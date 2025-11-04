@@ -1,0 +1,39 @@
+:root {
+  --text-headings: #1a1d29;
+  --text-body: #212534;
+  --text-caption: #393e51;
+  --text-action: #00bcdc;
+  --text-error: #f94343;
+  --text-success: #06c686;
+  --text-warning: #f9db43;
+  --text-inverse: #ffffff;
+
+  --bg-primary: #ffffff;
+  --bg-secondary: #f4f4f6;
+  --bg-tertiary: #e8e9ed;
+  --bg-inverse: #1a1d29;
+
+  --accent-primary: #00bcdc;
+  --accent-hover: #0096b0;
+  --accent-light: rgba(0, 188, 220, 0.1);
+
+  --surface-accent: #00bcdc;
+
+  --border-default: #e8e9ed;
+  --border-strong: #c6c9d2;
+
+  --chart-bg: #ffffff;
+  --chart-grid: #e8e9ed;
+  --chart-axis: #c6c9d2;
+  --chart-label: #212534;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+
+  --dataviz-1: #498cf9;
+  --dataviz-2: #06c686;
+  --dataviz-3: #f9db43;
+  --dataviz-4: #fa8a40;
+  --dataviz-5: #f94343;
+}

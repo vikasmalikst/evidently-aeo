@@ -1,0 +1,31 @@
+@import './styles/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Sora', system-ui, -apple-system, sans-serif;
+  }
+
+  table,
+  .font-data,
+  [class*="table"],
+  [class*="chart"],
+  [data-chart],
+  canvas {
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer utilities {
+  .nav-expand {
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .text-fade-in {
+    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}

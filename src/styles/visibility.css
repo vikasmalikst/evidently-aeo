@@ -1,0 +1,95 @@
+:root {
+  --page-bg: #f4f4f6;
+
+  --panel-bg: #ffffff;
+  --panel-border: #e8e9ed;
+  --panel-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+
+  --chart-color-1: #06b6d4;
+  --chart-color-2: #498cf9;
+  --chart-color-3: #ac59fb;
+  --chart-color-4: #fa8a40;
+  --chart-color-5: #f155a2;
+  --chart-color-6: #0d7c96;
+  --chart-color-7: #0d3196;
+  --chart-color-8: #54079c;
+
+  --status-up: #06c686;
+  --status-down: #f94343;
+  --status-neutral: #c6c9d2;
+
+  --table-header-bg: #f4f4f6;
+  --table-row-hover-bg: #ebfafc;
+  --table-row-selected-bg: #d6f4f9;
+  --table-border: #dcdfe5;
+
+  --chart-bg: #ffffff;
+  --chart-grid: #e8e9ed;
+  --chart-axis: #c6c9d2;
+  --chart-label: #212534;
+
+  --control-area-bg: #ffffff;
+  --control-area-border: #dcdfe5;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+
+  --transition-fast: 150ms ease;
+  --transition-normal: 300ms ease;
+
+  --font-size-body: 14px;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+}
+
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #dcdfe5;
+  border-radius: 2px;
+  background-color: white;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+input[type="checkbox"]:hover {
+  border-color: #00bcdc;
+}
+
+input[type="checkbox"]:checked {
+  background-color: #00bcdc;
+  border-color: #00bcdc;
+}
+
+input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -60%) rotate(45deg);
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input[type="checkbox"]:disabled:hover {
+  border-color: #dcdfe5;
+}

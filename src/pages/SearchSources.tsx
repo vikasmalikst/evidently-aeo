@@ -530,10 +530,10 @@ export const SearchSources = () => {
           }}
         >
           <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-            AI Sources
+            Answer Sources
           </h1>
           <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
-            Understand which AI sources cite your brand, measure share of answer across prompts, and identify optimization opportunities
+            Understand which sources are cited in AI answers, measure share of answer across prompts, and identify optimization opportunities
           </p>
 
           {/* Top Metrics */}

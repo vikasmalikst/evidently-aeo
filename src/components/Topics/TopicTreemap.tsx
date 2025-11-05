@@ -23,9 +23,16 @@ interface TreemapTile {
   height: number;
 }
 
-export const TopicTreemap = ({ topics }: TopicTreemapProps) => {
+export const TopicTreemap = ({ topics: allTopics }: TopicTreemapProps) => {
   const [hoveredTopic, setHoveredTopic] = useState<TopicData | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const categories = ['all', ...Array.from(new Set(allTopics.map(t => t.category)))];
+
+  const topics = useMemo(() => {
+    if (selectedCategory === 'all') return allTopics;
+    return allTopics.filter(t => t.category === selectedCategory);
+  }, [allTopics, selectedCategory]);
 
   const getSoAColor = (soa: number): string => {
     if (soa >= 3.0) return '#06c686';
@@ -286,10 +293,56 @@ export const TopicTreemap = ({ topics }: TopicTreemapProps) => {
         boxShadow: 'var(--shadow-sm)'
       }}>
         <div style={{ marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '20px', fontWeight: '600', color: 'var(--text-headings)', fontFamily: 'Sora, sans-serif', marginBottom: '8px' }}>
-            Topic Performance Treemap
-          </h2>
-          <div style={{ display: 'flex', alignItems: 'start', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: '600', color: 'var(--text-headings)', fontFamily: 'Sora, sans-serif', margin: 0 }}>
+              Topic Performance Treemap
+            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <label
+                htmlFor="category-filter"
+                style={{
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  color: 'var(--text-caption)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}
+              >
+                Category:
+              </label>
+              <select
+                id="category-filter"
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-body)',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  minWidth: '200px'
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-default)';
+                }}
+              >
+                {categories.map(category => (
+                  <option key={category} value={category}>
+                    {category === 'all' ? 'All Categories' : category}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
             <Info size={16} color="var(--text-caption)" style={{ marginTop: '2px', flexShrink: 0 }} />
             <p style={{ fontSize: '14px', color: 'var(--text-caption)', lineHeight: '1.6', margin: 0 }}>
               Tile size represents search volume (market demand). Color indicates Share of Answer performance

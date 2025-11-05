@@ -151,17 +151,6 @@ const mockTopics: TopicData[] = [
 ];
 
 export const Topics = () => {
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-
-  const categories = ['all', ...Array.from(new Set(mockTopics.map(t => t.category)))];
-
-  const filteredTopics = useMemo(() => {
-    return mockTopics.filter(topic => {
-      const matchesCategory = selectedCategory === 'all' || topic.category === selectedCategory;
-      return matchesCategory;
-    });
-  }, [selectedCategory]);
-
   return (
     <Layout>
       <div className="p-6">
@@ -172,54 +161,7 @@ export const Topics = () => {
           </p>
         </div>
 
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-            <label
-              htmlFor="category-filter"
-              style={{
-                fontSize: '13px',
-                fontWeight: '600',
-                color: 'var(--text-caption)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}
-            >
-              Category:
-            </label>
-            <select
-              id="category-filter"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              style={{
-                padding: '8px 12px',
-                border: '1px solid var(--border-default)',
-                borderRadius: '6px',
-                backgroundColor: 'var(--bg-primary)',
-                color: 'var(--text-body)',
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                outline: 'none',
-                transition: 'border-color 0.2s',
-                minWidth: '200px'
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = 'var(--accent-primary)';
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-default)';
-              }}
-            >
-              {categories.map(category => (
-                <option key={category} value={category}>
-                  {category === 'all' ? 'All Categories' : category}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <TopicTreemap topics={filteredTopics} />
+        <TopicTreemap topics={mockTopics} />
       </div>
     </Layout>
   );

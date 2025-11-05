@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { Search } from 'lucide-react';
-import { TopicPerformanceBubbleChart } from '../components/Topics/TopicPerformanceBubbleChart';
+import { TopicTreemap } from '../components/Topics/TopicTreemap';
 
 interface TopicData {
   id: string;
@@ -209,7 +209,7 @@ export const Topics = () => {
             <p className="text-[var(--text-caption)]">No topics found matching your search.</p>
           </div>
         ) : (
-          <TopicPerformanceBubbleChart topics={filteredTopics} />
+          <TopicTreemap topics={filteredTopics} />
         )}
       </div>
     </Layout>

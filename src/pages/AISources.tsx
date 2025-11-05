@@ -75,11 +75,12 @@ const generateSourceData = (): SourceData[] => {
   ];
 
   editorialSources.forEach(domain => {
+    const mentionRate = Math.floor(Math.random() * 40);
     sources.push({
       name: domain,
       url: `https://${domain}`,
       type: 'editorial',
-      mentionRate: Math.floor(Math.random() * 35) + 5,
+      mentionRate,
       mentionChange: Math.floor(Math.random() * 20) - 8,
       soa: parseFloat((Math.random() * 3 + 0.3).toFixed(1)),
       soaChange: parseFloat((Math.random() * 0.8 - 0.3).toFixed(1)),
@@ -99,11 +100,12 @@ const generateSourceData = (): SourceData[] => {
   ];
 
   corporateSources.forEach(domain => {
+    const mentionRate = Math.floor(Math.random() * 35);
     sources.push({
       name: domain,
       url: `https://${domain}`,
       type: 'corporate',
-      mentionRate: Math.floor(Math.random() * 30) + 3,
+      mentionRate,
       mentionChange: Math.floor(Math.random() * 18) - 7,
       soa: parseFloat((Math.random() * 2.5 + 0.2).toFixed(1)),
       soaChange: parseFloat((Math.random() * 0.6 - 0.2).toFixed(1)),
@@ -120,11 +122,12 @@ const generateSourceData = (): SourceData[] => {
   ];
 
   referenceSources.forEach(domain => {
+    const mentionRate = Math.floor(Math.random() * 30);
     sources.push({
       name: domain,
       url: `https://${domain}`,
       type: 'reference',
-      mentionRate: Math.floor(Math.random() * 25) + 5,
+      mentionRate,
       mentionChange: Math.floor(Math.random() * 15) - 5,
       soa: parseFloat((Math.random() * 2.8 + 0.5).toFixed(1)),
       soaChange: parseFloat((Math.random() * 0.7 - 0.2).toFixed(1)),
@@ -143,11 +146,12 @@ const generateSourceData = (): SourceData[] => {
   ];
 
   ugcSources.forEach(domain => {
+    const mentionRate = Math.floor(Math.random() * 32);
     sources.push({
       name: domain,
       url: `https://${domain}`,
       type: 'ugc',
-      mentionRate: Math.floor(Math.random() * 28) + 2,
+      mentionRate,
       mentionChange: Math.floor(Math.random() * 22) - 9,
       soa: parseFloat((Math.random() * 2.2 + 0.2).toFixed(1)),
       soaChange: parseFloat((Math.random() * 0.5 - 0.25).toFixed(1)),
@@ -166,11 +170,12 @@ const generateSourceData = (): SourceData[] => {
   ];
 
   institutionalSources.forEach(domain => {
+    const mentionRate = Math.floor(Math.random() * 25);
     sources.push({
       name: domain,
       url: `https://${domain}`,
       type: 'institutional',
-      mentionRate: Math.floor(Math.random() * 20) + 3,
+      mentionRate,
       mentionChange: Math.floor(Math.random() * 12) - 4,
       soa: parseFloat((Math.random() * 2.5 + 0.3).toFixed(1)),
       soaChange: parseFloat((Math.random() * 0.5 - 0.15).toFixed(1)),

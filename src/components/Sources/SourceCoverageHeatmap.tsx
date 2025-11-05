@@ -305,10 +305,9 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
           <div style={{
             display: 'grid',
             gridTemplateColumns: `180px repeat(${sortedTopics.length}, 140px)`,
-            gap: '2px',
+            gap: '0',
             minWidth: 'max-content',
-            background: '#e8e9ed',
-            padding: '2px'
+            background: '#ffffff'
           }}>
             {/* Corner cell */}
             <div style={{
@@ -316,13 +315,15 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
               alignItems: 'center',
               padding: '12px',
               fontSize: '12px',
-              fontWeight: '500',
-              background: '#1a1d29',
-              color: 'white',
+              fontWeight: '600',
+              background: '#f4f4f6',
+              color: '#1a1d29',
               position: 'sticky',
               top: 0,
               left: 0,
-              zIndex: 20
+              zIndex: 20,
+              borderBottom: '2px solid #e8e9ed',
+              borderRight: '1px solid #e8e9ed'
             }}>
               Source / Topic
             </div>
@@ -338,13 +339,14 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
                   padding: '12px',
                   fontSize: '11px',
                   fontWeight: '600',
-                  background: '#1a1d29',
-                  color: 'white',
+                  background: '#f4f4f6',
+                  color: '#1a1d29',
                   position: 'sticky',
                   top: 0,
                   zIndex: 10,
                   textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
+                  letterSpacing: '0.5px',
+                  borderBottom: '2px solid #e8e9ed'
                 }}
               >
                 {topic}
@@ -363,11 +365,12 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
                     padding: '12px',
                     fontSize: '12px',
                     fontWeight: '600',
-                    background: '#e8e9ed',
+                    background: '#ffffff',
                     position: 'sticky',
                     left: 0,
                     zIndex: 10,
-                    borderRight: '2px solid #dcdfe5'
+                    borderRight: '1px solid #e8e9ed',
+                    borderBottom: '1px solid #e8e9ed'
                   }}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -390,7 +393,6 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
                       style={{
                         padding: '16px 8px',
                         textAlign: 'center',
-                        borderRadius: '4px',
                         fontSize: '11px',
                         fontWeight: '600',
                         cursor: 'pointer',
@@ -403,6 +405,7 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
                         background: cellStyle.bg,
                         color: cellStyle.color,
                         border: cellStyle.border,
+                        borderBottom: '1px solid #e8e9ed',
                         position: 'relative'
                       }}
                       onClick={() => {

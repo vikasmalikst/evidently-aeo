@@ -639,31 +639,6 @@ export const SearchSources = () => {
                     <span style={{ fontSize: '11px', fontWeight: '600', color: '#06c686' }}>+4.2%</span>
                   </div>
                 </div>
-
-                {/* CTA Button */}
-                <button
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    backgroundColor: '#00bcdc',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    fontFamily: 'IBM Plex Sans, sans-serif',
-                    transition: 'background-color 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#00a6c2';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#00bcdc';
-                  }}
-                >
-                  Update Wikipedia Page
-                </button>
               </div>
             </div>
           </div>

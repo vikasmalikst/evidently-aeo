@@ -632,11 +632,12 @@ export const SearchSources = () => {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
                     <IconChartBar size={14} style={{ color: '#00bcdc', flexShrink: 0 }} />
-                    <span style={{ fontSize: '11px', color: '#393e51' }}>23 prompts</span>
+                    <span style={{ fontSize: '11px', color: '#393e51' }}>Used as a source in 23 prompts</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <IconArrowUpRight size={14} style={{ color: '#06c686', flexShrink: 0 }} />
-                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#06c686' }}>+4.2%</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#393e51' }}>18% SoA</span>
+                    <IconArrowUpRight size={12} style={{ color: '#06c686', flexShrink: 0 }} />
+                    <span style={{ fontSize: '10px', fontWeight: '600', color: '#06c686' }}>+4.2%</span>
                   </div>
                 </div>
               </div>

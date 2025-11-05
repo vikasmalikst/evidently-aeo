@@ -314,11 +314,18 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
           </div>
         </div>
 
-        {/* Heatmap */}
+      </div>
+
+      {/* Heatmap - Outside the card */}
+      <div style={{
+        backgroundColor: '#ffffff',
+        padding: '24px',
+        borderRadius: '8px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        marginTop: '24px'
+      }}>
         <div style={{
           overflowX: 'auto',
-          overflowY: 'auto',
-          maxHeight: '700px',
           border: '1px solid #e8e9ed',
           borderRadius: '6px'
         }}>

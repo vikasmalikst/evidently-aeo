@@ -1,162 +1,855 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
-import { ChevronDown } from 'lucide-react';
-import { InsightsAndGaps } from '../components/Prompts/InsightsAndGaps';
-import { SourcesRacingChart } from '../components/Citations/SourcesRacingChart';
-import { SourceTypeDonutChart } from '../components/Citations/SourceTypeDonutChart';
-import { DomainsTable } from '../components/Citations/DomainsTable';
-import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
+import { Scatter } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  LinearScale,
+  PointElement,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { IconTarget, IconDownload, IconTrendingUp, IconTrendingDown } from '@tabler/icons-react';
+
+ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
+
+const sourceTypeColors: Record<string, string> = {
+  'brand': '#00bcdc',
+  'editorial': '#498cf9',
+  'corporate': '#fa8a40',
+  'reference': '#ac59fb',
+  'ugc': '#f155a2',
+  'institutional': '#0d7c96'
+};
+
+const sourceTypeLabels: Record<string, string> = {
+  'brand': 'Your Brand',
+  'editorial': 'Editorial',
+  'corporate': 'Corporate',
+  'reference': 'Reference',
+  'ugc': 'User-Generated',
+  'institutional': 'Institutional'
+};
+
+interface SourceData {
+  name: string;
+  url: string;
+  type: 'brand' | 'editorial' | 'corporate' | 'reference' | 'ugc' | 'institutional';
+  mentionRate: number;
+  mentionChange: number;
+  soa: number;
+  soaChange: number;
+  sentiment: number;
+  sentimentChange: number;
+  citations: number;
+  topics: string[];
+}
+
+const topicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
+
+const generateSourceData = (): SourceData[] => {
+  const sources: SourceData[] = [];
+
+  // Brand source
+  sources.push({
+    name: 'your-brand.com',
+    url: 'https://your-brand.com',
+    type: 'brand',
+    mentionRate: 45,
+    mentionChange: 8,
+    soa: 2.8,
+    soaChange: 0.4,
+    sentiment: 0.88,
+    sentimentChange: 0.15,
+    citations: 28,
+    topics: ['Innovation', 'Pricing']
+  });
+
+  // Editorial sources (25)
+  const editorialSources = [
+    'techcrunch.com', 'forbes.com', 'wired.com', 'bloomberg.com', 'theverge.com',
+    'cnet.com', 'arstechnica.com', 'engadget.com', 'technologyreview.com', 'venturebeat.com',
+    'zdnet.com', 'businessinsider.com', 'fastcompany.com', 'inc.com', 'entrepreneur.com',
+    'wsj.com', 'nytimes.com', 'reuters.com', 'apnews.com', 'bbc.com',
+    'theguardian.com', 'washingtonpost.com', 'fortune.com', 'cnbc.com', 'marketwatch.com'
+  ];
+
+  editorialSources.forEach(domain => {
+    sources.push({
+      name: domain,
+      url: `https://${domain}`,
+      type: 'editorial',
+      mentionRate: Math.floor(Math.random() * 40) + 1,
+      mentionChange: Math.floor(Math.random() * 26) - 10,
+      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
+      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
+      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
+      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
+      citations: Math.floor(Math.random() * 29) + 2,
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1)
+    });
+  });
+
+  // Corporate sources (20)
+  const corporateSources = [
+    'microsoft.com', 'apple.com', 'google.com', 'salesforce.com', 'ibm.com',
+    'oracle.com', 'sap.com', 'adobe.com', 'cisco.com', 'intel.com',
+    'nvidia.com', 'aws.amazon.com', 'azure.microsoft.com', 'cloud.google.com', 'dell.com',
+    'hp.com', 'lenovo.com', 'vmware.com', 'redhat.com', 'atlassian.com'
+  ];
+
+  corporateSources.forEach(domain => {
+    sources.push({
+      name: domain,
+      url: `https://${domain}`,
+      type: 'corporate',
+      mentionRate: Math.floor(Math.random() * 40) + 1,
+      mentionChange: Math.floor(Math.random() * 26) - 10,
+      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
+      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
+      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
+      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
+      citations: Math.floor(Math.random() * 29) + 2,
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1)
+    });
+  });
+
+  // Reference sources (6)
+  const referenceSources = [
+    'wikipedia.org', 'britannica.com', 'investopedia.com', 'dictionary.com', 'merriam-webster.com', 'oxfordreference.com'
+  ];
+
+  referenceSources.forEach(domain => {
+    sources.push({
+      name: domain,
+      url: `https://${domain}`,
+      type: 'reference',
+      mentionRate: Math.floor(Math.random() * 40) + 1,
+      mentionChange: Math.floor(Math.random() * 26) - 10,
+      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
+      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
+      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
+      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
+      citations: Math.floor(Math.random() * 29) + 2,
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 2) + 1)
+    });
+  });
+
+  // UGC sources (15)
+  const ugcSources = [
+    'reddit.com', 'github.com', 'stackoverflow.com', 'medium.com', 'dev.to',
+    'hackernews.com', 'producthunt.com', 'quora.com', 'discord.com', 'slack.com',
+    'twitter.com', 'linkedin.com', 'youtube.com', 'substack.com', 'devto.com'
+  ];
+
+  ugcSources.forEach(domain => {
+    sources.push({
+      name: domain,
+      url: `https://${domain}`,
+      type: 'ugc',
+      mentionRate: Math.floor(Math.random() * 40) + 1,
+      mentionChange: Math.floor(Math.random() * 26) - 10,
+      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
+      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
+      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
+      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
+      citations: Math.floor(Math.random() * 29) + 2,
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1)
+    });
+  });
+
+  // Institutional sources (12)
+  const institutionalSources = [
+    'mit.edu', 'stanford.edu', 'harvard.edu', 'berkeley.edu', 'cmu.edu',
+    'nih.gov', 'nsf.gov', 'nasa.gov', 'energy.gov', 'commerce.gov',
+    'cambridge.org', 'oxford.ac.uk'
+  ];
+
+  institutionalSources.forEach(domain => {
+    sources.push({
+      name: domain,
+      url: `https://${domain}`,
+      type: 'institutional',
+      mentionRate: Math.floor(Math.random() * 40) + 1,
+      mentionChange: Math.floor(Math.random() * 26) - 10,
+      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
+      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
+      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
+      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
+      citations: Math.floor(Math.random() * 29) + 2,
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 2) + 1)
+    });
+  });
+
+  // Fill remaining with more editorial and corporate (49 more to reach 127)
+  const extraDomains = [
+    { domain: 'protocol.com', type: 'editorial' as const },
+    { domain: 'techradar.com', type: 'editorial' as const },
+    { domain: 'digitaltrends.com', type: 'editorial' as const },
+    { domain: 'pcmag.com', type: 'editorial' as const },
+    { domain: 'gizmodo.com', type: 'editorial' as const },
+    { domain: 'mashable.com', type: 'editorial' as const },
+    { domain: 'lifehacker.com', type: 'editorial' as const },
+    { domain: 'axios.com', type: 'editorial' as const },
+    { domain: 'theatlantic.com', type: 'editorial' as const },
+    { domain: 'newyorker.com', type: 'editorial' as const },
+    { domain: 'vox.com', type: 'editorial' as const },
+    { domain: 'buzzfeed.com', type: 'editorial' as const },
+    { domain: 'huffpost.com', type: 'editorial' as const },
+    { domain: 'slate.com', type: 'editorial' as const },
+    { domain: 'polygon.com', type: 'editorial' as const },
+    { domain: 'theinformation.com', type: 'editorial' as const },
+    { domain: 'techmeme.com', type: 'editorial' as const },
+    { domain: '9to5mac.com', type: 'editorial' as const },
+    { domain: 'macrumors.com', type: 'editorial' as const },
+    { domain: 'androidcentral.com', type: 'editorial' as const },
+    { domain: 'xda-developers.com', type: 'editorial' as const },
+    { domain: 'tomshardware.com', type: 'editorial' as const },
+    { domain: 'anandtech.com', type: 'editorial' as const },
+    { domain: 'shopify.com', type: 'corporate' as const },
+    { domain: 'hubspot.com', type: 'corporate' as const },
+    { domain: 'mailchimp.com', type: 'corporate' as const },
+    { domain: 'zoom.us', type: 'corporate' as const },
+    { domain: 'dropbox.com', type: 'corporate' as const },
+    { domain: 'notion.so', type: 'corporate' as const },
+    { domain: 'figma.com', type: 'corporate' as const },
+    { domain: 'asana.com', type: 'corporate' as const },
+    { domain: 'trello.com', type: 'corporate' as const },
+    { domain: 'monday.com', type: 'corporate' as const },
+    { domain: 'zendesk.com', type: 'corporate' as const },
+    { domain: 'intercom.com', type: 'corporate' as const },
+    { domain: 'stripe.com', type: 'corporate' as const },
+    { domain: 'square.com', type: 'corporate' as const },
+    { domain: 'paypal.com', type: 'corporate' as const },
+    { domain: 'twilio.com', type: 'corporate' as const },
+    { domain: 'sendgrid.com', type: 'corporate' as const },
+    { domain: 'segment.com', type: 'corporate' as const },
+    { domain: 'amplitude.com', type: 'corporate' as const },
+    { domain: 'mixpanel.com', type: 'corporate' as const },
+    { domain: 'datadog.com', type: 'corporate' as const },
+    { domain: 'splunk.com', type: 'corporate' as const },
+    { domain: 'elastic.co', type: 'corporate' as const },
+    { domain: 'mongodb.com', type: 'corporate' as const },
+    { domain: 'redis.io', type: 'corporate' as const },
+    { domain: 'postgresql.org', type: 'corporate' as const },
+    { domain: 'docker.com', type: 'corporate' as const }
+  ];
+
+  extraDomains.forEach(({ domain, type }) => {
+    sources.push({
+      name: domain,
+      url: `https://${domain}`,
+      type,
+      mentionRate: Math.floor(Math.random() * 40) + 1,
+      mentionChange: Math.floor(Math.random() * 26) - 10,
+      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
+      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
+      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
+      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
+      citations: Math.floor(Math.random() * 29) + 2,
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1)
+    });
+  });
+
+  return sources.slice(0, 127);
+};
 
 export const SearchSources = () => {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(mockCitationSourcesData);
-  const [timeframe, setTimeframe] = useState('weekly');
-  const [region, setRegion] = useState('us');
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [sourceData] = useState<SourceData[]>(generateSourceData());
+  const [topicFilter, setTopicFilter] = useState('all');
+  const [sentimentFilter, setSentimentFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [timeRange, setTimeRange] = useState('30');
 
-  useEffect(() => {
-    setTimeout(() => {
-      setLoading(false);
-    }, 500);
-  }, []);
+  const filteredData = useMemo(() => {
+    return sourceData.filter(source => {
+      if (topicFilter !== 'all' && !source.topics.includes(topicFilter)) return false;
+      if (sentimentFilter === 'positive' && source.sentiment <= 0.3) return false;
+      if (sentimentFilter === 'neutral' && (source.sentiment < -0.1 || source.sentiment > 0.3)) return false;
+      if (sentimentFilter === 'negative' && source.sentiment >= -0.1) return false;
+      if (typeFilter !== 'all' && source.type !== typeFilter) return false;
+      return true;
+    });
+  }, [sourceData, topicFilter, sentimentFilter, typeFilter]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setOpenDropdown(null);
+  const overallMentionRate = useMemo(() => {
+    const avg = filteredData.reduce((sum, s) => sum + s.mentionRate, 0) / filteredData.length;
+    return Math.round(avg);
+  }, [filteredData]);
+
+  const avgSentiment = useMemo(() => {
+    const avg = filteredData.reduce((sum, s) => sum + s.sentiment, 0) / filteredData.length;
+    return avg.toFixed(2);
+  }, [filteredData]);
+
+  const topSource = useMemo(() => {
+    return filteredData.reduce((max, s) => s.mentionRate > max.mentionRate ? s : max, filteredData[0]);
+  }, [filteredData]);
+
+  const chartData = {
+    datasets: filteredData.map(source => ({
+      label: source.name,
+      data: [{
+        x: source.mentionRate,
+        y: source.soa,
+        r: Math.sqrt(source.citations) * 3.5,
+      }],
+      backgroundColor: sourceTypeColors[source.type] + '99',
+      borderColor: sourceTypeColors[source.type],
+      borderWidth: 2,
+      sourceData: source,
+    }))
+  };
+
+  const chartOptions: any = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: 'rgba(26, 29, 41, 0.95)',
+        titleColor: '#ffffff',
+        bodyColor: '#ffffff',
+        padding: 12,
+        displayColors: false,
+        callbacks: {
+          title: (context: any) => context[0].dataset.label,
+          label: (context: any) => {
+            const source = context.dataset.sourceData;
+            const sentimentEmoji = source.sentiment > 0.5 ? '😊' : source.sentiment < 0 ? '😟' : '😐';
+            const sentimentLabel = source.sentiment > 0.5 ? 'Positive' : source.sentiment < 0 ? 'Negative' : 'Neutral';
+            return [
+              '',
+              `Type: ${source.type.charAt(0).toUpperCase() + source.type.slice(1)}`,
+              `Mention Rate: ${source.mentionRate}%`,
+              `Share of Answer: ${source.soa}×`,
+              `Citations: ${source.citations}`,
+              '',
+              `${sentimentEmoji} Sentiment: ${sentimentLabel} (${source.sentiment > 0 ? '+' : ''}${source.sentiment})`,
+              '',
+              `🔗 ${source.url}`
+            ];
+          }
+        }
       }
-    };
-
-    if (openDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
+    },
+    scales: {
+      x: {
+        title: {
+          display: true,
+          text: 'Brand Mention Rate (%)',
+          font: { size: 14, weight: '600', family: 'IBM Plex Sans, sans-serif' },
+          color: '#212534'
+        },
+        min: 0,
+        max: 45,
+        grid: { color: '#e8e9ed' },
+        ticks: { color: '#393e51' }
+      },
+      y: {
+        title: {
+          display: true,
+          text: 'Share of Answer (×)',
+          font: { size: 14, weight: '600', family: 'IBM Plex Sans, sans-serif' },
+          color: '#212534'
+        },
+        min: 0,
+        max: 3.5,
+        grid: { color: '#e8e9ed' },
+        ticks: { color: '#393e51' }
+      }
     }
+  };
 
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [openDropdown]);
+  const quadrantPlugin = {
+    id: 'quadrantPlugin',
+    beforeDraw: (chart: any) => {
+      const ctx = chart.ctx;
+      const chartArea = chart.chartArea;
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
 
-  const timeframeOptions = [
-    { value: 'weekly', label: 'Last 7 days' },
-    { value: 'monthly', label: 'Last 30 days' },
-    { value: 'ytd', label: 'Year to Date' }
-  ];
+      const xMid = xScale.getPixelForValue(22.5);
+      const yMid = yScale.getPixelForValue(1.75);
 
-  const regionOptions = [
-    { value: 'us', label: '🇺🇸 United States' },
-    { value: 'canada', label: '🇨🇦 Canada' },
-    { value: 'latam', label: '🌎 LATAM' },
-    { value: 'south-america', label: '🌎 South America' },
-    { value: 'uk', label: '🇬🇧 United Kingdom' },
-    { value: 'emea', label: '🌍 EMEA' },
-    { value: 'india', label: '🇮🇳 India' },
-    { value: 'south-korea', label: '🇰🇷 South Korea' },
-    { value: 'china', label: '🇨🇳 China' },
-    { value: 'japan', label: '🇯🇵 Japan' },
-    { value: 'southeast-asia', label: '🌏 Southeast Asia' }
-  ];
+      ctx.save();
+      ctx.strokeStyle = '#e8e9ed';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]);
 
-  const currentTimeframe = timeframeOptions.find(o => o.value === timeframe);
-  const currentRegion = regionOptions.find(o => o.value === region);
+      ctx.beginPath();
+      ctx.moveTo(xMid, chartArea.top);
+      ctx.lineTo(xMid, chartArea.bottom);
+      ctx.stroke();
 
-  const renderDropdown = (
-    id: string,
-    value: string | undefined,
-    options: { value: string; label: string }[],
-    onChange: (value: string) => void
-  ) => (
-    <div className="relative min-w-[200px]">
-      <button
-        className="flex items-center gap-2 w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--accent-primary)] hover:bg-[var(--bg-secondary)]"
-        onClick={() => setOpenDropdown(openDropdown === id ? null : id)}
-      >
-        <span className="text-[var(--text-body)] whitespace-nowrap overflow-hidden text-ellipsis flex-1 text-left font-medium">
-          {value}
-        </span>
-        <ChevronDown
-          size={16}
-          className={`text-[var(--text-caption)] transition-transform duration-150 flex-shrink-0 ${
-            openDropdown === id ? 'rotate-180' : ''
-          }`}
-        />
-      </button>
+      ctx.beginPath();
+      ctx.moveTo(chartArea.left, yMid);
+      ctx.lineTo(chartArea.right, yMid);
+      ctx.stroke();
 
-      {openDropdown === id && (
-        <div className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[300px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              className={`block w-full px-4 py-2 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] ${
-                value === option.label
-                  ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
-                  : ''
-              }`}
-              onClick={() => {
-                onChange(option.value);
-                setOpenDropdown(null);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+      ctx.restore();
 
-  if (loading) {
-    return (
-      <Layout>
-        <div className="p-6">
-          <div className="animate-pulse">
-            <div className="h-8 bg-[var(--bg-secondary)] rounded w-1/4 mb-2"></div>
-            <div className="h-4 bg-[var(--bg-secondary)] rounded w-1/2 mb-6"></div>
-            <div className="h-96 bg-[var(--bg-secondary)] rounded-lg mb-6"></div>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
+      ctx.font = '600 11px IBM Plex Sans, sans-serif';
+      ctx.textAlign = 'center';
+
+      ctx.fillStyle = '#06c686';
+      ctx.fillText('HIGH VALUE ZONE', (xMid + chartArea.right) / 2, chartArea.top + 20);
+
+      ctx.fillStyle = '#f94343';
+      ctx.fillText('UNDERPERFORMING', (chartArea.left + xMid) / 2, chartArea.bottom - 10);
+    }
+  };
+
+  ChartJS.register(quadrantPlugin);
 
   return (
     <Layout>
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-[var(--text-headings)] mb-2">Search Sources</h1>
-            <p className="text-[var(--text-caption)]">
-              Websites and URLs cited in AI-generated responses to your tracked queries
-            </p>
+      <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+        {/* Page Header */}
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            marginBottom: '24px'
+          }}
+        >
+          <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
+            AI Sources
+          </h1>
+          <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
+            Understand which AI sources cite your brand, measure share of answer across prompts, and identify optimization opportunities
+          </p>
+
+          {/* Top Metrics */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginTop: '24px' }}>
+            {/* Overall Mention Rate */}
+            <div>
+              <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                OVERALL MENTION RATE
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '32px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
+                  {overallMentionRate}%
+                </span>
+                <span style={{ fontSize: '10px', color: '#06c686', display: 'flex', alignItems: 'center' }}>
+                  ↑ 3%
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', color: '#393e51' }}>
+                Brand mentioned in {overallMentionRate} of 100 responses
+              </div>
+            </div>
+
+            {/* Avg Sentiment & Top Source */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ backgroundColor: '#f4f4f6', padding: '12px', borderRadius: '6px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  AVG SENTIMENT SCORE
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '20px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
+                    +{avgSentiment}
+                  </span>
+                  <span style={{ fontSize: '10px', color: '#06c686' }}>
+                    ↑ 0.12
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#393e51' }}>Positive sentiment across mentions</div>
+              </div>
+
+              <div style={{ backgroundColor: '#f4f4f6', padding: '12px', borderRadius: '6px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  TOP SOURCE
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '16px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#1a1d29' }}>
+                    {topSource?.name}
+                  </span>
+                  <span style={{ fontSize: '10px', color: '#06c686' }}>
+                    ↑ 8%
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#393e51' }}>{topSource?.mentionRate}% mention · {filteredData.length} sources tracked</div>
+              </div>
+            </div>
+
+            {/* Priority Action Card */}
+            <div
+              style={{
+                backgroundColor: '#f0fbfd',
+                borderLeft: '4px solid #06b6d4',
+                padding: '16px',
+                borderRadius: '6px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>🎯</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#1a1d29' }}>Priority Action</span>
+                </div>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    backgroundColor: '#f94343',
+                    color: '#ffffff',
+                    fontSize: '10px',
+                    fontWeight: '700',
+                    borderRadius: '4px',
+                    textTransform: 'uppercase'
+                  }}
+                >
+                  HIGH
+                </span>
+              </div>
+              <p style={{ fontSize: '12px', color: '#212534', margin: '0 0 8px 0', lineHeight: '1.5' }}>
+                wikipedia.org: 18% SoA but only 4% brand mention rate.
+              </p>
+              <div style={{ fontSize: '11px', color: '#393e51', marginBottom: '12px' }}>
+                📊 23 prompts | 📈 +4.2% W_SoA
+              </div>
+              <button
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: '#0d7c96',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Update Wikipedia
+              </button>
+            </div>
           </div>
-          <div ref={dropdownRef} className="flex items-center gap-3">
-            {renderDropdown(
-              'timeframe',
-              currentTimeframe?.label,
-              timeframeOptions,
-              setTimeframe
-            )}
-            {renderDropdown(
-              'region',
-              currentRegion?.label,
-              regionOptions,
-              setRegion
-            )}
+        </div>
+
+        {/* Filter Bar */}
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            padding: '16px 24px',
+            borderRadius: '8px',
+            marginBottom: '24px',
+            display: 'flex',
+            gap: '12px',
+            flexWrap: 'wrap',
+            alignItems: 'center'
+          }}
+        >
+          <select
+            value={topicFilter}
+            onChange={(e) => setTopicFilter(e.target.value)}
+            style={{
+              border: '1px solid #dcdfe5',
+              borderRadius: '4px',
+              padding: '8px 12px',
+              fontSize: '13px',
+              fontFamily: 'IBM Plex Sans, sans-serif',
+              color: '#212534',
+              backgroundColor: '#ffffff',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="all">All Topics</option>
+            {topicOptions.map(topic => (
+              <option key={topic} value={topic}>{topic}</option>
+            ))}
+          </select>
+
+          <select
+            value={sentimentFilter}
+            onChange={(e) => setSentimentFilter(e.target.value)}
+            style={{
+              border: '1px solid #dcdfe5',
+              borderRadius: '4px',
+              padding: '8px 12px',
+              fontSize: '13px',
+              fontFamily: 'IBM Plex Sans, sans-serif',
+              color: '#212534',
+              backgroundColor: '#ffffff',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="all">All Sentiments</option>
+            <option value="positive">Positive Only</option>
+            <option value="neutral">Neutral Only</option>
+            <option value="negative">Negative Only</option>
+          </select>
+
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            style={{
+              border: '1px solid #dcdfe5',
+              borderRadius: '4px',
+              padding: '8px 12px',
+              fontSize: '13px',
+              fontFamily: 'IBM Plex Sans, sans-serif',
+              color: '#212534',
+              backgroundColor: '#ffffff',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="all">All Types</option>
+            {Object.entries(sourceTypeLabels).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+
+          <select
+            value={timeRange}
+            onChange={(e) => setTimeRange(e.target.value)}
+            style={{
+              border: '1px solid #dcdfe5',
+              borderRadius: '4px',
+              padding: '8px 12px',
+              fontSize: '13px',
+              fontFamily: 'IBM Plex Sans, sans-serif',
+              color: '#212534',
+              backgroundColor: '#ffffff',
+              cursor: 'pointer',
+              marginLeft: 'auto'
+            }}
+          >
+            <option value="7">Last 7 Days</option>
+            <option value="30">Last 30 Days</option>
+            <option value="90">Last 90 Days</option>
+          </select>
+        </div>
+
+        {/* Bubble Chart */}
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            marginBottom: '24px'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
+              Source Performance Matrix
+            </h2>
+            <a
+              href="#"
+              style={{
+                fontSize: '13px',
+                color: '#00bcdc',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              Export data <IconDownload size={14} />
+            </a>
+          </div>
+
+          <p style={{ fontSize: '13px', color: '#393e51', marginBottom: '16px' }}>
+            Sources in the top-right quadrant (high mention rate + high share of answer) are your highest-value targets. Colors indicate source type.
+          </p>
+
+          <div style={{ height: '500px', position: 'relative' }}>
+            <Scatter data={chartData} options={chartOptions} />
+          </div>
+
+          {/* Legend */}
+          <div style={{ marginTop: '16px', display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
+            {Object.entries(sourceTypeLabels).map(([key, label]) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    backgroundColor: sourceTypeColors[key]
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: '#393e51' }}>{label}</span>
+              </div>
+            ))}
+            <div style={{ fontSize: '11px', color: '#64748b', marginLeft: '8px' }}>
+              • Bubble Size: Total Citations
+            </div>
           </div>
         </div>
 
-        <InsightsAndGaps />
+        {/* Source Attribution Table */}
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
+              Source Attribution Details
+            </h2>
+            <a
+              href="#"
+              style={{
+                fontSize: '13px',
+                color: '#00bcdc',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              Export CSV <IconDownload size={14} />
+            </a>
+          </div>
 
-        <div className="mb-6">
-          <SourcesRacingChart racingChartData={data.racingChartData} />
-        </div>
-
-        <div className="mb-6">
-          <SourceTypeDonutChart distribution={data.sourceTypeDistribution} />
-        </div>
-
-        <div className="mb-6">
-          <DomainsTable domains={data.domainsData} urls={data.urlsData} />
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#f4f4f6', borderBottom: '2px solid #e8e9ed' }}>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                    Source
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                    Type
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                    Mention Rate
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                    Share of Answer
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                    Sentiment
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                    Top Topics
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                    Prompts
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.map((source, idx) => {
+                  const sentimentEmoji = source.sentiment > 0.5 ? '😊' : source.sentiment < 0 ? '😟' : '😐';
+                  return (
+                    <tr
+                      key={source.name}
+                      style={{
+                        borderBottom: '1px solid #e8e9ed',
+                        backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f9f9fb'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f4f4f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#f9f9fb';
+                      }}
+                    >
+                      <td style={{ padding: '16px 12px' }}>
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: '#00bcdc',
+                            textDecoration: 'none',
+                            fontSize: '13px',
+                            fontFamily: 'IBM Plex Sans, sans-serif'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.textDecoration = 'underline';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.textDecoration = 'none';
+                          }}
+                        >
+                          {source.name}
+                        </a>
+                      </td>
+                      <td style={{ padding: '16px 12px' }}>
+                        <span
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                            backgroundColor: sourceTypeColors[source.type],
+                            color: '#ffffff'
+                          }}
+                        >
+                          {source.type}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                          <span style={{ fontSize: '13px', fontFamily: 'IBM Plex Mono, monospace', color: '#212534' }}>
+                            {source.mentionRate}%
+                          </span>
+                          <span style={{ fontSize: '10px', color: source.mentionChange >= 0 ? '#06c686' : '#f94343' }}>
+                            {source.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(source.mentionChange)}%
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                          <span style={{ fontSize: '13px', fontFamily: 'IBM Plex Mono, monospace', color: '#212534' }}>
+                            {source.soa}×
+                          </span>
+                          <span style={{ fontSize: '10px', color: source.soaChange >= 0 ? '#06c686' : '#f94343' }}>
+                            {source.soaChange >= 0 ? '↑' : '↓'} {Math.abs(source.soaChange)}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '16px' }}>{sentimentEmoji}</span>
+                          <span
+                            style={{
+                              fontSize: '13px',
+                              fontFamily: 'IBM Plex Mono, monospace',
+                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < 0 ? '#f94343' : '#393e51'
+                            }}
+                          >
+                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
+                          </span>
+                          <span style={{ fontSize: '10px', color: source.sentimentChange >= 0 ? '#06c686' : '#f94343' }}>
+                            {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 12px' }}>
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                          {source.topics.slice(0, 2).map(topic => (
+                            <span
+                              key={topic}
+                              style={{
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                backgroundColor: '#f4f4f6',
+                                color: '#393e51'
+                              }}
+                            >
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 12px', textAlign: 'right', fontSize: '13px', color: '#393e51' }}>
+                        {source.citations} prompts
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </Layout>

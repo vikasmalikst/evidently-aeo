@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SourceTabs } from '../components/Sources/SourceTabs';
+import { SourceCoverageHeatmap } from '../components/Sources/SourceCoverageHeatmap';
 import { Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -310,6 +311,34 @@ export const SearchSources = () => {
   const [activeTab, setActiveTab] = useState<'top-sources' | 'source-coverage'>('top-sources');
   const [sourceData] = useState<SourceData[]>(generateSourceData());
   const [topicFilter, setTopicFilter] = useState('all');
+
+  // Generate heatmap data
+  const heatmapData = useMemo(() => {
+    const data: Record<string, number[]> = {};
+    sourceData.forEach(source => {
+      data[source.name] = topicOptions.map((topic) => {
+        let baseRate = Math.random() * 40;
+
+        if (source.type === 'brand') baseRate = Math.random() * 15 + 30;
+        if (source.type === 'editorial') baseRate += 10;
+        if (source.type === 'corporate') {
+          if (topic === 'Innovation' || topic === 'Technology') baseRate += 15;
+        }
+        if (source.type === 'reference') baseRate = Math.max(2, baseRate - 15);
+
+        return Math.min(45, Math.max(0, Math.round(baseRate)));
+      });
+    });
+    return data;
+  }, [sourceData]);
+
+  const heatmapSources = useMemo(() => {
+    return sourceData.map(s => ({
+      name: s.name,
+      type: s.type,
+      url: s.url
+    }));
+  }, [sourceData]);
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [timeRange, setTimeRange] = useState('30');
@@ -1362,28 +1391,11 @@ export const SearchSources = () => {
         )}
 
         {activeTab === 'source-coverage' && (
-          <div
-            style={{
-              backgroundColor: '#ffffff',
-              padding: '48px',
-              borderRadius: '8px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-              textAlign: 'center',
-              minHeight: '400px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <div>
-              <h3 style={{ fontSize: '20px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', marginBottom: '12px' }}>
-                Source Coverage
-              </h3>
-              <p style={{ fontSize: '14px', color: '#393e51', fontFamily: 'IBM Plex Sans, sans-serif' }}>
-                Coming soon
-              </p>
-            </div>
-          </div>
+          <SourceCoverageHeatmap
+            sources={heatmapSources}
+            topics={topicOptions}
+            data={heatmapData}
+          />
         )}
       </div>
     </Layout>

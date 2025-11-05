@@ -1,80 +1,153 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
-import { Search, TrendingUp, TrendingDown } from 'lucide-react';
+import { Search } from 'lucide-react';
+import { TopicPerformanceBubbleChart } from '../components/Topics/TopicPerformanceBubbleChart';
 
-interface Topic {
+interface TopicData {
   id: string;
   name: string;
   category: string;
-  volume: number;
-  trend: number;
-  topModels: string[];
+  citationCount: number;
+  shareOfAnswer: number;
+  searchVolume: number;
+  avgSentiment: number;
 }
 
-const mockTopics: Topic[] = [
+const mockTopics: TopicData[] = [
   {
     id: '1',
     name: 'AI Assistants',
     category: 'Technology',
-    volume: 15420,
-    trend: 12,
-    topModels: ['ChatGPT', 'Claude', 'Gemini']
+    citationCount: 145,
+    shareOfAnswer: 2.8,
+    searchVolume: 15420,
+    avgSentiment: 0.72
   },
   {
     id: '2',
     name: 'Large Language Models',
     category: 'Technology',
-    volume: 12350,
-    trend: 8,
-    topModels: ['Claude', 'GPT-4', 'Gemini']
+    citationCount: 132,
+    shareOfAnswer: 2.4,
+    searchVolume: 12350,
+    avgSentiment: 0.65
   },
   {
     id: '3',
     name: 'AI Search',
     category: 'Search',
-    volume: 10890,
-    trend: -3,
-    topModels: ['Perplexity', 'Google AI', 'Bing AI']
+    citationCount: 98,
+    shareOfAnswer: 1.8,
+    searchVolume: 10890,
+    avgSentiment: 0.48
   },
   {
     id: '4',
     name: 'Search Results',
     category: 'Search',
-    volume: 9870,
-    trend: 5,
-    topModels: ['Google AI Search', 'Bing', 'Perplexity']
+    citationCount: 87,
+    shareOfAnswer: 1.5,
+    searchVolume: 9870,
+    avgSentiment: 0.55
   },
   {
     id: '5',
     name: 'Research Tools',
     category: 'Productivity',
-    volume: 8560,
-    trend: 15,
-    topModels: ['Perplexity', 'Claude', 'ChatGPT']
+    citationCount: 156,
+    shareOfAnswer: 3.2,
+    searchVolume: 8560,
+    avgSentiment: 0.78
   },
   {
     id: '6',
     name: 'Real-time Info',
     category: 'Search',
-    volume: 7230,
-    trend: 2,
-    topModels: ['Grok', 'Perplexity', 'Gemini']
+    citationCount: 76,
+    shareOfAnswer: 1.2,
+    searchVolume: 7230,
+    avgSentiment: 0.42
   },
   {
     id: '7',
     name: 'Code Generation',
     category: 'Development',
-    volume: 11240,
-    trend: 18,
-    topModels: ['GitHub Copilot', 'Claude', 'ChatGPT']
+    citationCount: 168,
+    shareOfAnswer: 3.5,
+    searchVolume: 11240,
+    avgSentiment: 0.82
   },
   {
     id: '8',
     name: 'Content Creation',
     category: 'Creative',
-    volume: 9450,
-    trend: 6,
-    topModels: ['ChatGPT', 'Claude', 'Gemini']
+    citationCount: 124,
+    shareOfAnswer: 2.6,
+    searchVolume: 9450,
+    avgSentiment: 0.68
+  },
+  {
+    id: '9',
+    name: 'Data Analysis',
+    category: 'Analytics',
+    citationCount: 92,
+    shareOfAnswer: 2.1,
+    searchVolume: 6800,
+    avgSentiment: 0.58
+  },
+  {
+    id: '10',
+    name: 'Machine Learning',
+    category: 'Technology',
+    citationCount: 110,
+    shareOfAnswer: 2.3,
+    searchVolume: 13200,
+    avgSentiment: 0.71
+  },
+  {
+    id: '11',
+    name: 'Automation',
+    category: 'Productivity',
+    citationCount: 78,
+    shareOfAnswer: 1.6,
+    searchVolume: 5400,
+    avgSentiment: 0.52
+  },
+  {
+    id: '12',
+    name: 'Chatbots',
+    category: 'Technology',
+    citationCount: 65,
+    shareOfAnswer: 1.1,
+    searchVolume: 4200,
+    avgSentiment: 0.38
+  },
+  {
+    id: '13',
+    name: 'Voice Assistants',
+    category: 'Technology',
+    citationCount: 54,
+    shareOfAnswer: 0.9,
+    searchVolume: 3800,
+    avgSentiment: 0.28
+  },
+  {
+    id: '14',
+    name: 'Image Generation',
+    category: 'Creative',
+    citationCount: 143,
+    shareOfAnswer: 2.9,
+    searchVolume: 10300,
+    avgSentiment: 0.75
+  },
+  {
+    id: '15',
+    name: 'Natural Language',
+    category: 'Technology',
+    citationCount: 118,
+    shareOfAnswer: 2.5,
+    searchVolume: 8900,
+    avgSentiment: 0.66
   }
 ];
 
@@ -84,11 +157,13 @@ export const Topics = () => {
 
   const categories = ['all', ...Array.from(new Set(mockTopics.map(t => t.category)))];
 
-  const filteredTopics = mockTopics.filter(topic => {
-    const matchesSearch = topic.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || topic.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredTopics = useMemo(() => {
+    return mockTopics.filter(topic => {
+      const matchesSearch = topic.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = selectedCategory === 'all' || topic.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [searchQuery, selectedCategory]);
 
   return (
     <Layout>
@@ -96,7 +171,7 @@ export const Topics = () => {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-[var(--text-headings)] mb-2">Topics</h1>
           <p className="text-[var(--text-caption)]">
-            Explore trending topics and their performance across different AI models
+            Analyze topic performance across citation count, share of answer, search volume, and sentiment
           </p>
         </div>
 
@@ -112,7 +187,7 @@ export const Topics = () => {
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {categories.map(category => (
               <button
                 key={category}
@@ -129,58 +204,12 @@ export const Topics = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTopics.map(topic => {
-            const isPositive = topic.trend > 0;
-            return (
-              <div
-                key={topic.id}
-                className="bg-white border border-[var(--border-default)] rounded-lg p-5 hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-[var(--text-body)] mb-1">
-                      {topic.name}
-                    </h3>
-                    <span className="inline-block px-2 py-1 bg-[var(--bg-secondary)] rounded text-xs text-[var(--text-caption)] font-medium">
-                      {topic.category}
-                    </span>
-                  </div>
-                  <div className={`flex items-center gap-1 ${isPositive ? 'text-[var(--text-success)]' : 'text-[var(--text-error)]'}`}>
-                    {isPositive ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                    <span className="text-sm font-semibold">{Math.abs(topic.trend)}%</span>
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <div className="text-sm text-[var(--text-caption)] mb-1">Search Volume</div>
-                  <div className="text-2xl font-bold text-[var(--text-body)]">
-                    {topic.volume.toLocaleString()}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-sm text-[var(--text-caption)] mb-2">Top Models</div>
-                  <div className="flex flex-wrap gap-2">
-                    {topic.topModels.map((model, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-1 bg-[var(--accent-light)] text-[var(--accent-primary)] rounded text-xs font-medium"
-                      >
-                        {model}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {filteredTopics.length === 0 && (
-          <div className="text-center py-12">
+        {filteredTopics.length === 0 ? (
+          <div className="text-center py-12 bg-white border border-[var(--border-default)] rounded-lg">
             <p className="text-[var(--text-caption)]">No topics found matching your search.</p>
           </div>
+        ) : (
+          <TopicPerformanceBubbleChart topics={filteredTopics} />
         )}
       </div>
     </Layout>

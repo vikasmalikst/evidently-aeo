@@ -8,7 +8,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { IconTarget, IconDownload, IconTrendingUp, IconTrendingDown, IconX } from '@tabler/icons-react';
+import { IconTarget, IconDownload, IconTrendingUp, IconTrendingDown, IconX, IconChevronUp, IconChevronDown } from '@tabler/icons-react';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
@@ -302,6 +302,9 @@ const generateSourceData = (): SourceData[] => {
   return sources.slice(0, 127);
 };
 
+type SortField = 'name' | 'type' | 'mentionRate' | 'soa' | 'sentiment' | 'topics' | 'pages' | 'prompts';
+type SortDirection = 'asc' | 'desc';
+
 export const SearchSources = () => {
   const [sourceData] = useState<SourceData[]>(generateSourceData());
   const [topicFilter, setTopicFilter] = useState('all');
@@ -313,9 +316,20 @@ export const SearchSources = () => {
   const [modalType, setModalType] = useState<'prompts' | 'pages' | null>(null);
   const [modalData, setModalData] = useState<string[]>([]);
   const [modalTitle, setModalTitle] = useState('');
+  const [sortField, setSortField] = useState<SortField>('mentionRate');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
 
   const filteredData = useMemo(() => {
-    return sourceData.filter(source => {
+    const filtered = sourceData.filter(source => {
       if (topicFilter !== 'all' && !source.topics.includes(topicFilter)) return false;
       if (sentimentFilter === 'positive' && source.sentiment <= 0.3) return false;
       if (sentimentFilter === 'neutral' && (source.sentiment < -0.1 || source.sentiment > 0.3)) return false;
@@ -323,7 +337,54 @@ export const SearchSources = () => {
       if (typeFilter !== 'all' && source.type !== typeFilter) return false;
       return true;
     });
-  }, [sourceData, topicFilter, sentimentFilter, typeFilter]);
+
+    // Sort the filtered data
+    return filtered.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortField) {
+        case 'name':
+          aValue = a.name.toLowerCase();
+          bValue = b.name.toLowerCase();
+          break;
+        case 'type':
+          aValue = a.type;
+          bValue = b.type;
+          break;
+        case 'mentionRate':
+          aValue = a.mentionRate;
+          bValue = b.mentionRate;
+          break;
+        case 'soa':
+          aValue = a.soa;
+          bValue = b.soa;
+          break;
+        case 'sentiment':
+          aValue = a.sentiment;
+          bValue = b.sentiment;
+          break;
+        case 'topics':
+          aValue = a.topics.length;
+          bValue = b.topics.length;
+          break;
+        case 'pages':
+          aValue = a.pages.length;
+          bValue = b.pages.length;
+          break;
+        case 'prompts':
+          aValue = a.prompts.length;
+          bValue = b.prompts.length;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [sourceData, topicFilter, sentimentFilter, typeFilter, sortField, sortDirection]);
 
   const overallMentionRate = useMemo(() => {
     const avg = filteredData.reduce((sum, s) => sum + s.mentionRate, 0) / filteredData.length;
@@ -764,29 +825,165 @@ export const SearchSources = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f4f4f6', borderBottom: '2px solid #e8e9ed' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
-                    Source
+                  <th
+                    onClick={() => handleSort('name')}
+                    style={{
+                      textAlign: 'left',
+                      padding: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#393e51',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Source
+                      {sortField === 'name' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
-                    Type
+                  <th
+                    onClick={() => handleSort('type')}
+                    style={{
+                      textAlign: 'left',
+                      padding: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#393e51',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Type
+                      {sortField === 'type' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
                   </th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
-                    Mention Rate
+                  <th
+                    onClick={() => handleSort('mentionRate')}
+                    style={{
+                      textAlign: 'right',
+                      padding: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#393e51',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                      Mention Rate
+                      {sortField === 'mentionRate' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
                   </th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
-                    Share of Answer
+                  <th
+                    onClick={() => handleSort('soa')}
+                    style={{
+                      textAlign: 'right',
+                      padding: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#393e51',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                      Share of Answer
+                      {sortField === 'soa' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
-                    Sentiment
+                  <th
+                    onClick={() => handleSort('sentiment')}
+                    style={{
+                      textAlign: 'left',
+                      padding: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#393e51',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Sentiment
+                      {sortField === 'sentiment' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
-                    Top Topics
+                  <th
+                    onClick={() => handleSort('topics')}
+                    style={{
+                      textAlign: 'left',
+                      padding: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#393e51',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Top Topics
+                      {sortField === 'topics' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
-                    Pages
+                  <th
+                    onClick={() => handleSort('pages')}
+                    style={{
+                      textAlign: 'left',
+                      padding: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#393e51',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Pages
+                      {sortField === 'pages' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
-                    Prompts
+                  <th
+                    onClick={() => handleSort('prompts')}
+                    style={{
+                      textAlign: 'left',
+                      padding: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#393e51',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Prompts
+                      {sortField === 'prompts' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
                   </th>
                 </tr>
               </thead>

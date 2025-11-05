@@ -99,92 +99,64 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
   return (
     <>
       {/* Stats Bar */}
-      <div style={{
-        backgroundColor: '#ffffff',
-        padding: '24px',
-        borderRadius: '8px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-        marginBottom: '24px'
-      }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-          <div style={{
-            background: '#f4f4f6',
-            padding: '16px',
-            borderRadius: '6px',
-            borderLeft: '4px solid #00bcdc'
-          }}>
-            <div style={{ fontSize: '12px', color: '#393e51', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '500' }}>
-              Highest Coverage Source
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: '#1a1d29', fontFamily: 'IBM Plex Mono, monospace' }}>
-              {stats.highestSource?.name || 'N/A'}
-            </div>
-            <div style={{ fontSize: '11px', color: '#06c686', marginTop: '4px' }}>
-              ↑ 8%
-            </div>
-            <div style={{ fontSize: '11px', color: '#393e51', marginTop: '4px' }}>
-              45% avg mention rate across topics
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white border border-[var(--border-default)] rounded-lg p-6 shadow-sm">
+          <div className="text-xs text-[var(--text-caption)] mb-2 uppercase tracking-wide font-medium">
+            Highest Coverage Source
           </div>
-
-          <div style={{
-            background: '#f4f4f6',
-            padding: '16px',
-            borderRadius: '6px',
-            borderLeft: '4px solid #00bcdc'
-          }}>
-            <div style={{ fontSize: '12px', color: '#393e51', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '500' }}>
-              Top Topic
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: '#1a1d29', fontFamily: 'IBM Plex Mono, monospace' }}>
-              {stats.topTopic?.topic || 'N/A'}
-            </div>
-            <div style={{ fontSize: '11px', color: '#06c686', marginTop: '4px' }}>
-              ↑ 5%
-            </div>
-            <div style={{ fontSize: '11px', color: '#393e51', marginTop: '4px' }}>
-              {stats.topTopic?.avg.toFixed(0)}% avg mention rate across sources
-            </div>
+          <div className="text-2xl font-bold text-[var(--text-body)] mb-1">
+            {stats.highestSource?.name || 'N/A'}
           </div>
-
-          <div style={{
-            background: '#f4f4f6',
-            padding: '16px',
-            borderRadius: '6px',
-            borderLeft: '4px solid #00bcdc'
-          }}>
-            <div style={{ fontSize: '12px', color: '#393e51', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '500' }}>
-              Coverage Gaps
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: '#1a1d29', fontFamily: 'IBM Plex Mono, monospace' }}>
-              {stats.gaps}
-            </div>
-            <div style={{ fontSize: '11px', color: '#f94343', marginTop: '4px' }}>
-              ↓ 3
-            </div>
-            <div style={{ fontSize: '11px', color: '#393e51', marginTop: '4px' }}>
-              Source-topic pairs with &lt;5% mention
-            </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-[var(--text-success)]">↑ 8%</span>
           </div>
+          <div className="text-xs text-[var(--text-caption)] mt-1">
+            45% avg mention rate across topics
+          </div>
+        </div>
 
-          <div style={{
-            background: '#f4f4f6',
-            padding: '16px',
-            borderRadius: '6px',
-            borderLeft: '4px solid #00bcdc'
-          }}>
-            <div style={{ fontSize: '12px', color: '#393e51', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '500' }}>
-              High-Value Pairs
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: '#1a1d29', fontFamily: 'IBM Plex Mono, monospace' }}>
-              {stats.highValue}
-            </div>
-            <div style={{ fontSize: '11px', color: '#06c686', marginTop: '4px' }}>
-              ↑ 4
-            </div>
-            <div style={{ fontSize: '11px', color: '#393e51', marginTop: '4px' }}>
-              Pairs with &gt;35% mention rate
-            </div>
+        <div className="bg-white border border-[var(--border-default)] rounded-lg p-6 shadow-sm">
+          <div className="text-xs text-[var(--text-caption)] mb-2 uppercase tracking-wide font-medium">
+            Top Topic
+          </div>
+          <div className="text-2xl font-bold text-[var(--text-body)] mb-1">
+            {stats.topTopic?.topic || 'N/A'}
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-[var(--text-success)]">↑ 5%</span>
+          </div>
+          <div className="text-xs text-[var(--text-caption)] mt-1">
+            {stats.topTopic?.avg.toFixed(0)}% avg mention rate across sources
+          </div>
+        </div>
+
+        <div className="bg-white border border-[var(--border-default)] rounded-lg p-6 shadow-sm">
+          <div className="text-xs text-[var(--text-caption)] mb-2 uppercase tracking-wide font-medium">
+            Coverage Gaps
+          </div>
+          <div className="text-3xl font-bold text-[var(--text-body)] mb-1">
+            {stats.gaps}
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-[var(--text-error)]">↓ 3</span>
+          </div>
+          <div className="text-xs text-[var(--text-caption)] mt-1">
+            Source-topic pairs with &lt;5% mention
+          </div>
+        </div>
+
+        <div className="bg-white border border-[var(--border-default)] rounded-lg p-6 shadow-sm">
+          <div className="text-xs text-[var(--text-caption)] mb-2 uppercase tracking-wide font-medium">
+            High-Value Pairs
+          </div>
+          <div className="text-3xl font-bold text-[var(--text-body)] mb-1">
+            {stats.highValue}
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-[var(--text-success)]">↑ 4</span>
+          </div>
+          <div className="text-xs text-[var(--text-caption)] mt-1">
+            Pairs with &gt;35% mention rate
           </div>
         </div>
       </div>

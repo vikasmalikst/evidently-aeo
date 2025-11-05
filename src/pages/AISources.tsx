@@ -224,6 +224,7 @@ const generateSourceData = (): SourceData[] => {
 };
 
 export const AISources = () => {
+  const [activeTab, setActiveTab] = useState<'sources' | 'coverage'>('sources');
   const [sourceData] = useState<SourceData[]>(generateSourceData());
   const [topicFilter, setTopicFilter] = useState('all');
   const [sentimentFilter, setSentimentFilter] = useState('all');
@@ -385,7 +386,7 @@ export const AISources = () => {
           }}
         >
           <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-            AI Sources
+            Answer Sources
           </h1>
           <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
             Understand which AI sources cite your brand, measure share of answer across prompts, and identify optimization opportunities
@@ -496,6 +497,48 @@ export const AISources = () => {
           </div>
         </div>
 
+        {/* Tab Navigation */}
+        <div style={{ backgroundColor: '#ffffff', marginBottom: '24px', borderRadius: '8px', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '24px' }}>
+            <button
+              onClick={() => setActiveTab('sources')}
+              style={{
+                padding: '16px 20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: activeTab === 'sources' ? '#00bcdc' : '#6c7289',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'sources' ? '2px solid #00bcdc' : '2px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontFamily: 'IBM Plex Sans, sans-serif'
+              }}
+            >
+              Answer Sources
+            </button>
+            <button
+              onClick={() => setActiveTab('coverage')}
+              style={{
+                padding: '16px 20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: activeTab === 'coverage' ? '#00bcdc' : '#6c7289',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'coverage' ? '2px solid #00bcdc' : '2px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontFamily: 'IBM Plex Sans, sans-serif'
+              }}
+            >
+              Answer Coverage
+            </button>
+          </div>
+        </div>
+
+        {activeTab === 'sources' && (
+          <>
         {/* Filter Bar */}
         <div
           style={{
@@ -824,6 +867,170 @@ export const AISources = () => {
             </table>
           </div>
         </div>
+        </>
+        )}
+
+        {activeTab === 'coverage' && (
+          <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1a1d29', fontFamily: 'Sora, sans-serif', margin: 0 }}>
+                Source-Topic Coverage Heatmap
+              </h2>
+            </div>
+
+            <p style={{ fontSize: '14px', color: '#393e51', marginBottom: '24px', lineHeight: '1.6' }}>
+              Understand which sources mention your brand across different topics.
+              <strong> Dark cells = high mention rate</strong> (strengths to amplify).
+              <strong> Light cells = low/zero mentions</strong> (optimization opportunities).
+            </p>
+
+            {/* Stats Bar */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ background: '#f4f4f6', padding: '16px', borderRadius: '6px', borderLeft: '4px solid #00bcdc' }}>
+                <div style={{ fontSize: '12px', color: '#393e51', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '500' }}>
+                  Highest Coverage Source
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#1a1d29', fontFamily: 'IBM Plex Mono, monospace' }}>
+                  your-brand.com
+                </div>
+                <div style={{ fontSize: '11px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', color: '#06c686' }}>
+                  <IconTrendingUp size={12} />
+                  <span>8%</span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#393e51', marginTop: '4px' }}>
+                  45% avg mention rate across topics
+                </div>
+              </div>
+
+              <div style={{ background: '#f4f4f6', padding: '16px', borderRadius: '6px', borderLeft: '4px solid #00bcdc' }}>
+                <div style={{ fontSize: '12px', color: '#393e51', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '500' }}>
+                  Top Topic
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#1a1d29', fontFamily: 'IBM Plex Mono, monospace' }}>
+                  Innovation
+                </div>
+                <div style={{ fontSize: '11px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', color: '#06c686' }}>
+                  <IconTrendingUp size={12} />
+                  <span>5%</span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#393e51', marginTop: '4px' }}>
+                  38% avg mention rate across sources
+                </div>
+              </div>
+
+              <div style={{ background: '#f4f4f6', padding: '16px', borderRadius: '6px', borderLeft: '4px solid #00bcdc' }}>
+                <div style={{ fontSize: '12px', color: '#393e51', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '500' }}>
+                  Coverage Gaps
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#1a1d29', fontFamily: 'IBM Plex Mono, monospace' }}>
+                  18
+                </div>
+                <div style={{ fontSize: '11px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', color: '#f94343' }}>
+                  <IconTrendingDown size={12} />
+                  <span>3</span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#393e51', marginTop: '4px' }}>
+                  Source-topic pairs with &lt;5% mention
+                </div>
+              </div>
+
+              <div style={{ background: '#f4f4f6', padding: '16px', borderRadius: '6px', borderLeft: '4px solid #00bcdc' }}>
+                <div style={{ fontSize: '12px', color: '#393e51', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: '500' }}>
+                  High-Value Pairs
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#1a1d29', fontFamily: 'IBM Plex Mono, monospace' }}>
+                  12
+                </div>
+                <div style={{ fontSize: '11px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', color: '#06c686' }}>
+                  <IconTrendingUp size={12} />
+                  <span>4</span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#393e51', marginTop: '4px' }}>
+                  Pairs with &gt;35% mention rate
+                </div>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', color: '#393e51', fontWeight: '500' }}>Metric:</span>
+                <select style={{ padding: '8px 12px', border: '1px solid #dcdfe5', borderRadius: '4px', background: '#ffffff', color: '#212534', fontSize: '13px', cursor: 'pointer' }}>
+                  <option value="mentionRate">Brand Mention Rate (%)</option>
+                  <option value="soa">Share of Answer (×)</option>
+                  <option value="sentiment">Avg Sentiment Score</option>
+                  <option value="citations">Total Citations</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', color: '#393e51', fontWeight: '500' }}>Sort Sources:</span>
+                <select style={{ padding: '8px 12px', border: '1px solid #dcdfe5', borderRadius: '4px', background: '#ffffff', color: '#212534', fontSize: '13px', cursor: 'pointer' }}>
+                  <option value="total">Total Coverage (High to Low)</option>
+                  <option value="name">Alphabetical</option>
+                  <option value="type">By Source Type</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', color: '#393e51', fontWeight: '500' }}>Filter Source Type:</span>
+                <select style={{ padding: '8px 12px', border: '1px solid #dcdfe5', borderRadius: '4px', background: '#ffffff', color: '#212534', fontSize: '13px', cursor: 'pointer' }}>
+                  <option value="all">All Types</option>
+                  <option value="brand">Your Brand</option>
+                  <option value="editorial">Editorial</option>
+                  <option value="corporate">Corporate</option>
+                  <option value="reference">Reference</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Heatmap - Coming Soon Message for MVP */}
+            <div style={{
+              border: '1px solid #e8e9ed',
+              borderRadius: '6px',
+              padding: '48px',
+              textAlign: 'center',
+              background: 'linear-gradient(135deg, #f4f4f6 0%, #ffffff 100%)'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+              <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>
+                Interactive Heatmap
+              </h3>
+              <p style={{ fontSize: '14px', color: '#393e51', maxWidth: '500px', margin: '0 auto' }}>
+                The interactive source-topic coverage heatmap will be displayed here, showing brand mention rates across all source-topic combinations.
+              </p>
+            </div>
+
+            {/* Legend */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '20px',
+              padding: '16px',
+              background: '#f4f4f6',
+              borderRadius: '6px'
+            }}>
+              <span style={{ fontSize: '12px', color: '#393e51', fontWeight: '600', marginRight: '8px' }}>
+                Brand Mention Rate:
+              </span>
+              <div style={{
+                height: '24px',
+                width: '300px',
+                background: 'linear-gradient(to right, hsl(180, 70%, 95%), hsl(180, 80%, 75%), hsl(180, 85%, 55%), hsl(180, 90%, 35%))',
+                borderRadius: '4px',
+                border: '1px solid #dcdfe5'
+              }}></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '300px', fontSize: '11px', color: '#393e51', marginLeft: '8px' }}>
+                <span>0%</span>
+                <span>15%</span>
+                <span>30%</span>
+                <span>45%+</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );

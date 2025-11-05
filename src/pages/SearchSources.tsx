@@ -8,7 +8,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { IconTarget, IconDownload, IconTrendingUp, IconTrendingDown, IconX, IconChevronUp, IconChevronDown } from '@tabler/icons-react';
+import { IconTarget, IconDownload, IconTrendingUp, IconTrendingDown, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, IconChartBar, IconArrowUpRight } from '@tabler/icons-react';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
@@ -589,54 +589,82 @@ export const SearchSources = () => {
               </div>
             </div>
 
-            {/* Priority Action Card */}
-            <div
-              style={{
-                backgroundColor: '#f0fbfd',
-                borderLeft: '4px solid #06b6d4',
-                padding: '16px',
-                borderRadius: '6px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '18px' }}>🎯</span>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#1a1d29' }}>Priority Action</span>
-                </div>
-                <span
+            {/* Insights & Actions */}
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                INSIGHTS & ACTIONS
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {/* High Priority Alert */}
+                <div
                   style={{
-                    padding: '2px 8px',
-                    backgroundColor: '#f94343',
-                    color: '#ffffff',
-                    fontSize: '10px',
-                    fontWeight: '700',
-                    borderRadius: '4px',
-                    textTransform: 'uppercase'
+                    backgroundColor: '#fff5f5',
+                    border: '1px solid #fecaca',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'start',
+                    gap: '10px'
                   }}
                 >
-                  HIGH
-                </span>
+                  <IconAlertCircle size={16} style={{ color: '#f94343', flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '11px', fontWeight: '600', color: '#1a1d29', marginBottom: '4px' }}>
+                      High-Impact Opportunity
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#393e51', lineHeight: '1.5' }}>
+                      wikipedia.org has 18% SoA but only 4% brand mention
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Item */}
+                <div
+                  style={{
+                    backgroundColor: '#f4f4f6',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                    <IconChartBar size={14} style={{ color: '#00bcdc', flexShrink: 0 }} />
+                    <span style={{ fontSize: '11px', color: '#393e51' }}>23 prompts</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <IconArrowUpRight size={14} style={{ color: '#06c686', flexShrink: 0 }} />
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#06c686' }}>+4.2%</span>
+                  </div>
+                </div>
+
+                {/* CTA Button */}
+                <button
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#00bcdc',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontFamily: 'IBM Plex Sans, sans-serif',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#00a6c2';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#00bcdc';
+                  }}
+                >
+                  Update Wikipedia Page
+                </button>
               </div>
-              <p style={{ fontSize: '12px', color: '#212534', margin: '0 0 8px 0', lineHeight: '1.5' }}>
-                wikipedia.org: 18% SoA but only 4% brand mention rate.
-              </p>
-              <div style={{ fontSize: '11px', color: '#393e51', marginBottom: '12px' }}>
-                📊 23 prompts | 📈 +4.2% W_SoA
-              </div>
-              <button
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: '#0d7c96',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Update Wikipedia
-              </button>
             </div>
           </div>
         </div>

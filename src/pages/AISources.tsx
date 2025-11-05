@@ -387,11 +387,51 @@ export const AISources = () => {
           }}
         >
           <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-            Answer Sources
+            AI Sources
           </h1>
           <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
             Understand which AI sources cite your brand, measure share of answer across prompts, and identify optimization opportunities
           </p>
+        </div>
+
+        {/* Tab Navigation */}
+        <div style={{ backgroundColor: '#ffffff', marginBottom: '24px', borderRadius: '8px', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '24px' }}>
+            <button
+              onClick={() => setActiveTab('sources')}
+              style={{
+                padding: '16px 20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: activeTab === 'sources' ? '#00bcdc' : '#6c7289',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'sources' ? '2px solid #00bcdc' : '2px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontFamily: 'IBM Plex Sans, sans-serif'
+              }}
+            >
+              Answer Sources
+            </button>
+            <button
+              onClick={() => setActiveTab('coverage')}
+              style={{
+                padding: '16px 20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: activeTab === 'coverage' ? '#00bcdc' : '#6c7289',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === 'coverage' ? '2px solid #00bcdc' : '2px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontFamily: 'IBM Plex Sans, sans-serif'
+              }}
+            >
+              Answer Coverage
+            </button>
+          </div>
         </div>
 
         {/* Top Metrics */}
@@ -456,7 +496,7 @@ export const AISources = () => {
               </div>
             </div>
 
-            {/* Priority Action Card */}
+            {/* Insights & Actions Card */}
             <div
               style={{
                 backgroundColor: '#f0fbfd',
@@ -468,7 +508,7 @@ export const AISources = () => {
               <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '18px' }}>🎯</span>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#1a1d29' }}>Priority Action</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#1a1d29' }}>Insights & Actions</span>
                 </div>
                 <span
                   style={{
@@ -505,46 +545,6 @@ export const AISources = () => {
                 Update Wikipedia
               </button>
             </div>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div style={{ backgroundColor: '#ffffff', marginBottom: '24px', borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '24px' }}>
-            <button
-              onClick={() => setActiveTab('sources')}
-              style={{
-                padding: '16px 20px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: activeTab === 'sources' ? '#00bcdc' : '#6c7289',
-                backgroundColor: 'transparent',
-                border: 'none',
-                borderBottom: activeTab === 'sources' ? '2px solid #00bcdc' : '2px solid transparent',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                fontFamily: 'IBM Plex Sans, sans-serif'
-              }}
-            >
-              Answer Sources
-            </button>
-            <button
-              onClick={() => setActiveTab('coverage')}
-              style={{
-                padding: '16px 20px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: activeTab === 'coverage' ? '#00bcdc' : '#6c7289',
-                backgroundColor: 'transparent',
-                border: 'none',
-                borderBottom: activeTab === 'coverage' ? '2px solid #00bcdc' : '2px solid transparent',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                fontFamily: 'IBM Plex Sans, sans-serif'
-              }}
-            >
-              Answer Coverage
-            </button>
           </div>
         </div>
 

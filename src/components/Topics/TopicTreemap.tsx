@@ -35,11 +35,11 @@ export const TopicTreemap = ({ topics: allTopics }: TopicTreemapProps) => {
   }, [allTopics, selectedCategory]);
 
   const getSoAColor = (soa: number): string => {
-    if (soa >= 3.0) return '#06c686';
-    if (soa >= 2.5) return '#4ade80';
-    if (soa >= 2.0) return '#facc15';
-    if (soa >= 1.5) return '#fb923c';
-    if (soa >= 1.0) return '#f97316';
+    if (soa >= 3.0) return '#00bcdc';
+    if (soa >= 2.5) return '#498cf9';
+    if (soa >= 2.0) return '#f9db43';
+    if (soa >= 1.5) return '#fa8a40';
+    if (soa >= 1.0) return '#f97c6d';
     return '#f94343';
   };
 

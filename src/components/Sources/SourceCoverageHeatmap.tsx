@@ -86,12 +86,13 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
       return { bg: '#fafafa', color: '#393e51', border: '1px dashed #c6c9d2' };
     }
     const intensity = value / 45;
-    const hue = 180;
-    const saturation = 70 + (intensity * 30);
-    const lightness = 95 - (intensity * 50);
+    // Using blue color scheme from dataviz-1 (#498cf9)
+    const hue = 215;
+    const saturation = 85 + (intensity * 10);
+    const lightness = 96 - (intensity * 50);
     return {
       bg: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
-      color: intensity > 0.55 ? '#ffffff' : '#212534',
+      color: intensity > 0.5 ? '#ffffff' : '#212534',
       border: 'none'
     };
   };
@@ -450,7 +451,7 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
           <div style={{
             height: '24px',
             width: '300px',
-            background: 'linear-gradient(to right, hsl(180, 70%, 95%), hsl(180, 80%, 75%), hsl(180, 85%, 55%), hsl(180, 90%, 35%))',
+            background: 'linear-gradient(to right, hsl(215, 85%, 96%), hsl(215, 90%, 75%), hsl(215, 93%, 60%), hsl(215, 95%, 46%))',
             borderRadius: '4px',
             border: '1px solid #dcdfe5'
           }} />

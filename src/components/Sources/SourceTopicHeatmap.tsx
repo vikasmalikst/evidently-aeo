@@ -70,15 +70,16 @@ export const SourceTopicHeatmap = () => {
 
   const getCellColor = (value: number) => {
     const intensity = value / 45;
-    const hue = 180;
-    const saturation = 70 + (intensity * 30);
-    const lightness = 95 - (intensity * 50);
+    // Using blue color scheme from dataviz-1 (#498cf9)
+    const hue = 215;
+    const saturation = 85 + (intensity * 10);
+    const lightness = 96 - (intensity * 50);
     return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
   };
 
   const getCellTextColor = (value: number) => {
     const intensity = value / 45;
-    return intensity > 0.55 ? '#ffffff' : '#212534';
+    return intensity > 0.5 ? '#ffffff' : '#212534';
   };
 
   return (

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
+import { SourceTabs } from '../components/Sources/SourceTabs';
 import { Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -306,6 +307,7 @@ type SortField = 'name' | 'type' | 'mentionRate' | 'soa' | 'sentiment' | 'topics
 type SortDirection = 'asc' | 'desc';
 
 export const SearchSources = () => {
+  const [activeTab, setActiveTab] = useState<'top-sources' | 'source-coverage'>('top-sources');
   const [sourceData] = useState<SourceData[]>(generateSourceData());
   const [topicFilter, setTopicFilter] = useState('all');
   const [sentimentFilter, setSentimentFilter] = useState('all');
@@ -535,6 +537,25 @@ export const SearchSources = () => {
           <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
             Understand which sources are cited in AI answers, measure share of answer across prompts, and identify optimization opportunities
           </p>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ backgroundColor: '#ffffff', marginBottom: '24px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+          <SourceTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        </div>
+
+        {activeTab === 'top-sources' && (
+          <>
+            {/* Metrics Section */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                padding: '24px',
+                borderRadius: '8px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                marginBottom: '24px'
+              }}
+            >
 
           {/* Top Metrics */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginTop: '24px' }}>
@@ -645,7 +666,7 @@ export const SearchSources = () => {
           </div>
         </div>
 
-        {/* Filter Bar */}
+            {/* Filter Bar */}
         <div
           style={{
             backgroundColor: '#ffffff',
@@ -1334,6 +1355,33 @@ export const SearchSources = () => {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+          </>
+        )}
+
+        {activeTab === 'source-coverage' && (
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              padding: '48px',
+              borderRadius: '8px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+              textAlign: 'center',
+              minHeight: '400px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <div>
+              <h3 style={{ fontSize: '20px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', marginBottom: '12px' }}>
+                Source Coverage
+              </h3>
+              <p style={{ fontSize: '14px', color: '#393e51', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+                Coming soon
+              </p>
             </div>
           </div>
         )}

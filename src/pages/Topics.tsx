@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
-import { Search } from 'lucide-react';
 import { TopicTreemap } from '../components/Topics/TopicTreemap';
 
 interface TopicData {
@@ -152,18 +151,16 @@ const mockTopics: TopicData[] = [
 ];
 
 export const Topics = () => {
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const categories = ['all', ...Array.from(new Set(mockTopics.map(t => t.category)))];
 
   const filteredTopics = useMemo(() => {
     return mockTopics.filter(topic => {
-      const matchesSearch = topic.name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === 'all' || topic.category === selectedCategory;
-      return matchesSearch && matchesCategory;
+      return matchesCategory;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [selectedCategory]);
 
   return (
     <Layout>
@@ -175,42 +172,54 @@ export const Topics = () => {
           </p>
         </div>
 
-        <div className="flex gap-4 mb-6 flex-wrap">
-          <div className="relative flex-1 min-w-[300px]">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--text-caption)]" size={20} />
-            <input
-              type="text"
-              placeholder="Search topics..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-[var(--border-default)] rounded-lg focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
-            />
-          </div>
-
-          <div className="flex gap-2 flex-wrap">
-            {categories.map(category => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedCategory === category
-                    ? 'bg-[var(--accent-primary)] text-white'
-                    : 'bg-white border border-[var(--border-default)] text-[var(--text-body)] hover:border-[var(--accent-primary)]'
-                }`}
-              >
-                {category.charAt(0).toUpperCase() + category.slice(1)}
-              </button>
-            ))}
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+            <label
+              htmlFor="category-filter"
+              style={{
+                fontSize: '13px',
+                fontWeight: '600',
+                color: 'var(--text-caption)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}
+            >
+              Category:
+            </label>
+            <select
+              id="category-filter"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                border: '1px solid var(--border-default)',
+                borderRadius: '6px',
+                backgroundColor: 'var(--bg-primary)',
+                color: 'var(--text-body)',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                outline: 'none',
+                transition: 'border-color 0.2s',
+                minWidth: '200px'
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = 'var(--accent-primary)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-default)';
+              }}
+            >
+              {categories.map(category => (
+                <option key={category} value={category}>
+                  {category === 'all' ? 'All Categories' : category}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {filteredTopics.length === 0 ? (
-          <div className="text-center py-12 bg-white border border-[var(--border-default)] rounded-lg">
-            <p className="text-[var(--text-caption)]">No topics found matching your search.</p>
-          </div>
-        ) : (
-          <TopicTreemap topics={filteredTopics} />
-        )}
+        <TopicTreemap topics={filteredTopics} />
       </div>
     </Layout>
   );

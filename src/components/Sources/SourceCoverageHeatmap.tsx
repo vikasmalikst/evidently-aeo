@@ -408,8 +408,11 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
                         borderBottom: '1px solid #e8e9ed',
                         position: 'relative'
                       }}
-                      onClick={() => {
-                        alert(`Filtering to:\n\nSource: ${source.name}\nTopic: ${topic}\nMention Rate: ${value}%\n\nThis would navigate to the Top Sources tab with filters applied.`);
+                      onClick={(e) => {
+                        e.preventDefault();
+                        console.log('Cell clicked:', { source: source.name, topic, value });
+                        // TODO: Implement navigation to Sources page with filters applied
+                        // For now, this is a placeholder that doesn't break the app
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.transform = 'scale(1.08)';

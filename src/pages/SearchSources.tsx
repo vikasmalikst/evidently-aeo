@@ -8,7 +8,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { IconTarget, IconDownload, IconTrendingUp, IconTrendingDown } from '@tabler/icons-react';
+import { IconTarget, IconDownload, IconTrendingUp, IconTrendingDown, IconX } from '@tabler/icons-react';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
@@ -42,12 +42,47 @@ interface SourceData {
   sentimentChange: number;
   citations: number;
   topics: string[];
+  prompts: string[];
+  pages: string[];
 }
 
 const topicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
 
+const samplePrompts = [
+  'What are the best CRM solutions for small businesses?',
+  'How does AI improve customer service automation?',
+  'Compare enterprise software pricing models',
+  'What features should I look for in project management tools?',
+  'Best practices for implementing SaaS solutions',
+  'How to choose the right analytics platform?',
+  'What are the top trends in digital transformation?',
+  'Enterprise software security considerations',
+  'Cloud vs on-premise deployment options',
+  'Integration capabilities for business software'
+];
+
+const samplePages = [
+  'Product Overview',
+  'Pricing Page',
+  'Features Comparison',
+  'Customer Success Stories',
+  'Integration Documentation',
+  'Security & Compliance',
+  'Enterprise Solutions',
+  'Getting Started Guide',
+  'API Documentation',
+  'Best Practices'
+];
+
 const generateSourceData = (): SourceData[] => {
   const sources: SourceData[] = [];
+
+  // Helper to generate random items from array
+  const getRandomItems = (arr: string[], min: number, max: number) => {
+    const count = Math.floor(Math.random() * (max - min + 1)) + min;
+    const shuffled = [...arr].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+  };
 
   // Brand source
   sources.push({
@@ -61,7 +96,9 @@ const generateSourceData = (): SourceData[] => {
     sentiment: 0.88,
     sentimentChange: 0.15,
     citations: 28,
-    topics: ['Innovation', 'Pricing']
+    topics: ['Innovation', 'Pricing'],
+    prompts: getRandomItems(samplePrompts, 5, 10),
+    pages: getRandomItems(samplePages, 4, 8)
   });
 
   // Editorial sources (25)
@@ -85,7 +122,9 @@ const generateSourceData = (): SourceData[] => {
       sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
       sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
       citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1)
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1),
+      prompts: getRandomItems(samplePrompts, 3, 8),
+      pages: getRandomItems(samplePages, 2, 6)
     });
   });
 
@@ -109,7 +148,9 @@ const generateSourceData = (): SourceData[] => {
       sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
       sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
       citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1)
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1),
+      prompts: getRandomItems(samplePrompts, 3, 8),
+      pages: getRandomItems(samplePages, 2, 6)
     });
   });
 
@@ -130,7 +171,9 @@ const generateSourceData = (): SourceData[] => {
       sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
       sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
       citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 2) + 1)
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 2) + 1),
+      prompts: getRandomItems(samplePrompts, 3, 7),
+      pages: getRandomItems(samplePages, 2, 5)
     });
   });
 
@@ -153,7 +196,9 @@ const generateSourceData = (): SourceData[] => {
       sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
       sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
       citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1)
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1),
+      prompts: getRandomItems(samplePrompts, 2, 6),
+      pages: getRandomItems(samplePages, 2, 5)
     });
   });
 
@@ -176,7 +221,9 @@ const generateSourceData = (): SourceData[] => {
       sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
       sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
       citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 2) + 1)
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 2) + 1),
+      prompts: getRandomItems(samplePrompts, 2, 6),
+      pages: getRandomItems(samplePages, 2, 4)
     });
   });
 
@@ -246,7 +293,9 @@ const generateSourceData = (): SourceData[] => {
       sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
       sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
       citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1)
+      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1),
+      prompts: getRandomItems(samplePrompts, 2, 7),
+      pages: getRandomItems(samplePages, 2, 5)
     });
   });
 
@@ -259,6 +308,11 @@ export const SearchSources = () => {
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [timeRange, setTimeRange] = useState('30');
+  const [hoveredTopics, setHoveredTopics] = useState<string[] | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [modalType, setModalType] = useState<'prompts' | 'pages' | null>(null);
+  const [modalData, setModalData] = useState<string[]>([]);
+  const [modalTitle, setModalTitle] = useState('');
 
   const filteredData = useMemo(() => {
     return sourceData.filter(source => {
@@ -728,7 +782,10 @@ export const SearchSources = () => {
                   <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
                     Top Topics
                   </th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
+                    Pages
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase' }}>
                     Prompts
                   </th>
                 </tr>
@@ -824,7 +881,15 @@ export const SearchSources = () => {
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
-                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                        <div
+                          style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', position: 'relative' }}
+                          onMouseEnter={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setTooltipPosition({ x: rect.left, y: rect.top });
+                            setHoveredTopics(source.topics);
+                          }}
+                          onMouseLeave={() => setHoveredTopics(null)}
+                        >
                           {source.topics.slice(0, 2).map(topic => (
                             <span
                               key={topic}
@@ -833,16 +898,64 @@ export const SearchSources = () => {
                                 borderRadius: '4px',
                                 fontSize: '11px',
                                 backgroundColor: '#f4f4f6',
-                                color: '#393e51'
+                                color: '#393e51',
+                                cursor: 'default'
                               }}
                             >
                               {topic}
                             </span>
                           ))}
+                          {source.topics.length > 2 && (
+                            <span
+                              style={{
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                backgroundColor: '#e8e9ed',
+                                color: '#393e51',
+                                cursor: 'default'
+                              }}
+                            >
+                              +{source.topics.length - 2}
+                            </span>
+                          )}
                         </div>
                       </td>
-                      <td style={{ padding: '16px 12px', textAlign: 'right', fontSize: '13px', color: '#393e51' }}>
-                        {source.citations} prompts
+                      <td style={{ padding: '16px 12px' }}>
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: '#00bcdc',
+                            cursor: 'pointer',
+                            textDecoration: 'underline'
+                          }}
+                          onClick={() => {
+                            setModalType('pages');
+                            setModalData(source.pages);
+                            setModalTitle(`Pages citing ${source.name}`);
+                          }}
+                        >
+                          {source.pages.slice(0, 1).join(', ')}
+                          {source.pages.length > 1 && ` +${source.pages.length - 1} more`}
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 12px' }}>
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: '#00bcdc',
+                            cursor: 'pointer',
+                            textDecoration: 'underline'
+                          }}
+                          onClick={() => {
+                            setModalType('prompts');
+                            setModalData(source.prompts);
+                            setModalTitle(`Prompts citing ${source.name}`);
+                          }}
+                        >
+                          {source.prompts.slice(0, 1).join(', ')}
+                          {source.prompts.length > 1 && ` +${source.prompts.length - 1} more`}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -851,6 +964,178 @@ export const SearchSources = () => {
             </table>
           </div>
         </div>
+
+        {/* Topics Tooltip */}
+        {hoveredTopics && (
+          <div
+            style={{
+              position: 'fixed',
+              left: `${tooltipPosition.x}px`,
+              top: `${tooltipPosition.y - 10}px`,
+              transform: 'translateY(-100%)',
+              backgroundColor: 'rgba(26, 29, 41, 0.95)',
+              color: '#ffffff',
+              padding: '12px 16px',
+              borderRadius: '6px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              zIndex: 1000,
+              maxWidth: '300px',
+              pointerEvents: 'none'
+            }}
+          >
+            <div style={{ fontSize: '11px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#a0a5b8' }}>
+              All Topics
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {hoveredTopics.map((topic, idx) => (
+                <span
+                  key={idx}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    backgroundColor: 'rgba(255,255,255,0.15)',
+                    color: '#ffffff'
+                  }}
+                >
+                  {topic}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Modal for Prompts/Pages */}
+        {modalType && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              padding: '24px'
+            }}
+            onClick={() => setModalType(null)}
+          >
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '12px',
+                maxWidth: '600px',
+                width: '100%',
+                maxHeight: '80vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div
+                style={{
+                  padding: '24px',
+                  borderBottom: '1px solid #e8e9ed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <h3 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
+                  {modalTitle}
+                </h3>
+                <button
+                  onClick={() => setModalType(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: '#393e51'
+                  }}
+                >
+                  <IconX size={20} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div
+                style={{
+                  padding: '24px',
+                  overflowY: 'auto',
+                  flex: 1
+                }}
+              >
+                <div style={{ fontSize: '12px', color: '#393e51', marginBottom: '16px' }}>
+                  {modalType === 'prompts' ? `${modalData.length} prompts` : `${modalData.length} pages`}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {modalData.map((item, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '16px',
+                        backgroundColor: '#f9f9fb',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontFamily: 'IBM Plex Sans, sans-serif',
+                        color: '#212534',
+                        lineHeight: '1.6',
+                        border: '1px solid #e8e9ed'
+                      }}
+                    >
+                      {modalType === 'prompts' && (
+                        <div style={{ display: 'flex', alignItems: 'start', gap: '12px' }}>
+                          <span style={{ fontSize: '11px', color: '#393e51', fontWeight: '600', minWidth: '20px' }}>
+                            {idx + 1}.
+                          </span>
+                          <span>{item}</span>
+                        </div>
+                      )}
+                      {modalType === 'pages' && (
+                        <div style={{ fontWeight: '500' }}>{item}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div
+                style={{
+                  padding: '16px 24px',
+                  borderTop: '1px solid #e8e9ed',
+                  display: 'flex',
+                  justifyContent: 'flex-end'
+                }}
+              >
+                <button
+                  onClick={() => setModalType(null)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#00bcdc',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontFamily: 'IBM Plex Sans, sans-serif'
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );

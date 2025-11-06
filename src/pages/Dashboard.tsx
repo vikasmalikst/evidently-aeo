@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
+import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
 import { mockPromptsData } from '../data/mockPromptsData';
 import { mockSourcesData } from '../data/mockSourcesData';
 import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
+import type { Topic } from '../types/topic';
 import {
   TrendingUp,
   TrendingDown,
@@ -31,6 +33,26 @@ export const Dashboard = () => {
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
   const [startDate, setStartDate] = useState('2024-10-01');
   const [endDate, setEndDate] = useState('2024-10-31');
+  const [showTopicModal, setShowTopicModal] = useState(false);
+
+  useEffect(() => {
+    const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
+    if (!hasCompletedTopicSelection) {
+      const timer = setTimeout(() => {
+        setShowTopicModal(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  const handleTopicsSelected = (selectedTopics: Topic[]) => {
+    localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
+    setShowTopicModal(false);
+  };
+
+  const handleTopicModalClose = () => {
+    setShowTopicModal(false);
+  };
 
   const totalPrompts = mockPromptsData.reduce((sum, topic) => sum + topic.prompts.length, 0);
   const avgSentiment = mockPromptsData
@@ -410,6 +432,16 @@ export const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {showTopicModal && (
+        <TopicSelectionModal
+          brandName="Your Brand"
+          industry="Technology"
+          onNext={handleTopicsSelected}
+          onBack={() => {}}
+          onClose={handleTopicModalClose}
+        />
+      )}
     </Layout>
   );
 };

@@ -136,6 +136,20 @@ export const TopicSelectionModal = ({
 
   const isValid = selectedTopics.size >= MIN_TOPICS && selectedTopics.size <= MAX_TOPICS;
 
+  const getQualityLabel = () => {
+    if (qualityScore >= 80) return 'Excellent';
+    if (qualityScore >= 60) return 'Good';
+    if (qualityScore >= 40) return 'Fair';
+    return 'Needs Improvement';
+  };
+
+  const getQualityClass = () => {
+    if (qualityScore >= 80) return 'excellent';
+    if (qualityScore >= 60) return 'good';
+    if (qualityScore >= 40) return 'fair';
+    return 'poor';
+  };
+
   if (showWelcome) {
     return (
       <div className="topic-modal-overlay" onClick={onClose}>
@@ -154,7 +168,12 @@ export const TopicSelectionModal = ({
       <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="topic-modal-header">
           <div className="topic-modal-header-content">
-            <h2 className="topic-modal-title">Configure Your Topics</h2>
+            <div>
+              <h2 className="topic-modal-title">Configure Your Topics</h2>
+              <div className="topic-count-inline">
+                {selectedTopics.size}/{MAX_TOPICS} topics selected
+              </div>
+            </div>
             <span className="topic-modal-step-badge">Step 1 of 2</span>
           </div>
           <button className="topic-modal-close" onClick={onClose} aria-label="Close">
@@ -163,12 +182,17 @@ export const TopicSelectionModal = ({
         </div>
 
         <div className="topic-modal-body">
-          <SelectionBar
-            selectedCount={selectedTopics.size}
-            maxTopics={MAX_TOPICS}
-            minTopics={MIN_TOPICS}
-            qualityScore={qualityScore}
-          />
+          <div className="topic-quality-section">
+            <div className="topic-quality-indicator-main">
+              <span className="topic-quality-label">Selection Quality: {getQualityLabel()}</span>
+              <div className="topic-quality-bar">
+                <div
+                  className={`topic-quality-fill ${getQualityClass()}`}
+                  style={{ width: `${qualityScore}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
 
           <div className="topic-sections-container">
             <TopicSection
@@ -229,11 +253,8 @@ export const TopicSelectionModal = ({
         </div>
 
         <div className="topic-modal-footer">
-          <button className="topic-btn-secondary" onClick={onBack} type="button">
-            Back
-          </button>
           <button
-            className="topic-btn-primary"
+            className="topic-btn-primary topic-btn-full"
             onClick={handleNext}
             disabled={!isValid}
             type="button"

@@ -4,17 +4,13 @@ import { BrandInput } from '../components/Onboarding/BrandInput';
 import { CompetitorGrid } from '../components/Onboarding/CompetitorGrid';
 import { Summary } from '../components/Onboarding/Summary';
 import { StepIndicator } from '../components/Onboarding/StepIndicator';
-import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
 import { type Brand, type Competitor } from '../api/onboardingMock';
-import type { Topic } from '../types/topic';
 
 export const Onboarding = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [brand, setBrand] = useState<Brand | null>(null);
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [showTopicModal, setShowTopicModal] = useState(false);
 
   const handleBrandSuccess = (verifiedBrand: Brand) => {
     setBrand(verifiedBrand);
@@ -25,22 +21,7 @@ export const Onboarding = () => {
   const handleCompetitorsSelected = (selectedCompetitors: Competitor[]) => {
     setCompetitors(selectedCompetitors);
     localStorage.setItem('onboarding_competitors', JSON.stringify(selectedCompetitors));
-    setShowTopicModal(true);
-  };
-
-  const handleTopicsSelected = (selectedTopics: Topic[]) => {
-    setTopics(selectedTopics);
-    localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
-    setShowTopicModal(false);
     setStep(3);
-  };
-
-  const handleTopicModalBack = () => {
-    setShowTopicModal(false);
-  };
-
-  const handleTopicModalClose = () => {
-    setShowTopicModal(false);
   };
 
   const handleComplete = () => {
@@ -76,15 +57,6 @@ export const Onboarding = () => {
         )}
       </div>
 
-      {showTopicModal && brand && (
-        <TopicSelectionModal
-          brandName={brand.companyName}
-          industry={brand.industry}
-          onNext={handleTopicsSelected}
-          onBack={handleTopicModalBack}
-          onClose={handleTopicModalClose}
-        />
-      )}
     </div>
   );
 };

@@ -5,6 +5,7 @@ interface WelcomeScreenProps {
 }
 
 export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
+  console.log('WelcomeScreen component rendering');
   return (
     <div className="topic-welcome-card">
       <div className="progress-indicator">

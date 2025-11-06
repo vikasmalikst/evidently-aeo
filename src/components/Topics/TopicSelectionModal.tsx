@@ -26,7 +26,9 @@ export const TopicSelectionModal = ({
   onBack,
   onClose,
 }: TopicSelectionModalProps) => {
+  console.log('TopicSelectionModal rendered with:', { brandName, industry });
   const [showWelcome, setShowWelcome] = useState(true);
+  console.log('showWelcome initial state:', true);
   const [availableTopics, setAvailableTopics] = useState(() =>
     generateMockTopics(brandName, industry)
   );
@@ -151,17 +153,26 @@ export const TopicSelectionModal = ({
   };
 
   if (showWelcome) {
+    console.log('Rendering WelcomeScreen');
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal-container" onClick={(e) => e.stopPropagation()}>
           <button className="topic-modal-close" onClick={onClose} aria-label="Close">
             <X size={24} />
           </button>
-          <WelcomeScreen onGetStarted={() => setShowWelcome(false)} />
+          <WelcomeScreen onGetStarted={() => {
+            console.log('WelcomeScreen - Get Started clicked');
+            setShowWelcome(false);
+          }} />
         </div>
       </div>
     );
   }
+
+  console.log('Rendering topic selection (not welcome)', {
+    selectedCount: selectedTopics.size,
+    qualityScore
+  });
 
   return (
     <div className="modal-overlay" onClick={onClose}>

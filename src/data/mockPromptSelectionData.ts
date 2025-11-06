@@ -18,7 +18,7 @@ export const mockPromptSelectionData: TopicGroup[] = [
   {
     id: 'product',
     name: 'Product Features',
-    icon: '🎯',
+    icon: 'Target',
     collapsed: false,
     prompts: [
       {
@@ -82,7 +82,7 @@ export const mockPromptSelectionData: TopicGroup[] = [
   {
     id: 'competitive',
     name: 'Competitive Comparison',
-    icon: '⚔️',
+    icon: 'Swords',
     collapsed: false,
     prompts: [
       {
@@ -146,7 +146,7 @@ export const mockPromptSelectionData: TopicGroup[] = [
   {
     id: 'industry',
     name: 'Industry & Trends',
-    icon: '📊',
+    icon: 'ChartBar',
     collapsed: true,
     prompts: [
       {
@@ -196,7 +196,7 @@ export const mockPromptSelectionData: TopicGroup[] = [
   {
     id: 'pricing',
     name: 'Pricing & Value',
-    icon: '💰',
+    icon: 'CurrencyDollar',
     collapsed: true,
     prompts: [
       {
@@ -239,7 +239,7 @@ export const mockPromptSelectionData: TopicGroup[] = [
   {
     id: 'use-cases',
     name: 'Use Cases & Solutions',
-    icon: '💡',
+    icon: 'Bulb',
     collapsed: true,
     prompts: [
       {
@@ -289,7 +289,7 @@ export const mockPromptSelectionData: TopicGroup[] = [
   {
     id: 'integration',
     name: 'Integration & Setup',
-    icon: '🔗',
+    icon: 'Link',
     collapsed: true,
     prompts: [
       {

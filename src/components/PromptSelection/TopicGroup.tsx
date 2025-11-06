@@ -1,4 +1,5 @@
 import { ChevronDown, Plus } from 'lucide-react';
+import * as TablerIcons from '@tabler/icons-react';
 import { useState } from 'react';
 import { PromptCard } from './PromptCard';
 import type { TopicGroup as TopicGroupType } from '../../data/mockPromptSelectionData';
@@ -23,6 +24,8 @@ export const TopicGroup = ({
     topic.prompts.reduce((sum, p) => sum + p.confidence, 0) / topic.prompts.length
   );
 
+  const IconComponent = (TablerIcons as any)[`Icon${topic.icon}`];
+
   return (
     <div className="topic-group" id={`topic-${topic.id}`}>
       <div
@@ -30,7 +33,9 @@ export const TopicGroup = ({
         onClick={() => setIsCollapsed(!isCollapsed)}
       >
         <div className="topic-group-info">
-          <span className="topic-group-icon">{topic.icon}</span>
+          <span className="topic-group-icon">
+            {IconComponent && <IconComponent size={24} />}
+          </span>
           <div className="topic-group-title">
             <h3>{topic.name}</h3>
             <p className="topic-group-meta">

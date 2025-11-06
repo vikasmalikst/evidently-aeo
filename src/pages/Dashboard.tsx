@@ -36,10 +36,31 @@ export const Dashboard = () => {
   const [startDate, setStartDate] = useState('2024-10-01');
   const [endDate, setEndDate] = useState('2024-10-31');
   const [showTopicModal, setShowTopicModal] = useState(false);
+  const [brandData, setBrandData] = useState<{ name: string; industry: string } | null>(null);
 
   useEffect(() => {
+    const brandInfo = localStorage.getItem('onboarding_brand');
+    if (brandInfo) {
+      try {
+        const parsed = JSON.parse(brandInfo);
+        setBrandData({ name: parsed.name || 'Your Brand', industry: parsed.industry || 'Technology' });
+      } catch (e) {
+        setBrandData({ name: 'Your Brand', industry: 'Technology' });
+      }
+    } else {
+      setBrandData({ name: 'Your Brand', industry: 'Technology' });
+    }
+  }, []);
+
+  useEffect(() => {
+    const hasCompletedOnboarding = localStorage.getItem('onboarding_complete');
     const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
     const hasCompletedPromptSelection = localStorage.getItem('onboarding_prompts');
+
+    if (!hasCompletedOnboarding) {
+      navigate('/onboarding');
+      return;
+    }
 
     if (!hasCompletedTopicSelection) {
       const timer = setTimeout(() => {
@@ -443,10 +464,10 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {showTopicModal && (
+      {showTopicModal && brandData && (
         <TopicSelectionModal
-          brandName="Your Brand"
-          industry="Technology"
+          brandName={brandData.name}
+          industry={brandData.industry}
           onNext={handleTopicsSelected}
           onBack={() => {}}
           onClose={handleTopicModalClose}

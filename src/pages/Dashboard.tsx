@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
 import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
@@ -30,6 +31,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend,
 
 export const Dashboard = () => {
   const user = useAuthStore((state) => state.user);
+  const navigate = useNavigate();
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
   const [startDate, setStartDate] = useState('2024-10-01');
   const [endDate, setEndDate] = useState('2024-10-31');
@@ -37,17 +39,25 @@ export const Dashboard = () => {
 
   useEffect(() => {
     const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
+    const hasCompletedPromptSelection = localStorage.getItem('onboarding_prompts');
+
     if (!hasCompletedTopicSelection) {
       const timer = setTimeout(() => {
         setShowTopicModal(true);
       }, 500);
       return () => clearTimeout(timer);
+    } else if (!hasCompletedPromptSelection) {
+      const timer = setTimeout(() => {
+        navigate('/prompt-selection');
+      }, 500);
+      return () => clearTimeout(timer);
     }
-  }, []);
+  }, [navigate]);
 
   const handleTopicsSelected = (selectedTopics: Topic[]) => {
     localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
     setShowTopicModal(false);
+    navigate('/prompt-selection');
   };
 
   const handleTopicModalClose = () => {

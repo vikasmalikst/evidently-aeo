@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { ReadinessScale } from '../components/PromptSelection/ReadinessScale';
 import { TopicFilterBar } from '../components/PromptSelection/TopicFilterBar';
@@ -9,6 +10,7 @@ import { mockPromptSelectionData } from '../data/mockPromptSelectionData';
 const MAX_PROMPTS = 40;
 
 export const PromptSelection = () => {
+  const navigate = useNavigate();
   const [topics] = useState(mockPromptSelectionData);
   const [selectedPrompts, setSelectedPrompts] = useState<Set<string>>(new Set());
   const [readinessScore, setReadinessScore] = useState(0);
@@ -83,7 +85,11 @@ export const PromptSelection = () => {
   };
 
   const handleAnalyze = () => {
-    alert(`Starting analysis with ${selectedPrompts.size} queries`);
+    const selectedPromptsList = topics.flatMap(t =>
+      t.prompts.filter(p => selectedPrompts.has(p.id))
+    );
+    localStorage.setItem('onboarding_prompts', JSON.stringify(selectedPromptsList));
+    navigate('/dashboard');
   };
 
   return (

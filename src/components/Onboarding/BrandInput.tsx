@@ -15,10 +15,18 @@ export const BrandInput = ({ onSuccess }: BrandInputProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
+  const [logoUrl, setLogoUrl] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedInput(input);
+      if (input.length >= 2) {
+        const domain = input.toLowerCase().replace(/\s+/g, '').replace(/^(https?:\/\/)?(www\.)?/, '');
+        const cleanDomain = domain.includes('.') ? domain.split('/')[0] : `${domain}.com`;
+        setLogoUrl(`https://logo.clearbit.com/${cleanDomain}`);
+      } else {
+        setLogoUrl('');
+      }
     }, 500);
 
     return () => clearTimeout(timer);
@@ -73,14 +81,27 @@ export const BrandInput = ({ onSuccess }: BrandInputProps) => {
             onSubmit={handleSubmit}
             className={`onboarding-form ${shake ? 'onboarding-form--shake' : ''}`}
           >
-            <Input
-              type="text"
-              placeholder="Enter your brand name or website"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              error={error}
-              autoFocus
-            />
+            <div className="onboarding-input-with-logo">
+              {logoUrl && (
+                <img
+                  src={logoUrl}
+                  alt="Brand logo"
+                  className="onboarding-input-logo"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
+                />
+              )}
+              <Input
+                type="text"
+                placeholder="Enter your brand name or website"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                error={error}
+                autoFocus
+              />
+            </div>
             <Button
               type="submit"
               disabled={input.length < 2}

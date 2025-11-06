@@ -32,7 +32,7 @@
 
 .onboarding-step {
   width: 100%;
-  max-width: 600px;
+  max-width: 800px;
   animation: fadeIn 0.3s ease-in;
 }
 
@@ -44,7 +44,9 @@
 }
 
 .onboarding-step__content--wide {
-  max-width: 72vw;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: visible;
 }
 
 .onboarding-hero {
@@ -106,6 +108,28 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.onboarding-input-with-logo {
+  position: relative;
+  width: 100%;
+}
+
+.onboarding-input-logo {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: contain;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.onboarding-input-with-logo .onboarding-input {
+  padding-left: 60px;
 }
 
 .onboarding-input-wrapper {

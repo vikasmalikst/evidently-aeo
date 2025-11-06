@@ -90,22 +90,6 @@ export const BrandInput = ({ onSuccess }: BrandInputProps) => {
             </Button>
           </form>
         )}
-
-        <div className="onboarding-examples">
-          <p className="onboarding-examples__label">Try examples:</p>
-          <div className="onboarding-examples__list">
-            {['Nike', 'Apple', 'Tesla', 'Spotify', 'Airbnb'].map((example) => (
-              <button
-                key={example}
-                type="button"
-                className="onboarding-example-chip"
-                onClick={() => setInput(example)}
-              >
-                {example}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

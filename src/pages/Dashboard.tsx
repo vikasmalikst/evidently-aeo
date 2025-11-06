@@ -36,42 +36,52 @@ export const Dashboard = () => {
   const [startDate, setStartDate] = useState('2024-10-01');
   const [endDate, setEndDate] = useState('2024-10-31');
   const [showTopicModal, setShowTopicModal] = useState(false);
-  const [brandData, setBrandData] = useState<{ name: string; industry: string } | null>(null);
 
-  useEffect(() => {
+  const getBrandData = () => {
     const brandInfo = localStorage.getItem('onboarding_brand');
     if (brandInfo) {
       try {
         const parsed = JSON.parse(brandInfo);
-        setBrandData({ name: parsed.name || 'Your Brand', industry: parsed.industry || 'Technology' });
+        return { name: parsed.name || 'Your Brand', industry: parsed.industry || 'Technology' };
       } catch (e) {
-        setBrandData({ name: 'Your Brand', industry: 'Technology' });
+        return { name: 'Your Brand', industry: 'Technology' };
       }
-    } else {
-      setBrandData({ name: 'Your Brand', industry: 'Technology' });
     }
-  }, []);
+    return { name: 'Your Brand', industry: 'Technology' };
+  };
 
   useEffect(() => {
     const hasCompletedOnboarding = localStorage.getItem('onboarding_complete');
     const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
     const hasCompletedPromptSelection = localStorage.getItem('onboarding_prompts');
 
+    console.log('Dashboard useEffect - Checking flow:', {
+      hasCompletedOnboarding,
+      hasCompletedTopicSelection,
+      hasCompletedPromptSelection
+    });
+
     if (!hasCompletedOnboarding) {
+      console.log('No onboarding - redirecting to /onboarding');
       navigate('/onboarding');
       return;
     }
 
     if (!hasCompletedTopicSelection) {
+      console.log('No topics - showing topic modal in 500ms');
       const timer = setTimeout(() => {
+        console.log('Setting showTopicModal to true');
         setShowTopicModal(true);
       }, 500);
       return () => clearTimeout(timer);
     } else if (!hasCompletedPromptSelection) {
+      console.log('No prompts - redirecting to /prompt-selection in 500ms');
       const timer = setTimeout(() => {
         navigate('/prompt-selection');
       }, 500);
       return () => clearTimeout(timer);
+    } else {
+      console.log('All onboarding complete - showing full dashboard');
     }
   }, [navigate]);
 
@@ -464,15 +474,18 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {showTopicModal && brandData && (
-        <TopicSelectionModal
-          brandName={brandData.name}
-          industry={brandData.industry}
-          onNext={handleTopicsSelected}
-          onBack={() => {}}
-          onClose={handleTopicModalClose}
-        />
-      )}
+      {(() => {
+        console.log('Rendering modal check - showTopicModal:', showTopicModal);
+        return showTopicModal && (
+          <TopicSelectionModal
+            brandName={getBrandData().name}
+            industry={getBrandData().industry}
+            onNext={handleTopicsSelected}
+            onBack={() => {}}
+            onClose={handleTopicModalClose}
+          />
+        );
+      })()}
     </Layout>
   );
 };

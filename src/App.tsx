@@ -8,6 +8,7 @@ import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
 import { Onboarding } from './pages/Onboarding';
+import { PromptSelection } from './pages/PromptSelection';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -69,6 +70,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Keywords />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/prompt-selection"
+          element={
+            <ProtectedRoute>
+              <PromptSelection />
             </ProtectedRoute>
           }
         />

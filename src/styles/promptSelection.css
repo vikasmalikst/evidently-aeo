@@ -27,19 +27,17 @@
 }
 
 .prompt-selection-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   padding: 32px;
   border-bottom: 1px solid var(--primary200);
   flex-shrink: 0;
   position: relative;
+  gap: 24px;
 }
 
 .prompt-selection-back {
-  position: absolute;
-  top: 32px;
-  left: 32px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -52,17 +50,40 @@
   transition: background-color 0.2s ease;
   font-size: 14px;
   font-weight: 500;
-  z-index: 10;
+  justify-self: start;
 }
 
 .prompt-selection-back:hover {
   background: var(--bg-secondary);
 }
 
+.progress-indicator {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary300);
+  transition: all 0.3s ease;
+}
+
+.progress-dot.active {
+  width: 24px;
+  border-radius: 4px;
+  background: var(--accent500);
+}
+
 .prompt-selection-header-content {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
+  text-align: center;
 }
 
 .prompt-selection-header-content h1 {
@@ -75,16 +96,17 @@
 .prompt-selection-count {
   font-size: 14px;
   color: var(--text-body);
-  margin-top: 4px;
+  margin: 0;
 }
 
 .prompt-selection-step-badge {
   background: var(--accent500);
   color: white;
-  padding: 4px 12px;
+  padding: 6px 14px;
   border-radius: 12px;
   font-size: 12px;
   font-weight: 500;
+  justify-self: end;
 }
 
 .prompt-selection-readiness {
@@ -257,7 +279,7 @@
   background: white;
   border-radius: 8px;
   border: 1px solid var(--primary200);
-  overflow: hidden;
+  overflow: visible;
   scroll-margin-top: 200px;
 }
 

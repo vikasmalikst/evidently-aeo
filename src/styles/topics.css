@@ -283,11 +283,70 @@
   flex: 1;
 }
 
+.topic-step-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .topic-step-content h3 {
-  margin: 0 0 4px 0;
+  margin: 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--text-headings);
+}
+
+.topic-step-info-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.topic-step-info-icon {
+  color: var(--text-muted);
+  cursor: help;
+  transition: color 0.2s ease;
+}
+
+.topic-step-info-icon:hover {
+  color: var(--accent500);
+}
+
+.topic-step-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--text-headings);
+  color: white;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  width: 280px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.topic-step-tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: var(--text-headings);
+}
+
+.topic-step-info-wrapper:hover .topic-step-tooltip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .topic-step-content p {

@@ -41,7 +41,15 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
         <div className="topic-step-item active">
           <div className="topic-step-number">1</div>
           <div className="topic-step-content">
-            <h3>Select AI Models</h3>
+            <div className="topic-step-title-wrapper">
+              <h3>Select AI Models</h3>
+              <div className="topic-step-info-wrapper">
+                <IconInfoCircle size={18} className="topic-step-info-icon" />
+                <div className="topic-step-tooltip">
+                  AI model selection determines which platforms we monitor for your brand mentions. Different models may provide varying coverage and insights, making this crucial for comprehensive visibility tracking.
+                </div>
+              </div>
+            </div>
             <p>Choose which AI platforms to track your visibility across</p>
           </div>
         </div>
@@ -49,7 +57,15 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
         <div className="topic-step-item">
           <div className="topic-step-number">2</div>
           <div className="topic-step-content">
-            <h3>Select Topics</h3>
+            <div className="topic-step-title-wrapper">
+              <h3>Select Topics</h3>
+              <div className="topic-step-info-wrapper">
+                <IconInfoCircle size={18} className="topic-step-info-icon" />
+                <div className="topic-step-tooltip">
+                  Topics form the foundation of your visibility score by defining the subject areas most relevant to your brand. They help generate targeted prompts and enable accurate performance measurement across AI platforms.
+                </div>
+              </div>
+            </div>
             <p>Choose 5-10 topics that matter most to your brand visibility</p>
           </div>
         </div>
@@ -57,17 +73,18 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
         <div className="topic-step-item">
           <div className="topic-step-number">3</div>
           <div className="topic-step-content">
-            <h3>Configure Prompts</h3>
+            <div className="topic-step-title-wrapper">
+              <h3>Configure Prompts</h3>
+              <div className="topic-step-info-wrapper">
+                <IconInfoCircle size={18} className="topic-step-info-icon" />
+                <div className="topic-step-tooltip">
+                  Prompts are the specific queries we'll test across AI models. They determine what questions reveal your brand's visibility and directly impact the accuracy of your visibility score metrics.
+                </div>
+              </div>
+            </div>
             <p>Select search queries to track your AI visibility</p>
           </div>
         </div>
-      </div>
-
-      <div className="info-message">
-        <IconInfoCircle size={20} className="icon" />
-        <p>
-          Topics are crucial for generating relevant prompts and building a reliable visibility score. They form the foundation for all platform analytics.
-        </p>
       </div>
 
       <button className="topic-welcome-button" onClick={onGetStarted}>

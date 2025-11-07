@@ -23,7 +23,7 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
 
       <div className="onboarding-steps-overview">
         <div className="onboarding-step-card">
-          <div className="onboarding-step-border"></div>
+          <div className="onboarding-step-label">1</div>
           <div className="onboarding-step-content">
             <h3>Select AI Models</h3>
             <p>Choose which AI platforms track your visibility</p>
@@ -31,24 +31,24 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
         </div>
 
         <div className="onboarding-step-card">
-          <div className="onboarding-step-border"></div>
+          <div className="onboarding-step-label">2</div>
           <div className="onboarding-step-content">
             <h3>Select Topics</h3>
-            <p>Pick 5–10 topics that matter most to your brand</p>
+            <p>Pick 8–10 topics that matter most to your brand</p>
           </div>
         </div>
 
         <div className="onboarding-step-card">
-          <div className="onboarding-step-border"></div>
+          <div className="onboarding-step-label">3</div>
           <div className="onboarding-step-content">
             <h3>Configure Prompts</h3>
-            <p>Set the search queries for AI monitoring</p>
+            <p>Select the search queries for AI monitoring</p>
           </div>
         </div>
       </div>
 
       <button className="onboarding-welcome-button" onClick={onGetStarted}>
-        Let's Begin
+        let's begin
       </button>
     </div>
   );

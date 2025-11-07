@@ -1,23 +1,10 @@
-/* Onboarding Modal - Design System Colors */
-:root {
-  --navy-primary: #1A1D29;
-  --teal-accent: #00BCDC;
-  --teal-hover: #0096B0;
-  --teal-light: rgba(0, 188, 220, 0.08);
-  --neutral-light: #F4F4F6;
-  --neutral-medium: #E8E9ED;
-  --text-dark: #212534;
-  --text-light: #393E51;
-  --success: #06C686;
-  --error: #F94343;
-}
+/* Onboarding Modal - Uses Brand Design System from tokens.css */
 
 /* Modal Overlay */
 .onboarding-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(26, 29, 41, 0.7);
-  backdrop-filter: blur(4px);
+  background: var(--bg-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -27,9 +14,9 @@
 
 /* Modal Container */
 .onboarding-modal-container {
-  background: white;
+  background: var(--bg-primary);
   border-radius: 8px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
   width: 100%;
   max-width: 700px;
   max-height: 90vh;
@@ -45,16 +32,16 @@
 
 /* Progress Bar */
 .onboarding-progress-bar {
-  height: 4px;
+  height: 6px;
   width: 100%;
-  background: var(--neutral-medium);
+  background: var(--bg-tertiary);
   position: relative;
 }
 
 .onboarding-progress-fill {
   height: 100%;
-  background: var(--teal-accent);
-  transition: width 0.3s ease;
+  background: var(--accent500);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Modal Header */
@@ -64,7 +51,7 @@
   align-items: center;
   gap: 24px;
   padding: 24px 32px;
-  border-bottom: 1px solid var(--neutral-medium);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .onboarding-back-button {
@@ -73,18 +60,19 @@
   gap: 6px;
   background: transparent;
   border: none;
-  color: var(--navy-primary);
+  color: var(--text-body);
   cursor: pointer;
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   transition: all 0.2s ease;
   font-size: 14px;
   font-weight: 500;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-back-button:hover {
-  background: var(--neutral-light);
-  color: var(--teal-accent);
+  background: var(--bg-secondary);
+  color: var(--accent500);
 }
 
 .onboarding-header-content {
@@ -97,17 +85,19 @@
 .onboarding-modal-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--text-headings);
   margin: 0;
+  font-family: 'Sora', sans-serif;
 }
 
 .onboarding-step-badge {
-  background: var(--teal-accent);
-  color: white;
-  padding: 4px 12px;
+  background: var(--accent500);
+  color: var(--text-inverse);
+  padding: 6px 12px;
   border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 /* Modal Body */
@@ -123,47 +113,55 @@
   align-items: center;
   justify-content: space-between;
   padding: 24px 32px;
-  border-top: 1px solid var(--neutral-medium);
+  border-top: 1px solid var(--border-default);
   gap: 16px;
 }
 
 /* Buttons */
 .onboarding-button-primary {
-  background: var(--teal-accent);
-  color: white;
+  background: var(--accent500);
+  color: var(--text-inverse);
   border: none;
   padding: 12px 24px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+  box-shadow: var(--shadow-sm);
 }
 
 .onboarding-button-primary:hover:not(:disabled) {
-  background: var(--teal-hover);
+  background: var(--accent600);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .onboarding-button-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .onboarding-button-secondary {
   background: transparent;
-  color: var(--navy-primary);
-  border: 1px solid var(--neutral-medium);
+  color: var(--text-body);
+  border: 1px solid var(--border-default);
   padding: 12px 24px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-button-secondary:hover {
-  background: var(--neutral-light);
-  border-color: var(--teal-accent);
+  background: var(--bg-secondary);
+  border-color: var(--accent500);
+  color: var(--accent500);
 }
 
 /* Welcome Screen */
@@ -182,15 +180,19 @@
 .onboarding-welcome-title {
   font-size: 32px;
   font-weight: 600;
-  color: var(--navy-primary);
+  color: var(--text-headings);
   margin: 0 0 8px 0;
+  font-family: 'Sora', sans-serif;
+  letter-spacing: -0.02em;
 }
 
 .onboarding-welcome-subtitle {
   font-size: 18px;
-  color: var(--text-light);
+  color: var(--text-caption);
   margin: 0;
   font-weight: 400;
+  font-family: 'IBM Plex Sans', sans-serif;
+  line-height: 1.5;
 }
 
 .onboarding-welcome-description {
@@ -201,8 +203,9 @@
 .onboarding-welcome-description p {
   font-size: 15px;
   line-height: 1.6;
-  color: var(--text-light);
+  color: var(--text-body);
   margin: 0;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 /* Step Cards */
@@ -216,12 +219,19 @@
 }
 
 .onboarding-step-card {
-  background: var(--neutral-light);
+  background: var(--bg-secondary);
   border-radius: 8px;
   padding: 16px;
   text-align: left;
   position: relative;
   overflow: hidden;
+  border: 1px solid var(--border-default);
+  transition: all 0.2s ease;
+}
+
+.onboarding-step-card:hover {
+  border-color: var(--accent500);
+  box-shadow: var(--shadow-sm);
 }
 
 .onboarding-step-border {
@@ -230,7 +240,8 @@
   top: 0;
   bottom: 0;
   width: 4px;
-  background: var(--teal-accent);
+  background: var(--accent500);
+  border-radius: 8px 0 0 8px;
 }
 
 .onboarding-step-content {
@@ -240,31 +251,37 @@
 .onboarding-step-content h3 {
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--text-headings);
   margin: 0 0 4px 0;
+  font-family: 'Sora', sans-serif;
 }
 
 .onboarding-step-content p {
   font-size: 14px;
-  color: var(--text-light);
+  color: var(--text-caption);
   margin: 0;
   line-height: 1.5;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-welcome-button {
-  background: var(--teal-accent);
-  color: white;
+  background: var(--accent500);
+  color: var(--text-inverse);
   border: none;
   padding: 14px 32px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+  box-shadow: var(--shadow-md);
 }
 
 .onboarding-welcome-button:hover {
-  background: var(--teal-hover);
+  background: var(--accent600);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 /* AI Model Selection */
@@ -279,12 +296,13 @@
   align-items: flex-start;
   gap: 12px;
   padding: 16px;
-  background: var(--neutral-light);
+  background: var(--accent-light);
   border-radius: 8px;
+  border: 1px solid var(--accent200);
 }
 
 .instruction-icon {
-  color: var(--teal-accent);
+  color: var(--accent500);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -292,18 +310,20 @@
 .ai-model-instruction p {
   margin: 0;
   font-size: 14px;
-  color: var(--text-light);
+  color: var(--text-body);
   line-height: 1.5;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .ai-model-counter {
   font-size: 14px;
-  color: var(--text-light);
+  color: var(--text-caption);
   text-align: center;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .ai-model-counter strong {
-  color: var(--teal-accent);
+  color: var(--accent500);
   font-weight: 600;
 }
 
@@ -314,8 +334,8 @@
 }
 
 .ai-model-card {
-  background: white;
-  border: 1px solid var(--neutral-medium);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   padding: 24px;
   display: flex;
@@ -329,13 +349,16 @@
 }
 
 .ai-model-card:hover:not(:disabled) {
-  background: var(--neutral-light);
-  border-color: var(--teal-accent);
+  background: var(--bg-secondary);
+  border-color: var(--accent500);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
 }
 
 .ai-model-card.selected {
-  background: var(--teal-light);
-  border: 2px solid var(--teal-accent);
+  background: var(--accent-light);
+  border: 2px solid var(--accent500);
+  box-shadow: var(--shadow-md);
 }
 
 .ai-model-card.disabled {
@@ -349,12 +372,13 @@
   right: 8px;
   width: 24px;
   height: 24px;
-  background: var(--teal-accent);
+  background: var(--accent500);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-sm);
 }
 
 .ai-model-logo {
@@ -365,24 +389,28 @@
 .ai-model-name {
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--text-headings);
   text-align: center;
+  font-family: 'Sora', sans-serif;
 }
 
 .ai-model-provider {
   font-size: 12px;
-  color: var(--text-light);
+  color: var(--text-caption);
   text-align: center;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .ai-model-badge {
   position: absolute;
   bottom: 8px;
   font-size: 11px;
-  color: var(--text-light);
-  background: var(--neutral-medium);
-  padding: 2px 8px;
-  border-radius: 4px;
+  color: var(--text-caption);
+  background: var(--bg-tertiary);
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 500;
 }
 
 /* Prompt Configuration */
@@ -397,25 +425,28 @@
   align-items: flex-start;
   gap: 12px;
   padding: 16px;
-  background: var(--neutral-light);
+  background: var(--accent-light);
   border-radius: 8px;
+  border: 1px solid var(--accent200);
 }
 
 .prompt-instruction p {
   margin: 0;
   font-size: 14px;
-  color: var(--text-light);
+  color: var(--text-body);
   line-height: 1.5;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .prompt-counter {
   font-size: 14px;
-  color: var(--text-light);
+  color: var(--text-caption);
   text-align: center;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .prompt-counter strong {
-  color: var(--teal-accent);
+  color: var(--accent500);
   font-weight: 600;
 }
 
@@ -428,8 +459,9 @@
 .prompt-section-title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--text-headings);
   margin: 0;
+  font-family: 'Sora', sans-serif;
 }
 
 .prompt-suggestions-grid {
@@ -439,8 +471,8 @@
 }
 
 .prompt-suggestion-card {
-  background: white;
-  border: 1px solid var(--neutral-medium);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   padding: 16px;
   display: flex;
@@ -453,24 +485,28 @@
 }
 
 .prompt-suggestion-card:hover {
-  background: var(--neutral-light);
-  border-color: var(--teal-accent);
+  background: var(--bg-secondary);
+  border-color: var(--accent500);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 .prompt-suggestion-card.selected {
-  background: var(--teal-light);
-  border: 2px solid var(--teal-accent);
+  background: var(--accent-light);
+  border: 2px solid var(--accent500);
+  box-shadow: var(--shadow-sm);
 }
 
 .prompt-text {
   font-size: 14px;
-  color: var(--text-dark);
+  color: var(--text-body);
   line-height: 1.4;
   flex: 1;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .prompt-checkmark {
-  color: var(--teal-accent);
+  color: var(--accent500);
   font-size: 18px;
   font-weight: bold;
 }
@@ -483,40 +519,48 @@
 .prompt-custom-input {
   flex: 1;
   padding: 12px 16px;
-  border: 1px solid var(--neutral-medium);
-  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
   font-size: 14px;
-  color: var(--text-dark);
-  transition: border-color 0.2s ease;
+  color: var(--text-body);
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .prompt-custom-input:focus {
   outline: none;
-  border-color: var(--teal-accent);
+  border-color: var(--accent500);
+  box-shadow: 0 0 0 3px var(--accent-light);
 }
 
 .prompt-add-button {
-  background: var(--teal-accent);
-  color: white;
+  background: var(--accent500);
+  color: var(--text-inverse);
   border: none;
   padding: 12px 20px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   gap: 6px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  box-shadow: var(--shadow-sm);
 }
 
 .prompt-add-button:hover:not(:disabled) {
-  background: var(--teal-hover);
+  background: var(--accent600);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .prompt-add-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .prompt-selected-list {
@@ -526,30 +570,31 @@
 }
 
 .prompt-selected-item {
-  background: var(--neutral-light);
-  border-radius: 6px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
   padding: 12px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  border: 1px solid var(--border-default);
 }
 
 .prompt-remove-button {
   background: transparent;
   border: none;
-  color: var(--text-light);
+  color: var(--text-caption);
   cursor: pointer;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: 8px;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
 }
 
 .prompt-remove-button:hover {
-  background: white;
-  color: var(--error);
+  background: var(--bg-primary);
+  color: var(--text-error);
 }
 
 /* Responsive Design */

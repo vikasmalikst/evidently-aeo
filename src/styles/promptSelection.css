@@ -10,6 +10,7 @@
   justify-content: center;
   z-index: 9999;
   padding: 24px;
+  overflow: hidden;
 }
 
 .prompt-selection-page {
@@ -167,8 +168,10 @@
 .prompt-selection-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 24px 32px;
   background: var(--bg-secondary);
+  min-height: 0;
 }
 
 .topic-filter-bar {
@@ -266,7 +269,7 @@
   cursor: pointer;
   transition: background 150ms ease;
   border-bottom: 1px solid var(--primary200);
-  min-height: 80px;
+  min-height: 88px;
 }
 
 .topic-group-header:hover {
@@ -283,8 +286,8 @@
 
 .topic-group-icon {
   font-size: 24px;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -296,16 +299,18 @@
 .topic-group-title {
   flex: 1;
   min-width: 0;
+  padding-right: 16px;
 }
 
 .topic-group-title h3 {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-headings);
-  margin: 0 0 4px 0;
+  margin: 0 0 6px 0;
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
+  line-height: 1.4;
 }
 
 .topic-group-meta {

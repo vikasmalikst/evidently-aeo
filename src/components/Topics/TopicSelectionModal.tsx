@@ -155,15 +155,8 @@ export const TopicSelectionModal = ({
   if (showWelcome) {
     console.log('Rendering WelcomeScreen');
     return (
-      <div className="topic-modal-overlay" onClick={onClose}>
+      <div className="topic-modal-overlay">
         <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
-          <button className="topic-modal-back" onClick={onBack} aria-label="Back">
-            <ChevronLeft size={20} />
-            <span>Back</span>
-          </button>
-          <button className="topic-modal-close" onClick={onClose} aria-label="Close">
-            <X size={24} />
-          </button>
           <WelcomeScreen onGetStarted={() => {
             console.log('WelcomeScreen - Get Started clicked');
             setShowWelcome(false);

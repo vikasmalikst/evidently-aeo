@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
@@ -82,17 +82,18 @@ export const Dashboard = () => {
     }
   }, [navigate]);
 
-  const handleOnboardingComplete = (data: OnboardingData) => {
+  const handleOnboardingComplete = useCallback((data: OnboardingData) => {
     console.log('Onboarding complete with data:', data);
     localStorage.setItem('onboarding_models', JSON.stringify(data.models));
     localStorage.setItem('onboarding_topics', JSON.stringify(data.topics));
     localStorage.setItem('onboarding_prompts', JSON.stringify(data.prompts));
     setShowOnboardingModal(false);
-  };
+  }, []);
 
-  const handleOnboardingClose = () => {
+  const handleOnboardingClose = useCallback(() => {
+    console.log('handleOnboardingClose called');
     setShowOnboardingModal(false);
-  };
+  }, []);
 
   const totalPrompts = mockPromptsData.reduce((sum, topic) => sum + topic.prompts.length, 0);
   const avgSentiment = mockPromptsData
@@ -116,6 +117,24 @@ export const Dashboard = () => {
     { id: 4, title: 'Integration Documentation', url: 'your-brand.com/docs/integrations', impactScore: 6.9, delta: 0.3 },
     { id: 5, title: 'Product Comparison Guide', url: 'your-brand.com/compare', impactScore: 8.1, delta: -1.1 },
   ];
+
+  const onboardingModalComponent = useMemo(() => {
+    console.log('useMemo: Creating onboarding modal component, showOnboardingModal:', showOnboardingModal);
+    if (!showOnboardingModal) return null;
+
+    const brandData = getBrandData();
+    console.log('Brand data:', brandData);
+
+    return (
+      <OnboardingModal
+        key="onboarding-modal-instance"
+        brandName={brandData.name}
+        industry={brandData.industry}
+        onComplete={handleOnboardingComplete}
+        onClose={handleOnboardingClose}
+      />
+    );
+  }, [showOnboardingModal, handleOnboardingComplete, handleOnboardingClose]);
 
   return (
     <Layout>
@@ -473,17 +492,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {(() => {
-        console.log('Rendering modal check - showOnboardingModal:', showOnboardingModal);
-        return showOnboardingModal && (
-          <OnboardingModal
-            brandName={getBrandData().name}
-            industry={getBrandData().industry}
-            onComplete={handleOnboardingComplete}
-            onClose={handleOnboardingClose}
-          />
-        );
-      })()}
+      {onboardingModalComponent}
     </Layout>
   );
 };

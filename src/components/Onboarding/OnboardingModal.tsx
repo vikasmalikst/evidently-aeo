@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 import { WelcomeScreen } from '../Topics/WelcomeScreen';
 import { AIModelSelection } from './AIModelSelection';
@@ -31,6 +31,18 @@ export const OnboardingModal = ({
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);
   const [selectedPrompts, setSelectedPrompts] = useState<string[]>([]);
+
+  console.log('=== OnboardingModal Render ===');
+  console.log('Current step:', currentStep);
+  console.log('Selected models:', selectedModels);
+  console.log('Selected topics:', selectedTopics);
+  console.log('Selected prompts:', selectedPrompts);
+
+  // Track mount/unmount
+  useEffect(() => {
+    console.log('🚀 OnboardingModal MOUNTED');
+    return () => console.log('💀 OnboardingModal UNMOUNTED');
+  }, []);
 
   const handleBack = () => {
     console.log('handleBack called from step:', currentStep);

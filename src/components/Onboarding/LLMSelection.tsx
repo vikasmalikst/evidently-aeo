@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Card } from './common/Card';
 import { Button } from './common/Button';
-import { Check, Bot } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
 
 interface LLMSelectionProps {
   onContinue: (selectedLLMs: string[]) => void;
@@ -44,7 +44,7 @@ export const LLMSelection = ({ onContinue }: LLMSelectionProps) => {
       <div className="onboarding-step__content onboarding-step__content--wide">
         <div className="onboarding-hero">
           <div className="onboarding-hero__icon">
-            <Bot size={48} />
+            <Sparkles size={48} />
           </div>
           <h1 className="onboarding-hero__title">
             Select AI Platforms to Track

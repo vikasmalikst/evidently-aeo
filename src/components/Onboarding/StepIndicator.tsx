@@ -1,49 +1,69 @@
-import { Check } from 'lucide-react';
+import { IconCircleCheck } from '@tabler/icons-react';
+import { useRef, useEffect, useState } from 'react';
 
 interface StepIndicatorProps {
-  currentStep: number;
-  totalSteps: number;
+  currentStep: 'models' | 'topics' | 'prompts';
 }
 
-const steps = [
-  { number: 1, label: 'Brand' },
-  { number: 2, label: 'Competitors' },
-  { number: 3, label: 'Summary' }
-];
+export const StepIndicator = ({ currentStep }: StepIndicatorProps) => {
+  const steps = [
+    { id: 'models', label: 'Models', labelWithSelect: 'Select Models' },
+    { id: 'topics', label: 'Topics', labelWithSelect: 'Select Topics' },
+    { id: 'prompts', label: 'Prompts', labelWithSelect: 'Select Prompts' },
+  ] as const;
 
-export const StepIndicator = ({ currentStep, totalSteps }: StepIndicatorProps) => {
+  const textRef = useRef<HTMLDivElement>(null);
+  const [pillWidth, setPillWidth] = useState<number>(0);
+
+  const getStepIndex = (stepId: string) => {
+    return steps.findIndex((s) => s.id === stepId);
+  };
+
+  const currentIndex = getStepIndex(currentStep);
+  const currentStepData = steps[currentIndex];
+
+  useEffect(() => {
+    if (textRef.current && currentStepData) {
+      const textWidth = textRef.current.offsetWidth;
+      setPillWidth(textWidth + 32);
+    }
+  }, [currentStep, currentStepData]);
+
   return (
-    <div className="onboarding-step-indicator">
+    <div className="step-indicator">
       {steps.map((step, index) => {
-        const isCompleted = currentStep > step.number;
-        const isCurrent = currentStep === step.number;
+        const isCompleted = index < currentIndex;
+        const isCurrent = index === currentIndex;
+        const isPending = index > currentIndex;
 
         return (
-          <div key={step.number} className="onboarding-step-indicator__item">
-            <div
-              className={`
-                onboarding-step-indicator__circle
-                ${isCompleted ? 'onboarding-step-indicator__circle--completed' : ''}
-                ${isCurrent ? 'onboarding-step-indicator__circle--current' : ''}
-              `}
-            >
-              {isCompleted ? <Check size={16} /> : step.number}
-            </div>
-            <span
-              className={`
-                onboarding-step-indicator__label
-                ${isCurrent ? 'onboarding-step-indicator__label--current' : ''}
-              `}
-            >
-              {step.label}
-            </span>
-            {index < totalSteps - 1 && (
-              <div
-                className={`
-                  onboarding-step-indicator__line
-                  ${isCompleted ? 'onboarding-step-indicator__line--completed' : ''}
-                `}
-              />
+          <div key={step.id} className="step-indicator-item">
+            {isCompleted && (
+              <>
+                <IconCircleCheck size={20} className="step-indicator-icon-completed" />
+                <div className="step-indicator-label step-indicator-label-completed">
+                  {step.label}
+                </div>
+              </>
+            )}
+            {isCurrent && (
+              <div className="step-indicator-active-wrapper">
+                <div className="step-indicator-pill" style={{ width: `${pillWidth}px` }}></div>
+                <div
+                  ref={textRef}
+                  className="step-indicator-label step-indicator-label-current"
+                >
+                  {step.labelWithSelect}
+                </div>
+              </div>
+            )}
+            {isPending && (
+              <>
+                <div className="step-indicator-circle step-indicator-circle-pending"></div>
+                <div className="step-indicator-label step-indicator-label-pending">
+                  {step.label}
+                </div>
+              </>
             )}
           </div>
         );

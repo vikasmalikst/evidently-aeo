@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ChevronLeft, X } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { WelcomeScreen } from '../Topics/WelcomeScreen';
 import { AIModelSelection } from './AIModelSelection';
 import { TopicSelectionModal } from '../Topics/TopicSelectionModal';
 import { PromptConfiguration } from './PromptConfiguration';
+import { StepIndicator } from './StepIndicator';
 import type { Topic } from '../../types/topic';
 
 interface OnboardingModalProps {
@@ -59,25 +60,11 @@ export const OnboardingModal = ({
     return true;
   };
 
-  const getStepNumber = () => {
-    if (currentStep === 'models') return '1/3';
-    if (currentStep === 'topics') return '2/3';
-    if (currentStep === 'prompts') return '3/3';
-    return null;
-  };
-
   const getStepTitle = () => {
     if (currentStep === 'models') return 'Select AI Models';
     if (currentStep === 'topics') return 'Select Topics';
     if (currentStep === 'prompts') return 'Configure Prompts';
     return null;
-  };
-
-  const getProgressPercentage = () => {
-    if (currentStep === 'models') return 33;
-    if (currentStep === 'topics') return 66;
-    if (currentStep === 'prompts') return 100;
-    return 0;
   };
 
   // Welcome screen is handled differently
@@ -114,13 +101,8 @@ export const OnboardingModal = ({
         className={`onboarding-modal-container step-${currentStep}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="onboarding-progress-bar">
-          <div
-            className="onboarding-progress-fill"
-            style={{ width: `${getProgressPercentage()}%` }}
-          ></div>
-        </div>
-
+        <StepIndicator currentStep={currentStep} />
+        
         <div className="onboarding-modal-header">
           <button
             className="onboarding-back-button"
@@ -134,8 +116,6 @@ export const OnboardingModal = ({
           <div className="onboarding-header-content">
             <h2 className="onboarding-modal-title">{getStepTitle()}</h2>
           </div>
-
-          <div className="onboarding-step-badge">{getStepNumber()}</div>
         </div>
 
         <div className="onboarding-modal-body">
@@ -162,16 +142,7 @@ export const OnboardingModal = ({
         </div>
 
         <div className="onboarding-modal-footer">
-          {currentStep !== 'prompts' && (
-            <button
-              className="onboarding-button-secondary"
-              onClick={handleBack}
-            >
-              Back
-            </button>
-          )}
-
-          <div className="onboarding-button-wrapper" style={{ marginLeft: currentStep === 'prompts' ? 'auto' : '0' }}>
+          <div className="onboarding-button-wrapper" style={{ marginLeft: 'auto' }}>
             <button
               className="onboarding-button-primary"
               onClick={currentStep === 'prompts' ? handleComplete : handleNext}
@@ -182,11 +153,6 @@ export const OnboardingModal = ({
             {!canProceed() && currentStep === 'models' && (
               <div className="onboarding-button-tooltip">
                 Select at least 1 model
-              </div>
-            )}
-            {!canProceed() && currentStep === 'topics' && (
-              <div className="onboarding-button-tooltip">
-                Select at least 5 topics
               </div>
             )}
             {!canProceed() && currentStep === 'prompts' && (

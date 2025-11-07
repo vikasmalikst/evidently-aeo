@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 import { WelcomeScreen } from '../Topics/WelcomeScreen';
 import { AIModelSelection } from './AIModelSelection';
@@ -32,39 +32,16 @@ export const OnboardingModal = ({
   const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);
   const [selectedPrompts, setSelectedPrompts] = useState<string[]>([]);
 
-  console.log('=== OnboardingModal Render ===');
-  console.log('Current step:', currentStep);
-  console.log('Selected models:', selectedModels);
-  console.log('Selected topics:', selectedTopics);
-  console.log('Selected prompts:', selectedPrompts);
-
-  // Track mount/unmount
-  useEffect(() => {
-    console.log('🚀 OnboardingModal MOUNTED');
-    return () => console.log('💀 OnboardingModal UNMOUNTED');
-  }, []);
-
   const handleBack = () => {
-    console.log('handleBack called from step:', currentStep);
     if (currentStep === 'models') setCurrentStep('welcome');
     else if (currentStep === 'topics') setCurrentStep('models');
     else if (currentStep === 'prompts') setCurrentStep('topics');
   };
 
   const handleNext = () => {
-    console.log('handleNext called from step:', currentStep);
-    console.log('Selected models:', selectedModels);
-    console.log('Can proceed:', canProceed());
-    if (currentStep === 'welcome') {
-      console.log('Moving to models');
-      setCurrentStep('models');
-    } else if (currentStep === 'models') {
-      console.log('Moving to topics');
-      setCurrentStep('topics');
-    } else if (currentStep === 'topics') {
-      console.log('Moving to prompts');
-      setCurrentStep('prompts');
-    }
+    if (currentStep === 'welcome') setCurrentStep('models');
+    else if (currentStep === 'models') setCurrentStep('topics');
+    else if (currentStep === 'topics') setCurrentStep('prompts');
   };
 
   const handleComplete = () => {
@@ -106,8 +83,8 @@ export const OnboardingModal = ({
   // Welcome screen is handled differently
   if (currentStep === 'welcome') {
     return (
-      <div className="onboarding-modal-overlay">
-        <div className="onboarding-modal-container step-welcome">
+      <div className="onboarding-modal-overlay" onClick={onClose}>
+        <div className="onboarding-modal-container step-welcome" onClick={(e) => e.stopPropagation()}>
           <button
             className="onboarding-close-button"
             onClick={onClose}
@@ -139,9 +116,10 @@ export const OnboardingModal = ({
 
   // For models and prompts steps, use the new layout
   return (
-    <div className="onboarding-modal-overlay">
+    <div className="onboarding-modal-overlay" onClick={onClose}>
       <div
         className={`onboarding-modal-container step-${currentStep}`}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="onboarding-progress-bar">
           <div
@@ -172,15 +150,10 @@ export const OnboardingModal = ({
             <AIModelSelection
               selectedModels={selectedModels}
               onModelToggle={(modelId) => {
-                console.log('Model toggled:', modelId);
                 if (selectedModels.includes(modelId)) {
-                  const newModels = selectedModels.filter(m => m !== modelId);
-                  console.log('Removing model, new list:', newModels);
-                  setSelectedModels(newModels);
+                  setSelectedModels(selectedModels.filter(m => m !== modelId));
                 } else {
-                  const newModels = [...selectedModels, modelId];
-                  console.log('Adding model, new list:', newModels);
-                  setSelectedModels(newModels);
+                  setSelectedModels([...selectedModels, modelId]);
                 }
               }}
             />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
@@ -36,7 +36,6 @@ export const Dashboard = () => {
   const [startDate, setStartDate] = useState('2024-10-01');
   const [endDate, setEndDate] = useState('2024-10-31');
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
-  const hasShownModalRef = useRef(false);
 
   const getBrandData = () => {
     const brandInfo = localStorage.getItem('onboarding_brand');
@@ -57,10 +56,7 @@ export const Dashboard = () => {
     const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
     const hasCompletedPromptSelection = localStorage.getItem('onboarding_prompts');
 
-    console.log('=== Dashboard useEffect Running ===');
-    console.log('hasShownModalRef.current:', hasShownModalRef.current);
-    console.log('showOnboardingModal:', showOnboardingModal);
-    console.log('Checking flow:', {
+    console.log('Dashboard useEffect - Checking flow:', {
       hasCompletedOnboarding,
       hasCompletedModelSelection,
       hasCompletedTopicSelection,
@@ -75,41 +71,28 @@ export const Dashboard = () => {
 
     // Check if we need to show the onboarding modal (models, topics, prompts)
     if (!hasCompletedModelSelection || !hasCompletedTopicSelection || !hasCompletedPromptSelection) {
-      console.log('Incomplete setup - checking if modal should show');
-      console.log('hasShownModalRef.current =', hasShownModalRef.current);
-      if (!hasShownModalRef.current) {
-        console.log('✅ Modal not shown yet - setting to show in 500ms');
-        hasShownModalRef.current = true;
-        const timer = setTimeout(() => {
-          console.log('⏰ Timeout fired - Setting showOnboardingModal to true');
-          setShowOnboardingModal(true);
-        }, 500);
-        return () => {
-          console.log('🧹 Cleanup - clearing timeout');
-          clearTimeout(timer);
-        };
-      } else {
-        console.log('⚠️ Modal already triggered - not resetting');
-      }
+      console.log('Incomplete setup - showing onboarding modal in 500ms');
+      const timer = setTimeout(() => {
+        console.log('Setting showOnboardingModal to true');
+        setShowOnboardingModal(true);
+      }, 500);
+      return () => clearTimeout(timer);
     } else {
-      console.log('✅ All onboarding complete - showing full dashboard');
+      console.log('All onboarding complete - showing full dashboard');
     }
   }, [navigate]);
 
-  const handleOnboardingComplete = useCallback((data: OnboardingData) => {
+  const handleOnboardingComplete = (data: OnboardingData) => {
     console.log('Onboarding complete with data:', data);
     localStorage.setItem('onboarding_models', JSON.stringify(data.models));
     localStorage.setItem('onboarding_topics', JSON.stringify(data.topics));
     localStorage.setItem('onboarding_prompts', JSON.stringify(data.prompts));
     setShowOnboardingModal(false);
-    hasShownModalRef.current = false; // Reset for next time
-  }, []);
+  };
 
-  const handleOnboardingClose = useCallback(() => {
-    console.log('handleOnboardingClose called');
+  const handleOnboardingClose = () => {
     setShowOnboardingModal(false);
-    hasShownModalRef.current = false; // Reset for next time
-  }, []);
+  };
 
   const totalPrompts = mockPromptsData.reduce((sum, topic) => sum + topic.prompts.length, 0);
   const avgSentiment = mockPromptsData
@@ -133,24 +116,6 @@ export const Dashboard = () => {
     { id: 4, title: 'Integration Documentation', url: 'your-brand.com/docs/integrations', impactScore: 6.9, delta: 0.3 },
     { id: 5, title: 'Product Comparison Guide', url: 'your-brand.com/compare', impactScore: 8.1, delta: -1.1 },
   ];
-
-  const onboardingModalComponent = useMemo(() => {
-    console.log('useMemo: Creating onboarding modal component, showOnboardingModal:', showOnboardingModal);
-    if (!showOnboardingModal) return null;
-
-    const brandData = getBrandData();
-    console.log('Brand data:', brandData);
-
-    return (
-      <OnboardingModal
-        key="onboarding-modal-instance"
-        brandName={brandData.name}
-        industry={brandData.industry}
-        onComplete={handleOnboardingComplete}
-        onClose={handleOnboardingClose}
-      />
-    );
-  }, [showOnboardingModal, handleOnboardingComplete, handleOnboardingClose]);
 
   return (
     <Layout>
@@ -508,7 +473,17 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {onboardingModalComponent}
+      {(() => {
+        console.log('Rendering modal check - showOnboardingModal:', showOnboardingModal);
+        return showOnboardingModal && (
+          <OnboardingModal
+            brandName={getBrandData().name}
+            industry={getBrandData().industry}
+            onComplete={handleOnboardingComplete}
+            onClose={handleOnboardingClose}
+          />
+        );
+      })()}
     </Layout>
   );
 };

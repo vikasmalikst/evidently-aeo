@@ -447,8 +447,27 @@
 }
 
 .ai-model-logo {
-  font-size: 48px;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: 8px;
+}
+
+.ai-model-logo svg {
+  width: 64px;
+  height: 64px;
+}
+
+.ai-model-logo-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: rgba(99, 102, 241, 0.12);
 }
 
 .ai-model-name {

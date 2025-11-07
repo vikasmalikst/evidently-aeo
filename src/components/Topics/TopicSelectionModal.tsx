@@ -174,25 +174,24 @@ export const TopicSelectionModal = ({
   return (
     <div className="topic-modal-overlay" onClick={onClose}>
       <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
+        <div className="onboarding-progress-bar">
+          <div className="onboarding-progress-fill" style={{ width: '66%' }}></div>
+        </div>
+
         <div className="topic-modal-header">
-          <button className="topic-modal-back" onClick={() => setShowWelcome(true)} aria-label="Back">
+          <button className="topic-modal-back" onClick={onBack} aria-label="Back">
             <ChevronLeft size={20} />
             <span>Back</span>
           </button>
           <div className="topic-modal-header-content">
             <div>
-              <h2 className="topic-modal-title">Configure Your Topics</h2>
+              <h2 className="topic-modal-title">Select Topics</h2>
               <div className="topic-count-inline">
                 {selectedTopics.size}/{MAX_TOPICS} topics selected
               </div>
             </div>
             <div className="topic-modal-header-right">
-              <div className="progress-indicator">
-                <div className="progress-dot"></div>
-                <div className="progress-dot active"></div>
-                <div className="progress-dot"></div>
-              </div>
-              <span className="topic-modal-step-badge">Step 1 of 3</span>
+              <span className="topic-modal-step-badge">2/3</span>
             </div>
           </div>
         </div>

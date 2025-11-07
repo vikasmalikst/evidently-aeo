@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, ArrowRight, TrendingUp, Sparkles, List, ChevronLeft } from 'lucide-react';
+import { ArrowRight, TrendingUp, Sparkles, List, ChevronLeft } from 'lucide-react';
 import type { Topic, TopicCategory } from '../../types/topic';
 import { generateMockTopics } from '../../data/mockTopicsData';
-import { WelcomeScreen } from './WelcomeScreen';
-import { SelectionBar } from './SelectionBar';
 import { TopicSection } from './TopicSection';
 import { CustomTopicInput } from './CustomTopicInput';
 import { SelectedTopicsSummary } from './SelectedTopicsSummary';
@@ -26,9 +24,6 @@ export const TopicSelectionModal = ({
   onBack,
   onClose,
 }: TopicSelectionModalProps) => {
-  console.log('TopicSelectionModal rendered with:', { brandName, industry });
-  const [showWelcome, setShowWelcome] = useState(true);
-  console.log('showWelcome initial state:', true);
   const [availableTopics, setAvailableTopics] = useState(() =>
     generateMockTopics(brandName, industry)
   );
@@ -151,25 +146,6 @@ export const TopicSelectionModal = ({
     if (qualityScore >= 40) return 'fair';
     return 'poor';
   };
-
-  if (showWelcome) {
-    console.log('Rendering WelcomeScreen');
-    return (
-      <div className="topic-modal-overlay">
-        <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
-          <WelcomeScreen onGetStarted={() => {
-            console.log('WelcomeScreen - Get Started clicked');
-            setShowWelcome(false);
-          }} />
-        </div>
-      </div>
-    );
-  }
-
-  console.log('Rendering topic selection (not welcome)', {
-    selectedCount: selectedTopics.size,
-    qualityScore
-  });
 
   return (
     <div className="topic-modal-overlay" onClick={onClose}>

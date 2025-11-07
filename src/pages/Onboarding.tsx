@@ -25,8 +25,8 @@ export const Onboarding = () => {
   };
 
   const handleComplete = () => {
-    localStorage.setItem('onboarding_initial', 'true');
-    navigate('/topics');
+    localStorage.setItem('onboarding_complete', 'true');
+    navigate('/dashboard');
   };
 
   return (

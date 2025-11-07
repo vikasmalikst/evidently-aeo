@@ -7,7 +7,6 @@ import { TopicFilterBar } from '../components/PromptSelection/TopicFilterBar';
 import { TopicGroup } from '../components/PromptSelection/TopicGroup';
 import { ActionBar } from '../components/PromptSelection/ActionBar';
 import { AddPromptModal } from '../components/PromptSelection/AddPromptModal';
-import { LLMSelectionModal } from '../components/Onboarding/LLMSelectionModal';
 import { mockPromptSelectionData } from '../data/mockPromptSelectionData';
 
 const MAX_PROMPTS = 40;
@@ -20,21 +19,12 @@ export const PromptSelection = () => {
   const [readinessStatus, setReadinessStatus] = useState('Incomplete');
   const [isAddPromptModalOpen, setIsAddPromptModalOpen] = useState(false);
   const [selectedTopicForAdd, setSelectedTopicForAdd] = useState<{id: string; name: string} | null>(null);
-  const [showLLMModal, setShowLLMModal] = useState(false);
-  const [isFirstTime, setIsFirstTime] = useState(false);
 
   useEffect(() => {
     const preselected = topics.flatMap(t =>
       t.prompts.filter(p => p.preselected).map(p => p.id)
     );
     setSelectedPrompts(new Set(preselected));
-
-    const onboardingInitial = localStorage.getItem('onboarding_initial');
-    const llmsSelected = localStorage.getItem('onboarding_llms');
-
-    if (onboardingInitial && !llmsSelected) {
-      setIsFirstTime(true);
-    }
   }, [topics]);
 
   useEffect(() => {
@@ -111,19 +101,6 @@ export const PromptSelection = () => {
       t.prompts.filter(p => selectedPrompts.has(p.id))
     );
     localStorage.setItem('onboarding_prompts', JSON.stringify(selectedPromptsList));
-
-    if (isFirstTime) {
-      setShowLLMModal(true);
-    } else {
-      navigate('/dashboard');
-    }
-  };
-
-  const handleLLMsSelected = (selectedLLMs: string[]) => {
-    localStorage.setItem('onboarding_llms', JSON.stringify(selectedLLMs));
-    localStorage.setItem('onboarding_complete', 'true');
-    localStorage.removeItem('onboarding_initial');
-    setShowLLMModal(false);
     navigate('/dashboard');
   };
 
@@ -184,11 +161,6 @@ export const PromptSelection = () => {
         onClose={() => setIsAddPromptModalOpen(false)}
         onAdd={handleAddPrompt}
         topicName={selectedTopicForAdd?.name || ''}
-      />
-
-      <LLMSelectionModal
-        isOpen={showLLMModal}
-        onComplete={handleLLMsSelected}
       />
     </Layout>
   );

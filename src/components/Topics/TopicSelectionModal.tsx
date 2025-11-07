@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, ArrowRight, TrendingUp, Sparkles, List } from 'lucide-react';
+import { X, ArrowRight, TrendingUp, Sparkles, List, ChevronLeft } from 'lucide-react';
 import type { Topic, TopicCategory } from '../../types/topic';
 import { generateMockTopics } from '../../data/mockTopicsData';
 import { WelcomeScreen } from './WelcomeScreen';
@@ -157,6 +157,10 @@ export const TopicSelectionModal = ({
     return (
       <div className="topic-modal-overlay" onClick={onClose}>
         <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
+          <button className="topic-modal-back" onClick={onBack} aria-label="Back">
+            <ChevronLeft size={20} />
+            <span>Back</span>
+          </button>
           <button className="topic-modal-close" onClick={onClose} aria-label="Close">
             <X size={24} />
           </button>
@@ -178,6 +182,10 @@ export const TopicSelectionModal = ({
     <div className="topic-modal-overlay" onClick={onClose}>
       <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="topic-modal-header">
+          <button className="topic-modal-back" onClick={() => setShowWelcome(true)} aria-label="Back">
+            <ChevronLeft size={20} />
+            <span>Back</span>
+          </button>
           <div className="progress-indicator">
             <div className="progress-dot"></div>
             <div className="progress-dot active"></div>
@@ -189,7 +197,7 @@ export const TopicSelectionModal = ({
                 {selectedTopics.size}/{MAX_TOPICS} topics selected
               </div>
             </div>
-            <span className="topic-modal-step-badge">Step 1 of 2</span>
+            <span className="topic-modal-step-badge">Step 1 of 3</span>
           </div>
           <button className="topic-modal-close" onClick={onClose} aria-label="Close">
             <X size={24} />

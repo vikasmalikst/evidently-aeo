@@ -1,7 +1,37 @@
 .prompt-selection-page {
-  min-height: 100vh;
+  width: 72vw;
+  height: 88vh;
   background: var(--bg-secondary);
   padding-bottom: 120px;
+  margin: 0 auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.prompt-selection-back {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--primary200);
+  color: var(--text-body);
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 101;
+}
+
+.prompt-selection-back:hover {
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .prompt-selection-header {
@@ -12,6 +42,7 @@
   top: 0;
   z-index: 100;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
 }
 
 .prompt-selection-header-content h1 {
@@ -34,6 +65,7 @@
   position: sticky;
   top: 72px;
   z-index: 99;
+  flex-shrink: 0;
 }
 
 .readiness-scale {
@@ -105,6 +137,11 @@
 
 .readiness-status--optimal {
   color: #059666;
+}
+
+.prompt-selection-content {
+  flex: 1;
+  overflow-y: auto;
 }
 
 .topic-filter-bar {

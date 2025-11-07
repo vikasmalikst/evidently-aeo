@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ChevronLeft } from 'lucide-react';
 import { Layout } from '../components/Layout/Layout';
 import { ReadinessScale } from '../components/PromptSelection/ReadinessScale';
 import { TopicFilterBar } from '../components/PromptSelection/TopicFilterBar';
@@ -95,6 +96,10 @@ export const PromptSelection = () => {
   return (
     <Layout>
       <div className="prompt-selection-page">
+        <button className="prompt-selection-back" onClick={() => navigate('/dashboard')} aria-label="Back">
+          <ChevronLeft size={20} />
+          <span>Back</span>
+        </button>
         <div className="prompt-selection-header">
           <div className="prompt-selection-header-content">
             <h1>Evidently — Select Prompts</h1>

@@ -16,13 +16,14 @@ interface AIModelSelectionProps {
 
 const AI_MODELS: AIModel[] = [
   { id: 'chatgpt', name: 'ChatGPT', provider: 'OpenAI', logo: '🤖', available: true },
-  { id: 'perplexity', name: 'Perplexity', provider: 'Perplexity AI', logo: '🔍', available: true },
-  { id: 'google-search-ai', name: 'Google Search AI', provider: 'Google', logo: '🔎', available: true },
   { id: 'claude', name: 'Claude', provider: 'Anthropic', logo: '🎯', available: true },
-  { id: 'gemini', name: 'Gemini', provider: 'Google', logo: '✨', available: true },
-  { id: 'meta-llama', name: 'Meta Llama', provider: 'Meta', logo: '🦙', available: true },
-  { id: 'grok', name: 'Grok', provider: 'xAI', logo: '⚡', available: true },
-  { id: 'deepseek', name: 'Deepseek', provider: 'DeepSeek', logo: '🧠', available: true },
+  { id: 'gemini', name: 'Google Gemini', provider: 'Google', logo: '✨', available: true },
+  { id: 'perplexity', name: 'Perplexity', provider: 'Perplexity AI', logo: '🔍', available: true },
+  { id: 'bing-copilot', name: 'Bing Copilot', provider: 'Microsoft', logo: '🔎', available: true },
+  { id: 'deepseek', name: 'DeepSeek', provider: 'DeepSeek', logo: '🧠', available: true },
+  { id: 'mistral', name: 'Mistral', provider: 'Mistral AI', logo: '🌪️', available: true },
+  { id: 'groq', name: 'Groq', provider: 'Groq', logo: '⚡', available: true },
+  { id: 'future-llm', name: 'Future LLM', provider: 'TBA', logo: '🚀', available: false },
 ];
 
 const MAX_SELECTIONS = 4;

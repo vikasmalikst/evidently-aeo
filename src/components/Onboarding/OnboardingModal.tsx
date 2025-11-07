@@ -168,13 +168,30 @@ export const OnboardingModal = ({
             Back
           </button>
 
-          <button
-            className="onboarding-button-primary"
-            onClick={currentStep === 'prompts' ? handleComplete : handleNext}
-            disabled={!canProceed()}
-          >
-            {currentStep === 'prompts' ? 'Complete Setup' : 'Next'}
-          </button>
+          <div className="onboarding-button-wrapper">
+            <button
+              className="onboarding-button-primary"
+              onClick={currentStep === 'prompts' ? handleComplete : handleNext}
+              disabled={!canProceed()}
+            >
+              {currentStep === 'prompts' ? 'Complete Setup' : 'Next'}
+            </button>
+            {!canProceed() && currentStep === 'models' && (
+              <div className="onboarding-button-tooltip">
+                Select at least 1 model
+              </div>
+            )}
+            {!canProceed() && currentStep === 'topics' && (
+              <div className="onboarding-button-tooltip">
+                Select at least 5 topics
+              </div>
+            )}
+            {!canProceed() && currentStep === 'prompts' && (
+              <div className="onboarding-button-tooltip">
+                Select at least 1 prompt
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

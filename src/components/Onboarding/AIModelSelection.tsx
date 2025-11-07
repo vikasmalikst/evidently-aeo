@@ -43,15 +43,10 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
   return (
     <div className="ai-model-selection">
       <div className="ai-model-instruction">
-        <IconInfoCircle size={20} className="instruction-icon" />
         <p>
           Choose which AI platforms you want to track. You can select up to {MAX_SELECTIONS}.
           We recommend starting with ChatGPT and Perplexity.
         </p>
-      </div>
-
-      <div className="ai-model-counter">
-        You've selected <strong>{selectedModels.length}</strong> of {MAX_SELECTIONS} models
       </div>
 
       <div className="ai-model-grid">
@@ -82,6 +77,10 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
             </button>
           );
         })}
+      </div>
+
+      <div className="ai-model-counter">
+        You've selected <strong>{selectedModels.length}</strong> of {MAX_SELECTIONS} models
       </div>
     </div>
   );

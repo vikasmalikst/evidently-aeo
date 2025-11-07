@@ -7,6 +7,8 @@ import { SearchSources } from './pages/SearchSources';
 import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
+import { Onboarding } from './pages/Onboarding';
+import { PromptSelection } from './pages/PromptSelection';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -14,6 +16,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/auth" element={<AuthPage />} />
+        <Route path="/onboarding" element={<Onboarding />} />
         <Route
           path="/dashboard"
           element={
@@ -70,7 +73,15 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route
+          path="/prompt-selection"
+          element={
+            <ProtectedRoute>
+              <PromptSelection />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/" element={<Navigate to="/onboarding" replace />} />
       </Routes>
     </BrowserRouter>
   );

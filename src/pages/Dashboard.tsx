@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
+import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
 import { mockPromptsData } from '../data/mockPromptsData';
 import { mockSourcesData } from '../data/mockSourcesData';
 import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
+import type { Topic } from '../types/topic';
 import {
   TrendingUp,
   TrendingDown,
@@ -28,9 +31,78 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend,
 
 export const Dashboard = () => {
   const user = useAuthStore((state) => state.user);
+  const navigate = useNavigate();
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
   const [startDate, setStartDate] = useState('2024-10-01');
   const [endDate, setEndDate] = useState('2024-10-31');
+  const [showTopicModal, setShowTopicModal] = useState(false);
+
+  const getBrandData = () => {
+    const brandInfo = localStorage.getItem('onboarding_brand');
+    if (brandInfo) {
+      try {
+        const parsed = JSON.parse(brandInfo);
+        return { name: parsed.name || 'Your Brand', industry: parsed.industry || 'Technology' };
+      } catch (e) {
+        return { name: 'Your Brand', industry: 'Technology' };
+      }
+    }
+    return { name: 'Your Brand', industry: 'Technology' };
+  };
+
+  useEffect(() => {
+    const hasCompletedOnboarding = localStorage.getItem('onboarding_complete');
+    const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
+    const hasCompletedPromptSelection = localStorage.getItem('onboarding_prompts');
+
+    console.log('Dashboard useEffect - Checking flow:', {
+      hasCompletedOnboarding,
+      hasCompletedTopicSelection,
+      hasCompletedPromptSelection
+    });
+
+    if (!hasCompletedOnboarding) {
+      console.log('No onboarding - redirecting to /onboarding');
+      navigate('/onboarding');
+      return;
+    }
+
+    // TESTING MODE: Always show topic modal for team review
+    console.log('TESTING MODE: Forcing topic modal to show');
+    const timer = setTimeout(() => {
+      console.log('Setting showTopicModal to true');
+      setShowTopicModal(true);
+    }, 500);
+    return () => clearTimeout(timer);
+
+    // PRODUCTION CODE (commented out for testing):
+    // if (!hasCompletedTopicSelection) {
+    //   console.log('No topics - showing topic modal in 500ms');
+    //   const timer = setTimeout(() => {
+    //     console.log('Setting showTopicModal to true');
+    //     setShowTopicModal(true);
+    //   }, 500);
+    //   return () => clearTimeout(timer);
+    // } else if (!hasCompletedPromptSelection) {
+    //   console.log('No prompts - redirecting to /prompt-selection in 500ms');
+    //   const timer = setTimeout(() => {
+    //     navigate('/prompt-selection');
+    //   }, 500);
+    //   return () => clearTimeout(timer);
+    // } else {
+    //   console.log('All onboarding complete - showing full dashboard');
+    // }
+  }, [navigate]);
+
+  const handleTopicsSelected = (selectedTopics: Topic[]) => {
+    localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
+    setShowTopicModal(false);
+    navigate('/prompt-selection');
+  };
+
+  const handleTopicModalClose = () => {
+    setShowTopicModal(false);
+  };
 
   const totalPrompts = mockPromptsData.reduce((sum, topic) => sum + topic.prompts.length, 0);
   const avgSentiment = mockPromptsData
@@ -410,6 +482,19 @@ export const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {(() => {
+        console.log('Rendering modal check - showTopicModal:', showTopicModal);
+        return showTopicModal && (
+          <TopicSelectionModal
+            brandName={getBrandData().name}
+            industry={getBrandData().industry}
+            onNext={handleTopicsSelected}
+            onBack={() => {}}
+            onClose={handleTopicModalClose}
+          />
+        );
+      })()}
     </Layout>
   );
 };

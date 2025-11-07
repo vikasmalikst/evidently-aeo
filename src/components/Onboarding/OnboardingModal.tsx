@@ -154,6 +154,7 @@ export const OnboardingModal = ({
 
           {currentStep === 'prompts' && (
             <PromptConfiguration
+              selectedTopics={selectedTopics}
               selectedPrompts={selectedPrompts}
               onPromptsChange={setSelectedPrompts}
             />
@@ -161,14 +162,16 @@ export const OnboardingModal = ({
         </div>
 
         <div className="onboarding-modal-footer">
-          <button
-            className="onboarding-button-secondary"
-            onClick={handleBack}
-          >
-            Back
-          </button>
+          {currentStep !== 'prompts' && (
+            <button
+              className="onboarding-button-secondary"
+              onClick={handleBack}
+            >
+              Back
+            </button>
+          )}
 
-          <div className="onboarding-button-wrapper">
+          <div className="onboarding-button-wrapper" style={{ marginLeft: currentStep === 'prompts' ? 'auto' : '0' }}>
             <button
               className="onboarding-button-primary"
               onClick={currentStep === 'prompts' ? handleComplete : handleNext}

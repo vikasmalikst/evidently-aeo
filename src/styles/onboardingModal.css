@@ -58,18 +58,81 @@
   max-width: 600px;
 }
 
-/* Progress Bar */
-.onboarding-progress-bar {
-  height: 6px;
-  width: 100%;
-  background: var(--bg-tertiary);
-  position: relative;
+/* Step Indicator */
+.step-indicator {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: 264px;
+  z-index: 10;
 }
 
-.onboarding-progress-fill {
-  height: 100%;
+.step-indicator-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  justify-content: flex-start;
+  height: 46px;
+}
+
+.step-indicator-icon-completed {
+  color: #4ade80;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+
+.step-indicator-active-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.step-indicator-pill {
+  height: 20px;
   background: var(--accent500);
-  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.step-indicator-circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.step-indicator-circle-pending {
+  background: var(--primary300);
+  border: none;
+}
+
+.step-indicator-label {
+  font-size: 12.8px;
+  font-weight: 400;
+  font-family: 'IBM Plex Sans', sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.step-indicator-label-completed {
+  color: #4ade80;
+}
+
+.step-indicator-label-current {
+  color: var(--text-headings);
+  font-weight: 500;
+}
+
+.step-indicator-label-pending {
+  color: var(--primary300);
 }
 
 /* Modal Header */
@@ -152,20 +215,25 @@
 }
 
 .onboarding-button-primary {
-  background: #00BCDC;
+  background: #282c34;
   color: #FFFFFF;
   border: none;
   padding: 12px 24px;
-  border-radius: 6px;
-  font-size: 16px;
+  border-radius: 8px;
+  font-size: 14px;
   font-weight: 600;
   font-family: 'Sora', sans-serif;
   cursor: pointer;
   transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.onboarding-button-primary:hover:not(:disabled) {
-  background: #0096B0;
+.onboarding-button-primary:hover:not(:disabled),
+.onboarding-button-primary:focus:not(:disabled) {
+  outline: 2px solid #00BCDC;
+  outline-offset: 0;
 }
 
 .onboarding-button-primary:disabled {
@@ -460,14 +528,10 @@
   height: 64px;
 }
 
-.ai-model-logo-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.ai-model-logo-image {
   width: 64px;
   height: 64px;
-  border-radius: 16px;
-  background: rgba(99, 102, 241, 0.12);
+  object-fit: contain;
 }
 
 .ai-model-name {
@@ -548,8 +612,15 @@
 
 .prompt-header-right {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
+}
+
+.prompt-header-right-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
 }
 
 .prompt-topic-pill {

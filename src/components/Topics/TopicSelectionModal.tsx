@@ -5,6 +5,7 @@ import { generateMockTopics } from '../../data/mockTopicsData';
 import { TopicSection } from './TopicSection';
 import { CustomTopicInput } from './CustomTopicInput';
 import { SelectedTopicsSummary } from './SelectedTopicsSummary';
+import { StepIndicator } from '../Onboarding/StepIndicator';
 
 interface TopicSelectionModalProps {
   brandName: string;
@@ -150,10 +151,8 @@ export const TopicSelectionModal = ({
   return (
     <div className="topic-modal-overlay" onClick={onClose}>
       <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
-        <div className="onboarding-progress-bar">
-          <div className="onboarding-progress-fill" style={{ width: '66%' }}></div>
-        </div>
-
+        <StepIndicator currentStep="topics" />
+        
         <div className="topic-modal-header">
           <button className="topic-modal-back" onClick={onBack} aria-label="Back">
             <ChevronLeft size={20} />
@@ -165,9 +164,6 @@ export const TopicSelectionModal = ({
               <div className="topic-count-inline">
                 {selectedTopics.size}/{MAX_TOPICS} topics selected
               </div>
-            </div>
-            <div className="topic-modal-header-right">
-              <span className="topic-modal-step-badge">2/3</span>
             </div>
           </div>
         </div>
@@ -244,15 +240,16 @@ export const TopicSelectionModal = ({
         </div>
 
         <div className="topic-modal-footer">
-          <button
-            className="topic-btn-primary topic-btn-full"
-            onClick={handleNext}
-            disabled={!isValid}
-            type="button"
-          >
-            Next: Configure Prompts
-            <ArrowRight size={18} />
-          </button>
+          <div className="onboarding-button-wrapper" style={{ marginLeft: 'auto' }}>
+            <button
+              className="onboarding-button-primary"
+              onClick={handleNext}
+              disabled={!isValid}
+              type="button"
+            >
+              Next: Configure Prompts
+            </button>
+          </div>
         </div>
       </div>
     </div>

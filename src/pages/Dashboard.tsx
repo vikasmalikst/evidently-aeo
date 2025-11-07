@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
-import { OnboardingModal, type OnboardingData } from '../components/Onboarding/OnboardingModal';
+import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
 import { mockPromptsData } from '../data/mockPromptsData';
 import { mockSourcesData } from '../data/mockSourcesData';
 import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
@@ -35,7 +35,7 @@ export const Dashboard = () => {
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
   const [startDate, setStartDate] = useState('2024-10-01');
   const [endDate, setEndDate] = useState('2024-10-31');
-  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [showTopicModal, setShowTopicModal] = useState(false);
 
   const getBrandData = () => {
     const brandInfo = localStorage.getItem('onboarding_brand');
@@ -52,13 +52,11 @@ export const Dashboard = () => {
 
   useEffect(() => {
     const hasCompletedOnboarding = localStorage.getItem('onboarding_complete');
-    const hasCompletedModelSelection = localStorage.getItem('onboarding_models');
     const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
     const hasCompletedPromptSelection = localStorage.getItem('onboarding_prompts');
 
     console.log('Dashboard useEffect - Checking flow:', {
       hasCompletedOnboarding,
-      hasCompletedModelSelection,
       hasCompletedTopicSelection,
       hasCompletedPromptSelection
     });
@@ -69,29 +67,41 @@ export const Dashboard = () => {
       return;
     }
 
-    // Check if we need to show the onboarding modal (models, topics, prompts)
-    if (!hasCompletedModelSelection || !hasCompletedTopicSelection || !hasCompletedPromptSelection) {
-      console.log('Incomplete setup - showing onboarding modal in 500ms');
-      const timer = setTimeout(() => {
-        console.log('Setting showOnboardingModal to true');
-        setShowOnboardingModal(true);
-      }, 500);
-      return () => clearTimeout(timer);
-    } else {
-      console.log('All onboarding complete - showing full dashboard');
-    }
+    // TESTING MODE: Always show topic modal for team review
+    console.log('TESTING MODE: Forcing topic modal to show');
+    const timer = setTimeout(() => {
+      console.log('Setting showTopicModal to true');
+      setShowTopicModal(true);
+    }, 500);
+    return () => clearTimeout(timer);
+
+    // PRODUCTION CODE (commented out for testing):
+    // if (!hasCompletedTopicSelection) {
+    //   console.log('No topics - showing topic modal in 500ms');
+    //   const timer = setTimeout(() => {
+    //     console.log('Setting showTopicModal to true');
+    //     setShowTopicModal(true);
+    //   }, 500);
+    //   return () => clearTimeout(timer);
+    // } else if (!hasCompletedPromptSelection) {
+    //   console.log('No prompts - redirecting to /prompt-selection in 500ms');
+    //   const timer = setTimeout(() => {
+    //     navigate('/prompt-selection');
+    //   }, 500);
+    //   return () => clearTimeout(timer);
+    // } else {
+    //   console.log('All onboarding complete - showing full dashboard');
+    // }
   }, [navigate]);
 
-  const handleOnboardingComplete = (data: OnboardingData) => {
-    console.log('Onboarding complete with data:', data);
-    localStorage.setItem('onboarding_models', JSON.stringify(data.models));
-    localStorage.setItem('onboarding_topics', JSON.stringify(data.topics));
-    localStorage.setItem('onboarding_prompts', JSON.stringify(data.prompts));
-    setShowOnboardingModal(false);
+  const handleTopicsSelected = (selectedTopics: Topic[]) => {
+    localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
+    setShowTopicModal(false);
+    navigate('/prompt-selection');
   };
 
-  const handleOnboardingClose = () => {
-    setShowOnboardingModal(false);
+  const handleTopicModalClose = () => {
+    setShowTopicModal(false);
   };
 
   const totalPrompts = mockPromptsData.reduce((sum, topic) => sum + topic.prompts.length, 0);
@@ -474,13 +484,14 @@ export const Dashboard = () => {
       </div>
 
       {(() => {
-        console.log('Rendering modal check - showOnboardingModal:', showOnboardingModal);
-        return showOnboardingModal && (
-          <OnboardingModal
+        console.log('Rendering modal check - showTopicModal:', showTopicModal);
+        return showTopicModal && (
+          <TopicSelectionModal
             brandName={getBrandData().name}
             industry={getBrandData().industry}
-            onComplete={handleOnboardingComplete}
-            onClose={handleOnboardingClose}
+            onNext={handleTopicsSelected}
+            onBack={() => {}}
+            onClose={handleTopicModalClose}
           />
         );
       })()}

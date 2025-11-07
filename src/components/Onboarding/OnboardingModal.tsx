@@ -85,13 +85,6 @@ export const OnboardingModal = ({
     return (
       <div className="onboarding-modal-overlay" onClick={onClose}>
         <div className="onboarding-modal-container step-welcome" onClick={(e) => e.stopPropagation()}>
-          <button
-            className="onboarding-close-button"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
           <WelcomeScreen onGetStarted={handleNext} />
         </div>
       </div>

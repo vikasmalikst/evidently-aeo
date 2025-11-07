@@ -80,9 +80,6 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
 
       <div className="ai-model-counter">
         You've selected <strong>{selectedModels.length}</strong> of {MAX_SELECTIONS} models
-        {selectedModels.length >= MAX_SELECTIONS && (
-          <span className="ai-model-counter-hint"> — Maximum reached</span>
-        )}
       </div>
     </div>
   );

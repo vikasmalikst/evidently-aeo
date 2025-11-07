@@ -321,6 +321,8 @@
 .onboarding-welcome-description {
   margin-bottom: 32px;
   max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .onboarding-welcome-description p {
@@ -334,53 +336,53 @@
 /* Step Cards */
 .onboarding-steps-overview {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 16px;
   margin-bottom: 32px;
   width: 100%;
-  max-width: 500px;
+  max-width: 100%;
 }
 
 .onboarding-step-card {
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  padding: 16px;
+  background: var(--bg-primary);
+  border-radius: 16px;
+  padding: 20px;
   text-align: left;
   position: relative;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
   border: 1px solid var(--border-default);
-  transition: all 0.2s ease;
 }
 
-.onboarding-step-card:hover {
-  border-color: var(--accent500);
-  box-shadow: var(--shadow-sm);
-}
-
-.onboarding-step-border {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--accent500);
-  border-radius: 8px 0 0 8px;
+.onboarding-step-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent500);
+  font-family: 'IBM Plex Sans', sans-serif;
+  flex-shrink: 0;
+  line-height: 1.2;
 }
 
 .onboarding-step-content {
-  margin-left: 12px;
+  margin-left: 0;
+  flex: 1;
+  width: 100%;
+  text-align: center;
 }
 
 .onboarding-step-content h3 {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-headings);
-  margin: 0 0 4px 0;
+  margin: 0 0 6px 0;
   font-family: 'Sora', sans-serif;
 }
 
 .onboarding-step-content p {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-caption);
   margin: 0;
   line-height: 1.5;
@@ -388,7 +390,7 @@
 }
 
 .onboarding-welcome-button {
-  background: var(--accent500);
+  background: #282c34;
   color: var(--text-inverse);
   border: none;
   padding: 14px 32px;
@@ -401,10 +403,10 @@
   box-shadow: var(--shadow-md);
 }
 
-.onboarding-welcome-button:hover {
-  background: var(--accent600);
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
+.onboarding-welcome-button:hover:not(:disabled),
+.onboarding-welcome-button:focus:not(:disabled) {
+  outline: 2px solid #00BCDC;
+  outline-offset: 0;
 }
 
 /* AI Model Selection */

@@ -1,70 +1,95 @@
+.prompt-selection-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 24px;
+}
+
 .prompt-selection-page {
   width: 72vw;
   height: 88vh;
-  background: var(--bg-secondary);
-  padding-bottom: 120px;
-  margin: 0 auto;
+  background: var(--bg-primary);
+  border: 1px solid var(--primary200);
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
+.prompt-selection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32px;
+  border-bottom: 1px solid var(--primary200);
+  flex-shrink: 0;
+  position: relative;
+}
+
 .prompt-selection-back {
   position: absolute;
-  top: 24px;
-  left: 24px;
+  top: 32px;
+  left: 32px;
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid var(--primary200);
+  background: transparent;
+  border: none;
   color: var(--text-body);
   cursor: pointer;
   padding: 8px 12px;
   border-radius: 6px;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease;
   font-size: 14px;
   font-weight: 500;
-  z-index: 101;
+  z-index: 10;
 }
 
 .prompt-selection-back:hover {
-  background: white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: var(--bg-secondary);
 }
 
-.prompt-selection-header {
-  background: linear-gradient(135deg, #1a1d29 0%, #2a2d39 100%);
-  padding: 24px 48px;
-  color: white;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  flex-shrink: 0;
+.prompt-selection-header-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .prompt-selection-header-content h1 {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0 0 4px 0;
-  font-family: 'Sora', sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-headings);
+  margin: 0;
 }
 
-.prompt-selection-header-content p {
+.prompt-selection-count {
   font-size: 14px;
-  margin: 0;
-  opacity: 0.8;
+  color: var(--text-body);
+  margin-top: 4px;
+}
+
+.prompt-selection-step-badge {
+  background: var(--accent500);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .prompt-selection-readiness {
-  background: white;
-  padding: 16px 48px;
+  background: var(--bg-secondary);
+  padding: 16px 32px;
   border-bottom: 1px solid var(--primary200);
-  position: sticky;
-  top: 72px;
-  z-index: 99;
   flex-shrink: 0;
 }
 
@@ -142,18 +167,18 @@
 .prompt-selection-content {
   flex: 1;
   overflow-y: auto;
+  padding: 24px 32px;
+  background: var(--bg-secondary);
 }
 
 .topic-filter-bar {
   background: white;
-  padding: 16px 48px;
+  padding: 16px 32px;
   border-bottom: 1px solid var(--primary200);
   display: flex;
   align-items: center;
   gap: 16px;
-  position: sticky;
-  top: 128px;
-  z-index: 98;
+  flex-shrink: 0;
 }
 
 .topic-filter-label {
@@ -237,10 +262,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 20px 24px;
   cursor: pointer;
   transition: background 150ms ease;
   border-bottom: 1px solid var(--primary200);
+  min-height: 80px;
 }
 
 .topic-group-header:hover {
@@ -252,6 +278,7 @@
   align-items: center;
   gap: 12px;
   flex: 1;
+  min-width: 0;
 }
 
 .topic-group-icon {
@@ -266,17 +293,27 @@
   flex-shrink: 0;
 }
 
+.topic-group-title {
+  flex: 1;
+  min-width: 0;
+}
+
 .topic-group-title h3 {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-headings);
   margin: 0 0 4px 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .topic-group-meta {
   font-size: 12px;
   color: var(--text-caption);
   margin: 0;
+  white-space: normal;
+  overflow: visible;
 }
 
 .topic-group-actions {
@@ -431,21 +468,16 @@
 }
 
 .prompt-action-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
   background: white;
   border-top: 1px solid var(--primary200);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 101;
+  flex-shrink: 0;
 }
 
 .prompt-action-bar-content {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 20px 48px;
+  justify-content: flex-end;
+  padding: 20px 32px;
   max-width: 100%;
   margin: 0 auto;
 }

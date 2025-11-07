@@ -95,44 +95,54 @@ export const PromptSelection = () => {
 
   return (
     <Layout>
-      <div className="prompt-selection-page">
-        <button className="prompt-selection-back" onClick={() => navigate('/dashboard')} aria-label="Back">
-          <ChevronLeft size={20} />
-          <span>Back</span>
-        </button>
-        <div className="prompt-selection-header">
-          <div className="prompt-selection-header-content">
-            <h1>Evidently — Select Prompts</h1>
-            <p>Choose up to 40 queries for AI analysis</p>
+      <div className="prompt-selection-overlay">
+        <div className="prompt-selection-page">
+          <div className="prompt-selection-header">
+            <button className="prompt-selection-back" onClick={() => navigate('/dashboard')} aria-label="Back">
+              <ChevronLeft size={20} />
+              <span>Back</span>
+            </button>
+            <div className="progress-indicator">
+              <div className="progress-dot"></div>
+              <div className="progress-dot"></div>
+              <div className="progress-dot active"></div>
+            </div>
+            <div className="prompt-selection-header-content">
+              <h1>Configure Your Prompts</h1>
+              <div className="prompt-selection-count">
+                {selectedPrompts.size}/{MAX_PROMPTS} prompts selected
+              </div>
+            </div>
+            <span className="prompt-selection-step-badge">Step 3 of 3</span>
           </div>
+
+          <div className="prompt-selection-readiness">
+            <ReadinessScale percentage={readinessScore} status={readinessStatus} />
+          </div>
+
+          <TopicFilterBar
+            topics={topics.map(t => ({ id: t.id, name: t.name, icon: t.icon }))}
+            onFilterClick={handleFilterClick}
+          />
+
+          <div className="prompt-selection-content">
+            {topics.map((topic) => (
+              <TopicGroup
+                key={topic.id}
+                topic={topic}
+                selectedPrompts={selectedPrompts}
+                onTogglePrompt={handleTogglePrompt}
+                onAddCustomPrompt={handleAddCustomPrompt}
+              />
+            ))}
+          </div>
+
+          <ActionBar
+            selectedCount={selectedPrompts.size}
+            maxCount={MAX_PROMPTS}
+            onAnalyze={handleAnalyze}
+          />
         </div>
-
-        <div className="prompt-selection-readiness">
-          <ReadinessScale percentage={readinessScore} status={readinessStatus} />
-        </div>
-
-        <TopicFilterBar
-          topics={topics.map(t => ({ id: t.id, name: t.name, icon: t.icon }))}
-          onFilterClick={handleFilterClick}
-        />
-
-        <div className="prompt-selection-content">
-          {topics.map((topic) => (
-            <TopicGroup
-              key={topic.id}
-              topic={topic}
-              selectedPrompts={selectedPrompts}
-              onTogglePrompt={handleTogglePrompt}
-              onAddCustomPrompt={handleAddCustomPrompt}
-            />
-          ))}
-        </div>
-
-        <ActionBar
-          selectedCount={selectedPrompts.size}
-          maxCount={MAX_PROMPTS}
-          onAnalyze={handleAnalyze}
-        />
       </div>
     </Layout>
   );

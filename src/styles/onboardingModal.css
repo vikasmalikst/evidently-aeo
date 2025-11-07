@@ -17,13 +17,30 @@
   background: var(--bg-primary);
   border-radius: 8px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  width: 72vw;
-  height: 88vh;
+  width: 700px;
+  max-width: 90vw;
+  height: auto;
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   position: relative;
   overflow: hidden;
   animation: modalScale 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Modal size variants for different steps */
+.onboarding-modal-container.step-welcome {
+  width: 700px;
+  max-width: 90vw;
+}
+
+.onboarding-modal-container.step-ai-models,
+.onboarding-modal-container.step-prompts,
+.onboarding-modal-container.step-summary {
+  width: 72vw;
+  max-width: 1200px;
+  height: 88vh;
 }
 
 @keyframes modalScale {
@@ -177,13 +194,12 @@
 
 /* Welcome Screen */
 .onboarding-welcome-card {
-  padding: 0;
+  padding: 48px 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  height: 100%;
 }
 
 .onboarding-welcome-header {
@@ -612,7 +628,9 @@
 
 /* Responsive Design */
 @media (max-width: 1023px) {
-  .onboarding-modal-container {
+  .onboarding-modal-container.step-ai-models,
+  .onboarding-modal-container.step-prompts,
+  .onboarding-modal-container.step-summary {
     width: 85vw;
   }
 
@@ -628,9 +646,19 @@
 }
 
 @media (max-width: 767px) {
-  .onboarding-modal-container {
+  .onboarding-modal-container.step-welcome {
+    width: 95vw;
+  }
+
+  .onboarding-modal-container.step-ai-models,
+  .onboarding-modal-container.step-prompts,
+  .onboarding-modal-container.step-summary {
     width: 95vw;
     height: 90vh;
+  }
+
+  .onboarding-welcome-card {
+    padding: 32px 24px;
   }
 
   .onboarding-modal-header,

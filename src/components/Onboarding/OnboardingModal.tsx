@@ -84,7 +84,7 @@ export const OnboardingModal = ({
   if (currentStep === 'welcome') {
     return (
       <div className="onboarding-modal-overlay" onClick={onClose}>
-        <div className="onboarding-modal-container onboarding-welcome-container" onClick={(e) => e.stopPropagation()}>
+        <div className="onboarding-modal-container step-welcome" onClick={(e) => e.stopPropagation()}>
           <WelcomeScreen onGetStarted={handleNext} />
         </div>
       </div>
@@ -110,7 +110,10 @@ export const OnboardingModal = ({
   // For models and prompts steps, use the new layout
   return (
     <div className="onboarding-modal-overlay" onClick={onClose}>
-      <div className="onboarding-modal-container" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`onboarding-modal-container step-${currentStep}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="onboarding-progress-bar">
           <div
             className="onboarding-progress-fill"

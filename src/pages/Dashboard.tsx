@@ -57,7 +57,10 @@ export const Dashboard = () => {
     const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
     const hasCompletedPromptSelection = localStorage.getItem('onboarding_prompts');
 
-    console.log('Dashboard useEffect - Checking flow:', {
+    console.log('=== Dashboard useEffect Running ===');
+    console.log('hasShownModalRef.current:', hasShownModalRef.current);
+    console.log('showOnboardingModal:', showOnboardingModal);
+    console.log('Checking flow:', {
       hasCompletedOnboarding,
       hasCompletedModelSelection,
       hasCompletedTopicSelection,
@@ -73,19 +76,23 @@ export const Dashboard = () => {
     // Check if we need to show the onboarding modal (models, topics, prompts)
     if (!hasCompletedModelSelection || !hasCompletedTopicSelection || !hasCompletedPromptSelection) {
       console.log('Incomplete setup - checking if modal should show');
+      console.log('hasShownModalRef.current =', hasShownModalRef.current);
       if (!hasShownModalRef.current) {
-        console.log('Modal not shown yet - setting to show in 500ms');
+        console.log('✅ Modal not shown yet - setting to show in 500ms');
         hasShownModalRef.current = true;
         const timer = setTimeout(() => {
-          console.log('Setting showOnboardingModal to true');
+          console.log('⏰ Timeout fired - Setting showOnboardingModal to true');
           setShowOnboardingModal(true);
         }, 500);
-        return () => clearTimeout(timer);
+        return () => {
+          console.log('🧹 Cleanup - clearing timeout');
+          clearTimeout(timer);
+        };
       } else {
-        console.log('Modal already triggered - not resetting');
+        console.log('⚠️ Modal already triggered - not resetting');
       }
     } else {
-      console.log('All onboarding complete - showing full dashboard');
+      console.log('✅ All onboarding complete - showing full dashboard');
     }
   }, [navigate]);
 
@@ -95,11 +102,13 @@ export const Dashboard = () => {
     localStorage.setItem('onboarding_topics', JSON.stringify(data.topics));
     localStorage.setItem('onboarding_prompts', JSON.stringify(data.prompts));
     setShowOnboardingModal(false);
+    hasShownModalRef.current = false; // Reset for next time
   }, []);
 
   const handleOnboardingClose = useCallback(() => {
     console.log('handleOnboardingClose called');
     setShowOnboardingModal(false);
+    hasShownModalRef.current = false; // Reset for next time
   }, []);
 
   const totalPrompts = mockPromptsData.reduce((sum, topic) => sum + topic.prompts.length, 0);

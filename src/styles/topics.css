@@ -29,17 +29,50 @@
 
 /* Modal Header */
 .topic-modal-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
   align-items: center;
-  justify-content: space-between;
+  gap: 24px;
   padding: 32px;
   border-bottom: 1px solid var(--primary200);
+  position: relative;
 }
 
 .topic-modal-header-content {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex: 1;
+  min-width: 0;
+}
+
+.topic-modal-header-right {
+  display: flex;
+  align-items: center;
   gap: 16px;
+  flex-shrink: 0;
+}
+
+.topic-modal-header .progress-indicator {
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topic-modal-header .progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary300);
+  transition: all 0.3s ease;
+}
+
+.topic-modal-header .progress-dot.active {
+  width: 24px;
+  border-radius: 12px;
+  background: var(--accent500);
 }
 
 .topic-modal-title {
@@ -76,9 +109,6 @@
 }
 
 .topic-modal-back {
-  position: absolute;
-  top: 32px;
-  left: 32px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -91,7 +121,6 @@
   transition: background-color 0.2s ease;
   font-size: 14px;
   font-weight: 500;
-  z-index: 10;
 }
 
 .topic-modal-back:hover {

@@ -179,10 +179,6 @@ export const TopicSelectionModal = ({
             <ChevronLeft size={20} />
             <span>Back</span>
           </button>
-          <div className="progress-indicator">
-            <div className="progress-dot"></div>
-            <div className="progress-dot active"></div>
-          </div>
           <div className="topic-modal-header-content">
             <div>
               <h2 className="topic-modal-title">Configure Your Topics</h2>
@@ -190,11 +186,15 @@ export const TopicSelectionModal = ({
                 {selectedTopics.size}/{MAX_TOPICS} topics selected
               </div>
             </div>
-            <span className="topic-modal-step-badge">Step 1 of 3</span>
+            <div className="topic-modal-header-right">
+              <div className="progress-indicator">
+                <div className="progress-dot"></div>
+                <div className="progress-dot active"></div>
+                <div className="progress-dot"></div>
+              </div>
+              <span className="topic-modal-step-badge">Step 1 of 3</span>
+            </div>
           </div>
-          <button className="topic-modal-close" onClick={onClose} aria-label="Close">
-            <X size={24} />
-          </button>
         </div>
 
         <div className="topic-modal-body">

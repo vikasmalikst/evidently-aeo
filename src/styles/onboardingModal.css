@@ -35,7 +35,7 @@
   max-width: 90vw;
 }
 
-.onboarding-modal-container.step-ai-models,
+.onboarding-modal-container.step-models,
 .onboarding-modal-container.step-prompts,
 .onboarding-modal-container.step-summary {
   width: 72vw;
@@ -668,7 +668,7 @@
 
 /* Responsive Design */
 @media (max-width: 1023px) {
-  .onboarding-modal-container.step-ai-models,
+  .onboarding-modal-container.step-models,
   .onboarding-modal-container.step-prompts,
   .onboarding-modal-container.step-summary {
     width: 85vw;
@@ -690,7 +690,7 @@
     width: 95vw;
   }
 
-  .onboarding-modal-container.step-ai-models,
+  .onboarding-modal-container.step-models,
   .onboarding-modal-container.step-prompts,
   .onboarding-modal-container.step-summary {
     width: 95vw;

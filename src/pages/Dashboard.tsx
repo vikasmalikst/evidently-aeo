@@ -36,6 +36,7 @@ export const Dashboard = () => {
   const [startDate, setStartDate] = useState('2024-10-01');
   const [endDate, setEndDate] = useState('2024-10-31');
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const hasShownModalRef = useRef(false);
 
   const getBrandData = () => {
     const brandInfo = localStorage.getItem('onboarding_brand');
@@ -71,12 +72,18 @@ export const Dashboard = () => {
 
     // Check if we need to show the onboarding modal (models, topics, prompts)
     if (!hasCompletedModelSelection || !hasCompletedTopicSelection || !hasCompletedPromptSelection) {
-      console.log('Incomplete setup - showing onboarding modal in 500ms');
-      const timer = setTimeout(() => {
-        console.log('Setting showOnboardingModal to true');
-        setShowOnboardingModal(true);
-      }, 500);
-      return () => clearTimeout(timer);
+      console.log('Incomplete setup - checking if modal should show');
+      if (!hasShownModalRef.current) {
+        console.log('Modal not shown yet - setting to show in 500ms');
+        hasShownModalRef.current = true;
+        const timer = setTimeout(() => {
+          console.log('Setting showOnboardingModal to true');
+          setShowOnboardingModal(true);
+        }, 500);
+        return () => clearTimeout(timer);
+      } else {
+        console.log('Modal already triggered - not resetting');
+      }
     } else {
       console.log('All onboarding complete - showing full dashboard');
     }

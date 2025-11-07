@@ -9,9 +9,18 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
   return (
     <div className="topic-welcome-card">
       <div className="progress-indicator">
-        <div className="progress-dot active"></div>
-        <div className="progress-dot"></div>
-        <div className="progress-dot"></div>
+        <div className="progress-step">
+          <div className="progress-dot active"></div>
+          <span className="progress-label">Topics</span>
+        </div>
+        <div className="progress-step">
+          <div className="progress-dot"></div>
+          <span className="progress-label">Models</span>
+        </div>
+        <div className="progress-step">
+          <div className="progress-dot"></div>
+          <span className="progress-label">Prompts</span>
+        </div>
       </div>
 
       <div className="topic-welcome-header">
@@ -21,10 +30,10 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
 
       <div className="topic-welcome-description">
         <p>
-          To start tracking your brand's visibility across AI platforms, we'll first help you select the topics that matter most to your business. These topics will help us generate relevant search queries and build accurate visibility metrics.
+          To start tracking your brand's visibility across AI platforms, we'll guide you through three simple steps to configure your monitoring.
         </p>
         <p>
-          In this process, you'll choose 5-10 topics from our curated suggestions or create your own custom topics. Then, you'll select which AI platforms to track. Once complete, we'll use these to configure the specific prompts we'll monitor across AI engines.
+          First, select which AI models to track. Then, choose 5-10 topics from our curated suggestions or create your own. Finally, we'll configure the specific prompts to monitor across AI engines.
         </p>
       </div>
 
@@ -32,16 +41,16 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
         <div className="topic-step-item active">
           <div className="topic-step-number">1</div>
           <div className="topic-step-content">
-            <h3>Select Topics</h3>
-            <p>Choose 5-10 topics that matter most to your brand visibility</p>
+            <h3>Select AI Models</h3>
+            <p>Choose which AI platforms to track your visibility across</p>
           </div>
         </div>
 
         <div className="topic-step-item">
           <div className="topic-step-number">2</div>
           <div className="topic-step-content">
-            <h3>Select LLMs</h3>
-            <p>Choose which AI platforms to track your visibility across</p>
+            <h3>Select Topics</h3>
+            <p>Choose 5-10 topics that matter most to your brand visibility</p>
           </div>
         </div>
 

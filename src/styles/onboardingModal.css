@@ -512,11 +512,60 @@
   font-family: 'IBM Plex Sans', sans-serif;
 }
 
-.prompt-counter {
-  font-size: 14px;
-  color: var(--text-caption);
-  text-align: center;
+.prompt-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.prompt-topic-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+}
+
+.prompt-topic-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
   font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-topic-pill:hover {
+  background: var(--accent-light);
+  border-color: var(--accent500);
+  color: var(--accent500);
+}
+
+.prompt-pill-badge {
+  background: var(--accent500);
+  color: var(--text-inverse);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 18px;
+  text-align: center;
+}
+
+.prompt-counter {
+  font-size: 13px;
+  color: var(--text-caption);
+  font-family: 'IBM Plex Sans', sans-serif;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .prompt-counter strong {
@@ -826,6 +875,15 @@
 
   .prompt-suggestions-grid {
     grid-template-columns: 1fr;
+  }
+
+  .prompt-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .prompt-counter {
+    text-align: center;
   }
 
   .onboarding-back-button span {

@@ -1,5 +1,5 @@
 import { IconInfoCircle, IconPlus, IconTrash, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { Topic } from '../../types/topic';
 
 interface PromptConfigurationProps {
@@ -57,6 +57,7 @@ function getPromptsForTopic(topic: Topic): string[] {
 export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPromptsChange }: PromptConfigurationProps) => {
   const [customPrompt, setCustomPrompt] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set([selectedTopics[0]?.id]));
+  const topicRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const toggleTopic = (topicId: string) => {
     const newExpanded = new Set(expandedTopics);
@@ -66,6 +67,16 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
       newExpanded.add(topicId);
     }
     setExpandedTopics(newExpanded);
+  };
+
+  const scrollToTopic = (topicId: string) => {
+    const element = topicRefs.current[topicId];
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!expandedTopics.has(topicId)) {
+        toggleTopic(topicId);
+      }
+    }
   };
 
   const handleTogglePrompt = (prompt: string) => {
@@ -102,8 +113,27 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
         </p>
       </div>
 
-      <div className="prompt-counter">
-        You've selected <strong>{selectedPrompts.length}</strong> prompts across {selectedTopics.length} topics
+      <div className="prompt-header-row">
+        <div className="prompt-topic-pills">
+          {selectedTopics.map((topic) => {
+            const selectedCount = getSelectedCountForTopic(topic);
+            return (
+              <button
+                key={topic.id}
+                className="prompt-topic-pill"
+                onClick={() => scrollToTopic(topic.id)}
+              >
+                {topic.name}
+                {selectedCount > 0 && (
+                  <span className="prompt-pill-badge">{selectedCount}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="prompt-counter">
+          <strong>{selectedPrompts.length}</strong> prompts selected
+        </div>
       </div>
 
       <div className="prompt-topics-accordion">
@@ -113,7 +143,11 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
           const selectedCount = getSelectedCountForTopic(topic);
 
           return (
-            <div key={topic.id} className="prompt-topic-section">
+            <div
+              key={topic.id}
+              className="prompt-topic-section"
+              ref={(el) => (topicRefs.current[topic.id] = el)}
+            >
               <button
                 className="prompt-topic-header"
                 onClick={() => toggleTopic(topic.id)}
@@ -182,26 +216,6 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
           </button>
         </div>
       </div>
-
-      {selectedPrompts.length > 0 && (
-        <div className="prompt-section">
-          <h3 className="prompt-section-title">Your Selected Prompts ({selectedPrompts.length})</h3>
-          <div className="prompt-selected-list">
-            {selectedPrompts.map((prompt) => (
-              <div key={prompt} className="prompt-selected-item">
-                <span className="prompt-text">{prompt}</span>
-                <button
-                  className="prompt-remove-button"
-                  onClick={() => handleRemovePrompt(prompt)}
-                  aria-label={`Remove ${prompt}`}
-                >
-                  <IconTrash size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

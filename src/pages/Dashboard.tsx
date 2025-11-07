@@ -120,6 +120,23 @@ export const Dashboard = () => {
 
   return (
     <Layout>
+      {/* DEBUG BANNER */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        background: 'red',
+        color: 'white',
+        padding: '10px',
+        zIndex: 99999,
+        fontSize: '14px',
+        fontFamily: 'monospace'
+      }}>
+        DEBUG: showTopicModal = {showTopicModal ? 'TRUE' : 'FALSE'} |
+        onboarding_topics = {localStorage.getItem('onboarding_topics') || 'NULL'}
+      </div>
+
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
         {criticalAlerts > 0 && (
           <div className="bg-[#fff8f0] border border-[#f9db43] rounded-lg p-4 mb-6 flex items-start gap-3">

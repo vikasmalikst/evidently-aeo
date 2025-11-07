@@ -1,4 +1,4 @@
-import { IconInfoCircle, IconPlus, IconTrash, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { IconInfoCircle, IconPlus, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { useState, useRef } from 'react';
 import type { Topic } from '../../types/topic';
 
@@ -41,23 +41,36 @@ const TOPIC_PROMPTS: Record<string, string[]> = {
   ]
 };
 
-function getPromptsForTopic(topic: Topic): string[] {
+function getPromptsForTopic(topic: Topic, customPrompts: Record<string, string[]> = {}): string[] {
   const topicKey = topic.id.toLowerCase().replace(/\s+/g, '-');
-  if (TOPIC_PROMPTS[topicKey]) {
-    return TOPIC_PROMPTS[topicKey];
-  }
-
-  return [
+  const basePrompts = TOPIC_PROMPTS[topicKey] || [
     `Best ${topic.name.toLowerCase()} solutions`,
     `How to choose ${topic.name.toLowerCase()}`,
     `Top ${topic.name.toLowerCase()} providers`
   ];
+
+  const custom = customPrompts[topic.id] || [];
+  return [...basePrompts, ...custom];
+}
+
+function isCustomPrompt(prompt: string, customPrompts: Record<string, string[]>): boolean {
+  return Object.values(customPrompts).some(prompts => prompts.includes(prompt));
+}
+
+interface CustomPromptData {
+  text: string;
+  topicId: string;
+  isCustom: boolean;
 }
 
 export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPromptsChange }: PromptConfigurationProps) => {
   const [customPrompt, setCustomPrompt] = useState('');
+  const [selectedTopicForCustom, setSelectedTopicForCustom] = useState('');
+  const [showCustomModal, setShowCustomModal] = useState(false);
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set([selectedTopics[0]?.id]));
+  const [customPromptsByTopic, setCustomPromptsByTopic] = useState<Record<string, string[]>>({});
   const topicRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const modalButtonRef = useRef<HTMLButtonElement>(null);
 
   const toggleTopic = (topicId: string) => {
     const newExpanded = new Set(expandedTopics);
@@ -87,11 +100,29 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
     }
   };
 
-  const handleAddCustomPrompt = (topicId?: string) => {
-    if (customPrompt.trim() && !selectedPrompts.includes(customPrompt.trim())) {
+  const handleAddCustomPrompt = () => {
+    if (customPrompt.trim() && selectedTopicForCustom && !selectedPrompts.includes(customPrompt.trim())) {
+      const updatedCustomPrompts = {
+        ...customPromptsByTopic,
+        [selectedTopicForCustom]: [...(customPromptsByTopic[selectedTopicForCustom] || []), customPrompt.trim()]
+      };
+      setCustomPromptsByTopic(updatedCustomPrompts);
       onPromptsChange([...selectedPrompts, customPrompt.trim()]);
       setCustomPrompt('');
+      setSelectedTopicForCustom('');
+      setShowCustomModal(false);
     }
+  };
+
+  const handleOpenCustomModal = () => {
+    setShowCustomModal(true);
+    setSelectedTopicForCustom(selectedTopics[0]?.id || '');
+  };
+
+  const handleCloseCustomModal = () => {
+    setShowCustomModal(false);
+    setCustomPrompt('');
+    setSelectedTopicForCustom('');
   };
 
   const handleRemovePrompt = (prompt: string) => {
@@ -99,7 +130,7 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
   };
 
   const getSelectedCountForTopic = (topic: Topic): number => {
-    const topicPrompts = getPromptsForTopic(topic);
+    const topicPrompts = getPromptsForTopic(topic, customPromptsByTopic);
     return topicPrompts.filter(p => selectedPrompts.includes(p)).length;
   };
 
@@ -139,7 +170,7 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
       <div className="prompt-topics-accordion">
         {selectedTopics.map((topic) => {
           const isExpanded = expandedTopics.has(topic.id);
-          const topicPrompts = getPromptsForTopic(topic);
+          const topicPrompts = getPromptsForTopic(topic, customPromptsByTopic);
           const selectedCount = getSelectedCountForTopic(topic);
 
           return (
@@ -169,6 +200,7 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
                   <div className="prompt-list">
                     {topicPrompts.map((prompt) => {
                       const isSelected = selectedPrompts.includes(prompt);
+                      const isCustom = isCustomPrompt(prompt, customPromptsByTopic);
                       return (
                         <label key={prompt} className="prompt-checkbox-item">
                           <input
@@ -177,7 +209,10 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
                             onChange={() => handleTogglePrompt(prompt)}
                             className="prompt-checkbox"
                           />
-                          <span className="prompt-label">{prompt}</span>
+                          <span className="prompt-label">
+                            {prompt}
+                            {isCustom && <span className="prompt-custom-badge">Custom</span>}
+                          </span>
                         </label>
                       );
                     })}
@@ -189,33 +224,83 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
         })}
       </div>
 
-      <div className="prompt-section">
-        <h3 className="prompt-section-title">Add Custom Prompt</h3>
-        <div className="prompt-custom-input-wrapper">
-          <input
-            type="text"
-            className="prompt-custom-input"
-            placeholder="Enter your custom search query..."
-            value={customPrompt}
-            onChange={(e) => setCustomPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleAddCustomPrompt();
-              }
-            }}
-          />
-          <button
-            className="prompt-add-button"
-            onClick={() => handleAddCustomPrompt()}
-            disabled={!customPrompt.trim()}
-            aria-label="Add custom prompt"
-          >
-            <IconPlus size={20} />
-            Add
-          </button>
-        </div>
+      <div className="prompt-custom-button-wrapper">
+        <button
+          ref={modalButtonRef}
+          className="prompt-custom-trigger-button"
+          onClick={handleOpenCustomModal}
+        >
+          <IconPlus size={18} />
+          Add Custom Prompt
+        </button>
       </div>
+
+      {showCustomModal && (
+        <div className="prompt-custom-modal-overlay" onClick={handleCloseCustomModal}>
+          <div
+            className="prompt-custom-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              bottom: modalButtonRef.current ? `${window.innerHeight - modalButtonRef.current.getBoundingClientRect().top + 8}px` : '50%',
+              left: '50%',
+              transform: 'translateX(-50%)'
+            }}
+          >
+            <div className="prompt-custom-modal-header">
+              <h3>Add Custom Prompt</h3>
+            </div>
+            <div className="prompt-custom-modal-body">
+              <div className="prompt-custom-form-group">
+                <label className="prompt-custom-label">Select Topic</label>
+                <select
+                  className="prompt-custom-select"
+                  value={selectedTopicForCustom}
+                  onChange={(e) => setSelectedTopicForCustom(e.target.value)}
+                >
+                  {selectedTopics.map((topic) => (
+                    <option key={topic.id} value={topic.id}>
+                      {topic.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="prompt-custom-form-group">
+                <label className="prompt-custom-label">Custom Prompt</label>
+                <input
+                  type="text"
+                  className="prompt-custom-modal-input"
+                  placeholder="Enter your custom search query..."
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomPrompt();
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="prompt-custom-modal-footer">
+              <button
+                className="prompt-custom-cancel-button"
+                onClick={handleCloseCustomModal}
+              >
+                Cancel
+              </button>
+              <button
+                className="prompt-custom-submit-button"
+                onClick={handleAddCustomPrompt}
+                disabled={!customPrompt.trim() || !selectedTopicForCustom}
+              >
+                Add Prompt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

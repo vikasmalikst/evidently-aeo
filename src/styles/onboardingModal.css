@@ -824,6 +824,198 @@
   color: var(--text-error);
 }
 
+/* Custom Prompt Modal */
+.prompt-custom-button-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+  position: relative;
+}
+
+.prompt-custom-trigger-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-trigger-button:hover {
+  background: var(--accent-light);
+  border-color: var(--accent500);
+  color: var(--accent500);
+  box-shadow: var(--shadow-sm);
+}
+
+.prompt-custom-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prompt-custom-modal {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  width: 440px;
+  max-width: 90vw;
+  animation: modalSlideUp 0.2s ease-out;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.prompt-custom-modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.prompt-custom-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-headings);
+  font-family: 'Sora', sans-serif;
+}
+
+.prompt-custom-modal-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.prompt-custom-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prompt-custom-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-headings);
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-select {
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-body);
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-select:focus {
+  outline: none;
+  border-color: var(--accent500);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.prompt-custom-modal-input {
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-body);
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-modal-input:focus {
+  outline: none;
+  border-color: var(--accent500);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.prompt-custom-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-default);
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.prompt-custom-cancel-button {
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-cancel-button:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-caption);
+}
+
+.prompt-custom-submit-button {
+  padding: 10px 20px;
+  background: var(--accent500);
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-inverse);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+  box-shadow: var(--shadow-sm);
+}
+
+.prompt-custom-submit-button:hover:not(:disabled) {
+  background: var(--accent600);
+  box-shadow: var(--shadow-md);
+}
+
+.prompt-custom-submit-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.prompt-custom-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--accent-light);
+  color: var(--accent500);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
 /* Responsive Design */
 @media (max-width: 1023px) {
   .onboarding-modal-container.step-models,

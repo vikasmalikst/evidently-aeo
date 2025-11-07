@@ -162,8 +162,18 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
             );
           })}
         </div>
-        <div className="prompt-counter">
-          <strong>{selectedPrompts.length}</strong> prompts selected
+        <div className="prompt-header-right">
+          <button
+            ref={modalButtonRef}
+            className="prompt-custom-trigger-button"
+            onClick={handleOpenCustomModal}
+          >
+            <IconPlus size={18} />
+            Add Custom Prompt
+          </button>
+          <div className="prompt-counter">
+            <strong>{selectedPrompts.length}</strong> prompts selected
+          </div>
         </div>
       </div>
 
@@ -222,17 +232,6 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
             </div>
           );
         })}
-      </div>
-
-      <div className="prompt-custom-button-wrapper">
-        <button
-          ref={modalButtonRef}
-          className="prompt-custom-trigger-button"
-          onClick={handleOpenCustomModal}
-        >
-          <IconPlus size={18} />
-          Add Custom Prompt
-        </button>
       </div>
 
       {showCustomModal && (

@@ -4,7 +4,8 @@
 .onboarding-modal-overlay {
   position: fixed;
   inset: 0;
-  background: var(--bg-inverse);
+  background: rgba(26, 29, 41, 0.75);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -27,6 +28,29 @@
   overflow: hidden;
   animation: modalScale 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Close Button */
+.onboarding-close-button {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-caption);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding-close-button:hover {
+  background: var(--bg-secondary);
+  color: var(--text-headings);
 }
 
 /* Modal size variants for different steps */
@@ -188,6 +212,18 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   pointer-events: none;
   z-index: 10;
+  animation: tooltipFadeIn 0.2s ease-out;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .onboarding-button-tooltip::after {
@@ -372,6 +408,12 @@
   font-weight: 600;
 }
 
+.ai-model-counter-hint {
+  color: #64748b;
+  font-size: 12px;
+  font-style: italic;
+}
+
 .ai-model-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -415,10 +457,11 @@
 }
 
 .ai-model-card.disabled {
-  background: #F4F4F6;
+  background: #F9F9FB;
   border: 1px dashed #E8E9ED;
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .ai-model-card.disabled .ai-model-name,
@@ -712,7 +755,17 @@
   }
 
   .ai-model-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .ai-model-card {
+    padding: 16px;
+    min-height: 140px;
+  }
+
+  .ai-model-logo {
+    font-size: 40px;
   }
 
   .prompt-suggestions-grid {

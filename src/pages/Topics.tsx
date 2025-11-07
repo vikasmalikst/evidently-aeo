@@ -1,6 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { TopicTreemap } from '../components/Topics/TopicTreemap';
+import { WelcomeScreen } from '../components/Topics/WelcomeScreen';
+import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
+import type { Brand } from '../api/onboardingMock';
+import type { Topic } from '../types/topic';
 
 interface TopicData {
   id: string;
@@ -151,6 +156,48 @@ const mockTopics: TopicData[] = [
 ];
 
 export const Topics = () => {
+  const navigate = useNavigate();
+  const [showTopicSelection, setShowTopicSelection] = useState(false);
+  const [isFirstTime, setIsFirstTime] = useState(false);
+  const [brand, setBrand] = useState<Brand | null>(null);
+
+  useEffect(() => {
+    const onboardingInitial = localStorage.getItem('onboarding_initial');
+    const topicsSelected = localStorage.getItem('onboarding_topics');
+    const brandData = localStorage.getItem('onboarding_brand');
+
+    if (brandData) {
+      setBrand(JSON.parse(brandData));
+    }
+
+    if (onboardingInitial && !topicsSelected) {
+      setIsFirstTime(true);
+      setShowTopicSelection(true);
+    }
+  }, []);
+
+  const handleTopicsSelected = (selectedTopics: Topic[]) => {
+    localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
+    setShowTopicSelection(false);
+
+    if (isFirstTime) {
+      navigate('/prompt-selection');
+    }
+  };
+
+  const handleBack = () => {
+    if (isFirstTime) {
+      navigate('/onboarding');
+    }
+  };
+
+  const handleClose = () => {
+    setShowTopicSelection(false);
+    if (isFirstTime) {
+      navigate('/dashboard');
+    }
+  };
+
   return (
     <Layout>
       <div className="p-6">
@@ -163,6 +210,16 @@ export const Topics = () => {
 
         <TopicTreemap topics={mockTopics} />
       </div>
+
+      {showTopicSelection && brand && (
+        <TopicSelectionModal
+          brandName={brand.companyName}
+          industry={brand.industry}
+          onNext={handleTopicsSelected}
+          onBack={handleBack}
+          onClose={handleClose}
+        />
+      )}
     </Layout>
   );
 };

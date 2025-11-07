@@ -28,17 +28,17 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
       </div>
 
       <div className="topic-steps-overview">
-        <div className="step-item active">
-          <div className="step-number">1</div>
-          <div className="step-content">
+        <div className="topic-step-item active">
+          <div className="topic-step-number">1</div>
+          <div className="topic-step-content">
             <h3>Select Topics</h3>
             <p>Choose 5-10 topics that matter most to your brand visibility</p>
           </div>
         </div>
 
-        <div className="step-item">
-          <div className="step-number">2</div>
-          <div className="step-content">
+        <div className="topic-step-item">
+          <div className="topic-step-number">2</div>
+          <div className="topic-step-content">
             <h3>Configure Prompts</h3>
             <p>Select search queries to track your AI visibility</p>
           </div>

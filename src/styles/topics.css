@@ -107,6 +107,46 @@
   margin: 0;
 }
 
+.topic-welcome-description {
+  margin-bottom: 32px;
+  text-align: left;
+}
+
+.topic-welcome-description p {
+  margin: 0 0 16px 0;
+  font-size: 15px;
+  color: var(--text-body);
+  line-height: 1.6;
+}
+
+.topic-welcome-description p:last-child {
+  margin-bottom: 0;
+}
+
+.info-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin-bottom: 32px;
+  text-align: left;
+}
+
+.info-message .icon {
+  color: var(--accent500);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.info-message p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-body);
+  line-height: 1.5;
+}
+
 .topic-steps-overview {
   display: flex;
   flex-direction: column;

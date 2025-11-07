@@ -155,8 +155,8 @@ export const TopicSelectionModal = ({
   if (showWelcome) {
     console.log('Rendering WelcomeScreen');
     return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+      <div className="topic-modal-overlay" onClick={onClose}>
+        <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
           <button className="topic-modal-close" onClick={onClose} aria-label="Close">
             <X size={24} />
           </button>
@@ -175,9 +175,9 @@ export const TopicSelectionModal = ({
   });
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+    <div className="topic-modal-overlay" onClick={onClose}>
+      <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
+        <div className="topic-modal-header">
           <div className="progress-indicator">
             <div className="progress-dot"></div>
             <div className="progress-dot active"></div>
@@ -196,7 +196,7 @@ export const TopicSelectionModal = ({
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="topic-modal-body">
           <div className="topic-quality-section">
             <div className="topic-quality-indicator-main">
               <span className="topic-quality-label">Selection Quality: {getQualityLabel()}</span>
@@ -267,7 +267,7 @@ export const TopicSelectionModal = ({
           />
         </div>
 
-        <div className="modal-footer">
+        <div className="topic-modal-footer">
           <button
             className="topic-btn-primary topic-btn-full"
             onClick={handleNext}

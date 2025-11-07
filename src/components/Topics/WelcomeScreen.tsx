@@ -11,6 +11,7 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
       <div className="progress-indicator">
         <div className="progress-dot active"></div>
         <div className="progress-dot"></div>
+        <div className="progress-dot"></div>
       </div>
 
       <div className="topic-welcome-header">
@@ -23,7 +24,7 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
           To start tracking your brand's visibility across AI platforms, we'll first help you select the topics that matter most to your business. These topics will help us generate relevant search queries and build accurate visibility metrics.
         </p>
         <p>
-          In this process, you'll choose 5-10 topics from our curated suggestions or create your own custom topics. Once complete, we'll use these topics to configure the specific prompts we'll monitor across AI engines.
+          In this process, you'll choose 5-10 topics from our curated suggestions or create your own custom topics. Then, you'll select which AI platforms to track. Once complete, we'll use these to configure the specific prompts we'll monitor across AI engines.
         </p>
       </div>
 
@@ -38,6 +39,14 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
 
         <div className="topic-step-item">
           <div className="topic-step-number">2</div>
+          <div className="topic-step-content">
+            <h3>Select LLMs</h3>
+            <p>Choose which AI platforms to track your visibility across</p>
+          </div>
+        </div>
+
+        <div className="topic-step-item">
+          <div className="topic-step-number">3</div>
           <div className="topic-step-content">
             <h3>Configure Prompts</h3>
             <p>Select search queries to track your AI visibility</p>

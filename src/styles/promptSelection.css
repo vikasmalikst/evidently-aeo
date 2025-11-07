@@ -494,6 +494,180 @@
   border-color: var(--accent500);
 }
 
+.add-prompt-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.add-prompt-modal {
+  width: 90%;
+  max-width: 560px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.add-prompt-modal-header {
+  padding: 24px 28px;
+  border-bottom: 1px solid var(--primary200);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.add-prompt-modal-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-headings);
+  margin: 0 0 4px 0;
+}
+
+.add-prompt-modal-subtitle {
+  font-size: 14px;
+  color: var(--text-body);
+  margin: 0;
+}
+
+.add-prompt-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-body);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.add-prompt-modal-close:hover {
+  background: var(--bg-secondary);
+}
+
+.add-prompt-modal-body {
+  padding: 24px 28px;
+}
+
+.add-prompt-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.add-prompt-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-headings);
+}
+
+.add-prompt-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--primary200);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-headings);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 100px;
+  transition: border-color 0.2s ease;
+}
+
+.add-prompt-textarea:focus {
+  outline: none;
+  border-color: var(--accent500);
+  box-shadow: 0 0 0 3px var(--accent100);
+}
+
+.add-prompt-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.add-prompt-error {
+  font-size: 13px;
+  color: var(--error500);
+  margin: 0;
+}
+
+.add-prompt-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.add-prompt-modal-footer {
+  padding: 20px 28px;
+  border-top: 1px solid var(--primary200);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.add-prompt-cancel-button {
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid var(--primary200);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-prompt-cancel-button:hover {
+  background: var(--bg-secondary);
+  border-color: var(--primary300);
+}
+
+.add-prompt-submit-button {
+  padding: 10px 20px;
+  background: var(--accent500);
+  border: 1px solid var(--accent500);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-prompt-submit-button:hover {
+  background: var(--accent600);
+  border-color: var(--accent600);
+}
+
 .prompt-action-bar {
   background: white;
   border-top: 1px solid var(--primary200);

@@ -6,6 +6,7 @@ import { ReadinessScale } from '../components/PromptSelection/ReadinessScale';
 import { TopicFilterBar } from '../components/PromptSelection/TopicFilterBar';
 import { TopicGroup } from '../components/PromptSelection/TopicGroup';
 import { ActionBar } from '../components/PromptSelection/ActionBar';
+import { AddPromptModal } from '../components/PromptSelection/AddPromptModal';
 import { mockPromptSelectionData } from '../data/mockPromptSelectionData';
 
 const MAX_PROMPTS = 40;
@@ -16,6 +17,8 @@ export const PromptSelection = () => {
   const [selectedPrompts, setSelectedPrompts] = useState<Set<string>>(new Set());
   const [readinessScore, setReadinessScore] = useState(0);
   const [readinessStatus, setReadinessStatus] = useState('Incomplete');
+  const [isAddPromptModalOpen, setIsAddPromptModalOpen] = useState(false);
+  const [selectedTopicForAdd, setSelectedTopicForAdd] = useState<{id: string; name: string} | null>(null);
 
   useEffect(() => {
     const preselected = topics.flatMap(t =>
@@ -82,7 +85,15 @@ export const PromptSelection = () => {
   };
 
   const handleAddCustomPrompt = (topicId: string) => {
-    alert(`Add custom prompt feature for topic ${topicId} - to be implemented`);
+    const topic = topics.find(t => t.id === topicId);
+    if (topic) {
+      setSelectedTopicForAdd({ id: topic.id, name: topic.name });
+      setIsAddPromptModalOpen(true);
+    }
+  };
+
+  const handleAddPrompt = (promptText: string) => {
+    console.log('Adding custom prompt:', promptText, 'to topic:', selectedTopicForAdd);
   };
 
   const handleAnalyze = () => {
@@ -144,6 +155,13 @@ export const PromptSelection = () => {
           />
         </div>
       </div>
+
+      <AddPromptModal
+        isOpen={isAddPromptModalOpen}
+        onClose={() => setIsAddPromptModalOpen(false)}
+        onAdd={handleAddPrompt}
+        topicName={selectedTopicForAdd?.name || ''}
+      />
     </Layout>
   );
 };

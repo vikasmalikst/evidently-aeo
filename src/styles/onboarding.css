@@ -580,6 +580,62 @@
   min-width: 140px;
 }
 
+.onboarding-actions--single {
+  justify-content: center;
+  border-top: none;
+}
+
+.onboarding-llm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.onboarding-llm-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  position: relative;
+  padding: 8px;
+}
+
+.onboarding-llm-card__checkbox {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.onboarding-card--selected .onboarding-llm-card__checkbox {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.onboarding-llm-card__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-headings);
+  margin: 0;
+}
+
+.onboarding-llm-card__provider {
+  font-size: 13px;
+  color: var(--text-caption);
+  margin: 0;
+}
+
 .onboarding-summary {
   max-width: 700px;
   margin: 0 auto;
@@ -762,29 +818,37 @@
 
 .onboarding-step-indicator {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .onboarding-step-indicator__item {
   display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+
+.onboarding-step-indicator__content {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .onboarding-step-indicator__circle {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   border: 2px solid var(--border-default);
   background: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-caption);
   transition: all 0.3s ease;
+  flex-shrink: 0;
 }
 
 .onboarding-step-indicator__circle--current {
@@ -800,9 +864,10 @@
 }
 
 .onboarding-step-indicator__label {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-caption);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .onboarding-step-indicator__label--current {
@@ -811,10 +876,13 @@
 }
 
 .onboarding-step-indicator__line {
-  width: 40px;
-  height: 2px;
+  width: 2px;
+  height: 16px;
   background: var(--border-default);
   transition: all 0.3s ease;
+  margin-left: 11px;
+  margin-top: 4px;
+  margin-bottom: -4px;
 }
 
 .onboarding-step-indicator__line--completed {

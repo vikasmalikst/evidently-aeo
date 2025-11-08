@@ -30,6 +30,27 @@
   padding: 48px 24px;
 }
 
+/* Content wrappers for modal body */
+.onboarding-brand-input {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 0;
+}
+
+.onboarding-competitor-grid-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 0 64px;
+}
+
+.onboarding-summary-content {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
 .onboarding-step {
   width: 100%;
   max-width: 800px;
@@ -51,7 +72,7 @@
 
 .onboarding-hero {
   text-align: center;
-  margin-bottom: 48px;
+  margin-bottom: 0;
 }
 
 .onboarding-hero__icon {
@@ -67,26 +88,27 @@
 }
 
 .onboarding-hero__title {
-  font-size: 36px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 600;
   color: var(--text-headings);
-  margin: 0 0 16px 0;
+  margin: 0 0 12px 0;
   font-family: 'Sora', sans-serif;
   line-height: 1.2;
 }
 
 .onboarding-hero__subtitle {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--text-caption);
   margin: 0;
-  line-height: 1.6;
+  line-height: 1.5;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  margin-bottom: 32px;
+  margin-bottom: 0;
 }
 
 .onboarding-form--shake {
@@ -113,6 +135,8 @@
 .onboarding-input-with-logo {
   position: relative;
   width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
 }
 
 .onboarding-input-logo {
@@ -316,19 +340,28 @@
   transform: translateY(-2px);
 }
 
+.onboarding-brand-section-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
 .onboarding-brand-header {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  margin-bottom: 32px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  width: 66%;
+  flex-shrink: 0;
 }
 
 .onboarding-brand-header__logo {
-  width: 56px;
-  height: 56px;
+  width: 128px;
+  height: 128px;
   border-radius: 8px;
   object-fit: contain;
   background: white;
@@ -349,29 +382,39 @@
 .onboarding-brand-header__meta {
   font-size: 14px;
   color: var(--text-caption);
+  margin: 0 0 8px 0;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.onboarding-brand-header__description {
+  font-size: 14px;
+  color: var(--text-body);
   margin: 0;
+  line-height: 1.5;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-section-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 24px;
   gap: 24px;
 }
 
 .onboarding-section-header__title {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 600;
   color: var(--text-headings);
   margin: 0 0 8px 0;
   font-family: 'Sora', sans-serif;
 }
 
 .onboarding-section-header__subtitle {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--text-caption);
   margin: 0;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-selection-count {
@@ -382,6 +425,7 @@
   background: var(--accent-light);
   border-radius: 8px;
   min-width: 100px;
+  flex-shrink: 0;
 }
 
 .onboarding-selection-count__number {
@@ -475,19 +519,28 @@
 
 .onboarding-competitor-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
   margin-bottom: 32px;
 }
 
 .onboarding-card {
   background: var(--bg-primary);
   border: 2px solid var(--primary200);
-  border-radius: 8px;
+  border-radius: 24px;
   padding: 16px;
+  min-height: 180px;
   transition: all 0.2s ease;
   cursor: default;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Direct/indirect styling is on the relevance badge only */
+
+.onboarding-card--custom {
+  border-color: var(--primary200);
 }
 
 .onboarding-card--hoverable {
@@ -501,7 +554,7 @@
 }
 
 .onboarding-card--selected {
-  border-color: var(--accent500);
+  border-color: var(--accent500); /* brand-teal */
   background: var(--accent50);
 }
 
@@ -510,8 +563,10 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 12px;
+  gap: 8px;
   position: relative;
+  flex: 1;
+  justify-content: space-between;
 }
 
 .onboarding-competitor-card__checkbox {
@@ -536,48 +591,57 @@
 }
 
 .onboarding-competitor-card__logo {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   border-radius: 8px;
   object-fit: contain;
   background: var(--bg-secondary);
-  padding: 8px;
+  padding: 6px;
 }
 
 .onboarding-competitor-card__name {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-headings);
   margin: 0;
 }
 
 .onboarding-competitor-card__industry {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-caption);
   margin: 0;
 }
 
 .onboarding-competitor-card__relevance {
-  font-size: 11px;
-  color: var(--accent600);
-  background: var(--accent50);
+  font-size: 8.6px;
   padding: 4px 12px;
   border-radius: 12px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border: 1px solid;
 }
 
+.onboarding-competitor-card__relevance--direct {
+  color: #DC2626; /* red-600 - WCAG AA compliant (4.83:1) */
+  border-color: #F87171; /* red-400 */
+  background: transparent;
+}
+
+.onboarding-competitor-card__relevance--indirect {
+  color: #A16207; /* yellow-700 - WCAG AA compliant (4.92:1) */
+  border-color: #EAB308; /* yellow-500 */
+  background: transparent;
+}
+
+.onboarding-competitor-card__relevance--custom {
+  color: var(--text-caption);
+  background: var(--bg-secondary);
+}
+
+/* Actions removed - buttons now in modal footer */
 .onboarding-actions {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  padding-top: 24px;
-  border-top: 1px solid var(--border-default);
-}
-
-.onboarding-actions button {
-  min-width: 140px;
+  display: none;
 }
 
 .onboarding-summary {
@@ -592,21 +656,23 @@
 
 .onboarding-summary__icon {
   color: var(--accent-primary);
-  margin-bottom: 16px;
+  margin: 0 auto 16px;
+  display: block;
 }
 
 .onboarding-summary__title {
-  font-size: 32px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 600;
   color: var(--text-headings);
   margin: 0 0 12px 0;
   font-family: 'Sora', sans-serif;
 }
 
 .onboarding-summary__subtitle {
-  font-size: 16px;
+  font-size: 15px;
   color: var(--text-caption);
   margin: 0;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-summary__section {
@@ -614,10 +680,11 @@
 }
 
 .onboarding-summary__section-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-headings);
   margin: 0 0 16px 0;
+  font-family: 'Sora', sans-serif;
 }
 
 .onboarding-summary-brand {
@@ -629,8 +696,8 @@
 }
 
 .onboarding-summary-brand__logo {
-  width: 72px;
-  height: 72px;
+  width: 128px;
+  height: 128px;
   border-radius: 8px;
   object-fit: contain;
   background: white;
@@ -643,16 +710,18 @@
 }
 
 .onboarding-summary-brand__name {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--text-headings);
   margin: 0 0 8px 0;
+  font-family: 'Sora', sans-serif;
 }
 
 .onboarding-summary-brand__meta {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text-caption);
   margin: 0 0 12px 0;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-summary-brand__description {
@@ -660,6 +729,7 @@
   color: var(--text-body);
   margin: 0;
   line-height: 1.5;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-summary-competitors {
@@ -671,22 +741,24 @@
 .onboarding-summary-competitor {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .onboarding-summary-competitor__logo {
-  width: 32px;
-  height: 32px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
   object-fit: contain;
   background: white;
-  padding: 4px;
+  padding: 2px;
+  flex-shrink: 0;
 }
 
 .onboarding-summary-competitor__name {
-  font-size: 14px;
+  font-size: 12.8px;
   font-weight: 500;
   color: var(--text-body);
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-summary__preview {
@@ -697,10 +769,11 @@
 }
 
 .onboarding-summary__preview-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-headings);
   margin: 0 0 16px 0;
+  font-family: 'Sora', sans-serif;
 }
 
 .onboarding-summary__preview-list {
@@ -712,8 +785,9 @@
 .onboarding-summary__preview-list li {
   font-size: 14px;
   color: var(--text-body);
-  line-height: 1.8;
+  line-height: 1.6;
   position: relative;
+  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .onboarding-summary__preview-list li::before {
@@ -852,7 +926,7 @@
   }
 
   .onboarding-competitor-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 12px;
   }
 
@@ -1040,7 +1114,7 @@
   }
 
   .onboarding-competitor-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 

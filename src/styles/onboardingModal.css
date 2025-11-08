@@ -4,7 +4,7 @@
 .onboarding-modal-overlay {
   position: fixed;
   inset: 0;
-  background: var(--bg-inverse);
+  background: linear-gradient(135deg, #f8f9fc 0%, #ffffff 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15,7 +15,7 @@
 /* Modal Container */
 .onboarding-modal-container {
   background: var(--bg-primary);
-  border-radius: 8px;
+  border-radius: 16px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
   width: 700px;
   max-width: 90vw;
@@ -41,6 +41,24 @@
   width: 72vw;
   max-width: 1200px;
   height: 88vh;
+}
+
+.onboarding-modal-container.step-brand {
+  width: 700px;
+  max-width: 90vw;
+  max-height: 85vh;
+}
+
+.onboarding-modal-container.step-competitors {
+  width: 80vw;
+  max-width: 1020px;
+  max-height: 90vh;
+}
+
+.onboarding-modal-container.step-summary {
+  width: 72vw;
+  max-width: 1000px;
+  max-height: 85vh;
 }
 
 @keyframes modalScale {
@@ -142,6 +160,7 @@
   align-items: center;
   gap: 24px;
   padding: 24px;
+  padding-top: 64px; /* Add space for step indicator */
   border-bottom: 1px solid var(--border-default);
 }
 
@@ -196,6 +215,10 @@
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+}
+
+.onboarding-modal-body.step-competitors {
+  padding: 24px 0;
 }
 
 /* Modal Footer */
@@ -278,6 +301,9 @@
   font-family: 'IBM Plex Sans', sans-serif;
   cursor: pointer;
   transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .onboarding-button-secondary:hover {

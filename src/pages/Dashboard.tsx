@@ -7,6 +7,8 @@ import { mockPromptsData } from '../data/mockPromptsData';
 import { mockSourcesData } from '../data/mockSourcesData';
 import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
 import type { Topic } from '../types/topic';
+import { featureFlags } from '../config/featureFlags';
+import { onboardingUtils } from '../utils/onboardingUtils';
 import {
   TrendingUp,
   TrendingDown,
@@ -51,47 +53,61 @@ export const Dashboard = () => {
   };
 
   useEffect(() => {
-    const hasCompletedOnboarding = localStorage.getItem('onboarding_complete');
-    const hasCompletedTopicSelection = localStorage.getItem('onboarding_topics');
-    const hasCompletedPromptSelection = localStorage.getItem('onboarding_prompts');
-
-    console.log('Dashboard useEffect - Checking flow:', {
-      hasCompletedOnboarding,
-      hasCompletedTopicSelection,
-      hasCompletedPromptSelection
-    });
-
-    if (!hasCompletedOnboarding) {
-      console.log('No onboarding - redirecting to /onboarding');
-      navigate('/onboarding');
+    // Skip setup check if feature flag is set (for testing)
+    if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
+      console.log('🚀 Skipping setup check (feature flag enabled)');
       return;
     }
 
-    // TESTING MODE: Always show topic modal for team review
-    console.log('TESTING MODE: Forcing topic modal to show');
-    const timer = setTimeout(() => {
-      console.log('Setting showTopicModal to true');
-      setShowTopicModal(true);
-    }, 500);
-    return () => clearTimeout(timer);
+    // Force setup if feature flag is set
+    if (featureFlags.forceSetup || featureFlags.forceOnboarding) {
+      console.log('🚀 Forcing setup (feature flag enabled)');
+      navigate('/setup');
+      return;
+    }
 
-    // PRODUCTION CODE (commented out for testing):
-    // if (!hasCompletedTopicSelection) {
-    //   console.log('No topics - showing topic modal in 500ms');
-    //   const timer = setTimeout(() => {
-    //     console.log('Setting showTopicModal to true');
-    //     setShowTopicModal(true);
-    //   }, 500);
-    //   return () => clearTimeout(timer);
-    // } else if (!hasCompletedPromptSelection) {
-    //   console.log('No prompts - redirecting to /prompt-selection in 500ms');
-    //   const timer = setTimeout(() => {
-    //     navigate('/prompt-selection');
-    //   }, 500);
-    //   return () => clearTimeout(timer);
-    // } else {
-    //   console.log('All onboarding complete - showing full dashboard');
-    // }
+    const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
+    const hasCompletedTopicSelection = onboardingUtils.getOnboardingTopics();
+    const hasCompletedPromptSelection = onboardingUtils.getOnboardingPrompts();
+
+    console.log('Dashboard useEffect - Checking flow:', {
+      hasCompletedSetup,
+      hasCompletedTopicSelection: !!hasCompletedTopicSelection,
+      hasCompletedPromptSelection: !!hasCompletedPromptSelection
+    });
+
+    // Redirect to setup if not complete
+    if (!hasCompletedSetup) {
+      console.log('No setup - redirecting to /setup');
+      navigate('/setup');
+      return;
+    }
+
+    // Testing mode (only in development)
+    if (featureFlags.enableTestingMode && featureFlags.isDevelopment) {
+      console.log('🧪 Testing mode enabled - showing topic modal');
+      const timer = setTimeout(() => {
+        setShowTopicModal(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+
+    // Production flow: Check for incomplete steps
+    if (!hasCompletedTopicSelection) {
+      console.log('No topics - showing topic modal in 500ms');
+      const timer = setTimeout(() => {
+        setShowTopicModal(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    } else if (!hasCompletedPromptSelection) {
+      console.log('No prompts - redirecting to /prompt-selection in 500ms');
+      const timer = setTimeout(() => {
+        navigate('/prompt-selection');
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      console.log('All setup complete - showing full dashboard');
+    }
   }, [navigate]);
 
   const handleTopicsSelected = (selectedTopics: Topic[]) => {

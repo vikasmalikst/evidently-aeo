@@ -33,7 +33,7 @@ export const SetupModal = ({
   onClose,
 }: SetupModalProps) => {
   // Support direct step access via feature flag (for testing)
-  const initialStep: Step = featureFlags.onboardingStep || 'welcome';
+  const initialStep: Step = featureFlags.setupStep || featureFlags.onboardingStep || 'welcome';
   const [currentStep, setCurrentStep] = useState<Step>(initialStep);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);

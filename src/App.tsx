@@ -7,9 +7,44 @@ import { SearchSources } from './pages/SearchSources';
 import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
+import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { featureFlags } from './config/featureFlags';
+import { onboardingUtils } from './utils/onboardingUtils';
+
+function DefaultRedirect() {
+  if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  if (featureFlags.skipOnboardingAfterLogin) {
+    // Skip onboarding, go to setup
+    return onboardingUtils.isOnboardingComplete() ? (
+      <Navigate to="/dashboard" replace />
+    ) : (
+      <Navigate to="/setup" replace />
+    );
+  }
+  
+  if (featureFlags.forceOnboardingAfterLogin) {
+    return <Navigate to="/onboarding" replace />;
+  }
+  
+  // Check onboarding completion (brand/competitors)
+  if (typeof window !== 'undefined' && localStorage.getItem('onboarding_complete') === 'true') {
+    // Onboarding complete, check setup
+    return onboardingUtils.isOnboardingComplete() ? (
+      <Navigate to="/dashboard" replace />
+    ) : (
+      <Navigate to="/setup" replace />
+    );
+  }
+  
+  // Onboarding not complete, go to onboarding
+  return <Navigate to="/onboarding" replace />;
+}
 
 function App() {
   return (
@@ -17,6 +52,7 @@ function App() {
       <Routes>
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/setup" element={<Setup />} />
         <Route
           path="/dashboard"
           element={
@@ -81,7 +117,10 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/" element={<Navigate to="/onboarding" replace />} />
+        <Route 
+          path="/" 
+          element={<DefaultRedirect />}
+        />
       </Routes>
     </BrowserRouter>
   );

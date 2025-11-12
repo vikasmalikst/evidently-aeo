@@ -65,12 +65,13 @@ export const Sidebar = () => {
     if (name) {
       return name
         .split(' ')
+        .filter(Boolean)
         .map((n) => n[0])
         .join('')
         .toUpperCase()
         .slice(0, 2);
     }
-    return email[0].toUpperCase();
+    return email ? email[0].toUpperCase() : '?';
   };
 
   return (

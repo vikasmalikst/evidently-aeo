@@ -22,4 +22,4 @@ dist-ssr
 *.sw?
 .env
 /portal
-/backend 2
+

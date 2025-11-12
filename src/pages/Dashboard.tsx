@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -11,7 +12,6 @@ import { featureFlags } from '../config/featureFlags';
 import { onboardingUtils } from '../utils/onboardingUtils';
 import {
   TrendingUp,
-  TrendingDown,
   MessageSquare,
   ExternalLink,
   AlertTriangle,
@@ -20,19 +20,63 @@ import {
   Activity,
   Target,
   Eye,
-  Zap,
   ChevronUp,
   ChevronDown
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
+import { apiClient } from '../lib/apiClient';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+interface BrandSummary {
+  id: string;
+  name: string;
+  slug?: string | null;
+}
+
+interface DashboardScoreMetric {
+  label: string;
+  value: number;
+  delta: number;
+  description: string;
+}
+
+interface DashboardPayload {
+  brandId: string;
+  brandName: string;
+  brandSlug?: string;
+  customerId: string;
+  dateRange: {
+    start: string;
+    end: string;
+  };
+  totalQueries: number;
+  totalResponses: number;
+  trendPercentage: number;
+  visibilityPercentage: number;
+  sentimentScore: number;
+  scores: DashboardScoreMetric[];
+}
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
 export const Dashboard = () => {
   const user = useAuthStore((state) => state.user);
+  const authLoading = useAuthStore((state) => state.isLoading);
+  const [startDate, setStartDate] = useState('2024-10-01');
+  const [endDate, setEndDate] = useState('2024-10-31');
+  const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
   const [startDate, setStartDate] = useState('2024-10-01');
@@ -122,21 +166,7 @@ export const Dashboard = () => {
 
   const displayName = user?.fullName || user?.email?.split('@')[0] || 'there';
 
-  const totalPrompts = mockPromptsData.reduce((sum, topic) => sum + topic.prompts.length, 0);
-  const avgSentiment = mockPromptsData
-    .flatMap(t => t.prompts)
-    .reduce((sum, p) => sum + p.sentiment, 0) / totalPrompts;
-
-  const topSource = mockSourcesData.sources.reduce((max, s) =>
-    s.mentionRate > max.mentionRate ? s : max
-  );
-
-  const totalCitations = mockCitationSourcesData.domainsData.reduce((sum, d) => sum + d.usedPercentage, 0);
-  const yourDomainData = mockCitationSourcesData.domainsData.find(d => d.isYourDomain);
-
   const criticalAlerts = mockSourcesData.insights.warnings.length;
-  const opportunities = mockCitationSourcesData.insights.partnershipOpportunities.length;
-
   const brandPages = [
     { id: 1, title: 'Product Features Page', url: 'your-brand.com/features', impactScore: 8.5, delta: 1.2 },
     { id: 2, title: 'Pricing & Plans', url: 'your-brand.com/pricing', impactScore: 9.2, delta: 0.8 },
@@ -144,6 +174,182 @@ export const Dashboard = () => {
     { id: 4, title: 'Integration Documentation', url: 'your-brand.com/docs/integrations', impactScore: 6.9, delta: 0.3 },
     { id: 5, title: 'Product Comparison Guide', url: 'your-brand.com/compare', impactScore: 8.1, delta: -1.1 },
   ];
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchDashboard = async () => {
+      setDashboardLoading(true);
+      setDashboardError(null);
+
+      try {
+        const brandsResponse = await apiClient.request<ApiResponse<BrandSummary[]>>('/brands');
+
+        if (!brandsResponse.success) {
+          throw new Error(brandsResponse.error || brandsResponse.message || 'Failed to load brands.');
+        }
+
+        const brands = brandsResponse.data ?? [];
+
+        if (brands.length === 0) {
+          throw new Error('No brands found for this account. Please add a brand to view the dashboard.');
+        }
+
+        const primaryBrand = brands[0];
+
+        const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(
+          `/brands/${primaryBrand.id}/dashboard`
+        );
+
+        if (!dashboardResponse.success || !dashboardResponse.data) {
+          throw new Error(
+            dashboardResponse.error || dashboardResponse.message || 'Failed to load dashboard data.'
+          );
+        }
+
+        if (!cancelled) {
+          setDashboardData(dashboardResponse.data);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to load dashboard data.';
+        if (!cancelled) {
+          setDashboardError(message);
+          setDashboardData(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setDashboardLoading(false);
+        }
+      }
+    };
+
+    fetchDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, reloadKey]);
+
+  const handleRetryFetch = () => {
+    setReloadKey((prev) => prev + 1);
+  };
+
+  if (dashboardLoading) {
+    return (
+      <Layout>
+        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-10 flex flex-col items-center justify-center">
+            <div className="h-12 w-12 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mb-4" />
+            <p className="text-[14px] text-[#64748b]">Loading dashboard insights…</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (dashboardError || !dashboardData) {
+    return (
+      <Layout>
+        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+          <div className="max-w-xl mx-auto bg-white border border-[#fadddb] rounded-lg shadow-sm p-6 text-center">
+            <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-2">Unable to load dashboard</h2>
+            <p className="text-[13px] text-[#64748b] mb-4">
+              {dashboardError ?? 'Dashboard data is currently unavailable.'}
+            </p>
+            <button
+              onClick={handleRetryFetch}
+              className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-[#00bcdc] text-white text-[13px] font-medium hover:bg-[#0096b0] transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  const findScore = (label: string) =>
+    dashboardData.scores.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
+
+  const formatNumber = (value: number, decimals = 1): string => {
+    const fixed = value.toFixed(decimals);
+    if (decimals === 0) {
+      return fixed;
+    }
+    return fixed.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+  };
+
+  const formatMetricValue = (metric: DashboardScoreMetric | undefined, suffix = '%'): string => {
+    if (!metric) {
+      return '—';
+    }
+    return `${formatNumber(metric.value, 1)}${suffix}`;
+  };
+
+  const computeTrend = (delta?: number) => {
+    if (!delta) {
+      return { direction: 'stable' as const, value: 0 };
+    }
+    return {
+      direction: delta > 0 ? ('up' as const) : ('down' as const),
+      value: Number(Math.abs(delta).toFixed(1))
+    };
+  };
+
+  const visibilityMetric = findScore('Visibility Index');
+  const shareMetric = findScore('Share of Answers');
+  const sentimentMetric = findScore('Sentiment Score');
+
+  const metricCards: Array<MetricCardProps & { key: string }> = [
+    {
+      key: 'visibility-index',
+      title: 'Visibility Index',
+      value: formatMetricValue(visibilityMetric),
+      subtitle: `Across ${formatNumber(dashboardData.totalQueries, 0)} queries`,
+      trend: computeTrend(visibilityMetric?.delta),
+      icon: <Eye size={20} />,
+      color: '#498cf9',
+      linkTo: '/search-visibility'
+    },
+    {
+      key: 'share-of-answers',
+      title: 'Share of Answers',
+      value: formatMetricValue(shareMetric),
+      subtitle: 'Share across tracked queries',
+      trend: computeTrend(shareMetric?.delta),
+      icon: <Target size={20} />,
+      color: '#06c686',
+      linkTo: '/ai-sources'
+    },
+    {
+      key: 'sentiment-score',
+      title: 'Sentiment Score',
+      value: formatMetricValue(sentimentMetric),
+      subtitle: 'Normalized 0-100 sentiment',
+      trend: computeTrend(sentimentMetric?.delta),
+      icon: <MessageSquare size={20} />,
+      color: '#00bcdc',
+      linkTo: '/prompts'
+    },
+    {
+      key: 'tracked-queries',
+      title: 'Tracked Queries',
+      value: formatNumber(dashboardData.totalQueries, 0),
+      subtitle: `Total responses: ${formatNumber(dashboardData.totalResponses, 0)}`,
+      trend: computeTrend(dashboardData.trendPercentage),
+      icon: <Activity size={20} />,
+      color: '#7c3aed',
+      linkTo: '/topics'
+    }
+  ];
+
+  const overviewSubtitle = dashboardData.brandName
+    ? `Here's your AI visibility performance overview for ${dashboardData.brandName}`
+    : `Here's your AI visibility performance overview`;
 
   return (
     <Layout>
@@ -176,7 +382,7 @@ export const Dashboard = () => {
             Welcome back, {displayName}
           </h1>
           <p className="text-[15px] text-[#393e51]">
-            Here's your AI visibility performance overview
+            {overviewSubtitle}
           </p>
         </div>
 
@@ -267,42 +473,9 @@ export const Dashboard = () => {
         </div>
 
         <div className="grid grid-cols-4 gap-5 mb-6">
-          <MetricCard
-            title="AI Search Visibility"
-            value={`${topSource.mentionRate * 100}%`}
-            subtitle={`${topSource.name} leading`}
-            trend={{ direction: topSource.trendDirection, value: topSource.trendPercent }}
-            icon={<Eye size={20} />}
-            color="#498cf9"
-            linkTo="/search-visibility"
-          />
-          <MetricCard
-            title="Brand Citations"
-            value={`${yourDomainData?.usedPercentage}%`}
-            subtitle="Across all citations"
-            trend={{ direction: yourDomainData?.trend.direction || 'up', value: yourDomainData?.trend.percent || 0 }}
-            icon={<Target size={20} />}
-            color="#06c686"
-            linkTo="/ai-sources"
-          />
-          <MetricCard
-            title="Sentiment"
-            value={avgSentiment.toFixed(1)}
-            subtitle={`${totalPrompts} prompts tracked`}
-            trend={{ direction: 'up', value: 8 }}
-            icon={<MessageSquare size={20} />}
-            color="#00bcdc"
-            linkTo="/prompts"
-          />
-          <MetricCard
-            title="Source Opportunities"
-            value={mockCitationSourcesData.domainsData.length.toString()}
-            subtitle={`${opportunities} new opportunities`}
-            trend={{ direction: 'up', value: 12 }}
-            icon={<Zap size={20} />}
-            color="#fa8a40"
-            linkTo="/search-sources"
-          />
+          {metricCards.map(({ key, ...cardProps }) => (
+            <MetricCard key={key} {...cardProps} />
+          ))}
         </div>
 
         <div className="grid grid-cols-3 gap-5 mb-6">
@@ -674,7 +847,7 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
 
 interface LLMVisibilityDonutProps {
   data: Array<{
-    id: number;
+    id: number | string;
     name: string;
     mentionRate: number;
     color: string;

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useManualBrandDashboard } from '../manual-dashboard';
 import { Layout } from '../components/Layout/Layout';
 import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
 import { mockPromptsData } from '../data/mockPromptsData';
@@ -36,12 +37,6 @@ interface ApiResponse<T> {
   message?: string;
 }
 
-interface BrandSummary {
-  id: string;
-  name: string;
-  slug?: string | null;
-}
-
 interface DashboardScoreMetric {
   label: string;
   value: number;
@@ -64,6 +59,17 @@ interface DashboardPayload {
   visibilityPercentage: number;
   sentimentScore: number;
   scores: DashboardScoreMetric[];
+  sourceDistribution: Array<{
+    label: string;
+    percentage: number;
+    color?: string;
+  }>;
+  llmVisibility: Array<{
+    provider: string;
+    share: number;
+    delta: number;
+    color?: string;
+  }>;
 }
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
@@ -75,7 +81,7 @@ export const Dashboard = () => {
   const [endDate, setEndDate] = useState('2024-10-31');
   const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
@@ -175,8 +181,17 @@ export const Dashboard = () => {
     { id: 5, title: 'Product Comparison Guide', url: 'your-brand.com/compare', impactScore: 8.1, delta: -1.1 },
   ];
 
+  const {
+    brands,
+    isLoading: brandsLoading,
+    error: brandsError,
+    selectedBrandId,
+    selectedBrand,
+    selectBrand
+  } = useManualBrandDashboard();
+
   useEffect(() => {
-    if (authLoading) {
+    if (authLoading || brandsLoading || !selectedBrandId) {
       return;
     }
 
@@ -187,22 +202,8 @@ export const Dashboard = () => {
       setDashboardError(null);
 
       try {
-        const brandsResponse = await apiClient.request<ApiResponse<BrandSummary[]>>('/brands');
-
-        if (!brandsResponse.success) {
-          throw new Error(brandsResponse.error || brandsResponse.message || 'Failed to load brands.');
-        }
-
-        const brands = brandsResponse.data ?? [];
-
-        if (brands.length === 0) {
-          throw new Error('No brands found for this account. Please add a brand to view the dashboard.');
-        }
-
-        const primaryBrand = brands[0];
-
         const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(
-          `/brands/${primaryBrand.id}/dashboard`
+          `/brands/${selectedBrandId}/dashboard`
         );
 
         if (!dashboardResponse.success || !dashboardResponse.data) {
@@ -232,13 +233,15 @@ export const Dashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, reloadKey]);
+  }, [authLoading, brandsLoading, reloadKey, selectedBrandId]);
 
   const handleRetryFetch = () => {
     setReloadKey((prev) => prev + 1);
   };
 
-  if (dashboardLoading) {
+  const combinedLoading = authLoading || brandsLoading || dashboardLoading;
+
+  if (combinedLoading) {
     return (
       <Layout>
         <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
@@ -251,14 +254,20 @@ export const Dashboard = () => {
     );
   }
 
-  if (dashboardError || !dashboardData) {
+  if (brandsError || dashboardError || !dashboardData) {
+    const errorMessage =
+      brandsError ||
+      dashboardError ||
+      (brands.length === 0
+        ? 'No brands found for this account. Please add a brand to view the dashboard.'
+        : 'Dashboard data is currently unavailable.');
     return (
       <Layout>
         <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
           <div className="max-w-xl mx-auto bg-white border border-[#fadddb] rounded-lg shadow-sm p-6 text-center">
             <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-2">Unable to load dashboard</h2>
             <p className="text-[13px] text-[#64748b] mb-4">
-              {dashboardError ?? 'Dashboard data is currently unavailable.'}
+              {errorMessage}
             </p>
             <button
               onClick={handleRetryFetch}
@@ -347,9 +356,40 @@ export const Dashboard = () => {
     }
   ];
 
-  const overviewSubtitle = dashboardData.brandName
-    ? `Here's your AI visibility performance overview for ${dashboardData.brandName}`
+  const overviewSubtitle = (selectedBrand?.name ?? dashboardData.brandName)
+    ? `Here's your AI visibility performance overview for ${selectedBrand?.name ?? dashboardData.brandName}`
     : `Here's your AI visibility performance overview`;
+
+  const fallbackLlmSlices: LLMVisibilitySliceUI[] = mockSourcesData.sources.slice(0, 5).map((source) => ({
+    provider: source.name,
+    share: Math.round(source.mentionRate * 100),
+    delta: source.trendPercent ?? 0,
+    color: source.color
+  }));
+
+  const llmSlices: LLMVisibilitySliceUI[] =
+    dashboardData.llmVisibility && dashboardData.llmVisibility.length > 0
+      ? dashboardData.llmVisibility.map((slice) => ({
+          provider: slice.provider,
+          share: slice.share,
+          delta: slice.delta ?? 0,
+          color: slice.color || '#64748b'
+        }))
+      : fallbackLlmSlices;
+
+const fallbackSourceSlices = mockCitationSourcesData.sourceTypeDistribution.map((item) => ({
+  type: item.type,
+  percentage: item.percentage,
+  color: item.color
+}));
+
+const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDistribution.length > 0
+  ? dashboardData.sourceDistribution.map((slice) => ({
+      type: slice.label,
+      percentage: slice.percentage,
+      color: slice.color || '#64748b'
+    }))
+  : fallbackSourceSlices;
 
   return (
     <Layout>
@@ -381,9 +421,30 @@ export const Dashboard = () => {
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
             Welcome back, {displayName}
           </h1>
-          <p className="text-[15px] text-[#393e51]">
-            {overviewSubtitle}
-          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <p className="text-[15px] text-[#393e51]">
+              {overviewSubtitle}
+            </p>
+            {brands.length > 1 && selectedBrandId && (
+              <div className="flex items-center gap-2">
+                <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
+                  Brand
+                </label>
+                <select
+                  id="brand-selector"
+                  value={selectedBrandId}
+                  onChange={(event) => selectBrand(event.target.value)}
+                  className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
+                >
+                  {brands.map((brandOption) => (
+                    <option key={brandOption.id} value={brandOption.id}>
+                      {brandOption.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 mb-6">
@@ -412,7 +473,7 @@ export const Dashboard = () => {
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
               <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-4">Source Type Distribution</h3>
-              <StackedRacingChart data={mockCitationSourcesData.sourceTypeDistribution} />
+              <StackedRacingChart data={sourceSlices} />
             </div>
 
             <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
@@ -420,37 +481,41 @@ export const Dashboard = () => {
               <div className="flex gap-6 items-center">
                 <div className="flex flex-col items-center gap-2">
                   <div style={{ width: '130px', height: '130px' }} className="flex-shrink-0">
-                    <LLMVisibilityDonut data={mockSourcesData.sources.slice(0, 5)} />
+                    <LLMVisibilityDonut data={llmSlices} />
                   </div>
                   <span className="text-[11px] font-medium text-[#64748b]">Total Visibility</span>
                 </div>
                 <div className="flex-1 space-y-2">
-                  {mockSourcesData.sources.slice(0, 5).map((source) => (
-                    <div key={source.id} className="flex items-center gap-2">
+                  {llmSlices.map((slice) => (
+                    <div key={slice.provider} className="flex items-center gap-2">
                       <div
                         className="w-3 h-3 rounded-sm flex-shrink-0"
-                        style={{ backgroundColor: source.color }}
+                        style={{ backgroundColor: slice.color }}
                       />
                       <div className="flex-shrink-0">
-                        {getLLMIcon(source.name)}
+                        {getLLMIcon(slice.provider)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-medium text-[#1a1d29]">{source.name}</span>
+                        <span className="text-[13px] font-medium text-[#1a1d29]">{slice.provider}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <span className="text-[13px] font-semibold text-[#1a1d29]">
-                          {(source.mentionRate * 100).toFixed(0)}%
+                          {Math.round(slice.share)}%
                         </span>
-                        <span className={`flex items-center text-[11px] font-semibold ${
-                          source.trendDirection === 'up' ? 'text-[#06c686]' : 'text-[#f94343]'
-                        }`}>
-                          {source.trendDirection === 'up' ? (
-                            <ChevronUp size={12} strokeWidth={2.5} />
-                          ) : (
-                            <ChevronDown size={12} strokeWidth={2.5} />
-                          )}
-                          {Math.abs(source.trendPercent)}%
-                        </span>
+                        {slice.delta !== 0 && (
+                          <span
+                            className={`flex items-center text-[11px] font-semibold ${
+                              slice.delta > 0 ? 'text-[#06c686]' : 'text-[#f94343]'
+                            }`}
+                          >
+                            {slice.delta > 0 ? (
+                              <ChevronUp size={12} strokeWidth={2.5} />
+                            ) : (
+                              <ChevronDown size={12} strokeWidth={2.5} />
+                            )}
+                            {Math.abs(slice.delta).toFixed(1)}%
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -768,7 +833,6 @@ const ActionCard = ({ title, description, link, icon, color }: ActionCardProps) 
 interface StackedRacingChartProps {
   data: Array<{
     type: string;
-    count: number;
     percentage: number;
     color: string;
   }>;
@@ -845,21 +909,23 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
   );
 };
 
+interface LLMVisibilitySliceUI {
+  provider: string;
+  share: number;
+  delta: number;
+  color: string;
+}
+
 interface LLMVisibilityDonutProps {
-  data: Array<{
-    id: number | string;
-    name: string;
-    mentionRate: number;
-    color: string;
-  }>;
+  data: LLMVisibilitySliceUI[];
 }
 
 const LLMVisibilityDonut = ({ data }: LLMVisibilityDonutProps) => {
   const chartData = {
-    labels: data.map(item => item.name),
+    labels: data.map(item => item.provider),
     datasets: [
       {
-        data: data.map(item => item.mentionRate * 100),
+        data: data.map(item => item.share),
         backgroundColor: data.map(item => item.color),
         borderWidth: 0,
         borderRadius: 2,

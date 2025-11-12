@@ -3,6 +3,25 @@ import { DatabaseError } from '../types/auth'
 
 const DISTRIBUTION_COLORS = ['#6366f1', '#0ea5e9', '#22d3ee', '#f97316', '#a855f7', '#10b981', '#facc15']
 
+const COLLECTOR_COLORS: Record<string, string> = {
+  chatgpt: '#0ea5e9',
+  'openai-chatgpt': '#0ea5e9',
+  claude: '#6366f1',
+  anthropic: '#6366f1',
+  gemini: '#a855f7',
+  perplexity: '#f97316',
+  deepseek: '#10b981',
+  'bing copilot': '#4b5563',
+  bing_copilot: '#4b5563',
+  'google aio': '#06b6d4',
+  google_aio: '#06b6d4',
+  grok: '#f43f5e',
+  dataforseo: '#facc15',
+  brightdata: '#ec4899',
+  oxylabs: '#14b8a6',
+  default: '#64748b'
+}
+
 interface BrandRow {
   id: string
   name: string
@@ -12,6 +31,7 @@ interface BrandRow {
 interface PositionRow {
   brand_name: string | null
   query_id: string | null
+  collector_result_id: number | null
   collector_type: string | null
   competitor_name: string | null
   visibility_index: string | number | null
@@ -222,7 +242,7 @@ class BrandDashboardService {
     const positionsPromise = supabaseAdmin
       .from('extracted_positions')
       .select(
-        'brand_name, query_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions'
+        'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions'
       )
       .eq('brand_id', brand.id)
       .eq('customer_id', customerId)
@@ -298,14 +318,54 @@ class BrandDashboardService {
       }
     >()
 
+    const collectorAggregates = new Map<
+      string,
+      {
+        shareValues: number[]
+        visibilityValues: number[]
+        mentions: number
+      }
+    >()
+
     // Per-collector scoring: Multiple rows per query (one per collector per competitor)
     // We aggregate across collectors to get average scores per query
     const brandShareByQuery = new Map<string, number[]>() // Changed to array for averaging
     const brandVisibilityByQuery = new Map<string, number[]>() // Changed to array for averaging
     const brandSentimentByQuery = new Map<string, number[]>()
     const queryTextMap = new Map<string, string>()
+    const collectorVisibilityMap = new Map<number, number[]>()
 
     if (positionRows.length > 0) {
+      const uniqueCollectorResultIds = Array.from(
+        new Set(
+          positionRows
+            .map((row) => row.collector_result_id)
+            .filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
+        )
+      )
+
+      if (uniqueCollectorResultIds.length > 0) {
+        const { data: collectorRows, error: collectorRowsError } = await supabaseAdmin
+          .from('collector_results')
+          .select('id, question')
+          .in('id', uniqueCollectorResultIds)
+
+        if (collectorRowsError) {
+          throw new DatabaseError(`Failed to load collector questions for dashboard: ${collectorRowsError.message}`)
+        }
+
+        ;(collectorRows ?? []).forEach((collectorRow) => {
+          if (!collectorRow?.id) {
+            return
+          }
+          const label =
+            typeof collectorRow.question === 'string' && collectorRow.question.trim().length > 0
+              ? collectorRow.question.trim()
+              : 'Unlabeled query'
+          queryTextMap.set(`collector-${collectorRow.id}`, label)
+        })
+      }
+
       const uniqueQueryIds = Array.from(
         new Set(
           positionRows
@@ -317,7 +377,7 @@ class BrandDashboardService {
       if (uniqueQueryIds.length > 0) {
         const { data: queryRows, error: queryRowsError } = await supabaseAdmin
           .from('generated_queries')
-          .select('id, question')
+          .select('id, query_text')
           .in('id', uniqueQueryIds)
 
         if (queryRowsError) {
@@ -328,8 +388,8 @@ class BrandDashboardService {
           if (!query?.id) {
             return
           }
-          const label = typeof query.question === 'string' && query.question.trim().length > 0
-            ? query.question.trim()
+          const label = typeof query.query_text === 'string' && query.query_text.trim().length > 0
+            ? query.query_text.trim()
             : 'Unlabeled query'
           queryTextMap.set(query.id, label)
         })
@@ -342,7 +402,9 @@ class BrandDashboardService {
     for (const row of positionRows) {
       processedRowCount++
       const queryId = row.query_id ?? `query-${generatedQueryFallback++}`
+      const collectorKey = row.collector_result_id ? `collector-${row.collector_result_id}` : undefined
       const queryText =
+        (collectorKey ? queryTextMap.get(collectorKey) : undefined) ??
         (row.query_id ? queryTextMap.get(row.query_id) : undefined) ??
         queryTextMap.get(queryId) ??
         'Unlabeled query'
@@ -386,6 +448,34 @@ class BrandDashboardService {
 
       if (hasBrandSentiment && (isBrandRow || sentimentArray.length === 0)) {
         sentimentArray.push(brandSentiment)
+      }
+
+      if (isBrandRow) {
+        if (!collectorAggregates.has(collectorType)) {
+          collectorAggregates.set(collectorType, {
+            shareValues: [],
+            visibilityValues: [],
+            mentions: 0
+          })
+        }
+        const collectorAggregate = collectorAggregates.get(collectorType)!
+        collectorAggregate.shareValues.push(brandShare)
+        collectorAggregate.visibilityValues.push(brandVisibility)
+
+        const brandMentions = Math.max(0, toNumber(row.total_brand_mentions))
+        collectorAggregate.mentions += brandMentions > 0 ? brandMentions : 1
+
+        collectorAggregates.set(collectorType, collectorAggregate)
+
+        if (
+          typeof row.collector_result_id === 'number' &&
+          Number.isFinite(row.collector_result_id)
+        ) {
+          if (!collectorVisibilityMap.has(row.collector_result_id)) {
+            collectorVisibilityMap.set(row.collector_result_id, [])
+          }
+          collectorVisibilityMap.get(row.collector_result_id)!.push(brandVisibility)
+        }
       }
 
       if (processedRowCount <= 3) {
@@ -483,6 +573,14 @@ class BrandDashboardService {
     console.log(`[Dashboard] Brand visibility: [${brandVisibilityValues.slice(0, 5).map(v => v.toFixed(2)).join(', ')}...]`)
     console.log(`[Dashboard] Competitor aggregates: ${competitorAggregates.size} competitors`)
 
+    const collectorVisibilityAverage = new Map<number, number>()
+    collectorVisibilityMap.forEach((values, collectorId) => {
+      if (!values.length) {
+        return
+      }
+      collectorVisibilityAverage.set(collectorId, average(values))
+    })
+
     // totalQueries = unique queries tracked
     // totalResponses = total score rows (queries × collectors × competitors)
     const totalPositionRows = positionRows.length
@@ -515,33 +613,86 @@ class BrandDashboardService {
     // Fetch citation sources for Source Type Distribution
     const { data: citationsData } = await supabaseAdmin
       .from('citations')
-      .select('domain, category, usage_count')
+      .select('domain, category, usage_count, collector_result_id')
       .eq('brand_id', brand.id)
       .eq('customer_id', customerId)
 
+    const categoryVisibilityAggregates = new Map<
+      string,
+      {
+        visibilitySum: number
+        weight: number
+      }
+    >()
     const citationCounts = new Map<string, number>()
     if (citationsData && citationsData.length > 0) {
       for (const citation of citationsData) {
-        const domain = citation.domain || 'Unknown'
+        const categoryKey =
+          citation.category && citation.category.trim().length > 0
+            ? citation.category.trim().toLowerCase()
+            : 'other'
         const count = citation.usage_count || 1
-        citationCounts.set(domain, (citationCounts.get(domain) || 0) + count)
+        citationCounts.set(categoryKey, (citationCounts.get(categoryKey) || 0) + count)
+
+        if (
+          citation.collector_result_id !== null &&
+          citation.collector_result_id !== undefined &&
+          collectorVisibilityAverage.has(citation.collector_result_id)
+        ) {
+          const visibility = collectorVisibilityAverage.get(citation.collector_result_id) ?? 0
+          const entry = categoryVisibilityAggregates.get(categoryKey) ?? {
+            visibilitySum: 0,
+            weight: 0
+          }
+          entry.visibilitySum += visibility * count
+          entry.weight += count
+          categoryVisibilityAggregates.set(categoryKey, entry)
+        }
       }
     }
 
     const totalCitations = Array.from(citationCounts.values()).reduce((sum, count) => sum + count, 0)
+    const totalCategoryVisibility = Array.from(categoryVisibilityAggregates.values()).reduce(
+      (sum, entry) => sum + entry.visibilitySum,
+      0
+    )
 
-    const sourceDistribution: DistributionSlice[] = Array.from(citationCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([domain, count], index) => ({
-        label: domain,
-        percentage: totalCitations > 0 
-          ? round((count / totalCitations) * 100)
-          : 0,
-        color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
-      }))
+    let sourceDistribution: DistributionSlice[] = []
 
-    // Fallback to query distribution if no citations
+    const formatCategoryLabel = (categoryKey: string): string => {
+      if (!categoryKey) {
+        return 'Other'
+      }
+      return categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1).replace(/[_-]/g, ' ')
+    }
+
+    if (totalCategoryVisibility > 0) {
+      const sortedCategories = Array.from(categoryVisibilityAggregates.entries()).sort(
+        (a, b) => b[1].visibilitySum - a[1].visibilitySum
+      )
+
+      let accumulatedVisibility = 0
+
+      sortedCategories.slice(0, 5).forEach(([categoryKey, aggregate], index) => {
+        accumulatedVisibility += aggregate.visibilitySum
+        sourceDistribution.push({
+          label: formatCategoryLabel(categoryKey),
+          percentage: round((aggregate.visibilitySum / totalCategoryVisibility) * 100),
+          color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
+        })
+      })
+
+      const othersVisibility = totalCategoryVisibility - accumulatedVisibility
+      if (othersVisibility > 1e-6) {
+        sourceDistribution.push({
+          label: 'Other',
+          percentage: round((othersVisibility / totalCategoryVisibility) * 100),
+          color: DISTRIBUTION_COLORS[sourceDistribution.length % DISTRIBUTION_COLORS.length]
+        })
+      }
+    }
+
+    // Fallback to query distribution if no domain visibility data
     if (sourceDistribution.length === 0) {
       sourceDistribution.push(...Array.from(queryAggregates.values())
         .sort((a, b) => b.share - a.share)
@@ -557,19 +708,10 @@ class BrandDashboardService {
     }
 
     // Calculate category distribution from citations
-    const categoryCounts = new Map<string, number>()
-    if (citationsData && citationsData.length > 0) {
-      for (const citation of citationsData) {
-        const category = citation.category || 'webpage'
-        const count = citation.usage_count || 1
-        categoryCounts.set(category, (categoryCounts.get(category) || 0) + count)
-      }
-    }
-
-    const categoryDistribution: DistributionSlice[] = Array.from(categoryCounts.entries())
+    const categoryDistribution: DistributionSlice[] = Array.from(citationCounts.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([category, count], index) => ({
-        label: category.charAt(0).toUpperCase() + category.slice(1).replace(/_/g, ' '),
+      .map(([categoryKey, count], index) => ({
+        label: formatCategoryLabel(categoryKey),
         percentage: totalCitations > 0 
           ? round((count / totalCitations) * 100)
           : 0,
@@ -691,6 +833,45 @@ class BrandDashboardService {
 
     const coverageScore = sourceDistribution.length > 0 ? Math.min(95, round(sourceDistribution.length / 6 * 100)) : 40
 
+    const totalCollectorMentions = Array.from(collectorAggregates.values()).reduce(
+      (sum, aggregate) => sum + aggregate.mentions,
+      0
+    )
+    const totalCollectorShareSum = Array.from(collectorAggregates.values()).reduce(
+      (sum, aggregate) => sum + aggregate.shareValues.reduce((inner, value) => inner + value, 0),
+      0
+    )
+
+    const llmVisibility: LlmVisibilitySlice[] = Array.from(collectorAggregates.entries())
+      .map(([collectorType, aggregate]) => {
+        const averageVisibilityRaw =
+          aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
+        const clampedVisibility = Math.min(1, Math.max(0, averageVisibilityRaw))
+        const visibilityPercentage = round(clampedVisibility * 100)
+        const hasVisibility = visibilityPercentage > 0
+
+        const shareValueSum = aggregate.shareValues.reduce((sum, value) => sum + value, 0)
+        const shareFromValues =
+          totalCollectorShareSum > 0 ? round((shareValueSum / totalCollectorShareSum) * 100) : 0
+        const shareFromMentions =
+          totalCollectorMentions > 0 ? round((aggregate.mentions / totalCollectorMentions) * 100) : 0
+        const shareValue = hasVisibility ? visibilityPercentage : shareFromValues || shareFromMentions
+
+        const normalizedCollectorType = collectorType.toLowerCase().trim()
+        const color =
+          COLLECTOR_COLORS[normalizedCollectorType] ??
+          COLLECTOR_COLORS[(normalizedCollectorType.split(/[._-]/)[0]) || 'default'] ??
+          COLLECTOR_COLORS.default
+
+        return {
+          provider: collectorType,
+          share: shareValue,
+          delta: 0,
+          color
+        }
+      })
+      .sort((a, b) => b.share - a.share)
+
     const scores: ScoreMetric[] = [
       {
         label: 'Visibility Index',
@@ -781,7 +962,7 @@ class BrandDashboardService {
       scores,
       sourceDistribution,
       categoryDistribution,
-      llmVisibility: [],
+      llmVisibility,
       actionItems: actionItems.slice(0, 4),
       collectorSummaries: [],
       competitorVisibility,

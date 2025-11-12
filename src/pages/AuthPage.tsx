@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { LoginForm } from '../components/Auth/LoginForm';
 import { RegisterForm } from '../components/Auth/RegisterForm';
 import { PasswordResetForm } from '../components/Auth/PasswordResetForm';
+import { featureFlags } from '../config/featureFlags';
+import { onboardingUtils } from '../utils/onboardingUtils';
 
 type AuthView = 'login' | 'register' | 'reset';
 
@@ -11,7 +13,62 @@ export const AuthPage = () => {
   const navigate = useNavigate();
 
   const handleSuccess = () => {
-    navigate('/dashboard');
+    // Check if onboarding (brand/competitors) is complete
+    const hasCompletedOnboarding = localStorage.getItem('onboarding_complete') === 'true';
+    const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
+
+    console.log('🔍 Post-login check:', {
+      hasCompletedOnboarding,
+      hasCompletedSetup,
+      skipOnboardingAfterLogin: featureFlags.skipOnboardingAfterLogin,
+      forceOnboardingAfterLogin: featureFlags.forceOnboardingAfterLogin,
+      skipSetupCheck: featureFlags.skipSetupCheck,
+      skipOnboardingCheck: featureFlags.skipOnboardingCheck,
+    });
+
+    // Check feature flags for post-login behavior
+    if (featureFlags.skipOnboardingAfterLogin) {
+      console.log('🚀 Skipping onboarding after login (feature flag enabled) - going to setup');
+      // Skip onboarding, go directly to setup
+      if (hasCompletedSetup) {
+        navigate('/dashboard');
+      } else {
+        navigate('/setup');
+      }
+      return;
+    }
+
+    if (featureFlags.skipSetupAfterLogin || featureFlags.skipSetupCheck || 
+        featureFlags.skipOnboardingCheck) {
+      console.log('🚀 Skipping setup after login (feature flag enabled)');
+      navigate('/dashboard');
+      return;
+    }
+
+    if (featureFlags.forceOnboardingAfterLogin) {
+      console.log('🚀 Forcing onboarding after login (feature flag enabled)');
+      navigate('/onboarding');
+      return;
+    }
+
+    if (featureFlags.forceSetupAfterLogin || featureFlags.forceSetup ||
+        featureFlags.forceOnboarding) {
+      console.log('🚀 Forcing setup after login (feature flag enabled)');
+      navigate('/setup');
+      return;
+    }
+
+    // Normal flow: check onboarding first, then setup
+    if (!hasCompletedOnboarding) {
+      console.log('📋 Onboarding not complete - redirecting to onboarding');
+      navigate('/onboarding');
+    } else if (!hasCompletedSetup) {
+      console.log('📋 Setup not complete - redirecting to setup');
+      navigate('/setup');
+    } else {
+      console.log('✅ All complete - redirecting to dashboard');
+      navigate('/dashboard');
+    }
   };
 
   return (

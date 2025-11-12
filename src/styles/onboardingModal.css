@@ -1,0 +1,1221 @@
+/* Onboarding Modal - Uses Brand Design System from tokens.css */
+
+/* Modal Overlay */
+.onboarding-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #f8f9fc 0%, #ffffff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+/* Modal Container */
+.onboarding-modal-container {
+  background: var(--bg-primary);
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  width: 700px;
+  max-width: 90vw;
+  height: auto;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  animation: modalScale 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Modal size variants for different steps */
+.onboarding-modal-container.step-welcome {
+  width: 700px;
+  max-width: 90vw;
+}
+
+.onboarding-modal-container.step-models,
+.onboarding-modal-container.step-prompts,
+.onboarding-modal-container.step-summary {
+  width: 72vw;
+  max-width: 1200px;
+  height: 88vh;
+}
+
+.onboarding-modal-container.step-brand {
+  width: 700px;
+  max-width: 90vw;
+  max-height: 85vh;
+}
+
+.onboarding-modal-container.step-competitors {
+  width: 80vw;
+  max-width: 1020px;
+  max-height: 90vh;
+}
+
+.onboarding-modal-container.step-summary {
+  width: 72vw;
+  max-width: 1000px;
+  max-height: 85vh;
+}
+
+@keyframes modalScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.onboarding-welcome-container {
+  max-width: 600px;
+}
+
+/* Step Indicator */
+.step-indicator {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: 264px;
+  z-index: 10;
+}
+
+.step-indicator-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  justify-content: flex-start;
+  height: 46px;
+}
+
+.step-indicator-icon-completed {
+  color: #4ade80;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+
+.step-indicator-active-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.step-indicator-pill {
+  height: 20px;
+  background: var(--accent500);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.step-indicator-circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.step-indicator-circle-pending {
+  background: var(--primary300);
+  border: none;
+}
+
+.step-indicator-label {
+  font-size: 12.8px;
+  font-weight: 400;
+  font-family: 'IBM Plex Sans', sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.step-indicator-label-completed {
+  color: #4ade80;
+}
+
+.step-indicator-label-current {
+  color: var(--text-headings);
+  font-weight: 500;
+}
+
+.step-indicator-label-pending {
+  color: var(--primary300);
+}
+
+/* Modal Header */
+.onboarding-modal-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 24px;
+  padding: 24px;
+  padding-top: 64px; /* Add space for step indicator */
+  border-bottom: 1px solid var(--border-default);
+}
+
+.onboarding-back-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-body);
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.onboarding-back-button:hover {
+  background: var(--bg-secondary);
+  color: var(--accent500);
+}
+
+.onboarding-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.onboarding-modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-headings);
+  margin: 0;
+  font-family: 'Sora', sans-serif;
+}
+
+.onboarding-step-badge {
+  background: var(--accent500);
+  color: var(--text-inverse);
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+/* Modal Body */
+.onboarding-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.onboarding-modal-body.step-competitors {
+  padding: 24px 0;
+}
+
+/* Modal Footer */
+.onboarding-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px;
+  border-top: 1px solid var(--border-default);
+  gap: 16px;
+}
+
+/* Buttons */
+.onboarding-button-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.onboarding-button-primary {
+  background: #282c34;
+  color: #FFFFFF;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Sora', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.onboarding-button-primary:hover:not(:disabled),
+.onboarding-button-primary:focus:not(:disabled) {
+  outline: 2px solid #00BCDC;
+  outline-offset: 0;
+}
+
+.onboarding-button-primary:disabled {
+  background: #E8E9ED;
+  color: #C6C9D2;
+  cursor: not-allowed;
+}
+
+.onboarding-button-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  background: #1A1D29;
+  color: #FFFFFF;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.onboarding-button-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  border: 6px solid transparent;
+  border-top-color: #1A1D29;
+}
+
+.onboarding-button-secondary {
+  background: transparent;
+  color: #212534;
+  border: 1px solid #E8E9ED;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: 'IBM Plex Sans', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.onboarding-button-secondary:hover {
+  background: #F4F4F6;
+  border-color: #00BCDC;
+  color: #00BCDC;
+}
+
+/* Welcome Screen */
+.onboarding-welcome-card {
+  padding: 48px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.onboarding-welcome-header {
+  margin-bottom: 24px;
+}
+
+.onboarding-welcome-title {
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--text-headings);
+  margin: 0 0 8px 0;
+  font-family: 'Sora', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.onboarding-welcome-subtitle {
+  font-size: 18px;
+  color: var(--text-caption);
+  margin: 0;
+  font-weight: 400;
+  font-family: 'IBM Plex Sans', sans-serif;
+  line-height: 1.5;
+}
+
+.onboarding-welcome-description {
+  margin-bottom: 32px;
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.onboarding-welcome-description p {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-body);
+  margin: 0;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+/* Step Cards */
+.onboarding-steps-overview {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  margin-bottom: 32px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.onboarding-step-card {
+  background: var(--bg-primary);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: left;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  border: 1px solid var(--border-default);
+}
+
+.onboarding-step-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent500);
+  font-family: 'IBM Plex Sans', sans-serif;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.onboarding-step-content {
+  margin-left: 0;
+  flex: 1;
+  width: 100%;
+  text-align: center;
+}
+
+.onboarding-step-content h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-headings);
+  margin: 0 0 6px 0;
+  font-family: 'Sora', sans-serif;
+}
+
+.onboarding-step-content p {
+  font-size: 13px;
+  color: var(--text-caption);
+  margin: 0;
+  line-height: 1.5;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.onboarding-welcome-button {
+  background: #282c34;
+  color: var(--text-inverse);
+  border: none;
+  padding: 14px 32px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+  box-shadow: var(--shadow-md);
+}
+
+.onboarding-welcome-button:hover:not(:disabled),
+.onboarding-welcome-button:focus:not(:disabled) {
+  outline: 2px solid #00BCDC;
+  outline-offset: 0;
+}
+
+/* AI Model Selection */
+.ai-model-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.ai-model-instruction {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.ai-model-instruction p {
+  margin: 0;
+  font-size: 15px;
+  color: #393E51;
+  line-height: 1.6;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.ai-model-counter {
+  font-size: 13px;
+  color: #393E51;
+  text-align: center;
+  font-family: 'IBM Plex Sans', sans-serif;
+  margin-top: 8px;
+}
+
+.ai-model-counter strong {
+  color: #00BCDC;
+  font-weight: 600;
+}
+
+.ai-model-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.ai-model-card {
+  background: #FFFFFF;
+  border: 1px solid #E8E9ED;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+  min-height: 160px;
+  text-align: center;
+}
+
+.ai-model-card:hover:not(:disabled) {
+  background: #F4F4F6;
+  border: 1px solid #00BCDC;
+}
+
+.ai-model-card:hover:not(:disabled) .ai-model-name,
+.ai-model-card:hover:not(:disabled) .ai-model-provider {
+  color: #00BCDC;
+}
+
+.ai-model-card.selected {
+  background: rgba(0, 188, 220, 0.08);
+  border: 2px solid #00BCDC;
+}
+
+.ai-model-card.selected .ai-model-name {
+  color: #00BCDC;
+}
+
+.ai-model-card.disabled {
+  background: #F4F4F6;
+  border: 1px dashed #E8E9ED;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ai-model-card.disabled .ai-model-name,
+.ai-model-card.disabled .ai-model-provider {
+  color: #C6C9D2;
+}
+
+.ai-model-card:focus-visible {
+  outline: 2px solid #00BCDC;
+  outline-offset: 2px;
+}
+
+.ai-model-checkmark {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  background: #00BCDC;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.ai-model-logo {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.ai-model-logo svg {
+  width: 64px;
+  height: 64px;
+}
+
+.ai-model-logo-image {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
+.ai-model-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #212534;
+  text-align: center;
+  font-family: 'Sora', sans-serif;
+  transition: color 0.15s ease;
+}
+
+.ai-model-provider {
+  font-size: 12px;
+  color: #6B7280;
+  text-align: center;
+  font-family: 'IBM Plex Sans', sans-serif;
+  transition: color 0.15s ease;
+}
+
+.ai-model-badge {
+  position: absolute;
+  bottom: 12px;
+  font-size: 10px;
+  color: #6B7280;
+  background: #E8E9ED;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Prompt Configuration */
+.prompt-configuration {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.prompt-instruction {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: var(--accent-light);
+  border-radius: 8px;
+  border: 1px solid var(--accent200);
+}
+
+.prompt-instruction .instruction-icon {
+  color: var(--accent500);
+  flex-shrink: 0;
+}
+
+.prompt-instruction p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-body);
+  line-height: 1.5;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.prompt-topic-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+}
+
+.prompt-header-right {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.prompt-header-right-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.prompt-topic-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-topic-pill:hover {
+  background: var(--accent-light);
+  border-color: var(--accent500);
+  color: var(--accent500);
+}
+
+.prompt-pill-badge {
+  background: var(--accent500);
+  color: var(--text-inverse);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 18px;
+  text-align: center;
+}
+
+.prompt-counter {
+  font-size: 13px;
+  color: var(--text-caption);
+  font-family: 'IBM Plex Sans', sans-serif;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.prompt-counter strong {
+  color: var(--accent500);
+  font-weight: 600;
+}
+
+/* Topic Accordion */
+.prompt-topics-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.prompt-topic-section {
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.prompt-topic-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: var(--bg-secondary);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-topic-header:hover {
+  background: var(--bg-tertiary);
+}
+
+.prompt-topic-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.prompt-topic-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-headings);
+  font-family: 'Sora', sans-serif;
+}
+
+.prompt-topic-badge {
+  background: var(--accent-light);
+  color: var(--accent500);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-topic-header-right {
+  color: var(--text-caption);
+  display: flex;
+  align-items: center;
+}
+
+.prompt-topic-content {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-default);
+}
+
+.prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prompt-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+}
+
+.prompt-checkbox-item:hover {
+  background: var(--bg-secondary);
+}
+
+.prompt-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent500);
+  flex-shrink: 0;
+}
+
+.prompt-label {
+  font-size: 14px;
+  color: var(--text-body);
+  line-height: 1.4;
+  font-family: 'IBM Plex Sans', sans-serif;
+  cursor: pointer;
+}
+
+.prompt-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.prompt-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-headings);
+  margin: 0;
+  font-family: 'Sora', sans-serif;
+}
+
+.prompt-suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.prompt-suggestion-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.prompt-suggestion-card:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent500);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.prompt-suggestion-card.selected {
+  background: var(--accent-light);
+  border: 2px solid var(--accent500);
+  box-shadow: var(--shadow-sm);
+}
+
+.prompt-text {
+  font-size: 14px;
+  color: var(--text-body);
+  line-height: 1.4;
+  flex: 1;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-checkmark {
+  color: var(--accent500);
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.prompt-custom-input-wrapper {
+  display: flex;
+  gap: 12px;
+}
+
+.prompt-custom-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-body);
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-input:focus {
+  outline: none;
+  border-color: var(--accent500);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.prompt-add-button {
+  background: var(--accent500);
+  color: var(--text-inverse);
+  border: none;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  box-shadow: var(--shadow-sm);
+}
+
+.prompt-add-button:hover:not(:disabled) {
+  background: var(--accent600);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.prompt-add-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.prompt-selected-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prompt-selected-item {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border-default);
+}
+
+.prompt-remove-button {
+  background: transparent;
+  border: none;
+  color: var(--text-caption);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.prompt-remove-button:hover {
+  background: var(--bg-primary);
+  color: var(--text-error);
+}
+
+/* Custom Prompt Modal */
+.prompt-custom-trigger-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+  white-space: nowrap;
+}
+
+.prompt-custom-trigger-button:hover {
+  background: var(--accent-light);
+  border-color: var(--accent500);
+  color: var(--accent500);
+  box-shadow: var(--shadow-sm);
+}
+
+.prompt-custom-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prompt-custom-modal {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  width: 440px;
+  max-width: 90vw;
+  animation: modalSlideUp 0.2s ease-out;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.prompt-custom-modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.prompt-custom-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-headings);
+  font-family: 'Sora', sans-serif;
+}
+
+.prompt-custom-modal-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.prompt-custom-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prompt-custom-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-headings);
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-select {
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-body);
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-select:focus {
+  outline: none;
+  border-color: var(--accent500);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.prompt-custom-modal-input {
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-body);
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-modal-input:focus {
+  outline: none;
+  border-color: var(--accent500);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.prompt-custom-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-default);
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.prompt-custom-cancel-button {
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.prompt-custom-cancel-button:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-caption);
+}
+
+.prompt-custom-submit-button {
+  padding: 10px 20px;
+  background: var(--accent500);
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-inverse);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'IBM Plex Sans', sans-serif;
+  box-shadow: var(--shadow-sm);
+}
+
+.prompt-custom-submit-button:hover:not(:disabled) {
+  background: var(--accent600);
+  box-shadow: var(--shadow-md);
+}
+
+.prompt-custom-submit-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.prompt-custom-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--accent-light);
+  color: var(--accent500);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+/* Responsive Design */
+@media (max-width: 1023px) {
+  .onboarding-modal-container.step-models,
+  .onboarding-modal-container.step-prompts,
+  .onboarding-modal-container.step-summary {
+    width: 85vw;
+  }
+
+  .onboarding-modal-header,
+  .onboarding-modal-body,
+  .onboarding-modal-footer {
+    padding: 24px;
+  }
+
+  .ai-model-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .onboarding-modal-container.step-welcome {
+    width: 95vw;
+  }
+
+  .onboarding-modal-container.step-models,
+  .onboarding-modal-container.step-prompts,
+  .onboarding-modal-container.step-summary {
+    width: 95vw;
+    height: 90vh;
+  }
+
+  .onboarding-welcome-card {
+    padding: 32px 24px;
+  }
+
+  .onboarding-modal-header,
+  .onboarding-modal-body,
+  .onboarding-modal-footer {
+    padding: 16px;
+  }
+
+  .onboarding-welcome-title {
+    font-size: 28px;
+  }
+
+  .ai-model-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-suggestions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .prompt-header-right {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .prompt-counter {
+    text-align: center;
+  }
+
+  .prompt-custom-trigger-button {
+    justify-content: center;
+  }
+
+  .onboarding-back-button span {
+    display: none;
+  }
+
+  .onboarding-modal-footer {
+    flex-direction: column-reverse;
+  }
+
+  .onboarding-button-primary,
+  .onboarding-button-secondary {
+    width: 100%;
+  }
+}

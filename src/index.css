@@ -1,4 +1,6 @@
 @import './styles/tokens.css';
+@import './styles/promptSelection.css';
+@import './styles/onboardingModal.css';
 
 @tailwind base;
 @tailwind components;

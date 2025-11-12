@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
+import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
 import { mockPromptsData } from '../data/mockPromptsData';
 import { mockSourcesData } from '../data/mockSourcesData';
 import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
+import type { Topic } from '../types/topic';
+import { featureFlags } from '../config/featureFlags';
+import { onboardingUtils } from '../utils/onboardingUtils';
 import {
   TrendingUp,
   MessageSquare,
@@ -71,6 +77,92 @@ export const Dashboard = () => {
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+  const navigate = useNavigate();
+  const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
+  const [startDate, setStartDate] = useState('2024-10-01');
+  const [endDate, setEndDate] = useState('2024-10-31');
+  const [showTopicModal, setShowTopicModal] = useState(false);
+
+  const getBrandData = () => {
+    const brandInfo = localStorage.getItem('onboarding_brand');
+    if (brandInfo) {
+      try {
+        const parsed = JSON.parse(brandInfo);
+        return { name: parsed.name || 'Your Brand', industry: parsed.industry || 'Technology' };
+      } catch (e) {
+        return { name: 'Your Brand', industry: 'Technology' };
+      }
+    }
+    return { name: 'Your Brand', industry: 'Technology' };
+  };
+
+  useEffect(() => {
+    // Skip setup check if feature flag is set (for testing)
+    if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
+      console.log('🚀 Skipping setup check (feature flag enabled)');
+      return;
+    }
+
+    // Force setup if feature flag is set
+    if (featureFlags.forceSetup || featureFlags.forceOnboarding) {
+      console.log('🚀 Forcing setup (feature flag enabled)');
+      navigate('/setup');
+      return;
+    }
+
+    const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
+    const hasCompletedTopicSelection = onboardingUtils.getOnboardingTopics();
+    const hasCompletedPromptSelection = onboardingUtils.getOnboardingPrompts();
+
+    console.log('Dashboard useEffect - Checking flow:', {
+      hasCompletedSetup,
+      hasCompletedTopicSelection: !!hasCompletedTopicSelection,
+      hasCompletedPromptSelection: !!hasCompletedPromptSelection
+    });
+
+    // Redirect to setup if not complete
+    if (!hasCompletedSetup) {
+      console.log('No setup - redirecting to /setup');
+      navigate('/setup');
+      return;
+    }
+
+    // Testing mode (only in development)
+    if (featureFlags.enableTestingMode && featureFlags.isDevelopment) {
+      console.log('🧪 Testing mode enabled - showing topic modal');
+      const timer = setTimeout(() => {
+        setShowTopicModal(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+
+    // Production flow: Check for incomplete steps
+    if (!hasCompletedTopicSelection) {
+      console.log('No topics - showing topic modal in 500ms');
+      const timer = setTimeout(() => {
+        setShowTopicModal(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    } else if (!hasCompletedPromptSelection) {
+      console.log('No prompts - redirecting to /prompt-selection in 500ms');
+      const timer = setTimeout(() => {
+        navigate('/prompt-selection');
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      console.log('All setup complete - showing full dashboard');
+    }
+  }, [navigate]);
+
+  const handleTopicsSelected = (selectedTopics: Topic[]) => {
+    localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
+    setShowTopicModal(false);
+    navigate('/prompt-selection');
+  };
+
+  const handleTopicModalClose = () => {
+    setShowTopicModal(false);
+  };
 
   const displayName = user?.fullName || user?.email?.split('@')[0] || 'there';
 
@@ -581,6 +673,19 @@ export const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {(() => {
+        console.log('Rendering modal check - showTopicModal:', showTopicModal);
+        return showTopicModal && (
+          <TopicSelectionModal
+            brandName={getBrandData().name}
+            industry={getBrandData().industry}
+            onNext={handleTopicsSelected}
+            onBack={() => {}}
+            onClose={handleTopicModalClose}
+          />
+        );
+      })()}
     </Layout>
   );
 };

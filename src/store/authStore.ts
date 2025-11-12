@@ -1,18 +1,20 @@
 import { create } from 'zustand';
-import { User } from '../lib/auth';
+import { AuthUser, authService } from '../lib/auth';
 
 interface AuthState {
-  user: User | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  setUser: (user: User | null) => void;
+  setUser: (user: AuthUser | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
 }
 
+const storedUser = authService.getStoredUser();
+
 export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  isAuthenticated: false,
+  user: storedUser,
+  isAuthenticated: !!storedUser,
   isLoading: true,
   setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
   setLoading: (isLoading) => set({ isLoading }),

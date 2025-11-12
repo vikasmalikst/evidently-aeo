@@ -120,6 +120,8 @@ export const Dashboard = () => {
     setShowTopicModal(false);
   };
 
+  const displayName = user?.fullName || user?.email?.split('@')[0] || 'there';
+
   const totalPrompts = mockPromptsData.reduce((sum, topic) => sum + topic.prompts.length, 0);
   const avgSentiment = mockPromptsData
     .flatMap(t => t.prompts)
@@ -171,7 +173,7 @@ export const Dashboard = () => {
 
         <div className="mb-6">
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
-            Welcome back, {user?.fullName || user?.email?.split('@')[0]}
+            Welcome back, {displayName}
           </h1>
           <p className="text-[15px] text-[#393e51]">
             Here's your AI visibility performance overview

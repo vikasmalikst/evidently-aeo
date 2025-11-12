@@ -11,15 +11,27 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { isAuthenticated, isLoading, setUser, setLoading } = useAuthStore();
 
   useEffect(() => {
+    let isMounted = true;
+
     const checkAuth = async () => {
-      const user = await authService.getCurrentUser();
-      setUser(user);
-      setLoading(false);
+      try {
+        const user = await authService.getCurrentUser();
+        if (!isMounted) return;
+        setUser(user);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
     };
 
     if (isLoading) {
       checkAuth();
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [isLoading, setUser, setLoading]);
 
   if (isLoading) {

@@ -1,171 +1,250 @@
-import { supabase } from './supabase';
+import { apiClient } from './apiClient';
 
-export interface User {
+const USER_STORAGE_KEY = 'auth.user';
+
+interface BackendAuthSuccess {
+  user: {
+    id: string;
+    email: string;
+    name?: string | null;
+    customer_id?: string | null;
+    role?: string | null;
+  };
+  profile: {
+    id: string;
+    email: string;
+    name?: string | null;
+    full_name?: string | null;
+    customer_id?: string | null;
+    role?: string | null;
+  };
+  session: {
+    access_token: string;
+    refresh_token: string;
+    expires_at: number;
+  };
+}
+
+interface BackendResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+export interface AuthUser {
   id: string;
   email: string;
   fullName: string | null;
-  emailVerified: boolean;
+  customerId: string | null;
+  role?: string | null;
 }
 
 export interface AuthResponse {
   success: boolean;
-  user?: User;
+  user?: AuthUser;
   error?: string;
 }
 
+const persistUser = (user: AuthUser | null) => {
+  if (!user) {
+    localStorage.removeItem(USER_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+};
+
+const loadUser = (): AuthUser | null => {
+  const raw = localStorage.getItem(USER_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+};
+
+const mapUser = (payload: BackendAuthSuccess): AuthUser => {
+  const name = payload.profile.full_name ?? payload.profile.name ?? payload.user.name ?? null;
+  return {
+    id: payload.user.id,
+    email: payload.user.email,
+    fullName: name,
+    customerId: payload.profile.customer_id ?? payload.user.customer_id ?? null,
+    role: payload.profile.role ?? payload.user.role ?? null,
+  };
+};
+
+const handleAuthSuccess = (payload: BackendAuthSuccess): AuthResponse => {
+  apiClient.setAuthTokens(
+    payload.session.access_token,
+    payload.session.refresh_token,
+    payload.session.expires_at
+  );
+
+  const user = mapUser(payload);
+  persistUser(user);
+
+  return {
+    success: true,
+    user,
+  };
+};
+
 export const authService = {
+  getStoredUser(): AuthUser | null {
+    return loadUser();
+  },
+
   async register(email: string, password: string, fullName: string): Promise<AuthResponse> {
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-          },
+      const response = await apiClient.request<BackendResponse<BackendAuthSuccess>>(
+        '/auth/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            email,
+            password,
+            name: fullName,
+          }),
         },
-      });
+        { requiresAuth: false }
+      );
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Registration failed');
+      if (!response.success || !response.data) {
+        throw new Error(response.error || response.message || 'Registration failed');
+      }
 
-      const { error: profileError } = await supabase
-        .from('users')
-        .insert({
-          id: authData.user.id,
-          email,
-          full_name: fullName,
-          email_verified: false,
-        });
-
-      if (profileError) throw profileError;
-
-      return {
-        success: true,
-        user: {
-          id: authData.user.id,
-          email,
-          fullName,
-          emailVerified: false,
-        },
-      };
-    } catch (error: any) {
+      return handleAuthSuccess(response.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Registration failed';
       return {
         success: false,
-        error: error.message || 'Registration failed',
+        error: message,
       };
     }
   },
 
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Login failed');
-
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authData.user.id)
-        .maybeSingle();
-
-      if (userError) throw userError;
-
-      await supabase.from('user_sessions').insert({
-        user_id: authData.user.id,
-        login_at: new Date().toISOString(),
-      });
-
-      return {
-        success: true,
-        user: {
-          id: authData.user.id,
-          email: authData.user.email!,
-          fullName: userData?.full_name || null,
-          emailVerified: userData?.email_verified || false,
+      const response = await apiClient.request<BackendResponse<BackendAuthSuccess>>(
+        '/auth/login',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
         },
-      };
-    } catch (error: any) {
+        { requiresAuth: false }
+      );
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error || response.message || 'Login failed');
+      }
+
+      return handleAuthSuccess(response.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Login failed';
       return {
         success: false,
-        error: error.message || 'Login failed',
+        error: message,
+      };
+    }
+  },
+
+  async loginWithGoogle(code: string): Promise<AuthResponse> {
+    try {
+      const response = await apiClient.request<BackendResponse<BackendAuthSuccess>>(
+        '/auth/google',
+        {
+          method: 'POST',
+          body: JSON.stringify({ code }),
+        },
+        { requiresAuth: false }
+      );
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error || response.message || 'Google authentication failed');
+      }
+
+      return handleAuthSuccess(response.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Google authentication failed';
+      return {
+        success: false,
+        error: message,
       };
     }
   },
 
   async logout(): Promise<void> {
-    const { data } = await supabase.auth.getUser();
-    if (data.user) {
-      await supabase
-        .from('user_sessions')
-        .update({ logout_at: new Date().toISOString() })
-        .eq('user_id', data.user.id)
-        .is('logout_at', null);
-    }
-    await supabase.auth.signOut();
-  },
-
-  async resetPassword(email: string): Promise<AuthResponse> {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-
-      if (error) throw error;
-
-      return {
-        success: true,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message || 'Password reset failed',
-      };
-    }
-  },
-
-  async updatePassword(newPassword: string): Promise<AuthResponse> {
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (error) throw error;
-
-      return {
-        success: true,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message || 'Password update failed',
-      };
-    }
-  },
-
-  async getCurrentUser(): Promise<User | null> {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      return {
-        id: user.id,
-        email: user.email!,
-        fullName: userData?.full_name || null,
-        emailVerified: userData?.email_verified || false,
-      };
+      await apiClient.request<BackendResponse<{ message: string }>>(
+        '/auth/signout',
+        { method: 'POST' },
+        { requiresAuth: true }
+      );
     } catch (error) {
+      console.warn('Failed to notify backend about logout:', error);
+    } finally {
+      apiClient.clearAuthTokens();
+      persistUser(null);
+    }
+  },
+
+  async resetPassword(_email: string): Promise<AuthResponse> {
+    return {
+      success: false,
+      error: 'Password reset is not yet available in the new backend.',
+    };
+  },
+
+  async updatePassword(_newPassword: string): Promise<AuthResponse> {
+    return {
+      success: false,
+      error: 'Password update is not yet available in the new backend.',
+    };
+  },
+
+  async getCurrentUser(): Promise<AuthUser | null> {
+    const accessToken = apiClient.getAccessToken();
+    const refreshToken = apiClient.getRefreshToken();
+
+    if (!accessToken && !refreshToken) {
+      persistUser(null);
+      return null;
+    }
+
+    try {
+      const response = await apiClient.request<BackendResponse<any>>('/auth/me');
+      if (!response.success || !response.data) {
+        throw new Error(response.error || response.message || 'Failed to fetch user');
+      }
+
+      const payload: BackendAuthSuccess = {
+        user: {
+          id: response.data.id,
+          email: response.data.email,
+          name: response.data.name ?? response.data.full_name ?? null,
+          customer_id: response.data.customer_id ?? null,
+          role: response.data.role ?? null,
+        },
+        profile: response.data,
+        session: {
+          access_token: apiClient.getAccessToken() || '',
+          refresh_token: apiClient.getRefreshToken() || '',
+          expires_at: apiClient.getTokenExpiry() || Date.now(),
+        },
+      };
+
+      const user = mapUser(payload);
+      persistUser(user);
+      return user;
+    } catch (error) {
+      console.warn('Failed to restore authenticated user:', error);
+      apiClient.clearAuthTokens();
+      persistUser(null);
       return null;
     }
   },
 };
+

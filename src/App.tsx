@@ -12,6 +12,7 @@ import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
 import { Settings } from './pages/Settings';
 import { ManagePrompts } from './pages/ManagePrompts';
+import { TopicManagementSettings } from './pages/BrandSettings/TopicManagementSettings';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
@@ -146,6 +147,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ManagePrompts />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/manage-topics"
+          element={
+            <ProtectedRoute>
+              <TopicManagementSettings />
             </ProtectedRoute>
           }
         />

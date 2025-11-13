@@ -17,7 +17,11 @@ const settingsNavItems: SettingsNavItem[] = [
     label: 'Manage Prompts',
     path: '/settings/manage-prompts',
   },
-  // Add more settings nav items here in the future
+  {
+    id: 'manage-topics',
+    label: 'Topic Configuration',
+    path: '/settings/manage-topics',
+  },
 ];
 
 interface SettingsLayoutProps {
@@ -38,7 +42,7 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
   };
 
   return (
-    <div className="flex" style={{ height: 'calc(100vh - 4rem)', marginTop: '-4rem' }}>
+    <div className="flex" style={{ height: 'calc(100vh - 4rem)' }}>
       {/* Settings Navigation Sidebar */}
       <div className="w-64 bg-white border-r border-[var(--border-default)] flex-shrink-0 flex flex-col">
         <div className="p-6 border-b border-[var(--border-default)]">
@@ -62,7 +66,7 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
                     <span className="text-sm relative">
                       {item.label}
                       {active && (
-                        <span className="absolute bottom-0 left-0 h-0.5 bg-[#00bcdc]" style={{ width: '64%' }}></span>
+                        <span className="absolute left-0 h-0.5 bg-[#00bcdc]" style={{ width: '100%', bottom: '-2px' }}></span>
                       )}
                     </span>
                   </button>

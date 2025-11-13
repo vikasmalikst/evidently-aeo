@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { brandService } from '../services/brand.service';
-import { brandDashboardService } from '../services/brand-dashboard.service';
+import { brandDashboardService, DashboardDateRange } from '../services/brand-dashboard.service';
+import { promptsAnalyticsService } from '../services/prompts-analytics.service';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { BrandOnboardingRequest, ApiResponse, DatabaseError } from '../types/auth';
 import { supabaseAdmin } from '../config/database';
@@ -262,6 +263,53 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
   try {
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
+    const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    let dateRange: DashboardDateRange | undefined;
+
+    if (startQuery || endQuery) {
+      try {
+        const parseDate = (value: string): Date => {
+          const parsed = new Date(value);
+          if (Number.isNaN(parsed.getTime())) {
+            throw new Error(`Invalid date: ${value}`);
+          }
+          return parsed;
+        };
+
+        let startDate = startQuery ? parseDate(startQuery) : undefined;
+        let endDate = endQuery ? parseDate(endQuery) : undefined;
+
+        if (endDate && !startDate) {
+          startDate = new Date(endDate);
+          startDate.setUTCDate(startDate.getUTCDate() - 30);
+        }
+
+        if (startDate && !endDate) {
+          endDate = new Date(startDate);
+        }
+
+        if (!startDate || !endDate) {
+          throw new Error('Both startDate and endDate are required');
+        }
+
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate.setUTCHours(23, 59, 59, 999);
+
+        if (startDate.getTime() > endDate.getTime()) {
+          throw new Error('startDate must be before or equal to endDate');
+        }
+
+        dateRange = {
+          start: startDate.toISOString(),
+          end: endDate.toISOString()
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid date range';
+        res.status(400).json({ success: false, error: message });
+        return;
+      }
+    }
 
     console.log(`[Dashboard Route] brandId=${brandId}, customerId=${customerId}, user=${req.user?.email}`);
 
@@ -270,7 +318,7 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
       return;
     }
 
-    const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId);
+    const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange);
 
     res.json({
       success: true,
@@ -287,6 +335,68 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to fetch brand dashboard'
+    });
+  }
+});
+
+/**
+ * GET /brands/:brandId/prompts
+ * Get prompt analytics for a specific brand
+ */
+router.get('/:brandId/prompts', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    if (!brandId) {
+      res.status(400).json({ success: false, error: 'Brand ID is required' });
+      return;
+    }
+
+    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    const collectorsQuery = req.query.collectors;
+
+    let collectors: string[] | undefined;
+    if (typeof collectorsQuery === 'string') {
+      collectors = collectorsQuery
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+    } else if (Array.isArray(collectorsQuery)) {
+      collectors = collectorsQuery
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter((value) => value.length > 0);
+    }
+
+    const payload = await promptsAnalyticsService.getPromptAnalytics({
+      brandId,
+      customerId,
+      startDate,
+      endDate,
+      collectors
+    });
+
+    res.json({
+      success: true,
+      data: payload
+    });
+  } catch (error) {
+    console.error('Error fetching prompt analytics:', error);
+
+    if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
+      res.status(404).json({ success: false, error: error.message });
+      return;
+    }
+
+    if (error instanceof Error && error.message.toLowerCase().includes('invalid')) {
+      res.status(400).json({ success: false, error: error.message });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch prompt analytics'
     });
   }
 });

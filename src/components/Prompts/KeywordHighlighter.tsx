@@ -2,28 +2,28 @@ interface KeywordHighlighterProps {
   text: string;
   keywords: {
     brand: string[];
-    target: string[];
-    top: string[];
+    products: string[];
   };
   highlightBrand: boolean;
-  highlightTarget: boolean;
-  highlightTop: boolean;
+  highlightProducts: boolean;
 }
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export const KeywordHighlighter = ({
   text,
   keywords,
   highlightBrand,
-  highlightTarget,
-  highlightTop
+  highlightProducts
 }: KeywordHighlighterProps) => {
-  let highlightedText = text;
-
   const highlights: Array<{ start: number; end: number; type: string }> = [];
 
   const addHighlights = (words: string[], type: string) => {
     words.forEach(word => {
-      const regex = new RegExp(`\\b${word}\\b`, 'gi');
+      if (!word || word.trim().length === 0) {
+        return;
+      }
+      const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'giu');
       let match;
       while ((match = regex.exec(text)) !== null) {
         highlights.push({
@@ -36,8 +36,7 @@ export const KeywordHighlighter = ({
   };
 
   if (highlightBrand) addHighlights(keywords.brand, 'brand');
-  if (highlightTarget) addHighlights(keywords.target, 'target');
-  if (highlightTop) addHighlights(keywords.top, 'top');
+  if (highlightProducts) addHighlights(keywords.products, 'product');
 
   highlights.sort((a, b) => a.start - b.start);
 
@@ -69,8 +68,7 @@ export const KeywordHighlighter = ({
 
     const getHighlightColor = (type: string) => {
       if (type === 'brand') return '#498CF9';
-      if (type === 'target') return '#AC59FB';
-      if (type === 'top') return '#F155A2';
+      if (type === 'product') return '#AC59FB';
       return '';
     };
 

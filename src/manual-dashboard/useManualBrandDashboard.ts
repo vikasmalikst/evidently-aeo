@@ -102,21 +102,48 @@ export const useManualBrandDashboard = (
 
         setBrands(fetchedBrands)
 
-        if (fetchedBrands.length === 0) {
-          setSelectedBrandId(null)
-          if (persistSelection) {
-            localStorage.removeItem(storageKey)
+        setSelectedBrandId((previousSelected) => {
+          if (fetchedBrands.length === 0) {
+            if (persistSelection) {
+              try {
+                localStorage.removeItem(storageKey)
+              } catch {
+                // ignore storage issues
+              }
+            }
+            return null
           }
-          return
-        }
 
-        if (!selectedBrandId || !fetchedBrands.some((brand) => brand.id === selectedBrandId)) {
-          const fallbackBrandId = fetchedBrands[0]?.id ?? null
-          setSelectedBrandId(fallbackBrandId)
-          if (persistSelection && fallbackBrandId) {
-            localStorage.setItem(storageKey, fallbackBrandId)
+          const stillValid =
+            previousSelected && fetchedBrands.some((brand) => brand.id === previousSelected)
+
+          if (stillValid) {
+            if (persistSelection) {
+              try {
+                localStorage.setItem(storageKey, previousSelected)
+              } catch {
+                // ignore storage issues
+              }
+            }
+            return previousSelected
           }
-        }
+
+          const fallbackBrandId = fetchedBrands[0]?.id ?? null
+
+          if (persistSelection) {
+            try {
+              if (fallbackBrandId) {
+                localStorage.setItem(storageKey, fallbackBrandId)
+              } else {
+                localStorage.removeItem(storageKey)
+              }
+            } catch {
+              // ignore storage issues
+            }
+          }
+
+          return fallbackBrandId
+        })
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : 'Failed to load brands'
@@ -136,7 +163,7 @@ export const useManualBrandDashboard = (
     return () => {
       cancelled = true
     }
-  }, [filter, persistSelection, reloadToken, selectedBrandId, storageKey])
+  }, [filter, persistSelection, reloadToken, storageKey])
 
   const selectedBrand = useMemo(
     () => brands.find((brand) => brand.id === selectedBrandId) ?? null,

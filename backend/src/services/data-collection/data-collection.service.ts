@@ -187,7 +187,7 @@ export class DataCollectionService {
     // DeepSeek Collector (direct via OpenRouter)
     this.collectors.set('deepseek', {
       name: 'DeepSeek Collector',
-      enabled: true, // enable once OPENROUTER_API_KEY is configured
+      enabled: false, // enable once OPENROUTER_API_KEY is configured
       baseUrl: 'openrouter',
       timeout: 45000,
       retries: 1,

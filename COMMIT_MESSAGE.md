@@ -1,44 +1,56 @@
-feat: Add Settings > Manage Prompts page with coverage summary
+feat: Add Topic Configuration page with inline expandable prompts and improved review modal
 
 ## Summary
-Implements a new Settings > Manage Prompts page that allows users to view and manage their tracked prompts with a comprehensive coverage summary dashboard.
+Implements a new Topic Configuration page under Settings with inline expandable prompts, improved review changes modal, and design system alignment.
 
 ## Changes
 
 ### New Features
-- **Prompt Coverage Summary Card**: Added a summary dashboard at the top of the Manage Prompts page displaying:
-  - Total Prompts count across all topics
-  - Topics Covered count
-  - Coverage percentage with color-coded indicators (green ≥90%, yellow ≥70%, red <70%)
-  - Visibility Score
-- **Settings Navigation**: Created a new SettingsLayout component with a clean sidebar navigation
-- **Manage Prompts Page**: New page at `/settings/manage-prompts` for managing prompts grouped by topic
+- **Topic Configuration Page**: New page at `/settings/manage-topics` for managing topic configurations
+- **Inline Expandable Prompts**: Converted floating sidebar to inline expandable sections with chevron indicators
+- **Configuration History**: Integrated history section into Current Configuration card
+- **Review Changes Modal**: Enhanced modal with design system styling and improved visual feedback
 
 ### UI/UX Improvements
-- **Settings Menu Styling**: 
-  - Removed icons from settings navigation menu for cleaner appearance
-  - Updated active state underline to be 64% of text width
-  - Underline now fits only the text, excluding iconography
-- **Coverage Indicators**: Visual feedback with icons (CheckCircle for good coverage, AlertCircle for low coverage)
+- **Inline Topic Prompts**: 
+  - Prompts now expand inline within topic blocks
+  - ChevronRight icon when closed, ChevronDown when expanded
+  - All topics can be expanded simultaneously
+  - Removed copy functionality from prompts
+- **Settings Navigation**: 
+  - Updated active state underline to full text width with 2px padding
+  - Improved visual alignment
+- **Review Changes Modal**:
+  - Replaced emojis with design system icons
+  - Green highlighting for added topics, red for removed topics
+  - Improved icon and text alignment
+  - Better typography hierarchy and spacing
+- **Page Layout**:
+  - Set max-width of 1200px for main content
+  - Adjusted top spacing for better header separation
+  - Removed "Reset to Setup" button
+  - Removed "Prompts Generated" section
 
 ### Technical Details
-- Added `ManagePrompts` page component with prompt management functionality
-- Created `SettingsLayout` component for consistent settings page structure
-- Implemented `ManagePromptsList` component for displaying prompts by topic
-- Added route configuration for `/settings/manage-prompts`
-- Integrated with existing `PromptConfigurationWorkflow` for progressive disclosure
+- Created `TopicManagementSettings` page component
+- Created `ActiveTopicsSection` with inline expandable prompts
+- Created `CurrentConfigCard` with integrated history
+- Created `TopicEditModal` with improved review step
+- Updated `SettingsLayout` with improved navigation styling
+- Added route configuration for `/settings/manage-topics`
 
 ## Files Changed
-- `src/pages/ManagePrompts.tsx` (new)
-- `src/pages/Settings.tsx` (new)
-- `src/components/Settings/SettingsLayout.tsx` (new)
-- `src/components/Settings/ManagePromptsList.tsx` (new)
+- `src/pages/BrandSettings/TopicManagementSettings.tsx` (new)
+- `src/pages/BrandSettings/components/ActiveTopicsSection.tsx` (new)
+- `src/pages/BrandSettings/components/CurrentConfigCard.tsx` (new)
+- `src/pages/BrandSettings/components/TopicEditModal.tsx` (new)
+- `src/components/Settings/SettingsLayout.tsx` (updated)
+- `src/pages/Settings.tsx` (updated)
 - `src/App.tsx` (route added)
-- `src/utils/promptConfigAdapter.ts` (new - configuration utilities)
 
 ## Testing
-- Verify prompt coverage summary displays correct counts
-- Confirm settings navigation highlights active page correctly
-- Test prompt selection and editing functionality
-- Validate coverage percentage color coding
-
+- Verify topic expansion/collapse functionality
+- Confirm review changes modal displays correctly
+- Test topic addition/removal highlighting
+- Validate settings navigation active states
+- Check responsive behavior

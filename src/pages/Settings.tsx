@@ -1,7 +1,7 @@
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { useNavigate } from 'react-router-dom';
-import { IconForms, IconChevronRight } from '@tabler/icons-react';
+import { IconForms, IconChevronRight, IconTags } from '@tabler/icons-react';
 
 export const Settings = () => {
   const navigate = useNavigate();
@@ -14,7 +14,13 @@ export const Settings = () => {
       icon: IconForms,
       path: '/settings/manage-prompts',
     },
-    // Add more settings options here in the future
+    {
+      id: 'manage-topics',
+      title: 'Topic Configuration',
+      description: 'Manage topics that determine which queries your brand is measured against',
+      icon: IconTags,
+      path: '/settings/manage-topics',
+    },
   ];
 
   return (

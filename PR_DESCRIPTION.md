@@ -1,68 +1,71 @@
-# Settings > Manage Prompts Page
+# Settings > Topic Configuration Page
 
 ## 🎯 Overview
-This PR introduces a new Settings > Manage Prompts page that provides users with a comprehensive view of their prompt coverage and management capabilities.
+This PR introduces a new Settings > Topic Configuration page that allows users to manage their topic configurations with an improved inline interface and enhanced review changes modal.
 
 ## ✨ Features
 
-### Prompt Coverage Summary Dashboard
-A new summary card displays key metrics at a glance:
-- **Total Prompts**: Count of all prompts across all topics
-- **Topics Covered**: Number of topics with prompts
-- **Coverage**: Percentage with visual indicators:
-  - 🟢 Green (≥90%): Excellent coverage
-  - 🟡 Yellow (≥70%): Good coverage
-  - 🔴 Red (<70%): Needs improvement
-- **Visibility Score**: Current visibility score
+### Topic Configuration Management
+- **Current Configuration Card**: Displays active configuration with version, topics, and integrated history
+- **Active Topics Section**: List of active topics with inline expandable prompts
+- **Version History**: View and restore previous topic configurations
+- **Edit Topics**: Modal interface for selecting and reviewing topic changes
 
-### Settings Navigation
-- Clean, icon-free navigation menu
-- Active state indicator with 64% width underline
-- Consistent layout using new `SettingsLayout` component
+### Inline Expandable Prompts
+- **Replaced Floating Sidebar**: Converted drawer-based prompt display to inline expandable sections
+- **Visual Indicators**: ChevronRight (closed) and ChevronDown (expanded) icons
+- **Multiple Expansion**: All topics can be expanded simultaneously
+- **Clean Interface**: Removed copy functionality for simpler interaction
 
-### Prompt Management
-- View prompts grouped by topic
-- Select prompts to view detailed responses
-- Edit and delete prompts inline
-- Add new prompts to existing topics
-- Date range filtering for prompt data
+### Review Changes Modal
+- **Design System Alignment**: Updated to match platform design tokens and patterns
+- **Visual Feedback**: 
+  - 🟢 Green highlighting for added topics
+  - 🔴 Red highlighting for removed topics
+- **Icon Integration**: Replaced emojis with design system icons (Plus, Minus, BarChart3, Clock, etc.)
+- **Improved Layout**: Better spacing, alignment, and typography hierarchy
 
 ## 🎨 UI/UX Improvements
 
-### Settings Menu
-- **Removed icons** for a cleaner, text-focused navigation
-- **Refined underline**: Active state underline is now 64% of text width and positioned only under the text (excluding icon space)
-- Improved visual hierarchy and readability
+### Settings Navigation
+- **Underline Styling**: Active state underline extends to full text width with 2px padding from baseline
+- **Consistent Alignment**: Improved visual alignment across navigation items
 
-### Coverage Indicators
-- Color-coded coverage percentages for quick visual assessment
-- Icon indicators (✓ for good, ⚠ for needs attention)
-- Consistent styling with existing design system
+### Page Layout
+- **Content Width**: Set max-width of 1200px for optimal reading width
+- **Spacing**: Adjusted top padding for better header separation
+- **Simplified Interface**: Removed "Reset to Setup" button and "Prompts Generated" section
+
+### Topic Display
+- **Source Badges**: Color-coded badges for topic sources (trending, ai_generated, preset, custom)
+- **Expandable Sections**: Smooth expand/collapse with clear visual indicators
+- **Prompt Display**: Clean list of search prompts with search icons
 
 ## 📁 New Components
 
-- `ManagePrompts.tsx` - Main page component for prompt management
-- `SettingsLayout.tsx` - Reusable layout component for settings pages
-- `ManagePromptsList.tsx` - Component for displaying and managing prompts by topic
-- `promptConfigAdapter.ts` - Utility functions for prompt configuration conversion
+- `TopicManagementSettings.tsx` - Main page component for topic configuration
+- `ActiveTopicsSection.tsx` - Component for displaying active topics with inline prompts
+- `CurrentConfigCard.tsx` - Card displaying current configuration and history
+- `TopicEditModal.tsx` - Modal for editing topics with review step
+- `useTopicConfiguration.ts` - Hook for managing topic configuration state
 
 ## 🔗 Routes Added
 
-- `/settings` - Main settings page
-- `/settings/manage-prompts` - Manage Prompts page
+- `/settings/manage-topics` - Topic Configuration page
 
 ## 🧪 Testing Checklist
 
-- [ ] Prompt coverage summary displays correct counts
-- [ ] Coverage percentage color coding works correctly
-- [ ] Settings navigation highlights active page
-- [ ] Prompt selection and editing functionality works
-- [ ] Date range filtering functions properly
+- [ ] Topic expansion/collapse works correctly
+- [ ] Review changes modal displays added/removed topics correctly
+- [ ] Green/red highlighting works for topic changes
+- [ ] Settings navigation active states work correctly
+- [ ] Version history selection and restoration works
+- [ ] Modal review step shows correct impact information
 - [ ] Responsive design works on different screen sizes
+- [ ] Icon alignment is correct throughout
 
 ## 📸 Screenshots
-_Add screenshots of the new Manage Prompts page and coverage summary_
+_Add screenshots of the Topic Configuration page, inline expanded prompts, and review changes modal_
 
 ## 🔄 Related Issues
 _Link to any related issues or tickets_
-

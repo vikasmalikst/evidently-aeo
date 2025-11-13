@@ -81,10 +81,21 @@ class ApiClient {
       }
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers,
+      });
+    } catch (error) {
+      // Handle network errors (server not running, CORS, etc.)
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        throw new Error(
+          `Unable to connect to backend server at ${url}. Please ensure the backend is running on port ${this.baseUrl.includes('3001') ? '3001' : '3000'}.`
+        );
+      }
+      throw error;
+    }
 
     if (response.status === 401 && requiresAuth && retry) {
       const refreshed = await this.tryRefreshToken();

@@ -362,7 +362,7 @@ export const Dashboard = () => {
   }
 
   const findScore = (label: string) =>
-    dashboardData.scores.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
+    dashboardData?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
   const formatNumber = (value: number, decimals = 1): string => {
     const fixed = value.toFixed(decimals);
@@ -857,6 +857,30 @@ export const Dashboard = () => {
                             {sentimentScore.toFixed(1)}
                           </span>
                         </div>
+              {mockPromptsData.slice(0, 5).map((topic) => {
+                const promptCount = topic.prompts.length || 1;
+                const avgVolume = topic.prompts.reduce((sum, p) => sum + p.volume, 0) / promptCount;
+                const avgSent = topic.prompts.reduce((sum, p) => sum + p.sentiment, 0) / promptCount;
+
+                return (
+                  <div key={topic.id} className="flex items-center justify-between py-2 border-b border-[#f4f4f6] last:border-0">
+                    <div className="flex-1">
+                      <h3 className="text-[14px] font-medium text-[#1a1d29] mb-1">{topic.name}</h3>
+                      <p className="text-[12px] text-[#64748b]">{topic.prompts.length} prompts tracked</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[14px] font-semibold text-[#1a1d29]">{avgVolume.toFixed(1)}%</div>
+                      <div className="text-[12px] text-[#64748b]">Avg volume</div>
+                    </div>
+                    <div className="ml-4">
+                      <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${
+                        avgSent >= 4.5 ? 'bg-[#e6f7f1]' : avgSent >= 3.5 ? 'bg-[#fff8e6]' : 'bg-[#fff0f0]'
+                      }`}>
+                        <span className={`text-[14px] font-semibold ${
+                          avgSent >= 4.5 ? 'text-[#06c686]' : avgSent >= 3.5 ? 'text-[#f9db43]' : 'text-[#f94343]'
+                        }`}>
+                          {avgSent.toFixed(1)}
+                        </span>
                       </div>
                     </div>
                   );

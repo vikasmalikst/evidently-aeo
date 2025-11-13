@@ -6,7 +6,7 @@ interface ResponseViewerProps {
   prompt: PromptEntry | null;
 }
 
-export const ResponseViewer = ({ prompt }: ResponseViewerProps) => {
+export const ResponseViewer = ({ prompt, showHighlighting = true }: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
   const [highlightProducts, setHighlightProducts] = useState(true);
 

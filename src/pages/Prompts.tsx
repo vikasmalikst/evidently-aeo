@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { PromptFilters } from '../components/Prompts/PromptFilters';
 import { PromptsList } from '../components/Prompts/PromptsList';
@@ -52,6 +53,7 @@ const getDateBounds = (preset: DatePreset) => {
 
 export const Prompts = () => {
   const [selectedPrompt, setSelectedPrompt] = useState<PromptEntry | null>(null);
+  const navigate = useNavigate();
   const [selectedLLMs, setSelectedLLMs] = useState<string[]>([]);
   const [selectedRegion, setSelectedRegion] = useState('us');
   const [dateRangeKey, setDateRangeKey] = useState<string>(DATE_PRESETS[2]?.value ?? 'last30');
@@ -167,6 +169,10 @@ export const Prompts = () => {
     };
   }, [selectedBrandId, dateRangeKey, selectedLLMs, brandsLoading]);
 
+  const handleManagePrompts = () => {
+    navigate('/settings/manage-prompts');
+  };
+
   return (
     <Layout>
       <div className="p-6">
@@ -179,7 +185,10 @@ export const Prompts = () => {
               Analyze AI responses to tracked prompts across topics and platforms
             </p>
           </div>
-          <button className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm">
+          <button
+            onClick={handleManagePrompts}
+            className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+          >
             Manage Prompts
           </button>
         </div>

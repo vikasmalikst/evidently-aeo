@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LoginForm } from '../components/Auth/LoginForm';
 import { RegisterForm } from '../components/Auth/RegisterForm';
@@ -11,6 +11,21 @@ type AuthView = 'login' | 'register' | 'reset';
 export const AuthPage = () => {
   const [view, setView] = useState<AuthView>('login');
   const navigate = useNavigate();
+
+  // In dev bypass mode, redirect away from auth page
+  useEffect(() => {
+    if (featureFlags.bypassAuthInDev) {
+      console.log('🔓 Dev mode: Redirecting away from auth page');
+      // Use the same redirect logic as DefaultRedirect
+      if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
+        navigate('/dashboard', { replace: true });
+      } else if (localStorage.getItem('onboarding_complete') === 'true') {
+        navigate(onboardingUtils.isOnboardingComplete() ? '/dashboard' : '/setup', { replace: true });
+      } else {
+        navigate('/onboarding', { replace: true });
+      }
+    }
+  }, [navigate]);
 
   const handleSuccess = () => {
     // Check if onboarding (brand/competitors) is complete

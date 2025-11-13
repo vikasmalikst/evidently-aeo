@@ -10,6 +10,8 @@ import { Keywords } from './pages/Keywords';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
+import { Settings } from './pages/Settings';
+import { ManagePrompts } from './pages/ManagePrompts';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
@@ -128,6 +130,22 @@ function App() {
           element={
             <ProtectedRoute>
               <PromptSelection />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/manage-prompts"
+          element={
+            <ProtectedRoute>
+              <ManagePrompts />
             </ProtectedRoute>
           }
         />

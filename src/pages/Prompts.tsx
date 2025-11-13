@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { PromptFilters } from '../components/Prompts/PromptFilters';
 import { PromptsList } from '../components/Prompts/PromptsList';
@@ -6,6 +7,7 @@ import { ResponseViewer } from '../components/Prompts/ResponseViewer';
 import { mockPromptsData, Prompt } from '../data/mockPromptsData';
 
 export const Prompts = () => {
+  const navigate = useNavigate();
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [selectedLLMs, setSelectedLLMs] = useState<string[]>([]);
   const [selectedRegion, setSelectedRegion] = useState('us');
@@ -13,6 +15,10 @@ export const Prompts = () => {
 
   const handlePromptSelect = (prompt: Prompt) => {
     setSelectedPrompt(prompt);
+  };
+
+  const handleManagePrompts = () => {
+    navigate('/settings/manage-prompts');
   };
 
   return (
@@ -27,7 +33,10 @@ export const Prompts = () => {
               Analyze AI responses to tracked prompts across topics and platforms
             </p>
           </div>
-          <button className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm">
+          <button 
+            onClick={handleManagePrompts}
+            className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+          >
             Manage Prompts
           </button>
         </div>

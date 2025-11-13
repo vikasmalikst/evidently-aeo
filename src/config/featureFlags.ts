@@ -34,5 +34,8 @@ export const featureFlags = {
   
   // Development mode flag
   isDevelopment: import.meta.env.DEV,
+  
+  // Bypass authentication in development (auto-login with dev user)
+  bypassAuthInDev: import.meta.env.VITE_BYPASS_AUTH_IN_DEV === 'true' && import.meta.env.DEV,
 };
 

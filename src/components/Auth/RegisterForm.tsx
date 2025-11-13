@@ -4,7 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import { Mail, Lock, User, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface RegisterFormProps {
-  onSuccess?: () => void;
+  onSuccess?: () => void | Promise<void>;
   onSwitchToLogin?: () => void;
 }
 

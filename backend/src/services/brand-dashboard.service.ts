@@ -3,6 +3,25 @@ import { DatabaseError } from '../types/auth'
 
 const DISTRIBUTION_COLORS = ['#6366f1', '#0ea5e9', '#22d3ee', '#f97316', '#a855f7', '#10b981', '#facc15']
 
+const COLLECTOR_COLORS: Record<string, string> = {
+  chatgpt: '#0ea5e9',
+  'openai-chatgpt': '#0ea5e9',
+  claude: '#6366f1',
+  anthropic: '#6366f1',
+  gemini: '#a855f7',
+  perplexity: '#f97316',
+  deepseek: '#10b981',
+  'bing copilot': '#4b5563',
+  bing_copilot: '#4b5563',
+  'google aio': '#06b6d4',
+  google_aio: '#06b6d4',
+  grok: '#f43f5e',
+  dataforseo: '#facc15',
+  brightdata: '#ec4899',
+  oxylabs: '#14b8a6',
+  default: '#64748b'
+}
+
 interface BrandRow {
   id: string
   name: string
@@ -12,6 +31,7 @@ interface BrandRow {
 interface PositionRow {
   brand_name: string | null
   query_id: string | null
+  collector_result_id: number | null
   collector_type: string | null
   competitor_name: string | null
   visibility_index: string | number | null
@@ -25,6 +45,8 @@ interface PositionRow {
   processed_at: string | null
   brand_positions: number[] | null
   competitor_positions: number[] | null
+  has_brand_presence: boolean | null
+  metadata?: Record<string, any> | null
 }
 
 interface ScoreMetric {
@@ -40,11 +62,37 @@ interface DistributionSlice {
   color: string
 }
 
+interface CollectorAggregateTopicStats {
+  occurrences: number
+  shareSum: number
+  visibilitySum: number
+  mentions: number
+}
+
+interface CollectorAggregate {
+  shareValues: number[]
+  visibilityValues: number[]
+  mentions: number
+  brandPresenceCount: number
+  topics: Map<string, CollectorAggregateTopicStats>
+}
+
 interface LlmVisibilitySlice {
   provider: string
   share: number
+  shareOfSearch: number
+  visibility: number
   delta: number
+  brandPresenceCount: number
   color: string
+  topTopic: string | null
+  topTopics: Array<{
+    topic: string
+    occurrences: number
+    share: number
+    visibility: number
+    mentions: number
+  }>
 }
 
 interface ActionItem {
@@ -68,6 +116,7 @@ interface CompetitorVisibility {
   competitor: string
   mentions: number
   share: number
+  visibility: number
   collectors: Array<{
     collectorType: string
     mentions: number
@@ -88,6 +137,25 @@ interface QueryVisibilityRow {
   }>
 }
 
+interface TopBrandSource {
+  id: string
+  title: string
+  url: string
+  domain: string
+  impactScore: number | null
+  change: number | null
+  visibility: number
+  share: number
+  usage: number
+}
+
+interface TopicPerformanceRow {
+  topic: string
+  promptsTracked: number
+  averageVolume: number
+  sentimentScore: number
+}
+
 export interface BrandDashboardPayload {
   brandId: string
   brandName: string
@@ -95,6 +163,9 @@ export interface BrandDashboardPayload {
   customerId: string
   dateRange: { start: string; end: string }
   totalQueries: number
+  queriesWithBrandPresence: number
+  collectorResultsWithBrandPresence: number
+  brandPresenceRows: number
   totalResponses: number
   visibilityPercentage: number
   trendPercentage: number
@@ -113,6 +184,13 @@ export interface BrandDashboardPayload {
   collectorSummaries: CollectorSummary[]
   competitorVisibility: CompetitorVisibility[]
   queryVisibility: QueryVisibilityRow[]
+  topBrandSources: TopBrandSource[]
+  topTopics: TopicPerformanceRow[]
+}
+
+export interface DashboardDateRange {
+  start: string
+  end: string
 }
 
 const round = (value: number, precision = 1): number => {
@@ -156,7 +234,86 @@ const truncateLabel = (label: string, maxLength = 52): string => {
   return `${label.slice(0, maxLength - 1)}…`
 }
 
+const clampPercentage = (value: number): number => Math.min(100, Math.max(0, value))
+
+const toPercentage = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+  if (value <= 1) {
+    return clampPercentage(value * 100)
+  }
+  return clampPercentage(value)
+}
+
+const DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000
+
+interface DashboardSnapshotRow {
+  payload: BrandDashboardPayload
+  computed_at: string
+}
+
+interface NormalizedDashboardRange {
+  startDate: Date
+  endDate: Date
+  startIso: string
+  endIso: string
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+const DEFAULT_RANGE_DAYS = 30
+
+const normalizeDateRange = (dateRange?: DashboardDateRange): NormalizedDashboardRange => {
+  const now = new Date()
+  const defaultStart = new Date(now.getTime() - DEFAULT_RANGE_DAYS * DAY_MS)
+  const defaultEnd = now
+
+  let start = dateRange?.start ? new Date(dateRange.start) : defaultStart
+  let end = dateRange?.end ? new Date(dateRange.end) : defaultEnd
+
+  if (Number.isNaN(start.getTime())) {
+    start = defaultStart
+  }
+
+  if (Number.isNaN(end.getTime())) {
+    end = defaultEnd
+  }
+
+  if (start.getTime() > end.getTime()) {
+    const temp = start
+    start = end
+    end = temp
+  }
+
+  start.setUTCHours(0, 0, 0, 0)
+  end.setUTCHours(23, 59, 59, 999)
+
+  return {
+    startDate: start,
+    endDate: end,
+    startIso: start.toISOString(),
+    endIso: end.toISOString()
+  }
+}
+
 class BrandDashboardService {
+  private getSnapshotAgeMs(computedAt: string | null | undefined): number | null {
+    if (!computedAt) {
+      return null
+    }
+
+    const age = Date.now() - new Date(computedAt).getTime()
+    return Number.isFinite(age) ? age : null
+  }
+
+  private isCacheValid(computedAt: string | null | undefined): boolean {
+    const age = this.getSnapshotAgeMs(computedAt)
+    if (age === null) {
+      return false
+    }
+    return age >= 0 && age <= DASHBOARD_CACHE_TTL_MS
+  }
+
   private async resolveBrand(brandKey: string, customerId: string): Promise<BrandRow> {
     const { data: brandById, error: brandError } = await supabaseAdmin
       .from('brands')
@@ -191,52 +348,174 @@ class BrandDashboardService {
     return brandBySlug as BrandRow
   }
 
-  async getBrandDashboard(brandKey: string, customerId: string): Promise<BrandDashboardPayload> {
+  private async getCachedDashboard(
+    brandId: string,
+    customerId: string,
+    range: NormalizedDashboardRange
+  ): Promise<DashboardSnapshotRow | null> {
+    const { data, error } = await supabaseAdmin
+      .from('brand_dashboard_snapshots')
+      .select('payload, computed_at')
+      .eq('brand_id', brandId)
+      .eq('customer_id', customerId)
+      .eq('range_start', range.startIso)
+      .eq('range_end', range.endIso)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('[Dashboard] Failed to load dashboard snapshot:', error)
+      return null
+    }
+
+    if (!data) {
+      return null
+    }
+
+    return {
+      payload: data.payload as BrandDashboardPayload,
+      computed_at: data.computed_at
+    }
+  }
+
+  private async upsertDashboardSnapshot(
+    brandId: string,
+    customerId: string,
+    payload: BrandDashboardPayload,
+    range: NormalizedDashboardRange
+  ): Promise<void> {
+    const nowIso = new Date().toISOString()
+    const { error } = await supabaseAdmin
+      .from('brand_dashboard_snapshots')
+      .upsert(
+        {
+          brand_id: brandId,
+          customer_id: customerId,
+          payload,
+          range_start: range.startIso,
+          range_end: range.endIso,
+          computed_at: nowIso,
+          refreshed_at: nowIso
+        },
+        { onConflict: 'brand_id,customer_id,range_start,range_end' }
+      )
+
+    if (error) {
+      console.warn('[Dashboard] Failed to upsert dashboard snapshot:', error)
+    }
+  }
+
+  async getBrandDashboard(
+    brandKey: string,
+    customerId: string,
+    dateRange?: DashboardDateRange
+  ): Promise<BrandDashboardPayload> {
     const brand = await this.resolveBrand(brandKey, customerId)
 
-    const now = new Date()
+    const normalizedRange = normalizeDateRange(dateRange)
+    const cached = await this.getCachedDashboard(brand.id, customerId, normalizedRange)
+    const cachedAgeMs = this.getSnapshotAgeMs(cached?.computed_at ?? null)
+
+    if (cached && this.isCacheValid(cached.computed_at)) {
+      console.log(
+        `[Dashboard] ✅ Serving cached snapshot for brand ${brand.id} range ${normalizedRange.startIso} → ${normalizedRange.endIso} (age ${cachedAgeMs ?? 0}ms)`
+      )
+      return cached.payload
+    }
+
+    if (cached) {
+      console.log(
+        `[Dashboard] ♻️ Snapshot stale for brand ${brand.id} range ${normalizedRange.startIso} → ${normalizedRange.endIso} (age ${cachedAgeMs ?? 'unknown'}ms) - recomputing`
+      )
+    } else {
+      console.log(
+        `[Dashboard] ❌ No snapshot for brand ${brand.id} range ${normalizedRange.startIso} → ${normalizedRange.endIso} - computing full payload`
+      )
+    }
+
+    const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange)
+    await this.upsertDashboardSnapshot(brand.id, customerId, payload, normalizedRange)
+    return payload
+  }
+
+  private async buildDashboardPayload(
+    brand: BrandRow,
+    customerId: string,
+    range: NormalizedDashboardRange
+  ): Promise<BrandDashboardPayload> {
+    const requestStart = Date.now()
+    let lastMark = requestStart
+    const mark = (label: string) => {
+      const now = Date.now()
+      const delta = now - lastMark
+      const total = now - requestStart
+      console.log(`[Dashboard] ⏱ ${label}: +${delta}ms (total ${total}ms)`)
+      lastMark = now
+    }
+
+    const startIsoBound = range.startIso
+    const endIsoBound = range.endIso
 
     console.log(`[Dashboard] Querying scores for brand_id=${brand.id}, customer_id=${customerId}`)
     
     // Debug: Check what customer_ids exist for this brand in scores table
-    const debugScoresCheck = await supabaseAdmin
-      .from('scores')
-      .select('customer_id, brand_id')
-      .eq('brand_id', brand.id)
-      .limit(5)
-    
-    console.log(`[Dashboard] Debug - Found ${debugScoresCheck.data?.length ?? 0} scores for brand_id=${brand.id} (any customer_id)`)
-    if (debugScoresCheck.data && debugScoresCheck.data.length > 0) {
-      const uniqueCustomerIds = [...new Set(debugScoresCheck.data.map(r => r.customer_id))]
-      console.log(`[Dashboard] Debug - Unique customer_ids in scores: ${uniqueCustomerIds.join(', ')}`)
-      console.log(`[Dashboard] Debug - Looking for customer_id: ${customerId}`)
-      console.log(`[Dashboard] Debug - Match found: ${uniqueCustomerIds.includes(customerId)}`)
-    }
-    
-    const competitorListPromise = supabaseAdmin
-      .from('brand_competitors')
-      .select('competitor_name')
-      .eq('brand_id', brand.id)
-      .order('priority', { ascending: true })
+    const competitorListPromise = (async () => {
+      const start = Date.now()
+      const result = await supabaseAdmin
+        .from('brand_competitors')
+        .select('competitor_name')
+        .eq('brand_id', brand.id)
+        .order('priority', { ascending: true })
+      console.log(`[Dashboard] ⏱ competitor list query: ${Date.now() - start}ms`)
+      return result
+    })()
 
-    const positionsPromise = supabaseAdmin
-      .from('extracted_positions')
-      .select(
-        'brand_name, query_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions'
-      )
-      .eq('brand_id', brand.id)
-      .eq('customer_id', customerId)
-      .order('processed_at', { ascending: true })
+    const positionsPromise = (async () => {
+      const start = Date.now()
+      const result = await supabaseAdmin
+        .from('extracted_positions')
+        .select(
+          'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions, has_brand_presence, metadata'
+        )
+        .eq('brand_id', brand.id)
+        .eq('customer_id', customerId)
+        .gte('processed_at', startIsoBound)
+        .lte('processed_at', endIsoBound)
+        .order('processed_at', { ascending: true })
+      console.log(`[Dashboard] ⏱ extracted positions query: ${Date.now() - start}ms`)
+      return result
+    })()
 
-    const [queryCountResult, positionsResult, competitorResult] = await Promise.all([
-      supabaseAdmin
+    const queryCountPromise = (async () => {
+      const start = Date.now()
+      const result = await supabaseAdmin
         .from('generated_queries')
         .select('id', { count: 'exact', head: true })
         .eq('brand_id', brand.id)
-        .eq('customer_id', customerId),
+        .eq('customer_id', customerId)
+        .gte('created_at', startIsoBound)
+        .lte('created_at', endIsoBound)
+      console.log(`[Dashboard] ⏱ generated queries count query: ${Date.now() - start}ms`)
+      return result
+    })()
+
+    const brandTopicsPromise = (async () => {
+      const start = Date.now()
+      const result = await supabaseAdmin
+        .from('brand_topics')
+        .select('topic_name, priority')
+        .eq('brand_id', brand.id)
+        .order('priority', { ascending: true })
+      console.log(`[Dashboard] ⏱ brand topics query: ${Date.now() - start}ms`)
+      return result
+    })()
+
+    const [queryCountResult, positionsResult, competitorResult, brandTopicsResult] = await Promise.all([
+      queryCountPromise,
       positionsPromise,
-      competitorListPromise
+      competitorListPromise,
+      brandTopicsPromise
     ])
+    mark('initial Supabase queries')
 
     console.log(`[Dashboard] Supabase extracted_positions query returned: ${positionsResult.data?.length ?? 0} rows, error: ${positionsResult.error?.message ?? 'none'}`)
 
@@ -248,6 +527,15 @@ class BrandDashboardService {
 
     if (competitorResult.error) {
       throw new DatabaseError(`Failed to load brand competitors: ${competitorResult.error.message}`)
+    }
+
+    const brandTopics =
+      brandTopicsResult.error || !brandTopicsResult.data
+        ? []
+        : brandTopicsResult.data.filter((topic) => topic?.topic_name)
+
+    if (brandTopicsResult.error) {
+      console.warn('[Dashboard] Failed to load brand topics:', brandTopicsResult.error.message)
     }
 
     const positionRows: PositionRow[] = (positionsResult.data as PositionRow[]) ?? []
@@ -263,11 +551,12 @@ class BrandDashboardService {
         .map((row) => row.competitor_name)
         .filter((name): name is string => Boolean(name)) || []
 
-    const firstTimestamp = positionRows[0]?.processed_at
-    const lastTimestamp = positionRows.length > 0 ? positionRows[positionRows.length - 1]?.processed_at : undefined
+    const firstTimestamp = positionRows[0]?.processed_at ?? null
+    const lastTimestamp =
+      positionRows.length > 0 ? positionRows[positionRows.length - 1]?.processed_at ?? null : null
 
-    const startIso = firstTimestamp ?? new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    const endIso = lastTimestamp ?? now.toISOString()
+    const startIso = startIsoBound
+    const endIso = endIsoBound
 
     const queryAggregates = new Map<
       string,
@@ -298,14 +587,108 @@ class BrandDashboardService {
       }
     >()
 
+    const collectorAggregates = new Map<string, CollectorAggregate>()
+
+    const collectorBrandStats = new Map<
+      number,
+      {
+        shareValues: number[]
+        visibilityValues: number[]
+        sentimentValues: number[]
+        brandMentions: number
+        hasBrandPresence: boolean
+        queryId: string | null
+        topic: string | null
+      }
+    >()
+
+    const collectorResultTopicMap = new Map<number, string | null>()
+
+    const topicAggregates = new Map<
+      string,
+      {
+        queryIds: Set<string>
+        shareValues: number[]
+        visibilityValues: number[]
+        sentimentValues: number[]
+        citationUsage: number
+        brandPresenceCount: number
+        brandMentions: number
+      }
+    >()
+
+    const topicByQueryId = new Map<string, string>()
+    const extractTopicName = (metadata: any): string | null => {
+      if (!metadata) {
+        return null
+      }
+      let parsed: any = metadata
+      if (typeof metadata === 'string') {
+        try {
+          parsed = JSON.parse(metadata)
+        } catch {
+          return null
+        }
+      }
+      if (typeof parsed !== 'object' || parsed === null) {
+        return null
+      }
+      const topicName =
+        typeof parsed.topic_name === 'string' && parsed.topic_name.trim().length > 0
+          ? parsed.topic_name.trim()
+          : typeof parsed.topic === 'string' && parsed.topic.trim().length > 0
+            ? parsed.topic.trim()
+            : null
+      return topicName
+    }
+
     // Per-collector scoring: Multiple rows per query (one per collector per competitor)
     // We aggregate across collectors to get average scores per query
     const brandShareByQuery = new Map<string, number[]>() // Changed to array for averaging
     const brandVisibilityByQuery = new Map<string, number[]>() // Changed to array for averaging
     const brandSentimentByQuery = new Map<string, number[]>()
     const queryTextMap = new Map<string, string>()
+    const collectorVisibilityMap = new Map<number, number[]>()
 
     if (positionRows.length > 0) {
+      const uniqueCollectorResultIds = Array.from(
+        new Set(
+          positionRows
+            .map((row) => row.collector_result_id)
+            .filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
+        )
+      )
+
+      if (uniqueCollectorResultIds.length > 0) {
+        const {
+          data: collectorRows,
+          error: collectorRowsError
+        } = await (async () => {
+          const start = Date.now()
+          const result = await supabaseAdmin
+            .from('collector_results')
+            .select('id, question')
+            .in('id', uniqueCollectorResultIds)
+          console.log(`[Dashboard] ⏱ collector results query: ${Date.now() - start}ms`)
+          return result
+        })()
+
+        if (collectorRowsError) {
+          throw new DatabaseError(`Failed to load collector questions for dashboard: ${collectorRowsError.message}`)
+        }
+
+        ;(collectorRows ?? []).forEach((collectorRow) => {
+          if (!collectorRow?.id) {
+            return
+          }
+          const label =
+            typeof collectorRow.question === 'string' && collectorRow.question.trim().length > 0
+              ? collectorRow.question.trim()
+              : 'Unlabeled query'
+          queryTextMap.set(`collector-${collectorRow.id}`, label)
+        })
+      }
+
       const uniqueQueryIds = Array.from(
         new Set(
           positionRows
@@ -315,10 +698,18 @@ class BrandDashboardService {
       )
 
       if (uniqueQueryIds.length > 0) {
-        const { data: queryRows, error: queryRowsError } = await supabaseAdmin
-          .from('generated_queries')
-          .select('id, question')
-          .in('id', uniqueQueryIds)
+        const {
+          data: queryRows,
+          error: queryRowsError
+        } = await (async () => {
+          const start = Date.now()
+          const result = await supabaseAdmin
+            .from('generated_queries')
+            .select('id, query_text, metadata')
+            .in('id', uniqueQueryIds)
+          console.log(`[Dashboard] ⏱ generated queries lookup query: ${Date.now() - start}ms`)
+          return result
+        })()
 
         if (queryRowsError) {
           throw new DatabaseError(`Failed to load queries for dashboard: ${queryRowsError.message}`)
@@ -328,21 +719,38 @@ class BrandDashboardService {
           if (!query?.id) {
             return
           }
-          const label = typeof query.question === 'string' && query.question.trim().length > 0
-            ? query.question.trim()
+          const label = typeof query.query_text === 'string' && query.query_text.trim().length > 0
+            ? query.query_text.trim()
             : 'Unlabeled query'
           queryTextMap.set(query.id, label)
+
+          const metadata = query.metadata as Record<string, any> | null | undefined
+          const topicName =
+            typeof metadata?.topic_name === 'string' && metadata.topic_name.trim().length > 0
+              ? metadata.topic_name.trim()
+              : typeof metadata?.topic === 'string' && metadata.topic.trim().length > 0
+                ? metadata.topic.trim()
+                : null
+
+          if (topicName) {
+            topicByQueryId.set(query.id, topicName)
+          }
         })
       }
     }
 
     let generatedQueryFallback = 0
     let processedRowCount = 0
+    const queriesWithBrandPresence = new Set<string>()
+    const collectorResultsWithBrandPresence = new Set<number>()
+    let brandPresenceRowCount = 0
 
     for (const row of positionRows) {
       processedRowCount++
       const queryId = row.query_id ?? `query-${generatedQueryFallback++}`
+      const collectorKey = row.collector_result_id ? `collector-${row.collector_result_id}` : undefined
       const queryText =
+        (collectorKey ? queryTextMap.get(collectorKey) : undefined) ??
         (row.query_id ? queryTextMap.get(row.query_id) : undefined) ??
         queryTextMap.get(queryId) ??
         'Unlabeled query'
@@ -357,6 +765,8 @@ class BrandDashboardService {
       const brandVisibility = Math.max(0, toNumber(row.visibility_index))
       const hasBrandSentiment = row.sentiment_score !== null && row.sentiment_score !== undefined
       const brandSentiment = hasBrandSentiment ? toNumber(row.sentiment_score) : 0
+      const hasBrandPresence = row.has_brand_presence === true
+      const brandMentions = Math.max(0, toNumber(row.total_brand_mentions))
 
       if (!brandShareByQuery.has(queryId)) {
         brandShareByQuery.set(queryId, [])
@@ -373,8 +783,27 @@ class BrandDashboardService {
       const shareArray = brandShareByQuery.get(queryId)!
       const visibilityArray = brandVisibilityByQuery.get(queryId)!
       const sentimentArray = brandSentimentByQuery.get(queryId)!
+      const metadataTopicName = extractTopicName(row.metadata)
+      if (metadataTopicName && row.query_id) {
+        topicByQueryId.set(row.query_id, metadataTopicName)
+      }
+      const topicNameRaw =
+        metadataTopicName ??
+        (row.query_id ? topicByQueryId.get(row.query_id) ?? null : null)
+      const topicName = topicNameRaw ? topicNameRaw.trim() : null
 
       const isBrandRow = !row.competitor_name || row.competitor_name.trim().length === 0
+
+      if (isBrandRow && hasBrandPresence) {
+        brandPresenceRowCount += 1
+        queriesWithBrandPresence.add(queryId)
+        if (
+          typeof row.collector_result_id === 'number' &&
+          Number.isFinite(row.collector_result_id)
+        ) {
+          collectorResultsWithBrandPresence.add(row.collector_result_id)
+        }
+      }
 
       if (isBrandRow || shareArray.length === 0) {
         shareArray.push(brandShare)
@@ -386,6 +815,120 @@ class BrandDashboardService {
 
       if (hasBrandSentiment && (isBrandRow || sentimentArray.length === 0)) {
         sentimentArray.push(brandSentiment)
+      }
+
+      if (isBrandRow) {
+        if (
+          typeof row.collector_result_id === 'number' &&
+          Number.isFinite(row.collector_result_id)
+        ) {
+          const collectorId = row.collector_result_id
+          const collectorStats =
+            collectorBrandStats.get(collectorId) ?? {
+              shareValues: [] as number[],
+              visibilityValues: [] as number[],
+              sentimentValues: [] as number[],
+              brandMentions: 0,
+              hasBrandPresence: false,
+              queryId: null as string | null,
+              topic: null as string | null
+            }
+
+          collectorStats.shareValues.push(brandShare)
+          collectorStats.visibilityValues.push(brandVisibility)
+          if (hasBrandSentiment) {
+            collectorStats.sentimentValues.push(brandSentiment)
+          }
+          if (brandMentions > 0) {
+            collectorStats.brandMentions += brandMentions
+          }
+          collectorStats.hasBrandPresence = collectorStats.hasBrandPresence || hasBrandPresence
+          if (row.query_id && !collectorStats.queryId) {
+            collectorStats.queryId = row.query_id
+          }
+          if (topicName) {
+            collectorStats.topic = topicName
+          }
+          collectorBrandStats.set(collectorId, collectorStats)
+
+          if (topicName) {
+            collectorResultTopicMap.set(collectorId, topicName)
+          } else if (!collectorResultTopicMap.has(collectorId) && collectorStats.topic) {
+            collectorResultTopicMap.set(collectorId, collectorStats.topic)
+          }
+
+          if (!collectorVisibilityMap.has(collectorId)) {
+            collectorVisibilityMap.set(collectorId, [])
+          }
+          collectorVisibilityMap.get(collectorId)!.push(brandVisibility)
+        }
+
+        if (topicName) {
+          if (!topicAggregates.has(topicName)) {
+            topicAggregates.set(topicName, {
+              queryIds: new Set<string>(),
+              shareValues: [],
+              visibilityValues: [],
+              sentimentValues: [],
+              citationUsage: 0,
+              brandPresenceCount: 0,
+              brandMentions: 0
+            })
+          }
+          const topicAggregate = topicAggregates.get(topicName)!
+          if (row.query_id) {
+            topicAggregate.queryIds.add(row.query_id)
+          }
+          topicAggregate.shareValues.push(brandShare)
+          topicAggregate.visibilityValues.push(brandVisibility)
+          if (hasBrandSentiment) {
+            topicAggregate.sentimentValues.push(brandSentiment)
+          }
+          if (hasBrandPresence) {
+            topicAggregate.brandPresenceCount += 1
+          }
+          const brandMentionsTopic = Math.max(0, toNumber(row.total_brand_mentions))
+          if (brandMentionsTopic > 0) {
+            topicAggregate.brandMentions += brandMentionsTopic
+          }
+          topicAggregates.set(topicName, topicAggregate)
+        }
+
+        if (!collectorAggregates.has(collectorType)) {
+          collectorAggregates.set(collectorType, {
+            shareValues: [],
+            visibilityValues: [],
+            mentions: 0,
+            brandPresenceCount: 0,
+            topics: new Map<string, CollectorAggregateTopicStats>()
+          })
+        }
+        const collectorAggregate = collectorAggregates.get(collectorType)!
+        collectorAggregate.shareValues.push(brandShare)
+        collectorAggregate.visibilityValues.push(brandVisibility)
+
+        collectorAggregate.mentions += brandMentions > 0 ? brandMentions : 1
+
+        if (hasBrandPresence) {
+          collectorAggregate.brandPresenceCount += 1
+        }
+
+        if (topicName) {
+          const topicStats =
+            collectorAggregate.topics.get(topicName) ?? {
+              occurrences: 0,
+              shareSum: 0,
+              visibilitySum: 0,
+              mentions: 0
+            }
+          topicStats.occurrences += 1
+          topicStats.shareSum += brandShare
+          topicStats.visibilitySum += brandVisibility
+          topicStats.mentions += brandMentions > 0 ? brandMentions : 1
+          collectorAggregate.topics.set(topicName, topicStats)
+        }
+
+        collectorAggregates.set(collectorType, collectorAggregate)
       }
 
       if (processedRowCount <= 3) {
@@ -478,10 +1021,20 @@ class BrandDashboardService {
     const brandSentimentValues = Array.from(brandSentimentByQuery.values()).flat()
 
     const uniqueQueries = brandShareByQuery.size
+    const queriesWithBrandPresenceCount = queriesWithBrandPresence.size
+    const collectorBrandPresenceCount = collectorResultsWithBrandPresence.size
     console.log(`[Dashboard] Processed ${uniqueQueries} unique queries`)
     console.log(`[Dashboard] Brand shares: [${brandShareValues.slice(0, 5).map(v => v.toFixed(2)).join(', ')}...]`)
     console.log(`[Dashboard] Brand visibility: [${brandVisibilityValues.slice(0, 5).map(v => v.toFixed(2)).join(', ')}...]`)
     console.log(`[Dashboard] Competitor aggregates: ${competitorAggregates.size} competitors`)
+
+    const collectorVisibilityAverage = new Map<number, number>()
+    collectorVisibilityMap.forEach((values, collectorId) => {
+      if (!values.length) {
+        return
+      }
+      collectorVisibilityAverage.set(collectorId, average(values))
+    })
 
     // totalQueries = unique queries tracked
     // totalResponses = total score rows (queries × collectors × competitors)
@@ -513,35 +1066,172 @@ class BrandDashboardService {
     console.log(`[Dashboard] Final metrics: shareOfAnswers=${shareOfAnswersPercentage}%, visibilityIndex=${visibilityIndexPercentage}%, sentiment=${sentimentScore}`)
 
     // Fetch citation sources for Source Type Distribution
-    const { data: citationsData } = await supabaseAdmin
-      .from('citations')
-      .select('domain, category, usage_count')
-      .eq('brand_id', brand.id)
-      .eq('customer_id', customerId)
+    const { data: citationsData } = await (async () => {
+      const start = Date.now()
+      const result = await supabaseAdmin
+        .from('citations')
+        .select('domain, page_name, url, category, usage_count, collector_result_id')
+        .eq('brand_id', brand.id)
+        .eq('customer_id', customerId)
+        .gte('created_at', startIsoBound)
+        .lte('created_at', endIsoBound)
+      console.log(`[Dashboard] ⏱ citations query: ${Date.now() - start}ms`)
+      return result
+    })()
 
+    const categoryVisibilityAggregates = new Map<
+      string,
+      {
+        visibilitySum: number
+        weight: number
+      }
+    >()
+    const sourceAggregates = new Map<
+      string,
+      {
+        title: string | null
+        url: string | null
+        domain: string | null
+        usage: number
+        collectorIds: Set<number>
+      }
+    >()
     const citationCounts = new Map<string, number>()
     if (citationsData && citationsData.length > 0) {
       for (const citation of citationsData) {
-        const domain = citation.domain || 'Unknown'
+        const categoryKey =
+          citation.category && citation.category.trim().length > 0
+            ? citation.category.trim().toLowerCase()
+            : 'other'
         const count = citation.usage_count || 1
-        citationCounts.set(domain, (citationCounts.get(domain) || 0) + count)
+        citationCounts.set(categoryKey, (citationCounts.get(categoryKey) || 0) + count)
+
+        const sourceKey =
+          typeof citation.url === 'string' && citation.url.trim().length > 0
+            ? citation.url.trim().toLowerCase()
+            : citation.domain && citation.domain.trim().length > 0
+              ? `domain:${citation.domain.trim().toLowerCase()}`
+              : `source:${sourceAggregates.size + 1}`
+
+        const existingSource =
+          sourceAggregates.get(sourceKey) ?? {
+            title:
+              typeof citation.page_name === 'string' && citation.page_name.trim().length > 0
+                ? citation.page_name.trim()
+                : null,
+            url:
+              typeof citation.url === 'string' && citation.url.trim().length > 0
+                ? citation.url.trim()
+                : null,
+            domain: citation.domain ?? null,
+            usage: 0,
+            collectorIds: new Set<number>()
+          }
+
+        existingSource.usage += count
+        if (
+          !existingSource.title &&
+          typeof citation.page_name === 'string' &&
+          citation.page_name.trim().length > 0
+        ) {
+          existingSource.title = citation.page_name.trim()
+        }
+        if (
+          !existingSource.url &&
+          typeof citation.url === 'string' &&
+          citation.url.trim().length > 0
+        ) {
+          existingSource.url = citation.url.trim()
+        }
+        if (!existingSource.domain && typeof citation.domain === 'string') {
+          existingSource.domain = citation.domain
+        }
+
+        if (
+          typeof citation.collector_result_id === 'number' &&
+          Number.isFinite(citation.collector_result_id)
+        ) {
+          existingSource.collectorIds.add(citation.collector_result_id)
+          const topicForCitation = collectorResultTopicMap.get(citation.collector_result_id)
+          if (topicForCitation) {
+            if (!topicAggregates.has(topicForCitation)) {
+              topicAggregates.set(topicForCitation, {
+                queryIds: new Set<string>(),
+                shareValues: [],
+                visibilityValues: [],
+                sentimentValues: [],
+                citationUsage: 0,
+                brandPresenceCount: 0,
+                brandMentions: 0
+              })
+            }
+            const topicAggregate = topicAggregates.get(topicForCitation)!
+            topicAggregate.citationUsage += count
+            topicAggregates.set(topicForCitation, topicAggregate)
+          }
+        }
+
+        sourceAggregates.set(sourceKey, existingSource)
+
+        if (
+          citation.collector_result_id !== null &&
+          citation.collector_result_id !== undefined &&
+          collectorVisibilityAverage.has(citation.collector_result_id)
+        ) {
+          const visibility = collectorVisibilityAverage.get(citation.collector_result_id) ?? 0
+          const entry = categoryVisibilityAggregates.get(categoryKey) ?? {
+            visibilitySum: 0,
+            weight: 0
+          }
+          entry.visibilitySum += visibility * count
+          entry.weight += count
+          categoryVisibilityAggregates.set(categoryKey, entry)
+        }
       }
     }
 
     const totalCitations = Array.from(citationCounts.values()).reduce((sum, count) => sum + count, 0)
+    const totalCategoryVisibility = Array.from(categoryVisibilityAggregates.values()).reduce(
+      (sum, entry) => sum + entry.visibilitySum,
+      0
+    )
 
-    const sourceDistribution: DistributionSlice[] = Array.from(citationCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([domain, count], index) => ({
-        label: domain,
-        percentage: totalCitations > 0 
-          ? round((count / totalCitations) * 100)
-          : 0,
-        color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
-      }))
+    let sourceDistribution: DistributionSlice[] = []
 
-    // Fallback to query distribution if no citations
+    const formatCategoryLabel = (categoryKey: string): string => {
+      if (!categoryKey) {
+        return 'Other'
+      }
+      return categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1).replace(/[_-]/g, ' ')
+    }
+
+    if (totalCategoryVisibility > 0) {
+      const sortedCategories = Array.from(categoryVisibilityAggregates.entries()).sort(
+        (a, b) => b[1].visibilitySum - a[1].visibilitySum
+      )
+
+      let accumulatedVisibility = 0
+
+      sortedCategories.slice(0, 5).forEach(([categoryKey, aggregate], index) => {
+        accumulatedVisibility += aggregate.visibilitySum
+        sourceDistribution.push({
+          label: formatCategoryLabel(categoryKey),
+          percentage: round((aggregate.visibilitySum / totalCategoryVisibility) * 100),
+          color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
+        })
+      })
+
+      const othersVisibility = totalCategoryVisibility - accumulatedVisibility
+      if (othersVisibility > 1e-6) {
+        sourceDistribution.push({
+          label: 'Other',
+          percentage: round((othersVisibility / totalCategoryVisibility) * 100),
+          color: DISTRIBUTION_COLORS[sourceDistribution.length % DISTRIBUTION_COLORS.length]
+        })
+      }
+    }
+
+    // Fallback to query distribution if no domain visibility data
     if (sourceDistribution.length === 0) {
       sourceDistribution.push(...Array.from(queryAggregates.values())
         .sort((a, b) => b.share - a.share)
@@ -557,29 +1247,183 @@ class BrandDashboardService {
     }
 
     // Calculate category distribution from citations
-    const categoryCounts = new Map<string, number>()
-    if (citationsData && citationsData.length > 0) {
-      for (const citation of citationsData) {
-        const category = citation.category || 'webpage'
-        const count = citation.usage_count || 1
-        categoryCounts.set(category, (categoryCounts.get(category) || 0) + count)
-      }
-    }
-
-    const categoryDistribution: DistributionSlice[] = Array.from(categoryCounts.entries())
+    const categoryDistribution: DistributionSlice[] = Array.from(citationCounts.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([category, count], index) => ({
-        label: category.charAt(0).toUpperCase() + category.slice(1).replace(/_/g, ' '),
+      .map(([categoryKey, count], index) => ({
+        label: formatCategoryLabel(categoryKey),
         percentage: totalCitations > 0 
           ? round((count / totalCitations) * 100)
           : 0,
         color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
       }))
 
+    const sourceAggregateEntries = Array.from(sourceAggregates.entries()).map(([key, aggregate]) => {
+      let domain = aggregate.domain
+      if ((!domain || domain.trim().length === 0) && aggregate.url) {
+        try {
+          const normalizedUrl = aggregate.url.startsWith('http')
+            ? aggregate.url
+            : `https://${aggregate.url}`
+          domain = new URL(normalizedUrl).hostname
+        } catch {
+          domain = aggregate.url.replace(/^https?:\/\//, '')
+        }
+      }
+
+      const fallbackLabel =
+        domain && domain.trim().length > 0
+          ? truncateLabel(domain.trim(), 72)
+          : aggregate.url
+              ? truncateLabel(aggregate.url.replace(/^https?:\/\//, ''), 72)
+              : 'Unknown Source'
+
+      const title =
+        aggregate.title && aggregate.title.trim().length > 0
+          ? truncateLabel(aggregate.title.trim(), 72)
+          : fallbackLabel
+
+      const collectorStats = Array.from(aggregate.collectorIds)
+        .map((collectorId) => collectorBrandStats.get(collectorId))
+        .filter(
+          (
+            stats
+          ): stats is {
+            shareValues: number[]
+            visibilityValues: number[]
+            sentimentValues: number[]
+            brandMentions: number
+            hasBrandPresence: boolean
+            queryId: string | null
+            topic: string | null
+          } => Boolean(stats)
+        )
+
+      const shareValues = collectorStats.flatMap((stats) => stats.shareValues)
+      const visibilityValues = collectorStats.flatMap((stats) => stats.visibilityValues)
+
+      const avgShare = shareValues.length > 0 ? average(shareValues) : 0
+      const avgVisibilityRaw = visibilityValues.length > 0 ? average(visibilityValues) : 0
+
+      return {
+        key,
+        title,
+        url: aggregate.url ?? (domain ? `https://${domain}` : ''),
+        domain: domain ?? 'unknown',
+        usage: aggregate.usage,
+        share: toPercentage(avgShare),
+        visibility: toPercentage(avgVisibilityRaw)
+      }
+    })
+
+    const maxSourceUsage = sourceAggregateEntries.reduce(
+      (max, source) => (source.usage > max ? source.usage : max),
+      0
+    )
+
+    const topBrandSources = sourceAggregateEntries
+      .map((source) => {
+        const usageNorm = maxSourceUsage > 0 ? source.usage / maxSourceUsage : 0
+        const shareNorm = source.share / 100
+        const visibilityNorm = source.visibility / 100
+        const hasImpact = usageNorm > 0 || shareNorm > 0 || visibilityNorm > 0
+        const impactScore = hasImpact
+          ? round((0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm) * 10, 1)
+          : null
+        return {
+          id: source.key,
+          title: source.title,
+          url: source.url,
+          domain: source.domain,
+          impactScore,
+          change: hasImpact ? 0 : null,
+          visibility: round(source.visibility, 1),
+          share: round(source.share, 1),
+          usage: source.usage
+        }
+      })
+      .filter((source) => Number.isFinite(source.impactScore))
+      .sort((a, b) => b.impactScore - a.impactScore || b.usage - a.usage)
+      .slice(0, 5)
+
+    const ensureTopicAggregate = (topicName: string) => {
+      if (!topicAggregates.has(topicName)) {
+        topicAggregates.set(topicName, {
+          queryIds: new Set<string>(),
+          shareValues: [],
+          visibilityValues: [],
+          sentimentValues: [],
+          citationUsage: 0,
+          brandPresenceCount: 0,
+          brandMentions: 0
+        })
+      }
+    }
+
+    const canonicalTopicNames = new Set<string>()
+    brandTopics.forEach((topic) => {
+      if (typeof topic?.topic_name === 'string' && topic.topic_name.trim().length > 0) {
+        canonicalTopicNames.add(topic.topic_name.trim())
+      }
+    })
+    topicByQueryId.forEach((topicName) => {
+      if (topicName && topicName.trim().length > 0) {
+        canonicalTopicNames.add(topicName.trim())
+      }
+    })
+
+    canonicalTopicNames.forEach((topicName) => ensureTopicAggregate(topicName))
+
+    const topicAggregateEntries = Array.from(topicAggregates.entries())
+    const totalTopicCitationUsage = topicAggregateEntries.reduce(
+      (sum, [, aggregate]) => sum + aggregate.citationUsage,
+      0
+    )
+    const totalTopicPresence = topicAggregateEntries.reduce(
+      (sum, [, aggregate]) => sum + aggregate.brandPresenceCount,
+      0
+    )
+
+    const topTopics = topicAggregateEntries
+      .map(([topicName, aggregate]) => {
+        const promptsTracked = aggregate.queryIds.size
+        const volumeRatioRaw =
+          totalTopicCitationUsage > 0
+            ? aggregate.citationUsage / totalTopicCitationUsage
+            : totalTopicPresence > 0
+              ? aggregate.brandPresenceCount / totalTopicPresence
+              : 0
+        const volumeRatio = Number.isFinite(volumeRatioRaw) ? volumeRatioRaw : 0
+        const averageVolume = clampPercentage(round(volumeRatio * 100, 1))
+
+        let sentimentPercentage = 0
+        if (aggregate.sentimentValues.length > 0) {
+          const hasLargeSentiment = aggregate.sentimentValues.some((value) => Math.abs(value) > 1)
+          sentimentPercentage = hasLargeSentiment
+            ? clampPercentage(average(aggregate.sentimentValues))
+            : clampPercentage(normalizeSentiment(aggregate.sentimentValues))
+        }
+
+        let sentimentScore =
+          aggregate.sentimentValues.length > 0 ? round(sentimentPercentage / 20, 1) : 4
+        sentimentScore = Math.max(0, Math.min(5, sentimentScore))
+
+        return {
+          topic: truncateLabel(topicName, 64),
+          promptsTracked,
+          averageVolume,
+          sentimentScore
+        }
+      })
+      .filter((topic) => topic.promptsTracked > 0 || topic.averageVolume > 0)
+      .sort((a, b) => b.averageVolume - a.averageVolume || b.promptsTracked - a.promptsTracked)
+      .slice(0, 5)
+
     let competitorVisibility: CompetitorVisibility[] = Array.from(competitorAggregates.entries())
       .map(([competitorName, aggregate]) => {
         const competitorShare = aggregate.shareValues.reduce((sum, value) => sum + value, 0)
-        const share = totalShareUniverse > 0 ? round((competitorShare / totalShareUniverse) * 100) : round(average(aggregate.shareValues))
+        const share = totalShareUniverse > 0 ? round((competitorShare / totalShareUniverse) * 100) : round(average(aggregate.shareValues) * 100)
+        const avgVisibilityRaw = aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
+        const visibility = round(Math.min(1, Math.max(0, avgVisibilityRaw)) * 100)
 
         const topSignals = Array.from(aggregate.queries.values())
           .map((query) => ({
@@ -595,6 +1439,7 @@ class BrandDashboardService {
           competitor: competitorName,
           mentions: aggregate.mentions || aggregate.shareValues.length,
           share,
+          visibility,
           collectors: topSignals
         }
       })
@@ -608,6 +1453,7 @@ class BrandDashboardService {
           competitor: competitorName,
           mentions: 0,
           share: 0,
+          visibility: 0,
           collectors: []
         })
       }
@@ -691,6 +1537,80 @@ class BrandDashboardService {
 
     const coverageScore = sourceDistribution.length > 0 ? Math.min(95, round(sourceDistribution.length / 6 * 100)) : 40
 
+    const totalCollectorMentions = Array.from(collectorAggregates.values()).reduce(
+      (sum, aggregate) => sum + aggregate.mentions,
+      0
+    )
+    const totalCollectorShareSum = Array.from(collectorAggregates.values()).reduce(
+      (sum, aggregate) => sum + aggregate.shareValues.reduce((inner, value) => inner + value, 0),
+      0
+    )
+
+    const llmVisibility: LlmVisibilitySlice[] = Array.from(collectorAggregates.entries())
+      .map(([collectorType, aggregate]) => {
+        const averageVisibilityRaw =
+          aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
+        const clampedVisibility = Math.min(1, Math.max(0, averageVisibilityRaw))
+        const visibilityPercentage = round(clampedVisibility * 100)
+
+        const shareValueSum = aggregate.shareValues.reduce((sum, value) => sum + value, 0)
+        const shareFromValues =
+          totalCollectorShareSum > 0 ? round((shareValueSum / totalCollectorShareSum) * 100) : 0
+        const shareFromMentions =
+          totalCollectorMentions > 0 ? round((aggregate.mentions / totalCollectorMentions) * 100) : 0
+        const shareOfSearch =
+          shareFromValues > 0
+            ? shareFromValues
+            : shareFromMentions > 0
+              ? shareFromMentions
+              : visibilityPercentage
+
+        const normalizedCollectorType = collectorType.toLowerCase().trim()
+        const color =
+          COLLECTOR_COLORS[normalizedCollectorType] ??
+          COLLECTOR_COLORS[(normalizedCollectorType.split(/[._-]/)[0]) || 'default'] ??
+          COLLECTOR_COLORS.default
+
+        const topicEntries = Array.from(aggregate.topics.entries()).map(([topic, stats]) => {
+          const occurrences = stats.occurrences
+          const share =
+            occurrences > 0 ? round(stats.shareSum / occurrences) : 0
+          const visibility =
+            occurrences > 0 ? round(stats.visibilitySum / occurrences) : 0
+          return {
+            topic: truncateLabel(topic, 64),
+            occurrences,
+            share,
+            visibility,
+            mentions: stats.mentions
+          }
+        })
+
+        const sortedTopics = topicEntries
+          .filter((entry) => entry.topic.trim().length > 0)
+          .sort(
+            (a, b) =>
+              b.occurrences - a.occurrences ||
+              b.share - a.share ||
+              b.visibility - a.visibility ||
+              b.mentions - a.mentions
+          )
+          .slice(0, 5)
+
+        return {
+          provider: collectorType,
+          share: shareOfSearch,
+          shareOfSearch,
+          visibility: visibilityPercentage,
+          delta: 0,
+          brandPresenceCount: aggregate.brandPresenceCount,
+          color,
+          topTopic: sortedTopics[0]?.topic ?? null,
+          topTopics: sortedTopics
+        }
+      })
+      .sort((a, b) => b.share - a.share)
+
     const scores: ScoreMetric[] = [
       {
         label: 'Visibility Index',
@@ -766,13 +1686,16 @@ class BrandDashboardService {
       })
     }
 
-    return {
+    const payload = {
       brandId: brand.id,
       brandName: brand.name,
       brandSlug: brand.slug ?? undefined,
       customerId,
       dateRange: { start: startIso, end: endIso },
       totalQueries,
+      queriesWithBrandPresence: queriesWithBrandPresenceCount,
+      collectorResultsWithBrandPresence: collectorBrandPresenceCount,
+      brandPresenceRows: brandPresenceRowCount,
       totalResponses,
       visibilityPercentage: round(shareOfAnswersPercentage), // This is Share of Answers, not Visibility Index
       trendPercentage,
@@ -781,12 +1704,19 @@ class BrandDashboardService {
       scores,
       sourceDistribution,
       categoryDistribution,
-      llmVisibility: [],
+      llmVisibility,
       actionItems: actionItems.slice(0, 4),
       collectorSummaries: [],
       competitorVisibility,
-      queryVisibility
+      queryVisibility,
+      topBrandSources,
+      topTopics
     }
+
+    mark('payload computed')
+    console.log(`[Dashboard] ✅ Total dashboard generation time: ${Date.now() - requestStart}ms`)
+
+    return payload
   }
 }
 

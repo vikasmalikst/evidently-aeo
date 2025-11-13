@@ -35,6 +35,7 @@ const CollectorResultRow = z.object({
     z.array(z.object({ competitor_name: z.string() })), // Format 2: [{competitor_name: "Nike"}]
   ]),
   created_at: z.string(),
+  metadata: z.any().optional(),
 });
 
 const BrandRow = z.object({
@@ -64,7 +65,9 @@ interface PositionInsertRow {
   share_of_answers_competitor: number | null;
   total_brand_product_mentions: number;
   total_competitor_product_mentions: number;
+  has_brand_presence: boolean;
   processed_at: string;
+  metadata?: Record<string, any> | null;
 }
 
 interface PositionExtractionPayload {
@@ -79,7 +82,7 @@ export interface ExtractPositionsOptions {
   limit?: number;
 }
 
-const DEFAULT_POSITION_LIMIT = 50;
+const DEFAULT_POSITION_LIMIT = 300;
 
 // ============================================================================
 // POSITION EXTRACTION SERVICE
@@ -146,7 +149,7 @@ export class PositionExtractionService {
     // Fetch collector results (limit to recent ones)
     let query = this.supabase
       .from('collector_results')
-      .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at')
+      .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata')
       .order('created_at', { ascending: false })
       .limit(fetchLimit);
 
@@ -239,6 +242,33 @@ export class PositionExtractionService {
   private async extractPositions(
     result: z.infer<typeof CollectorResultRow>
   ): Promise<PositionExtractionPayload> {
+    let topicName = this.getTopicNameFromMetadata(result.metadata);
+
+    if (!topicName) {
+      try {
+        const { data: queryMetadataRow, error: queryMetadataError } = await this.supabase
+          .from('generated_queries')
+          .select('metadata')
+          .eq('id', result.query_id)
+          .maybeSingle();
+
+        if (!queryMetadataError && queryMetadataRow?.metadata) {
+          topicName = this.getTopicNameFromMetadata(queryMetadataRow.metadata);
+        }
+      } catch (topicError) {
+        console.warn(
+          `⚠️ Unable to resolve topic metadata for query ${result.query_id}:`,
+          topicError instanceof Error ? topicError.message : topicError
+        );
+      }
+    }
+
+    const positionMetadata = topicName
+      ? {
+          topic_name: topicName
+        }
+      : null;
+
     // Fetch brand metadata for product names
     const { data: brand } = await this.supabase
       .from('brands')
@@ -325,6 +355,7 @@ export class PositionExtractionService {
       .reduce((sum, posArray) => sum + posArray.length, 0);
 
     const processedAt = new Date().toISOString();
+    const hasBrandPresence = totalBrandMentions > 0;
 
     const brandVisibility = this.calculateVisibilityIndex(totalBrandMentions, positions.brand.all, positions.wordCount);
     const brandShareOfAnswers = this.calculateShareOfAnswers(totalBrandMentions, totalCompetitorMentions);
@@ -350,7 +381,9 @@ export class PositionExtractionService {
       share_of_answers_competitor: null,
       total_brand_product_mentions: totalBrandProductMentions,
       total_competitor_product_mentions: totalCompetitorProductMentions,
+      has_brand_presence: hasBrandPresence,
       processed_at: processedAt,
+      metadata: positionMetadata,
     };
 
     const competitorRows: PositionInsertRow[] = competitorNames.map((competitorName) => {
@@ -390,7 +423,9 @@ export class PositionExtractionService {
         share_of_answers_competitor: competitorShareOfAnswers,
         total_brand_product_mentions: totalBrandProductMentions,
         total_competitor_product_mentions: competitorProductMentions,
+        has_brand_presence: hasBrandPresence,
         processed_at: processedAt,
+        metadata: positionMetadata,
       };
     });
 
@@ -837,6 +872,34 @@ Example response:
   // ============================================================================
   // HELPER METHODS
   // ============================================================================
+
+  private getTopicNameFromMetadata(metadata: any): string | null {
+    if (!metadata) {
+      return null;
+    }
+
+    let parsed: any = metadata;
+    if (typeof metadata === 'string') {
+      try {
+        parsed = JSON.parse(metadata);
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null;
+    }
+
+    const topicName =
+      typeof parsed.topic_name === 'string' && parsed.topic_name.trim().length > 0
+        ? parsed.topic_name.trim()
+        : typeof parsed.topic === 'string' && parsed.topic.trim().length > 0
+          ? parsed.topic.trim()
+          : null;
+
+    return topicName;
+  }
 
   /**
    * Save extracted positions to database

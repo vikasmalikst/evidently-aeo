@@ -156,7 +156,7 @@ export const VisibilityChart = ({
           label: (context: any) => {
             const label = context.dataset.label || '';
             const value = context.parsed.y;
-            return `  ${label}: ${value}%`;
+            return `  ${label}: ${value}`;
           },
         },
       },
@@ -176,9 +176,7 @@ export const VisibilityChart = ({
             family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
             weight: 400,
           },
-          callback: (value: any) => {
-            return value + '%';
-          },
+          callback: (value: any) => String(value),
           padding: 8,
           stepSize: 10,
           maxRotation: 0,

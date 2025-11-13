@@ -23,7 +23,7 @@ export interface QueryGenerationResponse {
   queries: Array<{
     query: string;
     intent: string;
-    entity: string | null;
+    brand: string | null;
     template_id: string;
     evidence_snippet: string;
     evidence_source: string;
@@ -183,15 +183,15 @@ export class QueryGenerationService {
 
       // Convert queries to the expected format
     const formattedQueries = aeoTopics.map((q, index) => ({
-        query: q.query,
-        intent: q.intent,
-        entity: brandName,
-        template_id: `template-${index + 1}`,
-        evidence_snippet: `Generated query for ${brandName} ${q.topic}`,
-        evidence_source: `AI Generated`,
-        locale: request.locale,
-        country: request.country
-      }));
+      query: q.query,
+      intent: q.intent,
+      brand: brandName,
+      template_id: `template-${index + 1}`,
+      evidence_snippet: `Generated query for ${brandName} ${q.topic}`,
+      evidence_source: `AI Generated`,
+      locale: request.locale,
+      country: request.country
+    }));
 
       // Create queries_by_intent mapping
       const queriesByIntent: Record<string, number> = {};
@@ -2145,7 +2145,7 @@ CRITICAL VALIDATION BEFORE RETURNING:
         customer_id: request.customer_id,
         query_text: q.query,
         intent: q.intent,
-        entity: request.url,
+        brand: brandName,
         template_id: `template-${index}`,
         evidence_snippet: `Generated query for ${q.topic}`,
         evidence_source: 'query_generation_service',

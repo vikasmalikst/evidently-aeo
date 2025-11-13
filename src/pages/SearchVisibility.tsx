@@ -1,10 +1,64 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { VisibilityTabs } from '../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../components/Visibility/ChartControls';
 import { VisibilityChart } from '../components/Visibility/VisibilityChart';
 import { VisibilityTable } from '../components/Visibility/VisibilityTable';
+import { useManualBrandDashboard } from '../manual-dashboard';
+import { useAuthStore } from '../store/authStore';
+import { apiClient } from '../lib/apiClient';
 import '../styles/visibility.css';
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+interface LlmTopic {
+  topic: string;
+  occurrences: number;
+  share: number;
+  visibility: number;
+  mentions: number;
+}
+
+interface LlmVisibilitySlice {
+  provider: string;
+  share: number;
+  shareOfSearch?: number;
+  visibility?: number;
+  delta?: number;
+  color?: string;
+  brandPresenceCount?: number;
+  topTopic?: string | null;
+  topTopics?: LlmTopic[];
+}
+
+interface VisibilityComparisonEntry {
+  entity: string;
+  isBrand: boolean;
+  mentions: number;
+  share: number;
+}
+
+interface CompetitorVisibilityEntry {
+  competitor: string;
+  mentions: number;
+  share: number;
+  visibility: number;
+  collectors?: Array<{
+    collectorType: string;
+    mentions: number;
+  }>;
+}
+
+interface DashboardPayload {
+  llmVisibility?: LlmVisibilitySlice[];
+  visibilityComparison?: VisibilityComparisonEntry[];
+  competitorVisibility?: CompetitorVisibilityEntry[];
+}
 
 interface ModelData {
   id: string;
@@ -16,119 +70,39 @@ interface ModelData {
   change?: number;
   referenceCount: number;
   data: number[];
+  topTopics?: LlmTopic[];
 }
 
-const brandModels: ModelData[] = [
-  {
-    id: 'chatgpt',
-    name: 'ChatGPT',
-    score: 87,
-    shareOfSearch: 92,
-    shareOfSearchChange: 3,
-    topTopic: 'AI Assistants',
-    change: 5,
-    referenceCount: 342,
-    data: [65, 68, 72, 75, 80, 85, 87]
-  },
-  {
-    id: 'claude',
-    name: 'Claude',
-    score: 82,
-    shareOfSearch: 88,
-    shareOfSearchChange: 4,
-    topTopic: 'Large Language Models',
-    change: 3,
-    referenceCount: 298,
-    data: [60, 63, 67, 70, 75, 80, 82]
-  },
-  {
-    id: 'gemini',
-    name: 'Gemini',
-    score: 78,
-    shareOfSearch: 85,
-    shareOfSearchChange: -1,
-    topTopic: 'AI Search',
-    change: -2,
-    referenceCount: 267,
-    data: [70, 72, 71, 73, 75, 77, 78]
-  },
-  {
-    id: 'google-search',
-    name: 'Google AI Search',
-    score: 75,
-    shareOfSearch: 80,
-    shareOfSearchChange: 2,
-    topTopic: 'Search Results',
-    change: 1,
-    referenceCount: 245,
-    data: [72, 73, 74, 74, 75, 75, 75]
-  },
-  {
-    id: 'perplexity',
-    name: 'Perplexity',
-    score: 72,
-    shareOfSearch: 78,
-    shareOfSearchChange: 5,
-    topTopic: 'Research Tools',
-    change: 4,
-    referenceCount: 223,
-    data: [55, 58, 62, 65, 68, 70, 72]
-  },
-  {
-    id: 'grok',
-    name: 'Grok',
-    score: 68,
-    shareOfSearch: 70,
-    shareOfSearchChange: 0,
-    topTopic: 'Real-time Info',
-    change: 0,
-    referenceCount: 198,
-    data: [65, 65, 66, 66, 67, 68, 68]
-  },
-  {
-    id: 'copilot',
-    name: 'MS Copilot',
-    score: 65,
-    shareOfSearch: 68,
-    topTopic: 'Code Generation',
-    change: -1,
-    referenceCount: 178,
-    data: [68, 68, 67, 66, 65, 65, 65]
-  }
-];
+const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-const competitorBrands: ModelData[] = [
-  {
-    id: 'competitor1',
-    name: 'OpenAI',
-    score: 89,
-    shareOfSearch: 95,
-    topTopic: 'AI Leadership',
-    change: 2,
-    referenceCount: 356,
-    data: [85, 86, 87, 88, 88, 89, 89]
-  },
-  {
-    id: 'competitor2',
-    name: 'Google DeepMind',
-    score: 84,
-    shareOfSearch: 90,
-    topTopic: 'AI Research',
-    change: -1,
-    referenceCount: 312,
-    data: [86, 86, 85, 85, 84, 84, 84]
-  },
-  {
-    id: 'competitor3',
-    name: 'Meta AI',
-    score: 76,
-    shareOfSearch: 82,
-    topTopic: 'Large Models',
-    change: 3,
-    referenceCount: 267,
-    data: [70, 71, 72, 73, 74, 75, 76]
+const normalizeId = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
+
+const buildTimeseries = (value: number) => Array(chartLabels.length).fill(Math.max(0, Math.round(value)));
+
+const getDateRangeForTimeframe = (timeframe: string) => {
+  const end = new Date();
+  end.setUTCHours(23, 59, 59, 999);
+
+  const start = new Date(end);
+  switch (timeframe) {
+    case 'monthly':
+      start.setUTCDate(start.getUTCDate() - 29);
+      break;
+    case 'ytd':
+      start.setUTCMonth(0, 1);
+      break;
+    case 'weekly':
+    default:
+      start.setUTCDate(start.getUTCDate() - 6);
+      break;
   }
-];
+  start.setUTCHours(0, 0, 0, 0);
+
+  return {
+    startDate: start.toISOString(),
+    endDate: end.toISOString()
+  };
+};
 
 export const SearchVisibility = () => {
   const [activeTab, setActiveTab] = useState<'brand' | 'competitive'>('brand');
@@ -137,14 +111,119 @@ export const SearchVisibility = () => {
   const [region, setRegion] = useState('us');
   const [stacked, setStacked] = useState(false);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [brandModels, setBrandModels] = useState<ModelData[]>([]);
+  const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
+  const [reloadToken, setReloadToken] = useState(0);
 
-  const currentModels = activeTab === 'brand' ? brandModels : competitorBrands;
+  const authLoading = useAuthStore((state) => state.isLoading);
+  const {
+    brands,
+    selectedBrandId,
+    selectedBrand,
+    isLoading: brandsLoading,
+    selectBrand,
+    error: brandsError
+  } = useManualBrandDashboard();
 
   useEffect(() => {
-    const defaultSelected = currentModels.slice(0, 5).map((m) => m.id);
-    setSelectedModels(defaultSelected);
-  }, [activeTab]);
+    if (authLoading || brandsLoading || !selectedBrandId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchVisibility = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const { startDate, endDate } = getDateRangeForTimeframe(timeframe);
+        const params = new URLSearchParams({
+          startDate,
+          endDate
+        });
+        const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+        const response = await apiClient.request<ApiResponse<DashboardPayload>>(
+          endpoint
+        );
+
+        if (!response.success || !response.data) {
+          throw new Error(response.error || response.message || 'Failed to load visibility data.');
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const llmSlices = response.data.llmVisibility ?? [];
+        const llmModels = llmSlices.map((slice) => ({
+          id: normalizeId(slice.provider),
+          name: slice.provider,
+          score: Math.round(slice.visibility ?? slice.share ?? 0),
+          shareOfSearch: Math.round(slice.shareOfSearch ?? slice.share ?? 0),
+          shareOfSearchChange: slice.delta ? Math.round(slice.delta) : 0,
+          topTopic:
+            slice.topTopic ??
+            slice.topTopics?.[0]?.topic ??
+            '—',
+          change: slice.delta ? Math.round(slice.delta) : 0,
+          referenceCount: slice.brandPresenceCount ?? 0,
+          data: buildTimeseries(slice.visibility ?? slice.share ?? 0),
+          topTopics: slice.topTopics ?? []
+        }));
+
+        const competitorEntries = response.data.competitorVisibility ?? [];
+
+        const competitorModels = competitorEntries.map((entry) => ({
+          id: normalizeId(entry.competitor),
+          name: entry.competitor,
+          score: Math.round(entry.visibility ?? 0),
+          shareOfSearch: Math.round(entry.share ?? 0),
+          topTopic: '—',
+          change: 0,
+          referenceCount: entry.mentions ?? 0,
+          data: buildTimeseries(entry.visibility ?? 0),
+          topTopics: []
+        }));
+
+        setBrandModels(llmModels);
+        setCompetitorModels(competitorModels);
+      } catch (fetchError) {
+        const message =
+          fetchError instanceof Error ? fetchError.message : 'Failed to load visibility data.';
+        if (!cancelled) {
+          setError(message);
+          setBrandModels([]);
+          setCompetitorModels([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchVisibility();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, brandsLoading, selectedBrandId, timeframe, reloadToken]);
+
+  const currentModels = activeTab === 'brand' ? brandModels : competitorModels;
+
+  useEffect(() => {
+    const availableModels = currentModels;
+    setSelectedModels((previous) => {
+      const stillValid = previous.filter((id) => availableModels.some((model) => model.id === id));
+      if (stillValid.length > 0) {
+        return stillValid;
+      }
+      return availableModels.slice(0, 5).map((model) => model.id);
+    });
+  }, [activeTab, currentModels]);
 
   const handleModelToggle = (modelId: string) => {
     setSelectedModels((prev) =>
@@ -152,14 +231,28 @@ export const SearchVisibility = () => {
     );
   };
 
-  const chartData = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  const chartData = useMemo(() => ({
+    labels: chartLabels,
     datasets: currentModels.map((model) => ({
       id: model.id,
       label: model.name,
       data: model.data
     }))
+  }), [currentModels]);
+
+  const combinedLoading = authLoading || brandsLoading || loading;
+  const combinedError = brandsError || error;
+
+  const handleRetry = () => {
+    setError(null);
+    setReloadToken((prev) => prev + 1);
   };
+
+  const EmptyState = ({ message }: { message: string }) => (
+    <div className="flex flex-col items-center justify-center py-12 text-center text-sm text-[#6c7289]">
+      {message}
+    </div>
+  );
 
   return (
     <Layout>
@@ -174,11 +267,50 @@ export const SearchVisibility = () => {
               Gemini, and Perplexity. Track visibility trends and compare your performance
               against competitors.
             </p>
+            {brands.length > 1 && selectedBrandId && (
+              <div className="flex items-center gap-2 mb-6">
+                <label
+                  htmlFor="brand-selector"
+                  className="text-xs font-semibold text-[#6c7289] uppercase tracking-wide"
+                >
+                  Brand
+                </label>
+                <select
+                  id="brand-selector"
+                  value={selectedBrandId}
+                  onChange={(event) => selectBrand(event.target.value)}
+                  className="text-sm border border-[#dcdfe5] rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#06b6d4]"
+                >
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.id}>
+                      {brand.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {selectedBrand && (
+              <p className="text-sm text-[#8b90a7]">
+                Viewing data for <span className="font-medium text-[#1a1d29]">{selectedBrand.name}</span>
+              </p>
+            )}
           </div>
           <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
 
         <div className="flex flex-col flex-1 gap-4 overflow-hidden p-4">
+          {combinedError && !combinedLoading && (
+            <div className="bg-white border border-[#f2b8b5] rounded-lg p-6 text-center">
+              <p className="text-sm text-[#b42318] mb-3">{combinedError}</p>
+              <button
+                onClick={handleRetry}
+                className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-[#06b6d4] rounded-lg hover:bg-[#0d7c96] transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-col flex-[0_0_60%] bg-white rounded-lg overflow-hidden shadow-sm">
             <ChartControls
               timeframe={timeframe}
@@ -196,19 +328,25 @@ export const SearchVisibility = () => {
               chartType={chartType}
               timeframe={timeframe}
               selectedModels={selectedModels}
-              loading={loading}
+              loading={combinedLoading}
               activeTab={activeTab}
             />
           </div>
 
           <div className="flex flex-col flex-1 bg-white rounded-lg overflow-hidden shadow-sm">
-            <VisibilityTable
-              activeTab={activeTab}
-              models={currentModels}
-              selectedModels={selectedModels}
-              onModelToggle={handleModelToggle}
-              loading={loading}
-            />
+            {combinedLoading ? (
+              <EmptyState message="Loading visibility data…" />
+            ) : currentModels.length === 0 ? (
+              <EmptyState message="No visibility records available for the selected brand yet." />
+            ) : (
+              <VisibilityTable
+                activeTab={activeTab}
+                models={currentModels}
+                selectedModels={selectedModels}
+                onModelToggle={handleModelToggle}
+                loading={combinedLoading}
+              />
+            )}
           </div>
         </div>
       </div>

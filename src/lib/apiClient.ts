@@ -65,8 +65,10 @@ class ApiClient {
   async request<T>(endpoint: string, options: RequestInit = {}, config: RequestConfig = {}): Promise<T> {
     const { requiresAuth = true, retry = true } = config;
     const headers = new Headers(options.headers as HeadersInit | undefined);
+    const method = (options.method || 'GET').toUpperCase();
+    const hasPayload = options.body !== undefined && options.body !== null;
 
-    if (!headers.has('Content-Type')) {
+    if (!headers.has('Content-Type') && method !== 'GET' && hasPayload) {
       headers.set('Content-Type', 'application/json');
     }
 

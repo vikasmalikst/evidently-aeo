@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../lib/auth';
 
 interface NavItem {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
   label: string;
   path: string;
 }
@@ -121,7 +121,14 @@ export const Sidebar = () => {
       </nav>
 
       <div className="border-t border-[var(--border-default)] p-3 space-y-2">
-        <button className="flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]">
+        <Link
+          to="/settings"
+          className={`flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out ${
+            isActive('/settings') || location.pathname.startsWith('/settings')
+              ? 'bg-[var(--bg-secondary)] text-[var(--accent-primary)]'
+              : 'text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]'
+          }`}
+        >
           <div className="flex-shrink-0 relative z-10">
             <IconSettings size={24} className="transition-colors duration-300" />
           </div>
@@ -134,7 +141,7 @@ export const Sidebar = () => {
           >
             Settings
           </span>
-        </button>
+        </Link>
 
         <div className="relative" ref={menuRef}>
           <button

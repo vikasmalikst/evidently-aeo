@@ -4,9 +4,10 @@ import { KeywordHighlighter } from './KeywordHighlighter';
 
 interface ResponseViewerProps {
   prompt: Prompt | null;
+  showHighlighting?: boolean;
 }
 
-export const ResponseViewer = ({ prompt }: ResponseViewerProps) => {
+export const ResponseViewer = ({ prompt, showHighlighting = true }: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
   const [highlightTarget, setHighlightTarget] = useState(true);
   const [highlightTop, setHighlightTop] = useState(true);
@@ -48,46 +49,52 @@ export const ResponseViewer = ({ prompt }: ResponseViewerProps) => {
           <h3 className="text-sm font-semibold text-[var(--text-headings)]">
             Response
           </h3>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={highlightBrand}
-                onChange={() => setHighlightBrand(!highlightBrand)}
-                className="w-3 h-3 rounded border-2 border-[#498CF9] text-[#498CF9] focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-medium text-[#498CF9]">Brand</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={highlightTarget}
-                onChange={() => setHighlightTarget(!highlightTarget)}
-                className="w-3 h-3 rounded border-2 border-[#AC59FB] text-[#AC59FB] focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-medium text-[#AC59FB]">Target</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={highlightTop}
-                onChange={() => setHighlightTop(!highlightTop)}
-                className="w-3 h-3 rounded border-2 border-[#F155A2] text-[#F155A2] focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-medium text-[#F155A2]">Trending</span>
-            </label>
-          </div>
+          {showHighlighting && (
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={highlightBrand}
+                  onChange={() => setHighlightBrand(!highlightBrand)}
+                  className="w-3 h-3 rounded border-2 border-[#498CF9] text-[#498CF9] focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-xs font-medium text-[#498CF9]">Brand</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={highlightTarget}
+                  onChange={() => setHighlightTarget(!highlightTarget)}
+                  className="w-3 h-3 rounded border-2 border-[#AC59FB] text-[#AC59FB] focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-xs font-medium text-[#AC59FB]">Target</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={highlightTop}
+                  onChange={() => setHighlightTop(!highlightTop)}
+                  className="w-3 h-3 rounded border-2 border-[#F155A2] text-[#F155A2] focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-xs font-medium text-[#F155A2]">Trending</span>
+              </label>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 font-data" style={{ maxHeight: 'calc(100vh - 450px)' }}>
-        <KeywordHighlighter
-          text={prompt.response}
-          keywords={prompt.keywords}
-          highlightBrand={highlightBrand}
-          highlightTarget={highlightTarget}
-          highlightTop={highlightTop}
-        />
+        {showHighlighting ? (
+          <KeywordHighlighter
+            text={prompt.response}
+            keywords={prompt.keywords}
+            highlightBrand={highlightBrand}
+            highlightTarget={highlightTarget}
+            highlightTop={highlightTop}
+          />
+        ) : (
+          <p className="text-[var(--text-body)] whitespace-pre-wrap">{prompt.response}</p>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Input } from './common/Input';
-import { Button } from './common/Button';
 import { Spinner } from './common/Spinner';
 import { verifyBrand, type Brand } from '../../api/onboardingMock';
 import { Search } from 'lucide-react';
@@ -19,7 +18,6 @@ export const BrandInput = ({
   isLoading: externalIsLoading 
 }: BrandInputProps) => {
   const [input, setInput] = useState(externalInput || '');
-  const [debouncedInput, setDebouncedInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
@@ -42,7 +40,6 @@ export const BrandInput = ({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedInput(input);
       if (input.length >= 2) {
         const domain = input.toLowerCase().replace(/\s+/g, '').replace(/^(https?:\/\/)?(www\.)?/, '');
         const cleanDomain = domain.includes('.') ? domain.split('/')[0] : `${domain}.com`;

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
@@ -78,9 +77,6 @@ export const Dashboard = () => {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
-  const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
-  const [startDate, setStartDate] = useState('2024-10-01');
-  const [endDate, setEndDate] = useState('2024-10-31');
   const [showTopicModal, setShowTopicModal] = useState(false);
 
   const getBrandData = () => {
@@ -273,7 +269,7 @@ export const Dashboard = () => {
   }
 
   const findScore = (label: string) =>
-    dashboardData.scores.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
+    dashboardData?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
   const formatNumber = (value: number, decimals = 1): string => {
     const fixed = value.toFixed(decimals);
@@ -599,8 +595,9 @@ export const Dashboard = () => {
 
             <div className="space-y-3">
               {mockPromptsData.slice(0, 5).map((topic) => {
-                const avgVolume = topic.prompts.reduce((sum, p) => sum + p.volume, 0) / topic.prompts.length;
-                const avgSent = topic.prompts.reduce((sum, p) => sum + p.sentiment, 0) / topic.prompts.length;
+                const promptCount = topic.prompts.length || 1;
+                const avgVolume = topic.prompts.reduce((sum, p) => sum + p.volume, 0) / promptCount;
+                const avgSent = topic.prompts.reduce((sum, p) => sum + p.sentiment, 0) / promptCount;
 
                 return (
                   <div key={topic.id} className="flex items-center justify-between py-2 border-b border-[#f4f4f6] last:border-0">

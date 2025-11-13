@@ -1,11 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SetupModal, type SetupData } from '../components/Onboarding/SetupModal';
 import { onboardingUtils } from '../utils/onboardingUtils';
 import { featureFlags } from '../config/featureFlags';
+import { submitBrandOnboarding } from '../api/brandApi';
 
 export const Setup = () => {
   const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Redirect to dashboard if skip setup check is enabled
   useEffect(() => {
@@ -15,9 +18,115 @@ export const Setup = () => {
     }
   }, [navigate]);
 
-  const handleComplete = (data: SetupData) => {
-    onboardingUtils.setOnboardingComplete(data);
-    navigate('/dashboard');
+  const handleComplete = async (data: SetupData) => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      // Gather all onboarding data from localStorage
+      const brandData = localStorage.getItem('onboarding_brand');
+      const competitorsData = localStorage.getItem('onboarding_competitors');
+
+      if (!brandData) {
+        throw new Error('Brand data not found. Please complete the brand selection first.');
+      }
+
+      const brand = JSON.parse(brandData);
+      const competitors = competitorsData ? JSON.parse(competitorsData) : [];
+
+      console.log('📦 Gathering onboarding data:', {
+        brand: brand.companyName,
+        competitors: competitors.length,
+        models: data.models.length,
+        topics: data.topics.length,
+      });
+
+      // Prepare the complete onboarding payload
+      const competitorPayload = competitors.map((competitor: any, index: number) => {
+        const name =
+          competitor?.name ||
+          competitor?.companyName ||
+          competitor?.domain ||
+          `Competitor ${index + 1}`;
+        const normalizedDomain =
+          (competitor?.domain || competitor?.url || '')
+            .toString()
+            .trim()
+            .replace(/^https?:\/\//i, '')
+            .replace(/^www\./i, '')
+            .split('/')[0] || '';
+        const url =
+          competitor?.url && competitor.url.startsWith('http')
+            ? competitor.url
+            : normalizedDomain
+            ? `https://${normalizedDomain}`
+            : '';
+
+        return {
+          name: name,
+          domain: normalizedDomain,
+          url,
+          relevance: competitor?.relevance || 'Direct Competitor',
+          industry: competitor?.industry || '',
+          logo: competitor?.logo || '',
+          source: competitor?.source || 'onboarding',
+        };
+      });
+
+      const onboardingPayload = {
+        brand_name: brand.companyName || brand.name,
+        website_url: brand.website || brand.domain || 'https://example.com',
+        description: brand.description || '',
+        industry: brand.industry || 'Technology',
+        competitors: competitorPayload,
+        aeo_topics: data.topics.map((topic) => ({
+          label: topic.label,
+          weight: topic.weight || 1.0,
+        })),
+        ai_models: data.models, // Selected AI models (chatgpt, perplexity, etc.)
+        metadata: {
+          ceo: brand.metadata?.ceo || brand.ceo,
+          headquarters: brand.headquarters,
+          founded_year: brand.founded,
+          prompts: data.prompts,
+          logo: brand.logo || brand.metadata?.brand_logo,
+          domain: brand.domain || '',
+          competitors_detail: competitorPayload,
+          description: brand.description,
+        },
+      };
+
+      console.log('🚀 Submitting complete onboarding data to API...');
+
+      // Submit to backend - this will:
+      // 1. Create brand in database
+      // 2. Save competitors
+      // 3. Save topics and categorize with AI
+      // 4. Trigger Cerebras AI query generation
+      // 5. Store AI models in metadata
+      const response = await submitBrandOnboarding(onboardingPayload);
+
+      if (response.success) {
+        console.log('✅ Onboarding completed successfully!');
+        
+        // Save to localStorage for backward compatibility
+        onboardingUtils.setOnboardingComplete(data);
+        
+        // Save brand ID for dashboard
+        if (response.data?.brand) {
+          localStorage.setItem('current_brand_id', response.data.brand.id);
+        }
+
+        // Navigate to dashboard
+        navigate('/dashboard');
+      } else {
+        throw new Error(response.error || 'Failed to complete onboarding');
+      }
+    } catch (error) {
+      console.error('❌ Onboarding submission failed:', error);
+      setSubmitError(error instanceof Error ? error.message : 'Failed to complete onboarding');
+      setIsSubmitting(false);
+    }
   };
 
   const handleClose = () => {
@@ -29,10 +138,57 @@ export const Setup = () => {
     return null;
   }
 
+  // Show error if submission failed
+  if (submitError) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+          <h2 className="text-xl font-semibold text-red-600 mb-4">Onboarding Failed</h2>
+          <p className="text-gray-700 mb-4">{submitError}</p>
+          <button
+            onClick={() => setSubmitError(null)}
+            className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading state during submission
+  if (isSubmitting) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md mx-4 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold mb-2">Setting up your brand...</h2>
+          <p className="text-gray-600">
+            Creating brand, saving topics, and generating queries with AI
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <SetupModal
-      brandName="Your Brand"
-      industry="Technology"
+      brandName={(() => {
+        const brandData = localStorage.getItem('onboarding_brand');
+        if (brandData) {
+          const brand = JSON.parse(brandData);
+          return brand.companyName || brand.name || 'Your Brand';
+        }
+        return 'Your Brand';
+      })()}
+      industry={(() => {
+        const brandData = localStorage.getItem('onboarding_brand');
+        if (brandData) {
+          const brand = JSON.parse(brandData);
+          return brand.industry || 'Technology';
+        }
+        return 'Technology';
+      })()}
       onComplete={handleComplete}
       onClose={handleClose}
     />

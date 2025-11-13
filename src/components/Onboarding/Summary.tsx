@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { Button } from './common/Button';
 import { Spinner } from './common/Spinner';
-import { submitOnboarding, type Brand, type Competitor } from '../../api/onboardingMock';
 import { CheckCircle, Sparkles } from 'lucide-react';
+import type { OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 
 interface SummaryProps {
-  brand: Brand;
-  competitors: Competitor[];
+  brand: OnboardingBrand;
+  competitors: OnboardingCompetitor[];
   onComplete: () => void;
   onBack: () => void;
 }
@@ -19,13 +18,14 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
     setIsSubmitting(true);
 
     try {
-      await submitOnboarding(brand, competitors);
+      await new Promise((resolve) => setTimeout(resolve, 750));
       setShowSuccess(true);
       setTimeout(() => {
         onComplete();
-      }, 2000);
+      }, 1200);
     } catch (error) {
-      console.error('Failed to submit onboarding:', error);
+      console.error('Failed to progress onboarding summary:', error);
+      onComplete();
     } finally {
       setIsSubmitting(false);
     }
@@ -69,11 +69,14 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
         <div className="onboarding-summary__section">
           <h2 className="onboarding-summary__section-title">Your Brand</h2>
           <div className="onboarding-summary-brand">
-            <img
-              src={brand.logo}
-              alt={brand.companyName}
-              className="onboarding-summary-brand__logo"
-            />
+            {brand.logo && (
+              <img
+                src={brand.logo}
+                alt={brand.companyName}
+                className="onboarding-summary-brand__logo"
+                crossOrigin="anonymous"
+              />
+            )}
             <div className="onboarding-summary-brand__info">
               <h3 className="onboarding-summary-brand__name">{brand.companyName}</h3>
               <p className="onboarding-summary-brand__meta">
@@ -90,16 +93,19 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
           </h2>
           <div className="onboarding-summary-competitors">
             {competitors.map((competitor) => (
-              <div key={competitor.domain} className="onboarding-summary-competitor">
-                <img
-                  src={competitor.logo}
-                  alt={competitor.name}
-                  className="onboarding-summary-competitor__logo"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                  }}
-                />
+              <div key={competitor.domain || competitor.name} className="onboarding-summary-competitor">
+                {competitor.logo && (
+                  <img
+                    src={competitor.logo}
+                    alt={competitor.name}
+                    className="onboarding-summary-competitor__logo"
+                    crossOrigin="anonymous"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
+                  />
+                )}
                 <span className="onboarding-summary-competitor__name">{competitor.name}</span>
               </div>
             ))}
@@ -114,6 +120,35 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
             <li>Get actionable insights in minutes</li>
             <li>Monitor competitor performance</li>
           </ul>
+        </div>
+
+        <div
+          className="onboarding-summary-actions"
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '12px',
+            marginTop: '32px',
+          }}
+        >
+          <button
+            type="button"
+            className="onboarding-button-secondary"
+            onClick={onBack}
+            disabled={isSubmitting}
+            style={{ minWidth: 120 }}
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            className="onboarding-button-primary"
+            onClick={handleStartAnalysis}
+            disabled={isSubmitting}
+            style={{ minWidth: 160 }}
+          >
+            Complete Onboarding
+          </button>
         </div>
       </div>
     </div>

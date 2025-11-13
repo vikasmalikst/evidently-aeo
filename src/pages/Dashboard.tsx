@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -79,8 +78,6 @@ export const Dashboard = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
-  const [startDate, setStartDate] = useState('2024-10-01');
-  const [endDate, setEndDate] = useState('2024-10-31');
   const [showTopicModal, setShowTopicModal] = useState(false);
 
   const getBrandData = () => {

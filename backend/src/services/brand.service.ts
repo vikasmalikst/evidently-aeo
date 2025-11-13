@@ -7,6 +7,17 @@ import {
   ValidationError 
 } from '../types/auth';
 import { v4 as uuidv4 } from 'uuid';
+import { queryGenerationService } from './query-generation.service';
+
+type NormalizedCompetitor = {
+  name: string;
+  domain?: string;
+  url?: string;
+  relevance?: string;
+  industry?: string;
+  logo?: string;
+  source?: string;
+};
 
 export class BrandService {
   /**
@@ -17,6 +28,23 @@ export class BrandService {
     brandData: BrandOnboardingRequest
   ): Promise<BrandOnboardingResponse> {
     try {
+      const normalizeDomain = (value?: string) => {
+        if (!value) {
+          return '';
+        }
+        return value
+          .toString()
+          .trim()
+          .replace(/^https?:\/\//i, '')
+          .replace(/^www\./i, '')
+          .split('/')[0];
+      };
+
+      const buildUrlFromDomain = (value?: string) => {
+        const domainOnly = normalizeDomain(value);
+        return domainOnly ? `https://${domainOnly}` : '';
+      };
+
       // Validate input
       this.validateBrandData(brandData);
 
@@ -46,6 +74,94 @@ export class BrandService {
       // Create brand
       const brandId = uuidv4();
       const brandSlug = brandData.brand_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+      const seenCompetitorNames = new Set<string>();
+      const normalizedCompetitors: NormalizedCompetitor[] = (brandData.competitors || [])
+        .map((competitor: any, index: number): NormalizedCompetitor | null => {
+          try {
+            if (!competitor && competitor !== 0) {
+              return null;
+            }
+
+            if (typeof competitor === 'string') {
+              const name = competitor.trim();
+              if (!name) {
+                return null;
+              }
+              const key = name.toLowerCase();
+              if (seenCompetitorNames.has(key)) {
+                return null;
+              }
+              seenCompetitorNames.add(key);
+              const domain = normalizeDomain(name);
+              return {
+                name,
+                domain,
+                url: buildUrlFromDomain(domain),
+                relevance: 'Direct Competitor',
+                industry: '',
+                logo: domain ? `https://logo.clearbit.com/${domain}` : '',
+                source: 'onboarding',
+              };
+            }
+
+            const name =
+              (competitor.name ||
+                competitor.companyName ||
+                competitor.domain ||
+                `Competitor ${index + 1}`) as string;
+            const trimmedName = name.trim();
+            if (!trimmedName) {
+              return null;
+            }
+
+            const key = trimmedName.toLowerCase();
+            if (seenCompetitorNames.has(key)) {
+              return null;
+            }
+            seenCompetitorNames.add(key);
+
+            const domain =
+              normalizeDomain(competitor.domain) || normalizeDomain(competitor.url);
+            const url =
+              competitor.url && competitor.url.startsWith('http')
+                ? competitor.url
+                : buildUrlFromDomain(competitor.url || domain);
+
+            const relevance = competitor.relevance || 'Direct Competitor';
+            const industry = competitor.industry || '';
+            const logo =
+              competitor.logo ||
+              (domain ? `https://logo.clearbit.com/${domain}` : '');
+
+            return {
+              name: trimmedName,
+              domain,
+              url,
+              relevance,
+              industry,
+              logo,
+              source: competitor.source || 'onboarding',
+            };
+          } catch (error) {
+            console.warn('⚠️ Failed to normalize competitor payload:', error, competitor);
+            return null;
+          }
+        })
+        .filter((item): item is NormalizedCompetitor => Boolean(item));
+      const competitorNames = normalizedCompetitors.map((competitor) => competitor.name).filter(Boolean);
+      
+      // Prepare metadata with ai_models
+      const metadata = {
+        ...(brandData.metadata || {}),
+        ai_models: brandData.ai_models || [],
+        topics: brandData.aeo_topics || [],
+        ceo: brandData.metadata?.ceo,
+        headquarters: brandData.metadata?.headquarters,
+        founded_year: brandData.metadata?.founded_year,
+        brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
+        competitors_detail: normalizedCompetitors
+      };
       
       const { data: newBrand, error: brandError } = await supabaseAdmin
         .from('brands')
@@ -57,10 +173,10 @@ export class BrandService {
           homepage_url: brandData.website_url,
           industry: brandData.industry,
           summary: brandData.description,
-          ceo: (brandData as any).metadata?.ceo,
-          headquarters: (brandData as any).metadata?.headquarters,
-          founded_year: (brandData as any).metadata?.founded_year,
-          metadata: (brandData as any).metadata
+          ceo: brandData.metadata?.ceo,
+          headquarters: brandData.metadata?.headquarters,
+          founded_year: brandData.metadata?.founded_year,
+          metadata: metadata
         })
         .select()
         .single();
@@ -86,36 +202,16 @@ export class BrandService {
         brandName: brandData.brand_name,
         homepageUrl: brandData.website_url,
         summary: brandData.description,
-        ceo: (brandData as any).metadata?.ceo,
-        headquarters: (brandData as any).metadata?.headquarters,
-        foundedYear: (brandData as any).metadata?.founded_year,
+        ceo: brandData.metadata?.ceo,
+        headquarters: brandData.metadata?.headquarters,
+        foundedYear: brandData.metadata?.founded_year,
         industry: brandData.industry,
-        competitors: brandData.competitors || [],
-        topics: (brandData as any).metadata?.topics || brandData.aeo_topics || [],
+        competitors: normalizedCompetitors,
+        topics: brandData.metadata?.topics || brandData.aeo_topics || [],
+        ai_models: brandData.ai_models || [], // Store selected AI models
         sources: (brandData as any).sources || [],
-        generatedAtIso: (brandData as any).metadata?.generated_at || new Date().toISOString()
+        generatedAtIso: brandData.metadata?.generated_at || new Date().toISOString()
       };
-
-      // Insert competitors into brand_competitors table
-      if (brandData.competitors && brandData.competitors.length > 0) {
-        const competitorInserts = brandData.competitors.map((competitor: string, index: number) => ({
-          brand_id: brandId,
-          competitor_name: competitor.trim(),
-          competitor_url: `https://www.${competitor.toLowerCase().replace(/\s+/g, '')}.com`,
-          priority: index + 1
-        }));
-
-        const { error: competitorError } = await supabaseAdmin
-          .from('brand_competitors')
-          .insert(competitorInserts);
-
-        if (competitorError) {
-          console.error('❌ Failed to insert competitors:', competitorError);
-          // Don't throw error, just log it - competitors are not critical for brand creation
-        } else {
-          console.log(`✅ Inserted ${competitorInserts.length} competitors for brand ${brandId}`);
-        }
-      }
 
       const { error: artifactError } = await supabaseAdmin
         .from('onboarding_artifacts')
@@ -134,19 +230,20 @@ export class BrandService {
       }
 
       // Insert competitors into brand_competitors table
-      if (brandData.competitors && Array.isArray(brandData.competitors) && brandData.competitors.length > 0) {
-        const competitorRecords = brandData.competitors.map((competitor: any, index: number) => {
-          // Handle both string and object competitors
-          const competitorName = typeof competitor === 'string' ? competitor : (competitor.name || competitor);
-          const competitorUrl = typeof competitor === 'string' ? '' : (competitor.url || '');
-          
-          return {
-            brand_id: newBrand.id,
-            competitor_name: competitorName,
-            competitor_url: competitorUrl,
-            priority: index + 1
-          };
-        });
+      if (normalizedCompetitors.length > 0) {
+        const competitorRecords = normalizedCompetitors.map((competitor, index) => ({
+          brand_id: newBrand.id,
+          competitor_name: competitor.name,
+          competitor_url: competitor.url || buildUrlFromDomain(competitor.domain),
+          priority: index + 1,
+          metadata: {
+            domain: competitor.domain || null,
+            relevance: competitor.relevance || null,
+            industry: competitor.industry || null,
+            logo: competitor.logo || null,
+            source: competitor.source || 'onboarding'
+          }
+        }));
 
         const { error: competitorError } = await supabaseAdmin
           .from('brand_competitors')
@@ -154,6 +251,7 @@ export class BrandService {
 
         if (competitorError) {
           console.error('⚠️ Failed to insert competitors:', competitorError);
+          console.error('🔍 DEBUG: Competitor records that failed:', competitorRecords);
           // Don't throw - brand was created successfully
         } else {
           console.log(`✅ Inserted ${competitorRecords.length} competitors for brand ${newBrand.name}`);
@@ -163,18 +261,25 @@ export class BrandService {
       // Insert AEO topics into brand_topics table
       // Check both aeo_topics and metadata.topics fields
       const topics = brandData.aeo_topics || (brandData as any).metadata?.topics || [];
+      
+      // Extract topic labels from objects or use strings directly
+      const topicLabels = topics.map((topic: any) => 
+        typeof topic === 'string' ? topic : (topic.label || String(topic))
+      );
+      
       console.log('🔍 DEBUG: Topics extraction:', {
         aeo_topics: brandData.aeo_topics,
         metadata_topics: (brandData as any).metadata?.topics,
         extracted_topics: topics,
+        extracted_labels: topicLabels,
         topics_length: topics.length,
         is_array: Array.isArray(topics)
       });
       
-      if (topics && Array.isArray(topics) && topics.length > 0) {
-        const topicRecords = topics.map((topic) => ({
+      if (topicLabels && Array.isArray(topicLabels) && topicLabels.length > 0) {
+        const topicRecords = topicLabels.map((topicLabel: string) => ({
           brand_id: newBrand.id,
-          topic_name: topic, // Fixed: use topic_name instead of topic
+          topic_name: topicLabel, // Fixed: use extracted label string
           description: '' // We don't have descriptions from onboarding
         }));
 
@@ -193,10 +298,6 @@ export class BrandService {
           
           // 🎯 NEW: Categorize topics using AI with guaranteed fallback
           try {
-            // Handle both string and object topic formats
-            const topicLabels = topics.map(topic => 
-              typeof topic === 'string' ? topic : (topic.label || String(topic))
-            );
             console.log(`🤖 Starting AI categorization for ${topicLabels.length} topics during brand creation`);
             console.log(`📋 Topics to categorize:`, topicLabels);
             await this.categorizeTopicsWithAI(newBrand.id, topicLabels);
@@ -207,14 +308,37 @@ export class BrandService {
             
             // GUARANTEED FALLBACK: Always categorize topics using rules
             try {
-              const topicLabels = topics.map(topic => 
-                typeof topic === 'string' ? topic : (topic.label || String(topic))
-              );
               await this.categorizeTopicsWithRules(newBrand.id, topicLabels);
               console.log(`✅ Rule-based categorization completed for brand ${newBrand.id}`);
             } catch (ruleError) {
               console.error('❌ Even rule-based categorization failed:', ruleError);
             }
+          }
+          
+          // 🎯 PHASE 3: Trigger Cerebras AI Query Generation
+          // Generate neutral queries based on selected topics
+          try {
+            console.log(`🚀 Triggering query generation for ${topicLabels.length} topics`);
+            console.log(`📋 Topics for query generation:`, topicLabels);
+            
+            await queryGenerationService.generateSeedQueries({
+              url: brandData.website_url,
+              locale: 'en-US',
+              country: 'US',
+              industry: brandData.industry,
+              competitors: competitorNames.join(', '),
+              keywords: brandData.keywords?.join(', '),
+              llm_provider: 'cerebras', // Use Cerebras as primary
+              brand_id: newBrand.id,
+              customer_id: customerId,
+              topics: topicLabels // Pass topics for targeted query generation
+            });
+            
+            console.log(`✅ Query generation completed for brand ${newBrand.id}`);
+          } catch (queryGenError) {
+            console.error('⚠️ Query generation failed (non-critical):', queryGenError);
+            // Don't throw - query generation failure shouldn't block brand creation
+            // Queries can be generated later if needed
           }
         }
       } else {

@@ -94,10 +94,11 @@ export class DataCollectionService {
       'perplexity': 'Perplexity',
       'claude': 'Claude',
       'deepseek': 'DeepSeek',
-     
+      'copilot': 'Bing Copilot', // Map copilot to Bing Copilot
       'bing_copilot': 'Bing Copilot',
       'grok': 'Grok',
-      'gemini': 'Gemini'
+      'gemini': 'Gemini',
+      'mistral': 'Mistral' // Add Mistral mapping (for future implementation)
     };
     return mapping[collectorType] || collectorType;
   }
@@ -135,6 +136,16 @@ export class DataCollectionService {
 
     // Bing Copilot Collector (via BrightData)
     this.collectors.set('bing_copilot', {
+      name: 'Bing Copilot Collector',
+      enabled: false, // ✅ Enabled with BrightData
+      baseUrl: 'priority',
+      timeout: 300000, // Increased to 5 minutes for BrightData async processing
+      retries: 2,
+      priority: 4
+    });
+
+    // Copilot (alias for Bing Copilot - for frontend compatibility)
+    this.collectors.set('copilot', {
       name: 'Bing Copilot Collector',
       enabled: false, // ✅ Enabled with BrightData
       baseUrl: 'priority',

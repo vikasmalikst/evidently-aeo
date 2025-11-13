@@ -53,8 +53,22 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/auth" element={<AuthPage />} />
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/setup" element={<Setup />} />
+        <Route 
+          path="/onboarding" 
+          element={
+            <ProtectedRoute>
+              <Onboarding />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/setup" 
+          element={
+            <ProtectedRoute>
+              <Setup />
+            </ProtectedRoute>
+          } 
+        />
         <Route
           path="/dashboard"
           element={

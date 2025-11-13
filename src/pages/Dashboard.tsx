@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/Layout/Layout';
@@ -77,6 +77,7 @@ export const Dashboard = () => {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
+  const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
   const [showTopicModal, setShowTopicModal] = useState(false);
 
   const getBrandData = () => {

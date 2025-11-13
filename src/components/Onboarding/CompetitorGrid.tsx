@@ -1,38 +1,44 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
+import { Plus, Check } from 'lucide-react';
 import { Card } from './common/Card';
-import { Button } from './common/Button';
 import { Input } from './common/Input';
 import { Spinner } from './common/Spinner';
-import { getCompetitors, type Brand, type Competitor } from '../../api/onboardingMock';
-import { Plus, Check } from 'lucide-react';
+import type { OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 
 interface CompetitorGridProps {
-  brand: Brand;
-  onContinue: (competitors: Competitor[]) => void;
+  brand: OnboardingBrand;
+  initialCompetitors?: OnboardingCompetitor[];
+  onContinue: (competitors: OnboardingCompetitor[]) => void;
   onBack: () => void;
   selectedCompetitors?: Set<string>;
   onSelectionChange?: (selected: Set<string>) => void;
-  onCompetitorsLoaded?: (competitors: Competitor[]) => void;
+  onCompetitorsLoaded?: (competitors: OnboardingCompetitor[]) => void;
 }
 
 export const CompetitorGrid = ({ 
   brand, 
+  initialCompetitors = [],
   onContinue, 
   onBack,
   selectedCompetitors: externalSelected,
   onSelectionChange,
   onCompetitorsLoaded
 }: CompetitorGridProps) => {
-  const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [competitors, setCompetitors] = useState<OnboardingCompetitor[]>(initialCompetitors);
   const [selected, setSelected] = useState<Set<string>>(externalSelected || new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customName, setCustomName] = useState('');
 
+  const getCompetitorKey = (competitor: OnboardingCompetitor) =>
+    (competitor.domain || competitor.name || '').toLowerCase();
+
   // Sync with external selection if provided
   useEffect(() => {
     if (externalSelected) {
-      setSelected(externalSelected);
+      setSelected(
+        new Set(Array.from(externalSelected).map((value) => value.toLowerCase()))
+      );
     }
   }, [externalSelected]);
 
@@ -40,18 +46,21 @@ export const CompetitorGrid = ({
     const loadCompetitors = async () => {
       setIsLoading(true);
       try {
-        const data = await getCompetitors(brand);
-        setCompetitors(data);
-        // Notify parent of loaded competitors
-        if (onCompetitorsLoaded) {
-          onCompetitorsLoaded(data);
-        }
-        // Only set initial selection if no external selection is provided
-        if (!externalSelected || externalSelected.size === 0) {
-          const topFive = new Set(data.slice(0, 5).map(c => c.domain));
-          setSelected(topFive);
-          if (onSelectionChange) {
-            onSelectionChange(topFive);
+        if (initialCompetitors && initialCompetitors.length > 0) {
+          setCompetitors(initialCompetitors);
+          onCompetitorsLoaded?.(initialCompetitors);
+          if (!externalSelected || externalSelected.size === 0) {
+            const autoSelect = new Set(
+              initialCompetitors.slice(0, 5).map((competitor) => getCompetitorKey(competitor))
+            );
+            setSelected(autoSelect);
+            onSelectionChange?.(autoSelect);
+          }
+        } else {
+          setCompetitors([]);
+          onCompetitorsLoaded?.([]);
+          if (!externalSelected || externalSelected.size === 0) {
+            setSelected(new Set());
           }
         }
       } finally {
@@ -60,16 +69,21 @@ export const CompetitorGrid = ({
     };
 
     loadCompetitors();
-  }, [brand]);
+  }, [brand, initialCompetitors]);
 
 
-  const toggleCompetitor = (domain: string) => {
+  const toggleCompetitor = (competitor: OnboardingCompetitor) => {
+    const key = getCompetitorKey(competitor);
+    if (!key) {
+      return;
+    }
+
     const newSelected = new Set(selected);
-    if (newSelected.has(domain)) {
-      newSelected.delete(domain);
+    if (newSelected.has(key)) {
+      newSelected.delete(key);
     } else {
       if (newSelected.size >= 10) return;
-      newSelected.add(domain);
+      newSelected.add(key);
     }
     setSelected(newSelected);
     if (onSelectionChange) {
@@ -81,12 +95,15 @@ export const CompetitorGrid = ({
     if (!customName.trim()) return;
 
     const customDomain = customName.toLowerCase().replace(/\s+/g, '');
-    const customCompetitor: Competitor = {
+    const domain = `${customDomain}.com`;
+    const customCompetitor: OnboardingCompetitor = {
       name: customName,
-      logo: `https://logo.clearbit.com/${customDomain}.com`,
+      logo: `https://logo.clearbit.com/${domain}`,
       industry: brand.industry,
       relevance: 'Custom',
-      domain: `${customDomain}.com`
+      domain,
+      url: `https://${domain}`,
+      source: 'custom',
     };
 
     const updatedCompetitors = [customCompetitor, ...competitors];
@@ -95,7 +112,9 @@ export const CompetitorGrid = ({
     if (onCompetitorsLoaded) {
       onCompetitorsLoaded(updatedCompetitors);
     }
-    const newSelected = new Set([...selected, customCompetitor.domain]);
+    const key = getCompetitorKey(customCompetitor);
+    const newSelected = new Set(selected);
+    newSelected.add(key);
     setSelected(newSelected);
     if (onSelectionChange) {
       onSelectionChange(newSelected);
@@ -105,7 +124,9 @@ export const CompetitorGrid = ({
   };
 
   const handleContinue = () => {
-    const selectedCompetitors = competitors.filter((c) => selected.has(c.domain));
+    const selectedCompetitors = competitors.filter((competitor) =>
+      selected.has(getCompetitorKey(competitor))
+    );
     onContinue(selectedCompetitors);
   };
 
@@ -121,7 +142,7 @@ export const CompetitorGrid = ({
     <div className="onboarding-competitor-grid-content">
       <div className="onboarding-brand-section-wrapper">
         <div className="onboarding-brand-header">
-          <img src={brand.logo} alt={brand.companyName} className="onboarding-brand-header__logo" />
+          <img src={brand.logo} alt={brand.companyName} className="onboarding-brand-header__logo" crossOrigin="anonymous" />
           <div className="onboarding-brand-header__info">
             <h2 className="onboarding-brand-header__name">{brand.companyName}</h2>
             <p className="onboarding-brand-header__meta">{brand.industry}</p>
@@ -175,13 +196,14 @@ export const CompetitorGrid = ({
 
       <div className="onboarding-competitor-grid">
         {competitors.map((competitor) => {
-          const isSelected = selected.has(competitor.domain);
+          const key = getCompetitorKey(competitor);
+          const isSelected = key ? selected.has(key) : false;
           return (
             <Card
-              key={competitor.domain}
+              key={key || competitor.name}
               selected={isSelected}
               hoverable
-              onClick={() => toggleCompetitor(competitor.domain)}
+              onClick={() => toggleCompetitor(competitor)}
               className={
                 competitor.relevance === 'Direct Competitor' 
                   ? 'onboarding-card--direct' 
@@ -194,15 +216,18 @@ export const CompetitorGrid = ({
                 <div className="onboarding-competitor-card__checkbox">
                   {isSelected && <Check size={16} />}
                 </div>
-                <img
-                  src={competitor.logo}
-                  alt={competitor.name}
-                  className="onboarding-competitor-card__logo"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                  }}
-                />
+                {competitor.logo && (
+                  <img
+                    src={competitor.logo}
+                    alt={competitor.name}
+                    className="onboarding-competitor-card__logo"
+                    crossOrigin="anonymous"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
+                  />
+                )}
                 <h3 className="onboarding-competitor-card__name">{competitor.name}</h3>
                 <p className="onboarding-competitor-card__industry">{competitor.industry}</p>
                 <span className={`onboarding-competitor-card__relevance onboarding-competitor-card__relevance--${

@@ -7,17 +7,20 @@ import { Summary } from '../components/Onboarding/Summary';
 import { OnboardingStepIndicator } from '../components/Onboarding/OnboardingStepIndicator';
 import { featureFlags } from '../config/featureFlags';
 import { onboardingUtils } from '../utils/onboardingUtils';
-import type { Brand, Competitor } from '../api/onboardingMock';
+import type { OnboardingBrand, OnboardingCompetitor } from '../types/onboarding';
 
 type OnboardingStep = 'brand' | 'competitors' | 'summary';
 
 export const Onboarding = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('brand');
-  const [brand, setBrand] = useState<Brand | null>(null);
-  const [competitors, setCompetitors] = useState<Competitor[]>([]);
-  const [allCompetitors, setAllCompetitors] = useState<Competitor[]>([]);
+  const [brand, setBrand] = useState<OnboardingBrand | null>(null);
+  const [competitors, setCompetitors] = useState<OnboardingCompetitor[]>([]);
+  const [allCompetitors, setAllCompetitors] = useState<OnboardingCompetitor[]>([]);
   const [selectedCompetitorDomains, setSelectedCompetitorDomains] = useState<Set<string>>(new Set());
+  const getCompetitorKey = (competitor: OnboardingCompetitor) =>
+    (competitor.domain || competitor.name || '').toLowerCase();
+
   const [brandInput, setBrandInput] = useState('');
   const [isAnalyzingBrand, setIsAnalyzingBrand] = useState(false);
 
@@ -51,13 +54,27 @@ export const Onboarding = () => {
     setIsAnalyzingBrand(true);
   };
 
-  const handleBrandSuccess = (verifiedBrand: Brand) => {
+  const handleBrandSuccess = (
+    verifiedBrand: OnboardingBrand,
+    competitorSuggestions: OnboardingCompetitor[]
+  ) => {
     setBrand(verifiedBrand);
+    setAllCompetitors(competitorSuggestions);
     setIsAnalyzingBrand(false);
+
+    if (competitorSuggestions.length > 0) {
+      const defaultSelection = new Set(
+        competitorSuggestions.slice(0, 5).map(getCompetitorKey)
+      );
+      setSelectedCompetitorDomains(defaultSelection);
+    } else {
+      setSelectedCompetitorDomains(new Set());
+    }
+
     setCurrentStep('competitors');
   };
 
-  const handleCompetitorsContinue = (selectedCompetitors: Competitor[]) => {
+  const handleCompetitorsContinue = (selectedCompetitors: OnboardingCompetitor[]) => {
     setCompetitors(selectedCompetitors);
     setCurrentStep('summary');
   };
@@ -124,8 +141,9 @@ export const Onboarding = () => {
 
         <div className={`onboarding-modal-body ${currentStep === 'competitors' ? 'step-competitors' : ''}`}>
           {currentStep === 'brand' && (
-            <BrandInput 
-              onSuccess={handleBrandSuccess} 
+            <BrandInput
+              onSuccess={handleBrandSuccess}
+              onAnalysisComplete={() => setIsAnalyzingBrand(false)}
               input={brandInput}
               onInputChange={setBrandInput}
               isLoading={isAnalyzingBrand}
@@ -134,6 +152,7 @@ export const Onboarding = () => {
           {currentStep === 'competitors' && brand && (
             <CompetitorGrid
               brand={brand}
+              initialCompetitors={allCompetitors}
               onContinue={handleCompetitorsContinue}
               onBack={handleBack}
               selectedCompetitors={selectedCompetitorDomains}
@@ -174,22 +193,14 @@ export const Onboarding = () => {
               <button
                 className="onboarding-button-primary"
                 onClick={() => {
-                  const selectedCompetitors = allCompetitors.filter((c) => 
-                    selectedCompetitorDomains.has(c.domain)
+                  const selectedCompetitors = allCompetitors.filter((c) =>
+                    selectedCompetitorDomains.has(getCompetitorKey(c))
                   );
                   handleCompetitorsContinue(selectedCompetitors);
                 }}
                 disabled={!canProceed()}
               >
                 Next
-              </button>
-            )}
-            {currentStep === 'summary' && (
-              <button
-                className="onboarding-button-primary"
-                onClick={handleOnboardingComplete}
-              >
-                Complete Onboarding
               </button>
             )}
             {!canProceed() && currentStep === 'competitors' && (

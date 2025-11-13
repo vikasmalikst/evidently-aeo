@@ -15,6 +15,7 @@ import trendingKeywordsRoutes from './routes/trending-keywords.routes';
 import dataCollectionRoutes from './routes/data-collection.routes';
 import keywordGenerationRoutes from './routes/keyword-generation.routes';
 import citationCategorizationRoutes from './routes/citation-categorization.routes';
+import onboardingRoutes from './routes/onboarding.routes';
 // TEMPORARY: Admin routes commented out
 // import adminRoutes from './routes/admin.routes';
 // import userManagementRoutes from './routes/user-management.routes';
@@ -77,6 +78,7 @@ app.use('/api', (_req, res, next) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/brands', brandRoutes);
+app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/query-generation', queryGenerationRoutes);
 app.use('/api/google-aio', googleAIORoutes);
 app.use('/api/trending-keywords', trendingKeywordsRoutes);

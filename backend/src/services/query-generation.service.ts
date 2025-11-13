@@ -290,7 +290,7 @@ export class QueryGenerationService {
     const keywords = request.keywords ? request.keywords.split(',').map(k => k.trim()) : [];
     const topics = request.topics || [];
     
-    return `You are an expert SEO and AEO specialist. Generate search queries for ${brandName}.
+    return `You are an expert SEO and AEO specialist. Generate neutral, industry-focused search queries.
 
 BRAND CONTEXT:
 Industry: ${industry}
@@ -298,20 +298,26 @@ Competitors: ${competitors.join(', ') || 'None'}
 Keywords: ${keywords.join(', ') || 'None'}
 Market: ${request.country} (${request.locale})
 
+CRITICAL NEUTRALITY RULES:
+- Generate NEUTRAL, INDUSTRY-FOCUSED queries without brand mentions
+- Queries should help customers find and evaluate options in the ${industry} industry
+- ONLY mention brand names in COMPARISON queries when competitors are provided
+- Think from customer perspective: "How would someone search when researching ${industry} options?"
+
 QUALITY STANDARDS:
 - Generate queries real users would type into Google
 - Make queries specific, actionable, and search-optimized
 - Use natural language matching how people actually search
 - Include long-tail keywords and specific use cases
 - Cover customer journey: awareness → comparison → purchase → support
-- Use specific product names, features, or use cases when available
-- Include comparison queries with specific competitors: ${competitors.length > 0 ? competitors.join(', ') : 'None specified'}
+- Use industry-specific terminology and features
 - Add location-specific queries when relevant for ${request.country}
 - Include troubleshooting and support queries
 
 FORBIDDEN:
-- Generic queries: "What is [brand]?", "How does [brand] work?", "Benefits of [brand]"
-- Queries that don't clearly relate to the assigned topic
+- Brand-specific queries like "What is [brand]?", "How does [brand] work?"
+- Queries mentioning brand name unless it's a comparison with competitors
+- Generic queries that don't relate to the assigned topic
 - Duplicate or similar queries across topics
 
 ${topics.length > 0 ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -379,59 +385,67 @@ STEP 4: Finalize only if unique
    - Query would NOT make sense if assigned to any other topic
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ CORRECT EXAMPLES (Study these carefully)
+✅ CORRECT EXAMPLES (Study these carefully - NEUTRAL INDUSTRY-FOCUSED)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Topic: "Menu & Nutrition"
 ❌ BAD: "What does ${brandName} offer?" 
-   → Too generic, could apply to any topic
-✅ GOOD: "What are the nutritional values and calorie counts for ${brandName} menu items?"
-   → Includes "nutritional values", "calorie counts", "menu items" - UNIQUE to this topic
+   → Mentions brand unnecessarily
+✅ GOOD: "What are the nutritional values and calorie counts to consider when choosing ${industry} options?"
+   → Neutral, industry-focused, no brand mention
 
 Topic: "Pricing & Value"  
 ❌ BAD: "What does ${brandName} cost?"
-   → Too vague, could apply to products, services, or other topics
-✅ GOOD: "What are ${brandName}'s pricing tiers and which option offers the best value for money?"
-   → Includes "pricing tiers", "best value" - UNIQUE to pricing topic
+   → Mentions brand unnecessarily
+✅ GOOD: "What pricing tiers and value options are available in the ${industry} industry?"
+   → Neutral, industry-focused, helps customers evaluate options
 
 Topic: "Delivery & App Experience"
 ❌ BAD: "How does ${brandName} work?"
-   → Too generic, could apply to any topic
-✅ GOOD: "How long does ${brandName} delivery take and what features are available in their mobile app?"
-   → Includes "delivery take", "mobile app" - UNIQUE to delivery/app topic
+   → Mentions brand unnecessarily
+✅ GOOD: "What features should I look for in a ${industry} mobile app and delivery service?"
+   → Neutral, helps customers understand what to expect
 
 Topic: "Product Features"
 ❌ BAD: "What are ${brandName}'s products?"
-   → Too generic, doesn't specify features
-✅ GOOD: "What are the key features and technical specifications of ${brandName}'s [specific product]?"
-   → Includes "features", "technical specifications" - UNIQUE to product features
+   → Mentions brand unnecessarily
+✅ GOOD: "What are the most important features and specifications to compare in ${industry} products?"
+   → Neutral, industry-focused, helps customers make informed decisions
 
 Topic: "Customer Reviews"
 ❌ BAD: "What do people think about ${brandName}?"
-   → Too generic, could apply to any topic
-✅ GOOD: "What are verified customer reviews and ratings for ${brandName}'s [specific product/service]?"
-   → Includes "verified customer reviews", "ratings" - UNIQUE to reviews topic
+   → Mentions brand unnecessarily
+✅ GOOD: "How to evaluate customer reviews and ratings when choosing ${industry} options?"
+   → Neutral, helps customers understand evaluation criteria
+
+Topic: "Competitor Comparison" (ONLY case where brand names are allowed)
+${competitors.length > 0 ? `✅ GOOD: "How does ${brandName} compare to ${competitors[0]} in terms of features?"
+   → Comparison query with competitor - ALLOWED` : `⚠️ NO COMPETITORS: Use neutral comparison like "What factors to compare when evaluating ${industry} options?"`}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❌ FORBIDDEN PATTERNS (NEVER use these)
+❌ FORBIDDEN PATTERNS (NEVER use these - BRAND MENTIONS PROHIBITED)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-FORBIDDEN: Generic queries that could apply to multiple topics
+FORBIDDEN: Brand-specific queries (unless comparing with competitors)
    ❌ "What is ${brandName}?"
    ❌ "How does ${brandName} work?"
    ❌ "What does ${brandName} offer?"
    ❌ "What are ${brandName}'s products?"
    ❌ "Is ${brandName} good?"
    ❌ "What are ${brandName}'s services?"
-
-FORBIDDEN: Queries without topic-specific keywords
    ❌ "Where can I find ${brandName}?"
    ❌ "How to use ${brandName}?"
    ❌ "What are ${brandName}'s benefits?"
 
-FORBIDDEN: Queries that could apply to other topics
-   ❌ "What are ${brandName}'s prices?" (could apply to "Pricing" or "Products" topics)
-   ✅ MUST be: "What are ${brandName}'s pricing tiers and which option offers best value?" (specific to pricing)
+CORRECT: Industry-focused neutral queries
+   ✅ "What factors matter when choosing ${industry} products?"
+   ✅ "How to evaluate ${industry} options?"
+   ✅ "What features are important in ${industry} services?"
+   ✅ "What are the key considerations for ${industry} purchases?"
+
+ALLOWED: Brand comparison queries (ONLY when competitors provided)
+${competitors.length > 0 ? `   ✅ "How does ${brandName} compare to ${competitors[0]}?"
+   ✅ "Which is better: ${brandName} or ${competitors[0]}?"` : `   ⚠️ No competitors provided - use neutral comparisons instead`}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔍 MANDATORY VALIDATION CHECKLIST (Check ALL before returning)
@@ -461,10 +475,10 @@ For EACH query, verify:
    [ ] Checked against ALL other topics: Query would NOT apply ✅
 
 INTENT ASSIGNMENT:
-- awareness: learning about brand, discovering features, understanding benefits
-- comparison: comparing with competitors, alternatives, pros/cons
-- purchase: pricing, buying decisions, deals, where to buy
-- support: troubleshooting, help, customer service, returns, refunds
+- awareness: Learning about industry, discovering features, understanding benefits (NEUTRAL)
+- comparison: Comparing options, evaluating alternatives (USE BRAND NAME ONLY IF COMPETITORS PROVIDED)
+- purchase: Pricing, buying decisions, deals, where to buy (NEUTRAL)
+- support: Troubleshooting, help, customer service, returns, refunds (NEUTRAL)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📤 OUTPUT FORMAT
@@ -490,9 +504,11 @@ Return JSON array with EXACTLY ${topics.length} queries (one per topic):
 4. Verify topic coverage: ALL ${topics.length} topics must have a query
 5. Verify uniqueness: Each query MUST be exclusive to its assigned topic
 6. Cross-reference: Each query checked against ALL other topics - must be unique
+7. VERIFY NEUTRALITY: Queries must be industry-focused, NO brand mentions (except competitor comparisons)
 
 CRITICAL: If ANY query could apply to another topic, you MUST regenerate it with more specificity.
-CRITICAL: Return EXACTLY ${topics.length} unique queries. Zero duplicates. Zero overlaps.` : `GENERATE 8 QUERIES (EXACTLY 2 per intent):
+CRITICAL: Return EXACTLY ${topics.length} unique queries. Zero duplicates. Zero overlaps.
+CRITICAL: Keep queries NEUTRAL - help customers evaluate ${industry} options, not specific brands.` : `GENERATE 8 QUERIES (EXACTLY 2 per intent):
 
 For each query, consider:
 - What specific problem does this solve for the user?
@@ -1338,16 +1354,16 @@ Generate a single query as JSON:
         );
       }
 
-      // Product-specific queries for sportswear
+      // Product-specific queries for sportswear (NEUTRAL)
       queries.push(
-        `What are the key features of ${brandName} running shoes?`,
-        `How does ${brandName} athletic wear perform during workouts?`,
-        `What makes ${brandName} sneakers unique?`,
-        `How does ${brandName} clothing fit compared to other brands?`,
-        `What are the materials used in ${brandName} products?`,
-        `How does ${brandName} sizing compare to other brands?`,
-        `What are the care instructions for ${brandName} products?`,
-        `How does ${brandName} product durability hold up over time?`
+        `What are the key features to look for in running shoes?`,
+        `How to evaluate athletic wear performance for workouts?`,
+        `What makes quality sneakers stand out in the ${industry} industry?`,
+        `What are the typical sizing considerations for ${industry} apparel?`,
+        `What materials are commonly used in high-quality ${industry} products?`,
+        `How to determine the right fit when buying ${industry} clothing?`,
+        `What care instructions are important for ${industry} products?`,
+        `How to assess product durability in ${industry} items?`
       );
     } else if (industry.toLowerCase().includes('automotive') || industry.toLowerCase().includes('vehicle') || industry.toLowerCase().includes('car')) {
       // Automotive industry queries
@@ -1364,16 +1380,16 @@ Generate a single query as JSON:
         );
       }
 
-      // Product-specific queries for automotive
+      // Product-specific queries for automotive (NEUTRAL)
       queries.push(
-        `What are the key features of ${brandName} vehicles?`,
-        `How does ${brandName} fuel efficiency compare to other brands?`,
-        `What makes ${brandName} cars unique?`,
-        `How does ${brandName} safety technology work?`,
-        `What are the engine specifications of ${brandName} vehicles?`,
-        `How does ${brandName} interior quality compare to other brands?`,
-        `What are the maintenance costs for ${brandName} vehicles?`,
-        `How does ${brandName} warranty coverage work?`
+        `What are the key features to look for when choosing a vehicle?`,
+        `How to compare fuel efficiency across different ${industry} options?`,
+        `What makes a quality vehicle stand out in today's market?`,
+        `What safety technologies are important in modern vehicles?`,
+        `What engine specifications matter most when buying a vehicle?`,
+        `How to evaluate interior quality in ${industry} purchases?`,
+        `What are typical maintenance costs for vehicles in this category?`,
+        `What warranty coverage should I expect from ${industry} manufacturers?`
       );
     } else {
       // Generic industry queries
@@ -1390,26 +1406,26 @@ Generate a single query as JSON:
         );
       }
 
-      // Generic product queries
+      // Generic product queries (NEUTRAL)
       queries.push(
-        `What are the key features of ${brandName} products?`,
-        `How does ${brandName} quality compare to other brands?`,
-        `What makes ${brandName} unique?`,
-        `How does ${brandName} customer service work?`,
-        `What are the benefits of choosing ${brandName}?`,
-        `How does ${brandName} pricing compare to other brands?`,
-        `What are the reviews for ${brandName} products?`,
-        `How does ${brandName} warranty work?`
+        `What are the key features to look for in ${industry} products?`,
+        `How to evaluate quality when choosing ${industry} options?`,
+        `What makes a product stand out in the ${industry} industry?`,
+        `What customer service standards should I expect in ${industry}?`,
+        `What are the benefits of different ${industry} options?`,
+        `How to compare pricing across ${industry} providers?`,
+        `How to evaluate reviews when choosing ${industry} products?`,
+        `What warranty coverage is typical in the ${industry} industry?`
       );
     }
 
-    // Generic Brand Queries (15% of queries) - Reduced percentage
+    // Generic Industry Awareness Queries (NEUTRAL)
     queries.push(
-      `What makes ${brandName} unique in the ${industry.toLowerCase()} industry?`,
-      `How reliable and trustworthy is ${brandName}?`,
-      `What is ${brandName}'s company history and track record?`,
-      `What certifications and awards does ${brandName} have?`,
-      `What security measures does ${brandName} implement?`
+      `What factors make ${industry} options stand out in the market?`,
+      `How to evaluate reliability and trustworthiness in ${industry} providers?`,
+      `What company history and track record matters when choosing ${industry} options?`,
+      `What certifications and awards are important in the ${industry} industry?`,
+      `What security measures should I expect from ${industry} providers?`
     );
 
     // Add keyword-specific technical queries if keywords are provided
@@ -1429,19 +1445,19 @@ Generate a single query as JSON:
     const industrySpecificQueries = this.getIndustrySpecificTechnicalQueries(brandName, industry, competitors);
     queries.push(...industrySpecificQueries);
 
-    // If no competitors, add more product-specific and technical queries to fill the gap
+    // If no competitors, add more industry-specific queries (NEUTRAL)
     if (competitors.length === 0) {
       queries.push(
-        `What are ${brandName}'s latest technology innovations?`,
-        `How does ${brandName} stay ahead of industry trends?`,
-        `What future developments is ${brandName} working on?`,
-        `How does ${brandName} ensure system reliability?`,
-        `What makes ${brandName}'s technology cutting-edge?`,
-        `What are ${brandName}'s performance benchmarks and metrics?`,
-        `How does ${brandName} optimize for different use cases?`,
-        `What are ${brandName}'s scalability and capacity limits?`,
-        `How does ${brandName} handle system maintenance and updates?`,
-        `What are ${brandName}'s integration capabilities and APIs?`
+        `What are the latest technology innovations in the ${industry} industry?`,
+        `How do leading ${industry} providers stay ahead of trends?`,
+        `What future developments are shaping the ${industry} market?`,
+        `How to ensure system reliability when choosing ${industry} solutions?`,
+        `What makes technology cutting-edge in the ${industry} space?`,
+        `What performance benchmarks matter most in ${industry}?`,
+        `How to evaluate optimization for different ${industry} use cases?`,
+        `What scalability and capacity considerations matter for ${industry} solutions?`,
+        `How do ${industry} providers handle system maintenance and updates?`,
+        `What integration capabilities should I expect from ${industry} solutions?`
       );
     }
 
@@ -1773,10 +1789,10 @@ For EACH query, verify:
    [ ] Checked against ALL other topics: Query would NOT apply ✅
 
 INTENT ASSIGNMENT:
-- awareness: learning about brand, discovering features, understanding benefits
-- comparison: comparing with competitors, alternatives, pros/cons
-- purchase: pricing, buying decisions, deals, where to buy
-- support: troubleshooting, help, customer service, returns, refunds
+- awareness: Learning about industry, discovering features, understanding benefits (NEUTRAL)
+- comparison: Comparing options, evaluating alternatives (USE BRAND NAME ONLY IF COMPETITORS PROVIDED)
+- purchase: Pricing, buying decisions, deals, where to buy (NEUTRAL)
+- support: Troubleshooting, help, customer service, returns, refunds (NEUTRAL)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📤 OUTPUT FORMAT
@@ -2101,7 +2117,7 @@ CRITICAL VALIDATION BEFORE RETURNING:
           locale: request.locale,
           country: request.country,
           strategy: 'universal_prompt',
-          brand_name: brandName,
+          // Note: brand_name column doesn't exist in query_generations table
           queries_by_intent: this.groupQueriesByIntent(queries),
           processing_time_seconds: 0,
           metadata: {
@@ -2109,7 +2125,8 @@ CRITICAL VALIDATION BEFORE RETURNING:
             url: request.url,
             industry: request.industry,
             competitors: request.competitors,
-            keywords: request.keywords
+            keywords: request.keywords,
+            brand_name: brandName // Store brand name in metadata instead
           }
         })
         .select('id, brand_id, total_queries, created_at')
@@ -2124,6 +2141,7 @@ CRITICAL VALIDATION BEFORE RETURNING:
       const queryInserts = queries.map((q, index) => ({
         generation_id: generationId,
         brand_id: brandId,
+        // Note: brand_name column doesn't exist in generated_queries table
         customer_id: request.customer_id,
         query_text: q.query,
         intent: q.intent,
@@ -2138,7 +2156,8 @@ CRITICAL VALIDATION BEFORE RETURNING:
           topic_name: q.topic, // Also store as topic_name for compatibility
           priority: q.priority,
           index,
-          provider
+          provider,
+          brand_name: brandName // Store brand name in metadata instead
         }
       }));
 

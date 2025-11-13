@@ -71,12 +71,24 @@ export interface BrandOnboardingRequest {
   website_url: string;
   description?: string;
   industry?: string;
-  competitors?: string[];
+  competitors?: Array<
+    string | {
+      name?: string;
+      domain?: string;
+      url?: string;
+      relevance?: string;
+      industry?: string;
+      logo?: string;
+      source?: string;
+    }
+  >;
   keywords?: string[];
   aeo_topics?: Array<{
     label: string;
     weight: number;
   }>;
+  ai_models?: string[]; // Selected AI models (chatgpt, perplexity, gemini, etc.)
+  metadata?: Record<string, any>; // Additional metadata
 }
 
 export interface BrandOnboardingResponse {

@@ -94,6 +94,7 @@ export const ChartPreview = ({
       },
       tooltip: {
         enabled: true,
+        caretSize: 0,
         callbacks: {
           label: (context: any) => {
             if (context.datasetIndex === 1) {

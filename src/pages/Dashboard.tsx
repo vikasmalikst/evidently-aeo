@@ -27,6 +27,7 @@ import { getLLMIcon } from '../components/Visibility/LLMIcons';
 import { apiClient } from '../lib/apiClient';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
+import { SourcesChartContainer } from '../components/Citations/SourcesChartContainer';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -469,6 +470,17 @@ export const Dashboard = () => {
           </div>
         </div>
 
+        {/* Citation Sources Chart with Type Selector */}
+        <div className="mb-6">
+          <SourcesChartContainer
+            racingChartData={mockCitationSourcesData.racingChartData}
+            categories={['Editorial', 'Corporate', 'Reference', 'UGC', 'Institutional']}
+            onExport={() => {
+              console.log('Exporting citation sources data...');
+            }}
+          />
+        </div>
+
         <div className="grid grid-cols-4 gap-5 mb-6">
           {metricCards.map(({ key, ...cardProps }) => (
             <MetricCard key={key} {...cardProps} />
@@ -811,6 +823,7 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
         display: false,
       },
       tooltip: {
+        caretSize: 0,
         callbacks: {
           label: (context: any) => {
             return `${context.dataset.label}: ${context.parsed.x}%`;
@@ -874,6 +887,7 @@ const LLMVisibilityDonut = ({ data }: LLMVisibilityDonutProps) => {
         display: false,
       },
       tooltip: {
+        caretSize: 0,
         callbacks: {
           label: (context: any) => {
             return `${context.label}: ${context.parsed.toFixed(1)}%`;

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { getLLMIcon } from '../Visibility/LLMIcons';
+import { CountryFlag } from '../CountryFlag';
 
 interface PromptFiltersProps {
   selectedLLMs: string[];
@@ -21,18 +22,23 @@ const llmOptions = [
   'Meta Llama'
 ];
 
+// Country options (sorted alphabetically)
+const countryOptions = [
+  { value: 'canada', label: 'Canada' },
+  { value: 'china', label: 'China' },
+  { value: 'india', label: 'India' },
+  { value: 'japan', label: 'Japan' },
+  { value: 'south-korea', label: 'South Korea' },
+  { value: 'uk', label: 'United Kingdom' },
+  { value: 'us', label: 'United States' }
+];
+
+// Region options (sorted alphabetically)
 const regionOptions = [
-  { value: 'us', label: '🇺🇸 United States' },
-  { value: 'canada', label: '🇨🇦 Canada' },
-  { value: 'latam', label: '🌎 LATAM' },
-  { value: 'south-america', label: '🌎 South America' },
-  { value: 'uk', label: '🇬🇧 United Kingdom' },
-  { value: 'emea', label: '🌍 EMEA' },
-  { value: 'india', label: '🇮🇳 India' },
-  { value: 'south-korea', label: '🇰🇷 South Korea' },
-  { value: 'china', label: '🇨🇳 China' },
-  { value: 'japan', label: '🇯🇵 Japan' },
-  { value: 'southeast-asia', label: '🌏 Southeast Asia' }
+  { value: 'emea', label: 'EMEA' },
+  { value: 'latam', label: 'LATAM' },
+  { value: 'south-america', label: 'South America' },
+  { value: 'southeast-asia', label: 'Southeast Asia' }
 ];
 
 export const PromptFilters = ({
@@ -68,7 +74,8 @@ export const PromptFilters = ({
     }
   };
 
-  const currentRegion = regionOptions.find(r => r.value === selectedRegion);
+  const allOptions = [...countryOptions, ...regionOptions];
+  const currentRegion = allOptions.find(r => r.value === selectedRegion);
 
   return (
     <div ref={dropdownRef} className="flex items-center justify-end gap-3 mb-6">
@@ -120,9 +127,17 @@ export const PromptFilters = ({
           className="flex items-center gap-2 w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--accent-primary)] hover:bg-[var(--bg-secondary)]"
           onClick={() => setOpenDropdown(openDropdown === 'region' ? null : 'region')}
         >
-          <span className="text-[var(--text-body)] whitespace-nowrap overflow-hidden text-ellipsis flex-1 text-left font-medium">
-            {currentRegion?.label}
-          </span>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {currentRegion && (
+              <CountryFlag 
+                countryCode={currentRegion.value} 
+                className="w-4 h-4 flex-shrink-0"
+              />
+            )}
+            <span className="text-[var(--text-body)] whitespace-nowrap overflow-hidden text-ellipsis text-left font-medium">
+              {currentRegion?.label}
+            </span>
+          </div>
           <ChevronDown
             size={16}
             className={`text-[var(--text-caption)] transition-transform duration-150 flex-shrink-0 ${
@@ -133,10 +148,11 @@ export const PromptFilters = ({
 
         {openDropdown === 'region' && (
           <div className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[300px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]">
-            {regionOptions.map((option) => (
+            {/* Countries */}
+            {countryOptions.map((option) => (
               <button
                 key={option.value}
-                className={`block w-full px-4 py-2 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] ${
+                className={`flex items-center gap-2 w-full px-4 py-2 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] ${
                   selectedRegion === option.value
                     ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
                     : ''
@@ -146,7 +162,42 @@ export const PromptFilters = ({
                   setOpenDropdown(null);
                 }}
               >
-                {option.label}
+                <CountryFlag 
+                  countryCode={option.value} 
+                  className="w-4 h-4 flex-shrink-0"
+                />
+                <span>{option.label}</span>
+              </button>
+            ))}
+            
+            {/* Separator with Regions Header */}
+            <div className="flex items-center px-4 py-2 my-1">
+              <div className="flex-1 border-t border-[var(--border-default)]"></div>
+              <span className="px-3 text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider">
+                Regions
+              </span>
+              <div className="flex-1 border-t border-[var(--border-default)]"></div>
+            </div>
+            
+            {/* Regions */}
+            {regionOptions.map((option) => (
+              <button
+                key={option.value}
+                className={`flex items-center gap-2 w-full px-4 py-2 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] ${
+                  selectedRegion === option.value
+                    ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
+                    : ''
+                }`}
+                onClick={() => {
+                  onRegionChange(option.value);
+                  setOpenDropdown(null);
+                }}
+              >
+                <CountryFlag 
+                  countryCode={option.value} 
+                  className="w-4 h-4 flex-shrink-0"
+                />
+                <span>{option.label}</span>
               </button>
             ))}
           </div>

@@ -217,13 +217,21 @@ export class DataCollectionService {
         try {
           console.log(`\n🚀 [${queryNum}/${requests.length}] Executing: "${request.queryText.substring(0, 60)}..."`);
           
-          // Execute across enabled collectors
+          // Execute across enabled collectors with retry mechanism
           // Each collector will create its own execution record
-          const collectorResults = await this.executeQueryAcrossCollectors(request);
+          const collectorResults = await this.executeQueryAcrossCollectorsWithRetry(request, 2); // 2 retries
           console.log(`✅ [${queryNum}/${requests.length}] Completed ${collectorResults.length} collector executions`);
           return collectorResults;
         } catch (error) {
-          console.error(`❌ [${queryNum}/${requests.length}] Error:`, error instanceof Error ? error.message : 'Unknown error');
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const errorStack = error instanceof Error ? error.stack : undefined;
+          console.error(`❌ [${queryNum}/${requests.length}] Error executing query:`, {
+            query: request.queryText.substring(0, 100),
+            error: errorMessage,
+            stack: errorStack,
+            brandId: request.brandId,
+            queryId: request.queryId
+          });
           return [];
         }
       });
@@ -238,8 +246,57 @@ export class DataCollectionService {
       }
     }
 
-    console.log(`\n✅ All queries processed. Total results: ${results.length}`);
+    // Enhanced summary logging
+    const successCount = results.filter(r => r.status === 'completed').length;
+    const failedCount = results.filter(r => r.status === 'failed').length;
+    const totalExecutions = results.length;
+    
+    console.log(`\n✅ All queries processed. Summary:`);
+    console.log(`   Total executions: ${totalExecutions}`);
+    if (totalExecutions > 0) {
+      console.log(`   Successful: ${successCount} (${Math.round((successCount / totalExecutions) * 100)}%)`);
+      console.log(`   Failed: ${failedCount} (${Math.round((failedCount / totalExecutions) * 100)}%)`);
+    }
+    
+    if (failedCount > 0) {
+      console.warn(`⚠️ ${failedCount} collector executions failed. Check logs above for details.`);
+    }
+    
     return results;
+  }
+
+  /**
+   * Execute query across multiple collectors with retry mechanism
+   */
+  private async executeQueryAcrossCollectorsWithRetry(
+    request: QueryExecutionRequest,
+    maxRetries: number = 2
+  ): Promise<CollectorResult[]> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(`🔄 Retry attempt ${attempt}/${maxRetries} for query: "${request.queryText.substring(0, 60)}..."`);
+          // Exponential backoff: wait 2^attempt seconds
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        }
+        
+        return await this.executeQueryAcrossCollectors(request);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`⚠️ Attempt ${attempt + 1}/${maxRetries + 1} failed:`, lastError.message);
+        
+        // Don't retry on certain errors (e.g., validation errors)
+        if (lastError.message.includes('not found') || lastError.message.includes('invalid')) {
+          throw lastError;
+        }
+      }
+    }
+    
+    // All retries exhausted
+    console.error(`❌ All ${maxRetries + 1} attempts failed for query: "${request.queryText.substring(0, 60)}..."`);
+    throw lastError || new Error('Query execution failed after retries');
   }
 
   /**
@@ -532,18 +589,36 @@ export class DataCollectionService {
 
     } catch (error: any) {
       const executionTime = Date.now() - startTime;
+      const errorMessage = error?.message || 'Unknown error';
+      const errorStack = error?.stack || undefined;
       
-      console.error(`❌ ${config.name} failed:`, error.message);
+      // Enhanced error logging
+      console.error(`❌ ${config.name} failed for query "${request.queryText.substring(0, 60)}...":`, {
+        collectorType,
+        queryId: request.queryId,
+        brandId: request.brandId,
+        error: errorMessage,
+        stack: errorStack,
+        executionTimeMs: executionTime,
+        timestamp: new Date().toISOString()
+      });
       
-      // Update execution status
-      await this.updateExecutionStatus(executionId, collectorType, 'failed', error.message);
+      // Update execution status with detailed error information
+      const detailedError = {
+        message: errorMessage,
+        stack: errorStack,
+        collectorType,
+        timestamp: new Date().toISOString()
+      };
+      
+      await this.updateExecutionStatus(executionId, collectorType, 'failed', JSON.stringify(detailedError));
       
       return {
         queryId: request.queryId,
         executionId,
         collectorType,
         status: 'failed',
-        error: error.message,
+        error: errorMessage,
         executionTimeMs: executionTime
       };
     }

@@ -141,20 +141,31 @@ export class QueryGenerationService {
     // Remove duplicates before formatting (safety check)
     const uniqueQueries = this.removeDuplicateQueries(queries);
     
+    // 🎯 NEW: Validate query neutrality - filter out queries that mention the brand name
+    const neutralQueries = this.validateAndFilterNeutralQueries(uniqueQueries, brandName, request.competitors);
+    
+    if (neutralQueries.length < uniqueQueries.length) {
+      const removedCount = uniqueQueries.length - neutralQueries.length;
+      console.warn(`⚠️ Removed ${removedCount} non-neutral queries that mentioned brand name "${brandName}"`);
+      console.warn(`   Remaining neutral queries: ${neutralQueries.length}`);
+    } else {
+      console.log(`✅ All ${neutralQueries.length} queries passed neutrality validation`);
+    }
+    
     // Log the AI-generated queries
-    console.log(`🤖 Final Generated ${uniqueQueries.length} queries for ${brandName}:`);
-    uniqueQueries.forEach((q, index) => {
+    console.log(`🤖 Final Generated ${neutralQueries.length} neutral queries for ${brandName}:`);
+    neutralQueries.forEach((q, index) => {
       console.log(`  ${index + 1}. [${q.topic || 'N/A'}] [${q.intent}] ${q.query}`);
     });
     
     // Final validation
     if (request.topics && request.topics.length > 0) {
-      const queryTexts = uniqueQueries.map(q => q.query.toLowerCase().trim());
+      const queryTexts = neutralQueries.map(q => q.query.toLowerCase().trim());
       const duplicates = queryTexts.filter((query, index) => queryTexts.indexOf(query) !== index);
       if (duplicates.length > 0) {
         console.error(`❌ CRITICAL: Still found ${duplicates.length} duplicate queries after enforcement!`);
         duplicates.forEach(dup => {
-          const dupQueries = uniqueQueries.filter(q => q.query.toLowerCase().trim() === dup);
+          const dupQueries = neutralQueries.filter(q => q.query.toLowerCase().trim() === dup);
           console.error(`  Duplicate: "${dup}" appears in topics: ${dupQueries.map(q => q.topic).join(', ')}`);
         });
       } else {
@@ -162,7 +173,7 @@ export class QueryGenerationService {
       }
       
       // Verify all topics have queries
-      const generatedTopics = uniqueQueries.map(q => q.topic).filter(Boolean);
+      const generatedTopics = neutralQueries.map(q => q.topic).filter(Boolean);
       const missingTopics = request.topics.filter(topic => !generatedTopics.includes(topic));
       if (missingTopics.length > 0) {
         console.error(`❌ CRITICAL: Missing queries for ${missingTopics.length} topics: ${missingTopics.join(', ')}`);
@@ -173,12 +184,12 @@ export class QueryGenerationService {
     
     // Only use AI-generated queries, don't fall back to generic ones
     let aeoTopics;
-    if (uniqueQueries.length >= 4) {
-      console.log(`✅ Using ${uniqueQueries.length} AI-generated queries (no fallback needed)`);
-      aeoTopics = uniqueQueries.slice(0, 8); // Take up to 8 queries
+    if (neutralQueries.length >= 4) {
+      console.log(`✅ Using ${neutralQueries.length} AI-generated neutral queries (no fallback needed)`);
+      aeoTopics = neutralQueries.slice(0, 8); // Take up to 8 queries
     } else {
-      console.warn(`⚠️ Only ${uniqueQueries.length} AI-generated queries available, but proceeding with AI queries only`);
-      aeoTopics = uniqueQueries;
+      console.warn(`⚠️ Only ${neutralQueries.length} AI-generated neutral queries available, but proceeding with AI queries only`);
+      aeoTopics = neutralQueries;
     }
 
       // Convert queries to the expected format
@@ -2198,6 +2209,77 @@ CRITICAL VALIDATION BEFORE RETURNING:
       grouped[q.intent] = (grouped[q.intent] || 0) + 1;
     });
     return grouped;
+  }
+
+  /**
+   * Validate and filter queries to ensure neutrality
+   * Removes queries that mention the brand name (except in comparison queries with competitors)
+   */
+  private validateAndFilterNeutralQueries(
+    queries: Array<{ topic: string; query: string; intent: string; priority: number }>,
+    brandName: string,
+    competitors?: string
+  ): Array<{ topic: string; query: string; intent: string; priority: number }> {
+    if (!brandName) {
+      return queries; // No brand name to check against
+    }
+
+    const normalizedBrandName = brandName.toLowerCase().trim();
+    const competitorList = competitors ? competitors.split(',').map(c => c.trim().toLowerCase()) : [];
+    
+    // Forbidden patterns that indicate brand-specific queries
+    const forbiddenPatterns = [
+      `what is ${normalizedBrandName}`,
+      `how does ${normalizedBrandName}`,
+      `what does ${normalizedBrandName}`,
+      `what are ${normalizedBrandName}`,
+      `is ${normalizedBrandName}`,
+      `where can i find ${normalizedBrandName}`,
+      `how to use ${normalizedBrandName}`,
+      `${normalizedBrandName}'s`,
+      `${normalizedBrandName} offers`,
+      `${normalizedBrandName} provides`,
+      `${normalizedBrandName} features`,
+      `${normalizedBrandName} products`,
+      `${normalizedBrandName} services`
+    ];
+
+    return queries.filter(query => {
+      const queryLower = query.query.toLowerCase().trim();
+      
+      // Check if query contains brand name
+      if (!queryLower.includes(normalizedBrandName)) {
+        return true; // No brand mention - neutral
+      }
+
+      // Allow brand mentions in comparison queries if competitors are provided
+      if (query.intent === 'comparison' && competitorList.length > 0) {
+        // Check if query mentions at least one competitor along with brand
+        const mentionsCompetitor = competitorList.some(competitor => 
+          queryLower.includes(competitor)
+        );
+        
+        if (mentionsCompetitor) {
+          // This is a valid comparison query
+          return true;
+        }
+      }
+
+      // Check against forbidden patterns
+      const matchesForbiddenPattern = forbiddenPatterns.some(pattern => 
+        queryLower.includes(pattern)
+      );
+
+      if (matchesForbiddenPattern) {
+        console.log(`🚫 Filtered non-neutral query: "${query.query}" (matches forbidden pattern)`);
+        return false;
+      }
+
+      // If brand is mentioned but not in a forbidden pattern and not a comparison,
+      // it might still be non-neutral - be conservative and filter it
+      console.log(`🚫 Filtered non-neutral query: "${query.query}" (contains brand name "${brandName}" without competitor context)`);
+      return false;
+    });
   }
 }
 

@@ -417,19 +417,51 @@ export class TrendingKeywordsService {
 
   /**
    * Check if a keyword is valid (not a URL, question, or technical term)
+   * Keywords must be 1-4 words, no question words, no question marks, no full sentences
    */
   private isValidKeyword(keyword: string, brand: string): boolean {
-    // Reject URLs
-    if (keyword.includes('http') || keyword.includes('www.')) return false;
+    if (!keyword || typeof keyword !== 'string') return false;
     
-    // Reject questions
-    if (keyword.includes('?') || keyword.startsWith('what') || keyword.startsWith('how') || keyword.startsWith('why')) return false;
+    const keywordTrimmed = keyword.trim();
+    if (keywordTrimmed.length === 0) return false;
+    
+    // Reject URLs
+    if (keywordTrimmed.includes('http') || keywordTrimmed.includes('www.')) return false;
+    
+    // Reject question marks
+    if (keywordTrimmed.includes('?')) return false;
+    
+    // Check word count (must be 1-4 words)
+    const wordCount = keywordTrimmed.split(/\s+/).filter(w => w.length > 0).length;
+    if (wordCount > 4) {
+      console.log(`🚫 Rejected keyword (too many words: ${wordCount}): "${keywordTrimmed}"`);
+      return false;
+    }
+    
+    // Reject question words at the start
+    const questionWords = ['what', 'how', 'why', 'when', 'where', 'who', 'which', 'explain', 'tell', 'describe', 'compare'];
+    const keywordLower = keywordTrimmed.toLowerCase();
+    if (questionWords.some(qw => keywordLower.startsWith(qw + ' ') || keywordLower === qw)) {
+      console.log(`🚫 Rejected keyword (starts with question word): "${keywordTrimmed}"`);
+      return false;
+    }
+    
+    // Reject full sentences (check for verbs that indicate sentences)
+    // Common sentence patterns: "are", "is", "do", "does", "can", "should", "will" followed by other words
+    const sentencePatterns = [
+      /\b(are|is|was|were|do|does|did|can|could|should|will|would|may|might)\s+\w+\s+\w+/i,
+      /\b(explain|tell|describe|compare|show|help|find|get|buy|purchase)\s+\w+\s+\w+/i
+    ];
+    if (sentencePatterns.some(pattern => pattern.test(keywordTrimmed))) {
+      console.log(`🚫 Rejected keyword (sentence pattern): "${keywordTrimmed}"`);
+      return false;
+    }
     
     // Reject technical terms
-    if (keyword.includes('\\') || keyword.includes('{') || keyword.includes('}')) return false;
+    if (keywordTrimmed.includes('\\') || keywordTrimmed.includes('{') || keywordTrimmed.includes('}')) return false;
     
-    // Must be relevant to brand or industry
-    return this.isRelevantKeyword(keyword, brand) || keyword.toLowerCase().includes(brand.toLowerCase());
+    // Must be relevant to brand or industry (relaxed check - allow general terms too)
+    return true; // Allow all keywords that pass the above checks
   }
 
   /**
@@ -600,11 +632,39 @@ export class TrendingKeywordsService {
       const prompt = [
         `You are an SEO trends expert. For brand "${brand}" in industry "${industry}" (country ${country}), return JSON with two arrays:`,
         `{"keywords": [{"keyword": string, "category": string}], "prompts": [{"prompt": string, "category": string}]}.`,
-        `Keywords must be short search terms (8-12 items) and category from: Trending, Comparison, Features, Pricing, Support, Alternatives, News.`,
-        `Prompts must be trending user questions or task prompts about the brand (8-12 items) with the same categories.`,
+        ``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📋 KEYWORDS REQUIREMENTS (CRITICAL - READ CAREFULLY)`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        `Keywords are SHORT SEARCH TERMS that users type into search engines, NOT questions or full sentences.`,
+        ``,
+        `✅ CORRECT KEYWORD FORMAT:`,
+        `- 1-4 words maximum`,
+        `- No question words (what, how, why, when, where, who, which, explain, tell)`,
+        `- No question marks`,
+        `- No full sentences or verb phrases`,
+        `- Examples: "running shoes", "product reviews", "pricing plans", "customer support", "brand comparison"`,
+        ``,
+        `❌ FORBIDDEN KEYWORD FORMATS:`,
+        `- Questions: "What are running shoes?", "How to buy products?"`,
+        `- Full sentences: "Explain the benefits of Nike React foam"`,
+        `- Long phrases: "What are the latest Nike sneaker releases everyone is talking about?"`,
+        `- Task prompts: "Tell me about Nike's recent environmental initiatives"`,
+        ``,
+        `Generate 8-12 keywords with categories from: Trending, Comparison, Features, Pricing, Support, Alternatives, News.`,
+        ``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📋 PROMPTS REQUIREMENTS`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        `Prompts are trending user QUESTIONS or task prompts about the brand (8-12 items) with the same categories.`,
+        `These are full questions like "What are the latest Nike sneaker releases?" or "How do Nike running shoes compare to Adidas?"`,
+        ``,
         competitors.length ? `Consider competitors: ${competitors.slice(0, 3).join(', ')}.` : '',
+        ``,
         `Respond ONLY with strict JSON. No prose.`
-      ].filter(Boolean).join(' ');
+      ].filter(Boolean).join('\n');
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`, {
         method: 'POST',
@@ -635,7 +695,14 @@ export class TrendingKeywordsService {
 
       const now = new Date().toISOString();
       const keywords: TrendingKeyword[] = (parsed.keywords || [])
-        .filter((k: any) => typeof k?.keyword === 'string' && k.keyword.length >= 3)
+        .filter((k: any) => {
+          // Basic type and length check
+          if (typeof k?.keyword !== 'string' || k.keyword.length < 3) {
+            return false;
+          }
+          // Apply strict keyword validation
+          return this.isValidKeyword(k.keyword.trim(), brand);
+        })
         .slice(0, 12)
         .map((k: any) => ({
           keyword: k.keyword.trim(),
@@ -663,6 +730,170 @@ export class TrendingKeywordsService {
       console.error('❌ Gemini fetch error:', error);
       throw error; // Re-throw the error instead of returning empty arrays
     }
+  }
+
+  /**
+   * Check if a topic is prompt-like (full question or sentence)
+   */
+  private isPromptLike(topic: string): boolean {
+    if (!topic || typeof topic !== 'string') return false;
+    
+    const topicTrimmed = topic.trim();
+    
+    // Check for question mark
+    if (topicTrimmed.includes('?')) return true;
+    
+    // Check word count (prompts are usually >4 words)
+    const wordCount = topicTrimmed.split(/\s+/).filter(w => w.length > 0).length;
+    if (wordCount > 4) return true;
+    
+    // Check for question words at start
+    const questionWords = ['what', 'how', 'why', 'when', 'where', 'who', 'which', 'explain', 'tell', 'describe', 'compare'];
+    const topicLower = topicTrimmed.toLowerCase();
+    if (questionWords.some(qw => topicLower.startsWith(qw + ' ') || topicLower === qw)) {
+      return true;
+    }
+    
+    // Check for sentence patterns
+    const sentencePatterns = [
+      /\b(are|is|was|were|do|does|did|can|could|should|will|would|may|might)\s+\w+\s+\w+/i,
+      /\b(explain|tell|describe|compare|show|help|find|get|buy|purchase)\s+\w+\s+\w+/i
+    ];
+    if (sentencePatterns.some(pattern => pattern.test(topicTrimmed))) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Convert a prompt-like topic to a keyword using Gemini
+   */
+  private async convertPromptToKeyword(prompt: string, brand: string, industry: string): Promise<string | null> {
+    try {
+      if (!this.geminiApiKey) {
+        console.warn('⚠️ Gemini API key not configured, cannot convert prompt to keyword');
+        return null;
+      }
+
+      const conversionPrompt = `You are an SEO expert. Extract the core keyword or key phrase from this search query or question.
+
+Original: "${prompt}"
+
+Extract the main keyword or key phrase (1-4 words) that users would search for. 
+- Remove question words (what, how, why, etc.)
+- Remove question marks
+- Keep only the essential search terms
+- Examples:
+  - "What are Nike running shoes?" → "Nike running shoes"
+  - "How do I buy products?" → "buy products"
+  - "Explain the benefits of React foam" → "React foam benefits"
+
+Return ONLY the keyword phrase, nothing else. No explanation, no quotes, just the keyword.`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: conversionPrompt }] }]
+        })
+      });
+
+      if (!response.ok) {
+        console.warn(`⚠️ Gemini conversion error for "${prompt}": ${response.status}`);
+        return null;
+      }
+
+      const data = await response.json() as any;
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const keyword = text.trim().replace(/^["']|["']$/g, ''); // Remove quotes if present
+
+      // Validate the extracted keyword
+      if (this.isValidKeyword(keyword, brand)) {
+        return keyword;
+      }
+
+      // If validation fails, try to extract manually
+      return this.extractKeywordManually(prompt);
+    } catch (error) {
+      console.warn(`⚠️ Error converting prompt to keyword: "${prompt}"`, error);
+      return this.extractKeywordManually(prompt);
+    }
+  }
+
+  /**
+   * Manually extract keyword from prompt (fallback method)
+   */
+  private extractKeywordManually(prompt: string): string | null {
+    let keyword = prompt.trim();
+    
+    // Remove question mark
+    keyword = keyword.replace(/\?/g, '');
+    
+    // Remove question words at start
+    const questionWords = ['what', 'how', 'why', 'when', 'where', 'who', 'which', 'explain', 'tell', 'describe', 'compare'];
+    for (const qw of questionWords) {
+      if (keyword.toLowerCase().startsWith(qw + ' ')) {
+        keyword = keyword.substring(qw.length + 1).trim();
+        break;
+      }
+    }
+    
+    // Remove common sentence starters
+    keyword = keyword.replace(/^(are|is|was|were|do|does|did|can|could|should|will|would|may|might)\s+/i, '');
+    
+    // Take first 4 words max
+    const words = keyword.split(/\s+/).filter(w => w.length > 0).slice(0, 4);
+    keyword = words.join(' ');
+    
+    // Validate
+    if (keyword.length >= 3 && keyword.length <= 50) {
+      return keyword;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Normalize topics to keywords - converts any prompt-like topics to keyword-like topics
+   * Returns both the normalized topics array and a map of original -> normalized
+   */
+  async normalizeTopicsToKeywords(topics: string[], brand: string, industry: string): Promise<string[]> {
+    const normalizedTopics: string[] = [];
+    
+    for (const topic of topics) {
+      if (!topic || typeof topic !== 'string') continue;
+      
+      const topicTrimmed = topic.trim();
+      if (topicTrimmed.length === 0) continue;
+      
+      // If already keyword-like, use as-is
+      if (!this.isPromptLike(topicTrimmed)) {
+        normalizedTopics.push(topicTrimmed);
+        continue;
+      }
+      
+      // Convert prompt-like topic to keyword
+      console.log(`🔄 Converting prompt-like topic to keyword: "${topicTrimmed}"`);
+      const keyword = await this.convertPromptToKeyword(topicTrimmed, brand, industry);
+      
+      if (keyword && this.isValidKeyword(keyword, brand)) {
+        normalizedTopics.push(keyword);
+        console.log(`✅ Converted "${topicTrimmed}" → "${keyword}"`);
+      } else {
+        // If conversion fails, try manual extraction
+        const manualKeyword = this.extractKeywordManually(topicTrimmed);
+        if (manualKeyword && this.isValidKeyword(manualKeyword, brand)) {
+          normalizedTopics.push(manualKeyword);
+          console.log(`✅ Manually extracted "${topicTrimmed}" → "${manualKeyword}"`);
+        } else {
+          console.warn(`⚠️ Could not convert prompt-like topic to keyword: "${topicTrimmed}"`);
+          // Skip this topic if we can't convert it
+        }
+      }
+    }
+    
+    return normalizedTopics;
   }
 
   /**

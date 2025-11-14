@@ -8,6 +8,7 @@ import {
 } from '../types/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { queryGenerationService } from './query-generation.service';
+import { dataCollectionService, QueryExecutionRequest } from './data-collection/data-collection.service';
 
 type NormalizedCompetitor = {
   name: string;
@@ -321,7 +322,7 @@ export class BrandService {
             console.log(`🚀 Triggering query generation for ${topicLabels.length} topics`);
             console.log(`📋 Topics for query generation:`, topicLabels);
             
-            await queryGenerationService.generateSeedQueries({
+            const queryGenResult = await queryGenerationService.generateSeedQueries({
               url: brandData.website_url,
               locale: 'en-US',
               country: 'US',
@@ -334,7 +335,71 @@ export class BrandService {
               topics: topicLabels // Pass topics for targeted query generation
             });
             
-            console.log(`✅ Query generation completed for brand ${newBrand.id}`);
+            console.log(`✅ Query generation completed for brand ${newBrand.id} - Generated ${queryGenResult.total_queries} queries`);
+            
+            // 🎯 PHASE 4: Automatically trigger data collection for generated queries
+            // Use selected AI models from onboarding, or default to common collectors
+            const selectedModels = brandData.ai_models || [];
+            const collectors = this.mapAIModelsToCollectors(selectedModels);
+            
+            if (collectors.length > 0 && queryGenResult.total_queries > 0) {
+              try {
+                console.log(`🚀 Triggering automatic data collection for ${queryGenResult.total_queries} queries using collectors: ${collectors.join(', ')}`);
+                
+                // Fetch the generated queries from database
+                const { data: generatedQueries, error: queriesError } = await supabaseAdmin
+                  .from('generated_queries')
+                  .select('id, query_text, intent')
+                  .eq('brand_id', newBrand.id)
+                  .eq('customer_id', customerId)
+                  .eq('is_active', true)
+                  .order('created_at', { ascending: false })
+                  .limit(queryGenResult.total_queries);
+                
+                if (queriesError) {
+                  console.error('⚠️ Failed to fetch generated queries for data collection:', queriesError);
+                } else if (generatedQueries && generatedQueries.length > 0) {
+                  // Prepare execution requests
+                  const executionRequests: QueryExecutionRequest[] = generatedQueries.map(query => ({
+                    queryId: query.id,
+                    brandId: newBrand.id,
+                    customerId: customerId,
+                    queryText: query.query_text,
+                    intent: query.intent || 'data_collection',
+                    locale: 'en-US',
+                    country: 'US',
+                    collectors: collectors
+                  }));
+                  
+                  // Execute queries through collectors (non-blocking)
+                  // Use setTimeout to run in background without blocking brand creation response
+                  setTimeout(async () => {
+                    try {
+                      console.log(`📊 Starting background data collection for ${executionRequests.length} queries...`);
+                      const results = await dataCollectionService.executeQueries(executionRequests);
+                      console.log(`✅ Data collection completed: ${results.length} collector executions finished`);
+                      
+                      // Log summary
+                      const successCount = results.filter(r => r.status === 'completed').length;
+                      const failedCount = results.filter(r => r.status === 'failed').length;
+                      console.log(`📊 Data collection summary: ${successCount} successful, ${failedCount} failed`);
+                    } catch (collectionError) {
+                      console.error('❌ Data collection execution failed (non-critical):', collectionError);
+                      // Don't throw - data collection failure shouldn't affect brand creation
+                    }
+                  }, 1000); // Small delay to ensure brand creation response is sent first
+                  
+                  console.log(`✅ Data collection triggered in background for ${executionRequests.length} queries`);
+                } else {
+                  console.warn('⚠️ No generated queries found for data collection');
+                }
+              } catch (collectionError) {
+                console.error('⚠️ Failed to trigger data collection (non-critical):', collectionError);
+                // Don't throw - data collection failure shouldn't block brand creation
+              }
+            } else {
+              console.log(`ℹ️ Skipping data collection: ${collectors.length === 0 ? 'No collectors selected' : 'No queries generated'}`);
+            }
           } catch (queryGenError) {
             console.error('⚠️ Query generation failed (non-critical):', queryGenError);
             // Don't throw - query generation failure shouldn't block brand creation
@@ -1127,6 +1192,50 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
         console.log(`✅ Rule-categorized "${topic}" as "${category}"`);
       }
     }
+  }
+
+  /**
+   * Map frontend AI model names to backend collector names
+   */
+  private mapAIModelsToCollectors(aiModels: string[]): string[] {
+    if (!aiModels || aiModels.length === 0) {
+      // Default to common collectors if none selected
+      return ['chatgpt', 'google_aio', 'perplexity', 'claude'];
+    }
+
+    const modelToCollectorMap: Record<string, string> = {
+      'chatgpt': 'chatgpt',
+      'openai': 'chatgpt',
+      'gpt-4': 'chatgpt',
+      'gpt-3.5': 'chatgpt',
+      'google_aio': 'google_aio',
+      'google-ai': 'google_aio',
+      'google': 'google_aio',
+      'perplexity': 'perplexity',
+      'claude': 'claude',
+      'anthropic': 'claude',
+      'deepseek': 'deepseek',
+      'baidu': 'baidu',
+      'bing': 'bing',
+      'bing_copilot': 'bing_copilot',
+      'copilot': 'bing_copilot',
+      'microsoft-copilot': 'bing_copilot',
+      'gemini': 'gemini',
+      'google-gemini': 'gemini',
+      'grok': 'grok',
+      'x-ai': 'grok',
+      'mistral': 'mistral'
+    };
+
+    const collectors = aiModels
+      .map(model => {
+        const normalizedModel = model.toLowerCase().trim();
+        return modelToCollectorMap[normalizedModel] || null;
+      })
+      .filter((collector): collector is string => collector !== null);
+
+    // Remove duplicates
+    return [...new Set(collectors)];
   }
 }
 

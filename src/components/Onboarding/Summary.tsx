@@ -115,10 +115,10 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
         <div className="onboarding-summary__preview">
           <h3 className="onboarding-summary__preview-title">What's Next?</h3>
           <ul className="onboarding-summary__preview-list">
-            <li>Track visibility across 6 AI engines</li>
-            <li>Analyze 50+ queries in your industry</li>
-            <li>Get actionable insights in minutes</li>
-            <li>Monitor competitor performance</li>
+            <li>Track visibility across multiple AI engines</li>
+            <li>Analyze queries across {competitors.length} competitor{competitors.length !== 1 ? 's' : ''}</li>
+            <li>Get actionable insights powered by AI</li>
+            <li>Monitor your brand's performance</li>
           </ul>
         </div>
 

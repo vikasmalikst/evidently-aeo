@@ -24,7 +24,6 @@ export const AuthPage = () => {
   const [view, setView] = useState<AuthView>('login');
   const navigate = useNavigate();
 
-  const handleSuccess = async () => {
   // In dev bypass mode, redirect away from auth page
   useEffect(() => {
     if (featureFlags.bypassAuthInDev) {
@@ -40,7 +39,7 @@ export const AuthPage = () => {
     }
   }, [navigate]);
 
-  const handleSuccess = () => {
+  const handleSuccess = async () => {
     // Check if onboarding (brand/competitors) is complete
     const hasCompletedOnboarding = localStorage.getItem('onboarding_complete') === 'true';
     const hasCompletedSetup = onboardingUtils.isOnboardingComplete();

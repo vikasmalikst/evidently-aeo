@@ -47,6 +47,7 @@ export const config = {
   cors: {
     origin: [
       process.env['FRONTEND_URL'] || 'http://localhost:5173',
+      'http://localhost:5176', // Main frontend port
       'http://192.168.1.18:5174', // Admin portal
       'http://localhost:5174', // Admin portal local
       'http://192.168.1.18:5173', // Main portal network

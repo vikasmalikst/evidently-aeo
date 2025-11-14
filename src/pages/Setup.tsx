@@ -80,8 +80,10 @@ export const Setup = () => {
         industry: brand.industry || 'Technology',
         competitors: competitorPayload,
         aeo_topics: data.topics.map((topic) => ({
-          label: topic.label,
-          weight: topic.weight || 1.0,
+          label: topic.name,
+          weight: topic.relevance / 100 || 1.0,
+          source: topic.source,
+          category: topic.category
         })),
         ai_models: data.models, // Selected AI models (chatgpt, perplexity, etc.)
         metadata: {
@@ -93,6 +95,9 @@ export const Setup = () => {
           domain: brand.domain || '',
           competitors_detail: competitorPayload,
           description: brand.description,
+          topics_count: data.topics.length,
+          prompts_count: data.prompts.length,
+          models_count: data.models.length
         },
       };
 

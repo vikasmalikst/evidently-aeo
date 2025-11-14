@@ -75,3 +75,50 @@ export async function submitBrandOnboarding(
   }
 }
 
+/**
+ * Search for a brand by URL or name
+ */
+export async function searchBrand(params: {
+  url?: string;
+  name?: string;
+}): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params.url) queryParams.append('url', params.url);
+    if (params.name) queryParams.append('name', params.name);
+
+    const response = await apiClient.request<{ success: boolean; data?: any; error?: string }>(
+      `/brands/search?${queryParams.toString()}`,
+      {
+        method: 'GET',
+      },
+      { requiresAuth: true }
+    );
+
+    return response;
+  } catch (error) {
+    console.error('❌ Brand search failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get brand by ID
+ */
+export async function getBrandById(brandId: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const response = await apiClient.request<{ success: boolean; data?: any; error?: string }>(
+      `/brands/${brandId}`,
+      {
+        method: 'GET',
+      },
+      { requiresAuth: true }
+    );
+
+    return response;
+  } catch (error) {
+    console.error('❌ Get brand failed:', error);
+    throw error;
+  }
+}
+

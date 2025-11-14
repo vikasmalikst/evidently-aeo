@@ -1,0 +1,305 @@
+{
+  "timestamp": "2025-11-14T05:08:04.195Z",
+  "testRunId": "test-1763096884196",
+  "failures": [
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Sportswear)",
+      "failureReason": "Expected: Sportswear, Got: General",
+      "expected": "Sportswear",
+      "actual": "General",
+      "context": {
+        "testBrand": "Nike",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:08:05.583Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Technology)",
+      "failureReason": "Expected: Technology, Got: General",
+      "expected": "Technology",
+      "actual": "General",
+      "context": {
+        "testBrand": "Apple",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:08:06.969Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Automotive)",
+      "failureReason": "Expected: Automotive, Got: General",
+      "expected": "Automotive",
+      "actual": "General",
+      "context": {
+        "testBrand": "Tesla",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:08:08.023Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Food & Beverage)",
+      "failureReason": "Expected: Food & Beverage, Got: General",
+      "expected": "Food & Beverage",
+      "actual": "General",
+      "context": {
+        "testBrand": "Starbucks",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:08:09.017Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "competitors",
+      "testMessage": "At least 3 competitors in same/related industry: 0",
+      "failureReason": "Expected: At least 3 industry-relevant competitors, Got: 0 industry-relevant competitors",
+      "expected": "At least 3 industry-relevant competitors",
+      "actual": "0 industry-relevant competitors",
+      "context": {
+        "testBrand": "Nike",
+        "expectedIndustry": "Sportswear",
+        "industryRelevantCount": 0,
+        "industryRelevantCompetitors": [],
+        "allCompetitorIndustries": [
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear"
+        ]
+      },
+      "timestamp": "2025-11-14T05:08:10.803Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "competitors",
+      "testMessage": "At least 3 competitors in same/related industry: 0",
+      "failureReason": "Expected: At least 3 industry-relevant competitors, Got: 0 industry-relevant competitors",
+      "expected": "At least 3 industry-relevant competitors",
+      "actual": "0 industry-relevant competitors",
+      "context": {
+        "testBrand": "Starbucks",
+        "expectedIndustry": "Food & Beverage",
+        "industryRelevantCount": 0,
+        "industryRelevantCompetitors": [],
+        "allCompetitorIndustries": [
+          "Coffee & Snack Retail",
+          "Coffee Retail",
+          "Coffee & Quick Service Restaurant",
+          "Café & Bakery",
+          "Quick Service Restaurant",
+          "Coffee Retail",
+          "Specialty Coffee",
+          "Coffee & Tea Retail",
+          "Convenience Retail"
+        ]
+      },
+      "timestamp": "2025-11-14T05:08:16.906Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "topics",
+      "testMessage": "At least 8 topics are keyword-like (not prompts): 7",
+      "failureReason": "Expected: At least 8 keyword-like topics, Got: 7 keyword-like topics",
+      "expected": "At least 8 keyword-like topics",
+      "actual": "7 keyword-like topics",
+      "context": {
+        "testBrand": "Nike",
+        "keywordLikeCount": 7,
+        "keywordLikeTopics": [
+          "Nike Dunk Low trends",
+          "Jordan retro release dates",
+          "Nike ZoomX technology",
+          "Nike shoe sale US",
+          "Nike customer service",
+          "Product features",
+          "Customer testimonials"
+        ],
+        "promptLikeTopics": [
+          "What are the most popular Nike sneakers currently trending in the US?",
+          "Explain the key features of Nike's Dri-FIT apparel and its benefits.",
+          "What's the latest news on Nike's new product launches for the upcoming season?",
+          "Tell me about Nike's recent innovations in sustainable manufacturing.",
+          "How does Nike's FlyEase technology enhance shoe accessibility?",
+          "Compare Nike's running shoe technology with Adidas Boost for performance.",
+          "Suggest top alternatives to Nike for high-performance basketball shoes.",
+          "Which Nike training shoes are comparable to Under Armour's Project Rock series?",
+          "Where can I find the best upcoming Nike sales and discount events?",
+          "What is the typical price range for new Jordan Retro releases?",
+          "How do I process a return for a Nike order purchased online?"
+        ]
+      },
+      "timestamp": "2025-11-14T05:08:47.415Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "topics",
+      "testMessage": "Few topics are prompt-like (max 2): 11",
+      "failureReason": "Expected: Maximum 2 prompt-like topics, Got: 11 prompt-like topics",
+      "expected": "Maximum 2 prompt-like topics",
+      "actual": "11 prompt-like topics",
+      "context": {
+        "testBrand": "Nike",
+        "promptLikeCount": 11,
+        "promptLikeTopics": [
+          "What are the most popular Nike sneakers currently trending in the US?",
+          "Explain the key features of Nike's Dri-FIT apparel and its benefits.",
+          "What's the latest news on Nike's new product launches for the upcoming season?",
+          "Tell me about Nike's recent innovations in sustainable manufacturing.",
+          "How does Nike's FlyEase technology enhance shoe accessibility?",
+          "Compare Nike's running shoe technology with Adidas Boost for performance.",
+          "Suggest top alternatives to Nike for high-performance basketball shoes.",
+          "Which Nike training shoes are comparable to Under Armour's Project Rock series?",
+          "Where can I find the best upcoming Nike sales and discount events?",
+          "What is the typical price range for new Jordan Retro releases?",
+          "How do I process a return for a Nike order purchased online?"
+        ]
+      },
+      "timestamp": "2025-11-14T05:08:47.415Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "topics",
+      "testMessage": "At least 8 topics are keyword-like (not prompts): 5",
+      "failureReason": "Expected: At least 8 keyword-like topics, Got: 5 keyword-like topics",
+      "expected": "At least 8 keyword-like topics",
+      "actual": "5 keyword-like topics",
+      "context": {
+        "testBrand": "Apple",
+        "keywordLikeCount": 5,
+        "keywordLikeTopics": [
+          "Apple Vision Pro reviews",
+          "iOS 18 AI features",
+          "MacBook Air M3 performance",
+          "Product features",
+          "Customer testimonials"
+        ],
+        "promptLikeTopics": [
+          "What are the new AI features expected in iOS 18?",
+          "Explain how Apple's Continuity features enhance daily workflow.",
+          "Summarize the key announcements from Apple's latest quarterly earnings call.",
+          "How does Apple ensure user privacy and data security across its devices?",
+          "How does the Apple Vision Pro compare to other VR headsets?",
+          "Which is better for productivity: MacBook Pro or Microsoft Surface Laptop?",
+          "What are the top Android phone alternatives to the iPhone 15 Pro Max?",
+          "Should I buy an iPhone 15 or wait for the iPhone 16?",
+          "What are the best Apple iPhone 15 deals available now?",
+          "How can I troubleshoot my Apple Watch not pairing with my iPhone?"
+        ]
+      },
+      "timestamp": "2025-11-14T05:09:27.687Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "topics",
+      "testMessage": "Few topics are prompt-like (max 2): 10",
+      "failureReason": "Expected: Maximum 2 prompt-like topics, Got: 10 prompt-like topics",
+      "expected": "Maximum 2 prompt-like topics",
+      "actual": "10 prompt-like topics",
+      "context": {
+        "testBrand": "Apple",
+        "promptLikeCount": 10,
+        "promptLikeTopics": [
+          "What are the new AI features expected in iOS 18?",
+          "Explain how Apple's Continuity features enhance daily workflow.",
+          "Summarize the key announcements from Apple's latest quarterly earnings call.",
+          "How does Apple ensure user privacy and data security across its devices?",
+          "How does the Apple Vision Pro compare to other VR headsets?",
+          "Which is better for productivity: MacBook Pro or Microsoft Surface Laptop?",
+          "What are the top Android phone alternatives to the iPhone 15 Pro Max?",
+          "Should I buy an iPhone 15 or wait for the iPhone 16?",
+          "What are the best Apple iPhone 15 deals available now?",
+          "How can I troubleshoot my Apple Watch not pairing with my iPhone?"
+        ]
+      },
+      "timestamp": "2025-11-14T05:09:27.687Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "prompts",
+      "testMessage": "Error testing prompts for Nike",
+      "failureReason": "Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint",
+      "expected": "Successful prompt generation",
+      "actual": "Error: Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint",
+      "context": {
+        "testBrand": "Nike",
+        "errorType": "Error"
+      },
+      "timestamp": "2025-11-14T05:09:56.126Z",
+      "stackTrace": "Error: Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint\n    at QueryGenerationService.generateSeedQueries (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\dist\\services\\query-generation.service.js:198:19)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async testPromptGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:736:30)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1243:5)"
+    },
+    {
+      "testCategory": "prompts",
+      "testMessage": "Error testing prompts for Apple",
+      "failureReason": "Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint",
+      "expected": "Successful prompt generation",
+      "actual": "Error: Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint",
+      "context": {
+        "testBrand": "Apple",
+        "errorType": "Error"
+      },
+      "timestamp": "2025-11-14T05:10:29.918Z",
+      "stackTrace": "Error: Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint\n    at QueryGenerationService.generateSeedQueries (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\dist\\services\\query-generation.service.js:198:19)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async testPromptGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:736:30)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1243:5)"
+    },
+    {
+      "testCategory": "integration",
+      "testMessage": "Error in end-to-end test for Nike",
+      "failureReason": "Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint",
+      "expected": "Successful end-to-end flow",
+      "actual": "Error: Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint",
+      "context": {
+        "testBrand": "Nike",
+        "errorType": "Error"
+      },
+      "timestamp": "2025-11-14T05:11:13.747Z",
+      "stackTrace": "Error: Query generation failed: Failed to create brand: null value in column \"customer_id\" of relation \"brands\" violates not-null constraint\n    at QueryGenerationService.generateSeedQueries (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\dist\\services\\query-generation.service.js:198:19)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async testEndToEndIntegration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1018:28)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1244:5)"
+    }
+  ],
+  "summary": {
+    "totalTests": 219,
+    "totalPassed": 206,
+    "totalFailed": 13,
+    "categories": {
+      "brandIntel": {
+        "passed": 32,
+        "failed": 4,
+        "total": 36,
+        "passRate": 89
+      },
+      "competitors": {
+        "passed": 165,
+        "failed": 2,
+        "total": 167,
+        "passRate": 99
+      },
+      "topics": {
+        "passed": 6,
+        "failed": 4,
+        "total": 10,
+        "passRate": 60
+      },
+      "prompts": {
+        "passed": 0,
+        "failed": 2,
+        "total": 2,
+        "passRate": 0
+      },
+      "integration": {
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "passRate": 75
+      }
+    },
+    "overallPassRate": 94
+  }
+}

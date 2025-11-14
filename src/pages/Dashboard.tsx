@@ -1,9 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { Layout } from '../components/Layout/Layout';
 import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
+import { mockPromptsData } from '../data/mockPromptsData';
+import { mockSourcesData } from '../data/mockSourcesData';
+import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
 import type { Topic } from '../types/topic';
 import { featureFlags } from '../config/featureFlags';
 import { onboardingUtils } from '../utils/onboardingUtils';
@@ -23,8 +26,8 @@ import {
 import { Link } from 'react-router-dom';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
 import { apiClient } from '../lib/apiClient';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
-import { Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
+import { Bar, Doughnut } from 'react-chartjs-2';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -40,23 +43,6 @@ interface DashboardScoreMetric {
   description: string;
 }
 
-interface ActionItem {
-  id: string;
-  title: string;
-  description: string;
-  priority: 'high' | 'medium' | 'low';
-  category: 'content' | 'technical' | 'distribution' | 'monitoring';
-}
-
-interface CollectorSummary {
-  collectorType?: string;
-  status: 'completed' | 'failed' | 'pending' | 'running';
-  successRate: number;
-  completed: number;
-  failed: number;
-  lastRunAt?: string | null;
-}
-
 interface DashboardPayload {
   brandId: string;
   brandName: string;
@@ -67,9 +53,6 @@ interface DashboardPayload {
     end: string;
   };
   totalQueries: number;
-  queriesWithBrandPresence: number;
-  collectorResultsWithBrandPresence: number;
-  brandPresenceRows: number;
   totalResponses: number;
   trendPercentage: number;
   visibilityPercentage: number;
@@ -83,61 +66,18 @@ interface DashboardPayload {
   llmVisibility: Array<{
     provider: string;
     share: number;
-    shareOfSearch?: number;
-    visibility?: number;
     delta: number;
-    brandPresenceCount: number;
     color?: string;
-    topTopic?: string | null;
-    topTopics?: Array<{
-      topic: string;
-      occurrences: number;
-      share: number;
-      visibility: number;
-      mentions: number;
-    }>;
-  }>;
-  actionItems?: ActionItem[];
-  collectorSummaries?: CollectorSummary[];
-  topBrandSources: Array<{
-    id: string;
-    title: string;
-    url: string;
-    domain: string;
-    impactScore: number | null;
-    change: number | null;
-    visibility: number;
-    share: number;
-    usage: number;
-  }>;
-  topTopics: Array<{
-    topic: string;
-    promptsTracked: number;
-    averageVolume: number;
-    sentimentScore: number;
   }>;
 }
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
-
-const formatDateForInput = (date: Date): string => date.toISOString().split('T')[0];
-
-const getDefaultDateRange = () => {
-  const end = new Date();
-  const start = new Date(end);
-  start.setDate(start.getDate() - 29);
-  return {
-    start: formatDateForInput(start),
-    end: formatDateForInput(end)
-  };
-};
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
 export const Dashboard = () => {
   const user = useAuthStore((state) => state.user);
   const authLoading = useAuthStore((state) => state.isLoading);
-  const defaultDateRange = useMemo(getDefaultDateRange, []);
-  const [startDate, setStartDate] = useState(defaultDateRange.start);
-  const [endDate, setEndDate] = useState(defaultDateRange.end);
+  const [startDate, setStartDate] = useState('2024-10-01');
+  const [endDate, setEndDate] = useState('2024-10-31');
   const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
@@ -158,94 +98,63 @@ export const Dashboard = () => {
     return { name: 'Your Brand', industry: 'Technology' };
   };
 
-  const {
-    brands,
-    isLoading: brandsLoading,
-    error: brandsError,
-    selectedBrandId,
-    selectedBrand,
-    selectBrand
-  } = useManualBrandDashboard();
-
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const clearTimer = () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-
     // Skip setup check if feature flag is set (for testing)
     if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
       console.log('🚀 Skipping setup check (feature flag enabled)');
-      return () => clearTimer();
+      return;
     }
 
     // Force setup if feature flag is set
     if (featureFlags.forceSetup || featureFlags.forceOnboarding) {
       console.log('🚀 Forcing setup (feature flag enabled)');
       navigate('/setup');
-      return () => clearTimer();
+      return;
     }
 
-    if (brandsLoading) {
-      return () => clearTimer();
-    }
-
-    const hasBackendBrands = brands.length > 0;
     const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
     const hasCompletedTopicSelection = onboardingUtils.getOnboardingTopics();
     const hasCompletedPromptSelection = onboardingUtils.getOnboardingPrompts();
 
     console.log('Dashboard useEffect - Checking flow:', {
-      hasBackendBrands,
       hasCompletedSetup,
       hasCompletedTopicSelection: !!hasCompletedTopicSelection,
       hasCompletedPromptSelection: !!hasCompletedPromptSelection
     });
 
-    // Redirect to setup if not complete (only when brand data is absent)
-    if (!hasBackendBrands && !hasCompletedSetup) {
+    // Redirect to setup if not complete
+    if (!hasCompletedSetup) {
       console.log('No setup - redirecting to /setup');
       navigate('/setup');
-      return () => clearTimer();
-    }
-
-    if (hasBackendBrands) {
-      console.log('✅ Backend brands found - skipping onboarding modal');
-      setShowTopicModal(false);
-      return () => clearTimer();
+      return;
     }
 
     // Testing mode (only in development)
     if (featureFlags.enableTestingMode && featureFlags.isDevelopment) {
       console.log('🧪 Testing mode enabled - showing topic modal');
-      timer = setTimeout(() => {
+      const timer = setTimeout(() => {
         setShowTopicModal(true);
       }, 500);
-      return () => clearTimer();
+      return () => clearTimeout(timer);
     }
 
     // Production flow: Check for incomplete steps
     if (!hasCompletedTopicSelection) {
       console.log('No topics - showing topic modal in 500ms');
-      timer = setTimeout(() => {
+      const timer = setTimeout(() => {
         setShowTopicModal(true);
       }, 500);
-      return () => clearTimer();
+      return () => clearTimeout(timer);
     } else if (!hasCompletedPromptSelection) {
       console.log('No prompts - redirecting to /prompt-selection in 500ms');
-      timer = setTimeout(() => {
+      const timer = setTimeout(() => {
         navigate('/prompt-selection');
       }, 500);
-      return () => clearTimer();
+      return () => clearTimeout(timer);
     } else {
       console.log('All setup complete - showing full dashboard');
     }
-
-    return () => clearTimer();
-  }, [brands, brandsLoading, navigate]);
+  }, [navigate]);
 
   const handleTopicsSelected = (selectedTopics: Topic[]) => {
     localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
@@ -259,14 +168,26 @@ export const Dashboard = () => {
 
   const displayName = user?.fullName || user?.email?.split('@')[0] || 'there';
 
-  const actionItems: ActionItem[] = dashboardData?.actionItems ?? [];
-  const highPriorityActions = actionItems.filter((item: ActionItem) => item.priority === 'high');
-  const criticalAlerts = highPriorityActions.length;
-  const brandPages = dashboardData?.topBrandSources ?? [];
-  const topTopics = dashboardData?.topTopics ?? [];
+  const criticalAlerts = mockSourcesData.insights.warnings.length;
+  const brandPages = [
+    { id: 1, title: 'Product Features Page', url: 'your-brand.com/features', impactScore: 8.5, delta: 1.2 },
+    { id: 2, title: 'Pricing & Plans', url: 'your-brand.com/pricing', impactScore: 9.2, delta: 0.8 },
+    { id: 3, title: 'Case Studies & Success Stories', url: 'your-brand.com/case-studies', impactScore: 7.8, delta: -0.5 },
+    { id: 4, title: 'Integration Documentation', url: 'your-brand.com/docs/integrations', impactScore: 6.9, delta: 0.3 },
+    { id: 5, title: 'Product Comparison Guide', url: 'your-brand.com/compare', impactScore: 8.1, delta: -1.1 },
+  ];
+
+  const {
+    brands,
+    isLoading: brandsLoading,
+    error: brandsError,
+    selectedBrandId,
+    selectedBrand,
+    selectBrand
+  } = useManualBrandDashboard();
 
   useEffect(() => {
-    if (authLoading || !selectedBrandId || !startDate || !endDate) {
+    if (authLoading || brandsLoading || !selectedBrandId) {
       return;
     }
 
@@ -277,13 +198,9 @@ export const Dashboard = () => {
       setDashboardError(null);
 
       try {
-        const params = new URLSearchParams({
-          startDate,
-          endDate
-        });
-
-        const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
-        const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(endpoint);
+        const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(
+          `/brands/${selectedBrandId}/dashboard`
+        );
 
         if (!dashboardResponse.success || !dashboardResponse.data) {
           throw new Error(
@@ -312,19 +229,18 @@ export const Dashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, endDate, reloadKey, selectedBrandId, startDate]);
+  }, [authLoading, brandsLoading, reloadKey, selectedBrandId]);
 
   const handleRetryFetch = () => {
     setReloadKey((prev) => prev + 1);
   };
 
-  const brandSelectionPending = !selectedBrandId && brandsLoading;
-  const combinedLoading = authLoading || dashboardLoading || brandSelectionPending;
+  const combinedLoading = authLoading || brandsLoading || dashboardLoading;
 
   if (combinedLoading) {
     return (
       <Layout>
-        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+        <div className="p-6 bg-[#f9f9fb] min-h-screen">
           <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-10 flex flex-col items-center justify-center">
             <div className="h-12 w-12 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mb-4" />
             <p className="text-[14px] text-[#64748b]">Loading dashboard insights…</p>
@@ -343,7 +259,7 @@ export const Dashboard = () => {
         : 'Dashboard data is currently unavailable.');
     return (
       <Layout>
-        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+        <div className="p-6 bg-[#f9f9fb] min-h-screen">
           <div className="max-w-xl mx-auto bg-white border border-[#fadddb] rounded-lg shadow-sm p-6 text-center">
             <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-2">Unable to load dashboard</h2>
             <p className="text-[13px] text-[#64748b] mb-4">
@@ -362,7 +278,7 @@ export const Dashboard = () => {
   }
 
   const findScore = (label: string) =>
-    dashboardData?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
+    dashboardData.scores.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
   const formatNumber = (value: number, decimals = 1): string => {
     const fixed = value.toFixed(decimals);
@@ -392,15 +308,13 @@ export const Dashboard = () => {
   const visibilityMetric = findScore('Visibility Index');
   const shareMetric = findScore('Share of Answers');
   const sentimentMetric = findScore('Sentiment Score');
-  const queriesWithBrandPresence = dashboardData?.queriesWithBrandPresence ?? 0;
-  const brandPresenceRows = dashboardData?.brandPresenceRows ?? 0;
 
   const metricCards: Array<MetricCardProps & { key: string }> = [
     {
       key: 'visibility-index',
       title: 'Visibility Index',
-      value: formatMetricValue(visibilityMetric, ''),
-      subtitle: `Across ${formatNumber(queriesWithBrandPresence, 0)} queries with brand presence`,
+      value: formatMetricValue(visibilityMetric),
+      subtitle: `Across ${formatNumber(dashboardData.totalQueries, 0)} queries`,
       trend: computeTrend(visibilityMetric?.delta),
       icon: <Eye size={20} />,
       color: '#498cf9',
@@ -427,10 +341,10 @@ export const Dashboard = () => {
       linkTo: '/prompts'
     },
     {
-      key: 'brand-presence',
-      title: 'Brand Presence',
-      value: formatNumber(brandPresenceRows, 0),
-      subtitle: `${formatNumber(dashboardData.totalQueries, 0)} tracked`,
+      key: 'tracked-queries',
+      title: 'Tracked Queries',
+      value: formatNumber(dashboardData.totalQueries, 0),
+      subtitle: `Total responses: ${formatNumber(dashboardData.totalResponses, 0)}`,
       trend: computeTrend(dashboardData.trendPercentage),
       icon: <Activity size={20} />,
       color: '#7c3aed',
@@ -442,56 +356,62 @@ export const Dashboard = () => {
     ? `Here's your AI visibility performance overview for ${selectedBrand?.name ?? dashboardData.brandName}`
     : `Here's your AI visibility performance overview`;
 
-  const llmSlices: LLMVisibilitySliceUI[] = (dashboardData?.llmVisibility ?? [])
-    .map((slice): LLMVisibilitySliceUI => ({
-      provider: slice.provider,
-      share: slice.shareOfSearch ?? slice.share,
-      shareOfSearch: slice.shareOfSearch ?? slice.share,
-      visibility: slice.visibility,
-      delta: slice.delta ?? 0,
-      brandPresenceCount: slice.brandPresenceCount ?? 0,
-      color: slice.color || '#64748b',
-      topTopic: slice.topTopic ?? null,
-      topTopics: slice.topTopics
-    }))
-    .filter((slice) => Number.isFinite(slice.share) && slice.share >= 0);
+  const fallbackLlmSlices: LLMVisibilitySliceUI[] = mockSourcesData.sources.slice(0, 5).map((source) => ({
+    provider: source.name,
+    share: Math.round(source.mentionRate * 100),
+    delta: source.trendPercent ?? 0,
+    color: source.color
+  }));
 
-  const sourceSlices = (dashboardData?.sourceDistribution ?? [])
-    .map((slice): { type: string; percentage: number; color: string } => ({
+  const llmSlices: LLMVisibilitySliceUI[] =
+    dashboardData.llmVisibility && dashboardData.llmVisibility.length > 0
+      ? dashboardData.llmVisibility.map((slice) => ({
+          provider: slice.provider,
+          share: slice.share,
+          delta: slice.delta ?? 0,
+          color: slice.color || '#64748b'
+        }))
+      : fallbackLlmSlices;
+
+const fallbackSourceSlices = mockCitationSourcesData.sourceTypeDistribution.map((item) => ({
+  type: item.type,
+  percentage: item.percentage,
+  color: item.color
+}));
+
+const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDistribution.length > 0
+  ? dashboardData.sourceDistribution.map((slice) => ({
       type: slice.label,
       percentage: slice.percentage,
       color: slice.color || '#64748b'
     }))
-    .filter((slice) => Number.isFinite(slice.percentage) && slice.percentage >= 0);
-
-  const hasLlmData = llmSlices.length > 0;
-  const hasSourceData = sourceSlices.length > 0;
-  const collectorSummaries: CollectorSummary[] = dashboardData?.collectorSummaries ?? [];
+  : fallbackSourceSlices;
 
   return (
     <Layout>
-      <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-        <div className="bg-[#fff8f0] border border-[#f9db43] rounded-lg p-4 mb-6 flex items-start gap-3">
-          <AlertTriangle size={20} className="text-[#fa8a40] flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1">
-              {criticalAlerts > 0
-                ? `${criticalAlerts} High-Priority Action${criticalAlerts > 1 ? 's' : ''} Identified`
-                : 'No high-priority actions detected right now'}
-            </h3>
-            {criticalAlerts > 0 ? (
-              highPriorityActions.slice(0, 3).map((action: ActionItem) => (
-                <p key={action.id} className="text-[13px] text-[#393e51]">
-                  <span className="font-medium">{action.title}:</span> {action.description}
+      <div className="p-6 bg-[#f9f9fb] min-h-screen">
+        {criticalAlerts > 0 && (
+          <div className="bg-[#fff8f0] border border-[#f9db43] rounded-lg p-4 mb-6 flex items-start gap-3">
+            <AlertTriangle size={20} className="text-[#fa8a40] flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1">
+                {criticalAlerts} Alert{criticalAlerts > 1 ? 's' : ''} Requiring Attention
+              </h3>
+              {mockSourcesData.insights.warnings.map((warning, idx) => (
+                <p key={idx} className="text-[13px] text-[#393e51]">
+                  <span className="font-medium">{warning.source}:</span> {warning.message}
                 </p>
-              ))
-            ) : (
-              <p className="text-[13px] text-[#393e51]">
-                Keep monitoring your queries—we’ll surface urgent recommendations here as they appear.
-              </p>
-            )}
+              ))}
+            </div>
+            <Link
+              to="/search-sources"
+              className="text-[13px] font-medium text-[#00bcdc] hover:text-[#0096b0] flex items-center gap-1"
+            >
+              View Details
+              <ArrowRight size={14} />
+            </Link>
           </div>
-        </div>
+        )}
 
         <div className="mb-6">
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
@@ -530,31 +450,21 @@ export const Dashboard = () => {
             </h2>
             <div className="flex items-center gap-3">
               <label className="text-[13px] text-[#64748b] font-medium">Date Range:</label>
+              <label htmlFor="start-date" className="sr-only">Start Date</label>
               <input
+                id="start-date"
                 type="date"
                 value={startDate}
-                max={endDate}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setStartDate(value);
-                  if (value && endDate && value > endDate) {
-                    setEndDate(value);
-                  }
-                }}
+                onChange={(e) => setStartDate(e.target.value)}
                 className="px-3 py-1.5 border border-[#e8e9ed] rounded-lg text-[13px] bg-white focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc]"
               />
               <span className="text-[13px] text-[#64748b]">to</span>
+              <label htmlFor="end-date" className="sr-only">End Date</label>
               <input
+                id="end-date"
                 type="date"
                 value={endDate}
-                min={startDate}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setEndDate(value);
-                  if (value && startDate && value < startDate) {
-                    setStartDate(value);
-                  }
-                }}
+                onChange={(e) => setEndDate(e.target.value)}
                 className="px-3 py-1.5 border border-[#e8e9ed] rounded-lg text-[13px] bg-white focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc]"
               />
             </div>
@@ -563,80 +473,68 @@ export const Dashboard = () => {
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
               <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-4">Source Type Distribution</h3>
-              {hasSourceData ? (
-                <StackedRacingChart data={sourceSlices} />
-              ) : (
-                <EmptyState message="No source distribution data available for this period." />
-              )}
+              <StackedRacingChart data={sourceSlices} />
             </div>
 
             <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
               <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-4">LLM Visibility (7 Days)</h3>
-              {hasLlmData ? (
-                <table className="w-full text-left text-[13px]">
-                  <thead>
-                    <tr className="text-[#64748b] uppercase text-[11px] tracking-wide">
-                      <th className="py-2 font-medium">LLM</th>
-                      <th className="py-2 font-medium text-right">Visibility</th>
-                      <th className="py-2 font-medium text-right">Brand Presence</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {llmSlices.map((slice) => (
-                      <tr key={slice.provider} className="border-t border-[#f0f0f3]">
-                        <td className="py-3 pr-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-shrink-0">{getLLMIcon(slice.provider)}</div>
-                            <span className="text-[#1a1d29] font-medium">{slice.provider}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 text-right text-[#1a1d29] font-semibold">
-                          {Math.round(slice.share)}
-                          {slice.delta !== 0 && (
-                            <span
-                              className={`inline-flex items-center gap-1 text-[11px] font-semibold ml-2 ${
-                                slice.delta > 0 ? 'text-[#06c686]' : 'text-[#f94343]'
-                              }`}
-                            >
-                              {slice.delta > 0 ? (
-                                <ChevronUp size={12} strokeWidth={2.5} />
-                              ) : (
-                                <ChevronDown size={12} strokeWidth={2.5} />
-                              )}
-                              {Math.abs(slice.delta).toFixed(1)} pts
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 text-right text-[#1a1d29] font-semibold">
-                          {slice.brandPresenceCount}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <EmptyState message="No LLM visibility data available for this period." />
-              )}
+              <div className="flex gap-6 items-center">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-[130px] h-[130px] flex-shrink-0">
+                    <LLMVisibilityDonut data={llmSlices} />
+                  </div>
+                  <span className="text-[11px] font-medium text-[#64748b]">Total Visibility</span>
+                </div>
+                <div className="flex-1 space-y-2">
+                  {llmSlices.map((slice) => (
+                    <div key={slice.provider} className="flex items-center gap-2">
+                      {/* eslint-disable-next-line react/forbid-dom-props */}
+                      <div
+                        className="w-3 h-3 rounded-sm flex-shrink-0"
+                        style={{ backgroundColor: slice.color }}
+                      />
+                      <div className="flex-shrink-0">
+                        {getLLMIcon(slice.provider)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[13px] font-medium text-[#1a1d29]">{slice.provider}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[13px] font-semibold text-[#1a1d29]">
+                          {Math.round(slice.share)}%
+                        </span>
+                        {slice.delta !== 0 && (
+                          <span
+                            className={`flex items-center text-[11px] font-semibold ${
+                              slice.delta > 0 ? 'text-[#06c686]' : 'text-[#f94343]'
+                            }`}
+                          >
+                            {slice.delta > 0 ? (
+                              <ChevronUp size={12} strokeWidth={2.5} />
+                            ) : (
+                              <ChevronDown size={12} strokeWidth={2.5} />
+                            )}
+                            {Math.abs(slice.delta).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
           <div className="mt-5 pt-5 border-t border-[#e8e9ed]">
             <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-3">Recommended Actions</h3>
-            {actionItems.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3">
-                {actionItems.slice(0, 4).map((item: ActionItem) => (
-                  <div key={item.id} className="flex items-start gap-2 p-3 bg-[#f9f9fb] rounded-lg">
-                    <CheckCircle size={16} className="text-[#06c686] flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-[13px] text-[#1a1d29] font-medium">{item.title}</p>
-                      <p className="text-[12px] text-[#64748b]">{item.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState message="No tailored recommendations yet. Check back after more data is collected." />
-            )}
+            <div className="grid grid-cols-2 gap-3">
+              {mockSourcesData.insights.recommendations.slice(0, 4).map((rec, idx) => (
+                <div key={idx} className="flex items-start gap-2 p-3 bg-[#f9f9fb] rounded-lg">
+                  <CheckCircle size={16} className="text-[#06c686] flex-shrink-0 mt-0.5" />
+                  <p className="text-[13px] text-[#393e51]">{rec}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -681,85 +579,36 @@ export const Dashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {brandPages.length > 0 ? (
-                      brandPages.map((page) => {
-                        const hasImpactScore =
-                          typeof page.impactScore === 'number' && Number.isFinite(page.impactScore);
-                        const impactLabel = hasImpactScore
-                          ? page.impactScore!.toFixed(1)
-                          : '—';
-                        const hasChange =
-                          typeof page.change === 'number' && Number.isFinite(page.change);
-                        const changeValue = hasChange ? page.change! : 0;
-                        const changeLabel = hasChange ? Math.abs(changeValue).toFixed(1) : '—';
-                        const changeClass = hasChange
-                          ? changeValue > 0
-                            ? 'text-[#06c686]'
-                            : changeValue < 0
-                            ? 'text-[#f94343]'
-                            : 'text-[#64748b]'
-                          : 'text-[#64748b]';
-                        const rawUrl =
-                          (typeof page.url === 'string' && page.url.trim().length > 0
-                            ? page.url.trim()
-                            : typeof page.domain === 'string'
-                            ? page.domain
-                            : '') || '';
-                        const displayUrl = rawUrl.replace(/^https?:\/\//, '') || '—';
-                        const title =
-                          (typeof page.title === 'string' && page.title.trim().length > 0
-                            ? page.title.trim()
-                            : page.domain) || 'Unknown Source';
-
-                        return (
-                          <tr
-                            key={page.id}
-                            className="border-b border-[#f4f4f6] last:border-0 hover:bg-[#f9f9fb] transition-colors"
-                          >
-                            <td className="py-3 px-3">
-                              <span className="text-[14px] font-medium text-[#1a1d29]">
-                                {title}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3">
-                              <span className="text-[13px] text-[#64748b]">{displayUrl}</span>
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <div className="inline-flex items-center justify-center">
-                                <span className="text-[14px] font-semibold text-[#1a1d29]">
-                                  {impactLabel}
-                                </span>
-                                {hasImpactScore && (
-                                  <span className="text-[12px] text-[#64748b] ml-1">/10</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <div className={`inline-flex items-center gap-1 text-[13px] font-semibold ${changeClass}`}>
-                                {hasChange ? (
-                                  <>
-                                    {changeValue > 0 && <ChevronUp size={16} />}
-                                    {changeValue < 0 && <ChevronDown size={16} />}
-                                    {changeValue === 0 ? '0.0' : changeLabel}
-                                  </>
-                                ) : (
-                                  '—'
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={4}
-                          className="py-6 px-3 text-center text-[13px] text-[#64748b]"
-                        >
-                          No branded sources detected for this period.
+                    {brandPages.map((page) => (
+                      <tr key={page.id} className="border-b border-[#f4f4f6] last:border-0 hover:bg-[#f9f9fb] transition-colors">
+                        <td className="py-3 px-3">
+                          <span className="text-[14px] font-medium text-[#1a1d29]">{page.title}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="text-[13px] text-[#64748b]">{page.url}</span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="inline-flex items-center justify-center">
+                            <span className="text-[14px] font-semibold text-[#1a1d29]">
+                              {page.impactScore.toFixed(1)}
+                            </span>
+                            <span className="text-[12px] text-[#64748b] ml-1">/10</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className={`inline-flex items-center gap-1 text-[13px] font-semibold ${
+                            page.delta > 0 ? 'text-[#06c686]' : 'text-[#f94343]'
+                          }`}>
+                            {page.delta > 0 ? (
+                              <ChevronUp size={16} />
+                            ) : (
+                              <ChevronDown size={16} />
+                            )}
+                            {Math.abs(page.delta).toFixed(1)}
+                          </div>
                         </td>
                       </tr>
-                    )}
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -859,13 +708,9 @@ export const Dashboard = () => {
                         </div>
                       </div>
                     </div>
-                  );
-                })
-              ) : (
-                <div className="py-4 text-center text-[13px] text-[#64748b] border border-dashed border-[#e8e9ed] rounded-lg">
-                  We haven’t detected enough topic data for this window yet.
-                </div>
-              )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -883,42 +728,33 @@ export const Dashboard = () => {
               </Link>
             </div>
 
-            {collectorSummaries.length > 0 ? (
-              <div className="space-y-3">
-                {collectorSummaries.slice(0, 4).map((summary: CollectorSummary, index) => (
-                  <div key={summary.collectorType ?? index} className="p-3 bg-[#f9f9fb] rounded-lg border border-[#e8e9ed]">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[12px] font-semibold flex items-center justify-center">
-                          {index + 1}
-                        </div>
-                        <h3 className="text-[14px] font-medium text-[#1a1d29] capitalize">
-                          {summary.collectorType?.replace(/[-_]/g, ' ') ?? 'Unknown Collector'}
-                        </h3>
+            <div className="space-y-3">
+              {mockCitationSourcesData.insights.partnershipOpportunities.map((opp) => (
+                <div key={opp.rank} className="p-3 bg-[#f9f9fb] rounded-lg border border-[#e8e9ed]">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[12px] font-semibold flex items-center justify-center">
+                        {opp.rank}
                       </div>
-                      <div className="flex items-center gap-1 text-[12px] font-medium text-[#64748b]">
-                        <TrendingUp size={12} className="text-[#06c686]" />
-                        {Math.round(summary.successRate ?? 0)}% success
-                      </div>
+                      <h3 className="text-[14px] font-medium text-[#1a1d29]">{opp.source}</h3>
                     </div>
-                    <p className="text-[12px] text-[#64748b] mb-2">
-                      {summary.completed} completed · {summary.failed} failed · Last run{' '}
-                      {summary.lastRunAt ? new Date(summary.lastRunAt).toLocaleDateString() : 'N/A'}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-[#64748b] bg-white px-2 py-1 rounded">
-                        Status: {summary.status}
-                      </span>
-                      <span className="text-[12px] font-medium text-[#1a1d29]">
-                        {summary.completed}/{summary.completed + summary.failed} runs successful
-                      </span>
+                    <div className={`flex items-center gap-1 text-[12px] font-medium ${
+                      opp.trend.direction === 'up' ? 'text-[#06c686]' : 'text-[#64748b]'
+                    }`}>
+                      {opp.trend.direction === 'up' && <TrendingUp size={12} />}
+                      {opp.trend.percent}%
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState message="No partnership opportunities identified yet." />
-            )}
+                  <p className="text-[12px] text-[#64748b] mb-2">{opp.recommendation}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-[#64748b] bg-white px-2 py-1 rounded">
+                      {opp.type}
+                    </span>
+                    <span className="text-[12px] font-medium text-[#1a1d29]">{opp.usage}% usage</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -952,10 +788,12 @@ interface MetricCardProps {
 const MetricCard = ({ title, value, subtitle, trend, icon, color, linkTo }: MetricCardProps) => (
   <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 flex flex-col">
     <div className="flex items-center gap-3 mb-3">
+      {/* eslint-disable-next-line react/forbid-dom-props */}
       <div
         className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
+        {/* eslint-disable-next-line react/forbid-dom-props */}
         <div style={{ color }}>{icon}</div>
       </div>
       <div className="text-[14px] font-semibold text-[#1a1d29]">{title}</div>
@@ -997,10 +835,12 @@ const ActionCard = ({ title, description, link, icon, color }: ActionCardProps) 
     className="block p-3 border border-[#e8e9ed] rounded-lg hover:border-[#00bcdc] hover:bg-[#f9fbfc] transition-all group"
   >
     <div className="flex items-start gap-3">
+      {/* eslint-disable-next-line react/forbid-dom-props */}
       <div
         className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
+        {/* eslint-disable-next-line react/forbid-dom-props */}
         <div style={{ color }}>{icon}</div>
       </div>
       <div className="flex-1 min-w-0">
@@ -1012,12 +852,6 @@ const ActionCard = ({ title, description, link, icon, color }: ActionCardProps) 
       <ArrowRight size={16} className="text-[#c6c9d2] group-hover:text-[#00bcdc] transition-colors flex-shrink-0 mt-1" />
     </div>
   </Link>
-);
-
-const EmptyState = ({ message }: { message: string }) => (
-  <div className="py-6 text-center text-[13px] text-[#64748b] bg-white border border-dashed border-[#e8e9ed] rounded-lg">
-    {message}
-  </div>
 );
 
 interface StackedRacingChartProps {
@@ -1069,7 +903,7 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
       tooltip: {
         callbacks: {
           label: (context: any) => {
-            return `${context.dataset.label}: ${context.parsed.x}`;
+            return `${context.dataset.label}: ${context.parsed.x}%`;
           },
         },
       },
@@ -1078,12 +912,13 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
 
   return (
     <div>
-      <div style={{ height: '40px' }}>
+      <div className="h-10">
         <Bar data={chartData} options={options} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
         {data.map((item) => (
           <div key={item.type} className="flex items-center gap-2">
+            {/* eslint-disable-next-line react/forbid-dom-props */}
             <div
               className="w-3 h-3 rounded-sm flex-shrink-0"
               style={{ backgroundColor: item.color }}
@@ -1102,17 +937,44 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
 interface LLMVisibilitySliceUI {
   provider: string;
   share: number;
-  shareOfSearch?: number;
-  visibility?: number;
   delta: number;
-  brandPresenceCount: number;
   color: string;
-  topTopic?: string | null;
-  topTopics?: Array<{
-    topic: string;
-    occurrences: number;
-    share: number;
-    visibility: number;
-    mentions: number;
-  }>;
 }
+
+interface LLMVisibilityDonutProps {
+  data: LLMVisibilitySliceUI[];
+}
+
+const LLMVisibilityDonut = ({ data }: LLMVisibilityDonutProps) => {
+  const chartData = {
+    labels: data.map(item => item.provider),
+    datasets: [
+      {
+        data: data.map(item => item.share),
+        backgroundColor: data.map(item => item.color),
+        borderWidth: 0,
+        borderRadius: 2,
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: true,
+    cutout: '65%',
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip: {
+        callbacks: {
+          label: (context: any) => {
+            return `${context.label}: ${context.parsed.toFixed(1)}%`;
+          },
+        },
+      },
+    },
+  };
+
+  return <Doughnut data={chartData} options={options} />;
+};

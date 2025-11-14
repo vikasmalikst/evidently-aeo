@@ -1,6 +1,7 @@
 import { IconInfoCircle, IconPlus, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { useState, useRef } from 'react';
 import type { Topic } from '../../types/topic';
+import { fetchPromptsForTopics } from '../../api/onboardingApi';
 
 interface PromptConfigurationProps {
   selectedTopics: Topic[];
@@ -11,46 +12,6 @@ interface PromptConfigurationProps {
 interface TopicPrompt {
   topicId: string;
   prompt: string;
-}
-
-const TOPIC_PROMPTS: Record<string, string[]> = {
-  'project-management': [
-    'Best tools for project management',
-    'Agile project management software',
-    'Project collaboration platforms'
-  ],
-  'productivity': [
-    'How to improve team productivity',
-    'Team workflow automation',
-    'Time management tools'
-  ],
-  'software-development': [
-    'Top software development practices',
-    'Best code review tools',
-    'CI/CD pipeline solutions'
-  ],
-  'collaboration': [
-    'Enterprise collaboration solutions',
-    'Remote work communication tools',
-    'Team messaging platforms'
-  ],
-  'analytics': [
-    'Business intelligence platforms',
-    'Data visualization tools',
-    'Analytics dashboard software'
-  ]
-};
-
-function getPromptsForTopic(topic: Topic, customPrompts: Record<string, string[]> = {}): string[] {
-  const topicKey = topic.id.toLowerCase().replace(/\s+/g, '-');
-  const basePrompts = TOPIC_PROMPTS[topicKey] || [
-    `Best ${topic.name.toLowerCase()} solutions`,
-    `How to choose ${topic.name.toLowerCase()}`,
-    `Top ${topic.name.toLowerCase()} providers`
-  ];
-
-  const custom = customPrompts[topic.id] || [];
-  return [...basePrompts, ...custom];
 }
 
 function isCustomPrompt(prompt: string, customPrompts: Record<string, string[]>): boolean {
@@ -69,17 +30,80 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set([selectedTopics[0]?.id]));
   const [customPromptsByTopic, setCustomPromptsByTopic] = useState<Record<string, string[]>>({});
+  const [promptsByTopic, setPromptsByTopic] = useState<Record<string, string[]>>({});
+  const [loadingTopics, setLoadingTopics] = useState<Set<string>>(new Set());
   const topicRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const modalButtonRef = useRef<HTMLButtonElement>(null);
 
-  const toggleTopic = (topicId: string) => {
+  const toggleTopic = async (topicId: string) => {
+    const isCurrentlyExpanded = expandedTopics.has(topicId);
+    
+    // Expand/collapse
     const newExpanded = new Set(expandedTopics);
-    if (newExpanded.has(topicId)) {
+    if (isCurrentlyExpanded) {
       newExpanded.delete(topicId);
     } else {
       newExpanded.add(topicId);
+      
+      // Load prompts if not already loaded
+      if (!promptsByTopic[topicId] && !loadingTopics.has(topicId)) {
+        const newLoading = new Set(loadingTopics);
+        newLoading.add(topicId);
+        setLoadingTopics(newLoading);
+        await fetchPromptsForTopic(topicId);
+        setLoadingTopics(prev => {
+          const next = new Set(prev);
+          next.delete(topicId);
+          return next;
+        });
+      }
     }
     setExpandedTopics(newExpanded);
+  };
+
+  const fetchPromptsForTopic = async (topicId: string) => {
+    try {
+      const topic = selectedTopics.find(t => t.id === topicId);
+      if (!topic) return;
+      
+      const brandData = localStorage.getItem('onboarding_brand');
+      const competitorsData = localStorage.getItem('onboarding_competitors');
+      const brand = brandData ? JSON.parse(brandData) : {};
+      const competitors = competitorsData ? JSON.parse(competitorsData) : [];
+      
+      // Get brand_id if available (might not exist yet during onboarding)
+      const brandId = localStorage.getItem('current_brand_id') || undefined;
+      
+      console.log('🔍 Fetching prompts for topic:', topic.name);
+      
+      const response = await fetchPromptsForTopics({
+        brand_name: brand.companyName || brand.name || 'Brand',
+        industry: brand.industry || 'General',
+        competitors: competitors.map((c: any) => c.name || c.companyName || ''),
+        topics: [topic.name],
+        locale: 'en-US',
+        country: 'US',
+        brand_id: brandId,
+        website_url: brand.website || brand.domain || undefined
+      });
+      
+      if (response.success && response.data && response.data[0]) {
+        const prompts = response.data[0].prompts || [];
+        setPromptsByTopic(prev => ({
+          ...prev,
+          [topicId]: prompts
+        }));
+        console.log(`✅ Loaded ${prompts.length} prompts for "${topic.name}"`);
+      } else {
+        // Fallback to empty array
+        setPromptsByTopic(prev => ({ ...prev, [topicId]: [] }));
+        console.warn('No prompts returned for topic:', topic.name);
+      }
+    } catch (error) {
+      console.error('Failed to fetch prompts:', error);
+      // Fallback to empty array
+      setPromptsByTopic(prev => ({ ...prev, [topicId]: [] }));
+    }
   };
 
   const scrollToTopic = (topicId: string) => {
@@ -130,8 +154,10 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
   };
 
   const getSelectedCountForTopic = (topic: Topic): number => {
-    const topicPrompts = getPromptsForTopic(topic, customPromptsByTopic);
-    return topicPrompts.filter(p => selectedPrompts.includes(p)).length;
+    const apiPrompts = promptsByTopic[topic.id] || [];
+    const customPrompts = customPromptsByTopic[topic.id] || [];
+    const allPrompts = [...apiPrompts, ...customPrompts];
+    return allPrompts.filter(p => selectedPrompts.includes(p)).length;
   };
 
   return (
@@ -182,7 +208,10 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
       <div className="prompt-topics-accordion">
         {selectedTopics.map((topic) => {
           const isExpanded = expandedTopics.has(topic.id);
-          const topicPrompts = getPromptsForTopic(topic, customPromptsByTopic);
+          const apiPrompts = promptsByTopic[topic.id] || [];
+          const customPrompts = customPromptsByTopic[topic.id] || [];
+          const topicPrompts = [...apiPrompts, ...customPrompts];
+          const isLoading = loadingTopics.has(topic.id);
           const selectedCount = getSelectedCountForTopic(topic);
 
           return (
@@ -207,28 +236,40 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
                 </div>
               </button>
 
-              {isExpanded && (
+              {isExpanded && isLoading && (
+                <div className="prompt-topic-loading" style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+                  Loading prompts...
+                </div>
+              )}
+              
+              {isExpanded && !isLoading && (
                 <div className="prompt-topic-content">
-                  <div className="prompt-list">
-                    {topicPrompts.map((prompt) => {
-                      const isSelected = selectedPrompts.includes(prompt);
-                      const isCustom = isCustomPrompt(prompt, customPromptsByTopic);
-                      return (
-                        <label key={prompt} className="prompt-checkbox-item">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleTogglePrompt(prompt)}
-                            className="prompt-checkbox"
-                          />
-                          <span className="prompt-label">
-                            {prompt}
-                            {isCustom && <span className="prompt-custom-badge">Custom</span>}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                  {topicPrompts.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
+                      No prompts available for this topic. Try adding a custom prompt.
+                    </div>
+                  ) : (
+                    <div className="prompt-list">
+                      {topicPrompts.map((prompt) => {
+                        const isSelected = selectedPrompts.includes(prompt);
+                        const isCustom = isCustomPrompt(prompt, customPromptsByTopic);
+                        return (
+                          <label key={prompt} className="prompt-checkbox-item">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleTogglePrompt(prompt)}
+                              className="prompt-checkbox"
+                            />
+                            <span className="prompt-label">
+                              {prompt}
+                              {isCustom && <span className="prompt-custom-badge">Custom</span>}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

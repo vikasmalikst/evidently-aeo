@@ -16,6 +16,27 @@ export interface QueryGenerationRequest {
   topics?: string[]; // Add topics to the request
 }
 
+export interface NeutralityScore {
+  score: number; // 0-1, where 1 is fully neutral
+  reason?: string;
+  reasonCode?: 'BRAND_MENTION' | 'BRAND_PREFERENCE' | 'BRAND_SPECIFIC' | 'NEUTRAL' | 'COMPARISON_OK';
+}
+
+export interface NeutralityValidationReport {
+  totalQueries: number;
+  filteredQueries: number;
+  passedQueries: number;
+  filteredByReason: Record<string, number>;
+  filteredQueriesDetails: Array<{
+    query: string;
+    reason: string;
+    reasonCode: string;
+    score: number;
+  }>;
+  strictness: 'strict' | 'moderate' | 'lenient';
+  averageScore: number;
+}
+
 export interface QueryGenerationResponse {
   url: string;
   total_queries: number;
@@ -35,10 +56,12 @@ export interface QueryGenerationResponse {
   country: string;
   llm_provider: string;
   generation_id: string;
+  neutrality_report?: NeutralityValidationReport;
 }
 
 export class QueryGenerationService {
   private openai: OpenAI | null = null;
+  private neutralityStrictness: 'strict' | 'moderate' | 'lenient' = 'moderate';
 
   constructor() {
     const apiKey = process.env['OPENAI_API_KEY'];
@@ -48,6 +71,12 @@ export class QueryGenerationService {
       });
     } else {
       console.warn('⚠️ OpenAI API key not configured, using mock responses');
+    }
+    
+    // Load neutrality strictness from environment variable
+    const strictness = process.env['QUERY_NEUTRALITY_STRICTNESS'];
+    if (strictness === 'strict' || strictness === 'moderate' || strictness === 'lenient') {
+      this.neutralityStrictness = strictness;
     }
   }
 
@@ -141,20 +170,46 @@ export class QueryGenerationService {
     // Remove duplicates before formatting (safety check)
     const uniqueQueries = this.removeDuplicateQueries(queries);
     
+    // 🎯 NEW: Validate query neutrality with enhanced scoring and reporting
+    const { neutralQueries, neutralityReport } = this.validateAndFilterNeutralQueriesWithScoring(
+      uniqueQueries, 
+      brandName, 
+      request.competitors
+    );
+    
+    // Log neutrality validation summary
+    console.log(`📊 Neutrality validation summary (${this.neutralityStrictness} mode):`);
+    console.log(`   Total queries: ${neutralityReport.totalQueries}`);
+    console.log(`   Passed: ${neutralityReport.passedQueries} (${Math.round((neutralityReport.passedQueries / neutralityReport.totalQueries) * 100)}%)`);
+    console.log(`   Filtered: ${neutralityReport.filteredQueries} (${Math.round((neutralityReport.filteredQueries / neutralityReport.totalQueries) * 100)}%)`);
+    console.log(`   Average neutrality score: ${neutralityReport.averageScore.toFixed(2)}`);
+    
+    if (Object.keys(neutralityReport.filteredByReason).length > 0) {
+      console.log(`   Filtered by reason:`, neutralityReport.filteredByReason);
+    }
+    
+    if (neutralQueries.length < uniqueQueries.length) {
+      const removedCount = uniqueQueries.length - neutralQueries.length;
+      console.warn(`⚠️ Removed ${removedCount} non-neutral queries that mentioned brand name "${brandName}"`);
+      console.warn(`   Remaining neutral queries: ${neutralQueries.length}`);
+    } else {
+      console.log(`✅ All ${neutralQueries.length} queries passed neutrality validation`);
+    }
+    
     // Log the AI-generated queries
-    console.log(`🤖 Final Generated ${uniqueQueries.length} queries for ${brandName}:`);
-    uniqueQueries.forEach((q, index) => {
+    console.log(`🤖 Final Generated ${neutralQueries.length} neutral queries for ${brandName}:`);
+    neutralQueries.forEach((q, index) => {
       console.log(`  ${index + 1}. [${q.topic || 'N/A'}] [${q.intent}] ${q.query}`);
     });
     
     // Final validation
     if (request.topics && request.topics.length > 0) {
-      const queryTexts = uniqueQueries.map(q => q.query.toLowerCase().trim());
+      const queryTexts = neutralQueries.map(q => q.query.toLowerCase().trim());
       const duplicates = queryTexts.filter((query, index) => queryTexts.indexOf(query) !== index);
       if (duplicates.length > 0) {
         console.error(`❌ CRITICAL: Still found ${duplicates.length} duplicate queries after enforcement!`);
         duplicates.forEach(dup => {
-          const dupQueries = uniqueQueries.filter(q => q.query.toLowerCase().trim() === dup);
+          const dupQueries = neutralQueries.filter(q => q.query.toLowerCase().trim() === dup);
           console.error(`  Duplicate: "${dup}" appears in topics: ${dupQueries.map(q => q.topic).join(', ')}`);
         });
       } else {
@@ -162,7 +217,7 @@ export class QueryGenerationService {
       }
       
       // Verify all topics have queries
-      const generatedTopics = uniqueQueries.map(q => q.topic).filter(Boolean);
+      const generatedTopics = neutralQueries.map(q => q.topic).filter(Boolean);
       const missingTopics = request.topics.filter(topic => !generatedTopics.includes(topic));
       if (missingTopics.length > 0) {
         console.error(`❌ CRITICAL: Missing queries for ${missingTopics.length} topics: ${missingTopics.join(', ')}`);
@@ -173,12 +228,12 @@ export class QueryGenerationService {
     
     // Only use AI-generated queries, don't fall back to generic ones
     let aeoTopics;
-    if (uniqueQueries.length >= 4) {
-      console.log(`✅ Using ${uniqueQueries.length} AI-generated queries (no fallback needed)`);
-      aeoTopics = uniqueQueries.slice(0, 8); // Take up to 8 queries
+    if (neutralQueries.length >= 4) {
+      console.log(`✅ Using ${neutralQueries.length} AI-generated neutral queries (no fallback needed)`);
+      aeoTopics = neutralQueries.slice(0, 8); // Take up to 8 queries
     } else {
-      console.warn(`⚠️ Only ${uniqueQueries.length} AI-generated queries available, but proceeding with AI queries only`);
-      aeoTopics = uniqueQueries;
+      console.warn(`⚠️ Only ${neutralQueries.length} AI-generated neutral queries available, but proceeding with AI queries only`);
+      aeoTopics = neutralQueries;
     }
 
       // Convert queries to the expected format
@@ -208,7 +263,8 @@ export class QueryGenerationService {
         locale: request.locale,
         country: request.country,
         llm_provider: request.llm_provider,
-        generation_id: generationId
+        generation_id: generationId,
+        neutrality_report: neutralityReport
       };
 
     } catch (error) {
@@ -2198,6 +2254,202 @@ CRITICAL VALIDATION BEFORE RETURNING:
       grouped[q.intent] = (grouped[q.intent] || 0) + 1;
     });
     return grouped;
+  }
+
+  /**
+   * Validate and filter queries to ensure neutrality with enhanced scoring
+   * Returns both filtered queries and a detailed validation report
+   */
+  private validateAndFilterNeutralQueriesWithScoring(
+    queries: Array<{ topic: string; query: string; intent: string; priority: number }>,
+    brandName: string,
+    competitors?: string
+  ): {
+    neutralQueries: Array<{ topic: string; query: string; intent: string; priority: number }>;
+    neutralityReport: NeutralityValidationReport;
+  } {
+    if (!brandName) {
+      // No brand name to check against - all queries pass
+      const report: NeutralityValidationReport = {
+        totalQueries: queries.length,
+        filteredQueries: 0,
+        passedQueries: queries.length,
+        filteredByReason: {},
+        filteredQueriesDetails: [],
+        strictness: this.neutralityStrictness,
+        averageScore: 1.0
+      };
+      return { neutralQueries: queries, neutralityReport: report };
+    }
+
+    const normalizedBrandName = brandName.toLowerCase().trim();
+    const competitorList = competitors ? competitors.split(',').map(c => c.trim().toLowerCase()) : [];
+    
+    // Expanded forbidden patterns with severity scores
+    const forbiddenPatterns: Array<{ pattern: string; severity: number; reasonCode: string }> = [
+      // High severity patterns (score 0.0-0.2)
+      { pattern: `what is ${normalizedBrandName}`, severity: 0.0, reasonCode: 'BRAND_MENTION' },
+      { pattern: `how does ${normalizedBrandName}`, severity: 0.0, reasonCode: 'BRAND_MENTION' },
+      { pattern: `what does ${normalizedBrandName}`, severity: 0.0, reasonCode: 'BRAND_MENTION' },
+      { pattern: `what are ${normalizedBrandName}`, severity: 0.0, reasonCode: 'BRAND_MENTION' },
+      { pattern: `where can i find ${normalizedBrandName}`, severity: 0.1, reasonCode: 'BRAND_SPECIFIC' },
+      { pattern: `how to use ${normalizedBrandName}`, severity: 0.1, reasonCode: 'BRAND_SPECIFIC' },
+      
+      // Medium severity patterns (score 0.3-0.5)
+      { pattern: `${normalizedBrandName}'s`, severity: 0.3, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `${normalizedBrandName} offers`, severity: 0.3, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `${normalizedBrandName} provides`, severity: 0.3, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `${normalizedBrandName} features`, severity: 0.4, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `${normalizedBrandName} products`, severity: 0.4, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `${normalizedBrandName} services`, severity: 0.4, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `is ${normalizedBrandName}`, severity: 0.4, reasonCode: 'BRAND_PREFERENCE' },
+      
+      // Lower severity patterns (score 0.6-0.8)
+      { pattern: `buy ${normalizedBrandName}`, severity: 0.6, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `${normalizedBrandName} review`, severity: 0.7, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `${normalizedBrandName} pricing`, severity: 0.7, reasonCode: 'BRAND_PREFERENCE' },
+      { pattern: `${normalizedBrandName} vs`, severity: 0.8, reasonCode: 'COMPARISON_OK' },
+      { pattern: `${normalizedBrandName} compared to`, severity: 0.8, reasonCode: 'COMPARISON_OK' }
+    ];
+
+    const neutralQueries: Array<{ topic: string; query: string; intent: string; priority: number }> = [];
+    const filteredQueriesDetails: Array<{
+      query: string;
+      reason: string;
+      reasonCode: string;
+      score: number;
+    }> = [];
+    const filteredByReason: Record<string, number> = {};
+    let totalScore = 0;
+    let passedCount = 0;
+    let filteredCount = 0;
+
+    queries.forEach(query => {
+      const neutralityScore = this.scoreQueryNeutrality(
+        query.query,
+        normalizedBrandName,
+        competitorList,
+        query.intent,
+        forbiddenPatterns
+      );
+
+      totalScore += neutralityScore.score;
+
+      // Determine filtering threshold based on strictness
+      let threshold = 0.5; // Default moderate
+      if (this.neutralityStrictness === 'strict') {
+        threshold = 0.8; // Only queries with score >= 0.8 pass
+      } else if (this.neutralityStrictness === 'lenient') {
+        threshold = 0.3; // Queries with score >= 0.3 pass
+      }
+
+      if (neutralityScore.score >= threshold) {
+        neutralQueries.push(query);
+        passedCount++;
+      } else {
+        filteredCount++;
+        const reasonCode = neutralityScore.reasonCode || 'BRAND_MENTION';
+        filteredByReason[reasonCode] = (filteredByReason[reasonCode] || 0) + 1;
+        
+        filteredQueriesDetails.push({
+          query: query.query,
+          reason: neutralityScore.reason || 'Query mentions brand without proper context',
+          reasonCode: reasonCode,
+          score: neutralityScore.score
+        });
+
+        console.log(`🚫 Filtered non-neutral query (score ${neutralityScore.score.toFixed(2)}): "${query.query}" - ${neutralityScore.reason}`);
+      }
+    });
+
+    const averageScore = queries.length > 0 ? totalScore / queries.length : 1.0;
+
+    const neutralityReport: NeutralityValidationReport = {
+      totalQueries: queries.length,
+      filteredQueries: filteredCount,
+      passedQueries: passedCount,
+      filteredByReason,
+      filteredQueriesDetails,
+      strictness: this.neutralityStrictness,
+      averageScore
+    };
+
+    return { neutralQueries, neutralityReport };
+  }
+
+  /**
+   * Score query neutrality (0-1, where 1 is fully neutral)
+   */
+  private scoreQueryNeutrality(
+    query: string,
+    normalizedBrandName: string,
+    competitorList: string[],
+    intent: string,
+    forbiddenPatterns: Array<{ pattern: string; severity: number; reasonCode: string }>
+  ): NeutralityScore {
+    const queryLower = query.toLowerCase().trim();
+    
+    // Check if query contains brand name
+    if (!queryLower.includes(normalizedBrandName)) {
+      return {
+        score: 1.0,
+        reason: 'Query does not mention brand',
+        reasonCode: 'NEUTRAL'
+      };
+    }
+
+    // Allow brand mentions in comparison queries if competitors are provided
+    if (intent === 'comparison' && competitorList.length > 0) {
+      // Check if query mentions at least one competitor along with brand
+      const mentionsCompetitor = competitorList.some(competitor => 
+        queryLower.includes(competitor)
+      );
+      
+      if (mentionsCompetitor) {
+        // This is a valid comparison query - allow it but with slightly lower score
+        return {
+          score: 0.9,
+          reason: 'Valid comparison query with competitor',
+          reasonCode: 'COMPARISON_OK'
+        };
+      }
+    }
+
+    // Check against forbidden patterns
+    for (const patternInfo of forbiddenPatterns) {
+      if (queryLower.includes(patternInfo.pattern)) {
+        return {
+          score: patternInfo.severity,
+          reason: `Query matches forbidden pattern: "${patternInfo.pattern}"`,
+          reasonCode: patternInfo.reasonCode
+        };
+      }
+    }
+
+    // If brand is mentioned but not in a forbidden pattern and not a comparison,
+    // assign a moderate penalty based on context
+    const brandMentionCount = (queryLower.match(new RegExp(normalizedBrandName, 'g')) || []).length;
+    const baseScore = 0.5;
+    const penalty = Math.min(brandMentionCount * 0.2, 0.4); // Max penalty of 0.4
+    
+    return {
+      score: Math.max(baseScore - penalty, 0.1),
+      reason: `Query mentions brand "${normalizedBrandName}" without proper competitor context`,
+      reasonCode: 'BRAND_MENTION'
+    };
+  }
+
+  /**
+   * Legacy method for backward compatibility
+   * @deprecated Use validateAndFilterNeutralQueriesWithScoring instead
+   */
+  private validateAndFilterNeutralQueries(
+    queries: Array<{ topic: string; query: string; intent: string; priority: number }>,
+    brandName: string,
+    competitors?: string
+  ): Array<{ topic: string; query: string; intent: string; priority: number }> {
+    const { neutralQueries } = this.validateAndFilterNeutralQueriesWithScoring(queries, brandName, competitors);
+    return neutralQueries;
   }
 }
 

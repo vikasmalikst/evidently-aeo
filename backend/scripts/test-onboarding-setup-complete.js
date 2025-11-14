@@ -490,6 +490,7 @@ async function testTopicGeneration() {
           }))
         : [];
       
+      // Store prompts separately (these are for query generation, not topic generation)
       const trendingPrompts = trendingResult.success && trendingResult.data && trendingResult.data.prompts
         ? trendingResult.data.prompts.map((prompt, index) => ({
             id: `prompt-${index}`,
@@ -500,9 +501,81 @@ async function testTopicGeneration() {
           }))
         : [];
       
-      // Categorize topics
+      // 3. Include existing topics from database (if any) - empty for testing
+      const existingTopics = [];
+      const existingTopicsFormatted = existingTopics.map((topic, index) => {
+        const topicName = topic.topic_name || topic.topic || topic;
+        return {
+          id: `existing-${index}`,
+          name: topicName,
+          source: 'existing',
+          category: topic.category || 'awareness',
+          relevance: 90 // Existing topics have high relevance
+        };
+      });
+
+      // 4. Normalize all topics to ensure they are keyword-like (not prompt-like)
+      // Combine keywords from trending and existing topics (matching real route)
+      const allTopicNames = [
+        ...trendingTopics.map((t) => t.name),
+        ...existingTopicsFormatted.map((t) => t.name)
+      ];
+      
+      // Normalize topics using the trending keywords service
+      if (!trendingKeywordsService.normalizeTopicsToKeywords) {
+        throw new Error('normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build');
+      }
+      const normalizedTopicNames = await trendingKeywordsService.normalizeTopicsToKeywords(
+        allTopicNames,
+        brandIntel.brand.companyName,
+        brandIntel.brand.industry || testBrand.industry
+      );
+      
+      // Create a map of original topic names to normalized names
+      // Since normalizeTopicsToKeywords processes topics in order, we can match them by index
+      // But we need to handle cases where some topics are skipped
+      const topicNameMap = new Map();
+      let normalizedIndex = 0;
+      
+      for (const original of allTopicNames) {
+        // Check if this topic was normalized (it should be in the normalized array)
+        // We'll match by checking if the normalized version exists and is similar
+        const normalized = normalizedTopicNames[normalizedIndex];
+        
+        if (normalized) {
+          // Check if this normalized topic corresponds to the current original
+          // (either exact match, or the original was converted to this)
+          if (normalized.toLowerCase() === original.toLowerCase() || 
+              original.toLowerCase().includes(normalized.toLowerCase()) ||
+              normalized.toLowerCase().includes(original.toLowerCase().split(' ').slice(-2).join(' '))) {
+            topicNameMap.set(original.toLowerCase(), normalized);
+            normalizedIndex++;
+          } else {
+            // This original topic was skipped, don't map it
+            topicNameMap.set(original.toLowerCase(), original); // Keep original if not normalized
+          }
+        } else {
+          // No more normalized topics, keep original
+          topicNameMap.set(original.toLowerCase(), original);
+        }
+      }
+      
+      // Map normalized topics back to their original structure
+      const normalizedTrendingTopics = trendingTopics
+        .map((t) => {
+          const normalized = topicNameMap.get(t.name.toLowerCase()) || t.name;
+          return { ...t, name: normalized };
+        });
+      
+      const normalizedExistingTopics = existingTopicsFormatted
+        .map((t) => {
+          const normalized = topicNameMap.get(t.name.toLowerCase()) || t.name;
+          return { ...t, name: normalized };
+        }); // Only keep successfully normalized topics
+      
+      // Categorize topics using normalized keywords (not prompts)
       const categorizedResult = await aeoCategorizationService.categorizeTopics({
-        topics: trendingPrompts.map(p => p.name),
+        topics: normalizedTopicNames,
         brand_name: brandIntel.brand.companyName,
         industry: brandIntel.brand.industry || testBrand.industry,
         competitors: brandIntel.competitors.slice(0, 5).map(c => c.name)
@@ -517,13 +590,26 @@ async function testTopicGeneration() {
       };
       
       if (categorizedResult.categorized_topics) {
-        categorizedResult.categorized_topics.forEach(ct => {
+        categorizedResult.categorized_topics.forEach((ct, index) => {
           const category = ct.category.toLowerCase().replace('post-purchase support', 'support');
-          const matchingPrompt = trendingPrompts.find(p => p.name === ct.topic_name);
-          if (matchingPrompt && aiGenerated[category]) {
+          
+          // Find matching topic from normalized topics
+          const matchingTopic = normalizedTrendingTopics.find((t) => t.name === ct.topic_name) ||
+                               normalizedExistingTopics.find((t) => t.name === ct.topic_name);
+          
+          if (matchingTopic && aiGenerated[category]) {
             aiGenerated[category].push({
-              id: matchingPrompt.id,
-              name: matchingPrompt.name,
+              id: matchingTopic.id || `ai-${index}`,
+              name: ct.topic_name, // Use the normalized topic name
+              source: matchingTopic.source || 'ai_generated',
+              category: category,
+              relevance: Math.round((ct.confidence || 0.8) * 100)
+            });
+          } else if (aiGenerated[category]) {
+            // If no matching topic found, create a new one
+            aiGenerated[category].push({
+              id: `ai-${index}`,
+              name: ct.topic_name,
               source: 'ai_generated',
               category: category,
               relevance: Math.round((ct.confidence || 0.8) * 100)
@@ -531,16 +617,34 @@ async function testTopicGeneration() {
           }
         });
       }
+
+      // 7. Merge normalized existing topics into appropriate categories (if not already added)
+      normalizedExistingTopics.forEach((topic) => {
+        const category = (topic.category || 'awareness').toLowerCase().replace('post-purchase support', 'support');
+        if (aiGenerated[category]) {
+          // Check if topic already exists to avoid duplicates
+          const exists = aiGenerated[category].some(t => t.name.toLowerCase() === topic.name.toLowerCase());
+          if (!exists) {
+            aiGenerated[category].push(topic);
+          }
+        }
+      });
+
+      // 8. Add minimal preset topics (keep a small set for fallback) - matching real route
+      const preset = [
+        { id: 'preset-1', name: 'Product features', source: 'preset', relevance: 85 },
+        { id: 'preset-2', name: 'Customer testimonials', source: 'preset', relevance: 82 },
+        { id: 'preset-3', name: 'Integration capabilities', source: 'preset', relevance: 80 },
+        { id: 'preset-4', name: 'Security and compliance', source: 'preset', relevance: 78 }
+      ];
       
       const result = {
         success: true,
         data: {
-          trending: trendingTopics.slice(0, 6),
+          trending: normalizedTrendingTopics.slice(0, 6),
           aiGenerated,
-          preset: [
-            { id: 'preset-1', name: 'Product features', source: 'preset', relevance: 85 },
-            { id: 'preset-2', name: 'Customer testimonials', source: 'preset', relevance: 82 }
-          ]
+          preset,
+          existing_count: existingTopics.length
         }
       };
       
@@ -713,12 +817,23 @@ async function testPromptGeneration() {
         max_keywords: 12
       });
       
-      const trendingPrompts = trendingResult.success && trendingResult.data && trendingResult.data.prompts
-        ? trendingResult.data.prompts.map(p => p.prompt)
+      // Use keywords (not prompts) for topics
+      const trendingKeywords = trendingResult.success && trendingResult.data && trendingResult.data.keywords
+        ? trendingResult.data.keywords.map(kw => kw.keyword)
         : [];
       
+      // Normalize topics to ensure they are keyword-like
+      if (!trendingKeywordsService.normalizeTopicsToKeywords) {
+        throw new Error('normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build');
+      }
+      const normalizedTopicNames = await trendingKeywordsService.normalizeTopicsToKeywords(
+        trendingKeywords,
+        brandIntel.brand.companyName,
+        brandIntel.brand.industry || testBrand.industry
+      );
+      
       const categorizedResult = await aeoCategorizationService.categorizeTopics({
-        topics: trendingPrompts,
+        topics: normalizedTopicNames,
         brand_name: brandIntel.brand.companyName,
         industry: brandIntel.brand.industry || testBrand.industry,
         competitors: brandIntel.competitors.slice(0, 5).map(c => c.name)
@@ -726,7 +841,7 @@ async function testPromptGeneration() {
       
       const allTopics = categorizedResult.categorized_topics
         ? categorizedResult.categorized_topics.map(ct => ct.topic_name)
-        : trendingPrompts;
+        : normalizedTopicNames;
       
       const topicsToUse = allTopics.slice(0, 5); // Use first 5 topics
       
@@ -987,12 +1102,23 @@ async function testEndToEndIntegration() {
       max_keywords: 12
     });
     
-    const trendingPrompts = trendingResult.success && trendingResult.data && trendingResult.data.prompts
-      ? trendingResult.data.prompts.map(p => p.prompt)
+    // Use keywords (not prompts) for topics
+    const trendingKeywords = trendingResult.success && trendingResult.data && trendingResult.data.keywords
+      ? trendingResult.data.keywords.map(kw => kw.keyword)
       : [];
     
+    // Normalize topics to ensure they are keyword-like
+    if (!trendingKeywordsService.normalizeTopicsToKeywords) {
+      throw new Error('normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build');
+    }
+    const normalizedTopicNames = await trendingKeywordsService.normalizeTopicsToKeywords(
+      trendingKeywords,
+      brandIntel.brand.companyName,
+      brandIntel.brand.industry || testBrand.industry
+    );
+    
     const categorizedResult = await aeoCategorizationService.categorizeTopics({
-      topics: trendingPrompts,
+      topics: normalizedTopicNames,
       brand_name: brandIntel.brand.companyName,
       industry: brandIntel.brand.industry || testBrand.industry,
       competitors: brandIntel.competitors.slice(0, 5).map(c => c.name)
@@ -1000,7 +1126,7 @@ async function testEndToEndIntegration() {
     
     const allTopics = categorizedResult.categorized_topics
       ? categorizedResult.categorized_topics.map(ct => ct.topic_name)
-      : trendingPrompts;
+      : normalizedTopicNames;
     
     const topicsToUse = allTopics.slice(0, 5);
     

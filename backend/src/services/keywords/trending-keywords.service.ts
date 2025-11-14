@@ -856,7 +856,7 @@ Return ONLY the keyword phrase, nothing else. No explanation, no quotes, just th
 
   /**
    * Normalize topics to keywords - converts any prompt-like topics to keyword-like topics
-   * Returns both the normalized topics array and a map of original -> normalized
+   * Returns normalized topics array (maintains order, skips invalid topics)
    */
   async normalizeTopicsToKeywords(topics: string[], brand: string, industry: string): Promise<string[]> {
     const normalizedTopics: string[] = [];
@@ -869,7 +869,26 @@ Return ONLY the keyword phrase, nothing else. No explanation, no quotes, just th
       
       // If already keyword-like, use as-is
       if (!this.isPromptLike(topicTrimmed)) {
-        normalizedTopics.push(topicTrimmed);
+        // Double-check with isValidKeyword to ensure it's truly keyword-like
+        if (this.isValidKeyword(topicTrimmed, brand)) {
+          normalizedTopics.push(topicTrimmed);
+        } else {
+          console.warn(`⚠️ Topic "${topicTrimmed}" appears keyword-like but failed validation, attempting conversion...`);
+          // Try to convert it anyway
+          const keyword = await this.convertPromptToKeyword(topicTrimmed, brand, industry);
+          if (keyword && this.isValidKeyword(keyword, brand)) {
+            normalizedTopics.push(keyword);
+            console.log(`✅ Converted "${topicTrimmed}" → "${keyword}"`);
+          } else {
+            const manualKeyword = this.extractKeywordManually(topicTrimmed);
+            if (manualKeyword && this.isValidKeyword(manualKeyword, brand)) {
+              normalizedTopics.push(manualKeyword);
+              console.log(`✅ Manually extracted "${topicTrimmed}" → "${manualKeyword}"`);
+            } else {
+              console.warn(`⚠️ Skipping invalid topic: "${topicTrimmed}"`);
+            }
+          }
+        }
         continue;
       }
       

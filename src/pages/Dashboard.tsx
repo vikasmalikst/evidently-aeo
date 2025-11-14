@@ -4,7 +4,6 @@ import { useAuthStore } from '../store/authStore';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { Layout } from '../components/Layout/Layout';
 import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
-import { mockPromptsData } from '../data/mockPromptsData';
 import { mockSourcesData } from '../data/mockSourcesData';
 import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
 import type { Topic } from '../types/topic';
@@ -68,6 +67,12 @@ interface DashboardPayload {
     share: number;
     delta: number;
     color?: string;
+  }>;
+  topTopics?: Array<{
+    topic: string;
+    promptsTracked: number;
+    averageVolume: number;
+    sentimentScore: number;
   }>;
 }
 
@@ -276,6 +281,8 @@ export const Dashboard = () => {
       </Layout>
     );
   }
+
+  const topTopics = dashboardData?.topTopics ?? [];
 
   const findScore = (label: string) =>
     dashboardData.scores.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
@@ -708,9 +715,13 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="py-4 text-center text-[13px] text-[#64748b] border border-dashed border-[#e8e9ed] rounded-lg">
+                  We haven't detected enough topic data for this window yet.
+                </div>
+              )}
             </div>
           </div>
 

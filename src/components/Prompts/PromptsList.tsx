@@ -1,68 +1,68 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, CalendarDays } from 'lucide-react';
-import { IconMoodSadSquint, IconMoodSad, IconMoodEmpty, IconMoodSmile, IconMoodHappy } from '@tabler/icons-react';
-import { Topic, Prompt } from '../../data/mockPromptsData';
+import { PromptEntry, PromptTopic } from '../../types/prompts';
 
-interface PromptsListProps {
-  topics: Topic[];
-  selectedPromptId: number | null;
-  onPromptSelect: (prompt: Prompt) => void;
-  dateRange: string;
-  onDateRangeChange: (range: string) => void;
+interface DateRangeOption {
+  value: string;
+  label: string;
 }
 
-const getSentimentIcon = (sentiment: number) => {
-  if (sentiment <= 1) return <IconMoodSadSquint size={18} className="text-[#f94343]" />;
-  if (sentiment <= 2) return <IconMoodSad size={18} className="text-[#fa8a40]" />;
-  if (sentiment <= 3) return <IconMoodEmpty size={18} className="text-[#f9db43]" />;
-  if (sentiment <= 4) return <IconMoodSmile size={18} className="text-[#06c686]" />;
-  return <IconMoodHappy size={18} className="text-[#06c686]" />;
-};
+interface PromptsListProps {
+  topics: PromptTopic[];
+  selectedPromptId: string | null;
+  onPromptSelect: (prompt: PromptEntry) => void;
+  dateRangeKey: string;
+  dateRangeOptions: DateRangeOption[];
+  onDateRangeChange: (range: string) => void;
+  loading: boolean;
+}
 
-const getSentimentLabel = (sentiment: number) => {
-  if (sentiment <= 1) return 'Very Negative';
-  if (sentiment <= 2) return 'Negative';
-  if (sentiment <= 3) return 'Neutral';
-  if (sentiment <= 4) return 'Positive';
-  return 'Very Positive';
-};
+export const PromptsList = ({
+  topics,
+  selectedPromptId,
+  onPromptSelect,
+  dateRangeKey,
+  dateRangeOptions,
+  onDateRangeChange,
+  loading
+}: PromptsListProps) => {
+  const [expandedTopics, setExpandedTopics] = useState<string[]>([]);
 
-const getWeeklyDateRanges = () => {
-  const ranges = [];
-  const today = new Date('2025-11-01');
-
-  for (let i = 0; i < 8; i++) {
-    const endDate = new Date(today);
-    endDate.setDate(today.getDate() - (i * 7));
-    const startDate = new Date(endDate);
-    startDate.setDate(endDate.getDate() - 6);
-
-    const formatDate = (date: Date) => {
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const day = date.getDate().toString().padStart(2, '0');
-      return `${month}/${day}`;
-    };
-
-    ranges.push({
-      value: `week-${i}`,
-      label: `${formatDate(startDate)} - ${formatDate(endDate)}`
-    });
-  }
-
-  return ranges;
-};
-
-export const PromptsList = ({ topics, selectedPromptId, onPromptSelect, dateRange, onDateRangeChange }: PromptsListProps) => {
-  const [expandedTopics, setExpandedTopics] = useState<number[]>([1]);
-  const weeklyRanges = getWeeklyDateRanges();
-
-  const toggleTopic = (topicId: number) => {
-    if (expandedTopics.includes(topicId)) {
-      setExpandedTopics(expandedTopics.filter(id => id !== topicId));
-    } else {
-      setExpandedTopics([...expandedTopics, topicId]);
+  useEffect(() => {
+    if (topics.length === 0) {
+      setExpandedTopics([]);
+      return;
     }
+
+    setExpandedTopics((current) => {
+      const valid = current.filter((topicId) => topics.some((topic) => topic.id === topicId));
+      if (valid.length > 0) {
+        return valid;
+      }
+      return [topics[0].id];
+    });
+  }, [topics]);
+
+  const volumeFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(undefined, {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+      }),
+    []
+  );
+
+  const toggleTopic = (topicId: string) => {
+    setExpandedTopics((current) =>
+      current.includes(topicId) ? current.filter((id) => id !== topicId) : [...current, topicId]
+    );
   };
+
+  const handlePromptClick = (prompt: PromptEntry) => {
+    onPromptSelect(prompt);
+  };
+
+  const hasPrompts = topics.some((topic) => topic.prompts.length > 0);
 
   return (
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm overflow-hidden h-full">
@@ -73,11 +73,11 @@ export const PromptsList = ({ topics, selectedPromptId, onPromptSelect, dateRang
         <div className="relative">
           <CalendarDays size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-caption)] pointer-events-none" />
           <select
-            value={dateRange}
+            value={dateRangeKey}
             onChange={(e) => onDateRangeChange(e.target.value)}
             className="text-xs border border-[var(--border-default)] rounded pl-7 pr-2 py-1 text-[var(--text-body)] bg-white font-data appearance-none"
           >
-            {weeklyRanges.map((range) => (
+            {dateRangeOptions.map((range) => (
               <option key={range.value} value={range.value}>
                 {range.label}
               </option>
@@ -100,7 +100,23 @@ export const PromptsList = ({ topics, selectedPromptId, onPromptSelect, dateRang
       </div>
 
       <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 450px)' }}>
+        {loading && (
+          <div className="px-4 py-6 text-sm text-[var(--text-caption)] border-b border-[var(--border-default)]">
+            Loading prompts…
+          </div>
+        )}
+
+        {!loading && !hasPrompts && (
+          <div className="px-4 py-6 text-sm text-[var(--text-caption)] border-b border-[var(--border-default)]">
+            No prompts available for the selected filters.
+          </div>
+        )}
+
         {topics.map((topic) => {
+          if (topic.prompts.length === 0) {
+            return null;
+          }
+
           const isExpanded = expandedTopics.includes(topic.id);
 
           return (
@@ -119,7 +135,7 @@ export const PromptsList = ({ topics, selectedPromptId, onPromptSelect, dateRang
                     {topic.name}
                   </span>
                   <span className="text-xs text-[var(--text-caption)]">
-                    ({topic.prompts.length})
+                    ({topic.promptCount})
                   </span>
                 </div>
               </button>
@@ -134,7 +150,7 @@ export const PromptsList = ({ topics, selectedPromptId, onPromptSelect, dateRang
                         return (
                           <tr
                             key={prompt.id}
-                            onClick={() => onPromptSelect(prompt)}
+                            onClick={() => handlePromptClick(prompt)}
                             className={`cursor-pointer border-t border-[var(--border-default)] transition-all ${
                               isSelected
                                 ? 'bg-[var(--accent-light)]'
@@ -142,22 +158,36 @@ export const PromptsList = ({ topics, selectedPromptId, onPromptSelect, dateRang
                             }`}
                           >
                             <td className="px-4 py-3">
-                              <p className="text-sm line-clamp-2 text-[var(--text-body)] font-data">
-                                {prompt.text}
+                              <p className="text-sm text-[var(--text-body)] font-data leading-snug">
+                                {prompt.question}
                               </p>
+                              {prompt.collectorTypes.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {prompt.collectorTypes.map((collector) => (
+                                    <span
+                                      key={collector}
+                                      className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[10px] font-semibold text-[var(--text-caption)]"
+                                    >
+                                      {collector}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                             <td className="px-2 py-3 w-20 text-center">
-                              <span className="text-sm font-data text-[var(--text-body)]">
-                                {prompt.volume}%
-                              </span>
-                            </td>
-                            <td className="px-2 py-3 w-32">
-                              <div className="flex items-center justify-center gap-2">
-                                {getSentimentIcon(prompt.sentiment)}
-                                <span className="text-xs text-[var(--text-caption)] whitespace-nowrap font-data">
-                                  {getSentimentLabel(prompt.sentiment)}
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                                  {volumeFormatter.format(prompt.volumePercentage)}%
+                                </span>
+                                <span className="text-[10px] text-[var(--text-caption)] font-medium">
+                                  {prompt.volumeCount} responses
                                 </span>
                               </div>
+                            </td>
+                            <td className="px-2 py-3 w-32">
+                              <span className="text-sm font-medium text-[var(--text-caption)]">
+                                {prompt.sentimentScore !== null ? `${prompt.sentimentScore.toFixed(1)}` : '—'}
+                              </span>
                             </td>
                             <td className="px-4 py-3 w-32 text-center">
                               <span className="text-xs text-[var(--text-caption)] font-data">

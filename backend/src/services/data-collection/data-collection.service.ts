@@ -10,6 +10,7 @@ import { dataForSeoCollectorService } from './dataforseo-collector.service';
 import { priorityCollectorService, PriorityExecutionResult } from './priority-collector.service';
 import { keywordGenerationService } from '../keywords/keyword-generation.service';
 import { openRouterCollectorService } from './openrouter-collector.service';
+import { CollectorError, ErrorType } from './types/collector-errors';
 
 // Load environment variables
 loadEnvironment();
@@ -66,6 +67,13 @@ export interface CollectorConfig {
 export class DataCollectionService {
   private collectors: Map<string, CollectorConfig> = new Map();
   private supabase: any;
+  private circuitBreakers: Map<string, { failures: number; lastFailure: number; isOpen: boolean }> = new Map();
+  
+  // Retry configuration from environment variables
+  private maxRetries: number = parseInt(process.env['DATA_COLLECTION_MAX_RETRIES'] || '3', 10);
+  private retryBaseDelayMs: number = parseInt(process.env['DATA_COLLECTION_RETRY_BASE_DELAY_MS'] || '1000', 10);
+  private circuitBreakerThreshold: number = parseInt(process.env['DATA_COLLECTION_CIRCUIT_BREAKER_THRESHOLD'] || '5', 10);
+  private circuitBreakerTimeoutMs: number = 60000; // 1 minute
 
   constructor() {
     // Initialize Supabase client
@@ -187,7 +195,7 @@ export class DataCollectionService {
     // DeepSeek Collector (direct via OpenRouter)
     this.collectors.set('deepseek', {
       name: 'DeepSeek Collector',
-      enabled: true, // enable once OPENROUTER_API_KEY is configured
+      enabled: false, // enable once OPENROUTER_API_KEY is configured
       baseUrl: 'openrouter',
       timeout: 45000,
       retries: 1,
@@ -217,13 +225,21 @@ export class DataCollectionService {
         try {
           console.log(`\n🚀 [${queryNum}/${requests.length}] Executing: "${request.queryText.substring(0, 60)}..."`);
           
-          // Execute across enabled collectors
+          // Execute across enabled collectors with retry mechanism
           // Each collector will create its own execution record
-          const collectorResults = await this.executeQueryAcrossCollectors(request);
+          const collectorResults = await this.executeQueryAcrossCollectorsWithRetry(request, 2); // 2 retries
           console.log(`✅ [${queryNum}/${requests.length}] Completed ${collectorResults.length} collector executions`);
           return collectorResults;
         } catch (error) {
-          console.error(`❌ [${queryNum}/${requests.length}] Error:`, error instanceof Error ? error.message : 'Unknown error');
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const errorStack = error instanceof Error ? error.stack : undefined;
+          console.error(`❌ [${queryNum}/${requests.length}] Error executing query:`, {
+            query: request.queryText.substring(0, 100),
+            error: errorMessage,
+            stack: errorStack,
+            brandId: request.brandId,
+            queryId: request.queryId
+          });
           return [];
         }
       });
@@ -238,8 +254,177 @@ export class DataCollectionService {
       }
     }
 
-    console.log(`\n✅ All queries processed. Total results: ${results.length}`);
+    // Enhanced summary logging
+    const successCount = results.filter(r => r.status === 'completed').length;
+    const failedCount = results.filter(r => r.status === 'failed').length;
+    const totalExecutions = results.length;
+    
+    console.log(`\n✅ All queries processed. Summary:`);
+    console.log(`   Total executions: ${totalExecutions}`);
+    if (totalExecutions > 0) {
+      console.log(`   Successful: ${successCount} (${Math.round((successCount / totalExecutions) * 100)}%)`);
+      console.log(`   Failed: ${failedCount} (${Math.round((failedCount / totalExecutions) * 100)}%)`);
+    }
+    
+    if (failedCount > 0) {
+      console.warn(`⚠️ ${failedCount} collector executions failed. Check logs above for details.`);
+    }
+    
     return results;
+  }
+
+  /**
+   * Execute query across multiple collectors with enhanced retry mechanism
+   * Includes smart retry logic, exponential backoff with jitter, and circuit breaker
+   */
+  private async executeQueryAcrossCollectorsWithRetry(
+    request: QueryExecutionRequest,
+    maxRetries: number = this.maxRetries
+  ): Promise<CollectorResult[]> {
+    let lastError: CollectorError | null = null;
+    const collectorKeys = request.collectors.join(',');
+    
+    // Check circuit breaker for this collector combination
+    if (this.isCircuitBreakerOpen(collectorKeys)) {
+      console.warn(`🚫 Circuit breaker is OPEN for collectors: ${request.collectors.join(', ')}. Skipping execution.`);
+      throw new Error(`Circuit breaker is open for collectors: ${request.collectors.join(', ')}`);
+    }
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(`🔄 Retry attempt ${attempt}/${maxRetries} for query: "${request.queryText.substring(0, 60)}..."`);
+          
+          // Calculate exponential backoff with jitter
+          const baseDelay = this.retryBaseDelayMs * Math.pow(2, attempt - 1);
+          const jitter = Math.random() * 0.3 * baseDelay; // Up to 30% jitter
+          const delayMs = baseDelay + jitter;
+          
+          console.log(`⏸️  Waiting ${Math.round(delayMs)}ms before retry (base: ${baseDelay}ms, jitter: ${Math.round(jitter)}ms)`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+        
+        const results = await this.executeQueryAcrossCollectors(request);
+        
+        // Reset circuit breaker on success
+        if (attempt > 0) {
+          this.resetCircuitBreaker(collectorKeys);
+          console.log(`✅ Query succeeded on retry attempt ${attempt}`);
+        }
+        
+        return results;
+      } catch (error: any) {
+        // Convert error to CollectorError
+        const collectorError = CollectorError.fromError(error, {
+          queryId: request.queryId,
+          queryText: request.queryText,
+          collectorType: request.collectors.join(','),
+          brandId: request.brandId,
+          customerId: request.customerId
+        }, attempt);
+        
+        lastError = collectorError;
+        
+        console.warn(`⚠️ Attempt ${attempt + 1}/${maxRetries + 1} failed:`, {
+          errorType: collectorError.errorType,
+          retryable: collectorError.retryable,
+          message: collectorError.message
+        });
+        
+        // Don't retry on non-retryable errors
+        if (!collectorError.retryable) {
+          console.log(`🚫 Error is non-retryable (${collectorError.errorType}). Stopping retries.`);
+          throw collectorError;
+        }
+        
+        // Check if we should continue retrying
+        if (attempt >= maxRetries) {
+          // Record failure in circuit breaker
+          this.recordCircuitBreakerFailure(collectorKeys);
+          break;
+        }
+      }
+    }
+    
+    // All retries exhausted
+    console.error(`❌ All ${maxRetries + 1} attempts failed for query: "${request.queryText.substring(0, 60)}..."`);
+    
+    // Record failure in circuit breaker
+    this.recordCircuitBreakerFailure(collectorKeys);
+    
+    throw lastError || new CollectorError(
+      ErrorType.UNKNOWN_ERROR,
+      'Query execution failed after retries',
+      {
+        queryId: request.queryId,
+        queryText: request.queryText,
+        collectorType: request.collectors.join(','),
+        attemptNumber: maxRetries,
+        timestamp: new Date().toISOString(),
+        brandId: request.brandId,
+        customerId: request.customerId
+      },
+      false
+    );
+  }
+
+  /**
+   * Check if circuit breaker is open for a collector combination
+   */
+  private isCircuitBreakerOpen(collectorKey: string): boolean {
+    const breaker = this.circuitBreakers.get(collectorKey);
+    if (!breaker) {
+      return false;
+    }
+    
+    if (breaker.isOpen) {
+      // Check if timeout has passed to try half-open state
+      const timeSinceLastFailure = Date.now() - breaker.lastFailure;
+      if (timeSinceLastFailure > this.circuitBreakerTimeoutMs) {
+        breaker.isOpen = false; // Move to half-open state
+        console.log(`🟡 Circuit breaker moved to HALF-OPEN for: ${collectorKey}`);
+        return false;
+      }
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Record a failure in circuit breaker
+   */
+  private recordCircuitBreakerFailure(collectorKey: string): void {
+    const breaker = this.circuitBreakers.get(collectorKey) || {
+      failures: 0,
+      lastFailure: 0,
+      isOpen: false
+    };
+    
+    breaker.failures += 1;
+    breaker.lastFailure = Date.now();
+    
+    if (breaker.failures >= this.circuitBreakerThreshold) {
+      breaker.isOpen = true;
+      console.error(`🔴 Circuit breaker OPENED for: ${collectorKey} (${breaker.failures} consecutive failures)`);
+    } else {
+      console.warn(`⚠️ Circuit breaker: ${breaker.failures}/${this.circuitBreakerThreshold} failures for: ${collectorKey}`);
+    }
+    
+    this.circuitBreakers.set(collectorKey, breaker);
+  }
+
+  /**
+   * Reset circuit breaker on success
+   */
+  private resetCircuitBreaker(collectorKey: string): void {
+    const breaker = this.circuitBreakers.get(collectorKey);
+    if (breaker) {
+      breaker.failures = 0;
+      breaker.isOpen = false;
+      this.circuitBreakers.set(collectorKey, breaker);
+      console.log(`🟢 Circuit breaker RESET for: ${collectorKey}`);
+    }
   }
 
   /**
@@ -249,7 +434,7 @@ export class DataCollectionService {
     request: QueryExecutionRequest, 
     collectorType: string, 
     status: string = 'pending',
-    errorMessage?: string,
+    collectorError?: CollectorError,
     snapshotId?: string
   ): Promise<string> {
     const mappedCollectorType = this.mapCollectorTypeToDatabase(collectorType);
@@ -292,9 +477,22 @@ export class DataCollectionService {
       insertData.brightdata_snapshot_id = snapshotId;
     }
 
-    // Add error message if failed
-    if (errorMessage) {
-      insertData.error_message = errorMessage;
+    // Add error information if failed (using CollectorError format)
+    if (collectorError) {
+      const errorFormat = collectorError.toDatabaseFormat();
+      insertData.error_message = errorFormat.error_message;
+      insertData.error_metadata = errorFormat.error_metadata;
+      
+      // Also add retry_count and retry_history if available
+      if (collectorError.context.attemptNumber > 0) {
+        insertData.retry_count = collectorError.context.attemptNumber;
+        insertData.retry_history = [{
+          attempt: collectorError.context.attemptNumber,
+          timestamp: collectorError.context.timestamp,
+          error_type: collectorError.errorType,
+          retryable: collectorError.retryable
+        }];
+      }
     }
 
     const { data, error } = await supabase
@@ -308,6 +506,67 @@ export class DataCollectionService {
     }
 
     return data.id;
+  }
+
+  /**
+   * Update query execution status with enhanced error handling
+   */
+  private async updateExecutionStatus(
+    executionId: string,
+    collectorType: string,
+    status: string,
+    collectorError?: CollectorError,
+    snapshotId?: string
+  ): Promise<void> {
+    const updateData: any = {
+      status: status,
+      updated_at: new Date().toISOString()
+    };
+
+    // Add error information if failed
+    if (collectorError && status === 'failed') {
+      const errorFormat = collectorError.toDatabaseFormat();
+      updateData.error_message = errorFormat.error_message;
+      updateData.error_metadata = errorFormat.error_metadata;
+      
+      // Update retry_count and retry_history
+      if (collectorError.context.attemptNumber > 0) {
+        updateData.retry_count = collectorError.context.attemptNumber;
+        
+        // Get existing retry_history and append
+        const { data: existing } = await this.supabase
+          .from('query_executions')
+          .select('retry_history, retry_count')
+          .eq('id', executionId)
+          .single();
+        
+        const existingHistory = existing?.retry_history || [];
+        updateData.retry_history = [
+          ...existingHistory,
+          {
+            attempt: collectorError.context.attemptNumber,
+            timestamp: collectorError.context.timestamp,
+            error_type: collectorError.errorType,
+            retryable: collectorError.retryable
+          }
+        ];
+      }
+    }
+
+    // Add snapshot_id if provided
+    if (snapshotId) {
+      updateData.brightdata_snapshot_id = snapshotId;
+    }
+
+    const { error } = await this.supabase
+      .from('query_executions')
+      .update(updateData)
+      .eq('id', executionId);
+
+    if (error) {
+      console.error(`Failed to update execution status for ${executionId}:`, error);
+      throw new Error(`Failed to update execution status: ${error.message}`);
+    }
   }
 
   /**
@@ -366,7 +625,17 @@ export class DataCollectionService {
       } else {
         const collectorType = enabledCollectors[index];
         // Create execution record even for failed attempts
-        this.createQueryExecutionForCollector(request, collectorType, 'failed', result.reason?.message || 'Unknown error')
+        // Convert error to CollectorError
+        const error = result.reason || new Error('Unknown error');
+        const collectorError = CollectorError.fromError(error, {
+          queryId: request.queryId,
+          queryText: request.queryText,
+          collectorType: collectorType,
+          brandId: request.brandId,
+          customerId: request.customerId
+        }, 0);
+        
+        this.createQueryExecutionForCollector(request, collectorType, 'failed', collectorError)
           .catch(err => console.error(`Failed to create execution record for ${collectorType}:`, err));
         
         results.push({
@@ -374,7 +643,11 @@ export class DataCollectionService {
           executionId: '', // Will be populated by createQueryExecutionForCollector if needed
           collectorType,
           status: 'failed',
-          error: result.reason?.message || 'Unknown error'
+          error: collectorError.message,
+          metadata: {
+            error_type: collectorError.errorType,
+            retryable: collectorError.retryable
+          }
         });
       }
     });
@@ -443,20 +716,48 @@ export class DataCollectionService {
         });
       } else {
         // Update execution status for failed attempts
-        await this.updateExecutionStatus(executionId, collectorType, 'failed', result.error, result.snapshotId);
+        // Create CollectorError from result.error if it's a string
+        let collectorError: CollectorError | undefined;
+        if (result.error) {
+          const error = typeof result.error === 'string' 
+            ? new Error(result.error) 
+            : result.error;
+          collectorError = CollectorError.fromError(error, {
+            queryId: request.queryId,
+            queryText: request.queryText,
+            collectorType: collectorType,
+            brandId: request.brandId,
+            customerId: request.customerId
+          }, 0);
+        }
+        await this.updateExecutionStatus(executionId, collectorType, 'failed', collectorError, result.snapshotId);
       }
 
       return result;
 
     } catch (error: any) {
-      console.error(`❌ Priority fallback failed for ${collectorType}:`, error.message);
+      // Create CollectorError from exception
+      const collectorError = CollectorError.fromError(error, {
+        queryId: request.queryId,
+        queryText: request.queryText,
+        collectorType: collectorType,
+        brandId: request.brandId,
+        customerId: request.customerId
+      }, 0);
+      
+      console.error(`❌ Priority fallback failed for ${collectorType}:`, {
+        errorType: collectorError.errorType,
+        retryable: collectorError.retryable,
+        message: collectorError.message,
+        context: collectorError.context
+      });
       
       // Create execution record if it wasn't created yet, or update existing one
       try {
         if (!executionId) {
-          executionId = await this.createQueryExecutionForCollector(request, collectorType, 'failed', error.message);
+          executionId = await this.createQueryExecutionForCollector(request, collectorType, 'failed', collectorError);
         } else {
-          await this.updateExecutionStatus(executionId, collectorType, 'failed', error.message);
+          await this.updateExecutionStatus(executionId, collectorType, 'failed', collectorError);
         }
       } catch (dbError) {
         console.error(`Failed to create/update execution record:`, dbError);
@@ -468,7 +769,7 @@ export class DataCollectionService {
         collectorType,
         provider: 'none',
         status: 'failed',
-        error: error.message,
+        error: collectorError.message,
         brandId: request.brandId,
         customerId: request.customerId
       };
@@ -533,17 +834,36 @@ export class DataCollectionService {
     } catch (error: any) {
       const executionTime = Date.now() - startTime;
       
-      console.error(`❌ ${config.name} failed:`, error.message);
+      // Create CollectorError from the exception
+      const collectorError = CollectorError.fromError(error, {
+        queryId: request.queryId,
+        queryText: request.queryText,
+        collectorType: collectorType,
+        brandId: request.brandId,
+        customerId: request.customerId
+      }, 0);
       
-      // Update execution status
-      await this.updateExecutionStatus(executionId, collectorType, 'failed', error.message);
+      // Enhanced error logging with structured error
+      console.error(`❌ ${config.name} failed for query "${request.queryText.substring(0, 60)}...":`, {
+        collectorType,
+        queryId: request.queryId,
+        brandId: request.brandId,
+        errorType: collectorError.errorType,
+        retryable: collectorError.retryable,
+        error: collectorError.message,
+        context: collectorError.context,
+        stack: collectorError.stack
+      });
+      
+      // Update execution status with CollectorError
+      await this.updateExecutionStatus(executionId, collectorType, 'failed', collectorError);
       
       return {
         queryId: request.queryId,
         executionId,
         collectorType,
         status: 'failed',
-        error: error.message,
+        error: errorMessage,
         executionTimeMs: executionTime
       };
     }

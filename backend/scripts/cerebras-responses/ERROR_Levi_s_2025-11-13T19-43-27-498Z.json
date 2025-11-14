@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "brand": "Levi's",
+    "timestamp": "2025-11-13T19:43:27.499Z",
+    "error": "❌ Cerebras competitor generation failed: Failed to parse Cerebras competitor response: Failed to parse complete JSON from response. Response appears to be truncated. Partial results are rejected in strict mode.",
+    "stack": "Error: ❌ Cerebras competitor generation failed: Failed to parse Cerebras competitor response: Failed to parse complete JSON from response. Response appears to be truncated. Partial results are rejected in strict mode.\n    at OnboardingIntelService.generateCompetitors (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\src\\services\\onboarding-intel.service.ts:250:19)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async OnboardingIntelService.lookupBrandIntel (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\src\\services\\onboarding-intel.service.ts:56:29)\n    at async testWithCerebras (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-cerebras-response.js:91:20)\n    at async runTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-cerebras-response.js:202:20)"
+  }
+}

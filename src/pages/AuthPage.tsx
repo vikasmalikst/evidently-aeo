@@ -5,6 +5,18 @@ import { RegisterForm } from '../components/Auth/RegisterForm';
 import { PasswordResetForm } from '../components/Auth/PasswordResetForm';
 import { featureFlags } from '../config/featureFlags';
 import { onboardingUtils } from '../utils/onboardingUtils';
+import { apiClient } from '../lib/apiClient';
+
+interface BrandsResponse {
+  success: boolean;
+  data?: Array<{
+    id: string;
+    name: string;
+    slug?: string | null;
+  }>;
+  error?: string;
+  message?: string;
+}
 
 type AuthView = 'login' | 'register' | 'reset';
 
@@ -27,14 +39,24 @@ export const AuthPage = () => {
     }
   }, [navigate]);
 
-  const handleSuccess = () => {
+  const handleSuccess = async () => {
     // Check if onboarding (brand/competitors) is complete
     const hasCompletedOnboarding = localStorage.getItem('onboarding_complete') === 'true';
     const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
 
+    let hasExistingBrand = false;
+
+    try {
+      const brandsResponse = await apiClient.request<BrandsResponse>('/brands');
+      hasExistingBrand = !!(brandsResponse.success && brandsResponse.data && brandsResponse.data.length > 0);
+    } catch (error) {
+      console.warn('Failed to check existing brands after login:', error);
+    }
+
     console.log('🔍 Post-login check:', {
       hasCompletedOnboarding,
       hasCompletedSetup,
+      hasExistingBrand,
       skipOnboardingAfterLogin: featureFlags.skipOnboardingAfterLogin,
       forceOnboardingAfterLogin: featureFlags.forceOnboardingAfterLogin,
       skipSetupCheck: featureFlags.skipSetupCheck,
@@ -70,6 +92,13 @@ export const AuthPage = () => {
         featureFlags.forceOnboarding) {
       console.log('🚀 Forcing setup after login (feature flag enabled)');
       navigate('/setup');
+      return;
+    }
+
+    if (hasExistingBrand) {
+      localStorage.setItem('onboarding_complete', 'true');
+      console.log('🏁 Existing brands detected - going straight to dashboard');
+      navigate('/dashboard');
       return;
     }
 

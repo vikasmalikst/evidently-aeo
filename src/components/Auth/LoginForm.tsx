@@ -4,7 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
 
 interface LoginFormProps {
-  onSuccess?: () => void;
+  onSuccess?: () => void | Promise<void>;
   onSwitchToRegister?: () => void;
   onForgotPassword?: () => void;
 }
@@ -25,7 +25,9 @@ export const LoginForm = ({ onSuccess, onSwitchToRegister, onForgotPassword }: L
 
     if (result.success && result.user) {
       setUser(result.user);
-      onSuccess?.();
+      if (onSuccess) {
+        await onSuccess();
+      }
     } else {
       setError(result.error || 'Login failed');
     }

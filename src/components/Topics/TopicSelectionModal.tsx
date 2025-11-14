@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { ArrowRight, TrendingUp, Sparkles, List, ChevronLeft } from 'lucide-react';
 import type { Topic, TopicCategory } from '../../types/topic';
-import { generateMockTopics } from '../../data/mockTopicsData';
+import { fetchTopicsForBrand } from '../../api/onboardingApi';
 import { TopicSection } from './TopicSection';
 import { CustomTopicInput } from './CustomTopicInput';
 import { SelectedTopicsSummary } from './SelectedTopicsSummary';
 import { StepIndicator } from '../Onboarding/StepIndicator';
+import { Spinner } from '../Onboarding/common/Spinner';
 
 interface TopicSelectionModalProps {
   brandName: string;
@@ -25,9 +26,22 @@ export const TopicSelectionModal = ({
   onBack,
   onClose,
 }: TopicSelectionModalProps) => {
-  const [availableTopics, setAvailableTopics] = useState(() =>
-    generateMockTopics(brandName, industry)
-  );
+  const [availableTopics, setAvailableTopics] = useState<{
+    trending: Topic[];
+    aiGenerated: {
+      awareness: Topic[];
+      comparison: Topic[];
+      purchase: Topic[];
+      support: Topic[];
+    };
+    preset: Topic[];
+  }>({
+    trending: [],
+    aiGenerated: { awareness: [], comparison: [], purchase: [], support: [] },
+    preset: []
+  });
+  const [isLoadingTopics, setIsLoadingTopics] = useState(true);
+  const [topicsError, setTopicsError] = useState<string | null>(null);
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
   const [customTopics, setCustomTopics] = useState<Topic[]>([]);
   const [activeAICategory, setActiveAICategory] = useState<TopicCategory>('awareness');
@@ -36,6 +50,61 @@ export const TopicSelectionModal = ({
   useEffect(() => {
     calculateQualityScore();
   }, [selectedTopics, customTopics]);
+
+  useEffect(() => {
+    fetchTopicsFromAPI();
+  }, [brandName, industry]);
+
+  const fetchTopicsFromAPI = async () => {
+    setIsLoadingTopics(true);
+    setTopicsError(null);
+    try {
+      // Get competitors from localStorage
+      const competitorsData = localStorage.getItem('onboarding_competitors');
+      const competitors = competitorsData ? JSON.parse(competitorsData) : [];
+      
+      console.log('🔍 Fetching topics for:', brandName, industry);
+      
+      // Get brand data to pass website_url if available
+      const brandData = localStorage.getItem('onboarding_brand');
+      const brand = brandData ? JSON.parse(brandData) : {};
+      
+      const response = await fetchTopicsForBrand({
+        brand_name: brandName,
+        industry,
+        competitors: competitors.map((c: any) => c.name || c.companyName || ''),
+        locale: 'en-US',
+        country: 'US',
+        brand_id: localStorage.getItem('current_brand_id') || undefined,
+        website_url: brand.website || brand.domain || undefined
+      });
+      
+      if (response.success && response.data) {
+        setAvailableTopics(response.data);
+        setTopicsError(null);
+        console.log('✅ Loaded topics:', {
+          trending: response.data.trending.length,
+          awareness: response.data.aiGenerated.awareness.length,
+          comparison: response.data.aiGenerated.comparison.length,
+          purchase: response.data.aiGenerated.purchase.length,
+          support: response.data.aiGenerated.support.length,
+          preset: response.data.preset.length
+        });
+      } else {
+        const errorMsg = response.error || 'Failed to load recommended topics';
+        console.error('Failed to fetch topics:', errorMsg);
+        setTopicsError(errorMsg);
+        // Keep empty state - user can still add custom topics
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to load recommended topics';
+      console.error('Failed to fetch topics:', error);
+      setTopicsError(errorMsg);
+      // Keep empty state - user can still add custom topics
+    } finally {
+      setIsLoadingTopics(false);
+    }
+  };
 
   const calculateQualityScore = () => {
     if (selectedTopics.size === 0) {
@@ -169,19 +238,38 @@ export const TopicSelectionModal = ({
         </div>
 
         <div className="topic-modal-body">
-          <div className="topic-quality-section">
-            <div className="topic-quality-indicator-main">
-              <span className="topic-quality-label">Selection Quality: {getQualityLabel()}</span>
-              <div className="topic-quality-bar">
-                <div
-                  className={`topic-quality-fill ${getQualityClass()}`}
-                  style={{ width: `${qualityScore}%` }}
-                ></div>
-              </div>
+          {isLoadingTopics ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+              <Spinner size="large" message="Loading topics from AI..." />
             </div>
-          </div>
+          ) : (
+            <>
+              {topicsError && (
+                <div style={{ 
+                  padding: '12px 16px', 
+                  marginBottom: '16px', 
+                  backgroundColor: '#fef3c7', 
+                  border: '1px solid #fbbf24', 
+                  borderRadius: '8px',
+                  color: '#92400e',
+                  fontSize: '14px'
+                }}>
+                  ⚠️ {topicsError}. You can still add custom topics below.
+                </div>
+              )}
+              <div className="topic-quality-section">
+                <div className="topic-quality-indicator-main">
+                  <span className="topic-quality-label">Selection Quality: {getQualityLabel()}</span>
+                  <div className="topic-quality-bar">
+                    <div
+                      className={`topic-quality-fill ${getQualityClass()}`}
+                      style={{ width: `${qualityScore}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
 
-          <div className="topic-sections-container">
+              <div className="topic-sections-container">
             <TopicSection
               title="Trending Topics"
               description={`Popular topics for ${brandName} from Google AI Overviews`}
@@ -233,10 +321,12 @@ export const TopicSelectionModal = ({
             )}
           </div>
 
-          <SelectedTopicsSummary
-            selectedTopics={getSelectedTopicsList()}
-            onRemoveTopic={handleRemoveTopic}
-          />
+              <SelectedTopicsSummary
+                selectedTopics={getSelectedTopicsList()}
+                onRemoveTopic={handleRemoveTopic}
+              />
+            </>
+          )}
         </div>
 
         <div className="topic-modal-footer">

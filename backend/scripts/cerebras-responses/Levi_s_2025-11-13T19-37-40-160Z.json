@@ -1,0 +1,147 @@
+{
+  "metadata": {
+    "brand": "Levi's",
+    "timestamp": "2025-11-13T19:37:40.160Z",
+    "parseStrategy": "Strategy 2 or higher: Enhanced parsing",
+    "parseError": null,
+    "success": true,
+    "rawTextLength": 3261,
+    "competitorsExtracted": 6
+  },
+  "rawCerebrasResponse": "\n\n\n{\n  \"competitors\": [\n    {\n      \"name\": \"Wrangler\",\n      \"domain\": \"https://www.wrangler.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.wrangler.com/dw/image/v2/AAGD_PRD/on/demandware.static/-/Library-Sites-wrangler-shared-library-usa/default/dw8d772e35/images/seo/Wrangler-Logo.png\",\n      \"description\": \"American lifestyle brand specializing in denim and casual wear, popular in the western and workwear markets.\"\n    },\n    {\n      \"name\": \"Lee\",\n      \"domain\": \"https://www.lee.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.lee.com/dw/image/v2/AAGC_PRD/on/demandware.static/-/Library-Sites-lee-shared-library-usa/default/dw1e4eab74/images/seo/Lee-Logo.png\",\n      \"description\": \"Denim and casual apparel brand offering jeans, jackets, and workwear, commonly found in department and specialty stores.\"\n    },\n    {\n      \"name\": \"Gap\",\n      \"domain\": \"https://www.gap.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.gap.com/on/demandware.static/Sites-GAP-Site/-/default/dw5b8d2e17/images/GAP-Logo.png\",\n      \"description\": \"Popular American clothing and accessories retailer offering denim, casual wear, and basics for men, women, and children.\"\n    },\n    {\n      \"name\": \"American Eagle Outfitters\",\n      \"domain\": \"https://www.ae.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.ae.com/webassets/images/aeropostale/logo/AE_logo.png\",\n      \"description\": \"Youth-oriented clothing brand known for denim, casual wear, and a strong presence in malls and online.\"\n    },\n    {\n      \"name\": \"Abercrombie & Fitch\",\n      \"domain\": \"https://www.abercrombie.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.abercrombie.com/dw/image/v2/BDJB_PRD/on/demandware.static/-/Library-Sites-aandf-usa-library/default/dw5c0d4c1b/images/seo/Abercrombie-Logo.png\",\n      \"description\": \"Lifestyle brand offering casual apparel and denim, targeting young adults with a focus on in-store experience and branding.\"\n    },\n    {\n      \"name\": \"Tommy Hilfiger\",\n      \"domain\": \"https://www.tommy.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Indirect Competitor\",\n      \"logo\": \"https://www.tommy.com/dw/image/v2/BDLG_PRD/on/demandware.static/-/Library-Sites-tommy-usa-library/default/dw1e4eab74/images/seo/Tommy-Hilfiger-Logo.png\",\n      \"description\": \"Global lifestyle brand offering premium denim and apparel with a classic American style, often positioned as slightly more upscale.\"\n    },\n    {\n      \"name\": \"Calvin Klein\",\n      \"domain\": \"https://www.calvinklein.us\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Indirect Competitor\",\n      \"logo\": \"https://www.calvinklein.us/dw/image/v2/BBKP_PRD/on/demandware.static/-/Library-Sites-calvinklein-usa-library/default/dw1e4eab74/images/seo/Calvin-Klein-Logo.png\",\n      \"description\": \"Fashion brand offering denim and lifestyle apparel with a modern, minimalist aesthetic, widely available through department stores.\"\n    },\n    {\n      \"name\": \"J.Crew\",\n      \"domain\": \"https://www.jcrew.com\",\n      \"industry\": \"Apparel\",\n",
+  "parsedResult": {
+    "competitors": [
+      {
+        "name": "Wrangler",
+        "domain": "https://www.wrangler.com",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "logo": "https://www.wrangler.com/dw/image/v2/AAGD_PRD/on/demandware.static/-/Library-Sites-wrangler-shared-library-usa/default/dw8d772e35/images/seo/Wrangler-Logo.png",
+        "description": "American lifestyle brand specializing in denim and casual wear, popular in the western and workwear markets."
+      },
+      {
+        "name": "Lee",
+        "domain": "https://www.lee.com",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "logo": "https://www.lee.com/dw/image/v2/AAGC_PRD/on/demandware.static/-/Library-Sites-lee-shared-library-usa/default/dw1e4eab74/images/seo/Lee-Logo.png",
+        "description": "Denim and casual apparel brand offering jeans, jackets, and workwear, commonly found in department and specialty stores."
+      },
+      {
+        "name": "Gap",
+        "domain": "https://www.gap.com",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "logo": "https://www.gap.com/on/demandware.static/Sites-GAP-Site/-/default/dw5b8d2e17/images/GAP-Logo.png",
+        "description": "Popular American clothing and accessories retailer offering denim, casual wear, and basics for men, women, and children."
+      },
+      {
+        "name": "American Eagle Outfitters",
+        "domain": "https://www.ae.com",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "logo": "https://www.ae.com/webassets/images/aeropostale/logo/AE_logo.png",
+        "description": "Youth-oriented clothing brand known for denim, casual wear, and a strong presence in malls and online."
+      },
+      {
+        "name": "Abercrombie & Fitch",
+        "domain": "https://www.abercrombie.com",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "logo": "https://www.abercrombie.com/dw/image/v2/BDJB_PRD/on/demandware.static/-/Library-Sites-aandf-usa-library/default/dw5c0d4c1b/images/seo/Abercrombie-Logo.png",
+        "description": "Lifestyle brand offering casual apparel and denim, targeting young adults with a focus on in-store experience and branding."
+      },
+      {
+        "name": "Tommy Hilfiger",
+        "domain": "https://www.tommy.com",
+        "industry": "Apparel",
+        "relevance": "Indirect Competitor",
+        "logo": "https://www.tommy.com/dw/image/v2/BDLG_PRD/on/demandware.static/-/Library-Sites-tommy-usa-library/default/dw1e4eab74/images/seo/Tommy-Hilfiger-Logo.png",
+        "description": "Global lifestyle brand offering premium denim and apparel with a classic American style, often positioned as slightly more upscale."
+      }
+    ]
+  },
+  "finalResult": {
+    "brand": {
+      "verified": true,
+      "companyName": "Levi's",
+      "website": "https://levi.com",
+      "domain": "levi.com",
+      "logo": "https://logo.clearbit.com/levi.com",
+      "industry": "General",
+      "headquarters": "",
+      "founded": null,
+      "description": "No public description available for this brand yet.",
+      "metadata": {
+        "source": {
+          "wikipedia": null,
+          "clearbit": "levi.com"
+        },
+        "lookupInput": "Levi's",
+        "fallbackUsed": false
+      }
+    },
+    "competitors": [
+      {
+        "name": "Wrangler",
+        "logo": "https://www.wrangler.com/dw/image/v2/AAGD_PRD/on/demandware.static/-/Library-Sites-wrangler-shared-library-usa/default/dw8d772e35/images/seo/Wrangler-Logo.png",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "domain": "wrangler.com",
+        "url": "https://www.wrangler.com",
+        "description": "American lifestyle brand specializing in denim and casual wear, popular in the western and workwear markets.",
+        "source": "cerebras-ai"
+      },
+      {
+        "name": "Lee",
+        "logo": "https://www.lee.com/dw/image/v2/AAGC_PRD/on/demandware.static/-/Library-Sites-lee-shared-library-usa/default/dw1e4eab74/images/seo/Lee-Logo.png",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "domain": "lee.com",
+        "url": "https://www.lee.com",
+        "description": "Denim and casual apparel brand offering jeans, jackets, and workwear, commonly found in department and specialty stores.",
+        "source": "cerebras-ai"
+      },
+      {
+        "name": "Gap",
+        "logo": "https://www.gap.com/on/demandware.static/Sites-GAP-Site/-/default/dw5b8d2e17/images/GAP-Logo.png",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "domain": "gap.com",
+        "url": "https://www.gap.com",
+        "description": "Popular American clothing and accessories retailer offering denim, casual wear, and basics for men, women, and children.",
+        "source": "cerebras-ai"
+      },
+      {
+        "name": "American Eagle Outfitters",
+        "logo": "https://www.ae.com/webassets/images/aeropostale/logo/AE_logo.png",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "domain": "ae.com",
+        "url": "https://www.ae.com",
+        "description": "Youth-oriented clothing brand known for denim, casual wear, and a strong presence in malls and online.",
+        "source": "cerebras-ai"
+      },
+      {
+        "name": "Abercrombie & Fitch",
+        "logo": "https://www.abercrombie.com/dw/image/v2/BDJB_PRD/on/demandware.static/-/Library-Sites-aandf-usa-library/default/dw5c0d4c1b/images/seo/Abercrombie-Logo.png",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "domain": "abercrombie.com",
+        "url": "https://www.abercrombie.com",
+        "description": "Lifestyle brand offering casual apparel and denim, targeting young adults with a focus on in-store experience and branding.",
+        "source": "cerebras-ai"
+      },
+      {
+        "name": "Tommy Hilfiger",
+        "logo": "https://www.tommy.com/dw/image/v2/BDLG_PRD/on/demandware.static/-/Library-Sites-tommy-usa-library/default/dw1e4eab74/images/seo/Tommy-Hilfiger-Logo.png",
+        "industry": "Apparel",
+        "relevance": "Indirect Competitor",
+        "domain": "tommy.com",
+        "url": "https://www.tommy.com",
+        "description": "Global lifestyle brand offering premium denim and apparel with a classic American style, often positioned as slightly more upscale.",
+        "source": "cerebras-ai"
+      }
+    ]
+  }
+}

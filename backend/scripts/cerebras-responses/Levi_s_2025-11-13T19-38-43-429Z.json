@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "brand": "Levi's",
+    "timestamp": "2025-11-13T19:38:43.429Z",
+    "parseStrategy": "Strategy 2 or higher: Enhanced parsing",
+    "parseError": null,
+    "success": true,
+    "rawTextLength": 3365,
+    "competitorsExtracted": 1
+  },
+  "rawCerebrasResponse": "\n\n\n```json\n{\n  \"competitors\": [\n    {\n      \"name\": \"Wrangler\",\n      \"domain\": \"https://www.wrangler.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.wrangler.com/on/demandware.static/-/Library-Sites-WranglerSharedLibrary/default/dw5c0a1a7c/images/brand-logo.png\",\n      \"description\": \"American clothing brand specializing in denim and casual wear, popular in the US with a strong heritage in workwear and Western-inspired styles.\"\n    },\n    {\n      \"name\": \"Lee\",\n      \"domain\": \"https://www.lee.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.lee.com/on/demandware.static/-/Library-Sites-LeeSharedLibrary/default/dw3a9f8a5c/images/brand-logo.png\",\n      \"description\": \"US-based denim and casual apparel brand offering jeans, jackets, and workwear, targeting similar demographics as Levi's.\"\n    },\n    {\n      \"name\": \"Gap\",\n      \"domain\": \"https://www.gap.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.gap.com.onwardsmiles.com/assets/images/gap-logo.png\",\n      \"description\": \"Nationwide retailer offering casual clothing including denim, competing with Levi's in the mass-market apparel segment.\"\n    },\n    {\n      \"name\": \"American Eagle Outfitters\",\n      \"domain\": \"https://www.ae.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.ae.com/on/demandware.static/-/Library-Sites-AEOPublicLibrary/default/dw21a3e9ad/global/ae-logo.svg\",\n      \"description\": \"Youth-oriented apparel brand with a strong focus on denim and casual fashion, popular in malls and online across the US.\"\n    },\n    {\n      \"name\": \"Abercrombie & Fitch\",\n      \"domain\": \"https://www.abercrombie.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Direct Competitor\",\n      \"logo\": \"https://www.abercrombie.com/dw/image/v2/BGFG_PRD/on/demandware.static/-/Library-Sites-afr-shared-library/default/dw29e4a7e9/images/A&F-logo.svg\",\n      \"description\": \"Casual apparel brand targeting teens and young adults, offering denim and lifestyle clothing through retail and e-commerce.\"\n    },\n    {\n      \"name\": \"Tommy Hilfiger\",\n      \"domain\": \"https://www.tommy.com\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Indirect Competitor\",\n      \"logo\": \"https://www.tommy.com/dw/image/v2/AAWA_PRD/on/demandware.static/-/Library-Sites-TommySharedLibrary/default/dw3cfb8c2b/images/tommy-logo.svg\",\n      \"description\": \"Global lifestyle brand offering premium casual wear, including denim, with a more fashion-forward positioning than Levi's.\"\n    },\n    {\n      \"name\": \"Calvin Klein\",\n      \"domain\": \"https://www.calvinklein.us\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Indirect Competitor\",\n      \"logo\": \"https://www.calvinklein.us/dw/image/v2/AAQP_PRD/on/demandware.static/-/Library-Sites-CalvinKleinSharedLibrary/default/dw3e6a5e0b/images/calvin-klein-logo.svg\",\n      \"description\": \"Fashion brand known for minimalist design and designer denim, appealing to consumers seeking a more urban or upscale aesthetic.\"\n    },\n    {\n      \"name\": \"Uniqlo\",\n      \"domain\": \"https://www.uniqlo.com/us/en\",\n      \"industry\": \"Apparel\",\n      \"relevance\": \"Indirect Competitor\",\n      \"logo\": \"https://www.uniqlo.com/on/demandware.static/-/Library-Sites-UniqloUS",
+  "parsedResult": {
+    "competitors": [
+      {
+        "name": "Wrangler",
+        "domain": "https://www.wrangler.com",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "logo": "https://www.wrangler.com/on/demandware.static/-/Library-Sites-WranglerSharedLibrary/default/dw5c0a1a7c/images/brand-logo.png",
+        "description": "American clothing brand specializing in denim and casual wear, popular in the US with a strong heritage in workwear and Western-inspired styles."
+      }
+    ]
+  },
+  "finalResult": {
+    "brand": {
+      "verified": true,
+      "companyName": "Levi's",
+      "website": "https://levi.com",
+      "domain": "levi.com",
+      "logo": "https://logo.clearbit.com/levi.com",
+      "industry": "General",
+      "headquarters": "",
+      "founded": null,
+      "description": "No public description available for this brand yet.",
+      "metadata": {
+        "source": {
+          "wikipedia": null,
+          "clearbit": "levi.com"
+        },
+        "lookupInput": "Levi's",
+        "fallbackUsed": false
+      }
+    },
+    "competitors": [
+      {
+        "name": "Wrangler",
+        "logo": "https://www.wrangler.com/on/demandware.static/-/Library-Sites-WranglerSharedLibrary/default/dw5c0a1a7c/images/brand-logo.png",
+        "industry": "Apparel",
+        "relevance": "Direct Competitor",
+        "domain": "wrangler.com",
+        "url": "https://www.wrangler.com",
+        "description": "American clothing brand specializing in denim and casual wear, popular in the US with a strong heritage in workwear and Western-inspired styles.",
+        "source": "cerebras-ai"
+      }
+    ]
+  }
+}

@@ -52,7 +52,7 @@ interface CompetitorGenerationParams {
 class OnboardingIntelService {
   private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
   private cerebrasModel =
-    process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
+    process.env['CEREBRAS_MODEL'] || 'gpt-oss-120b';
 
   async lookupBrandIntel(params: {
     input: string;
@@ -87,23 +87,46 @@ class OnboardingIntelService {
 
     // Step 2: Fetch Wikipedia summary for richer description/metadata
     const wikipediaSummary = await this.fetchWikipediaSummary(companyName);
-    const description =
-      wikipediaSummary?.extract?.trim() ||
-      'No public description available for this brand yet.';
+    let description = wikipediaSummary?.extract?.trim();
+    
+    // Step 2a: If no Wikipedia description, use LLM to generate brand intelligence
+    let llmBrandIntel: any = null;
+    if (!description || description === '') {
+      console.log('⚠️ No Wikipedia description found, generating with LLM...');
+      try {
+        llmBrandIntel = await this.generateBrandIntelWithLLM(trimmedInput, companyName, domain);
+        if (llmBrandIntel?.summary && llmBrandIntel.summary !== 'No summary available') {
+          description = llmBrandIntel.summary;
+          console.log('✅ Generated description using LLM');
+        }
+      } catch (llmError) {
+        console.error('❌ LLM generation failed:', llmError);
+        description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
+      }
+    }
+    
+    // Final fallback if still no description
+    if (!description || description === '') {
+      description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
+    }
 
-    const derivedIndustry =
+    // Extract industry, headquarters, and founded year from description or LLM data
+    let derivedIndustry =
       this.extractIndustry(description) ||
       this.extractIndustry(wikipediaSummary?.description ?? '') ||
+      llmBrandIntel?.industry ||
       'General';
 
-    const headquarters =
+    let headquarters =
       this.extractHeadquarters(description) ||
       this.extractHeadquarters(wikipediaSummary?.description ?? '') ||
+      llmBrandIntel?.headquarters ||
       '';
 
-    const foundedYear =
+    let foundedYear =
       this.extractFoundedYear(description) ||
       this.extractFoundedYear(wikipediaSummary?.description ?? '') ||
+      llmBrandIntel?.foundedYear ||
       null;
 
     const brand: BrandIntel = {
@@ -317,6 +340,87 @@ class OnboardingIntelService {
     return null;
   }
 
+  /**
+   * Generate brand intelligence using LLM (Cerebras) when Wikipedia fails
+   */
+  private async generateBrandIntelWithLLM(
+    rawInput: string,
+    companyName: string,
+    domain?: string
+  ): Promise<{
+    summary?: string;
+    industry?: string;
+    headquarters?: string;
+    foundedYear?: number | null;
+    ceo?: string;
+  }> {
+    if (!this.cerebrasApiKey) {
+      console.warn('⚠️ Cerebras API key not configured, skipping LLM generation');
+      return {};
+    }
+
+    try {
+      const prompt = `You are a brand intelligence analyst. Generate a brief, informative description for the brand "${companyName}"${domain ? ` (${domain})` : ''}.
+
+Provide a concise summary (2-3 sentences) about this brand, including:
+- What the company does
+- Industry/sector
+- Key characteristics
+
+If you cannot find reliable information, respond with "No summary available".
+
+Respond with ONLY valid JSON in this format:
+{
+  "summary": "Brief description of the brand...",
+  "industry": "Industry name",
+  "headquarters": "City, Country (if known)",
+  "foundedYear": 2020 (or null if unknown),
+  "ceo": "CEO name (if known)"
+}`;
+
+      const response = await axios.post<any>(
+        'https://api.cerebras.ai/v1/completions',
+        {
+          model: this.cerebrasModel,
+          prompt: prompt,
+          max_tokens: 500,
+          temperature: 0.3,
+          stop: ['---END---'],
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.cerebrasApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 10000,
+        }
+      );
+
+      const text = response.data?.choices?.[0]?.text ?? '';
+      if (!text.trim()) {
+        return {};
+      }
+
+      // Extract JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return {};
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        summary: parsed.summary,
+        industry: parsed.industry,
+        headquarters: parsed.headquarters,
+        foundedYear: parsed.foundedYear ? Number(parsed.foundedYear) : null,
+        ceo: parsed.ceo,
+      };
+    } catch (error) {
+      console.error('❌ LLM brand intelligence generation failed:', error);
+      return {};
+    }
+  }
+
   private toTitleCase(value: string): string {
     return value
       .split(/[\s-_]+/)
@@ -347,47 +451,68 @@ class OnboardingIntelService {
     const { companyName, industry = 'General', domain, locale, country } =
       params;
 
-    const uniqueCompetitors = new Map<string, CompetitorSuggestion>();
+    console.log('🔍 Starting competitor generation for:', {
+      companyName,
+      industry,
+      domain,
+      locale,
+      country,
+    });
 
-    // Attempt Cerebras generation first
-    if (this.cerebrasApiKey) {
-      try {
-        const aiCompetitors = await this.generateCompetitorsWithCerebras({
-          companyName,
-          industry,
-          domain,
-          locale,
-          country,
-        });
-
-        aiCompetitors.forEach((competitor) => {
-          if (!competitor.name) {
-            return;
-          }
-          uniqueCompetitors.set(
-            competitor.name.toLowerCase(),
-            competitor
-          );
-        });
-      } catch (error) {
-        console.error('❌ Cerebras competitor generation failed:', error);
-      }
+    // Ensure Cerebras API key is configured
+    if (!this.cerebrasApiKey) {
+      const errorMsg = '❌ CEREBRAS_API_KEY is not configured. Cannot generate competitors.';
+      console.error(errorMsg);
+      throw new Error(errorMsg);
     }
 
-    // Fallback dataset if AI failed or returned insufficient data
-    if (uniqueCompetitors.size < 5) {
-      const fallback = this.getFallbackCompetitors(companyName, industry);
-      fallback.forEach((competitor) => {
-        uniqueCompetitors.set(competitor.name.toLowerCase(), competitor);
+    console.log('✅ Cerebras API key found, calling Cerebras API...');
+
+    try {
+      const aiCompetitors = await this.generateCompetitorsWithCerebras({
+        companyName,
+        industry,
+        domain,
+        locale,
+        country,
       });
-    }
 
-    // Remove brand itself if accidentally included
-    if (uniqueCompetitors.has(companyName.toLowerCase())) {
-      uniqueCompetitors.delete(companyName.toLowerCase());
-    }
+      console.log(`✅ Cerebras returned ${aiCompetitors.length} competitors`);
 
-    return Array.from(uniqueCompetitors.values()).slice(0, 12);
+      const uniqueCompetitors = new Map<string, CompetitorSuggestion>();
+
+      aiCompetitors.forEach((competitor) => {
+        if (!competitor.name) {
+          return;
+        }
+        uniqueCompetitors.set(
+          competitor.name.toLowerCase(),
+          competitor
+        );
+      });
+
+      // Remove brand itself if accidentally included
+      if (uniqueCompetitors.has(companyName.toLowerCase())) {
+        console.log(`⚠️ Removing ${companyName} from competitors (self-reference)`);
+        uniqueCompetitors.delete(companyName.toLowerCase());
+      }
+
+      let finalCompetitors = Array.from(uniqueCompetitors.values()).slice(0, 12);
+      
+      // 🎯 NEW: Basic competitor verification - filter out invalid competitors
+      finalCompetitors = this.verifyCompetitors(finalCompetitors, companyName);
+      
+      console.log(`✅ Returning ${finalCompetitors.length} verified unique competitors`);
+
+      return finalCompetitors;
+    } catch (error) {
+      const errorMsg = `❌ Cerebras competitor generation failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      console.error(errorMsg);
+      console.error('Full error:', error);
+      throw new Error(errorMsg);
+    }
   }
 
   async generateCompetitorsForRequest(
@@ -400,7 +525,7 @@ class OnboardingIntelService {
     params: CompetitorGenerationParams
   ): Promise<CompetitorSuggestion[]> {
     if (!this.cerebrasApiKey) {
-      return [];
+      throw new Error('Cerebras API key is not configured');
     }
 
     const { companyName, industry, domain, locale = 'en-US', country = 'US' } =
@@ -415,30 +540,68 @@ class OnboardingIntelService {
         locale,
         country,
       }),
-      max_tokens: 900,
+      max_tokens: 3000, // Increased to ensure complete responses for 10 competitors with full details
       temperature: 0.6,
       stop: ['---END---'],
     };
 
-    const response = await axios.post<any>(
-      'https://api.cerebras.ai/v1/completions',
-      payload,
-      {
-        headers: {
-          Authorization: `Bearer ${this.cerebrasApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 12000,
+    console.log('📤 Sending request to Cerebras API:', {
+      model: payload.model,
+      max_tokens: payload.max_tokens,
+      temperature: payload.temperature,
+      promptLength: payload.prompt.length,
+    });
+
+    let response;
+    try {
+      response = await axios.post<any>(
+        'https://api.cerebras.ai/v1/completions',
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${this.cerebrasApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 12000,
+        }
+      );
+
+      console.log('📥 Cerebras API response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        hasData: !!response.data,
+        hasChoices: !!response.data?.choices,
+        choicesLength: response.data?.choices?.length,
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('❌ Cerebras API request failed:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          message: error.message,
+        });
+        throw new Error(
+          `Cerebras API request failed: ${error.response?.status} ${
+            error.response?.statusText || error.message
+          }`
+        );
       }
-    );
+      throw error;
+    }
 
     const text: string = response.data?.choices?.[0]?.text ?? '';
+    console.log('📄 Raw response text length:', text.length);
+    console.log('📄 Raw response text preview:', text.substring(0, 500));
+
     if (!text.trim()) {
       throw new Error('Cerebras returned an empty response');
     }
 
     try {
       const json = this.extractJsonFromText(text);
+      console.log('✅ Successfully parsed JSON from response');
+      
       const competitors: CompetitorSuggestion[] = Array.isArray(
         json?.competitors
       )
@@ -447,7 +610,9 @@ class OnboardingIntelService {
         ? json
         : [];
 
-      return competitors
+      console.log('📊 Parsed competitors count:', competitors.length);
+
+      const processedCompetitors = competitors
         .filter(
           (item): item is CompetitorSuggestion =>
             item && typeof item.name === 'string' && item.name.trim().length > 0
@@ -468,7 +633,15 @@ class OnboardingIntelService {
           source: 'cerebras-ai',
         }))
         .slice(0, 12);
+
+      console.log('✅ Processed competitors:', processedCompetitors.map(c => c.name));
+
+      return processedCompetitors;
     } catch (error) {
+      console.error('❌ Failed to parse Cerebras response:', {
+        error: error instanceof Error ? error.message : String(error),
+        rawTextPreview: text.substring(0, 1000),
+      });
       throw new Error(
         `Failed to parse Cerebras competitor response: ${
           error instanceof Error ? error.message : 'Unknown parsing error'
@@ -526,276 +699,306 @@ RULES:
   }
 
   private extractJsonFromText(text: string): any {
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
+    console.log('🔍 Attempting to extract JSON from text...');
+    
+    // Remove markdown code fences if present (common with instruction-tuned models)
+    let cleanedText = text.trim();
+    
+    // Handle <|endoftext|> token and other end tokens that might cause issues
+    // Cerebras and other models may append these tokens after the response
+    const endTokens = ['<|endoftext|>', '<|im_end|>', '---END---', '<|end|>'];
+    for (const token of endTokens) {
+      const tokenIndex = cleanedText.indexOf(token);
+      if (tokenIndex !== -1) {
+        console.log(`🔍 Detected end token "${token}" at position ${tokenIndex}, truncating...`);
+        cleanedText = cleanedText.substring(0, tokenIndex).trim();
+      }
+    }
+    
+    // Check for markdown code blocks: ```json ... ``` or ``` ... ```
+    if (cleanedText.startsWith('```')) {
+      console.log('🔍 Detected markdown code fence, removing...');
+      
+      // Remove opening fence (```json or ```)
+      cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '');
+      
+      // Remove closing fence (```)  
+      cleanedText = cleanedText.replace(/\n?```\s*$/i, '');
+      
+      console.log('✅ Removed markdown code fences');
+      console.log('📝 Cleaned text preview:', cleanedText.substring(0, 300));
+    }
+    
+    const firstBrace = cleanedText.indexOf('{');
+    const lastBrace = cleanedText.lastIndexOf('}');
 
     if (firstBrace === -1 || lastBrace === -1) {
-      throw new Error('No JSON object detected in response');
+      console.error('❌ No JSON braces found in response');
+      console.error('Text preview:', cleanedText.substring(0, 500));
+      // Try regex fallback extraction
+      return this.extractCompetitorsWithRegex(cleanedText);
     }
 
-    const jsonString = text.slice(firstBrace, lastBrace + 1);
-    return JSON.parse(jsonString);
+    let jsonString = cleanedText.slice(firstBrace, lastBrace + 1);
+    console.log('📝 Extracted JSON string length:', jsonString.length);
+    console.log('📝 Extracted JSON preview:', jsonString.substring(0, 300));
+
+    // Strategy 1: Try parsing as-is
+    try {
+      const parsed = JSON.parse(jsonString);
+      console.log('✅ JSON parsed successfully (Strategy 1: as-is)');
+      console.log('📊 Parsed object keys:', Object.keys(parsed));
+      
+      // VALIDATE COMPLETENESS - Reject partial/truncated responses
+      if (!this.validateJsonCompleteness(jsonString, parsed)) {
+        throw new Error('JSON validation failed: Response is incomplete or truncated');
+      }
+      
+      return parsed;
+    } catch (firstError) {
+      console.log('⚠️ Strategy 1 failed, trying Strategy 2: Enhanced JSON cleaning...');
+      console.log('Error:', firstError instanceof Error ? firstError.message : String(firstError));
+      
+      // Strategy 2: Enhanced JSON cleaning
+      try {
+        const cleanedJson = this.cleanJsonString(jsonString);
+        const parsed = JSON.parse(cleanedJson);
+        console.log('✅ JSON parsed successfully (Strategy 2: enhanced cleaning)');
+        console.log('📊 Parsed object keys:', Object.keys(parsed));
+        
+        // VALIDATE COMPLETENESS - Reject partial/truncated responses
+        if (!this.validateJsonCompleteness(cleanedJson, parsed)) {
+          throw new Error('JSON validation failed: Response is incomplete or truncated');
+        }
+        
+        return parsed;
+      } catch (secondError) {
+        console.log('⚠️ Strategy 2 failed, trying Strategy 3: Partial recovery...');
+        
+        // Strategy 3: Try partial JSON recovery (DISABLED IN STRICT MODE)
+        try {
+          const recovered = this.recoverPartialJson(jsonString, secondError);
+          if (recovered) {
+            console.log('✅ Recovered partial JSON (Strategy 3: partial recovery)');
+            return recovered;
+          }
+        } catch (thirdError) {
+          console.log('⚠️ Strategy 3 failed (disabled in strict mode)');
+        }
+        
+        // Strategy 4: Regex-based fallback extraction (DISABLED - incomplete data)
+        console.error('❌ All complete parsing strategies failed');
+        console.error('   Regex fallback is disabled in strict mode (would return incomplete data)');
+        console.error('   This likely means the API response was truncated due to token limits');
+        console.error('   Suggested fix: Increase max_tokens or reduce requested data');
+        
+        throw new Error(
+          'Failed to parse complete JSON from response. Response appears to be truncated. Partial results are rejected in strict mode.'
+        );
+      }
+    }
   }
 
-  private getFallbackCompetitors(
-    companyName: string,
-    industry: string
-  ): CompetitorSuggestion[] {
-    const normalizedIndustry = industry.toLowerCase();
-    const fallbackMap = this.getFallbackCompetitorMap();
-    const list =
-      fallbackMap.get(normalizedIndustry) ??
-      fallbackMap.get(this.normalizeIndustryKey(normalizedIndustry)) ??
-      fallbackMap.get('general')!;
-
-    return list
-      .filter(
-        (competitor) =>
-          competitor.name.toLowerCase() !== companyName.toLowerCase()
-      )
-      .map((competitor) => ({
-        ...competitor,
-        domain: this.stripProtocol(competitor.domain),
-        url: this.ensureHttps(competitor.domain),
-      }));
+  private cleanJsonString(jsonString: string): string {
+    console.log('🧹 Applying enhanced JSON cleaning...');
+    
+    let cleaned = jsonString;
+    
+    // 1. Replace single quotes with double quotes (but not in content)
+    // This is tricky, so we'll be conservative
+    cleaned = cleaned.replace(/'/g, '"');
+    
+    // 2. Remove trailing commas before closing brackets/braces
+    cleaned = cleaned.replace(/,\s*}/g, '}');
+    cleaned = cleaned.replace(/,\s*]/g, ']');
+    
+    // 3. Fix missing commas between array elements (detect } { pattern)
+    cleaned = cleaned.replace(/}\s*{/g, '},{');
+    
+    // 4. Fix missing commas between array elements (detect ] [ pattern)
+    cleaned = cleaned.replace(/]\s*\[/g, '],[');
+    
+    // 5. Fix missing commas after closing braces in arrays
+    cleaned = cleaned.replace(/}(\s*)"/g, '},"');
+    
+    // 6. Remove control characters
+    cleaned = cleaned.replace(/[\x00-\x1F\x7F]/g, '');
+    
+    // 7. Normalize whitespace
+    cleaned = cleaned.replace(/\r\n/g, ' ');
+    cleaned = cleaned.replace(/\n/g, ' ');
+    cleaned = cleaned.replace(/\t/g, ' ');
+    cleaned = cleaned.replace(/\s{2,}/g, ' ');
+    
+    // 8. Fix double double-quotes that might have been created
+    cleaned = cleaned.replace(/""+/g, '"');
+    
+    console.log('🧹 Cleaned JSON preview:', cleaned.substring(0, 300));
+    
+    return cleaned;
   }
 
-  private normalizeIndustryKey(industry: string): string {
-    if (industry.includes('apparel')) return 'athletic apparel';
-    if (industry.includes('footwear')) return 'athletic apparel';
-    if (industry.includes('automotive')) return 'automotive';
-    if (industry.includes('music')) return 'music streaming';
-    if (industry.includes('streaming')) return 'music streaming';
-    if (industry.includes('travel')) return 'travel & hospitality';
-    if (industry.includes('hospitality')) return 'travel & hospitality';
-    if (industry.includes('software')) return 'software';
-    if (industry.includes('cloud')) return 'cloud computing';
-    if (industry.includes('finance')) return 'financial services';
-    if (industry.includes('bank')) return 'financial services';
-    if (industry.includes('health')) return 'healthcare';
-    if (industry.includes('beauty')) return 'beauty';
-    if (industry.includes('telecom')) return 'telecommunications';
-    if (industry.includes('e-commerce') || industry.includes('retail'))
-      return 'e-commerce';
-    if (industry.includes('ride')) return 'ride hailing';
-    if (industry.includes('logistic')) return 'logistics';
-    if (industry.includes('fast food') || industry.includes('restaurant'))
-      return 'fast food';
-    if (industry.includes('airline')) return 'airlines';
-    if (industry.includes('gaming')) return 'gaming';
-    if (industry.includes('education')) return 'education technology';
-    return 'general';
+  /**
+   * Validates if the JSON response is complete and not truncated
+   * Returns true if complete, false if truncated/incomplete
+   */
+  private validateJsonCompleteness(jsonString: string, parsedJson: any): boolean {
+    // Check 1: Ensure the JSON ends properly with closing braces
+    const trimmed = jsonString.trim();
+    if (!trimmed.endsWith('}') && !trimmed.endsWith(']')) {
+      console.log('❌ JSON validation failed: Does not end with closing brace/bracket');
+      return false;
+    }
+    
+    // Check 2: Verify balanced braces
+    const openBraces = (jsonString.match(/{/g) || []).length;
+    const closeBraces = (jsonString.match(/}/g) || []).length;
+    const openBrackets = (jsonString.match(/\[/g) || []).length;
+    const closeBrackets = (jsonString.match(/]/g) || []).length;
+    
+    if (openBraces !== closeBraces) {
+      console.log(`❌ JSON validation failed: Unbalanced braces (open: ${openBraces}, close: ${closeBraces})`);
+      return false;
+    }
+    
+    if (openBrackets !== closeBrackets) {
+      console.log(`❌ JSON validation failed: Unbalanced brackets (open: ${openBrackets}, close: ${closeBrackets})`);
+      return false;
+    }
+    
+    // Check 3: Verify competitors array exists and has complete entries
+    if (!parsedJson?.competitors || !Array.isArray(parsedJson.competitors)) {
+      console.log('❌ JSON validation failed: Missing or invalid competitors array');
+      return false;
+    }
+    
+    // Check 4: Verify each competitor has all required fields
+    const requiredFields = ['name', 'domain', 'industry', 'relevance'];
+    for (let i = 0; i < parsedJson.competitors.length; i++) {
+      const competitor = parsedJson.competitors[i];
+      const missingFields = requiredFields.filter(field => !competitor[field]);
+      
+      if (missingFields.length > 0) {
+        console.log(`❌ JSON validation failed: Competitor ${i + 1} missing required fields: ${missingFields.join(', ')}`);
+        return false;
+      }
+      
+      // Check for truncated fields (very short or suspicious values)
+      if (competitor.name && competitor.name.length < 2) {
+        console.log(`❌ JSON validation failed: Competitor ${i + 1} has suspiciously short name`);
+        return false;
+      }
+    }
+    
+    console.log(`✅ JSON validation passed: Complete JSON with ${parsedJson.competitors.length} valid competitors`);
+    return true;
   }
 
-  private getFallbackCompetitorMap(): Map<string, CompetitorSuggestion[]> {
-    const createCompetitor = (
-      name: string,
-      domain: string,
-      industry: string,
-      relevance: string = 'Direct Competitor'
-    ): CompetitorSuggestion => ({
-      name,
-      domain,
-      logo: `https://logo.clearbit.com/${domain}`,
-      industry,
-      relevance,
-      source: 'fallback-dataset',
+  private recoverPartialJson(jsonString: string, error: any): any | null {
+    console.log('🔧 Attempting partial JSON recovery...');
+    
+    // STRICT MODE: Reject partial JSON recovery - we want 100% complete responses
+    console.log('❌ STRICT MODE ENABLED: Partial JSON recovery is disabled');
+    console.log('   Reason: User requires 100% complete responses, no partial data accepted');
+    
+    // Return null to force the error to propagate
+    // This will cause the API call to fail rather than return incomplete data
+    return null;
+  }
+
+  private extractCompetitorsWithRegex(text: string): any {
+    console.log('🔍 Attempting regex-based competitor extraction...');
+    
+    const competitors: CompetitorSuggestion[] = [];
+    
+    // Pattern 1: Look for "name": "..." or name: "..." (with or without quotes around key)
+    const namePattern = /"?name"?\s*:\s*"([^"]+)"/gi;
+    const domainPattern = /"?domain"?\s*:\s*"([^"]+)"/gi;
+    const industryPattern = /"?industry"?\s*:\s*"([^"]+)"/gi;
+    const relevancePattern = /"?relevance"?\s*:\s*"([^"]+)"/gi;
+    const descriptionPattern = /"?description"?\s*:\s*"([^"]+)"/gi;
+    
+    const names = Array.from(text.matchAll(namePattern)).map(m => m[1]);
+    const domains = Array.from(text.matchAll(domainPattern)).map(m => m[1]);
+    const industries = Array.from(text.matchAll(industryPattern)).map(m => m[1]);
+    const relevances = Array.from(text.matchAll(relevancePattern)).map(m => m[1]);
+    const descriptions = Array.from(text.matchAll(descriptionPattern)).map(m => m[1]);
+    
+    console.log('📊 Regex extraction found:', {
+      names: names.length,
+      domains: domains.length,
+      industries: industries.length,
+      relevances: relevances.length,
+      descriptions: descriptions.length,
     });
+    
+    // Match them up (assume they're in order)
+    const maxLength = Math.max(names.length, domains.length);
+    
+    for (let i = 0; i < maxLength; i++) {
+      const name = names[i];
+      if (!name) continue;
+      
+      const domain = domains[i] || '';
+      const industry = industries[i] || 'General';
+      const relevance = relevances[i] || 'Direct Competitor';
+      const description = descriptions[i] || '';
+      
+      competitors.push({
+        name: name.trim(),
+        domain: this.stripProtocol(domain),
+        industry,
+        relevance,
+        logo: domain ? `https://logo.clearbit.com/${this.stripProtocol(domain)}` : '',
+        url: domain ? this.ensureHttps(domain) : '',
+        description,
+        source: 'cerebras-ai-regex',
+      });
+    }
+    
+    console.log('✅ Regex extraction completed:', competitors.map(c => c.name));
+    
+    if (competitors.length === 0) {
+      throw new Error('No competitors could be extracted using regex fallback');
+    }
+    
+    return { competitors };
+  }
 
-    return new Map<string, CompetitorSuggestion[]>([
-      [
-        'athletic apparel',
-        [
-          createCompetitor('Adidas', 'adidas.com', 'Athletic Apparel'),
-          createCompetitor('Puma', 'puma.com', 'Athletic Apparel'),
-          createCompetitor('Under Armour', 'underarmour.com', 'Athletic Apparel'),
-          createCompetitor('New Balance', 'newbalance.com', 'Athletic Apparel'),
-          createCompetitor('Reebok', 'reebok.com', 'Athletic Apparel'),
-          createCompetitor('ASICS', 'asics.com', 'Athletic Apparel', 'Indirect Competitor'),
-          createCompetitor('Lululemon', 'lululemon.com', 'Athletic Apparel', 'Indirect Competitor'),
-        ],
-      ],
-      [
-        'technology',
-        [
-          createCompetitor('Microsoft', 'microsoft.com', 'Technology'),
-          createCompetitor('Google', 'google.com', 'Technology'),
-          createCompetitor('Amazon', 'amazon.com', 'Technology'),
-          createCompetitor('Meta', 'meta.com', 'Technology'),
-          createCompetitor('Samsung', 'samsung.com', 'Technology', 'Indirect Competitor'),
-        ],
-      ],
-      [
-        'automotive',
-        [
-          createCompetitor('Ford', 'ford.com', 'Automotive'),
-          createCompetitor('General Motors', 'gm.com', 'Automotive'),
-          createCompetitor('Volkswagen', 'vw.com', 'Automotive'),
-          createCompetitor('Toyota', 'toyota.com', 'Automotive'),
-          createCompetitor('BMW', 'bmw.com', 'Automotive'),
-        ],
-      ],
-      [
-        'music streaming',
-        [
-          createCompetitor('Apple Music', 'music.apple.com', 'Music Streaming'),
-          createCompetitor('YouTube Music', 'music.youtube.com', 'Music Streaming'),
-          createCompetitor('Amazon Music', 'music.amazon.com', 'Music Streaming'),
-          createCompetitor('Tidal', 'tidal.com', 'Music Streaming'),
-          createCompetitor('SoundCloud', 'soundcloud.com', 'Music Streaming', 'Indirect Competitor'),
-        ],
-      ],
-      [
-        'travel & hospitality',
-        [
-          createCompetitor('Booking.com', 'booking.com', 'Travel & Hospitality'),
-          createCompetitor('Expedia', 'expedia.com', 'Travel & Hospitality'),
-          createCompetitor('VRBO', 'vrbo.com', 'Travel & Hospitality'),
-          createCompetitor('Marriott', 'marriott.com', 'Travel & Hospitality'),
-          createCompetitor('Hilton', 'hilton.com', 'Travel & Hospitality'),
-        ],
-      ],
-      [
-        'financial services',
-        [
-          createCompetitor('JPMorgan Chase', 'jpmorganchase.com', 'Financial Services'),
-          createCompetitor('Bank of America', 'bankofamerica.com', 'Financial Services'),
-          createCompetitor('Wells Fargo', 'wellsfargo.com', 'Financial Services'),
-          createCompetitor('Citigroup', 'citigroup.com', 'Financial Services'),
-          createCompetitor('Capital One', 'capitalone.com', 'Financial Services'),
-        ],
-      ],
-      [
-        'software',
-        [
-          createCompetitor('Salesforce', 'salesforce.com', 'Software'),
-          createCompetitor('Adobe', 'adobe.com', 'Software'),
-          createCompetitor('Oracle', 'oracle.com', 'Software'),
-          createCompetitor('SAP', 'sap.com', 'Software'),
-          createCompetitor('Workday', 'workday.com', 'Software'),
-        ],
-      ],
-      [
-        'cloud computing',
-        [
-          createCompetitor('Amazon Web Services', 'aws.amazon.com', 'Cloud Computing'),
-          createCompetitor('Microsoft Azure', 'azure.microsoft.com', 'Cloud Computing'),
-          createCompetitor('Google Cloud', 'cloud.google.com', 'Cloud Computing'),
-          createCompetitor('IBM Cloud', 'ibm.com/cloud', 'Cloud Computing'),
-          createCompetitor('Oracle Cloud', 'cloud.oracle.com', 'Cloud Computing'),
-        ],
-      ],
-      [
-        'healthcare',
-        [
-          createCompetitor('UnitedHealth Group', 'unitedhealthgroup.com', 'Healthcare'),
-          createCompetitor('CVS Health', 'cvshealth.com', 'Healthcare'),
-          createCompetitor('Johnson & Johnson', 'jnj.com', 'Healthcare'),
-          createCompetitor('Pfizer', 'pfizer.com', 'Healthcare'),
-          createCompetitor('Abbott Laboratories', 'abbott.com', 'Healthcare'),
-        ],
-      ],
-      [
-        'beauty',
-        [
-          createCompetitor('L\'Oréal', 'loreal.com', 'Beauty'),
-          createCompetitor('Estée Lauder', 'esteelauder.com', 'Beauty'),
-          createCompetitor('Unilever', 'unilever.com', 'Beauty'),
-          createCompetitor('Procter & Gamble', 'pg.com', 'Beauty'),
-          createCompetitor('Shiseido', 'shiseido.com', 'Beauty'),
-        ],
-      ],
-      [
-        'telecommunications',
-        [
-          createCompetitor('Verizon', 'verizon.com', 'Telecommunications'),
-          createCompetitor('AT&T', 'att.com', 'Telecommunications'),
-          createCompetitor('T-Mobile', 't-mobile.com', 'Telecommunications'),
-          createCompetitor('Vodafone', 'vodafone.com', 'Telecommunications'),
-          createCompetitor('Orange', 'orange.com', 'Telecommunications'),
-        ],
-      ],
-      [
-        'e-commerce',
-        [
-          createCompetitor('Amazon', 'amazon.com', 'E-commerce'),
-          createCompetitor('Walmart', 'walmart.com', 'E-commerce'),
-          createCompetitor('Target', 'target.com', 'E-commerce'),
-          createCompetitor('Alibaba', 'alibaba.com', 'E-commerce'),
-          createCompetitor('Etsy', 'etsy.com', 'E-commerce', 'Indirect Competitor'),
-        ],
-      ],
-      [
-        'ride hailing',
-        [
-          createCompetitor('Lyft', 'lyft.com', 'Ride Hailing'),
-          createCompetitor('Grab', 'grab.com', 'Ride Hailing'),
-          createCompetitor('Didi', 'didiglobal.com', 'Ride Hailing'),
-          createCompetitor('Bolt', 'bolt.eu', 'Ride Hailing'),
-          createCompetitor('Ola', 'olacabs.com', 'Ride Hailing'),
-        ],
-      ],
-      [
-        'logistics',
-        [
-          createCompetitor('FedEx', 'fedex.com', 'Logistics'),
-          createCompetitor('UPS', 'ups.com', 'Logistics'),
-          createCompetitor('DHL', 'dhl.com', 'Logistics'),
-          createCompetitor('XPO Logistics', 'xpo.com', 'Logistics'),
-          createCompetitor('C.H. Robinson', 'chrobinson.com', 'Logistics'),
-        ],
-      ],
-      [
-        'fast food',
-        [
-          createCompetitor('McDonald\'s', 'mcdonalds.com', 'Fast Food'),
-          createCompetitor('Burger King', 'burgerking.com', 'Fast Food'),
-          createCompetitor('KFC', 'kfc.com', 'Fast Food'),
-          createCompetitor('Subway', 'subway.com', 'Fast Food'),
-          createCompetitor('Domino\'s', 'dominos.com', 'Fast Food'),
-        ],
-      ],
-      [
-        'airlines',
-        [
-          createCompetitor('Delta Air Lines', 'delta.com', 'Airlines'),
-          createCompetitor('American Airlines', 'aa.com', 'Airlines'),
-          createCompetitor('United Airlines', 'united.com', 'Airlines'),
-          createCompetitor('Southwest Airlines', 'southwest.com', 'Airlines'),
-          createCompetitor('British Airways', 'britishairways.com', 'Airlines'),
-        ],
-      ],
-      [
-        'gaming',
-        [
-          createCompetitor('PlayStation', 'playstation.com', 'Gaming'),
-          createCompetitor('Xbox', 'xbox.com', 'Gaming'),
-          createCompetitor('Nintendo', 'nintendo.com', 'Gaming'),
-          createCompetitor('Steam', 'store.steampowered.com', 'Gaming'),
-          createCompetitor('Epic Games', 'epicgames.com', 'Gaming'),
-        ],
-      ],
-      [
-        'education technology',
-        [
-          createCompetitor('Coursera', 'coursera.org', 'Education Technology'),
-          createCompetitor('Udemy', 'udemy.com', 'Education Technology'),
-          createCompetitor('Khan Academy', 'khanacademy.org', 'Education Technology'),
-          createCompetitor('edX', 'edx.org', 'Education Technology'),
-          createCompetitor('Duolingo', 'duolingo.com', 'Education Technology'),
-        ],
-      ],
-      [
-        'general',
-        [
-          createCompetitor('IBM', 'ibm.com', 'Technology', 'Indirect Competitor'),
-          createCompetitor('Accenture', 'accenture.com', 'Technology', 'Indirect Competitor'),
-          createCompetitor('Deloitte', 'deloitte.com', 'Consulting', 'Indirect Competitor'),
-          createCompetitor('PwC', 'pwc.com', 'Consulting', 'Indirect Competitor'),
-          createCompetitor('Capgemini', 'capgemini.com', 'Technology', 'Indirect Competitor'),
-        ],
-      ],
-    ]);
+  /**
+   * Verify and filter competitors to ensure data quality
+   * Removes competitors that are invalid, empty, or the same as the brand
+   */
+  private verifyCompetitors(
+    competitors: CompetitorSuggestion[],
+    brandName: string
+  ): CompetitorSuggestion[] {
+    const normalizedBrandName = brandName.toLowerCase().trim();
+    
+    return competitors.filter(competitor => {
+      // Remove if name is empty or too short
+      if (!competitor.name || competitor.name.trim().length < 2) {
+        console.log(`🚫 Filtered competitor: Empty or too short name`);
+        return false;
+      }
+
+      // Remove if competitor is the same as the brand (case-insensitive)
+      if (competitor.name.toLowerCase().trim() === normalizedBrandName) {
+        console.log(`🚫 Filtered competitor: "${competitor.name}" is the same as brand "${brandName}"`);
+        return false;
+      }
+
+      // Remove if name is just generic terms
+      const genericTerms = ['company', 'inc', 'ltd', 'corp', 'corporation', 'llc', 'brand', 'business'];
+      const competitorLower = competitor.name.toLowerCase().trim();
+      if (genericTerms.some(term => competitorLower === term || competitorLower === `${term}.`)) {
+        console.log(`🚫 Filtered competitor: "${competitor.name}" is too generic`);
+        return false;
+      }
+
+      // Basic validation passed
+      return true;
+    });
   }
 }
 

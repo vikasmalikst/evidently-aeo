@@ -8,6 +8,7 @@ import {
 } from '../types/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { queryGenerationService } from './query-generation.service';
+import { dataCollectionService, QueryExecutionRequest } from './data-collection/data-collection.service';
 
 type NormalizedCompetitor = {
   name: string;
@@ -149,7 +150,14 @@ export class BrandService {
           }
         })
         .filter((item): item is NormalizedCompetitor => Boolean(item));
-      const competitorNames = normalizedCompetitors.map((competitor) => competitor.name).filter(Boolean);
+      
+      // 🎯 NEW: Verify competitors with enhanced validation
+      const verifiedCompetitors: NormalizedCompetitor[] = await this.verifyCompetitors(
+        normalizedCompetitors,
+        brandData.brand_name
+      );
+      
+      const competitorNames = verifiedCompetitors.map((competitor) => competitor.name).filter(Boolean);
       
       // Prepare metadata with ai_models
       const metadata = {
@@ -160,7 +168,7 @@ export class BrandService {
         headquarters: brandData.metadata?.headquarters,
         founded_year: brandData.metadata?.founded_year,
         brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
-        competitors_detail: normalizedCompetitors
+        competitors_detail: verifiedCompetitors
       };
       
       const { data: newBrand, error: brandError } = await supabaseAdmin
@@ -206,7 +214,7 @@ export class BrandService {
         headquarters: brandData.metadata?.headquarters,
         foundedYear: brandData.metadata?.founded_year,
         industry: brandData.industry,
-        competitors: normalizedCompetitors,
+        competitors: verifiedCompetitors,
         topics: brandData.metadata?.topics || brandData.aeo_topics || [],
         ai_models: brandData.ai_models || [], // Store selected AI models
         sources: (brandData as any).sources || [],
@@ -230,8 +238,8 @@ export class BrandService {
       }
 
       // Insert competitors into brand_competitors table
-      if (normalizedCompetitors.length > 0) {
-        const competitorRecords = normalizedCompetitors.map((competitor, index) => ({
+      if (verifiedCompetitors.length > 0) {
+        const competitorRecords = verifiedCompetitors.map((competitor, index) => ({
           brand_id: newBrand.id,
           competitor_name: competitor.name,
           competitor_url: competitor.url || buildUrlFromDomain(competitor.domain),
@@ -321,7 +329,7 @@ export class BrandService {
             console.log(`🚀 Triggering query generation for ${topicLabels.length} topics`);
             console.log(`📋 Topics for query generation:`, topicLabels);
             
-            await queryGenerationService.generateSeedQueries({
+            const queryGenResult = await queryGenerationService.generateSeedQueries({
               url: brandData.website_url,
               locale: 'en-US',
               country: 'US',
@@ -334,7 +342,155 @@ export class BrandService {
               topics: topicLabels // Pass topics for targeted query generation
             });
             
-            console.log(`✅ Query generation completed for brand ${newBrand.id}`);
+            console.log(`✅ Query generation completed for brand ${newBrand.id} - Generated ${queryGenResult.total_queries} queries`);
+            
+            // 🎯 PHASE 4: Automatically trigger data collection for generated queries
+            // Use selected AI models from onboarding, or default to common collectors
+            const selectedModels = brandData.ai_models || [];
+            const collectors = this.mapAIModelsToCollectors(selectedModels);
+            
+            if (collectors.length > 0 && queryGenResult.total_queries > 0) {
+              try {
+                console.log(`🚀 Triggering automatic data collection for ${queryGenResult.total_queries} queries using collectors: ${collectors.join(', ')}`);
+                
+                // Fetch the generated queries from database
+                const { data: generatedQueries, error: queriesError } = await supabaseAdmin
+                  .from('generated_queries')
+                  .select('id, query_text, intent')
+                  .eq('brand_id', newBrand.id)
+                  .eq('customer_id', customerId)
+                  .eq('is_active', true)
+                  .order('created_at', { ascending: false })
+                  .limit(queryGenResult.total_queries);
+                
+                if (queriesError) {
+                  console.error('⚠️ Failed to fetch generated queries for data collection:', queriesError);
+                } else if (generatedQueries && generatedQueries.length > 0) {
+                  // Prepare execution requests
+                  const executionRequests: QueryExecutionRequest[] = generatedQueries.map(query => ({
+                    queryId: query.id,
+                    brandId: newBrand.id,
+                    customerId: customerId,
+                    queryText: query.query_text,
+                    intent: query.intent || 'data_collection',
+                    locale: 'en-US',
+                    country: 'US',
+                    collectors: collectors
+                  }));
+                  
+                  // Execute queries through collectors (non-blocking)
+                  // Use setTimeout to run in background without blocking brand creation response
+                  setTimeout(async () => {
+                    const startTime = Date.now();
+                    const collectionMetrics = {
+                      totalQueries: executionRequests.length,
+                      totalExecutions: 0,
+                      successCount: 0,
+                      failedCount: 0,
+                      failuresByCollector: {} as Record<string, number>,
+                      errorsByType: {} as Record<string, number>,
+                      executionIds: [] as string[]
+                    };
+
+                    try {
+                      console.log(`📊 Starting background data collection for ${executionRequests.length} queries...`);
+                      console.log(`📋 Collectors: ${collectors.join(', ')}`);
+                      console.log(`🔗 Brand ID: ${newBrand.id}, Customer ID: ${customerId}`);
+                      
+                      const results = await dataCollectionService.executeQueries(executionRequests);
+                      const endTime = Date.now();
+                      const durationMs = endTime - startTime;
+                      
+                      collectionMetrics.totalExecutions = results.length;
+                      collectionMetrics.successCount = results.filter(r => r.status === 'completed').length;
+                      collectionMetrics.failedCount = results.filter(r => r.status === 'failed').length;
+                      
+                      // Aggregate failures by collector type
+                      results.forEach(result => {
+                        if (result.status === 'failed') {
+                          const collector = result.collectorType || 'unknown';
+                          collectionMetrics.failuresByCollector[collector] = 
+                            (collectionMetrics.failuresByCollector[collector] || 0) + 1;
+                          
+                          // Extract error type from metadata if available
+                          if (result.metadata?.error_type) {
+                            const errorType = result.metadata.error_type;
+                            collectionMetrics.errorsByType[errorType] = 
+                              (collectionMetrics.errorsByType[errorType] || 0) + 1;
+                          }
+                        }
+                        
+                        // Track execution IDs
+                        if (result.executionId) {
+                          collectionMetrics.executionIds.push(result.executionId);
+                        }
+                      });
+                      
+                      // Log structured summary
+                      console.log(`✅ Data collection completed in ${durationMs}ms`);
+                      console.log(`📊 Data collection summary:`);
+                      console.log(`   Total queries: ${collectionMetrics.totalQueries}`);
+                      console.log(`   Total executions: ${collectionMetrics.totalExecutions}`);
+                      console.log(`   Successful: ${collectionMetrics.successCount} (${Math.round((collectionMetrics.successCount / collectionMetrics.totalExecutions) * 100)}%)`);
+                      console.log(`   Failed: ${collectionMetrics.failedCount} (${Math.round((collectionMetrics.failedCount / collectionMetrics.totalExecutions) * 100)}%)`);
+                      
+                      if (Object.keys(collectionMetrics.failuresByCollector).length > 0) {
+                        console.log(`   Failures by collector:`, collectionMetrics.failuresByCollector);
+                      }
+                      
+                      if (Object.keys(collectionMetrics.errorsByType).length > 0) {
+                        console.log(`   Errors by type:`, collectionMetrics.errorsByType);
+                      }
+                      
+                      // Store metrics in database (non-blocking)
+                      try {
+                        await this.storeDataCollectionMetrics(newBrand.id, customerId, collectionMetrics, durationMs);
+                      } catch (metricsError) {
+                        console.warn('⚠️ Failed to store data collection metrics (non-critical):', metricsError);
+                      }
+                      
+                    } catch (collectionError: any) {
+                      const endTime = Date.now();
+                      const durationMs = endTime - startTime;
+                      
+                      // Structured error logging with context
+                      const errorContext = {
+                        brandId: newBrand.id,
+                        customerId: customerId,
+                        queryCount: executionRequests.length,
+                        collectors: collectors,
+                        durationMs: durationMs,
+                        timestamp: new Date().toISOString()
+                      };
+                      
+                      console.error('❌ Data collection execution failed (non-critical):', {
+                        error: collectionError?.message || String(collectionError),
+                        stack: collectionError?.stack,
+                        context: errorContext
+                      });
+                      
+                      // Log error to database (non-blocking)
+                      try {
+                        await this.logDataCollectionError(newBrand.id, customerId, collectionError, errorContext);
+                      } catch (logError) {
+                        console.warn('⚠️ Failed to log data collection error (non-critical):', logError);
+                      }
+                      
+                      // Don't throw - data collection failure shouldn't affect brand creation
+                    }
+                  }, 1000); // Small delay to ensure brand creation response is sent first
+                  
+                  console.log(`✅ Data collection triggered in background for ${executionRequests.length} queries`);
+                } else {
+                  console.warn('⚠️ No generated queries found for data collection');
+                }
+              } catch (collectionError) {
+                console.error('⚠️ Failed to trigger data collection (non-critical):', collectionError);
+                // Don't throw - data collection failure shouldn't block brand creation
+              }
+            } else {
+              console.log(`ℹ️ Skipping data collection: ${collectors.length === 0 ? 'No collectors selected' : 'No queries generated'}`);
+            }
           } catch (queryGenError) {
             console.error('⚠️ Query generation failed (non-critical):', queryGenError);
             // Don't throw - query generation failure shouldn't block brand creation
@@ -1126,6 +1282,339 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
       } else {
         console.log(`✅ Rule-categorized "${topic}" as "${category}"`);
       }
+    }
+  }
+
+  /**
+   * Map frontend AI model names to backend collector names
+   */
+  private mapAIModelsToCollectors(aiModels: string[]): string[] {
+    if (!aiModels || aiModels.length === 0) {
+      // Default to common collectors if none selected
+      return ['chatgpt', 'google_aio', 'perplexity', 'claude'];
+    }
+
+    const modelToCollectorMap: Record<string, string> = {
+      'chatgpt': 'chatgpt',
+      'openai': 'chatgpt',
+      'gpt-4': 'chatgpt',
+      'gpt-3.5': 'chatgpt',
+      'google_aio': 'google_aio',
+      'google-ai': 'google_aio',
+      'google': 'google_aio',
+      'perplexity': 'perplexity',
+      'claude': 'claude',
+      'anthropic': 'claude',
+      'deepseek': 'deepseek',
+      'baidu': 'baidu',
+      'bing': 'bing',
+      'bing_copilot': 'bing_copilot',
+      'copilot': 'bing_copilot',
+      'microsoft-copilot': 'bing_copilot',
+      'gemini': 'gemini',
+      'google-gemini': 'gemini',
+      'grok': 'grok',
+      'x-ai': 'grok',
+      'mistral': 'mistral'
+    };
+
+    const collectors = aiModels
+      .map(model => {
+        const normalizedModel = model.toLowerCase().trim();
+        return modelToCollectorMap[normalizedModel] || null;
+      })
+      .filter((collector): collector is string => collector !== null);
+
+    // Remove duplicates
+    return [...new Set(collectors)];
+  }
+
+  /**
+   * Store data collection metrics in database
+   */
+  private async storeDataCollectionMetrics(
+    brandId: string,
+    customerId: string,
+    metrics: {
+      totalQueries: number;
+      totalExecutions: number;
+      successCount: number;
+      failedCount: number;
+      failuresByCollector: Record<string, number>;
+      errorsByType: Record<string, number>;
+      executionIds: string[];
+    },
+    durationMs: number
+  ): Promise<void> {
+    try {
+      // Store metrics in brand metadata or create a metrics record
+      // For now, we'll update the brand metadata with latest collection stats
+      const { data: brand } = await supabaseAdmin
+        .from('brands')
+        .select('metadata')
+        .eq('id', brandId)
+        .single();
+
+      if (brand) {
+        const metadata = brand.metadata || {};
+        const collectionStats = {
+          lastCollection: new Date().toISOString(),
+          lastCollectionDurationMs: durationMs,
+          totalQueries: metrics.totalQueries,
+          totalExecutions: metrics.totalExecutions,
+          successCount: metrics.successCount,
+          failedCount: metrics.failedCount,
+          successRate: metrics.totalExecutions > 0 
+            ? Math.round((metrics.successCount / metrics.totalExecutions) * 100) 
+            : 0,
+          failuresByCollector: metrics.failuresByCollector,
+          errorsByType: metrics.errorsByType
+        };
+
+        // Update metadata with collection stats
+        await supabaseAdmin
+          .from('brands')
+          .update({
+            metadata: {
+              ...metadata,
+              data_collection_stats: collectionStats,
+              data_collection_execution_ids: metrics.executionIds
+            }
+          })
+          .eq('id', brandId);
+
+        console.log(`✅ Stored data collection metrics for brand ${brandId}`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to store data collection metrics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Log data collection error to database
+   */
+  private async logDataCollectionError(
+    brandId: string,
+    customerId: string,
+    error: any,
+    context: {
+      brandId: string;
+      customerId: string;
+      queryCount: number;
+      collectors: string[];
+      durationMs: number;
+      timestamp: string;
+    }
+  ): Promise<void> {
+    try {
+      const errorData = {
+        brand_id: brandId,
+        customer_id: customerId,
+        error_type: 'data_collection_trigger_failure',
+        error_message: error?.message || String(error),
+        error_stack: error?.stack || null,
+        error_metadata: {
+          context: context,
+          error_name: error?.name,
+          error_code: error?.code,
+          error_status: error?.status || error?.statusCode,
+          timestamp: context.timestamp
+        },
+        created_at: new Date().toISOString()
+      };
+
+      // Store error in brand metadata
+      const { data: brand } = await supabaseAdmin
+        .from('brands')
+        .select('metadata')
+        .eq('id', brandId)
+        .single();
+
+      if (brand) {
+        const metadata = brand.metadata || {};
+        const existingErrors = Array.isArray(metadata.data_collection_errors) 
+          ? metadata.data_collection_errors 
+          : [];
+        
+        // Keep only last 10 errors to avoid metadata bloat
+        const updatedErrors = [...existingErrors, errorData].slice(-10);
+
+        const { error: insertError } = await supabaseAdmin
+          .from('brands')
+          .update({
+            metadata: {
+              ...metadata,
+              data_collection_errors: updatedErrors
+            }
+          })
+          .eq('id', brandId);
+
+        if (insertError) {
+          // Fallback: just log to console if database insert fails
+          console.warn('⚠️ Could not log error to database:', insertError);
+        } else {
+          console.log(`✅ Logged data collection error for brand ${brandId}`);
+        }
+      }
+    } catch (logError) {
+      console.error('❌ Failed to log data collection error:', logError);
+      // Don't throw - logging failures shouldn't break the flow
+    }
+  }
+
+  /**
+   * Verify and filter competitors with enhanced validation
+   * Includes name validation, domain validation, and optional HTTP checks
+   */
+  private async verifyCompetitors(
+    competitors: NormalizedCompetitor[],
+    brandName: string
+  ): Promise<NormalizedCompetitor[]> {
+    const normalizedBrandName = brandName.toLowerCase().trim();
+    const verified: NormalizedCompetitor[] = [];
+    const enableHttpChecks = process.env['COMPETITOR_VERIFY_HTTP'] === 'true';
+    
+    console.log(`🔍 Verifying ${competitors.length} competitors for brand "${brandName}"...`);
+    
+    for (const competitor of competitors) {
+      try {
+        // Basic name validation
+        if (!competitor.name || competitor.name.trim().length < 2) {
+          console.log(`🚫 Filtered competitor: Empty or too short name: "${competitor.name}"`);
+          continue;
+        }
+
+        const competitorNameLower = competitor.name.toLowerCase().trim();
+        
+        // Remove if competitor is the same as the brand (case-insensitive)
+        if (competitorNameLower === normalizedBrandName) {
+          console.log(`🚫 Filtered competitor: "${competitor.name}" is the same as brand "${brandName}"`);
+          continue;
+        }
+
+        // Remove if name is just generic terms
+        const genericTerms = ['company', 'inc', 'ltd', 'corp', 'corporation', 'llc', 'brand', 'business', 'competitor'];
+        if (genericTerms.some(term => competitorNameLower === term || competitorNameLower === `${term}.`)) {
+          console.log(`🚫 Filtered competitor: "${competitor.name}" is too generic`);
+          continue;
+        }
+
+        // Domain validation if domain is provided
+        if (competitor.domain) {
+          const domainValidation = this.validateDomain(competitor.domain);
+          if (!domainValidation.valid) {
+            console.log(`🚫 Filtered competitor: "${competitor.name}" has invalid domain "${competitor.domain}": ${domainValidation.reason}`);
+            continue;
+          }
+        }
+
+        // Optional HTTP check (disabled by default to avoid blocking brand creation)
+        let verificationStatus: 'verified' | 'unverified' | 'failed' = 'unverified';
+        if (enableHttpChecks && competitor.url) {
+          try {
+            const isReachable = await this.checkUrlReachability(competitor.url);
+            verificationStatus = isReachable ? 'verified' : 'failed';
+            
+            if (!isReachable) {
+              console.warn(`⚠️ Competitor "${competitor.name}" URL "${competitor.url}" is not reachable`);
+            } else {
+              console.log(`✅ Competitor "${competitor.name}" URL "${competitor.url}" is reachable`);
+            }
+          } catch (error) {
+            console.warn(`⚠️ Failed to check reachability for "${competitor.name}":`, error);
+            verificationStatus = 'failed';
+          }
+        }
+
+        // Add verification metadata to competitor
+        const verifiedCompetitor: NormalizedCompetitor = {
+          ...competitor,
+          source: competitor.source || 'onboarding'
+        };
+
+        // Store verification status in metadata if we had HTTP checks
+        if (enableHttpChecks) {
+          (verifiedCompetitor as any).verification_status = verificationStatus;
+        }
+
+        verified.push(verifiedCompetitor);
+      } catch (error) {
+        console.warn(`⚠️ Failed to verify competitor "${competitor.name}":`, error);
+        // Continue with other competitors even if one fails
+      }
+    }
+
+    const filteredCount = competitors.length - verified.length;
+    if (filteredCount > 0) {
+      console.log(`✅ Verified ${verified.length}/${competitors.length} competitors (filtered ${filteredCount})`);
+    } else {
+      console.log(`✅ All ${verified.length} competitors passed verification`);
+    }
+
+    return verified;
+  }
+
+  /**
+   * Validate domain format
+   */
+  private validateDomain(domain: string): { valid: boolean; reason?: string } {
+    if (!domain || domain.trim().length === 0) {
+      return { valid: false, reason: 'Empty domain' };
+    }
+
+    // Basic domain format validation
+    const domainRegex = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
+    
+    // Remove protocol and path if present
+    const cleanDomain = domain
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .split('/')[0]
+      .toLowerCase()
+      .trim();
+
+    if (!domainRegex.test(cleanDomain)) {
+      return { valid: false, reason: 'Invalid domain format' };
+    }
+
+    // Check for minimum length
+    if (cleanDomain.length < 4) {
+      return { valid: false, reason: 'Domain too short' };
+    }
+
+    // Check for maximum length
+    if (cleanDomain.length > 253) {
+      return { valid: false, reason: 'Domain too long' };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Check if URL is reachable (optional, with timeout)
+   */
+  private async checkUrlReachability(url: string, timeoutMs: number = 5000): Promise<boolean> {
+    try {
+      // Ensure URL has protocol
+      const urlWithProtocol = url.startsWith('http') ? url : `https://${url}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      const response = await fetch(urlWithProtocol, {
+        method: 'HEAD',
+        signal: controller.signal,
+        redirect: 'follow'
+      });
+
+      clearTimeout(timeoutId);
+
+      // Consider 2xx and 3xx as reachable
+      return response.status >= 200 && response.status < 400;
+    } catch (error) {
+      // Network errors, timeouts, etc. mean not reachable
+      return false;
     }
   }
 }

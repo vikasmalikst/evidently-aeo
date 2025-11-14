@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useManualBrandDashboard } from '../manual-dashboard';
 import { Layout } from '../components/Layout/Layout';
 import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
 import { mockPromptsData } from '../data/mockPromptsData';
@@ -36,12 +37,6 @@ interface ApiResponse<T> {
   message?: string;
 }
 
-interface BrandSummary {
-  id: string;
-  name: string;
-  slug?: string | null;
-}
-
 interface DashboardScoreMetric {
   label: string;
   value: number;
@@ -64,6 +59,17 @@ interface DashboardPayload {
   visibilityPercentage: number;
   sentimentScore: number;
   scores: DashboardScoreMetric[];
+  sourceDistribution: Array<{
+    label: string;
+    percentage: number;
+    color?: string;
+  }>;
+  llmVisibility: Array<{
+    provider: string;
+    share: number;
+    delta: number;
+    color?: string;
+  }>;
 }
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
@@ -75,10 +81,9 @@ export const Dashboard = () => {
   const [endDate, setEndDate] = useState('2024-10-31');
   const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
-  const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
   const [showTopicModal, setShowTopicModal] = useState(false);
 
   const getBrandData = () => {
@@ -173,8 +178,17 @@ export const Dashboard = () => {
     { id: 5, title: 'Product Comparison Guide', url: 'your-brand.com/compare', impactScore: 8.1, delta: -1.1 },
   ];
 
+  const {
+    brands,
+    isLoading: brandsLoading,
+    error: brandsError,
+    selectedBrandId,
+    selectedBrand,
+    selectBrand
+  } = useManualBrandDashboard();
+
   useEffect(() => {
-    if (authLoading) {
+    if (authLoading || brandsLoading || !selectedBrandId) {
       return;
     }
 
@@ -185,22 +199,8 @@ export const Dashboard = () => {
       setDashboardError(null);
 
       try {
-        const brandsResponse = await apiClient.request<ApiResponse<BrandSummary[]>>('/brands');
-
-        if (!brandsResponse.success) {
-          throw new Error(brandsResponse.error || brandsResponse.message || 'Failed to load brands.');
-        }
-
-        const brands = brandsResponse.data ?? [];
-
-        if (brands.length === 0) {
-          throw new Error('No brands found for this account. Please add a brand to view the dashboard.');
-        }
-
-        const primaryBrand = brands[0];
-
         const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(
-          `/brands/${primaryBrand.id}/dashboard`
+          `/brands/${selectedBrandId}/dashboard`
         );
 
         if (!dashboardResponse.success || !dashboardResponse.data) {
@@ -230,16 +230,18 @@ export const Dashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, reloadKey]);
+  }, [authLoading, brandsLoading, reloadKey, selectedBrandId]);
 
   const handleRetryFetch = () => {
     setReloadKey((prev) => prev + 1);
   };
 
-  if (dashboardLoading) {
+  const combinedLoading = authLoading || brandsLoading || dashboardLoading;
+
+  if (combinedLoading) {
     return (
       <Layout>
-        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+        <div className="p-6 bg-[#f9f9fb] min-h-screen">
           <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-10 flex flex-col items-center justify-center">
             <div className="h-12 w-12 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mb-4" />
             <p className="text-[14px] text-[#64748b]">Loading dashboard insights…</p>
@@ -249,14 +251,20 @@ export const Dashboard = () => {
     );
   }
 
-  if (dashboardError || !dashboardData) {
+  if (brandsError || dashboardError || !dashboardData) {
+    const errorMessage =
+      brandsError ||
+      dashboardError ||
+      (brands.length === 0
+        ? 'No brands found for this account. Please add a brand to view the dashboard.'
+        : 'Dashboard data is currently unavailable.');
     return (
       <Layout>
-        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+        <div className="p-6 bg-[#f9f9fb] min-h-screen">
           <div className="max-w-xl mx-auto bg-white border border-[#fadddb] rounded-lg shadow-sm p-6 text-center">
             <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-2">Unable to load dashboard</h2>
             <p className="text-[13px] text-[#64748b] mb-4">
-              {dashboardError ?? 'Dashboard data is currently unavailable.'}
+              {errorMessage}
             </p>
             <button
               onClick={handleRetryFetch}
@@ -271,7 +279,7 @@ export const Dashboard = () => {
   }
 
   const findScore = (label: string) =>
-    dashboardData?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
+    dashboardData.scores.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
   const formatNumber = (value: number, decimals = 1): string => {
     const fixed = value.toFixed(decimals);
@@ -345,13 +353,44 @@ export const Dashboard = () => {
     }
   ];
 
-  const overviewSubtitle = dashboardData.brandName
-    ? `Here's your AI visibility performance overview for ${dashboardData.brandName}`
+  const overviewSubtitle = (selectedBrand?.name ?? dashboardData.brandName)
+    ? `Here's your AI visibility performance overview for ${selectedBrand?.name ?? dashboardData.brandName}`
     : `Here's your AI visibility performance overview`;
+
+  const fallbackLlmSlices: LLMVisibilitySliceUI[] = mockSourcesData.sources.slice(0, 5).map((source) => ({
+    provider: source.name,
+    share: Math.round(source.mentionRate * 100),
+    delta: source.trendPercent ?? 0,
+    color: source.color
+  }));
+
+  const llmSlices: LLMVisibilitySliceUI[] =
+    dashboardData.llmVisibility && dashboardData.llmVisibility.length > 0
+      ? dashboardData.llmVisibility.map((slice) => ({
+          provider: slice.provider,
+          share: slice.share,
+          delta: slice.delta ?? 0,
+          color: slice.color || '#64748b'
+        }))
+      : fallbackLlmSlices;
+
+const fallbackSourceSlices = mockCitationSourcesData.sourceTypeDistribution.map((item) => ({
+  type: item.type,
+  percentage: item.percentage,
+  color: item.color
+}));
+
+const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDistribution.length > 0
+  ? dashboardData.sourceDistribution.map((slice) => ({
+      type: slice.label,
+      percentage: slice.percentage,
+      color: slice.color || '#64748b'
+    }))
+  : fallbackSourceSlices;
 
   return (
     <Layout>
-      <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+      <div className="p-6 bg-[#f9f9fb] min-h-screen">
         {criticalAlerts > 0 && (
           <div className="bg-[#fff8f0] border border-[#f9db43] rounded-lg p-4 mb-6 flex items-start gap-3">
             <AlertTriangle size={20} className="text-[#fa8a40] flex-shrink-0 mt-0.5" />
@@ -379,9 +418,30 @@ export const Dashboard = () => {
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
             Welcome back, {displayName}
           </h1>
-          <p className="text-[15px] text-[#393e51]">
-            {overviewSubtitle}
-          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <p className="text-[15px] text-[#393e51]">
+              {overviewSubtitle}
+            </p>
+            {brands.length > 1 && selectedBrandId && (
+              <div className="flex items-center gap-2">
+                <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
+                  Brand
+                </label>
+                <select
+                  id="brand-selector"
+                  value={selectedBrandId}
+                  onChange={(event) => selectBrand(event.target.value)}
+                  className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
+                >
+                  {brands.map((brandOption) => (
+                    <option key={brandOption.id} value={brandOption.id}>
+                      {brandOption.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 mb-6">
@@ -391,14 +451,18 @@ export const Dashboard = () => {
             </h2>
             <div className="flex items-center gap-3">
               <label className="text-[13px] text-[#64748b] font-medium">Date Range:</label>
+              <label htmlFor="start-date" className="sr-only">Start Date</label>
               <input
+                id="start-date"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="px-3 py-1.5 border border-[#e8e9ed] rounded-lg text-[13px] bg-white focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc]"
               />
               <span className="text-[13px] text-[#64748b]">to</span>
+              <label htmlFor="end-date" className="sr-only">End Date</label>
               <input
+                id="end-date"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
@@ -410,45 +474,50 @@ export const Dashboard = () => {
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
               <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-4">Source Type Distribution</h3>
-              <StackedRacingChart data={mockCitationSourcesData.sourceTypeDistribution} />
+              <StackedRacingChart data={sourceSlices} />
             </div>
 
             <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
               <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-4">LLM Visibility (7 Days)</h3>
               <div className="flex gap-6 items-center">
                 <div className="flex flex-col items-center gap-2">
-                  <div style={{ width: '130px', height: '130px' }} className="flex-shrink-0">
-                    <LLMVisibilityDonut data={mockSourcesData.sources.slice(0, 5)} />
+                  <div className="w-[130px] h-[130px] flex-shrink-0">
+                    <LLMVisibilityDonut data={llmSlices} />
                   </div>
                   <span className="text-[11px] font-medium text-[#64748b]">Total Visibility</span>
                 </div>
                 <div className="flex-1 space-y-2">
-                  {mockSourcesData.sources.slice(0, 5).map((source) => (
-                    <div key={source.id} className="flex items-center gap-2">
+                  {llmSlices.map((slice) => (
+                    <div key={slice.provider} className="flex items-center gap-2">
+                      {/* eslint-disable-next-line react/forbid-dom-props */}
                       <div
                         className="w-3 h-3 rounded-sm flex-shrink-0"
-                        style={{ backgroundColor: source.color }}
+                        style={{ backgroundColor: slice.color }}
                       />
                       <div className="flex-shrink-0">
-                        {getLLMIcon(source.name)}
+                        {getLLMIcon(slice.provider)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-medium text-[#1a1d29]">{source.name}</span>
+                        <span className="text-[13px] font-medium text-[#1a1d29]">{slice.provider}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <span className="text-[13px] font-semibold text-[#1a1d29]">
-                          {(source.mentionRate * 100).toFixed(0)}%
+                          {Math.round(slice.share)}%
                         </span>
-                        <span className={`flex items-center text-[11px] font-semibold ${
-                          source.trendDirection === 'up' ? 'text-[#06c686]' : 'text-[#f94343]'
-                        }`}>
-                          {source.trendDirection === 'up' ? (
-                            <ChevronUp size={12} strokeWidth={2.5} />
-                          ) : (
-                            <ChevronDown size={12} strokeWidth={2.5} />
-                          )}
-                          {Math.abs(source.trendPercent)}%
-                        </span>
+                        {slice.delta !== 0 && (
+                          <span
+                            className={`flex items-center text-[11px] font-semibold ${
+                              slice.delta > 0 ? 'text-[#06c686]' : 'text-[#f94343]'
+                            }`}
+                          >
+                            {slice.delta > 0 ? (
+                              <ChevronUp size={12} strokeWidth={2.5} />
+                            ) : (
+                              <ChevronDown size={12} strokeWidth={2.5} />
+                            )}
+                            {Math.abs(slice.delta).toFixed(1)}%
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -607,30 +676,48 @@ export const Dashboard = () => {
             </div>
 
             <div className="space-y-3">
-              {mockPromptsData.slice(0, 5).map((topic) => {
-                const promptCount = topic.prompts.length || 1;
-                const avgVolume = topic.prompts.reduce((sum, p) => sum + p.volume, 0) / promptCount;
-                const avgSent = topic.prompts.reduce((sum, p) => sum + p.sentiment, 0) / promptCount;
+              {topTopics.length > 0 ? (
+                topTopics.map((topic) => {
+                  const averageVolume = Number.isFinite(topic.averageVolume)
+                    ? topic.averageVolume
+                    : 0;
+                  const sentimentScore = Number.isFinite(topic.sentimentScore)
+                    ? topic.sentimentScore
+                    : 0;
+                  const sentimentClass =
+                    sentimentScore >= 4.5
+                      ? { background: 'bg-[#e6f7f1]', text: 'text-[#06c686]' }
+                      : sentimentScore >= 3.5
+                      ? { background: 'bg-[#fff8e6]', text: 'text-[#f9db43]' }
+                      : { background: 'bg-[#fff0f0]', text: 'text-[#f94343]' };
 
-                return (
-                  <div key={topic.id} className="flex items-center justify-between py-2 border-b border-[#f4f4f6] last:border-0">
-                    <div className="flex-1">
-                      <h3 className="text-[14px] font-medium text-[#1a1d29] mb-1">{topic.name}</h3>
-                      <p className="text-[12px] text-[#64748b]">{topic.prompts.length} prompts tracked</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[14px] font-semibold text-[#1a1d29]">{avgVolume.toFixed(1)}%</div>
-                      <div className="text-[12px] text-[#64748b]">Avg volume</div>
-                    </div>
-                    <div className="ml-4">
-                      <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${
-                        avgSent >= 4.5 ? 'bg-[#e6f7f1]' : avgSent >= 3.5 ? 'bg-[#fff8e6]' : 'bg-[#fff0f0]'
-                      }`}>
-                        <span className={`text-[14px] font-semibold ${
-                          avgSent >= 4.5 ? 'text-[#06c686]' : avgSent >= 3.5 ? 'text-[#f9db43]' : 'text-[#f94343]'
-                        }`}>
-                          {avgSent.toFixed(1)}
-                        </span>
+                  return (
+                    <div
+                      key={topic.topic}
+                      className="flex items-center justify-between py-2 border-b border-[#f4f4f6] last:border-0"
+                    >
+                      <div className="flex-1">
+                        <h3 className="text-[14px] font-medium text-[#1a1d29] mb-1">
+                          {topic.topic}
+                        </h3>
+                        <p className="text-[12px] text-[#64748b]">
+                          {topic.promptsTracked} {topic.promptsTracked === 1 ? 'prompt' : 'prompts'} tracked
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[14px] font-semibold text-[#1a1d29]">
+                          {averageVolume.toFixed(1)}%
+                        </div>
+                        <div className="text-[12px] text-[#64748b]">Avg volume</div>
+                      </div>
+                      <div className="ml-4">
+                        <div
+                          className={`flex items-center justify-center w-10 h-10 rounded-lg ${sentimentClass.background}`}
+                        >
+                          <span className={`text-[14px] font-semibold ${sentimentClass.text}`}>
+                            {sentimentScore.toFixed(1)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -713,10 +800,12 @@ interface MetricCardProps {
 const MetricCard = ({ title, value, subtitle, trend, icon, color, linkTo }: MetricCardProps) => (
   <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 flex flex-col">
     <div className="flex items-center gap-3 mb-3">
+      {/* eslint-disable-next-line react/forbid-dom-props */}
       <div
         className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
+        {/* eslint-disable-next-line react/forbid-dom-props */}
         <div style={{ color }}>{icon}</div>
       </div>
       <div className="text-[14px] font-semibold text-[#1a1d29]">{title}</div>
@@ -758,10 +847,12 @@ const ActionCard = ({ title, description, link, icon, color }: ActionCardProps) 
     className="block p-3 border border-[#e8e9ed] rounded-lg hover:border-[#00bcdc] hover:bg-[#f9fbfc] transition-all group"
   >
     <div className="flex items-start gap-3">
+      {/* eslint-disable-next-line react/forbid-dom-props */}
       <div
         className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
+        {/* eslint-disable-next-line react/forbid-dom-props */}
         <div style={{ color }}>{icon}</div>
       </div>
       <div className="flex-1 min-w-0">
@@ -778,7 +869,6 @@ const ActionCard = ({ title, description, link, icon, color }: ActionCardProps) 
 interface StackedRacingChartProps {
   data: Array<{
     type: string;
-    count: number;
     percentage: number;
     color: string;
   }>;
@@ -835,12 +925,13 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
 
   return (
     <div>
-      <div style={{ height: '40px' }}>
+      <div className="h-10">
         <Bar data={chartData} options={options} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
         {data.map((item) => (
           <div key={item.type} className="flex items-center gap-2">
+            {/* eslint-disable-next-line react/forbid-dom-props */}
             <div
               className="w-3 h-3 rounded-sm flex-shrink-0"
               style={{ backgroundColor: item.color }}
@@ -856,21 +947,23 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
   );
 };
 
+interface LLMVisibilitySliceUI {
+  provider: string;
+  share: number;
+  delta: number;
+  color: string;
+}
+
 interface LLMVisibilityDonutProps {
-  data: Array<{
-    id: number | string;
-    name: string;
-    mentionRate: number;
-    color: string;
-  }>;
+  data: LLMVisibilitySliceUI[];
 }
 
 const LLMVisibilityDonut = ({ data }: LLMVisibilityDonutProps) => {
   const chartData = {
-    labels: data.map(item => item.name),
+    labels: data.map(item => item.provider),
     datasets: [
       {
-        data: data.map(item => item.mentionRate * 100),
+        data: data.map(item => item.share),
         backgroundColor: data.map(item => item.color),
         borderWidth: 0,
         borderRadius: 2,

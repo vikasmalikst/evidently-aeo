@@ -65,8 +65,10 @@ class ApiClient {
   async request<T>(endpoint: string, options: RequestInit = {}, config: RequestConfig = {}): Promise<T> {
     const { requiresAuth = true, retry = true } = config;
     const headers = new Headers(options.headers as HeadersInit | undefined);
+    const method = (options.method || 'GET').toUpperCase();
+    const hasPayload = options.body !== undefined && options.body !== null;
 
-    if (!headers.has('Content-Type')) {
+    if (!headers.has('Content-Type') && method !== 'GET' && hasPayload) {
       headers.set('Content-Type', 'application/json');
     }
 
@@ -88,8 +90,13 @@ class ApiClient {
     } catch (error) {
       // Handle network errors (server not running, CORS, etc.)
       if (error instanceof TypeError && error.message.includes('fetch')) {
+        const port = this.baseUrl.includes('3001') ? '3001' : '3000';
+        const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
         throw new Error(
-          `Unable to connect to backend server at ${url}. Please ensure the backend is running on port ${this.baseUrl.includes('3001') ? '3001' : '3000'}.`
+          `Unable to connect to backend server at ${url}. ` +
+          `Please ensure: 1) Backend is running on port ${port}, ` +
+          `2) CORS is configured to allow requests from ${currentOrigin}, ` +
+          `3) No firewall or network issues are blocking the connection.`
         );
       }
       throw error;

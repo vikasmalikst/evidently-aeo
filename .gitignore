@@ -23,3 +23,5 @@ dist-ssr
 .env
 /portal
 
+backend/scripts/test-failures-2025-11-14T05-27-06-603Z.json
+backend/scripts/test-failures-2025-11-14T05-31-55-519Z.json

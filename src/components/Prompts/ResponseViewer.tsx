@@ -1,16 +1,29 @@
-import { useState } from 'react';
-import { Prompt } from '../../data/mockPromptsData';
+import { useMemo, useState } from 'react';
+import { PromptEntry } from '../../types/prompts';
 import { KeywordHighlighter } from './KeywordHighlighter';
 
 interface ResponseViewerProps {
-  prompt: Prompt | null;
-  showHighlighting?: boolean;
+  prompt: PromptEntry | null;
 }
 
 export const ResponseViewer = ({ prompt, showHighlighting = true }: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
-  const [highlightTarget, setHighlightTarget] = useState(true);
-  const [highlightTop, setHighlightTop] = useState(true);
+  const [highlightProducts, setHighlightProducts] = useState(true);
+
+  const formattedTimestamp = useMemo(() => {
+    if (!prompt?.lastUpdated) {
+      return null;
+    }
+    try {
+      const date = new Date(prompt.lastUpdated);
+      if (Number.isNaN(date.getTime())) {
+        return null;
+      }
+      return date.toLocaleString();
+    } catch {
+      return null;
+    }
+  }, [prompt?.lastUpdated]);
 
   if (!prompt) {
     return (
@@ -49,51 +62,49 @@ export const ResponseViewer = ({ prompt, showHighlighting = true }: ResponseView
           <h3 className="text-sm font-semibold text-[var(--text-headings)]">
             Response
           </h3>
-          {showHighlighting && (
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={highlightBrand}
-                  onChange={() => setHighlightBrand(!highlightBrand)}
-                  className="w-3 h-3 rounded border-2 border-[#498CF9] text-[#498CF9] focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-xs font-medium text-[#498CF9]">Brand</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={highlightTarget}
-                  onChange={() => setHighlightTarget(!highlightTarget)}
-                  className="w-3 h-3 rounded border-2 border-[#AC59FB] text-[#AC59FB] focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-xs font-medium text-[#AC59FB]">Target</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={highlightTop}
-                  onChange={() => setHighlightTop(!highlightTop)}
-                  className="w-3 h-3 rounded border-2 border-[#F155A2] text-[#F155A2] focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-xs font-medium text-[#F155A2]">Trending</span>
-              </label>
-            </div>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={highlightBrand}
+                onChange={() => setHighlightBrand(!highlightBrand)}
+                className="w-3 h-3 rounded border-2 border-[#498CF9] text-[#498CF9] focus:ring-0 focus:ring-offset-0"
+              />
+              <span className="text-xs font-medium text-[#498CF9]">Brand</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={highlightProducts}
+                onChange={() => setHighlightProducts(!highlightProducts)}
+                className="w-3 h-3 rounded border-2 border-[#AC59FB] text-[#AC59FB] focus:ring-0 focus:ring-offset-0"
+              />
+              <span className="text-xs font-medium text-[#AC59FB]">Product</span>
+            </label>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-caption)] font-medium">
+          {prompt.latestCollectorType && (
+            <span className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
+              {prompt.latestCollectorType}
+            </span>
           )}
+          {formattedTimestamp && <span>Updated {formattedTimestamp}</span>}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 font-data" style={{ maxHeight: 'calc(100vh - 450px)' }}>
-        {showHighlighting ? (
+        {prompt.response ? (
           <KeywordHighlighter
             text={prompt.response}
-            keywords={prompt.keywords}
+            keywords={prompt.highlights}
             highlightBrand={highlightBrand}
-            highlightTarget={highlightTarget}
-            highlightTop={highlightTop}
+            highlightProducts={highlightProducts}
           />
         ) : (
-          <p className="text-[var(--text-body)] whitespace-pre-wrap">{prompt.response}</p>
+          <p className="text-sm text-[var(--text-caption)]">
+            No response captured for this prompt within the selected filters.
+          </p>
         )}
       </div>
     </div>

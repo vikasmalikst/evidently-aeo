@@ -4,36 +4,13 @@ import { getLLMIcon } from '../Visibility/LLMIcons';
 import { CountryFlag } from '../CountryFlag';
 
 interface PromptFiltersProps {
+  llmOptions: string[];
   selectedLLMs: string[];
   onLLMChange: (llms: string[]) => void;
   selectedRegion: string;
   onRegionChange: (region: string) => void;
 }
 
-const llmOptions = [
-  'ChatGPT',
-  'Perplexity',
-  'Google AI Search',
-  'Gemini',
-  'Claude',
-  'Grok',
-  'Deepseek',
-  'Microsoft Copilot',
-  'Meta Llama'
-];
-
-// Country options (sorted alphabetically)
-const countryOptions = [
-  { value: 'canada', label: 'Canada' },
-  { value: 'china', label: 'China' },
-  { value: 'india', label: 'India' },
-  { value: 'japan', label: 'Japan' },
-  { value: 'south-korea', label: 'South Korea' },
-  { value: 'uk', label: 'United Kingdom' },
-  { value: 'us', label: 'United States' }
-];
-
-// Region options (sorted alphabetically)
 const regionOptions = [
   { value: 'emea', label: 'EMEA' },
   { value: 'latam', label: 'LATAM' },
@@ -42,6 +19,7 @@ const regionOptions = [
 ];
 
 export const PromptFilters = ({
+  llmOptions,
   selectedLLMs,
   onLLMChange,
   selectedRegion,
@@ -98,8 +76,7 @@ export const PromptFilters = ({
             }`}
           />
         </button>
-
-        {openDropdown === 'llm' && (
+        {openDropdown === 'llm' && llmOptions.length > 0 && (
           <div className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[400px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]">
             {llmOptions.map((llm) => (
               <label

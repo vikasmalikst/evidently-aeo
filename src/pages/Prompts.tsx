@@ -1,21 +1,173 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { PromptFilters } from '../components/Prompts/PromptFilters';
 import { PromptsList } from '../components/Prompts/PromptsList';
 import { ResponseViewer } from '../components/Prompts/ResponseViewer';
-import { mockPromptsData, Prompt } from '../data/mockPromptsData';
+import { apiClient } from '../lib/apiClient';
+import { useManualBrandDashboard } from '../manual-dashboard';
+import { PromptAnalyticsPayload, PromptEntry, PromptTopic } from '../types/prompts';
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+interface DatePreset {
+  value: string;
+  days: number;
+}
+
+const DATE_PRESETS: DatePreset[] = [
+  { value: 'last7', days: 7 },
+  { value: 'last14', days: 14 },
+  { value: 'last30', days: 30 }
+];
+
+const formatDateRangeLabel = (start: Date, end: Date) => {
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return `${formatter.format(start)} - ${formatter.format(end)}`;
+};
+
+const getDateBounds = (preset: DatePreset) => {
+  const end = new Date();
+  end.setUTCHours(23, 59, 59, 999);
+
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - (preset.days - 1));
+  start.setUTCHours(0, 0, 0, 0);
+
+  return {
+    start,
+    end,
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+    label: formatDateRangeLabel(start, end)
+  };
+};
 
 export const Prompts = () => {
+  const [selectedPrompt, setSelectedPrompt] = useState<PromptEntry | null>(null);
   const navigate = useNavigate();
-  const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [selectedLLMs, setSelectedLLMs] = useState<string[]>([]);
   const [selectedRegion, setSelectedRegion] = useState('us');
-  const [dateRange, setDateRange] = useState('30d');
+  const [dateRangeKey, setDateRangeKey] = useState<string>(DATE_PRESETS[2]?.value ?? 'last30');
+  const [topics, setTopics] = useState<PromptTopic[]>([]);
+  const [llmOptions, setLlmOptions] = useState<string[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handlePromptSelect = (prompt: Prompt) => {
+  const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
+
+  const dateRangeOptions = useMemo(
+    () =>
+      DATE_PRESETS.map((preset) => {
+        const bounds = getDateBounds(preset);
+        return {
+          value: preset.value,
+          label: bounds.label
+        };
+      }),
+    []
+  );
+
+  const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
   };
+
+  useEffect(() => {
+    if (brandsLoading) {
+      return;
+    }
+
+    if (!selectedBrandId) {
+      setTopics([]);
+      setSelectedPrompt(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchPrompts = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const preset = DATE_PRESETS.find((item) => item.value === dateRangeKey) ?? DATE_PRESETS[0];
+        const bounds = getDateBounds(preset);
+        const params = new URLSearchParams({
+          startDate: bounds.startIso,
+          endDate: bounds.endIso
+        });
+
+        if (selectedLLMs.length > 0) {
+          params.set('collectors', selectedLLMs.join(','));
+        }
+
+        const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
+        const response = await apiClient.request<ApiResponse<PromptAnalyticsPayload>>(endpoint);
+
+        if (!response.success || !response.data) {
+          throw new Error(response.error || response.message || 'Failed to load prompts.');
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const payload = response.data;
+        const normalizedTopics = (payload.topics ?? []).filter((topic) => topic.prompts.length > 0);
+        const availableCollectors = payload.collectors ?? [];
+
+        setTopics(normalizedTopics);
+        setLlmOptions(availableCollectors);
+        setSelectedLLMs((current) => {
+          const filtered = current.filter((collector) => availableCollectors.includes(collector));
+          const unchanged =
+            filtered.length === current.length &&
+            filtered.every((value, index) => value === current[index]);
+          return unchanged ? current : filtered;
+        });
+
+        const flattenedPrompts = normalizedTopics.flatMap((topic) => topic.prompts);
+        setSelectedPrompt((previous) => {
+          if (!flattenedPrompts.length) {
+            return null;
+          }
+          if (previous) {
+            const stillExists = flattenedPrompts.find((prompt) => prompt.id === previous.id);
+            if (stillExists) {
+              return stillExists;
+            }
+          }
+          return flattenedPrompts[0];
+        });
+      } catch (fetchError) {
+        const message =
+          fetchError instanceof Error ? fetchError.message : 'Failed to load prompts.';
+        if (!cancelled) {
+          setError(message);
+          setTopics([]);
+          setSelectedPrompt(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchPrompts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBrandId, dateRangeKey, selectedLLMs, brandsLoading]);
 
   const handleManagePrompts = () => {
     navigate('/settings/manage-prompts');
@@ -33,7 +185,7 @@ export const Prompts = () => {
               Analyze AI responses to tracked prompts across topics and platforms
             </p>
           </div>
-          <button 
+          <button
             onClick={handleManagePrompts}
             className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
           >
@@ -42,20 +194,29 @@ export const Prompts = () => {
         </div>
 
         <PromptFilters
+          llmOptions={llmOptions}
           selectedLLMs={selectedLLMs}
           onLLMChange={setSelectedLLMs}
           selectedRegion={selectedRegion}
           onRegionChange={setSelectedRegion}
         />
 
+        {error && (
+          <div className="mb-4 px-4 py-3 rounded-lg border border-[#fcdada] bg-[#fff5f5] text-sm text-[#b42323]">
+            {error}
+          </div>
+        )}
+
         <div className="grid grid-cols-10 gap-6">
           <div className="col-span-6">
             <PromptsList
-              topics={mockPromptsData}
-              selectedPromptId={selectedPrompt?.id || null}
+              topics={topics}
+              selectedPromptId={selectedPrompt?.id ?? null}
               onPromptSelect={handlePromptSelect}
-              dateRange={dateRange}
-              onDateRangeChange={setDateRange}
+              dateRangeKey={dateRangeKey}
+              dateRangeOptions={dateRangeOptions}
+              onDateRangeChange={setDateRangeKey}
+              loading={loading}
             />
           </div>
 

@@ -41,6 +41,7 @@ export const TopicSelectionModal = ({
     preset: []
   });
   const [isLoadingTopics, setIsLoadingTopics] = useState(true);
+  const [topicsError, setTopicsError] = useState<string | null>(null);
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
   const [customTopics, setCustomTopics] = useState<Topic[]>([]);
   const [activeAICategory, setActiveAICategory] = useState<TopicCategory>('awareness');
@@ -56,6 +57,7 @@ export const TopicSelectionModal = ({
 
   const fetchTopicsFromAPI = async () => {
     setIsLoadingTopics(true);
+    setTopicsError(null);
     try {
       // Get competitors from localStorage
       const competitorsData = localStorage.getItem('onboarding_competitors');
@@ -79,6 +81,7 @@ export const TopicSelectionModal = ({
       
       if (response.success && response.data) {
         setAvailableTopics(response.data);
+        setTopicsError(null);
         console.log('✅ Loaded topics:', {
           trending: response.data.trending.length,
           awareness: response.data.aiGenerated.awareness.length,
@@ -88,11 +91,15 @@ export const TopicSelectionModal = ({
           preset: response.data.preset.length
         });
       } else {
-        console.error('Failed to fetch topics:', response.error);
+        const errorMsg = response.error || 'Failed to load recommended topics';
+        console.error('Failed to fetch topics:', errorMsg);
+        setTopicsError(errorMsg);
         // Keep empty state - user can still add custom topics
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to load recommended topics';
       console.error('Failed to fetch topics:', error);
+      setTopicsError(errorMsg);
       // Keep empty state - user can still add custom topics
     } finally {
       setIsLoadingTopics(false);
@@ -237,6 +244,19 @@ export const TopicSelectionModal = ({
             </div>
           ) : (
             <>
+              {topicsError && (
+                <div style={{ 
+                  padding: '12px 16px', 
+                  marginBottom: '16px', 
+                  backgroundColor: '#fef3c7', 
+                  border: '1px solid #fbbf24', 
+                  borderRadius: '8px',
+                  color: '#92400e',
+                  fontSize: '14px'
+                }}>
+                  ⚠️ {topicsError}. You can still add custom topics below.
+                </div>
+              )}
               <div className="topic-quality-section">
                 <div className="topic-quality-indicator-main">
                   <span className="topic-quality-label">Selection Quality: {getQualityLabel()}</span>

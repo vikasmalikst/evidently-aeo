@@ -36,35 +36,59 @@ router.post('/brand-intel', authenticateToken, async (req: Request, res: Respons
         if (existingBrand) {
           console.log(`✅ Found existing brand: ${existingBrand.name}`);
           
-          // Get competitors from existing brand
+          // Get competitors from existing brand (already fetched by findBrandByUrlOrName)
           const competitors = existingBrand.competitors || [];
           
           // Get existing topics
           const existingTopics = await brandService.getBrandTopics(existingBrand.id, customer_id);
           
-          // Format response with existing data
+          // Get full competitor details from database if available
+          let competitorDetails: any[] = [];
+          if (existingBrand.brand_competitors && Array.isArray(existingBrand.brand_competitors)) {
+            competitorDetails = existingBrand.brand_competitors.map((comp: any) => ({
+              name: comp.competitor_name,
+              logo: `https://logo.clearbit.com/${(comp.competitor_url || comp.competitor_name).replace(/^https?:\/\//, '').split('/')[0]}`,
+              relevance: 'Direct Competitor',
+              industry: existingBrand.industry || '',
+              domain: comp.competitor_url?.replace(/^https?:\/\//, '').split('/')[0] || comp.competitor_name.toLowerCase().replace(/\s+/g, '') + '.com',
+              url: comp.competitor_url || `https://${comp.competitor_name.toLowerCase().replace(/\s+/g, '')}.com`,
+              priority: comp.priority || 999
+            }));
+          }
+          
+          // Format response with existing data - include all available fields
           const brandIntel = {
             verified: true,
             companyName: existingBrand.name,
             website: existingBrand.homepage_url || input,
             domain: existingBrand.homepage_url?.replace(/^https?:\/\//, '').split('/')[0] || '',
-            logo: existingBrand.metadata?.brand_logo || `https://logo.clearbit.com/${existingBrand.homepage_url?.replace(/^https?:\/\//, '').split('/')[0]}`,
+            logo: existingBrand.metadata?.brand_logo || existingBrand.metadata?.logo || `https://logo.clearbit.com/${existingBrand.homepage_url?.replace(/^https?:\/\//, '').split('/')[0]}`,
             industry: existingBrand.industry || 'General',
-            headquarters: existingBrand.headquarters || '',
-            founded: existingBrand.founded_year || null,
-            description: existingBrand.summary || '',
-            metadata: existingBrand.metadata || {}
+            headquarters: existingBrand.headquarters || existingBrand.metadata?.headquarters || '',
+            founded: existingBrand.founded_year || existingBrand.metadata?.founded_year || null,
+            ceo: existingBrand.ceo || existingBrand.metadata?.ceo || '',
+            description: existingBrand.summary || existingBrand.description || existingBrand.metadata?.description || '',
+            metadata: {
+              ...(existingBrand.metadata || {}),
+              ceo: existingBrand.ceo || existingBrand.metadata?.ceo,
+              headquarters: existingBrand.headquarters || existingBrand.metadata?.headquarters,
+              founded_year: existingBrand.founded_year || existingBrand.metadata?.founded_year,
+              topics: existingBrand.aeo_topics || existingBrand.topics || [],
+              sources: existingBrand.sources || existingBrand.metadata?.sources || []
+            }
           };
 
-          // Format competitors
-          const competitorSuggestions = competitors.map((compName: string, index: number) => ({
-            name: compName,
-            logo: `https://logo.clearbit.com/${compName.toLowerCase().replace(/\s+/g, '')}.com`,
-            relevance: 'Direct Competitor',
-            industry: existingBrand.industry || '',
-            domain: compName.toLowerCase().replace(/\s+/g, '') + '.com',
-            url: `https://${compName.toLowerCase().replace(/\s+/g, '')}.com`
-          }));
+          // Use detailed competitor info if available, otherwise format from names
+          const competitorSuggestions = competitorDetails.length > 0 
+            ? competitorDetails.sort((a, b) => (a.priority || 999) - (b.priority || 999))
+            : competitors.map((compName: string, index: number) => ({
+                name: compName,
+                logo: `https://logo.clearbit.com/${compName.toLowerCase().replace(/\s+/g, '')}.com`,
+                relevance: 'Direct Competitor',
+                industry: existingBrand.industry || '',
+                domain: compName.toLowerCase().replace(/\s+/g, '') + '.com',
+                url: `https://${compName.toLowerCase().replace(/\s+/g, '')}.com`
+              }));
 
           return res.json({
             success: true,
@@ -258,8 +282,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       ...existingTopicsFormatted.map((t: any) => t.name)
     ];
     
-    // Normalize topics using the trending keywords service
-    const { trendingKeywordsService } = require('../services/keywords/trending-keywords.service');
+    // Normalize topics using the trending keywords service (already imported at top)
     const normalizedTopicNames = await trendingKeywordsService.normalizeTopicsToKeywords(
       allTopicNames,
       brand_name,

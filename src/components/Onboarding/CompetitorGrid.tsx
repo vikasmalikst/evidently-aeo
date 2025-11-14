@@ -145,9 +145,18 @@ export const CompetitorGrid = ({
           <img src={brand.logo} alt={brand.companyName} className="onboarding-brand-header__logo" crossOrigin="anonymous" />
           <div className="onboarding-brand-header__info">
             <h2 className="onboarding-brand-header__name">{brand.companyName}</h2>
-            <p className="onboarding-brand-header__meta">{brand.industry}</p>
-            {brand.description && (
+            <p className="onboarding-brand-header__meta">
+              {brand.industry || 'General'}
+              {brand.headquarters ? ` • ${brand.headquarters}` : ''}
+              {brand.founded ? ` • Founded ${brand.founded}` : ''}
+              {brand.metadata?.ceo ? ` • CEO: ${brand.metadata.ceo}` : ''}
+            </p>
+            {brand.description ? (
               <p className="onboarding-brand-header__description">{brand.description}</p>
+            ) : (
+              <p className="onboarding-brand-header__description" style={{ fontStyle: 'italic', color: '#64748b' }}>
+                {brand.website ? `Website: ${brand.website}` : 'No additional information available'}
+              </p>
             )}
           </div>
         </div>

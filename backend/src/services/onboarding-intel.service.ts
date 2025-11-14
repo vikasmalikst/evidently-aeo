@@ -87,23 +87,46 @@ class OnboardingIntelService {
 
     // Step 2: Fetch Wikipedia summary for richer description/metadata
     const wikipediaSummary = await this.fetchWikipediaSummary(companyName);
-    const description =
-      wikipediaSummary?.extract?.trim() ||
-      'No public description available for this brand yet.';
+    let description = wikipediaSummary?.extract?.trim();
+    
+    // Step 2a: If no Wikipedia description, use LLM to generate brand intelligence
+    let llmBrandIntel: any = null;
+    if (!description || description === '') {
+      console.log('⚠️ No Wikipedia description found, generating with LLM...');
+      try {
+        llmBrandIntel = await this.generateBrandIntelWithLLM(trimmedInput, companyName, domain);
+        if (llmBrandIntel?.summary && llmBrandIntel.summary !== 'No summary available') {
+          description = llmBrandIntel.summary;
+          console.log('✅ Generated description using LLM');
+        }
+      } catch (llmError) {
+        console.error('❌ LLM generation failed:', llmError);
+        description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
+      }
+    }
+    
+    // Final fallback if still no description
+    if (!description || description === '') {
+      description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
+    }
 
-    const derivedIndustry =
+    // Extract industry, headquarters, and founded year from description or LLM data
+    let derivedIndustry =
       this.extractIndustry(description) ||
       this.extractIndustry(wikipediaSummary?.description ?? '') ||
+      llmBrandIntel?.industry ||
       'General';
 
-    const headquarters =
+    let headquarters =
       this.extractHeadquarters(description) ||
       this.extractHeadquarters(wikipediaSummary?.description ?? '') ||
+      llmBrandIntel?.headquarters ||
       '';
 
-    const foundedYear =
+    let foundedYear =
       this.extractFoundedYear(description) ||
       this.extractFoundedYear(wikipediaSummary?.description ?? '') ||
+      llmBrandIntel?.foundedYear ||
       null;
 
     const brand: BrandIntel = {
@@ -315,6 +338,87 @@ class OnboardingIntelService {
     }
 
     return null;
+  }
+
+  /**
+   * Generate brand intelligence using LLM (Cerebras) when Wikipedia fails
+   */
+  private async generateBrandIntelWithLLM(
+    rawInput: string,
+    companyName: string,
+    domain?: string
+  ): Promise<{
+    summary?: string;
+    industry?: string;
+    headquarters?: string;
+    foundedYear?: number | null;
+    ceo?: string;
+  }> {
+    if (!this.cerebrasApiKey) {
+      console.warn('⚠️ Cerebras API key not configured, skipping LLM generation');
+      return {};
+    }
+
+    try {
+      const prompt = `You are a brand intelligence analyst. Generate a brief, informative description for the brand "${companyName}"${domain ? ` (${domain})` : ''}.
+
+Provide a concise summary (2-3 sentences) about this brand, including:
+- What the company does
+- Industry/sector
+- Key characteristics
+
+If you cannot find reliable information, respond with "No summary available".
+
+Respond with ONLY valid JSON in this format:
+{
+  "summary": "Brief description of the brand...",
+  "industry": "Industry name",
+  "headquarters": "City, Country (if known)",
+  "foundedYear": 2020 (or null if unknown),
+  "ceo": "CEO name (if known)"
+}`;
+
+      const response = await axios.post<any>(
+        'https://api.cerebras.ai/v1/completions',
+        {
+          model: this.cerebrasModel,
+          prompt: prompt,
+          max_tokens: 500,
+          temperature: 0.3,
+          stop: ['---END---'],
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.cerebrasApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 10000,
+        }
+      );
+
+      const text = response.data?.choices?.[0]?.text ?? '';
+      if (!text.trim()) {
+        return {};
+      }
+
+      // Extract JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return {};
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        summary: parsed.summary,
+        industry: parsed.industry,
+        headquarters: parsed.headquarters,
+        foundedYear: parsed.foundedYear ? Number(parsed.foundedYear) : null,
+        ceo: parsed.ceo,
+      };
+    } catch (error) {
+      console.error('❌ LLM brand intelligence generation failed:', error);
+      return {};
+    }
   }
 
   private toTitleCase(value: string): string {

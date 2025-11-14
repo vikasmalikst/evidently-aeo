@@ -80,9 +80,18 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
             <div className="onboarding-summary-brand__info">
               <h3 className="onboarding-summary-brand__name">{brand.companyName}</h3>
               <p className="onboarding-summary-brand__meta">
-                {brand.industry} • {brand.headquarters}
+                {brand.industry || 'General'}
+                {brand.headquarters ? ` • ${brand.headquarters}` : ''}
+                {brand.founded ? ` • Founded ${brand.founded}` : ''}
+                {brand.metadata?.ceo ? ` • CEO: ${brand.metadata.ceo}` : ''}
               </p>
-              <p className="onboarding-summary-brand__description">{brand.description}</p>
+              {brand.description ? (
+                <p className="onboarding-summary-brand__description">{brand.description}</p>
+              ) : (
+                <p className="onboarding-summary-brand__description" style={{ fontStyle: 'italic', color: '#64748b' }}>
+                  {brand.website ? `Website: ${brand.website}` : 'No additional information available'}
+                </p>
+              )}
             </div>
           </div>
         </div>

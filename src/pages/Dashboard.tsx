@@ -664,29 +664,48 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
             </div>
 
             <div className="space-y-3">
-              {mockPromptsData.slice(0, 5).map((topic) => {
-                const avgVolume = topic.prompts.reduce((sum, p) => sum + p.volume, 0) / topic.prompts.length;
-                const avgSent = topic.prompts.reduce((sum, p) => sum + p.sentiment, 0) / topic.prompts.length;
+              {topTopics.length > 0 ? (
+                topTopics.map((topic) => {
+                  const averageVolume = Number.isFinite(topic.averageVolume)
+                    ? topic.averageVolume
+                    : 0;
+                  const sentimentScore = Number.isFinite(topic.sentimentScore)
+                    ? topic.sentimentScore
+                    : 0;
+                  const sentimentClass =
+                    sentimentScore >= 4.5
+                      ? { background: 'bg-[#e6f7f1]', text: 'text-[#06c686]' }
+                      : sentimentScore >= 3.5
+                      ? { background: 'bg-[#fff8e6]', text: 'text-[#f9db43]' }
+                      : { background: 'bg-[#fff0f0]', text: 'text-[#f94343]' };
 
-                return (
-                  <div key={topic.id} className="flex items-center justify-between py-2 border-b border-[#f4f4f6] last:border-0">
-                    <div className="flex-1">
-                      <h3 className="text-[14px] font-medium text-[#1a1d29] mb-1">{topic.name}</h3>
-                      <p className="text-[12px] text-[#64748b]">{topic.prompts.length} prompts tracked</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[14px] font-semibold text-[#1a1d29]">{avgVolume.toFixed(1)}%</div>
-                      <div className="text-[12px] text-[#64748b]">Avg volume</div>
-                    </div>
-                    <div className="ml-4">
-                      <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${
-                        avgSent >= 4.5 ? 'bg-[#e6f7f1]' : avgSent >= 3.5 ? 'bg-[#fff8e6]' : 'bg-[#fff0f0]'
-                      }`}>
-                        <span className={`text-[14px] font-semibold ${
-                          avgSent >= 4.5 ? 'text-[#06c686]' : avgSent >= 3.5 ? 'text-[#f9db43]' : 'text-[#f94343]'
-                        }`}>
-                          {avgSent.toFixed(1)}
-                        </span>
+                  return (
+                    <div
+                      key={topic.topic}
+                      className="flex items-center justify-between py-2 border-b border-[#f4f4f6] last:border-0"
+                    >
+                      <div className="flex-1">
+                        <h3 className="text-[14px] font-medium text-[#1a1d29] mb-1">
+                          {topic.topic}
+                        </h3>
+                        <p className="text-[12px] text-[#64748b]">
+                          {topic.promptsTracked} {topic.promptsTracked === 1 ? 'prompt' : 'prompts'} tracked
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[14px] font-semibold text-[#1a1d29]">
+                          {averageVolume.toFixed(1)}%
+                        </div>
+                        <div className="text-[12px] text-[#64748b]">Avg volume</div>
+                      </div>
+                      <div className="ml-4">
+                        <div
+                          className={`flex items-center justify-center w-10 h-10 rounded-lg ${sentimentClass.background}`}
+                        >
+                          <span className={`text-[14px] font-semibold ${sentimentClass.text}`}>
+                            {sentimentScore.toFixed(1)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -185,6 +185,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
     }
 
     console.log(`🎯 Generating topics for ${brand_name} in ${industry || 'General'} industry`);
+    console.log(`🔍 Topic generation params:`, { brand_name, brand_id, website_url, customer_id });
 
     // Try to get existing brand data from database
     let existingBrand = null;
@@ -196,10 +197,20 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       try {
         // Try to find brand by ID first, then by name/URL
         if (brand_id) {
+          console.log(`🔍 Looking up brand by ID: ${brand_id}`);
           existingBrand = await brandService.getBrandById(brand_id, customer_id);
+          if (existingBrand) {
+            console.log(`✅ Found brand by ID: ${existingBrand.name} (requested: ${brand_name})`);
+            // Verify the brand ID matches the brand name - if not, ignore it
+            if (existingBrand.name.toLowerCase() !== brand_name.toLowerCase()) {
+              console.warn(`⚠️ Brand ID ${brand_id} points to "${existingBrand.name}" but request is for "${brand_name}" - ignoring brand_id`);
+              existingBrand = null;
+            }
+          }
         }
         
         if (!existingBrand) {
+          console.log(`🔍 Looking up brand by name/URL: name="${brand_name}", url="${website_url}"`);
           existingBrand = await brandService.findBrandByUrlOrName(
             website_url,
             brand_name,
@@ -208,7 +219,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
         }
 
         if (existingBrand) {
-          console.log(`✅ Found existing brand: ${existingBrand.name}`);
+          console.log(`✅ Found existing brand: ${existingBrand.name} (matches request for: ${brand_name})`);
           
           // Use existing brand data
           brandIndustry = existingBrand.industry || industry || 'General';
@@ -347,12 +358,22 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       awareness: [],
       comparison: [],
       purchase: [],
-      support: []
+      'post-purchase support': [] // Use full category name
+    };
+
+    // Helper function to normalize category name for lookup
+    const normalizeCategoryForLookup = (cat: string): string => {
+      const normalized = cat.toLowerCase().trim();
+      if (normalized === 'support' || normalized === 'post-purchase' || normalized === 'postpurchase') {
+        return 'post-purchase support';
+      }
+      return normalized;
     };
 
     if (categorizedResult.categorized_topics) {
       categorizedResult.categorized_topics.forEach((ct: any, index: number) => {
-        const category = ct.category.toLowerCase().replace('post-purchase support', 'support');
+        // Normalize category name for lookup
+        const category = normalizeCategoryForLookup(ct.category || 'awareness');
         
         // Find matching topic from normalized topics
         const matchingTopic = normalizedTrendingTopics.find((t: any) => t.name === ct.topic_name) ||
@@ -363,7 +384,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
             id: matchingTopic.id || `ai-${index}`,
             name: ct.topic_name, // Use the normalized topic name
             source: matchingTopic.source || 'ai_generated' as const,
-            category: category as 'awareness' | 'comparison' | 'purchase' | 'support',
+            category: category,
             relevance: Math.round((ct.confidence || 0.8) * 100)
           });
         } else if (aiGenerated[category]) {
@@ -372,7 +393,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
             id: `ai-${index}`,
             name: ct.topic_name,
             source: 'ai_generated' as const,
-            category: category as 'awareness' | 'comparison' | 'purchase' | 'support',
+            category: category,
             relevance: Math.round((ct.confidence || 0.8) * 100)
           });
         }
@@ -381,7 +402,8 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
 
     // 7. Merge normalized existing topics into appropriate categories (if not already added)
     normalizedExistingTopics.forEach((topic) => {
-      const category = (topic.category || 'awareness').toLowerCase().replace('post-purchase support', 'support');
+      // Normalize category name for lookup
+      const category = normalizeCategoryForLookup(topic.category || 'awareness');
       if (aiGenerated[category]) {
         // Check if topic already exists to avoid duplicates
         const exists = aiGenerated[category].some(t => t.name.toLowerCase() === topic.name.toLowerCase());
@@ -399,9 +421,19 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       { id: 'preset-4', name: 'Security and compliance', source: 'preset' as const, relevance: 78 }
     ];
 
+    // Map 'post-purchase support' back to 'support' for frontend compatibility
+    // (database still stores 'post-purchase support', but frontend expects 'support')
+    // Ensure all keys exist as arrays (frontend expects them to be iterable)
+    const aiGeneratedForFrontend = {
+      awareness: Array.isArray(aiGenerated.awareness) ? aiGenerated.awareness : [],
+      comparison: Array.isArray(aiGenerated.comparison) ? aiGenerated.comparison : [],
+      purchase: Array.isArray(aiGenerated.purchase) ? aiGenerated.purchase : [],
+      support: Array.isArray(aiGenerated['post-purchase support']) ? aiGenerated['post-purchase support'] : [] // Map to 'support' for frontend
+    };
+
     const response = {
       trending: normalizedTrendingTopics.slice(0, 6),
-      aiGenerated,
+      aiGenerated: aiGeneratedForFrontend,
       preset,
       existing_count: existingTopics.length
     };
@@ -456,6 +488,7 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
     }
 
     console.log(`🔍 Generating prompts for ${topics.length} topics for ${brand_name}`);
+    console.log(`🔍 Prompt generation params:`, { brand_name, brand_id, website_url, customer_id, topics_count: topics.length });
 
     // Try to get existing brand data from database
     let existingBrand = null;
@@ -466,10 +499,20 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
       try {
         // Try to find brand by ID first, then by name/URL
         if (brand_id) {
+          console.log(`🔍 Looking up brand by ID: ${brand_id}`);
           existingBrand = await brandService.getBrandById(brand_id, customer_id);
+          if (existingBrand) {
+            console.log(`✅ Found brand by ID: ${existingBrand.name} (requested: ${brand_name})`);
+            // Verify the brand ID matches the brand name - if not, ignore it
+            if (existingBrand.name.toLowerCase() !== brand_name.toLowerCase()) {
+              console.warn(`⚠️ Brand ID ${brand_id} points to "${existingBrand.name}" but request is for "${brand_name}" - ignoring brand_id`);
+              existingBrand = null;
+            }
+          }
         }
         
         if (!existingBrand) {
+          console.log(`🔍 Looking up brand by name/URL: name="${brand_name}", url="${website_url}"`);
           existingBrand = await brandService.findBrandByUrlOrName(
             website_url,
             brand_name,
@@ -478,25 +521,61 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
         }
 
         if (existingBrand) {
-          console.log(`✅ Found existing brand: ${existingBrand.name}`);
+          console.log(`✅ Found existing brand: ${existingBrand.name} (matches request for: ${brand_name})`);
           
           // Use existing brand data
           brandIndustry = existingBrand.industry || industry || 'General';
           brandCompetitors = existingBrand.competitors || competitors;
+        } else {
+          console.log(`ℹ️ No existing brand found for "${brand_name}" - using provided values for prompt generation`);
         }
       } catch (brandError) {
         console.log('⚠️ Could not fetch existing brand data, using provided values:', brandError);
       }
     }
 
-    // Use Cerebras or OpenAI directly to generate queries without database operations
+    // Use Cerebras as primary, Gemini as secondary for prompt generation
     const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
     const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
-    const openaiApiKey = process.env['OPENAI_API_KEY'];
+    const geminiApiKey = process.env['GEMINI_API_KEY'];
 
     let generatedQueries: Array<{ topic: string; query: string }> = [];
 
-    // Build a simple prompt for query generation using brand data
+    // Helper function to extract JSON array from text
+    const extractJsonArray = (text: string): string | null => {
+      let cleanText = text.trim();
+      
+      // Remove markdown code blocks if present
+      if (cleanText.startsWith('```json')) {
+        cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanText.startsWith('```')) {
+        cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+      
+      // Find complete JSON array by counting brackets
+      let bracketCount = 0;
+      let startIndex = -1;
+      
+      for (let i = 0; i < cleanText.length; i++) {
+        if (cleanText[i] === '[') {
+          if (startIndex === -1) {
+            startIndex = i;
+          }
+          bracketCount++;
+        } else if (cleanText[i] === ']') {
+          bracketCount--;
+          if (bracketCount === 0 && startIndex !== -1) {
+            return cleanText.substring(startIndex, i + 1);
+          }
+        }
+      }
+      
+      // Fallback to regex if bracket counting didn't work
+      const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+      return jsonMatch ? jsonMatch[0] : null;
+    };
+
+    // Build prompt for query generation
     const finalIndustry = brandIndustry || industry || 'General';
     const finalCompetitors = brandCompetitors.length > 0 
       ? `Competitors: ${brandCompetitors.join(', ')}. ` 
@@ -516,9 +595,13 @@ Format:
 
 Generate queries that real users would type into Google. Make them specific and actionable.`;
 
-    try {
-      // Try Cerebras first
-      if (cerebrasApiKey && cerebrasApiKey !== 'your_cerebras_api_key_here') {
+    let cerebrasFailed = false;
+    let geminiFailed = false;
+
+    // Try Cerebras first (primary)
+    if (cerebrasApiKey && cerebrasApiKey !== 'your_cerebras_api_key_here') {
+      try {
+        console.log('🧠 Attempting prompt generation with Cerebras (primary)...');
         const response = await fetch('https://api.cerebras.ai/v1/completions', {
           method: 'POST',
           headers: {
@@ -539,151 +622,105 @@ Generate queries that real users would type into Google. Make them specific and 
           const generatedText = data.choices?.[0]?.text || '';
           
           if (generatedText) {
-            try {
-              // Try multiple JSON extraction methods
-              let jsonStr = '';
-              
-              // Method 1: Remove markdown code blocks if present
-              let cleanText = generatedText.trim();
-              if (cleanText.startsWith('```json')) {
-                cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-              } else if (cleanText.startsWith('```')) {
-                cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-              }
-              
-              // Method 2: Find complete JSON array by counting brackets (more reliable)
-              let bracketCount = 0;
-              let startIndex = -1;
-              
-              for (let i = 0; i < cleanText.length; i++) {
-                if (cleanText[i] === '[') {
-                  if (startIndex === -1) {
-                    startIndex = i;
-                  }
-                  bracketCount++;
-                } else if (cleanText[i] === ']') {
-                  bracketCount--;
-                  if (bracketCount === 0 && startIndex !== -1) {
-                    jsonStr = cleanText.substring(startIndex, i + 1);
-                    break;
-                  }
-                }
-              }
-              
-              // Method 3: Fallback to regex if bracket counting didn't work
-              if (!jsonStr) {
-                const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
-                if (jsonMatch) {
-                  jsonStr = jsonMatch[0];
-                }
-              }
-              
-              if (jsonStr) {
+            const jsonStr = extractJsonArray(generatedText);
+            if (jsonStr) {
+              try {
                 const parsed = JSON.parse(jsonStr);
                 if (Array.isArray(parsed) && parsed.length > 0) {
                   generatedQueries = parsed;
-                  console.log(`✅ Successfully parsed ${parsed.length} queries from Cerebras response`);
+                  console.log(`✅ Successfully generated ${parsed.length} queries using Cerebras`);
                 }
-              } else {
-                console.warn('⚠️ No valid JSON array found in Cerebras response');
+              } catch (parseError) {
+                console.error('❌ Failed to parse Cerebras JSON response:', parseError);
+                cerebrasFailed = true;
               }
-            } catch (parseError) {
-              console.error('❌ Failed to parse Cerebras JSON response:', parseError);
-              console.log('🔍 Raw response snippet:', generatedText.substring(0, 500));
+            } else {
+              console.warn('⚠️ No valid JSON array found in Cerebras response');
+              cerebrasFailed = true;
             }
+          } else {
+            cerebrasFailed = true;
           }
+        } else {
+          console.error(`❌ Cerebras API error: ${response.status} ${response.statusText}`);
+          cerebrasFailed = true;
         }
+      } catch (cerebrasError) {
+        console.error('❌ Cerebras API request failed:', cerebrasError);
+        cerebrasFailed = true;
       }
-
-      // Fallback to OpenAI if Cerebras failed
-      if (generatedQueries.length === 0 && openaiApiKey && openaiApiKey !== 'your_openai_api_key_here') {
-        try {
-          const { OpenAI } = await import('openai');
-          const openai = new OpenAI({ apiKey: openaiApiKey });
-
-          const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: 'You are an SEO expert. Return only valid JSON arrays. Do not include any text before or after the JSON array.' },
-              { role: 'user', content: prompt }
-            ],
-            temperature: 0.7,
-            max_tokens: 2000
-          });
-
-          const responseText = completion.choices[0]?.message?.content || '';
-          
-          if (responseText) {
-            try {
-              // Try multiple JSON extraction methods
-              let jsonStr = '';
-              
-              // Method 1: Remove markdown code blocks if present
-              let cleanText = responseText.trim();
-              if (cleanText.startsWith('```json')) {
-                cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-              } else if (cleanText.startsWith('```')) {
-                cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-              }
-              
-              // Method 2: Find complete JSON array by counting brackets (more reliable)
-              let bracketCount = 0;
-              let startIndex = -1;
-              
-              for (let i = 0; i < cleanText.length; i++) {
-                if (cleanText[i] === '[') {
-                  if (startIndex === -1) {
-                    startIndex = i;
-                  }
-                  bracketCount++;
-                } else if (cleanText[i] === ']') {
-                  bracketCount--;
-                  if (bracketCount === 0 && startIndex !== -1) {
-                    jsonStr = cleanText.substring(startIndex, i + 1);
-                    break;
-                  }
-                }
-              }
-              
-              // Method 3: Fallback to regex if bracket counting didn't work
-              if (!jsonStr) {
-                const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
-                if (jsonMatch) {
-                  jsonStr = jsonMatch[0];
-                }
-              }
-              
-              if (jsonStr) {
-                const parsed = JSON.parse(jsonStr);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  generatedQueries = parsed;
-                  console.log(`✅ Successfully parsed ${parsed.length} queries from OpenAI response`);
-                }
-              } else {
-                console.warn('⚠️ No valid JSON array found in OpenAI response');
-              }
-            } catch (parseError) {
-              console.error('❌ Failed to parse OpenAI JSON response:', parseError);
-              console.log('🔍 Raw response snippet:', responseText.substring(0, 500));
-            }
-          }
-        } catch (openaiError) {
-          console.error('❌ OpenAI API error:', openaiError);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error generating queries:', error);
+    } else {
+      console.warn('⚠️ Cerebras API key not configured');
+      cerebrasFailed = true;
     }
 
-    // Fallback: Generate basic prompts if AI generation failed
-    if (generatedQueries.length === 0) {
-      console.log('⚠️ AI generation failed, generating fallback prompts');
-      topics.forEach((topic) => {
-        generatedQueries.push(
-          { topic, query: `What are ${brand_name}'s ${topic.toLowerCase()}?` },
-          { topic, query: `How does ${brand_name} handle ${topic.toLowerCase()}?` },
-          { topic, query: `${brand_name} ${topic.toLowerCase()} information` }
+    // Fallback to Gemini if Cerebras failed
+    if (generatedQueries.length === 0 && geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
+      try {
+        console.log('🤖 Attempting prompt generation with Gemini (secondary)...');
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{
+                  text: `You are an SEO expert. Return only valid JSON arrays. No explanations, no markdown, no code blocks.\n\n${prompt}`,
+                }],
+              }],
+              generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 2000,
+              },
+            }),
+          }
         );
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          
+          if (generatedText) {
+            const jsonStr = extractJsonArray(generatedText);
+            if (jsonStr) {
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  generatedQueries = parsed;
+                  console.log(`✅ Successfully generated ${parsed.length} queries using Gemini`);
+                }
+              } catch (parseError) {
+                console.error('❌ Failed to parse Gemini JSON response:', parseError);
+                geminiFailed = true;
+              }
+            } else {
+              console.warn('⚠️ No valid JSON array found in Gemini response');
+              geminiFailed = true;
+            }
+          } else {
+            geminiFailed = true;
+          }
+        } else {
+          const errorText = await response.text();
+          console.error(`❌ Gemini API error: ${response.status} ${errorText}`);
+          geminiFailed = true;
+        }
+      } catch (geminiError) {
+        console.error('❌ Gemini API request failed:', geminiError);
+        geminiFailed = true;
+      }
+    } else if (generatedQueries.length === 0) {
+      console.warn('⚠️ Gemini API key not configured');
+      geminiFailed = true;
+    }
+
+    // If both providers failed, return error
+    if (generatedQueries.length === 0) {
+      console.error('❌ Prompt generation failed: Both Cerebras and Gemini failed');
+      return res.status(500).json({
+        success: false,
+        error: 'Prompt generation failed'
       });
     }
 

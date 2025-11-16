@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { brandService } from '../services/brand.service';
-import { brandDashboardService, DashboardDateRange } from '../services/brand-dashboard.service';
+import { brandDashboardService, DashboardDateRange } from '../services/brand-dashboard';
 import { promptsAnalyticsService } from '../services/prompts-analytics.service';
+import { keywordsAnalyticsService } from '../services/keywords-analytics.service';
+import { sourceAttributionService } from '../services/source-attribution.service';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { BrandOnboardingRequest, ApiResponse, DatabaseError } from '../types/auth';
 import { supabaseAdmin } from '../config/database';
@@ -37,6 +39,40 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to create brand'
+    });
+  }
+});
+
+/**
+ * GET /brands/:brandId/keywords
+ * Keyword analytics aggregated from generated_keywords and extracted_positions
+ */
+router.get('/:brandId/keywords', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    if (!brandId) {
+      res.status(400).json({ success: false, error: 'Brand ID is required' });
+      return;
+    }
+
+    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+
+    const payload = await keywordsAnalyticsService.getKeywordAnalytics({
+      brandId,
+      customerId,
+      startDate,
+      endDate
+    });
+
+    res.json({ success: true, data: payload });
+  } catch (error) {
+    console.error('Error fetching keyword analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch keyword analytics'
     });
   }
 });
@@ -505,6 +541,94 @@ router.post('/:id/categorize-topics', authenticateToken, async (req: Request, re
   } catch (error) {
     console.error('Error categorizing topics:', error);
     res.status(500).json({ success: false, error: 'Failed to categorize topics' });
+  }
+});
+
+/**
+ * GET /brands/:brandId/sources
+ * Get source attribution data for a specific brand
+ */
+router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    
+    let dateRange: { start: string; end: string } | undefined;
+    
+    if (startQuery || endQuery) {
+      try {
+        const parseDate = (value: string): Date => {
+          const parsed = new Date(value);
+          if (Number.isNaN(parsed.getTime())) {
+            throw new Error(`Invalid date: ${value}`);
+          }
+          return parsed;
+        };
+
+        let startDate = startQuery ? parseDate(startQuery) : undefined;
+        let endDate = endQuery ? parseDate(endQuery) : undefined;
+
+        if (endDate && !startDate) {
+          startDate = new Date(endDate);
+          startDate.setUTCDate(startDate.getUTCDate() - 30);
+        }
+
+        if (startDate && !endDate) {
+          endDate = new Date(startDate);
+          endDate.setUTCDate(endDate.getUTCDate() + 30);
+        }
+
+        if (!startDate || !endDate) {
+          throw new Error('Both startDate and endDate are required');
+        }
+
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate.setUTCHours(23, 59, 59, 999);
+
+        if (startDate.getTime() > endDate.getTime()) {
+          throw new Error('startDate must be before or equal to endDate');
+        }
+
+        dateRange = {
+          start: startDate.toISOString(),
+          end: endDate.toISOString()
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid date range';
+        res.status(400).json({ success: false, error: message });
+        return;
+      }
+    }
+
+    if (!brandId) {
+      res.status(400).json({ success: false, error: 'Brand ID is required' });
+      return;
+    }
+
+    const sourceData = await sourceAttributionService.getSourceAttribution(
+      brandId,
+      customerId,
+      dateRange
+    );
+
+    res.json({
+      success: true,
+      data: sourceData
+    });
+  } catch (error) {
+    console.error('Error fetching source attribution:', error);
+
+    if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
+      res.status(404).json({ success: false, error: error.message });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch source attribution'
+    });
   }
 });
 

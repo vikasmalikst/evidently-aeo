@@ -683,13 +683,52 @@ export class TrendingKeywordsService {
       const data = await response.json() as any;
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
+      // Use robust JSON extraction (same approach as brand intel service)
       let parsed: { keywords?: Array<{ keyword: string; category?: string }>; prompts?: Array<{ prompt: string; category?: string }> } = {};
+      
       try {
+        // Strategy 1: Try parsing as-is
         parsed = JSON.parse(text);
-      } catch {
-        const match = text.match(/\{[\s\S]*\}/);
-        if (match) {
-          parsed = JSON.parse(match[0]);
+      } catch (firstError) {
+        console.log('⚠️ Direct JSON parse failed, trying extraction...');
+        try {
+          // Strategy 2: Extract JSON using regex
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            // Try to find the matching closing brace by counting
+            const firstBrace = jsonMatch[0].indexOf('{');
+            if (firstBrace !== -1) {
+              let braceCount = 0;
+              let lastBrace = -1;
+              for (let i = firstBrace; i < jsonMatch[0].length; i++) {
+                if (jsonMatch[0][i] === '{') {
+                  braceCount++;
+                } else if (jsonMatch[0][i] === '}') {
+                  braceCount--;
+                  if (braceCount === 0) {
+                    lastBrace = i;
+                    break;
+                  }
+                }
+              }
+              if (lastBrace !== -1) {
+                const jsonString = jsonMatch[0].slice(firstBrace, lastBrace + 1);
+                parsed = JSON.parse(jsonString);
+                console.log('✅ Successfully extracted and parsed JSON from Gemini response');
+              } else {
+                throw new Error('No matching closing brace found');
+              }
+            } else {
+              throw new Error('No opening brace found');
+            }
+          } else {
+            throw new Error('No JSON object found in response');
+          }
+        } catch (secondError) {
+          console.error('❌ Failed to parse Gemini JSON response:', secondError);
+          console.error('📄 Response text preview:', text.substring(0, 500));
+          // Return empty result instead of throwing
+          return { keywords: [], prompts: [] };
         }
       }
 

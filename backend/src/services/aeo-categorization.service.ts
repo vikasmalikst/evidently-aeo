@@ -1,4 +1,3 @@
-import { OpenAI } from 'openai';
 import { supabaseAdmin } from '../config/database';
 
 export interface AEOCategory {
@@ -27,16 +26,21 @@ export interface CategorizationResponse {
 }
 
 export class AEOCategorizationService {
-  private openai: OpenAI | null = null;
+  private geminiApiKey: string;
+  private geminiModel: string;
+  private openaiApiKey: string;
 
   constructor() {
-    const apiKey = process.env['OPENAI_API_KEY'];
-    if (apiKey && apiKey !== 'your_openai_api_key_here') {
-      this.openai = new OpenAI({
-        apiKey: apiKey,
-      });
+    this.geminiApiKey = process.env['GOOGLE_GEMINI_API_KEY'] || '';
+    this.geminiModel = process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash-002';
+    this.openaiApiKey = process.env['OPENAI_API_KEY'] || '';
+    
+    if (!this.geminiApiKey && !this.openaiApiKey) {
+      console.warn('⚠️ Neither Gemini nor OpenAI API key configured, will use rule-based categorization');
     } else {
-      console.warn('⚠️ OpenAI API key not configured, using mock categorization');
+      console.log('✅ Categorization service initialized');
+      if (this.geminiApiKey) console.log('  - Gemini: ✅ Configured');
+      if (this.openaiApiKey) console.log('  - OpenAI: ✅ Configured (fallback)');
     }
   }
 
@@ -45,11 +49,28 @@ export class AEOCategorizationService {
    */
   async categorizeTopics(request: CategorizationRequest): Promise<CategorizationResponse> {
     try {
-      if (this.openai) {
-        return await this.categorizeWithAI(request);
-      } else {
-        return this.categorizeWithRules(request);
+      // Try Gemini first
+      if (this.geminiApiKey) {
+        try {
+          return await this.categorizeWithGemini(request);
+        } catch (geminiError) {
+          console.error('❌ Gemini categorization failed:', geminiError);
+          console.log('🔄 Falling back to OpenAI...');
+        }
       }
+      
+      // Fallback to OpenAI
+      if (this.openaiApiKey) {
+        try {
+          return await this.categorizeWithOpenAI(request);
+        } catch (openaiError) {
+          console.error('❌ OpenAI categorization failed:', openaiError);
+          console.log('🔄 Falling back to rule-based categorization...');
+        }
+      }
+      
+      // Final fallback to rule-based
+      return this.categorizeWithRules(request);
     } catch (error) {
       console.error('❌ Error in categorizeTopics:', error);
       // Fallback to rule-based categorization
@@ -58,30 +79,95 @@ export class AEOCategorizationService {
   }
 
   /**
-   * Use AI to categorize topics
+   * Use Gemini AI to categorize topics
    */
-  private async categorizeWithAI(request: CategorizationRequest): Promise<CategorizationResponse> {
+  private async categorizeWithGemini(request: CategorizationRequest): Promise<CategorizationResponse> {
     const prompt = this.buildCategorizationPrompt(request);
     
-    const response = await this.openai!.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert in Answer Engine Optimization (AEO) and customer journey mapping. Your task is to categorize brand topics into 4 main customer journey categories.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 2000
+    console.log('🤖 Categorizing topics with Gemini...');
+    
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `You are an expert in Answer Engine Optimization (AEO) and customer journey mapping. Your task is to categorize brand topics into 4 main customer journey categories.\n\n${prompt}`
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 2000,
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Gemini API error:', errorText);
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    const content = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    if (!content) {
+      throw new Error('No response from Gemini');
+    }
+
+    return await this.parseAIResponse(content, request.topics);
+  }
+
+  /**
+   * Use OpenAI to categorize topics (fallback)
+   */
+  private async categorizeWithOpenAI(request: CategorizationRequest): Promise<CategorizationResponse> {
+    const prompt = this.buildCategorizationPrompt(request);
+    
+    console.log('🤖 Categorizing topics with OpenAI (fallback)...');
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.openaiApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert in Answer Engine Optimization (AEO) and customer journey mapping. Your task is to categorize brand topics into 4 main customer journey categories. Always respond with valid JSON only.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000
+      })
     });
 
-    const content = response.choices[0]?.message?.content;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ OpenAI API error:', errorText);
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    const content = data.choices[0]?.message?.content || '';
+
     if (!content) {
-      throw new Error('No response from AI');
+      throw new Error('No response from OpenAI');
     }
 
     return await this.parseAIResponse(content, request.topics);
@@ -140,8 +226,62 @@ Make sure to:
    */
   private async parseAIResponse(content: string, originalTopics: string[]): Promise<CategorizationResponse> {
     try {
-      const parsed = JSON.parse(content);
+      // Use robust JSON extraction (same approach as other services)
+      let parsed: any = {};
+      
+      try {
+        // Strategy 1: Try parsing as-is
+        parsed = JSON.parse(content);
+      } catch (firstError) {
+        console.log('⚠️ Direct JSON parse failed, trying extraction...');
+        try {
+          // Strategy 2: Extract JSON using regex and brace matching
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const firstBrace = jsonMatch[0].indexOf('{');
+            if (firstBrace !== -1) {
+              let braceCount = 0;
+              let lastBrace = -1;
+              for (let i = firstBrace; i < jsonMatch[0].length; i++) {
+                if (jsonMatch[0][i] === '{') {
+                  braceCount++;
+                } else if (jsonMatch[0][i] === '}') {
+                  braceCount--;
+                  if (braceCount === 0) {
+                    lastBrace = i;
+                    break;
+                  }
+                }
+              }
+              if (lastBrace !== -1) {
+                const jsonString = jsonMatch[0].slice(firstBrace, lastBrace + 1);
+                parsed = JSON.parse(jsonString);
+                console.log('✅ Successfully extracted and parsed JSON from Gemini response');
+              } else {
+                throw new Error('No matching closing brace found');
+              }
+            } else {
+              throw new Error('No opening brace found');
+            }
+          } else {
+            throw new Error('No JSON object found in response');
+          }
+        } catch (secondError) {
+          console.error('❌ Failed to parse Gemini JSON response:', secondError);
+          console.error('📄 Response text preview:', content.substring(0, 500));
+          // Fallback to rule-based categorization
+          return await this.categorizeWithRules({ topics: originalTopics, brand_name: '', industry: '' });
+        }
+      }
+
       const categorizedTopics: CategorizedTopic[] = parsed.categorized_topics || [];
+      
+      if (categorizedTopics.length === 0) {
+        console.warn('⚠️ No categorized topics found in AI response, using rule-based fallback');
+        return await this.categorizeWithRules({ topics: originalTopics, brand_name: '', industry: '' });
+      }
+      
+      console.log(`✅ Successfully categorized ${categorizedTopics.length} topics with Gemini`);
       
       return {
         categories: this.getDefaultCategories(),

@@ -52,7 +52,7 @@ interface CompetitorGenerationParams {
 class OnboardingIntelService {
   private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
   private cerebrasModel =
-    process.env['CEREBRAS_MODEL'] || 'gpt-oss-120b';
+    process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
 
   async lookupBrandIntel(params: {
     input: string;
@@ -79,55 +79,64 @@ class OnboardingIntelService {
     );
 
     const companyName = this.buildCompanyName(matchedSuggestion, trimmedInput);
-    const domain = this.buildDomain(matchedSuggestion, trimmedInput);
-    const website = domain ? this.ensureHttps(domain) : '';
+    let domain = this.buildDomain(matchedSuggestion, trimmedInput);
+    let website = domain ? this.ensureHttps(domain) : '';
     const logo =
       matchedSuggestion?.logo ??
       (domain ? `https://logo.clearbit.com/${domain}` : '');
 
-    // Step 2: Fetch Wikipedia summary for richer description/metadata
-    const wikipediaSummary = await this.fetchWikipediaSummary(companyName);
-    let description = wikipediaSummary?.extract?.trim();
-    
-    // Step 2a: If no Wikipedia description, use LLM to generate brand intelligence
+    // Step 2: Generate complete brand intelligence using LLM (matches portal implementation)
+    // This generates brand info, competitors, and topics all at once
+    console.log('🤖 Generating brand intelligence with LLM (portal-style)...');
     let llmBrandIntel: any = null;
-    if (!description || description === '') {
-      console.log('⚠️ No Wikipedia description found, generating with LLM...');
-      try {
-        llmBrandIntel = await this.generateBrandIntelWithLLM(trimmedInput, companyName, domain);
-        if (llmBrandIntel?.summary && llmBrandIntel.summary !== 'No summary available') {
-          description = llmBrandIntel.summary;
-          console.log('✅ Generated description using LLM');
-        }
-      } catch (llmError) {
-        console.error('❌ LLM generation failed:', llmError);
-        description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
-      }
+    try {
+      llmBrandIntel = await this.generateBrandIntelWithLLM(trimmedInput, companyName, domain);
+      console.log('✅ LLM brand intelligence generated:', {
+        hasSummary: !!llmBrandIntel?.summary,
+        hasIndustry: !!llmBrandIntel?.industry,
+        competitorsCount: llmBrandIntel?.competitors?.length || 0,
+        topicsCount: llmBrandIntel?.topics?.length || 0,
+      });
+    } catch (llmError) {
+      console.error('❌ LLM generation failed:', llmError);
     }
+
+    // Step 2a: Fetch Wikipedia summary as fallback/enhancement
+    const wikipediaSummary = await this.fetchWikipediaSummary(companyName);
+    let description = llmBrandIntel?.summary || wikipediaSummary?.extract?.trim() || '';
     
     // Final fallback if still no description
     if (!description || description === '') {
       description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
     }
 
-    // Extract industry, headquarters, and founded year from description or LLM data
+    // Use LLM data first, then fallback to Wikipedia/extraction
     let derivedIndustry =
+      llmBrandIntel?.industry ||
       this.extractIndustry(description) ||
       this.extractIndustry(wikipediaSummary?.description ?? '') ||
-      llmBrandIntel?.industry ||
       'General';
 
     let headquarters =
+      llmBrandIntel?.headquarters ||
       this.extractHeadquarters(description) ||
       this.extractHeadquarters(wikipediaSummary?.description ?? '') ||
-      llmBrandIntel?.headquarters ||
       '';
 
     let foundedYear =
+      llmBrandIntel?.foundedYear ||
       this.extractFoundedYear(description) ||
       this.extractFoundedYear(wikipediaSummary?.description ?? '') ||
-      llmBrandIntel?.foundedYear ||
       null;
+
+    // Use LLM-generated homepage URL if available
+    if (llmBrandIntel?.homepageUrl) {
+      const llmDomain = this.stripProtocol(llmBrandIntel.homepageUrl);
+      if (llmDomain && !domain) {
+        domain = llmDomain;
+        website = llmBrandIntel.homepageUrl;
+      }
+    }
 
     const brand: BrandIntel = {
       verified: Boolean(domain),
@@ -149,14 +158,59 @@ class OnboardingIntelService {
       },
     };
 
-    // Step 3: Generate competitor suggestions
-    const competitors = await this.generateCompetitors({
-      companyName,
-      industry: derivedIndustry,
-      domain,
-      locale,
-      country,
-    });
+    // Step 3: Use LLM-generated competitors (simple string array) or generate with separate API
+    let competitors: CompetitorSuggestion[] = [];
+    
+    if (llmBrandIntel?.competitors && Array.isArray(llmBrandIntel.competitors) && llmBrandIntel.competitors.length > 0) {
+      // Convert simple string array to CompetitorSuggestion format
+      console.log(`✅ Using ${llmBrandIntel.competitors.length} competitors from LLM`);
+      competitors = llmBrandIntel.competitors
+        .filter((name: string) => name && typeof name === 'string' && name.trim().length > 0)
+        .slice(0, 10)
+        .map((name: string) => {
+          const normalizedName = name.trim();
+          // Create proper domain format - add .com if no TLD present
+          let competitorDomain = normalizedName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9.-]/g, '');
+          // If domain doesn't have a TLD, add .com
+          if (!competitorDomain.includes('.')) {
+            competitorDomain = `${competitorDomain}.com`;
+          }
+          return {
+            name: normalizedName,
+            domain: competitorDomain,
+            logo: `https://logo.clearbit.com/${competitorDomain}`,
+            industry: derivedIndustry,
+            relevance: 'Direct Competitor',
+            url: `https://${competitorDomain}`,
+            description: '',
+            source: 'cerebras-ai',
+          };
+        });
+    } else {
+      // Fallback to separate competitor generation API
+      console.log('⚠️ No competitors from LLM, using separate competitor generation...');
+      try {
+        competitors = await this.generateCompetitors({
+          companyName,
+          industry: derivedIndustry,
+          domain,
+          locale,
+          country,
+        });
+      } catch (compError) {
+        console.error('❌ Competitor generation failed:', compError);
+        competitors = [];
+      }
+    }
+
+    // Store topics in metadata for later use (they'll be used in topic generation step)
+    if (llmBrandIntel?.topics && Array.isArray(llmBrandIntel.topics) && llmBrandIntel.topics.length > 0) {
+      brand.metadata = {
+        ...brand.metadata,
+        llmGeneratedTopics: llmBrandIntel.topics,
+      };
+      console.log(`✅ Stored ${llmBrandIntel.topics.length} topics from LLM in metadata`);
+    }
 
     return {
       brand,
@@ -341,7 +395,8 @@ class OnboardingIntelService {
   }
 
   /**
-   * Generate brand intelligence using LLM (Cerebras) when Wikipedia fails
+   * Generate complete brand intelligence using LLM (Cerebras) - matches portal implementation
+   * Uses the same prompt and parsing logic as the portal
    */
   private async generateBrandIntelWithLLM(
     rawInput: string,
@@ -353,67 +408,111 @@ class OnboardingIntelService {
     headquarters?: string;
     foundedYear?: number | null;
     ceo?: string;
+    competitors?: string[];
+    topics?: string[];
+    homepageUrl?: string;
   }> {
     if (!this.cerebrasApiKey) {
       console.warn('⚠️ Cerebras API key not configured, skipping LLM generation');
       return {};
     }
 
-    try {
-      const prompt = `You are a brand intelligence analyst. Generate a brief, informative description for the brand "${companyName}"${domain ? ` (${domain})` : ''}.
+    // Use the exact same prompt as the portal implementation
+    const LLM_SYSTEM_PROMPT = `You are a brand intelligence researcher. Given a brand name OR a URL:
 
-Provide a concise summary (2-3 sentences) about this brand, including:
-- What the company does
-- Industry/sector
-- Key characteristics
+Identify the brand, canonical homepage URL, short neutral summary (max 4 sentences).
 
-If you cannot find reliable information, respond with "No summary available".
+Extract CEO, headquarters city+country, founded year (if public).
 
-Respond with ONLY valid JSON in this format:
+List top 5 competitors (global first, dedupe subsidiaries).
+
+Assign an industry/vertical (1–3 words).
+
+IMPORTANT: You must respond with a valid JSON object containing these exact fields:
 {
-  "summary": "Brief description of the brand...",
-  "industry": "Industry name",
-  "headquarters": "City, Country (if known)",
-  "foundedYear": 2020 (or null if unknown),
-  "ceo": "CEO name (if known)"
-}`;
+  "brandName": "string",
+  "homepageUrl": "string (full URL with https://)",
+  "summary": "string (max 4 sentences)",
+  "ceo": "string or null",
+  "headquarters": "string (city, country)",
+  "foundedYear": number or null,
+  "industry": "string (1-3 words)",
+  "competitors": ["string1", "string2", "string3", "string4", "string5"],
+  "topics": ["string1", "string2", "string3", "string4", "string5", "string6", "string7", "string8"]
+}
 
+You are an Answer Engine Optimization (AEO) researcher.  
+Your task is to generate 5–8 high-level **Topics** that represent the main categories of user queries for a specific brand or entity.  
+
+Requirements:
+1. Topics are broad "buckets" of user intent, not individual questions.  
+2. Topics must be **brand-specific** and **industry-specific**.  
+3. Avoid generic labels like "FAQs" or "General Information." Each Topic should reflect real areas of likely user curiosity.  
+4. Cover a balanced spread of user concerns, typically including:
+   - Brand identity & trust
+   - Products & features
+   - Concerns, risks, or complaints
+   - Informational / how-to usage
+   - Pricing, value, or cost
+   - Comparisons vs. competitors
+   - Sustainability, ethics, or quality signals
+   - Ingredients, nutrition, or safety (if relevant to category)
+   - Local/transactional considerations (if relevant)
+5. Keep Topics **short (2–5 words)** and **query-shaped** (e.g., "Nutritional Facts," "Durability & Quality," "Pricing & Value").  
+6. Do not include the brand name inside the Topics. 
+
+Return JSON strictly matching the BrandIntel schema. Include 3–6 public sources with titles+URLs used for the above. Input was: {rawInput}.`;
+
+    const systemPrompt = LLM_SYSTEM_PROMPT.replace('{rawInput}', rawInput);
+
+    try {
+      // Use chat/completions API format (same as portal)
       const response = await axios.post<any>(
-        'https://api.cerebras.ai/v1/completions',
+        'https://api.cerebras.ai/v1/chat/completions',
         {
           model: this.cerebrasModel,
-          prompt: prompt,
-          max_tokens: 500,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Analyze this brand: ${rawInput}` }
+          ],
           temperature: 0.3,
-          stop: ['---END---'],
+          max_tokens: 2000,
         },
         {
           headers: {
             Authorization: `Bearer ${this.cerebrasApiKey}`,
             'Content-Type': 'application/json',
           },
-          timeout: 10000,
+          timeout: 30000,
         }
       );
 
-      const text = response.data?.choices?.[0]?.text ?? '';
-      if (!text.trim()) {
+      const content = response.data?.choices?.[0]?.message?.content ?? '';
+      if (!content.trim()) {
+        console.warn('⚠️ No content in LLM response');
         return {};
       }
 
-      // Extract JSON from response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      // Use the same parsing logic as portal (simple regex, then handle field variations)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
+        console.warn('⚠️ No JSON found in LLM response');
         return {};
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
+      console.log('✅ Parsed brand intel JSON:', parsed);
+
+      // Handle field name variations (same as portal)
       return {
-        summary: parsed.summary,
-        industry: parsed.industry,
-        headquarters: parsed.headquarters,
-        foundedYear: parsed.foundedYear ? Number(parsed.foundedYear) : null,
-        ceo: parsed.ceo,
+        summary: parsed.summary || parsed.description || undefined,
+        industry: parsed.industry || parsed.sector || parsed.vertical || undefined,
+        headquarters: parsed.headquarters || parsed.location || parsed.hq || undefined,
+        foundedYear: parsed.foundedYear || parsed.founded || parsed.year_founded || null,
+        ceo: parsed.ceo || parsed.ceo_name || undefined,
+        competitors: Array.isArray(parsed.competitors) ? parsed.competitors : [],
+        topics: Array.isArray(parsed.topics) ? parsed.topics : (Array.isArray(parsed.aeo_topics) ? parsed.aeo_topics : []),
+        homepageUrl: parsed.homepageUrl || parsed.homepage || parsed.url || undefined,
       };
     } catch (error) {
       console.error('❌ LLM brand intelligence generation failed:', error);
@@ -501,6 +600,34 @@ Respond with ONLY valid JSON in this format:
       
       // 🎯 NEW: Basic competitor verification - filter out invalid competitors
       finalCompetitors = this.verifyCompetitors(finalCompetitors, companyName);
+      
+      // If no competitors found, try to get some basic suggestions from Clearbit
+      if (finalCompetitors.length === 0) {
+        console.warn('⚠️ No competitors found from AI, trying Clearbit fallback...');
+        try {
+          const clearbitSuggestions = await this.fetchClearbitSuggestions(`${industry} companies`);
+          const fallbackCompetitors = clearbitSuggestions
+            .slice(0, 5)
+            .filter(s => s.name.toLowerCase() !== companyName.toLowerCase())
+            .map(s => ({
+              name: s.name,
+              domain: s.domain,
+              logo: s.logo || `https://logo.clearbit.com/${s.domain}`,
+              industry: industry,
+              relevance: 'Indirect Competitor' as const,
+              url: `https://${s.domain}`,
+              description: '',
+              source: 'clearbit-fallback',
+            }));
+          
+          if (fallbackCompetitors.length > 0) {
+            console.log(`✅ Using ${fallbackCompetitors.length} Clearbit fallback competitors`);
+            finalCompetitors = fallbackCompetitors;
+          }
+        } catch (fallbackError) {
+          console.warn('⚠️ Clearbit fallback also failed:', fallbackError);
+        }
+      }
       
       console.log(`✅ Returning ${finalCompetitors.length} verified unique competitors`);
 
@@ -664,7 +791,8 @@ Respond with ONLY valid JSON in this format:
 
 TASK:
 - Identify up to 10 relevant competitors for "${companyName}" in the ${industry} industry.
-- Prefer companies operating in the same region (${country}) and market segment.
+- If ${companyName} operates in ${country}, find competitors in that market.
+- If ${companyName} does NOT operate in ${country}, find companies that DO operate in ${country} and serve similar customer needs in the ${industry} industry.
 - Prioritize realistic, well-known organizations. Avoid defunct companies.
 - Include a mix of direct and indirect competitors, clearly labelled.
 
@@ -686,14 +814,17 @@ Return ONLY valid JSON using the following schema:
 CONTEXT:
 - Brand: ${companyName}
 - Industry: ${industry}
-- Market: ${country} (${locale})
+- Target Market: ${country} (${locale})
 ${domain ? `- Website: ${domain}\n` : ''}
 
 RULES:
 - DO NOT include ${companyName} itself in the list.
+- If the brand doesn't operate in ${country}, find companies that DO operate there and serve similar needs.
 - Prefer competitors that customers would compare directly when researching options.
 - If unsure, choose the most globally recognized companies in the same category.
-- Output must be valid JSON. Do not include comments, explanations, or markdown.
+- CRITICAL: Output ONLY valid JSON. Do NOT include any text, comments, explanations, or markdown after the JSON.
+- The response must end immediately after the closing brace } of the JSON object.
+- Always return at least 3-5 competitors if possible. Only return empty array if truly no relevant companies exist.
 
 ---END---`;
   }
@@ -730,10 +861,31 @@ RULES:
     }
     
     const firstBrace = cleanedText.indexOf('{');
-    const lastBrace = cleanedText.lastIndexOf('}');
 
-    if (firstBrace === -1 || lastBrace === -1) {
+    if (firstBrace === -1) {
       console.error('❌ No JSON braces found in response');
+      console.error('Text preview:', cleanedText.substring(0, 500));
+      // Try regex fallback extraction
+      return this.extractCompetitorsWithRegex(cleanedText);
+    }
+
+    // Find the matching closing brace by counting braces (handles nested objects)
+    let braceCount = 0;
+    let lastBrace = -1;
+    for (let i = firstBrace; i < cleanedText.length; i++) {
+      if (cleanedText[i] === '{') {
+        braceCount++;
+      } else if (cleanedText[i] === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          lastBrace = i;
+          break; // Found the matching closing brace
+        }
+      }
+    }
+
+    if (lastBrace === -1) {
+      console.error('❌ No matching closing brace found for JSON object');
       console.error('Text preview:', cleanedText.substring(0, 500));
       // Try regex fallback extraction
       return this.extractCompetitorsWithRegex(cleanedText);

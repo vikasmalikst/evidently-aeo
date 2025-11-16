@@ -98,7 +98,7 @@ export class PriorityCollectorService {
         {
           name: 'oxylabs_chatgpt',
           priority: 1,
-          enabled: true, // Re-enabled as per user's request
+          enabled: true,
           timeout: 30000,
           retries: 1,
           fallback_on_failure: true
@@ -107,20 +107,18 @@ export class PriorityCollectorService {
           name: 'openai_direct',
           priority: 2,
           enabled: true,
-          timeout: 30000, // Reduced from 45s to 30s
+          timeout: 30000,
           retries: 1,
-          fallback_on_failure: false
+          fallback_on_failure: true // Fallback to OpenAI direct when Oxylabs fails
         },
-        
         {
           name: 'brightdata_chatgpt',
           priority: 3,
-          enabled: true,
-          timeout: 30000, // Reduced timeout
-          retries: 1, // Reduced retries
-          fallback_on_failure: true
+          enabled: false, // Disabled - skip BrightData for now
+          timeout: 30000,
+          retries: 1,
+          fallback_on_failure: false
         },
-      
       ]
     });
 
@@ -692,7 +690,7 @@ export class PriorityCollectorService {
   ): Promise<any> {
     const openaiApiKey = getEnvVar('OPENAI_API_KEY');
     
-    if (!openaiApiKey) {
+    if (!openaiApiKey || openaiApiKey === 'your_openai_api_key_here') {
       throw new Error('OpenAI API key not configured');
     }
 
@@ -708,41 +706,73 @@ export class PriorityCollectorService {
       temperature: 0.7
     };
 
-    console.log('🔄 Calling OpenAI Direct API');
+    console.log('🔄 Calling OpenAI Direct API (fallback)');
     
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    const result = await response.json() as any;
-    
-    if (result.choices && result.choices.length > 0) {
-      const choice = result.choices[0];
-      return {
-        answer: choice.message.content,
-        response: choice.message.content,
-        citations: [],
-        urls: [],
-        metadata: {
-          provider: 'openai_direct',
-          model: result.model,
-          usage: result.usage,
-          finishReason: choice.finish_reason
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = `OpenAI API error: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.error?.message) {
+            errorMessage = `OpenAI API error: ${errorJson.error.message}`;
+          }
+        } catch {
+          errorMessage += ` - ${errorText}`;
         }
-      };
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json() as any;
+      
+      if (result.choices && result.choices.length > 0) {
+        const choice = result.choices[0];
+        const answer = choice.message?.content || '';
+        
+        if (!answer) {
+          throw new Error('OpenAI API returned empty response');
+        }
+        
+        console.log('✅ OpenAI Direct API call successful');
+        
+        return {
+          query_id: `openai_direct_${Date.now()}`,
+          run_start: new Date().toISOString(),
+          run_end: new Date().toISOString(),
+          prompt: queryText,
+          answer: answer,
+          response: answer,
+          citations: [],
+          urls: [],
+          model_used: result.model || 'gpt-3.5-turbo',
+          collector_type: 'chatgpt',
+          metadata: {
+            provider: 'openai_direct',
+            model: result.model || 'gpt-3.5-turbo',
+            usage: result.usage,
+            finishReason: choice.finish_reason,
+            brand: brandId,
+            locale,
+            country,
+            success: true
+          }
+        };
+      }
+      
+      throw new Error('No valid response from OpenAI API - no choices in response');
+    } catch (error: any) {
+      console.error('❌ OpenAI Direct API call failed:', error.message);
+      throw error;
     }
-    
-    throw new Error('No valid response from OpenAI API');
   }
 
   /**

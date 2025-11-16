@@ -7,7 +7,7 @@
  * 2. Content strategy - Identifying gaps in content coverage
  * 3. Answer Engine Optimization - Optimizing content for answer engines
  * 
- * Uses LLM (Cerebras/OpenAI) to intelligently extract keywords from answers.
+ * Uses LLM (Cerebras primary, Gemini fallback) to intelligently extract keywords from answers.
  */
 
 import { supabaseAdmin } from '../../config/database';
@@ -63,7 +63,7 @@ export class KeywordGenerationService {
   }
 
   /**
-   * Generate keywords from answer using LLM (Cerebras or OpenAI)
+   * Generate keywords from answer using LLM (Cerebras primary, Gemini fallback)
    */
   private async generateKeywordsWithLLM(
     answer: string,
@@ -71,7 +71,8 @@ export class KeywordGenerationService {
   ): Promise<GeneratedKeyword[]> {
     const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
     const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
-    const openaiApiKey = process.env['OPENAI_API_KEY'];
+    const geminiApiKey = process.env['GEMINI_API_KEY'] || process.env['GOOGLE_GEMINI_API_KEY'];
+    const geminiModel = process.env['GEMINI_MODEL'] || process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash';
 
     const prompt = `You are an expert in SEO and Answer Engine Optimization (AEO). 
 
@@ -107,16 +108,16 @@ Return ONLY the JSON array, no additional text.`;
         try {
           return await this.generateWithCerebras(prompt, cerebrasApiKey, cerebrasModel, maxKeywords);
         } catch (error) {
-          console.warn('⚠️ Cerebras keyword generation failed, trying OpenAI:', error);
-          if (openaiApiKey) {
-            return await this.generateWithOpenAI(prompt, openaiApiKey, maxKeywords);
+          console.warn('⚠️ Cerebras keyword generation failed, trying Gemini:', error);
+          if (geminiApiKey) {
+            return await this.generateWithGemini(prompt, geminiApiKey, geminiModel, maxKeywords);
           }
           throw error;
         }
-      } else if (openaiApiKey) {
-        return await this.generateWithOpenAI(prompt, openaiApiKey, maxKeywords);
+      } else if (geminiApiKey) {
+        return await this.generateWithGemini(prompt, geminiApiKey, geminiModel, maxKeywords);
       } else {
-        throw new Error('No LLM API key configured (CEREBRAS_API_KEY or OPENAI_API_KEY required)');
+        throw new Error('No LLM API key configured (CEREBRAS_API_KEY or GEMINI_API_KEY required)');
       }
     } catch (error) {
       console.error('❌ LLM keyword generation failed:', error);
@@ -182,35 +183,50 @@ Return ONLY the JSON array, no additional text.`;
   }
 
   /**
-   * Generate keywords using OpenAI
+   * Generate keywords using Google Gemini
    */
-  private async generateWithOpenAI(
+  private async generateWithGemini(
     prompt: string,
     apiKey: string,
+    model: string,
     maxKeywords: number
   ): Promise<GeneratedKeyword[]> {
-    const { OpenAI } = await import('openai');
-    const openai = new OpenAI({ apiKey: apiKey });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [{
+              text: `You are an expert in SEO and AEO keyword extraction. Return only valid JSON arrays.\n\n${prompt}`
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 2000
+          }
+        })
+      }
+    );
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You are an expert in SEO and AEO keyword extraction. Return only valid JSON arrays.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 2000
-    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
 
-    const aiResponse = response.choices[0]?.message?.content?.trim();
+    const data = await response.json() as any;
+    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
     if (!aiResponse) {
-      throw new Error('Empty response from OpenAI API');
+      throw new Error('Empty response from Gemini API');
     }
 
     // Extract JSON from response
     const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      throw new Error('No JSON array found in OpenAI response');
+      throw new Error('No JSON array found in Gemini response');
     }
 
     const keywords = JSON.parse(jsonMatch[0]) as Array<{

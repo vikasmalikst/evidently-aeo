@@ -2,6 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, LineChart, BarChart3 } from 'lucide-react';
 import { CountryFlag } from '../CountryFlag';
 
+interface BrandOption {
+  id: string;
+  name: string;
+}
+
 interface ChartControlsProps {
   timeframe: string;
   onTimeframeChange: (value: string) => void;
@@ -11,6 +16,9 @@ interface ChartControlsProps {
   onRegionChange: (value: string) => void;
   stacked?: boolean;
   onStackedChange?: (value: boolean) => void;
+  brands?: BrandOption[];
+  selectedBrandId?: string | null;
+  onBrandChange?: (brandId: string) => void;
 }
 
 export const ChartControls = ({
@@ -21,7 +29,10 @@ export const ChartControls = ({
   region,
   onRegionChange,
   stacked = false,
-  onStackedChange
+  onStackedChange,
+  brands = [],
+  selectedBrandId,
+  onBrandChange
 }: ChartControlsProps) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -87,6 +98,8 @@ export const ChartControls = ({
   ) => {
     const currentOption = id === 'region' 
       ? options.find(o => o.value === region)
+      : id === 'brand' && selectedBrandId
+      ? options.find(o => o.value === selectedBrandId)
       : options.find(o => value === o.label);
     return (
       <div className="relative min-w-[200px]">
@@ -171,28 +184,33 @@ export const ChartControls = ({
                 ))}
               </>
             ) : (
-              options.map((option) => (
-                <button
-                  key={option.value}
-                  className={`flex items-center gap-2 w-full px-3 py-2 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--text-action)] ${
-                    value === option.label
-                      ? 'bg-[var(--bg-tertiary)] text-[var(--text-action)] font-medium'
-                      : ''
-                  }`}
-                  onClick={() => {
-                    onChange(option.value);
-                    setOpenDropdown(null);
-                  }}
-                >
-                  {showFlags && (
-                    <CountryFlag 
-                      countryCode={option.value} 
-                      className="w-4 h-4 flex-shrink-0"
-                    />
-                  )}
-                  <span>{option.label}</span>
-                </button>
-              ))
+              options.map((option) => {
+                const isSelected = id === 'brand' && selectedBrandId
+                  ? option.value === selectedBrandId
+                  : value === option.label;
+                return (
+                  <button
+                    key={option.value}
+                    className={`flex items-center gap-2 w-full px-3 py-2 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--text-action)] ${
+                      isSelected
+                        ? 'bg-[var(--bg-tertiary)] text-[var(--text-action)] font-medium'
+                        : ''
+                    }`}
+                    onClick={() => {
+                      onChange(option.value);
+                      setOpenDropdown(null);
+                    }}
+                  >
+                    {showFlags && (
+                      <CountryFlag 
+                        countryCode={option.value} 
+                        className="w-4 h-4 flex-shrink-0"
+                      />
+                    )}
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })
             )}
           </div>
         )}
@@ -240,6 +258,15 @@ export const ChartControls = ({
       </div>
 
       <div className="flex gap-4 items-center">
+        {brands.length > 1 && selectedBrandId && onBrandChange && 
+          renderDropdown(
+            'brand',
+            'Brand',
+            brands.find(b => b.id === selectedBrandId)?.name,
+            brands.map(b => ({ value: b.id, label: b.name })),
+            onBrandChange
+          )
+        }
         {renderDropdown(
           'timeframe',
           'Timeframe',

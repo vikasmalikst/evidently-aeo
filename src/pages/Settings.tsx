@@ -16,7 +16,7 @@ export const Settings = () => {
     },
     {
       id: 'manage-topics',
-      title: 'Topic Configuration',
+      title: 'Manage Topics',
       description: 'Manage topics that determine which queries your brand is measured against',
       icon: IconTags,
       path: '/settings/manage-topics',

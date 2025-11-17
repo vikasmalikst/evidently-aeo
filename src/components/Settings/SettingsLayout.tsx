@@ -19,7 +19,7 @@ const settingsNavItems: SettingsNavItem[] = [
   },
   {
     id: 'manage-topics',
-    label: 'Topic Configuration',
+    label: 'Manage Topics',
     path: '/settings/manage-topics',
   },
 ];

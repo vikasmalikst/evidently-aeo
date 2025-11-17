@@ -140,6 +140,39 @@ export const SearchSources = () => {
   const [modalTitle, setModalTitle] = useState('');
   const [sortField, setSortField] = useState<SortField>('mentionRate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // CSV Export function
+  const exportToCSV = () => {
+    const headers = ['Source', 'Type', 'Mention Rate (%)', 'Mention Rate Change (%)', 'Share of Answer (%)', 'Share of Answer Change (%)', 'Sentiment', 'Sentiment Change', 'Top Topics', 'Pages', 'Prompts'];
+    const rows = filteredData.map(source => [
+      source.name,
+      sourceTypeLabels[source.type] || source.type,
+      source.mentionRate.toFixed(2),
+      source.mentionChange.toFixed(2),
+      source.soa.toFixed(2),
+      source.soaChange.toFixed(2),
+      source.sentiment.toFixed(2),
+      source.sentimentChange.toFixed(2),
+      source.topics.join('; '),
+      source.pages.join('; '),
+      source.prompts.join('; ')
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `source-attribution-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   const [overallMentionRate, setOverallMentionRate] = useState<number>(0);
   const [overallMentionChange, setOverallMentionChange] = useState<number>(0);
   const [avgSentiment, setAvgSentiment] = useState<number>(0);
@@ -763,43 +796,72 @@ export const SearchSources = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
-              Source Attribution Details
-            </h2>
-            <a
-              href="#"
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <h2 style={{ fontSize: '20px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 4px 0' }}>
+                Source Attribution Details
+              </h2>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                {filteredData.length} source{filteredData.length !== 1 ? 's' : ''} found
+              </p>
+            </div>
+            <button
+              onClick={exportToCSV}
               style={{
                 fontSize: '13px',
-                color: '#00bcdc',
-                textDecoration: 'none',
+                fontWeight: '600',
+                color: '#ffffff',
+                backgroundColor: '#00bcdc',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '10px 16px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px'
+                gap: '6px',
+                cursor: 'pointer',
+                fontFamily: 'IBM Plex Sans, sans-serif',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 1px 3px rgba(0, 188, 220, 0.2)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#00a8c5';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 188, 220, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#00bcdc';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 188, 220, 0.2)';
               }}
             >
-              Export CSV <IconDownload size={14} />
-            </a>
+              <IconDownload size={16} />
+              Export CSV
+            </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e8e9ed' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#ffffff' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f4f4f6', borderBottom: '2px solid #e8e9ed' }}>
+                <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e8e9ed' }}>
                   <th
                     onClick={() => handleSort('name')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px',
+                      position: 'sticky',
+                      left: 0,
+                      backgroundColor: '#f8f9fa',
+                      zIndex: 1
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Source
                       {sortField === 'name' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -810,16 +872,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('type')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Type
                       {sortField === 'type' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -830,16 +893,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('mentionRate')}
                     style={{
                       textAlign: 'right',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                       Mention Rate
                       {sortField === 'mentionRate' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -850,16 +914,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('soa')}
                     style={{
                       textAlign: 'right',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                       Share of Answer
                       {sortField === 'soa' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -870,16 +935,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('sentiment')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Sentiment
                       {sortField === 'sentiment' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -896,11 +962,12 @@ export const SearchSources = () => {
                       color: '#393e51',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      Top Categories
+                      Top Topics
                       {sortField === 'topics' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
                       )}
@@ -910,16 +977,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('pages')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Pages
                       {sortField === 'pages' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -930,16 +998,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('prompts')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Prompts
                       {sortField === 'prompts' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -950,19 +1019,19 @@ export const SearchSources = () => {
               </thead>
               <tbody>
                 {filteredData.map((source, idx) => {
-                  const sentimentEmoji = source.sentiment > 0.5 ? '😊' : source.sentiment < 0 ? '😟' : '😐';
                   return (
                     <tr
                       key={source.name}
                       style={{
                         borderBottom: '1px solid #e8e9ed',
-                        backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f9f9fb'
+                        backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafbfc',
+                        transition: 'background-color 0.15s ease'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f4f4f6';
+                        e.currentTarget.style.backgroundColor = '#f0f4f8';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#f9f9fb';
+                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#fafbfc';
                       }}
                     >
                       <td style={{ padding: '16px 12px' }}>
@@ -971,17 +1040,26 @@ export const SearchSources = () => {
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
-                            color: '#00bcdc',
+                            color: '#1a1d29',
                             textDecoration: 'none',
-                            fontSize: '13px',
-                            fontFamily: 'IBM Plex Sans, sans-serif'
+                            fontSize: '14px',
+                            fontFamily: 'IBM Plex Sans, sans-serif',
+                            fontWeight: '500',
+                            display: 'inline-block',
+                            maxWidth: '300px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
                           }}
                           onMouseEnter={(e) => {
+                            e.currentTarget.style.color = '#00bcdc';
                             e.currentTarget.style.textDecoration = 'underline';
                           }}
                           onMouseLeave={(e) => {
+                            e.currentTarget.style.color = '#1a1d29';
                             e.currentTarget.style.textDecoration = 'none';
                           }}
+                          title={source.name}
                         >
                           {source.name}
                         </a>
@@ -989,134 +1067,208 @@ export const SearchSources = () => {
                       <td style={{ padding: '16px 12px' }}>
                         <span
                           style={{
-                            padding: '4px 8px',
-                            borderRadius: '12px',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
                             fontSize: '11px',
                             fontWeight: '600',
                             textTransform: 'uppercase',
                             backgroundColor: sourceTypeColors[source.type],
-                            color: '#ffffff'
+                            color: '#ffffff',
+                            letterSpacing: '0.3px',
+                            display: 'inline-block'
                           }}
                         >
-                          {source.type}
+                          {sourceTypeLabels[source.type] || source.type}
                         </span>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                          <span style={{ fontSize: '13px', fontFamily: 'IBM Plex Mono, monospace', color: '#212534' }}>
-                            {source.mentionRate}%
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          <span style={{ fontSize: '14px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '600', color: '#1a1d29' }}>
+                            {source.mentionRate.toFixed(1)}%
                           </span>
-                          <span style={{ fontSize: '10px', color: source.mentionChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(source.mentionChange)}%
-                          </span>
+                          {source.mentionChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.mentionChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(source.mentionChange).toFixed(1)}%
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                          <span style={{ fontSize: '13px', fontFamily: 'IBM Plex Mono, monospace', color: '#212534' }}>
-                            {source.soa}%
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          <span style={{ fontSize: '14px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '600', color: '#1a1d29' }}>
+                            {source.soa.toFixed(1)}%
                           </span>
-                          <span style={{ fontSize: '10px', color: source.soaChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.soaChange >= 0 ? '↑' : '↓'} {Math.abs(source.soaChange).toFixed(1)}%
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '16px 12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '16px' }}>{sentimentEmoji}</span>
-                          <span
-                            style={{
-                              fontSize: '13px',
-                              fontFamily: 'IBM Plex Mono, monospace',
-                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < 0 ? '#f94343' : '#393e51'
-                            }}
-                          >
-                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
-                          </span>
-                          <span style={{ fontSize: '10px', color: source.sentimentChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '16px 12px' }}>
-                        <div
-                          style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', position: 'relative' }}
-                          onMouseEnter={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setTooltipPosition({ x: rect.left, y: rect.top });
-                            setHoveredTopics(source.topics);
-                          }}
-                          onMouseLeave={() => setHoveredTopics(null)}
-                        >
-                          {source.topics.slice(0, 2).map(topic => (
-                            <span
-                              key={topic}
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                backgroundColor: '#f4f4f6',
-                                color: '#393e51',
-                                cursor: 'default'
-                              }}
-                            >
-                              {topic}
-                            </span>
-                          ))}
-                          {source.topics.length > 2 && (
-                            <span
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                backgroundColor: '#e8e9ed',
-                                color: '#393e51',
-                                cursor: 'default'
-                              }}
-                            >
-                              +{source.topics.length - 2}
+                          {source.soaChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.soaChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.soaChange >= 0 ? '↑' : '↓'} {Math.abs(source.soaChange).toFixed(1)}%
                             </span>
                           )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            color: '#00bcdc',
-                            cursor: 'pointer',
-                            textDecoration: 'underline'
-                          }}
-                          onClick={() => {
-                            setModalType('pages');
-                            setModalData(source.pages);
-                            setModalTitle(`Pages citing ${source.name}`);
-                          }}
-                        >
-                          {source.pages.slice(0, 1).join(', ')}
-                          {source.pages.length > 1 && ` +${source.pages.length - 1} more`}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span
+                            style={{
+                              fontSize: '14px',
+                              fontFamily: 'IBM Plex Mono, monospace',
+                              fontWeight: '600',
+                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < -0.1 ? '#f94343' : '#64748b'
+                            }}
+                          >
+                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
+                          </span>
+                          {source.sentimentChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.sentimentChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
+                        {source.topics.length > 0 ? (
+                          <div
+                            style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', position: 'relative', maxWidth: '250px' }}
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setTooltipPosition({ x: rect.left, y: rect.top });
+                              setHoveredTopics(source.topics);
+                            }}
+                            onMouseLeave={() => setHoveredTopics(null)}
+                          >
+                            {source.topics.slice(0, 2).map(topic => (
+                              <span
+                                key={topic}
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  fontWeight: '500',
+                                  backgroundColor: '#e0f2fe',
+                                  color: '#0369a1',
+                                  cursor: 'default',
+                                  border: '1px solid #bae6fd'
+                                }}
+                              >
+                                {topic}
+                              </span>
+                            ))}
+                            {source.topics.length > 2 && (
+                              <span
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  fontWeight: '500',
+                                  backgroundColor: '#f1f5f9',
+                                  color: '#64748b',
+                                  cursor: 'default',
+                                  border: '1px solid #e2e8f0'
+                                }}
+                                title={source.topics.slice(2).join(', ')}
+                              >
+                                +{source.topics.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '16px 12px', maxWidth: '250px' }}>
+                        {source.pages.length > 0 ? (
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              color: '#00bcdc',
+                              cursor: 'pointer',
+                              fontWeight: '500',
+                              display: 'inline-block',
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            onClick={() => {
+                              setModalType('pages');
+                              setModalData(source.pages);
+                              setModalTitle(`Pages citing ${source.name}`);
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.textDecoration = 'underline';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.textDecoration = 'none';
+                            }}
+                            title={source.pages[0]}
+                          >
+                            {source.pages[0]}
+                            {source.pages.length > 1 && (
+                              <span style={{ color: '#64748b', marginLeft: '4px' }}>
+                                +{source.pages.length - 1} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '16px 12px', maxWidth: '300px' }}>
                         {source.prompts.length > 0 ? (
                           <div
                             style={{
                               fontSize: '13px',
                               color: '#00bcdc',
                               cursor: 'pointer',
-                              textDecoration: 'underline'
+                              fontWeight: '500',
+                              display: 'inline-block',
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
                             }}
                             onClick={() => {
                               setModalType('prompts');
                               setModalData(source.prompts);
                               setModalTitle(`Prompts citing ${source.name}`);
                             }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.textDecoration = 'underline';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.textDecoration = 'none';
+                            }}
+                            title={source.prompts[0]}
                           >
-                            {source.prompts.slice(0, 1).join(', ')}
-                            {source.prompts.length > 1 && ` +${source.prompts.length - 1} more`}
+                            {source.prompts[0]}
+                            {source.prompts.length > 1 && (
+                              <span style={{ color: '#64748b', marginLeft: '4px' }}>
+                                +{source.prompts.length - 1} more
+                              </span>
+                            )}
                           </div>
                         ) : (
-                          <span style={{ fontSize: '13px', color: '#8b90a7' }}>—</span>
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
                         )}
                       </td>
                     </tr>

@@ -143,7 +143,7 @@ export class DashboardService {
           })
         }
         
-        // Ensure competitorVisibility exists
+        // Ensure competitorVisibility exists and has new fields
         if (!payload.competitorVisibility) {
           payload.competitorVisibility = []
         }
@@ -153,12 +153,63 @@ export class DashboardService {
             mentions: entry.mentions ?? 0,
             share: entry.share ?? 0,
             visibility: entry.visibility ?? 0,
+            brandPresencePercentage: entry.brandPresencePercentage ?? 0,
+            topTopics: entry.topTopics ?? [],
             collectors: entry.collectors ?? []
           }))
         }
         
+        // Calculate brandSummary from cached data if missing
+        if (!payload.brandSummary) {
+          // Get actual values from scores array (most reliable)
+          const shareScore = payload.scores?.find((s: any) => s.label === 'Share of Answers')
+          const visibilityScore = payload.scores?.find((s: any) => s.label === 'Visibility Index')
+          const actualShare = shareScore?.value ?? payload.visibilityPercentage ?? 0
+          const actualVisibility = visibilityScore?.value ?? 0
+          
+          const totalBrandPresence = payload.queriesWithBrandPresence && payload.totalQueries
+            ? round((payload.queriesWithBrandPresence / payload.totalQueries) * 100, 1)
+            : (payload.llmVisibility && payload.llmVisibility.length > 0
+              ? payload.llmVisibility.reduce((sum: number, slice: any) => sum + (slice.brandPresencePercentage ?? 0), 0) / payload.llmVisibility.length
+              : 0)
+          
+          // Aggregate top topics from all LLM slices
+          const allTopics = new Map<string, { occurrences: number; share: number; visibility: number }>()
+          payload.llmVisibility.forEach((slice: any) => {
+            if (Array.isArray(slice.topTopics)) {
+              slice.topTopics.forEach((topic: any) => {
+                const existing = allTopics.get(topic.topic) || { occurrences: 0, share: 0, visibility: 0 }
+                allTopics.set(topic.topic, {
+                  occurrences: existing.occurrences + (topic.occurrences ?? 0),
+                  share: existing.share + (topic.share ?? 0),
+                  visibility: existing.visibility + (topic.visibility ?? 0)
+                })
+              })
+            }
+          })
+          
+          const topTopics = Array.from(allTopics.entries())
+            .map(([topic, stats]) => ({
+              topic,
+              occurrences: stats.occurrences,
+              share: stats.share / payload.llmVisibility.length,
+              visibility: stats.visibility / payload.llmVisibility.length
+            }))
+            .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share)
+            .slice(0, 5)
+          
+          payload.brandSummary = {
+            visibility: Math.round(actualVisibility * 10) / 10,
+            share: Math.round(actualShare * 10) / 10,
+            brandPresencePercentage: Math.round(totalBrandPresence * 10) / 10,
+            topTopics
+          }
+          console.log('[Dashboard] ✅ Calculated brandSummary from cached data')
+        }
+        
         console.log(`[Dashboard] ✅ Cached payload: ${payload.llmVisibility.length} LLM models, ${payload.competitorVisibility.length} competitors`)
         console.log(`[Dashboard] Cached llmVisibility providers:`, payload.llmVisibility.map((s: any) => s.provider))
+        console.log(`[Dashboard] Cached brandSummary:`, payload.brandSummary)
         return payload
       }
 

@@ -95,6 +95,14 @@ export interface CompetitorVisibility {
   mentions: number
   share: number
   visibility: number
+  brandPresencePercentage: number
+  topTopics: Array<{
+    topic: string
+    occurrences: number
+    share: number
+    visibility: number
+    mentions: number
+  }>
   collectors: Array<{
     collectorType: string
     mentions: number
@@ -131,7 +139,22 @@ export interface TopicPerformanceRow {
   topic: string
   promptsTracked: number
   averageVolume: number
-  sentimentScore: number
+  sentimentScore: number | null // Can be null if no sentiment data
+  avgVisibility: number | null // Can be null if no visibility data
+  avgShare: number | null // Can be null if no share data
+  brandPresencePercentage: number | null // Can be null if no brand presence data
+}
+
+export interface BrandSummary {
+  visibility: number
+  share: number
+  brandPresencePercentage: number
+  topTopics: Array<{
+    topic: string
+    occurrences: number
+    share: number
+    visibility: number
+  }>
 }
 
 export interface BrandDashboardPayload {
@@ -165,6 +188,7 @@ export interface BrandDashboardPayload {
   queryVisibility: QueryVisibilityRow[]
   topBrandSources: TopBrandSource[]
   topTopics: TopicPerformanceRow[]
+  brandSummary?: BrandSummary
 }
 
 export interface DashboardDateRange {

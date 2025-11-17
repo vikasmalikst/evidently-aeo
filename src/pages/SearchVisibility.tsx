@@ -49,9 +49,29 @@ interface CompetitorVisibilityEntry {
   mentions: number;
   share: number;
   visibility: number;
+  brandPresencePercentage?: number;
+  topTopics?: Array<{
+    topic: string;
+    occurrences: number;
+    share: number;
+    visibility: number;
+    mentions: number;
+  }>;
   collectors?: Array<{
     collectorType: string;
     mentions: number;
+  }>;
+}
+
+interface BrandSummary {
+  visibility: number;
+  share: number;
+  brandPresencePercentage: number;
+  topTopics?: Array<{
+    topic: string;
+    occurrences: number;
+    share: number;
+    visibility: number;
   }>;
 }
 
@@ -59,6 +79,7 @@ interface DashboardPayload {
   llmVisibility?: LlmVisibilitySlice[];
   visibilityComparison?: VisibilityComparisonEntry[];
   competitorVisibility?: CompetitorVisibilityEntry[];
+  brandSummary?: BrandSummary;
 }
 
 interface ModelData {
@@ -74,6 +95,7 @@ interface ModelData {
   data: number[];
   topTopics?: LlmTopic[];
   color?: string;
+  isBrand?: boolean;
 }
 
 const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -191,21 +213,127 @@ export const SearchVisibility = () => {
 
         const competitorEntries = response.data.competitorVisibility ?? [];
 
+        // Create brand summary model for competitive view
+        const brandSummary = response.data.brandSummary;
+        console.log('[SearchVisibility] brandSummary from API:', brandSummary);
+        console.log('[SearchVisibility] llmModels count:', llmModels.length);
+        console.log('[SearchVisibility] selectedBrand:', selectedBrand);
+        
+        // Calculate brand summary from llmVisibility if brandSummary is not available
+        const calculateBrandSummary = () => {
+          if (brandSummary) {
+            return {
+              visibility: brandSummary.visibility ?? 0,
+              share: brandSummary.share ?? 0,
+              brandPresencePercentage: brandSummary.brandPresencePercentage ?? 0,
+              topTopics: brandSummary.topTopics ?? []
+            };
+          }
+          
+          // Fallback: calculate from llmVisibility
+          if (llmModels.length > 0) {
+            const totalVisibility = llmModels.reduce((sum, model) => sum + model.score, 0) / llmModels.length;
+            const totalShare = llmModels.reduce((sum, model) => sum + model.shareOfSearch, 0) / llmModels.length;
+            const totalBrandPresence = llmModels.reduce((sum, model) => sum + model.brandPresencePercentage, 0) / llmModels.length;
+            
+            // Get top topics from all LLM models
+            const allTopics = new Map<string, { occurrences: number; share: number; visibility: number; mentions: number }>();
+            llmModels.forEach(model => {
+              model.topTopics?.forEach(topic => {
+                const existing = allTopics.get(topic.topic) || { occurrences: 0, share: 0, visibility: 0, mentions: 0 };
+                allTopics.set(topic.topic, {
+                  occurrences: existing.occurrences + topic.occurrences,
+                  share: existing.share + topic.share,
+                  visibility: existing.visibility + topic.visibility,
+                  mentions: existing.mentions + topic.mentions
+                });
+              });
+            });
+            
+            const topTopics = Array.from(allTopics.entries())
+              .map(([topic, stats]) => ({
+                topic,
+                occurrences: stats.occurrences,
+                share: stats.share / llmModels.length,
+                visibility: stats.visibility / llmModels.length,
+                mentions: stats.mentions
+              }))
+              .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share)
+              .slice(0, 5);
+            
+            return {
+              visibility: totalVisibility,
+              share: totalShare,
+              brandPresencePercentage: totalBrandPresence,
+              topTopics
+            };
+          }
+          
+          // If no data available, return empty summary (will show zeros)
+          return {
+            visibility: 0,
+            share: 0,
+            brandPresencePercentage: 0,
+            topTopics: []
+          };
+        };
+        
+        const brandData = calculateBrandSummary();
+        // Get brand name from response or selectedBrand
+        const brandName = (response.data as any)?.brandName ?? selectedBrand?.name ?? 'Your Brand';
+        
+        // Always create brand row if we have a selected brand ID
+        const brandCompetitiveModel = selectedBrandId ? {
+          id: 'brand',
+          name: brandName,
+          score: Math.round(brandData.visibility ?? 0),
+          shareOfSearch: Math.round(brandData.share ?? 0),
+          topTopic: brandData.topTopics?.[0]?.topic ?? '—',
+          change: 0,
+          referenceCount: 0,
+          brandPresencePercentage: Math.round(brandData.brandPresencePercentage ?? 0),
+          data: buildTimeseries(brandData.visibility ?? 0),
+          topTopics: brandData.topTopics?.map(topic => ({
+            topic: topic.topic,
+            occurrences: topic.occurrences,
+            share: topic.share,
+            visibility: topic.visibility,
+            mentions: (topic as any).mentions ?? topic.occurrences
+          })) ?? [],
+          isBrand: true
+        } : null;
+
         const competitorModels = competitorEntries.map((entry) => ({
           id: normalizeId(entry.competitor),
           name: entry.competitor,
           score: Math.round(entry.visibility ?? 0),
           shareOfSearch: Math.round(entry.share ?? 0),
-          topTopic: '—',
+          topTopic: entry.topTopics?.[0]?.topic ?? '—',
           change: 0,
           referenceCount: entry.mentions ?? 0,
-          brandPresencePercentage: 0, // Not applicable for competitors
+          brandPresencePercentage: Math.round(entry.brandPresencePercentage ?? 0),
           data: buildTimeseries(entry.visibility ?? 0),
-          topTopics: []
+          topTopics: entry.topTopics?.map(topic => ({
+            topic: topic.topic,
+            occurrences: topic.occurrences,
+            share: topic.share,
+            visibility: topic.visibility,
+            mentions: topic.mentions
+          })) ?? [],
+          isBrand: false
         }));
 
+        // Prepend brand model to competitor models if available
+        const allCompetitorModels = brandCompetitiveModel 
+          ? [brandCompetitiveModel, ...competitorModels]
+          : competitorModels;
+
+        console.log('[SearchVisibility] brandCompetitiveModel:', brandCompetitiveModel);
+        console.log('[SearchVisibility] allCompetitorModels count:', allCompetitorModels.length);
+        console.log('[SearchVisibility] allCompetitorModels:', allCompetitorModels.map(m => ({ id: m.id, name: m.name, isBrand: m.isBrand })));
+
         setBrandModels(llmModels);
-        setCompetitorModels(competitorModels);
+        setCompetitorModels(allCompetitorModels);
       } catch (fetchError) {
         const message =
           fetchError instanceof Error ? fetchError.message : 'Failed to load visibility data.';

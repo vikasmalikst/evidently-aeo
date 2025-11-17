@@ -169,6 +169,17 @@ export async function buildDashboardPayload(
           count: number
         }
       >
+      topics: Map<
+        string,
+        {
+          occurrences: number
+          shareSum: number
+          visibilitySum: number
+          mentions: number
+          queryIds: Set<string>
+        }
+      >
+      queryIds: Set<string>
     }
   >()
 
@@ -564,7 +575,18 @@ export async function buildDashboardPayload(
             mentionSum: number
             count: number
           }
-        >()
+        >(),
+        topics: new Map<
+          string,
+          {
+            occurrences: number
+            shareSum: number
+            visibilitySum: number
+            mentions: number
+            queryIds: Set<string>
+          }
+        >(),
+        queryIds: new Set<string>()
       })
     }
 
@@ -602,6 +624,33 @@ export async function buildDashboardPayload(
       mentionSum: competitorQueryAggregate.mentionSum + competitorMentions,
       count: competitorQueryAggregate.count + 1
     })
+
+    // Track topics for this competitor
+    if (topicName) {
+      if (!competitorAggregate.topics.has(topicName)) {
+        competitorAggregate.topics.set(topicName, {
+          occurrences: 0,
+          shareSum: 0,
+          visibilitySum: 0,
+          mentions: 0,
+          queryIds: new Set<string>()
+        })
+      }
+      const topicStats = competitorAggregate.topics.get(topicName)!
+      topicStats.occurrences += 1
+      topicStats.shareSum += competitorShare
+      topicStats.visibilitySum += competitorVisibility
+      topicStats.mentions += competitorMentions > 0 ? competitorMentions : 1
+      if (queryId) {
+        topicStats.queryIds.add(queryId)
+      }
+      competitorAggregate.topics.set(topicName, topicStats)
+    }
+
+    // Track unique query IDs for brand presence calculation
+    if (queryId) {
+      competitorAggregate.queryIds.add(queryId)
+    }
 
     competitorAggregates.set(competitorName, competitorAggregate)
   }
@@ -705,12 +754,29 @@ export async function buildDashboardPayload(
       const count = citation.usage_count || 1
       citationCounts.set(categoryKey, (citationCounts.get(categoryKey) || 0) + count)
 
+      // Normalize URL by removing fragments (#) to avoid duplicate entries for same page
+      const normalizeUrl = (url: string): string => {
+        try {
+          const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`)
+          // Remove fragment (everything after #)
+          urlObj.hash = ''
+          return urlObj.toString().replace(/\/$/, '') // Remove trailing slash for consistency
+        } catch {
+          // If URL parsing fails, just remove fragment manually
+          return url.split('#')[0].replace(/\/$/, '')
+        }
+      }
+
       const sourceKey =
         typeof citation.url === 'string' && citation.url.trim().length > 0
-          ? citation.url.trim().toLowerCase()
+          ? normalizeUrl(citation.url.trim().toLowerCase())
           : citation.domain && citation.domain.trim().length > 0
             ? `domain:${citation.domain.trim().toLowerCase()}`
             : `source:${sourceAggregates.size + 1}`
+
+      const normalizedUrl = typeof citation.url === 'string' && citation.url.trim().length > 0
+        ? normalizeUrl(citation.url.trim())
+        : null
 
       const existingSource =
         sourceAggregates.get(sourceKey) ?? {
@@ -718,10 +784,7 @@ export async function buildDashboardPayload(
             typeof citation.page_name === 'string' && citation.page_name.trim().length > 0
               ? citation.page_name.trim()
               : null,
-          url:
-            typeof citation.url === 'string' && citation.url.trim().length > 0
-              ? citation.url.trim()
-              : null,
+          url: normalizedUrl,
           domain: citation.domain ?? null,
           usage: 0,
           collectorIds: new Set<number>()
@@ -735,12 +798,8 @@ export async function buildDashboardPayload(
       ) {
         existingSource.title = citation.page_name.trim()
       }
-      if (
-        !existingSource.url &&
-        typeof citation.url === 'string' &&
-        citation.url.trim().length > 0
-      ) {
-        existingSource.url = citation.url.trim()
+      if (!existingSource.url && normalizedUrl) {
+        existingSource.url = normalizedUrl
       }
       if (!existingSource.domain && typeof citation.domain === 'string') {
         existingSource.domain = citation.domain
@@ -993,26 +1052,44 @@ export async function buildDashboardPayload(
       const volumeRatio = Number.isFinite(volumeRatioRaw) ? volumeRatioRaw : 0
       const averageVolume = volumeRatio > 0 ? clampPercentage(round(volumeRatio * 100, 1)) : 0
 
-      let sentimentPercentage = 0
-      if (aggregate.sentimentValues.length > 0) {
-        const hasLargeSentiment = aggregate.sentimentValues.some((value) => Math.abs(value) > 1)
-        sentimentPercentage = hasLargeSentiment
-          ? clampPercentage(average(aggregate.sentimentValues))
-          : clampPercentage(normalizeSentiment(aggregate.sentimentValues))
-      }
+      // Calculate raw sentiment average (-1 to 1), no fallback
+      const sentimentScore = aggregate.sentimentValues.length > 0
+        ? round(average(aggregate.sentimentValues), 2)
+        : null // No fallback - return null if no data
 
-      let sentimentScore =
-        aggregate.sentimentValues.length > 0 ? round(sentimentPercentage / 20, 1) : 4
-      sentimentScore = Math.max(0, Math.min(5, sentimentScore))
+      // Calculate average visibility and share for the topic - no fallbacks
+      const avgVisibility = aggregate.visibilityValues.length > 0
+        ? round(average(aggregate.visibilityValues) * 100, 1) // Convert to percentage
+        : null
+      const avgShare = aggregate.shareValues.length > 0
+        ? round(average(aggregate.shareValues), 1)
+        : null
+
+      // Calculate brand presence percentage - no fallback
+      const brandPresencePercentage = promptsTracked > 0 && aggregate.brandPresenceCount > 0
+        ? Math.min(100, round((aggregate.brandPresenceCount / promptsTracked) * 100, 1))
+        : null
 
       return {
         topic: truncateLabel(topicName, 64),
         promptsTracked,
         averageVolume,
-        sentimentScore
+        sentimentScore,
+        avgVisibility,
+        avgShare,
+        brandPresencePercentage
       }
     })
-    .filter((topic) => topic.promptsTracked > 0 || topic.averageVolume > 0)
+    .filter((topic) => {
+      // Only show topics with actual data - no fallbacks
+      // Must have at least one meaningful metric
+      return topic.promptsTracked > 0 && (
+        topic.averageVolume > 0 || 
+        (topic.sentimentScore !== null && topic.sentimentScore !== undefined) ||
+        (topic.avgVisibility !== null && topic.avgVisibility !== undefined && topic.avgVisibility > 0) ||
+        (topic.brandPresencePercentage !== null && topic.brandPresencePercentage !== undefined && topic.brandPresencePercentage > 0)
+      )
+    })
     .sort((a, b) => b.averageVolume - a.averageVolume || b.promptsTracked - a.promptsTracked)
     .slice(0, 5)
 
@@ -1038,6 +1115,7 @@ export async function buildDashboardPayload(
   const competitorVisibility = visibilityService.calculateCompetitorVisibility(
     competitorAggregates,
     totalShareUniverse,
+    totalQueries,
     knownCompetitors
   )
   
@@ -1137,6 +1215,41 @@ export async function buildDashboardPayload(
     })
   }
 
+  // Calculate brand summary for competitive view
+  const brandSummary = (() => {
+    // Use the actual dashboard metrics (not LLM averages) for consistency
+    const totalBrandVisibility = visibilityIndexPercentage
+    const totalBrandShare = shareOfAnswersPercentage
+
+    // Brand presence percentage
+    const brandPresencePercentage = totalQueries > 0
+      ? round((queriesWithBrandPresenceCount / totalQueries) * 100, 1)
+      : 0
+
+    // Extract top topics from existing topicAggregates
+    const brandTopTopics = Array.from(topicAggregates.entries())
+      .map(([topicName, aggregate]) => ({
+        topic: truncateLabel(topicName, 64),
+        occurrences: aggregate.queryIds.size,
+        share: aggregate.shareValues.length > 0
+          ? round(average(aggregate.shareValues), 1)
+          : 0,
+        visibility: aggregate.visibilityValues.length > 0
+          ? round(average(aggregate.visibilityValues) * 100, 1)
+          : 0
+      }))
+      .filter((topic) => topic.topic.trim().length > 0 && topic.occurrences > 0)
+      .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share || b.visibility - a.visibility)
+      .slice(0, 5)
+
+    return {
+      visibility: round(totalBrandVisibility, 1),
+      share: round(totalBrandShare, 1),
+      brandPresencePercentage,
+      topTopics: brandTopTopics
+    }
+  })()
+
   const payload: BrandDashboardPayload = {
     brandId: brand.id,
     brandName: brand.name,
@@ -1162,7 +1275,8 @@ export async function buildDashboardPayload(
     competitorVisibility,
     queryVisibility,
     topBrandSources,
-    topTopics
+    topTopics,
+    brandSummary
   }
 
   mark('payload computed')

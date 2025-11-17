@@ -117,7 +117,10 @@ interface DashboardPayload {
     topic: string;
     promptsTracked: number;
     averageVolume: number;
-    sentimentScore: number;
+    sentimentScore: number | null;
+    avgVisibility?: number | null;
+    avgShare?: number | null;
+    brandPresencePercentage?: number | null;
   }>;
 }
 
@@ -163,6 +166,39 @@ const InfoTooltip = ({ description }: InfoTooltipProps) => {
         <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-[#1a1d29] text-white text-[12px] rounded-lg shadow-lg z-[100] pointer-events-none">
           <div className="whitespace-normal leading-relaxed">{description}</div>
           <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#1a1d29]"></div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface UrlTooltipProps {
+  url: string;
+  fullUrl: string;
+}
+
+const UrlTooltip = ({ url, fullUrl }: UrlTooltipProps) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  return (
+    <div className="relative inline-flex items-center">
+      <a
+        href={fullUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[12px] text-[#00bcdc] hover:text-[#0096b0] font-medium flex items-center gap-1 transition-colors"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
+        <ExternalLink size={12} />
+        View URL
+      </a>
+      {showTooltip && (
+        <div className="absolute left-0 bottom-full mb-2 w-80 max-w-[90vw] p-2.5 bg-[#1a1d29] text-white text-[11px] rounded-lg shadow-lg z-[100] pointer-events-none break-all">
+          <div className="whitespace-normal leading-relaxed" style={{ wordBreak: 'break-all' }}>
+            {url}
+          </div>
+          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#1a1d29]"></div>
         </div>
       )}
     </div>
@@ -725,106 +761,96 @@ export const Dashboard = () => {
                 </Link>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[#e8e9ed]">
-                      <th className="text-left py-3 px-3 text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                        Page Title
-                      </th>
-                      <th className="text-left py-3 px-3 text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                        Page URL
-                      </th>
-                      <th className="text-center py-3 px-3 text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                        Impact Score
-                      </th>
-                      <th className="text-center py-3 px-3 text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                        Change
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {brandPages.length > 0 ? (
-                      brandPages.map((page) => {
-                        const hasImpactScore =
-                          typeof page.impactScore === 'number' && Number.isFinite(page.impactScore);
-                        const impactLabel = hasImpactScore
-                          ? page.impactScore!.toFixed(1)
-                          : '—';
-                        const hasChange =
-                          typeof page.change === 'number' && Number.isFinite(page.change);
-                        const changeValue = hasChange ? page.change! : 0;
-                        const changeLabel = hasChange ? Math.abs(changeValue).toFixed(1) : '—';
-                        const changeClass = hasChange
-                          ? changeValue > 0
-                            ? 'text-[#06c686]'
-                            : changeValue < 0
-                            ? 'text-[#f94343]'
-                            : 'text-[#64748b]'
-                          : 'text-[#64748b]';
-                        const rawUrl =
-                          (typeof page.url === 'string' && page.url.trim().length > 0
-                            ? page.url.trim()
-                            : typeof page.domain === 'string'
-                            ? page.domain
-                            : '') || '';
-                        const displayUrl = rawUrl.replace(/^https?:\/\//, '') || '—';
-                        const title =
-                          (typeof page.title === 'string' && page.title.trim().length > 0
-                            ? page.title.trim()
-                            : page.domain) || 'Unknown Source';
+              <div className="space-y-3">
+                {brandPages.length > 0 ? (
+                  brandPages.map((page) => {
+                    const hasImpactScore =
+                      typeof page.impactScore === 'number' && Number.isFinite(page.impactScore);
+                    const impactLabel = hasImpactScore
+                      ? page.impactScore!.toFixed(1)
+                      : '—';
+                    const hasChange =
+                      typeof page.change === 'number' && Number.isFinite(page.change);
+                    const changeValue = hasChange ? page.change! : 0;
+                    const changeLabel = hasChange ? Math.abs(changeValue).toFixed(1) : '—';
+                    const changeClass = hasChange
+                      ? changeValue > 0
+                        ? 'text-[#06c686]'
+                        : changeValue < 0
+                        ? 'text-[#f94343]'
+                        : 'text-[#64748b]'
+                      : 'text-[#64748b]';
+                    const rawUrl =
+                      (typeof page.url === 'string' && page.url.trim().length > 0
+                        ? page.url.trim()
+                        : typeof page.domain === 'string'
+                        ? `https://${page.domain}`
+                        : '') || '';
+                    const fullUrl = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`;
+                    const displayUrl = rawUrl.replace(/^https?:\/\//, '') || '—';
+                    const title =
+                      (typeof page.title === 'string' && page.title.trim().length > 0
+                        ? page.title.trim()
+                        : page.domain) || 'Unknown Source';
+                    const domain = page.domain || displayUrl.split('/')[0] || '—';
 
-                        return (
-                          <tr
-                            key={page.id}
-                            className="border-b border-[#f4f4f6] last:border-0 hover:bg-[#f9f9fb] transition-colors"
-                          >
-                            <td className="py-3 px-3">
-                              <span className="text-[14px] font-medium text-[#1a1d29]">
-                                {title}
+                    return (
+                      <div
+                        key={page.id}
+                        className="group flex items-center justify-between p-4 bg-white border border-[#e8e9ed] rounded-lg hover:border-[#00bcdc] hover:shadow-sm transition-all"
+                      >
+                        <div className="flex-1 min-w-0 mr-4">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <h3 className="text-[14px] font-semibold text-[#1a1d29] truncate">
+                              {title}
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[12px] text-[#64748b] font-medium">
+                              {domain}
+                            </span>
+                            <UrlTooltip url={displayUrl} fullUrl={fullUrl} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6 flex-shrink-0">
+                          <div className="text-center min-w-[80px]">
+                            <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1">
+                              Impact
+                            </div>
+                            <div className="flex items-baseline justify-center gap-1">
+                              <span className="text-[16px] font-bold text-[#1a1d29]">
+                                {impactLabel}
                               </span>
-                            </td>
-                            <td className="py-3 px-3">
-                              <span className="text-[13px] text-[#64748b]">{displayUrl}</span>
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <div className="inline-flex items-center justify-center">
-                                <span className="text-[14px] font-semibold text-[#1a1d29]">
-                                  {impactLabel}
-                                </span>
-                                {hasImpactScore && (
-                                  <span className="text-[12px] text-[#64748b] ml-1">/10</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <div className={`inline-flex items-center gap-1 text-[13px] font-semibold ${changeClass}`}>
-                                {hasChange ? (
-                                  <>
-                                    {changeValue > 0 && <ChevronUp size={16} />}
-                                    {changeValue < 0 && <ChevronDown size={16} />}
-                                    {changeValue === 0 ? '0.0' : changeLabel}
-                                  </>
-                                ) : (
-                                  '—'
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={4}
-                          className="py-6 px-3 text-center text-[13px] text-[#64748b]"
-                        >
-                          No branded sources detected for this period.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                              {hasImpactScore && (
+                                <span className="text-[11px] text-[#64748b]">/10</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-center min-w-[70px]">
+                            <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1">
+                              Change
+                            </div>
+                            <div className={`inline-flex items-center gap-1 text-[14px] font-semibold ${changeClass}`}>
+                              {hasChange ? (
+                                <>
+                                  {changeValue > 0 && <ChevronUp size={14} />}
+                                  {changeValue < 0 && <ChevronDown size={14} />}
+                                  {changeValue === 0 ? '0.0' : changeLabel}
+                                </>
+                              ) : (
+                                <span className="text-[#64748b]">—</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-8 text-center text-[13px] text-[#64748b] border border-dashed border-[#e8e9ed] rounded-lg">
+                    No branded sources detected for this period.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -869,7 +895,7 @@ export const Dashboard = () => {
                 <h2 className="text-[18px] font-semibold text-[#1a1d29]">
                   Top Performing Topics
                 </h2>
-                <InfoTooltip description="Shows topics where your brand has the highest citation activity. Avg volume represents the topic's share of total citations (percentage). Sentiment score (0-5 scale) indicates how positively your brand is discussed for each topic, with higher scores being more positive." />
+                <InfoTooltip description="Shows topics where your brand performs best. Visibility Score measures how prominently your brand appears in AI answers. Brand Presence shows what percentage of queries include your brand. Sentiment indicates how positively your brand is discussed (0-5 scale, higher is better)." />
               </div>
               <Link
                 to="/prompts"
@@ -883,53 +909,108 @@ export const Dashboard = () => {
             <div className="space-y-3">
               {topTopics.length > 0 ? (
                 topTopics.map((topic) => {
-                  const averageVolume = Number.isFinite(topic.averageVolume)
-                    ? topic.averageVolume
-                    : 0;
-                  const sentimentScore = Number.isFinite(topic.sentimentScore)
+                  // Only show if we have actual data - no fallbacks
+                  const visibility = Number.isFinite(topic.avgVisibility) && topic.avgVisibility !== undefined 
+                    ? topic.avgVisibility 
+                    : null;
+                  const brandPresence = Number.isFinite(topic.brandPresencePercentage) && topic.brandPresencePercentage !== undefined
+                    ? topic.brandPresencePercentage 
+                    : null;
+                  const sentimentScore = topic.sentimentScore !== null && topic.sentimentScore !== undefined && Number.isFinite(topic.sentimentScore)
                     ? topic.sentimentScore
-                    : 0;
-                  const sentimentClass =
-                    sentimentScore >= 4.5
-                      ? { background: 'bg-[#e6f7f1]', text: 'text-[#06c686]' }
-                      : sentimentScore >= 3.5
-                      ? { background: 'bg-[#fff8e6]', text: 'text-[#f9db43]' }
-                      : { background: 'bg-[#fff0f0]', text: 'text-[#f94343]' };
+                    : null;
+                  
+                  // Sentiment color coding for -1 to 1 scale
+                  const getSentimentColor = (score: number | null) => {
+                    if (score === null) return { bg: 'bg-[#f4f4f6]', text: 'text-[#64748b]', label: 'No Data' };
+                    if (score >= 0.5) return { bg: 'bg-[#e6f7f1]', text: 'text-[#06c686]', label: 'Very Positive' };
+                    if (score >= 0.1) return { bg: 'bg-[#fff8e6]', text: 'text-[#f9db43]', label: 'Positive' };
+                    if (score >= -0.1) return { bg: 'bg-[#fff4e6]', text: 'text-[#fa8a40]', label: 'Neutral' };
+                    if (score >= -0.5) return { bg: 'bg-[#fff0f0]', text: 'text-[#f94343]', label: 'Negative' };
+                    return { bg: 'bg-[#ffe6e6]', text: 'text-[#d32f2f]', label: 'Very Negative' };
+                  };
+                  const sentimentStyle = getSentimentColor(sentimentScore);
 
                   return (
                     <div
                       key={topic.topic}
-                      className="flex items-center justify-between py-2 border-b border-[#f4f4f6] last:border-0"
+                      className="group p-4 bg-white border border-[#e8e9ed] rounded-lg hover:border-[#00bcdc] hover:shadow-sm transition-all"
                     >
-                      <div className="flex-1">
-                        <h3 className="text-[14px] font-medium text-[#1a1d29] mb-1">
-                          {topic.topic}
-                        </h3>
-                        <p className="text-[12px] text-[#64748b]">
-                          {topic.promptsTracked} {topic.promptsTracked === 1 ? 'prompt' : 'prompts'} tracked
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[14px] font-semibold text-[#1a1d29]">
-                          {averageVolume.toFixed(1)}%
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1 min-w-0 mr-4">
+                          <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1.5 truncate">
+                            {topic.topic}
+                          </h3>
+                          <p className="text-[12px] text-[#64748b]">
+                            {topic.promptsTracked} {topic.promptsTracked === 1 ? 'query' : 'queries'} tracked
+                          </p>
                         </div>
-                        <div className="text-[12px] text-[#64748b]">Avg volume</div>
+                        {sentimentScore !== null && (
+                          <div className={`flex items-center justify-center w-12 h-12 rounded-lg ${sentimentStyle.bg} flex-shrink-0`}>
+                            <div className="text-center">
+                              <span className={`text-[16px] font-bold ${sentimentStyle.text} block leading-none`}>
+                                {sentimentScore > 0 ? '+' : ''}{sentimentScore.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="ml-4">
-                        <div
-                          className={`flex items-center justify-center w-10 h-10 rounded-lg ${sentimentClass.background}`}
-                        >
-                          <span className={`text-[14px] font-semibold ${sentimentClass.text}`}>
-                            {sentimentScore.toFixed(1)}
-                          </span>
+                      
+                      <div className="grid grid-cols-3 gap-3 pt-3 border-t border-[#f4f4f6]">
+                        <div className="text-center">
+                          <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1.5">
+                            Visibility
+                          </div>
+                          {visibility !== null ? (
+                            <>
+                              <div className="text-[16px] font-bold text-[#1a1d29]">
+                                {visibility.toFixed(0)}
+                              </div>
+                              <div className="text-[10px] text-[#64748b] mt-0.5">score</div>
+                            </>
+                          ) : (
+                            <div className="text-[13px] text-[#64748b]">—</div>
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1.5">
+                            Brand Presence
+                          </div>
+                          {brandPresence !== null ? (
+                            <>
+                              <div className="text-[16px] font-bold text-[#1a1d29]">
+                                {brandPresence.toFixed(0)}%
+                              </div>
+                              <div className="text-[10px] text-[#64748b] mt-0.5">of queries</div>
+                            </>
+                          ) : (
+                            <div className="text-[13px] text-[#64748b]">—</div>
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1.5">
+                            Sentiment
+                          </div>
+                          {sentimentScore !== null ? (
+                            <>
+                              <div className={`text-[13px] font-semibold ${sentimentStyle.text}`}>
+                                {sentimentStyle.label}
+                              </div>
+                              <div className="text-[10px] text-[#64748b] mt-0.5">
+                                {sentimentScore > 0 ? '+' : ''}{sentimentScore.toFixed(2)}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-[13px] text-[#64748b]">—</div>
+                          )}
                         </div>
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <div className="py-4 text-center text-[13px] text-[#64748b] border border-dashed border-[#e8e9ed] rounded-lg">
-                  We haven’t detected enough topic data for this window yet.
+                <div className="py-8 text-center text-[13px] text-[#64748b] border border-dashed border-[#e8e9ed] rounded-lg">
+                  We haven't detected enough topic data for this window yet.
                 </div>
               )}
             </div>

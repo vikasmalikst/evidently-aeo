@@ -219,11 +219,37 @@ export class SourceAttributionService {
         }
       }
 
-      // Fetch share of answer and sentiment from extracted_positions table
+      // Helper function to extract topic name from metadata
+      const extractTopicName = (metadata: any): string | null => {
+        if (!metadata) {
+          return null
+        }
+        let parsed: any = metadata
+        if (typeof metadata === 'string') {
+          try {
+            parsed = JSON.parse(metadata)
+          } catch {
+            return null
+          }
+        }
+        if (typeof parsed !== 'object' || parsed === null) {
+          return null
+        }
+        const topicName =
+          typeof parsed.topic_name === 'string' && parsed.topic_name.trim().length > 0
+            ? parsed.topic_name.trim()
+            : typeof parsed.topic === 'string' && parsed.topic.trim().length > 0
+              ? parsed.topic.trim()
+              : null
+        return topicName
+      }
+
+      // Fetch share of answer, sentiment, and metadata from extracted_positions table
       let extractedPositions: Array<{
         collector_result_id: number | null;
         share_of_answers_brand: number | null;
         sentiment_score: number | null;
+        metadata: any;
       }> = []
 
       if (collectorResultIds.length > 0) {
@@ -232,7 +258,8 @@ export class SourceAttributionService {
           .select(`
             collector_result_id,
             share_of_answers_brand,
-            sentiment_score
+            sentiment_score,
+            metadata
           `)
           .in('collector_result_id', collectorResultIds)
           .eq('brand_id', brandId)
@@ -295,8 +322,20 @@ export class SourceAttributionService {
         avgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
       }
       
+      // Create map from collector_result_id to topic name (from extracted_positions metadata)
+      const collectorResultTopicMap = new Map<number, string>()
+      for (const position of extractedPositions) {
+        if (position.collector_result_id) {
+          const topicName = extractTopicName(position.metadata)
+          if (topicName && !collectorResultTopicMap.has(position.collector_result_id)) {
+            collectorResultTopicMap.set(position.collector_result_id, topicName)
+          }
+        }
+      }
+      
       console.log(`[SourceAttribution] Calculated average share of answer for ${avgShareByCollectorResult.size} collector results`)
       console.log(`[SourceAttribution] Calculated average sentiment for ${avgSentimentByCollectorResult.size} collector results`)
+      console.log(`[SourceAttribution] Mapped topics for ${collectorResultTopicMap.size} collector results`)
 
       // Aggregate sources by domain
       const sourceAggregates = new Map<
@@ -355,21 +394,21 @@ export class SourceAttributionService {
         const aggregate = sourceAggregates.get(sourceKey)!
         aggregate.citations += citation.usage_count || 1
 
-        // Use citation category as a topic for coverage analytics (fallback when query topics are unavailable)
-        if (citation.category) {
-          aggregate.topics.add(String(citation.category))
-        }
-
         // Add query_id from citation (citations table has query_id directly)
         if (citation.query_id) {
           aggregate.queryIds.add(citation.query_id)
-          // Note: generated_queries doesn't have topic_name, topics would need to come from brand_topics or metadata
         }
 
         // Add collector result data if available
         if (citation.collector_result_id) {
           aggregate.collectorResultIds.add(citation.collector_result_id)
           const collectorResult = collectorResultMap.get(citation.collector_result_id)
+          
+          // Get topic from collector_result_id mapping (extracted from extracted_positions metadata)
+          const topicName = collectorResultTopicMap.get(citation.collector_result_id)
+          if (topicName) {
+            aggregate.topics.add(topicName)
+          }
           
           if (!collectorResult) {
             // Log missing collector result (only once per source to avoid spam)
@@ -407,7 +446,6 @@ export class SourceAttributionService {
             // Also add query_id from collector result if citation doesn't have it
             if (!citation.query_id && collectorResult.query_id) {
               aggregate.queryIds.add(collectorResult.query_id)
-              // Note: topics would need to come from brand_topics or metadata
             }
           }
         }

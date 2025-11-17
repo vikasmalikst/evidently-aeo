@@ -141,8 +141,17 @@ export class VisibilityService {
         mentionSum: number
         count: number
       }>
+      topics: Map<string, {
+        occurrences: number
+        shareSum: number
+        visibilitySum: number
+        mentions: number
+        queryIds: Set<string>
+      }>
+      queryIds: Set<string>
     }>,
     totalShareUniverse: number,
+    totalQueries: number,
     knownCompetitors: string[]
   ): CompetitorVisibility[] {
     let competitorVisibility: CompetitorVisibility[] = Array.from(competitorAggregates.entries())
@@ -162,11 +171,44 @@ export class VisibilityService {
           .sort((a, b) => b.mentions - a.mentions)
           .slice(0, 3)
 
+        // Calculate brand presence percentage
+        // Only count queries where competitor has meaningful data (visibility > 0 or share > 0)
+        const queriesWithData = Array.from(aggregate.queries.values())
+          .filter(query => query.visibilitySum > 0 || query.shareSum > 0 || query.mentionSum > 0)
+          .length
+        
+        // Use totalQueries (total queries in system) for denominator
+        const brandPresencePercentage = totalQueries > 0 && queriesWithData > 0
+          ? round((queriesWithData / totalQueries) * 100, 1)
+          : 0
+
+        // Extract top topics - only include topics where competitor has meaningful data
+        const topTopics = Array.from(aggregate.topics.entries())
+          .map(([topicName, topicStats]) => ({
+            topic: truncateLabel(topicName, 64),
+            occurrences: topicStats.occurrences,
+            share: topicStats.occurrences > 0
+              ? round(topicStats.shareSum / topicStats.occurrences, 1)
+              : 0,
+            visibility: topicStats.occurrences > 0
+              ? round(topicStats.visibilitySum / topicStats.occurrences, 1)
+              : 0,
+            mentions: topicStats.mentions
+          }))
+          .filter((topic) => 
+            topic.topic.trim().length > 0 && 
+            (topic.share > 0 || topic.visibility > 0 || topic.mentions > 0)
+          )
+          .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share || b.visibility - a.visibility)
+          .slice(0, 5)
+
         return {
           competitor: competitorName,
           mentions: aggregate.mentions || aggregate.shareValues.length,
           share,
           visibility,
+          brandPresencePercentage,
+          topTopics,
           collectors: topSignals
         }
       })
@@ -181,6 +223,8 @@ export class VisibilityService {
           mentions: 0,
           share: 0,
           visibility: 0,
+          brandPresencePercentage: 0,
+          topTopics: [],
           collectors: []
         })
       }

@@ -20,6 +20,7 @@ interface Model {
     visibility: number;
     mentions: number;
   }>;
+  isBrand?: boolean;
 }
 
 interface VisibilityTableProps {
@@ -44,6 +45,12 @@ export const VisibilityTable = ({
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const sortedModels = [...models].sort((a, b) => {
+    // Keep brand row at top for competitive view
+    if (activeTab === 'competitive') {
+      if (a.isBrand && !b.isBrand) return -1;
+      if (!a.isBrand && b.isBrand) return 1;
+    }
+
     const key = sortConfig.key;
     const aVal = a[key] || 0;
     const bVal = b[key] || 0;
@@ -121,7 +128,9 @@ export const VisibilityTable = ({
                 <>
                   <tr
                     key={model.id}
-                    className="transition-colors cursor-pointer"
+                    className={`transition-colors cursor-pointer ${
+                      model.isBrand ? 'bg-[#f0f9ff] hover:bg-[#e0f2fe]' : ''
+                    }`}
                     onClick={() => handleRowClick(model.id)}
                   >
                     <td className="px-3 py-3 border-b border-[var(--border-default)] text-center">
@@ -134,8 +143,18 @@ export const VisibilityTable = ({
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">
                       <div className="flex items-center gap-3">
-                        {getLLMIcon(model.name)}
-                        <span className="text-[var(--text-body)] font-semibold">{model.name}</span>
+                        {activeTab === 'brand' ? getLLMIcon(model.name) : (
+                          <div className="w-6 h-6 flex items-center justify-center bg-[#8b90a7] rounded-md">
+                            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="white">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+                              <circle cx="12" cy="12" r="4"/>
+                            </svg>
+                          </div>
+                        )}
+                        <span className={`text-[var(--text-body)] font-semibold ${model.isBrand ? 'text-[#0d7c96]' : ''}`}>
+                          {model.name}
+                          {model.isBrand && <span className="ml-2 text-xs text-[#0d7c96] font-normal">(Your Brand)</span>}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">
@@ -174,7 +193,7 @@ export const VisibilityTable = ({
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">
                       <span className="text-sm font-semibold text-[var(--text-body)]">
-                        {activeTab === 'brand' ? `${model.brandPresencePercentage}%` : '—'}
+                        {model.brandPresencePercentage > 0 ? `${model.brandPresencePercentage}%` : '—'}
                       </span>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">

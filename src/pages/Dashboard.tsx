@@ -720,9 +720,13 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
                         </div>
                       </div>
                     </div>
-                  </div>
                 );
-              })}
+              })
+              ) : (
+                <div className="text-center py-8 text-[#64748b] text-[14px]">
+                  No topics available
+                </div>
+              )}
             </div>
           </div>
 

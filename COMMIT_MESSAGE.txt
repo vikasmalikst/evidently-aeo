@@ -1,47 +1,26 @@
-feat: Topics Analysis visualization overhaul with multi-chart support and enhanced UX
+refactor: improve topic management UI and add dev auth bypass
 
-Complete redesign of topics analysis with new visualization system, enhanced
-chart components, improved date selection, and comprehensive filtering capabilities.
+- Refactor TopicEditModal with improved filtering and UI
+  - Replace section-based layout with tab-based filtering (All/Trending/Recommended/General)
+  - Add category filtering via clickable category pills
+  - Add progress bar showing topic selection count
+  - Add "Currently Tracking" section with removable topic chips
+  - Move custom topic input inline with Add Topic button
+  - Improve review step with better visual feedback and version info
+  - Add floating info tip explaining filter usage
 
-Topics Analysis Page:
-- New TopicsAnalysisPage component with complete redesign
-- Multi-view chart system (Racing Bar, Bar, Line, Donut)
-- Compact metrics pods for key performance indicators
-- Sortable ranked table with category and tag filtering
-- Date range selection with daily/weekly/monthly views
-- Country/region filtering with visual flag indicators
-- Shared state management between charts and table
+- Update Settings navigation and labels
+  - Change "Topic Configuration" to "Manage Topics" for consistency
+  - Update SettingsLayout and Settings page labels
 
-Chart Components:
-- Added Bar and Line chart types to Citations/Sources charts
-- New SourcesChartContainer for unified chart management
-- Enhanced ChartTypeSelector with icon-based navigation
-- Category and time series filtering integrated
-- New Topics chart components (RacingBar, Bar, Line, Donut)
-- Consistent styling using CSS variables
+- Enhance ChartControls component
+  - Add brand selector dropdown when multiple brands available
+  - Improve dropdown selection logic for brand filtering
 
-DatePickerMultiView Enhancements:
-- Visual improvements: underline indicators, circular date highlights
-- Sequential selection logic (weekly: bidirectional, max 13 weeks)
-- Quarterly organization with Q1-Q4 navigation
-- User controls: Apply button, close button, date range display
-- Modal improvements: expanded size, better padding, scrolling
+- Add development authentication bypass
+  - Add BYPASS_AUTH_IN_DEV environment variable support
+  - Update auth middleware to bypass authentication in dev mode
+  - Set mock dev user when bypass is enabled
 
-Country Flag Component:
-- New reusable CountryFlag component
-- Support for 7 countries (US, CA, UK, IN, KR, CN, JP)
-- Regional support with globe icon for multi-country regions
-- Consistent sizing and accessibility features
-
-UI/UX Improvements:
-- Country flags in chart control dropdowns
-- Enhanced dropdown styling and hover states
-- Separated country and region options
-- Improved PromptFilters with better visual hierarchy
-- Enhanced accessibility (WCAG 2.1 AA compliant)
-
-Technical:
-- Added country-flag-icons dependency
-- Enhanced Chart.js and Nivo chart integrations
-- New component architecture for TopicsAnalysis
-- Backward compatible changes
+- Update SearchVisibility to support brand switching
+  - Pass brand props to ChartControls for brand selection

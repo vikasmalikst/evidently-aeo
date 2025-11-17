@@ -465,6 +465,9 @@ export const SearchVisibility = () => {
               onRegionChange={setRegion}
               stacked={stacked}
               onStackedChange={setStacked}
+              brands={brands}
+              selectedBrandId={selectedBrandId}
+              onBrandChange={selectBrand}
             />
 
             <VisibilityChart

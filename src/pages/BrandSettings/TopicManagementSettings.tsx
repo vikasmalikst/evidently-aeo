@@ -197,6 +197,7 @@ export const TopicManagementSettings = () => {
               changeImpact={changeImpact}
               brandName="Your Brand" // TODO: Get from store/context
               industry="Technology" // TODO: Get from store/context
+              currentVersion={currentConfig.version}
             />
           )}
 

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyToken, extractTokenFromHeader } from '../utils/jwt';
 import { authService } from '../services/auth/auth.service';
 import { AuthError } from '../types/auth';
+import { config } from '../config/environment';
 
 // Extend Express Request type to include user
 declare global {
@@ -21,12 +22,28 @@ declare global {
 /**
  * Authentication middleware
  * Verifies JWT token and adds user info to request
+ * Bypasses authentication in development mode if BYPASS_AUTH_IN_DEV is enabled
  */
 export const authenticateToken = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  // Bypass authentication in development mode
+  if (config.bypassAuthInDev) {
+    console.log('🔓 Dev mode: Bypassing authentication');
+    // Set a mock dev user
+    req.user = {
+      id: 'dev-user-123',
+      email: 'dev@evidently.ai',
+      customer_id: '123e4567-e89b-12d3-a456-426614174001', // Test Brand customer ID
+      role: 'admin',
+      full_name: 'Dev User'
+    };
+    next();
+    return;
+  }
+
   try {
     const token = extractTokenFromHeader(req.headers.authorization);
     

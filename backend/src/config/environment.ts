@@ -82,6 +82,9 @@ export const config = {
   
   // Site
   siteUrl: process.env['SITE_URL'] || 'http://localhost:3000',
+  
+  // Development
+  bypassAuthInDev: process.env['BYPASS_AUTH_IN_DEV'] === 'true' && process.env['NODE_ENV'] === 'development',
 };
 
 export default config;

@@ -736,6 +736,17 @@ export const Dashboard = () => {
           </div>
         </div>
 
+        {/* Citation Sources Chart with Type Selector */}
+        <div className="mb-6">
+          <SourcesChartContainer
+            racingChartData={mockCitationSourcesData.racingChartData}
+            categories={['Editorial', 'Corporate', 'Reference', 'UGC', 'Institutional']}
+            onExport={() => {
+              console.log('Exporting citation sources data...');
+            }}
+          />
+        </div>
+
         <div className="grid grid-cols-4 gap-5 mb-6">
           {metricCards.map(({ key, ...cardProps }) => (
             <MetricCard key={key} {...cardProps} />
@@ -1221,6 +1232,7 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
         display: false,
       },
       tooltip: {
+        caretSize: 0,
         callbacks: {
           label: (context: any) => {
             return `${context.dataset.label}: ${context.parsed.x}`;

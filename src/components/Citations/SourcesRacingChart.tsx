@@ -81,7 +81,7 @@ export const SourcesRacingChart = ({ racingChartData }: SourcesRacingChartProps)
                   className="absolute inset-y-0 left-0 rounded transition-all duration-500"
                   style={{
                     width: `${(source.value / maxValue) * 100}%`,
-                    backgroundColor: source.color
+                    background: 'linear-gradient(to right, #498cf9, #0d3196)'
                   }}
                 />
               </div>

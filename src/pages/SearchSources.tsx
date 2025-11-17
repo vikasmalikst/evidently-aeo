@@ -457,6 +457,7 @@ export const SearchSources = () => {
         bodyColor: '#ffffff',
         padding: 12,
         displayColors: false,
+        caretSize: 0,
         callbacks: {
           title: (context: any) => context[0].dataset.label,
           label: (context: any) => {
@@ -509,10 +510,20 @@ export const SearchSources = () => {
   const quadrantPlugin = {
     id: 'quadrantPlugin',
     beforeDraw: (chart: any) => {
+      // Only run for scatter charts, not bar/line charts
+      if (chart.config.type !== 'scatter') {
+        return;
+      }
+      
       const ctx = chart.ctx;
       const chartArea = chart.chartArea;
       const xScale = chart.scales.x;
       const yScale = chart.scales.y;
+      
+      // Ensure scales exist before proceeding
+      if (!xScale || !yScale) {
+        return;
+      }
 
       const xMid = xScale.getPixelForValue(22.5);
       const yMid = yScale.getPixelForValue(1.75);

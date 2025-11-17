@@ -15,12 +15,163 @@ const supabaseServiceKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
 
 export class CitationExtractionService {
   private supabase: SupabaseClient;
+  // In-memory cache for this run to avoid re-categorizing the same domain repeatedly
+  private domainCategorizationCache: Map<string, {
+    url: string;
+    domain: string;
+    pageName: string | null;
+    category: string;
+    confidence?: 'high' | 'medium' | 'low';
+    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default';
+  }> = new Map();
+  // Tunables (can be overridden via env)
+  private readonly perResultConcurrency =
+    Number.isFinite(Number(process.env.CITATIONS_CONCURRENCY))
+      ? Math.max(1, Number(process.env.CITATIONS_CONCURRENCY))
+      : 2;
+  private readonly interResultDelayMs =
+    Number.isFinite(Number(process.env.CITATIONS_INTER_RESULT_DELAY_MS))
+      ? Math.max(0, Number(process.env.CITATIONS_INTER_RESULT_DELAY_MS))
+      : 300;
+  private readonly perCallBaseDelayMs =
+    Number.isFinite(Number(process.env.CITATIONS_BASE_DELAY_MS))
+      ? Math.max(0, Number(process.env.CITATIONS_BASE_DELAY_MS))
+      : 200;
 
   constructor() {
     this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       db: { schema: 'public' },
     });
+  }
+
+  /**
+   * Simple concurrency runner to cap parallel LLM calls
+   */
+  private async runWithConcurrency<T, R>(
+    items: T[],
+    limit: number,
+    worker: (item: T, index: number) => Promise<R>
+  ): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let inFlight = 0;
+    let nextIndex = 0;
+    return new Promise((resolve, reject) => {
+      const launchNext = () => {
+        while (inFlight < limit && nextIndex < items.length) {
+          const current = nextIndex++;
+          inFlight++;
+          Promise.resolve(worker(items[current], current))
+            .then((res) => {
+              results[current] = res;
+            })
+            .catch((err) => {
+              reject(err);
+            })
+            .finally(() => {
+              inFlight--;
+              if (results.length === items.length && nextIndex === items.length && inFlight === 0) {
+                resolve(results);
+              } else {
+                launchNext();
+              }
+            });
+        }
+      };
+      if (items.length === 0) resolve([]);
+      launchNext();
+    });
+  }
+
+  /**
+   * Retry wrapper with exponential backoff + jitter for 429/5xx errors
+   */
+  private async withBackoff<R>(
+    fn: () => Promise<R>,
+    opts?: { retries?: number; baseMs?: number; maxMs?: number }
+  ): Promise<R> {
+    const retries = opts?.retries ?? 5;
+    const baseMs = opts?.baseMs ?? 800;
+    const maxMs = opts?.maxMs ?? 30000;
+    let attempt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        const msg = String(error?.message || error);
+        const status = (error?.status || error?.response?.status) as number | undefined;
+        const isRateLimit = msg.includes('429') || /too many requests/i.test(msg) || status === 429;
+        const isServerErr = status && status >= 500;
+        if (attempt >= retries || (!isRateLimit && !isServerErr)) {
+          throw error;
+        }
+        const delay = Math.min(
+          Math.round((baseMs * Math.pow(2, attempt)) * (0.8 + Math.random() * 0.4)),
+          maxMs
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        attempt++;
+      }
+    }
+  }
+
+  /**
+   * Categorize with per-domain cache + retries
+   */
+  private async categorizeWithCache(url: string): Promise<{
+    url: string;
+    domain: string;
+    pageName: string | null;
+    category: string;
+    confidence?: 'high' | 'medium' | 'low';
+    source?: 'hardcoded' | 'ai';
+  }> {
+    // Extract domain using the same categorization service helper to maximize cache hits
+    const domain = citationCategorizationService.extractDomain(url);
+    const cached = this.domainCategorizationCache.get(domain);
+    if (cached) {
+      return {
+        url,
+        domain: cached.domain,
+        pageName: cached.pageName,
+        category: cached.category,
+        confidence: cached.confidence,
+        source: cached.source as any
+      };
+    }
+    const processed = await this.withBackoff(
+      () => citationCategorizationService.processCitation(url, true),
+      { retries: 5, baseMs: 700, maxMs: 20000 }
+    );
+    this.domainCategorizationCache.set(processed.domain, {
+      url: processed.url,
+      domain: processed.domain,
+      pageName: processed.pageName,
+      category: processed.category,
+      confidence: processed.confidence,
+      source: processed.source
+    });
+    return processed;
+  }
+
+  /**
+   * Heuristics to skip junk/non-actionable URLs before hitting LLM
+   */
+  private isSkippableUrl(raw: string): boolean {
+    if (!raw) return true;
+    const url = String(raw).trim();
+    const lower = url.toLowerCase();
+    // Not a URL
+    if (!/^https?:\/\//i.test(url)) return true;
+    // Image/CDN/favicon or thumbnail domains
+    if (lower.includes('encrypted-tbn') || lower.includes('gstatic.com')) return true;
+    if (/\.(png|jpe?g|gif|webp|svg|ico)(\?|$)/i.test(lower)) return true;
+    // Activity/history pages that are not sources
+    if (lower.includes('myactivity.google.com')) return true;
+    // Obvious trackers or redirects
+    if (lower.includes('utm_') || lower.includes('doubleclick.net')) return true;
+    return false;
   }
 
   /**
@@ -102,17 +253,41 @@ export class CitationExtractionService {
             continue;
           }
 
-          // Process each citation (using AI for unknown domains)
-          const citationRows = await Promise.all(
-            citations
-              .filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
-              .map(async (url) => {
-                const processed = await citationCategorizationService.processCitation(url.trim(), true);
-                
+          // Normalize list of URL strings
+          const urlList: string[] = citations
+            .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+            .map((u) => u.trim())
+            .filter((u) => !this.isSkippableUrl(u));
+
+          // Limit per-result concurrency to avoid provider 429s
+          // Tuneable via env if needed later
+          const PER_RESULT_CONCURRENCY = this.perResultConcurrency;
+
+          const citationRows = await this.runWithConcurrency<string, {
+            customer_id: string;
+            brand_id: string;
+            query_id: string | null;
+            execution_id: string | null;
+            collector_result_id: number;
+            url: string;
+            domain: string;
+            page_name: string | null;
+            category: string;
+            metadata: Record<string, any>;
+          }>(
+            urlList,
+            PER_RESULT_CONCURRENCY,
+            async (url) => {
+              try {
+                // Small base delay between calls to smooth bursts
+                if (this.perCallBaseDelayMs > 0) {
+                  await new Promise((r) => setTimeout(r, this.perCallBaseDelayMs));
+                }
+                const processed = await this.categorizeWithCache(url);
                 return {
                   customer_id: result.customer_id,
                   brand_id: result.brand_id,
-                  query_id: result.query_id, // Direct reference to generated_queries.id
+                  query_id: result.query_id,
                   execution_id: result.execution_id,
                   collector_result_id: result.id,
                   url: processed.url,
@@ -124,7 +299,24 @@ export class CitationExtractionService {
                     categorization_source: processed.source,
                   }
                 };
-              })
+              } catch (e: any) {
+                // Surface but do not crash the whole batch; mark as skipped by throwing to be filtered
+                console.warn(`⚠️ Failed to categorize ${url}:`, e?.message || e);
+                // Return a special marker to be filtered out
+                return {
+                  customer_id: result.customer_id,
+                  brand_id: result.brand_id,
+                  query_id: result.query_id,
+                  execution_id: result.execution_id,
+                  collector_result_id: result.id,
+                  url,
+                  domain: citationCategorizationService.extractDomain(url),
+                  page_name: null,
+                  category: 'unknown',
+                  metadata: { categorization_source: 'failed' }
+                };
+              }
+            }
           );
 
           if (citationRows.length === 0) {
@@ -135,6 +327,10 @@ export class CitationExtractionService {
           // Remove duplicate URLs within the same batch (for same collector_result_id)
           const uniqueCitationRows = citationRows.reduce((acc, row) => {
             const key = `${row.collector_result_id}-${row.url}`;
+            // Filter out failed rows marked as unknown
+            if (row.category === 'unknown') {
+              return acc;
+            }
             if (!acc.has(key)) {
               acc.set(key, row);
             }
@@ -157,6 +353,11 @@ export class CitationExtractionService {
           } else {
             stats.inserted += uniqueRows.length;
             console.log(`✅ Inserted ${uniqueRows.length} citations for result ${result.id}`);
+          }
+
+          // Gentle delay between results to prevent continuous pressure
+          if (this.interResultDelayMs > 0) {
+            await new Promise((r) => setTimeout(r, this.interResultDelayMs));
           }
 
         } catch (resultError: any) {

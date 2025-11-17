@@ -5,17 +5,29 @@ dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Support multiple providers: Gemini (recommended), Cerebras (fallback), Hugging Face (last resort)
+// Accept both GEMINI_API_KEY and GOOGLE_GEMINI_API_KEY for compatibility
+const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+// Allow overriding Gemini model via env (supports GOOGLE_GEMINI_MODEL or GEMINI_MODEL)
+const geminiModel = process.env.GOOGLE_GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
+const cerebrasModel = process.env.CEREBRAS_MODEL || 'qwen-3-235b-a22b-instruct-2507';
 const huggingFaceToken = process.env.HUGGINGFACE_API_TOKEN;
 const huggingFaceModelUrl =
   process.env.HF_SENTIMENT_MODEL_URL ??
   'https://router.huggingface.co/hf-inference/models/distilbert/distilbert-base-uncased-finetuned-sst-2-english';
 
+// Sentiment provider priority: Gemini > Cerebras > Hugging Face
+const SENTIMENT_PROVIDER = (process.env.SENTIMENT_PROVIDER || 'gemini').toLowerCase();
+
 if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error('Missing Supabase credentials (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
 }
 
-if (!huggingFaceToken) {
-  throw new Error('Missing Hugging Face credentials (HUGGINGFACE_API_TOKEN)');
+// At least one provider must be configured
+if (!geminiApiKey && !cerebrasApiKey && !huggingFaceToken) {
+  throw new Error('Missing sentiment analysis credentials. Please set at least one: GEMINI_API_KEY, CEREBRAS_API_KEY, or HUGGINGFACE_API_TOKEN');
 }
 
 interface SentimentResult {
@@ -35,7 +47,7 @@ export interface SentimentScoreOptions {
   limit?: number;
 }
 
-const DEFAULT_SENTIMENT_LIMIT = 50;
+const DEFAULT_SENTIMENT_LIMIT = 150;
 
 export class SentimentScoringService {
   private supabase: SupabaseClient;
@@ -55,6 +67,18 @@ export class SentimentScoringService {
     const limit = Math.max(options.limit ?? DEFAULT_SENTIMENT_LIMIT, 1);
 
     console.log('\n🎯 Starting sentiment scoring...');
+    
+    // Show which provider is being used
+    let providerInfo = 'Unknown';
+    if (SENTIMENT_PROVIDER === 'gemini' && geminiApiKey) {
+      providerInfo = 'Gemini (1M token limit - no truncation needed!)';
+    } else if (SENTIMENT_PROVIDER === 'cerebras' && cerebrasApiKey) {
+      providerInfo = 'Cerebras (high token limit)';
+    } else if (huggingFaceToken) {
+      providerInfo = 'Hugging Face (512 token limit - may truncate)';
+    }
+    console.log(`   ▶ Provider: ${providerInfo}`);
+    
     if (options.customerId) {
       console.log(`   ▶ customer: ${options.customerId}`);
     }
@@ -97,10 +121,35 @@ export class SentimentScoringService {
     }
 
     let processed = 0;
+    let failed = 0;
 
-    for (const row of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       try {
-        const sentiment = await this.analyzeSentiment(row.raw_answer ?? '');
+        console.log(`\n📊 Processing ${i + 1}/${rows.length}: extracted_positions.id=${row.id}`);
+        
+        // Check if raw_answer exists and is not empty
+        if (!row.raw_answer || row.raw_answer.trim().length === 0) {
+          console.warn(`⚠️ Skipping row ${row.id}: empty raw_answer`);
+          // Set neutral sentiment for empty answers
+          const { error: updateError } = await this.supabase
+            .from('extracted_positions')
+            .update({
+              sentiment_label: 'NEUTRAL',
+              sentiment_score: 0,
+              sentiment_positive_sentences: JSON.stringify([]),
+              sentiment_negative_sentences: JSON.stringify([]),
+            })
+            .eq('id', row.id);
+
+          if (!updateError) {
+            processed += 1;
+            console.log(`✅ Set neutral sentiment for empty answer (id=${row.id})`);
+          }
+          continue;
+        }
+
+        const sentiment = await this.analyzeSentiment(row.raw_answer);
 
         const { error: updateError } = await this.supabase
           .from('extracted_positions')
@@ -118,18 +167,30 @@ export class SentimentScoringService {
 
         processed += 1;
         console.log(
-          `✅ Sentiment scored for extracted_positions.id=${row.id}: ${sentiment.label} (${sentiment.score})`
+          `✅ Sentiment scored: ${sentiment.label} (${sentiment.score.toFixed(2)}) | Positive: ${sentiment.positiveSentences.length}, Negative: ${sentiment.negativeSentences.length}`
         );
+
+        // Add small delay between API calls to avoid rate limits (except for last item)
+        if (i < rows.length - 1) {
+          await this.sleep(200); // 200ms delay between requests
+        }
       } catch (scoringError) {
+        failed += 1;
         const message =
           scoringError instanceof Error ? scoringError.message : String(scoringError);
         console.error(
           `❌ Failed sentiment scoring for extracted_positions.id=${row.id}: ${message}`
         );
+        
+        // If it's a rate limit error, wait longer before continuing
+        if (message.includes('rate limit') || message.includes('429')) {
+          console.warn(`⏳ Waiting 5 seconds before continuing due to rate limit...`);
+          await this.sleep(5000);
+        }
       }
     }
 
-    console.log(`\n✅ Sentiment scoring complete! Updated ${processed}/${rows.length} rows`);
+    console.log(`\n✅ Sentiment scoring complete! Updated ${processed}/${rows.length} rows (${failed} failed)`);
     return processed;
   }
 
@@ -138,15 +199,35 @@ export class SentimentScoringService {
       return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
     }
 
+    // Use Gemini or Cerebras for full text analysis (no chunking needed due to high token limits)
+    if (SENTIMENT_PROVIDER === 'gemini' && geminiApiKey) {
+      try {
+        return await this.analyzeSentimentWithGemini(text);
+      } catch (error) {
+        console.warn('⚠️ Gemini sentiment analysis failed, trying Cerebras fallback...');
+        if (cerebrasApiKey) {
+          return await this.analyzeSentimentWithCerebras(text);
+        }
+        throw error;
+      }
+    }
+    
+    if (SENTIMENT_PROVIDER === 'cerebras' && cerebrasApiKey) {
+      return await this.analyzeSentimentWithCerebras(text);
+    }
+
+    // Fallback to Hugging Face with chunking (for backward compatibility)
+    console.log('   ⚠️ Using Hugging Face fallback (512 token limit - text will be chunked)');
     const chunks = this.chunkTextForModel(text);
     const chunkScores: number[] = [];
 
     for (const chunk of chunks) {
-      const result = await this.callModel(chunk);
+      const result = await this.callHuggingFaceModel(chunk);
       const normalized = this.normalizeScore(result.label, result.score);
       chunkScores.push(normalized);
     }
 
+    // For sentence extraction, use Hugging Face (sentences are short)
     const sentences = this.extractSentences(text);
     const sentenceResults = await this.scoreSentences(sentences);
 
@@ -204,7 +285,11 @@ export class SentimentScoringService {
     return 0;
   }
 
-  private truncateToWordLimit(text: string, limit = 480): string {
+  /**
+   * Truncate text to a safe word limit that won't exceed Hugging Face's 512 token limit.
+   * Using a conservative ratio: ~1.3 tokens per word on average, so 200 words ≈ 260 tokens (safe)
+   */
+  private truncateToWordLimit(text: string, limit = 200): string {
     const words = text.split(/\s+/);
     if (words.length <= limit) {
       return text;
@@ -212,7 +297,11 @@ export class SentimentScoringService {
     return words.slice(0, limit).join(' ');
   }
 
-  private chunkTextForModel(text: string, maxTokensPerChunk = 450): string[] {
+  /**
+   * Chunk text for model processing.
+   * Using 200 words per chunk to stay well under 512 token limit (~260 tokens per chunk)
+   */
+  private chunkTextForModel(text: string, maxTokensPerChunk = 200): string[] {
     const sentences = this.extractSentences(text);
     if (sentences.length === 0) {
       return [];
@@ -224,11 +313,21 @@ export class SentimentScoringService {
     for (const sentence of sentences) {
       const candidate =
         currentChunk.length > 0 ? `${currentChunk} ${sentence}` : sentence;
-      if (candidate.split(/\s+/).length > maxTokensPerChunk) {
+      const wordCount = candidate.split(/\s+/).length;
+      
+      // Check if adding this sentence would exceed the limit
+      if (wordCount > maxTokensPerChunk) {
+        // If current chunk has content, save it
         if (currentChunk.length > 0) {
           chunks.push(currentChunk);
         }
-        currentChunk = sentence;
+        // If the sentence itself is too long, truncate it
+        if (sentence.split(/\s+/).length > maxTokensPerChunk) {
+          const truncatedSentence = this.truncateToWordLimit(sentence, maxTokensPerChunk);
+          currentChunk = truncatedSentence;
+        } else {
+          currentChunk = sentence;
+        }
       } else {
         currentChunk = candidate;
       }
@@ -250,12 +349,13 @@ export class SentimentScoringService {
 
     const limitedSentences = sentences.slice(0, 12);
 
-    for (const sentence of limitedSentences) {
+    for (let i = 0; i < limitedSentences.length; i++) {
+      const sentence = limitedSentences[i];
       const trimmed = sentence.trim();
       if (!trimmed) continue;
 
       try {
-        const result = await this.callModel(trimmed);
+        const result = await this.callHuggingFaceModel(trimmed);
         const normalized = this.normalizeScore(result.label, result.score);
 
         if (normalized >= 0.3) {
@@ -263,38 +363,318 @@ export class SentimentScoringService {
         } else if (normalized <= -0.3) {
           negative.push(trimmed);
         }
+
+        // Add small delay between sentence scoring to avoid rate limits
+        if (i < limitedSentences.length - 1) {
+          await this.sleep(100); // 100ms delay between sentences
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`⚠️ Failed to score sentence sentiment: ${message}`);
+        // Continue with next sentence even if one fails
       }
     }
 
     return { positive, negative };
   }
 
-  private async callModel(text: string): Promise<{ label: string; score: number }> {
-    const truncated = this.truncateToWordLimit(text, 450);
-
-    const response = await fetch(huggingFaceModelUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${huggingFaceToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ inputs: truncated }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Hugging Face API error: ${response.status} ${errorText}`);
+  /**
+   * Analyze sentiment using Google Gemini (recommended - 1M token limit!)
+   */
+  private async analyzeSentimentWithGemini(text: string): Promise<SentimentAnalysis> {
+    if (!geminiApiKey) {
+      throw new Error('Gemini API key not configured');
     }
 
-    const data = await response.json();
-    const candidate = this.extractTopCandidate(data);
-    if (!candidate) {
-      return { label: 'UNKNOWN', score: 0 };
+    // Truncate to 50k words max (Gemini can handle much more, but this is safe)
+    const maxWords = 50000;
+    const truncated = this.truncateToWordLimit(text, maxWords);
+
+    const prompt = `Analyze the sentiment of the following text and provide:
+1. Overall sentiment label: POSITIVE, NEGATIVE, or NEUTRAL
+2. Sentiment score: -1.0 (very negative) to 1.0 (very positive)
+3. List of positive sentences (sentences with positive sentiment)
+4. List of negative sentences (sentences with negative sentiment)
+
+Text to analyze:
+${truncated}
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "label": "POSITIVE|NEGATIVE|NEUTRAL",
+  "score": -1.0 to 1.0,
+  "positiveSentences": ["sentence 1", "sentence 2"],
+  "negativeSentences": ["sentence 1", "sentence 2"]
+}`;
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: prompt }]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 2000,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json() as any;
+      const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!content) {
+        throw new Error('No content in Gemini response');
+      }
+
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No JSON found in Gemini response');
+      }
+
+      const result = JSON.parse(jsonMatch[0]);
+      
+      return {
+        label: result.label?.toUpperCase() || 'NEUTRAL',
+        score: Math.max(-1, Math.min(1, parseFloat(result.score) || 0)),
+        positiveSentences: Array.isArray(result.positiveSentences) ? result.positiveSentences : [],
+        negativeSentences: Array.isArray(result.negativeSentences) ? result.negativeSentences : [],
+      };
+    } catch (error) {
+      console.error('Gemini sentiment analysis failed:', error);
+      // Fallback to neutral
+      return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
     }
-    return candidate;
+  }
+
+  /**
+   * Analyze sentiment using Cerebras (high token limit, good fallback)
+   */
+  private async analyzeSentimentWithCerebras(text: string): Promise<SentimentAnalysis> {
+    if (!cerebrasApiKey) {
+      throw new Error('Cerebras API key not configured');
+    }
+
+    // Truncate to 20k words max (Cerebras can handle large contexts)
+    const maxWords = 20000;
+    const truncated = this.truncateToWordLimit(text, maxWords);
+
+    const prompt = `Analyze the sentiment of the following text and provide:
+1. Overall sentiment label: POSITIVE, NEGATIVE, or NEUTRAL
+2. Sentiment score: -1.0 (very negative) to 1.0 (very positive)
+3. List of positive sentences (sentences with positive sentiment)
+4. List of negative sentences (sentences with negative sentiment)
+
+Text to analyze:
+${truncated}
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "label": "POSITIVE|NEGATIVE|NEUTRAL",
+  "score": -1.0 to 1.0,
+  "positiveSentences": ["sentence 1", "sentence 2"],
+  "negativeSentences": ["sentence 1", "sentence 2"]
+}`;
+
+    try {
+      const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cerebrasApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: cerebrasModel,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a sentiment analysis expert. Always respond with valid JSON only, no explanations.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 2000,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Cerebras API error: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json() as any;
+      const content = data.choices?.[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error('No content in Cerebras response');
+      }
+
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No JSON found in Cerebras response');
+      }
+
+      const result = JSON.parse(jsonMatch[0]);
+      
+      return {
+        label: result.label?.toUpperCase() || 'NEUTRAL',
+        score: Math.max(-1, Math.min(1, parseFloat(result.score) || 0)),
+        positiveSentences: Array.isArray(result.positiveSentences) ? result.positiveSentences : [],
+        negativeSentences: Array.isArray(result.negativeSentences) ? result.negativeSentences : [],
+      };
+    } catch (error) {
+      console.error('Cerebras sentiment analysis failed:', error);
+      // Fallback to neutral
+      return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
+    }
+  }
+
+  /**
+   * Call Hugging Face model (legacy/fallback - has 512 token limit)
+   */
+  private async callHuggingFaceModel(text: string, retries = 3): Promise<{ label: string; score: number }> {
+    // Truncate to 200 words max to stay well under 512 token limit
+    // Hugging Face models typically have 512 token limit, and ~1.3 tokens per word on average
+    // So 200 words ≈ 260 tokens, leaving plenty of headroom
+    const truncated = this.truncateToWordLimit(text, 200);
+
+    if (!truncated || truncated.trim().length === 0) {
+      return { label: 'NEUTRAL', score: 0 };
+    }
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        // Add timeout to fetch request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+        const response = await fetch(huggingFaceModelUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${huggingFaceToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ inputs: truncated }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          
+          // Handle rate limiting (429)
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('Retry-After');
+            const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 1000;
+            
+            if (attempt < retries) {
+              console.warn(`⚠️ Rate limit hit (429), waiting ${waitTime}ms before retry ${attempt + 1}/${retries}...`);
+              await this.sleep(waitTime);
+              continue;
+            }
+            throw new Error(`Hugging Face API rate limit exceeded after ${retries} attempts`);
+          }
+
+          // Handle token limit errors (400 with tensor size error)
+          if (response.status === 400 && errorText.includes('tensor') && errorText.includes('512')) {
+            // Text is too long - use much smaller truncation and try once more
+            console.warn(`⚠️ Text too long for model (exceeds 512 tokens), using minimal truncation (100 words)...`);
+            const minimalTruncated = this.truncateToWordLimit(text, 100); // Very aggressive truncation
+            // Only try once more with minimal truncation, don't recurse
+            if (minimalTruncated !== truncated) {
+              const minimalResponse = await fetch(huggingFaceModelUrl, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${huggingFaceToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ inputs: minimalTruncated }),
+                signal: controller.signal,
+              });
+              
+              if (minimalResponse.ok) {
+                const minimalData = await minimalResponse.json();
+                const candidate = this.extractTopCandidate(minimalData);
+                if (candidate) {
+                  return candidate;
+                }
+              }
+            }
+            // If still fails, return neutral sentiment instead of throwing
+            console.warn(`⚠️ Text still too long even with minimal truncation, using neutral sentiment`);
+            return { label: 'NEUTRAL', score: 0 };
+          }
+
+          // Handle other errors
+          if (response.status >= 500 && attempt < retries) {
+            const waitTime = Math.pow(2, attempt) * 1000;
+            console.warn(`⚠️ Server error (${response.status}), waiting ${waitTime}ms before retry ${attempt + 1}/${retries}...`);
+            await this.sleep(waitTime);
+            continue;
+          }
+
+          throw new Error(`Hugging Face API error: ${response.status} ${errorText}`);
+        }
+
+        const data = await response.json();
+        const candidate = this.extractTopCandidate(data);
+        if (!candidate) {
+          return { label: 'NEUTRAL', score: 0 };
+        }
+        return candidate;
+      } catch (error) {
+        // Handle timeout/abort
+        if (error instanceof Error && error.name === 'AbortError') {
+          if (attempt < retries) {
+            console.warn(`⚠️ Request timeout, retrying ${attempt + 1}/${retries}...`);
+            await this.sleep(Math.pow(2, attempt) * 1000);
+            continue;
+          }
+          throw new Error('Hugging Face API request timeout after retries');
+        }
+
+        // Handle network errors
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+          if (attempt < retries) {
+            console.warn(`⚠️ Network error, retrying ${attempt + 1}/${retries}...`);
+            await this.sleep(Math.pow(2, attempt) * 1000);
+            continue;
+          }
+          throw new Error(`Network error: ${error.message}`);
+        }
+
+        // If it's the last attempt or not a retryable error, throw
+        if (attempt === retries || !(error instanceof Error)) {
+          throw error;
+        }
+
+        // Wait before retry
+        await this.sleep(Math.pow(2, attempt) * 1000);
+      }
+    }
+
+    // Should never reach here, but TypeScript needs it
+    throw new Error('Failed to call Hugging Face API after retries');
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   private extractSentences(text: string): string[] {

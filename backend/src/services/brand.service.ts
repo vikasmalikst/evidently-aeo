@@ -61,21 +61,77 @@ export class BrandService {
       }
 
       // Check if brand already exists for this customer
-      const { data: existingBrand, error: existingError } = await supabaseAdmin
-        .from('brands')
-        .select('id')
-        .eq('customer_id', customerId)
-        .eq('name', brandData.brand_name)
-        .single();
+      // If it exists, we'll update it and allow adding more queries/topics/competitors
+      let existingBrand = null;
+      try {
+        const { data: brandCheck, error: existingError } = await supabaseAdmin
+          .from('brands')
+          .select('id, name, homepage_url')
+          .eq('customer_id', customerId)
+          .or(`name.eq.${brandData.brand_name},homepage_url.eq.${brandData.website_url}`)
+          .maybeSingle();
 
-      if (existingBrand && !existingError) {
-        throw new ValidationError('Brand with this name already exists for this customer');
+        if (brandCheck && !existingError) {
+          existingBrand = brandCheck;
+          console.log(`ℹ️ Brand "${brandData.brand_name}" already exists - will update and add new queries/topics/competitors`);
+        }
+      } catch (checkError) {
+        console.log('⚠️ Error checking for existing brand, proceeding with creation:', checkError);
       }
 
-      // Create brand
-      const brandId = uuidv4();
-      const brandSlug = brandData.brand_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      let brandId: string;
+      let newBrand: any;
+      
+      if (existingBrand) {
+        // Brand exists - update it and proceed with adding queries/topics/competitors
+        brandId = existingBrand.id;
+        console.log(`🔄 Updating existing brand: ${existingBrand.name} (${brandId})`);
+        
+        // Update brand metadata and other fields
+        const metadata = {
+          ...(brandData.metadata || {}),
+          ai_models: brandData.ai_models || [],
+          topics: brandData.aeo_topics || [],
+          ceo: brandData.metadata?.ceo,
+          headquarters: brandData.metadata?.headquarters,
+          founded_year: brandData.metadata?.founded_year,
+          brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
+        };
 
+        const { data: updatedBrand, error: updateError } = await supabaseAdmin
+          .from('brands')
+          .update({
+            industry: brandData.industry || undefined,
+            summary: brandData.description || undefined,
+            ceo: brandData.metadata?.ceo || undefined,
+            headquarters: brandData.metadata?.headquarters || undefined,
+            founded_year: brandData.metadata?.founded_year || undefined,
+            metadata: metadata,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', brandId)
+          .select()
+          .single();
+
+        if (updateError || !updatedBrand) {
+          console.error('⚠️ Failed to update existing brand, proceeding anyway:', updateError);
+          // Fetch the existing brand to continue
+          const { data: fetchedBrand } = await supabaseAdmin
+            .from('brands')
+            .select('*')
+            .eq('id', brandId)
+            .single();
+          newBrand = fetchedBrand || existingBrand;
+        } else {
+          newBrand = updatedBrand;
+        }
+      } else {
+        // Brand doesn't exist - create new one
+        brandId = uuidv4();
+        const brandSlug = brandData.brand_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      }
+
+      // Normalize competitors (for both new and existing brands)
       const seenCompetitorNames = new Set<string>();
       const normalizedCompetitors: NormalizedCompetitor[] = (brandData.competitors || [])
         .map((competitor: any, index: number): NormalizedCompetitor | null => {
@@ -159,51 +215,59 @@ export class BrandService {
       
       const competitorNames = verifiedCompetitors.map((competitor) => competitor.name).filter(Boolean);
       
-      // Prepare metadata with ai_models
-      const metadata = {
-        ...(brandData.metadata || {}),
-        ai_models: brandData.ai_models || [],
-        topics: brandData.aeo_topics || [],
-        ceo: brandData.metadata?.ceo,
-        headquarters: brandData.metadata?.headquarters,
-        founded_year: brandData.metadata?.founded_year,
-        brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
-        competitors_detail: verifiedCompetitors
-      };
-      
-      const { data: newBrand, error: brandError } = await supabaseAdmin
-        .from('brands')
-        .insert({
-          id: brandId,
-          customer_id: customerId,
-          name: brandData.brand_name,
-          slug: brandSlug,
-          homepage_url: brandData.website_url,
-          industry: brandData.industry,
-          summary: brandData.description,
+      // Create brand if it doesn't exist
+      if (!existingBrand) {
+        // Prepare metadata with ai_models
+        const metadata = {
+          ...(brandData.metadata || {}),
+          ai_models: brandData.ai_models || [],
+          topics: brandData.aeo_topics || [],
           ceo: brandData.metadata?.ceo,
           headquarters: brandData.metadata?.headquarters,
           founded_year: brandData.metadata?.founded_year,
-          metadata: metadata
-        })
-        .select()
-        .single();
-
-      if (brandError || !newBrand) {
-        console.error('❌ Brand creation failed:', {
-          brandError,
-          newBrand,
-          brandData: {
+          brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
+          competitors_detail: verifiedCompetitors
+        };
+        
+        const brandSlug = brandData.brand_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        
+        const { data: createdBrand, error: brandError } = await supabaseAdmin
+          .from('brands')
+          .insert({
+            id: brandId,
+            customer_id: customerId,
             name: brandData.brand_name,
-            website_url: brandData.website_url,
+            slug: brandSlug,
+            homepage_url: brandData.website_url,
             industry: brandData.industry,
-            description: brandData.description
-          }
-        });
-        throw new DatabaseError(`Failed to create brand: ${brandError?.message || 'Unknown error'}`);
+            summary: brandData.description,
+            ceo: brandData.metadata?.ceo,
+            headquarters: brandData.metadata?.headquarters,
+            founded_year: brandData.metadata?.founded_year,
+            metadata: metadata
+          })
+          .select()
+          .single();
+
+        if (brandError || !createdBrand) {
+          console.error('❌ Brand creation failed:', {
+            brandError,
+            createdBrand,
+            brandData: {
+              name: brandData.brand_name,
+              website_url: brandData.website_url,
+              industry: brandData.industry,
+              description: brandData.description
+            }
+          });
+          throw new DatabaseError(`Failed to create brand: ${brandError?.message || 'Unknown error'}`);
+        }
+        
+        newBrand = createdBrand;
       }
 
       // Create onboarding artifact with full BrandIntel structure
+      // This creates a history record for each setup run (both new and existing brands)
       const artifactId = uuidv4();
       const artifactData = {
         input: { raw: brandData.website_url || brandData.brand_name },
@@ -218,7 +282,8 @@ export class BrandService {
         topics: brandData.metadata?.topics || brandData.aeo_topics || [],
         ai_models: brandData.ai_models || [], // Store selected AI models
         sources: (brandData as any).sources || [],
-        generatedAtIso: brandData.metadata?.generated_at || new Date().toISOString()
+        generatedAtIso: brandData.metadata?.generated_at || new Date().toISOString(),
+        is_update: existingBrand ? true : false // Mark if this is an update to existing brand
       };
 
       const { error: artifactError } = await supabaseAdmin
@@ -234,35 +299,66 @@ export class BrandService {
 
       if (artifactError) {
         console.error('Failed to create onboarding artifact:', artifactError);
-        // Don't throw error here as brand was created successfully
+        // Don't throw error here as brand was created/updated successfully
+      } else {
+        console.log(`✅ Created onboarding artifact for brand ${newBrand.name} (${existingBrand ? 'update' : 'new'})`);
       }
 
       // Insert competitors into brand_competitors table
+      // For existing brands, only insert new competitors (avoid duplicates)
       if (verifiedCompetitors.length > 0) {
-        const competitorRecords = verifiedCompetitors.map((competitor, index) => ({
-          brand_id: newBrand.id,
-          competitor_name: competitor.name,
-          competitor_url: competitor.url || buildUrlFromDomain(competitor.domain),
-          priority: index + 1,
-          metadata: {
-            domain: competitor.domain || null,
-            relevance: competitor.relevance || null,
-            industry: competitor.industry || null,
-            logo: competitor.logo || null,
-            source: competitor.source || 'onboarding'
+        // Check existing competitors to avoid duplicates
+        let existingCompetitorNames = new Set<string>();
+        if (existingBrand) {
+          const { data: existingCompetitors } = await supabaseAdmin
+            .from('brand_competitors')
+            .select('competitor_name')
+            .eq('brand_id', newBrand.id);
+          
+          if (existingCompetitors) {
+            existingCompetitorNames = new Set(
+              existingCompetitors.map((c: any) => c.competitor_name?.toLowerCase().trim()).filter(Boolean)
+            );
           }
-        }));
+        }
+        
+        // Filter out competitors that already exist
+        const newCompetitors = verifiedCompetitors.filter(competitor => 
+          !existingCompetitorNames.has(competitor.name.toLowerCase().trim())
+        );
+        
+        if (newCompetitors.length > 0) {
+          const competitorRecords = newCompetitors.map((competitor, index) => {
+            // Get the next priority number (existing max + index + 1)
+            const basePriority = existingBrand ? (existingCompetitorNames.size + index + 1) : (index + 1);
+            return {
+              brand_id: newBrand.id,
+              competitor_name: competitor.name,
+              competitor_url: competitor.url || buildUrlFromDomain(competitor.domain),
+              priority: basePriority,
+              metadata: {
+                domain: competitor.domain || null,
+                relevance: competitor.relevance || null,
+                industry: competitor.industry || null,
+                logo: competitor.logo || null,
+                source: competitor.source || 'onboarding'
+              }
+            };
+          });
 
-        const { error: competitorError } = await supabaseAdmin
-          .from('brand_competitors')
-          .insert(competitorRecords);
+          const { error: competitorError } = await supabaseAdmin
+            .from('brand_competitors')
+            .insert(competitorRecords);
 
-        if (competitorError) {
-          console.error('⚠️ Failed to insert competitors:', competitorError);
-          console.error('🔍 DEBUG: Competitor records that failed:', competitorRecords);
-          // Don't throw - brand was created successfully
-        } else {
-          console.log(`✅ Inserted ${competitorRecords.length} competitors for brand ${newBrand.name}`);
+          if (competitorError) {
+            console.error('⚠️ Failed to insert competitors:', competitorError);
+            console.error('🔍 DEBUG: Competitor records that failed:', competitorRecords);
+            // Don't throw - brand was created/updated successfully
+          } else {
+            console.log(`✅ Inserted ${competitorRecords.length} new competitors for brand ${newBrand.name}`);
+          }
+        } else if (existingBrand) {
+          console.log(`ℹ️ All ${verifiedCompetitors.length} competitors already exist for brand ${newBrand.name}`);
         }
       }
 
@@ -270,233 +366,381 @@ export class BrandService {
       // Check both aeo_topics and metadata.topics fields
       const topics = brandData.aeo_topics || (brandData as any).metadata?.topics || [];
       
-      // Extract topic labels from objects or use strings directly
-      const topicLabels = topics.map((topic: any) => 
-        typeof topic === 'string' ? topic : (topic.label || String(topic))
-      );
+      // Extract topic labels and categories from objects or use strings directly
+      const topicData = topics.map((topic: any) => {
+        if (typeof topic === 'string') {
+          return { label: topic, category: null };
+        }
+        return {
+          label: topic.label || topic.name || String(topic),
+          category: topic.category || null
+        };
+      });
+      
+      const topicLabels = topicData.map(t => t.label);
+      const topicsWithCategories = topicData.filter(t => t.category);
       
       console.log('🔍 DEBUG: Topics extraction:', {
         aeo_topics: brandData.aeo_topics,
         metadata_topics: (brandData as any).metadata?.topics,
         extracted_topics: topics,
         extracted_labels: topicLabels,
+        topics_with_categories: topicsWithCategories.length,
         topics_length: topics.length,
         is_array: Array.isArray(topics)
       });
       
       if (topicLabels && Array.isArray(topicLabels) && topicLabels.length > 0) {
-        const topicRecords = topicLabels.map((topicLabel: string) => ({
-          brand_id: newBrand.id,
-          topic_name: topicLabel, // Fixed: use extracted label string
-          description: '' // We don't have descriptions from onboarding
-        }));
-
-        console.log('🔍 DEBUG: Inserting topics into brand_topics table:', topicRecords);
-        
-        const { error: topicError } = await supabaseAdmin
-          .from('brand_topics')
-          .insert(topicRecords);
-
-        if (topicError) {
-          console.error('⚠️ Failed to insert topics:', topicError);
-          console.error('🔍 DEBUG: Topic records that failed:', topicRecords);
-          // Don't throw - brand was created successfully
-        } else {
-          console.log(`✅ Inserted ${topicRecords.length} topics for brand ${newBrand.name}`);
+        // Check existing topics to avoid duplicates
+        let existingTopicNames = new Set<string>();
+        if (existingBrand) {
+          const { data: existingTopics } = await supabaseAdmin
+            .from('brand_topics')
+            .select('topic_name')
+            .eq('brand_id', newBrand.id);
           
-          // 🎯 NEW: Categorize topics using AI with guaranteed fallback
-          try {
-            console.log(`🤖 Starting AI categorization for ${topicLabels.length} topics during brand creation`);
-            console.log(`📋 Topics to categorize:`, topicLabels);
-            await this.categorizeTopicsWithAI(newBrand.id, topicLabels);
-            console.log(`✅ AI categorization completed for brand ${newBrand.id}`);
-          } catch (error) {
-            console.error('⚠️ Failed to categorize topics with AI:', error);
-            console.log('🔄 AI categorization failed, using rule-based fallback');
-            
-            // GUARANTEED FALLBACK: Always categorize topics using rules
-            try {
-              await this.categorizeTopicsWithRules(newBrand.id, topicLabels);
-              console.log(`✅ Rule-based categorization completed for brand ${newBrand.id}`);
-            } catch (ruleError) {
-              console.error('❌ Even rule-based categorization failed:', ruleError);
-            }
-          }
-          
-          // 🎯 PHASE 3: Trigger Cerebras AI Query Generation
-          // Generate neutral queries based on selected topics
-          try {
-            console.log(`🚀 Triggering query generation for ${topicLabels.length} topics`);
-            console.log(`📋 Topics for query generation:`, topicLabels);
-            
-            const queryGenResult = await queryGenerationService.generateSeedQueries({
-              url: brandData.website_url,
-              locale: 'en-US',
-              country: 'US',
-              industry: brandData.industry,
-              competitors: competitorNames.join(', '),
-              keywords: brandData.keywords?.join(', '),
-              llm_provider: 'cerebras', // Use Cerebras as primary
-              brand_id: newBrand.id,
-              customer_id: customerId,
-              topics: topicLabels // Pass topics for targeted query generation
-            });
-            
-            console.log(`✅ Query generation completed for brand ${newBrand.id} - Generated ${queryGenResult.total_queries} queries`);
-            
-            // 🎯 PHASE 4: Automatically trigger data collection for generated queries
-            // Use selected AI models from onboarding, or default to common collectors
-            const selectedModels = brandData.ai_models || [];
-            const collectors = this.mapAIModelsToCollectors(selectedModels);
-            
-            if (collectors.length > 0 && queryGenResult.total_queries > 0) {
-              try {
-                console.log(`🚀 Triggering automatic data collection for ${queryGenResult.total_queries} queries using collectors: ${collectors.join(', ')}`);
-                
-                // Fetch the generated queries from database
-                const { data: generatedQueries, error: queriesError } = await supabaseAdmin
-                  .from('generated_queries')
-                  .select('id, query_text, intent')
-                  .eq('brand_id', newBrand.id)
-                  .eq('customer_id', customerId)
-                  .eq('is_active', true)
-                  .order('created_at', { ascending: false })
-                  .limit(queryGenResult.total_queries);
-                
-                if (queriesError) {
-                  console.error('⚠️ Failed to fetch generated queries for data collection:', queriesError);
-                } else if (generatedQueries && generatedQueries.length > 0) {
-                  // Prepare execution requests
-                  const executionRequests: QueryExecutionRequest[] = generatedQueries.map(query => ({
-                    queryId: query.id,
-                    brandId: newBrand.id,
-                    customerId: customerId,
-                    queryText: query.query_text,
-                    intent: query.intent || 'data_collection',
-                    locale: 'en-US',
-                    country: 'US',
-                    collectors: collectors
-                  }));
-                  
-                  // Execute queries through collectors (non-blocking)
-                  // Use setTimeout to run in background without blocking brand creation response
-                  setTimeout(async () => {
-                    const startTime = Date.now();
-                    const collectionMetrics = {
-                      totalQueries: executionRequests.length,
-                      totalExecutions: 0,
-                      successCount: 0,
-                      failedCount: 0,
-                      failuresByCollector: {} as Record<string, number>,
-                      errorsByType: {} as Record<string, number>,
-                      executionIds: [] as string[]
-                    };
-
-                    try {
-                      console.log(`📊 Starting background data collection for ${executionRequests.length} queries...`);
-                      console.log(`📋 Collectors: ${collectors.join(', ')}`);
-                      console.log(`🔗 Brand ID: ${newBrand.id}, Customer ID: ${customerId}`);
-                      
-                      const results = await dataCollectionService.executeQueries(executionRequests);
-                      const endTime = Date.now();
-                      const durationMs = endTime - startTime;
-                      
-                      collectionMetrics.totalExecutions = results.length;
-                      collectionMetrics.successCount = results.filter(r => r.status === 'completed').length;
-                      collectionMetrics.failedCount = results.filter(r => r.status === 'failed').length;
-                      
-                      // Aggregate failures by collector type
-                      results.forEach(result => {
-                        if (result.status === 'failed') {
-                          const collector = result.collectorType || 'unknown';
-                          collectionMetrics.failuresByCollector[collector] = 
-                            (collectionMetrics.failuresByCollector[collector] || 0) + 1;
-                          
-                          // Extract error type from metadata if available
-                          if (result.metadata?.error_type) {
-                            const errorType = result.metadata.error_type;
-                            collectionMetrics.errorsByType[errorType] = 
-                              (collectionMetrics.errorsByType[errorType] || 0) + 1;
-                          }
-                        }
-                        
-                        // Track execution IDs
-                        if (result.executionId) {
-                          collectionMetrics.executionIds.push(result.executionId);
-                        }
-                      });
-                      
-                      // Log structured summary
-                      console.log(`✅ Data collection completed in ${durationMs}ms`);
-                      console.log(`📊 Data collection summary:`);
-                      console.log(`   Total queries: ${collectionMetrics.totalQueries}`);
-                      console.log(`   Total executions: ${collectionMetrics.totalExecutions}`);
-                      console.log(`   Successful: ${collectionMetrics.successCount} (${Math.round((collectionMetrics.successCount / collectionMetrics.totalExecutions) * 100)}%)`);
-                      console.log(`   Failed: ${collectionMetrics.failedCount} (${Math.round((collectionMetrics.failedCount / collectionMetrics.totalExecutions) * 100)}%)`);
-                      
-                      if (Object.keys(collectionMetrics.failuresByCollector).length > 0) {
-                        console.log(`   Failures by collector:`, collectionMetrics.failuresByCollector);
-                      }
-                      
-                      if (Object.keys(collectionMetrics.errorsByType).length > 0) {
-                        console.log(`   Errors by type:`, collectionMetrics.errorsByType);
-                      }
-                      
-                      // Store metrics in database (non-blocking)
-                      try {
-                        await this.storeDataCollectionMetrics(newBrand.id, customerId, collectionMetrics, durationMs);
-                      } catch (metricsError) {
-                        console.warn('⚠️ Failed to store data collection metrics (non-critical):', metricsError);
-                      }
-                      
-                    } catch (collectionError: any) {
-                      const endTime = Date.now();
-                      const durationMs = endTime - startTime;
-                      
-                      // Structured error logging with context
-                      const errorContext = {
-                        brandId: newBrand.id,
-                        customerId: customerId,
-                        queryCount: executionRequests.length,
-                        collectors: collectors,
-                        durationMs: durationMs,
-                        timestamp: new Date().toISOString()
-                      };
-                      
-                      console.error('❌ Data collection execution failed (non-critical):', {
-                        error: collectionError?.message || String(collectionError),
-                        stack: collectionError?.stack,
-                        context: errorContext
-                      });
-                      
-                      // Log error to database (non-blocking)
-                      try {
-                        await this.logDataCollectionError(newBrand.id, customerId, collectionError, errorContext);
-                      } catch (logError) {
-                        console.warn('⚠️ Failed to log data collection error (non-critical):', logError);
-                      }
-                      
-                      // Don't throw - data collection failure shouldn't affect brand creation
-                    }
-                  }, 1000); // Small delay to ensure brand creation response is sent first
-                  
-                  console.log(`✅ Data collection triggered in background for ${executionRequests.length} queries`);
-                } else {
-                  console.warn('⚠️ No generated queries found for data collection');
-                }
-              } catch (collectionError) {
-                console.error('⚠️ Failed to trigger data collection (non-critical):', collectionError);
-                // Don't throw - data collection failure shouldn't block brand creation
-              }
-            } else {
-              console.log(`ℹ️ Skipping data collection: ${collectors.length === 0 ? 'No collectors selected' : 'No queries generated'}`);
-            }
-          } catch (queryGenError) {
-            console.error('⚠️ Query generation failed (non-critical):', queryGenError);
-            // Don't throw - query generation failure shouldn't block brand creation
-            // Queries can be generated later if needed
+          if (existingTopics) {
+            existingTopicNames = new Set(
+              existingTopics.map((t: any) => t.topic_name?.toLowerCase().trim()).filter(Boolean)
+            );
           }
         }
+        
+        // Create a map of topic_name -> category for quick lookup
+        const categoryMap = new Map<string, string>();
+        topicsWithCategories.forEach(t => {
+          // Normalize category name - keep full category names as they are
+          // Valid categories: awareness, comparison, purchase, post-purchase support
+          let normalizedCategory = t.category?.toLowerCase().trim() || null;
+          if (normalizedCategory) {
+            // Map variations to standard names
+            if (normalizedCategory === 'support' || normalizedCategory === 'post-purchase' || normalizedCategory === 'postpurchase') {
+              normalizedCategory = 'post-purchase support';
+            } else if (normalizedCategory === 'awareness' || normalizedCategory === 'aware') {
+              normalizedCategory = 'awareness';
+            } else if (normalizedCategory === 'comparison' || normalizedCategory === 'compare') {
+              normalizedCategory = 'comparison';
+            } else if (normalizedCategory === 'purchase' || normalizedCategory === 'buy') {
+              normalizedCategory = 'purchase';
+            }
+            categoryMap.set(t.label, normalizedCategory);
+          }
+        });
+        
+        // Deduplicate topics by name (keep first occurrence)
+        const seenTopics = new Set<string>();
+        const uniqueTopicLabels: string[] = [];
+        for (const topicLabel of topicLabels) {
+          const normalized = topicLabel.toLowerCase().trim();
+          if (!seenTopics.has(normalized)) {
+            seenTopics.add(normalized);
+            uniqueTopicLabels.push(topicLabel);
+          }
+        }
+        
+        // Filter out topics that already exist
+        const newTopics = uniqueTopicLabels.filter(topicLabel => 
+          !existingTopicNames.has(topicLabel.toLowerCase().trim())
+        );
+        
+        if (newTopics.length > 0) {
+          // Helper function to normalize category before insertion
+          const normalizeCategoryForDB = (cat: string | null | undefined): string | null => {
+            if (!cat) return null;
+            const normalized = cat.toLowerCase().trim();
+            // Map variations to standard database category names
+            if (normalized === 'support' || normalized === 'post-purchase' || normalized === 'postpurchase') {
+              return 'post-purchase support';
+            }
+            // Only allow valid categories
+            const validCategories = ['awareness', 'comparison', 'purchase', 'post-purchase support'];
+            if (validCategories.includes(normalized)) {
+              return normalized;
+            }
+            // If invalid category, return null (will be categorized later by AI)
+            return null;
+          };
+          
+          const topicRecords = newTopics.map((topicLabel: string) => {
+            // Get category from map or find it in original topics
+            let category = categoryMap.get(topicLabel);
+            if (!category) {
+              // Try to find category from original topic data
+              const originalTopic = topics.find((t: any) => 
+                (t.label || t.name || String(t)).toLowerCase().trim() === topicLabel.toLowerCase().trim()
+              );
+              if (originalTopic && originalTopic.category) {
+                category = originalTopic.category;
+              }
+            }
+            // Normalize category before insertion
+            const normalizedCategory = normalizeCategoryForDB(category);
+            
+            return {
+              brand_id: newBrand.id,
+              topic_name: topicLabel,
+              category: normalizedCategory,
+              description: '' // We don't have descriptions from onboarding
+            };
+          });
+
+          console.log('🔍 DEBUG: Inserting topics into brand_topics table:', topicRecords);
+          
+          const { error: topicError } = await supabaseAdmin
+            .from('brand_topics')
+            .insert(topicRecords);
+
+          if (topicError) {
+            console.error('⚠️ Failed to insert topics:', topicError);
+            console.error('🔍 DEBUG: Topic records that failed:', topicRecords);
+            // Don't throw - brand was created/updated successfully
+          } else {
+            console.log(`✅ Inserted ${topicRecords.length} new topics for brand ${newBrand.name}`);
+          }
+        } else if (existingBrand) {
+          console.log(`ℹ️ All ${uniqueTopicLabels.length} topics already exist for brand ${newBrand.name}`);
+        }
+        
+        // For existing brands, we still want to proceed with query generation for existing topics
+        // So we use all unique topics (not just new ones) for query generation
+        const topicsForQueryGen = existingBrand ? uniqueTopicLabels : newTopics;
+        
+        if (topicsForQueryGen.length > 0) {
+          
+          // Check which topics need categorization (those without category from frontend)
+          // For existing brands, check all topics; for new brands, only check new topics
+          const topicsToCheck = existingBrand ? uniqueTopicLabels : newTopics;
+          const uncategorizedTopics = topicsToCheck.filter(label => !categoryMap.has(label));
+          const categorizedCount = topicsToCheck.length - uncategorizedTopics.length;
+          
+          if (categorizedCount > 0) {
+            console.log(`✅ ${categorizedCount} topics already have categories from frontend`);
+          }
+          
+          // Only categorize topics that don't have categories from frontend
+          if (uncategorizedTopics.length > 0) {
+            console.log(`🤖 Starting AI categorization for ${uncategorizedTopics.length} uncategorized topics`);
+            console.log(`📋 Topics to categorize:`, uncategorizedTopics);
+            
+            try {
+              await this.categorizeTopicsWithAI(newBrand.id, uncategorizedTopics);
+              console.log(`✅ AI categorization completed for brand ${newBrand.id}`);
+            } catch (error) {
+              console.error('⚠️ Failed to categorize topics with AI:', error);
+              console.log('🔄 AI categorization failed, using rule-based fallback');
+              
+              // GUARANTEED FALLBACK: Always categorize topics using rules
+              try {
+                await this.categorizeTopicsWithRules(newBrand.id, uncategorizedTopics);
+                console.log(`✅ Rule-based categorization completed for brand ${newBrand.id}`);
+              } catch (ruleError) {
+                console.error('❌ Even rule-based categorization failed:', ruleError);
+              }
+            }
+          } else {
+            console.log(`✅ All topics already have categories, skipping AI categorization`);
+          }
+          
+          // 🎯 PHASE 3: Save user-selected queries OR generate new queries
+          // This code is inside the else block (line 380) - topics were inserted successfully
+          // Check if user has selected queries in metadata.prompts
+          const userSelectedPrompts = (brandData.metadata as any)?.prompts || [];
+          let queryGenResult: { total_queries: number };
+          
+          if (userSelectedPrompts && Array.isArray(userSelectedPrompts) && userSelectedPrompts.length > 0) {
+            // Save user-selected queries directly
+            console.log(`💾 Saving ${userSelectedPrompts.length} user-selected queries to database`);
+            try {
+              await this.saveUserSelectedQueries(
+                newBrand.id,
+                customerId,
+                userSelectedPrompts,
+                topicsForQueryGen, // Use topicsForQueryGen instead of topicLabels
+                newBrand.name
+              );
+              queryGenResult = { total_queries: userSelectedPrompts.length };
+              console.log(`✅ Saved ${userSelectedPrompts.length} user-selected queries for brand ${newBrand.id}`);
+            } catch (saveError) {
+              console.error('⚠️ Failed to save user-selected queries, falling back to AI generation:', saveError);
+              // Fall through to AI generation
+              queryGenResult = { total_queries: 0 };
+            }
+          }
+          
+          // If no user-selected queries or save failed, generate queries with AI
+          if (!queryGenResult || queryGenResult.total_queries === 0) {
+            try {
+              console.log(`🚀 Triggering AI query generation for ${topicsForQueryGen.length} topics`);
+              console.log(`📋 Topics for query generation:`, topicsForQueryGen);
+              
+              queryGenResult = await queryGenerationService.generateSeedQueries({
+                url: brandData.website_url,
+                locale: 'en-US',
+                country: 'US',
+                industry: brandData.industry,
+                competitors: competitorNames.join(', '),
+                keywords: brandData.keywords?.join(', '),
+                llm_provider: 'cerebras', // Use Cerebras as primary
+                brand_id: newBrand.id,
+                customer_id: customerId,
+                topics: topicsForQueryGen // Pass topicsForQueryGen instead of topicLabels
+              });
+              
+              console.log(`✅ Query generation completed for brand ${newBrand.id} - Generated ${queryGenResult.total_queries} queries`);
+            } catch (genError) {
+              console.error('⚠️ AI query generation failed:', genError);
+              queryGenResult = { total_queries: 0 };
+            }
+          }
+          
+          // 🎯 PHASE 4: Automatically trigger data collection for generated queries
+          // Use selected AI models from onboarding, or default to common collectors
+          const selectedModels = brandData.ai_models || [];
+          const collectors = this.mapAIModelsToCollectors(selectedModels);
+          
+          if (collectors.length > 0 && queryGenResult.total_queries > 0) {
+            try {
+              console.log(`🚀 Triggering automatic data collection for ${queryGenResult.total_queries} queries using collectors: ${collectors.join(', ')}`);
+              
+              // Fetch the generated queries from database
+              const { data: generatedQueries, error: queriesError } = await supabaseAdmin
+                .from('generated_queries')
+                .select('id, query_text, intent')
+                .eq('brand_id', newBrand.id)
+                .eq('customer_id', customerId)
+                .eq('is_active', true)
+                .order('created_at', { ascending: false })
+                .limit(queryGenResult.total_queries);
+              
+              if (queriesError) {
+                console.error('⚠️ Failed to fetch generated queries for data collection:', queriesError);
+              } else if (generatedQueries && generatedQueries.length > 0) {
+                // Prepare execution requests
+                const executionRequests: QueryExecutionRequest[] = generatedQueries.map(query => ({
+                  queryId: query.id,
+                  brandId: newBrand.id,
+                  customerId: customerId,
+                  queryText: query.query_text,
+                  intent: query.intent || 'data_collection',
+                  locale: 'en-US',
+                  country: 'US',
+                  collectors: collectors
+                }));
+                
+                // Execute queries through collectors (non-blocking)
+                // Use setTimeout to run in background without blocking brand creation response
+                setTimeout(async () => {
+                  const startTime = Date.now();
+                  const collectionMetrics = {
+                    totalQueries: executionRequests.length,
+                    totalExecutions: 0,
+                    successCount: 0,
+                    failedCount: 0,
+                    failuresByCollector: {} as Record<string, number>,
+                    errorsByType: {} as Record<string, number>,
+                    executionIds: [] as string[]
+                  };
+
+                  try {
+                    console.log(`📊 Starting background data collection for ${executionRequests.length} queries...`);
+                    console.log(`📋 Collectors: ${collectors.join(', ')}`);
+                    console.log(`🔗 Brand ID: ${newBrand.id}, Customer ID: ${customerId}`);
+                    
+                    const results = await dataCollectionService.executeQueries(executionRequests);
+                    const endTime = Date.now();
+                    const durationMs = endTime - startTime;
+                    
+                    collectionMetrics.totalExecutions = results.length;
+                    collectionMetrics.successCount = results.filter(r => r.status === 'completed').length;
+                    collectionMetrics.failedCount = results.filter(r => r.status === 'failed').length;
+                    
+                    // Aggregate failures by collector type
+                    results.forEach(result => {
+                      if (result.status === 'failed') {
+                        const collector = result.collectorType || 'unknown';
+                        collectionMetrics.failuresByCollector[collector] = 
+                          (collectionMetrics.failuresByCollector[collector] || 0) + 1;
+                        
+                        // Extract error type from metadata if available
+                        if (result.metadata?.error_type) {
+                          const errorType = result.metadata.error_type;
+                          collectionMetrics.errorsByType[errorType] = 
+                            (collectionMetrics.errorsByType[errorType] || 0) + 1;
+                        }
+                      }
+                      
+                      // Track execution IDs
+                      if (result.executionId) {
+                        collectionMetrics.executionIds.push(result.executionId);
+                      }
+                    });
+                    
+                    // Log structured summary
+                    console.log(`✅ Data collection completed in ${durationMs}ms`);
+                    console.log(`📊 Data collection summary:`);
+                    console.log(`   Total queries: ${collectionMetrics.totalQueries}`);
+                    console.log(`   Total executions: ${collectionMetrics.totalExecutions}`);
+                    console.log(`   Successful: ${collectionMetrics.successCount} (${Math.round((collectionMetrics.successCount / collectionMetrics.totalExecutions) * 100)}%)`);
+                    console.log(`   Failed: ${collectionMetrics.failedCount} (${Math.round((collectionMetrics.failedCount / collectionMetrics.totalExecutions) * 100)}%)`);
+                    
+                    if (Object.keys(collectionMetrics.failuresByCollector).length > 0) {
+                      console.log(`   Failures by collector:`, collectionMetrics.failuresByCollector);
+                    }
+                    
+                    if (Object.keys(collectionMetrics.errorsByType).length > 0) {
+                      console.log(`   Errors by type:`, collectionMetrics.errorsByType);
+                    }
+                    
+                    // Store metrics in database (non-blocking)
+                    try {
+                      await this.storeDataCollectionMetrics(newBrand.id, customerId, collectionMetrics, durationMs);
+                    } catch (metricsError) {
+                      console.warn('⚠️ Failed to store data collection metrics (non-critical):', metricsError);
+                    }
+                    
+                  } catch (collectionError: any) {
+                    const endTime = Date.now();
+                    const durationMs = endTime - startTime;
+                    
+                    // Structured error logging with context
+                    const errorContext = {
+                      brandId: newBrand.id,
+                      customerId: customerId,
+                      queryCount: executionRequests.length,
+                      collectors: collectors,
+                      durationMs: durationMs,
+                      timestamp: new Date().toISOString()
+                    };
+                    
+                    console.error('❌ Data collection execution failed (non-critical):', {
+                      error: collectionError?.message || String(collectionError),
+                      stack: collectionError?.stack,
+                      context: errorContext
+                    });
+                    
+                    // Log error to database (non-blocking)
+                    try {
+                      await this.logDataCollectionError(newBrand.id, customerId, collectionError, errorContext);
+                    } catch (logError) {
+                      console.warn('⚠️ Failed to log data collection error (non-critical):', logError);
+                    }
+                    
+                    // Don't throw - data collection failure shouldn't affect brand creation
+                  }
+                }, 1000); // Small delay to ensure brand creation response is sent first
+                
+                console.log(`✅ Data collection triggered in background for ${executionRequests.length} queries`);
+              } else {
+                console.warn('⚠️ No generated queries found for data collection');
+              }
+            } catch (collectionError) {
+              console.error('⚠️ Failed to trigger data collection (non-critical):', collectionError);
+              // Don't throw - data collection failure shouldn't block brand creation
+            }
+          } else {
+            console.log(`ℹ️ Skipping data collection: ${collectors.length === 0 ? 'No collectors selected' : 'No queries generated'}`);
+          }
+        } // Close the else block from line 380 (topics inserted successfully)
       } else {
         console.log('🔍 DEBUG: No topics found to insert:', {
           topics,
@@ -1009,6 +1253,8 @@ export class BrandService {
       console.log(`🤖 Starting AI categorization for ${topics.length} topics`);
       
       // Get API keys
+      const geminiApiKey = process.env['GOOGLE_GEMINI_API_KEY'];
+      const geminiModel = process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash-002';
       const openaiApiKey = process.env['OPENAI_API_KEY'];
       const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
       const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
@@ -1022,15 +1268,30 @@ export class BrandService {
           return;
         } catch (error) {
           console.error('❌ Cerebras AI failed:', error);
-          console.log('🔄 Cerebras failed, trying OpenAI as fallback...');
+          console.log('🔄 Cerebras failed, trying Gemini as fallback...');
         }
       } else {
-        console.log('⚠️ Cerebras API key not configured, trying OpenAI...');
+        console.log('⚠️ Cerebras API key not configured, trying Gemini...');
       }
       
-      // Try OpenAI as fallback
+      // Try Gemini as secondary fallback
+      if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
+        console.log('🤖 Using Gemini as secondary provider');
+        try {
+          await this.categorizeWithGemini(brandId, topics, geminiApiKey, geminiModel);
+          console.log('✅ Gemini categorization completed successfully');
+          return;
+        } catch (error) {
+          console.error('❌ Gemini failed:', error);
+          console.log('🔄 Gemini failed, trying OpenAI as fallback...');
+        }
+      } else {
+        console.log('⚠️ Gemini API key not configured, trying OpenAI...');
+      }
+      
+      // Try OpenAI as tertiary fallback
       if (openaiApiKey && openaiApiKey !== 'your_openai_api_key_here') {
-        console.log('🤖 Using OpenAI as fallback provider');
+        console.log('🤖 Using OpenAI as tertiary fallback provider');
         try {
           await this.categorizeWithOpenAI(brandId, topics, openaiApiKey);
           console.log('✅ OpenAI categorization completed successfully');
@@ -1167,10 +1428,10 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
   }
 
   /**
-   * Categorize topics using OpenAI
+   * Categorize topics using Gemini
    */
-  private async categorizeWithOpenAI(brandId: string, topics: string[], apiKey: string): Promise<void> {
-    console.log(`🤖 Categorizing topics with OpenAI`);
+  private async categorizeWithGemini(brandId: string, topics: string[], apiKey: string, model: string): Promise<void> {
+    console.log(`🤖 Categorizing topics with Gemini (${model})`);
     
     const prompt = `You are an expert in brand marketing and customer journey analysis. 
       
@@ -1190,7 +1451,115 @@ Please respond with a JSON object where each topic is mapped to its most appropr
   "another_topic": "category_name"
 }
 
-Only use these exact category names: awareness, comparison, purchase, post-purchase support`;
+Only use these exact category names: awareness, comparison, purchase, post-purchase support
+
+CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanations, or markdown after the JSON.`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `You are an expert in brand marketing and customer journey analysis. Always respond with valid JSON only.\n\n${prompt}`
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 1000,
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    const content = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    if (!content) {
+      throw new Error('Empty response from Gemini API');
+    }
+
+    // Parse AI response with robust JSON extraction
+    let categorization: Record<string, string>;
+    try {
+      // Try direct parse first
+      categorization = JSON.parse(content);
+    } catch (firstError) {
+      // Try extracting JSON using brace matching
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const firstBrace = jsonMatch[0].indexOf('{');
+        if (firstBrace !== -1) {
+          let braceCount = 0;
+          let lastBrace = -1;
+          for (let i = firstBrace; i < jsonMatch[0].length; i++) {
+            if (jsonMatch[0][i] === '{') {
+              braceCount++;
+            } else if (jsonMatch[0][i] === '}') {
+              braceCount--;
+              if (braceCount === 0) {
+                lastBrace = i;
+                break;
+              }
+            }
+          }
+          if (lastBrace !== -1) {
+            const jsonString = jsonMatch[0].slice(firstBrace, lastBrace + 1);
+            categorization = JSON.parse(jsonString);
+          } else {
+            throw new Error('No matching closing brace found');
+          }
+        } else {
+          throw new Error('No opening brace found');
+        }
+      } else {
+        throw new Error('No JSON object found in response');
+      }
+    }
+
+    console.log('🤖 Gemini categorization result:', categorization);
+    await this.updateTopicsWithCategories(brandId, categorization);
+  }
+
+  /**
+   * Categorize topics using OpenAI (tertiary fallback)
+   */
+  private async categorizeWithOpenAI(brandId: string, topics: string[], apiKey: string): Promise<void> {
+    console.log(`🤖 Categorizing topics with OpenAI (fallback)`);
+    
+    const prompt = `You are an expert in brand marketing and customer journey analysis. 
+      
+I need you to categorize the following AEO (Answer Engine Optimization) topics into one of these 4 categories:
+
+1. **awareness** - Topics that help users discover and learn about the brand
+2. **comparison** - Topics that help users compare the brand with competitors  
+3. **purchase** - Topics that help users make buying decisions
+4. **post-purchase support** - Topics that help users after they've made a purchase
+
+AEO Topics to categorize:
+${topics.map((topic, index) => `${index + 1}. ${topic}`).join('\n')}
+
+Please respond with a JSON object where each topic is mapped to its most appropriate category. Format:
+{
+  "topic_name": "category_name",
+  "another_topic": "category_name"
+}
+
+Only use these exact category names: awareness, comparison, purchase, post-purchase support
+
+CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanations, or markdown after the JSON.`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -1199,7 +1568,7 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -1216,23 +1585,53 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as any;
-    const aiResponse = data.choices?.[0]?.message?.content?.trim();
+    const content = data.choices[0]?.message?.content?.trim() || '';
     
-    if (!aiResponse) {
+    if (!content) {
       throw new Error('Empty response from OpenAI API');
     }
 
-    // Parse AI response
+    // Parse AI response with robust JSON extraction
     let categorization: Record<string, string>;
     try {
-      categorization = JSON.parse(aiResponse);
-    } catch (parseError) {
-      console.error('❌ Failed to parse OpenAI response:', aiResponse);
-      throw new Error('Invalid JSON response from OpenAI AI');
+      // Try direct parse first
+      categorization = JSON.parse(content);
+    } catch (firstError) {
+      // Try extracting JSON using brace matching
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const firstBrace = jsonMatch[0].indexOf('{');
+        if (firstBrace !== -1) {
+          let braceCount = 0;
+          let lastBrace = -1;
+          for (let i = firstBrace; i < jsonMatch[0].length; i++) {
+            if (jsonMatch[0][i] === '{') {
+              braceCount++;
+            } else if (jsonMatch[0][i] === '}') {
+              braceCount--;
+              if (braceCount === 0) {
+                lastBrace = i;
+                break;
+              }
+            }
+          }
+          if (lastBrace !== -1) {
+            const jsonString = jsonMatch[0].slice(firstBrace, lastBrace + 1);
+            categorization = JSON.parse(jsonString);
+          } else {
+            throw new Error('No matching closing brace found');
+          }
+        } else {
+          throw new Error('No opening brace found');
+        }
+      } else {
+        throw new Error('No JSON object found in response');
+      }
     }
 
     console.log('🤖 OpenAI categorization result:', categorization);
@@ -1553,6 +1952,85 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
     }
 
     return verified;
+  }
+
+  /**
+   * Save user-selected queries directly to database
+   */
+  private async saveUserSelectedQueries(
+    brandId: string,
+    customerId: string,
+    prompts: string[],
+    topics: string[],
+    brandName: string
+  ): Promise<void> {
+    const { v4: uuidv4 } = require('uuid');
+    const generationId = uuidv4();
+    
+    // Create query generation record
+    const { error: genError } = await supabaseAdmin
+      .from('query_generations')
+      .insert({
+        id: generationId,
+        brand_id: brandId,
+        customer_id: customerId,
+        total_queries: prompts.length,
+        locale: 'en-US',
+        country: 'US',
+        strategy: 'user_selected',
+        queries_by_intent: {},
+        processing_time_seconds: 0,
+        metadata: {
+          provider: 'user_selected',
+          brand_name: brandName,
+          source: 'onboarding'
+        }
+      });
+
+    if (genError) {
+      throw new Error(`Failed to create query generation record: ${genError.message}`);
+    }
+
+    // Map prompts to topics (try to match by topic name in prompt, or assign to first topic)
+    const queryInserts = prompts.map((prompt, index) => {
+      // Try to find matching topic by checking if prompt contains topic name
+      let matchedTopic = topics.find(topic => 
+        prompt.toLowerCase().includes(topic.toLowerCase())
+      ) || topics[0] || 'General'; // Fallback to first topic or 'General'
+      
+      return {
+        generation_id: generationId,
+        brand_id: brandId,
+        customer_id: customerId,
+        query_text: prompt,
+        intent: 'data_collection', // Default intent
+        brand: brandName,
+        template_id: `user-selected-${index}`,
+        evidence_snippet: `User-selected query`,
+        evidence_source: 'user_onboarding',
+        locale: 'en-US',
+        country: 'US',
+        is_active: true,
+        metadata: {
+          topic: matchedTopic,
+          topic_name: matchedTopic,
+          priority: 1,
+          index,
+          provider: 'user_selected',
+          brand_name: brandName
+        }
+      };
+    });
+
+    const { error: queriesError } = await supabaseAdmin
+      .from('generated_queries')
+      .insert(queryInserts);
+
+    if (queriesError) {
+      throw new Error(`Failed to save user-selected queries: ${queriesError.message}`);
+    }
+
+    console.log(`✅ Saved ${queryInserts.length} user-selected queries to database`);
   }
 
   /**

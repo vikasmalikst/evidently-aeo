@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { getLLMIcon } from './LLMIcons';
@@ -12,6 +12,7 @@ interface Model {
   topTopic: string;
   change?: number;
   referenceCount: number;
+  brandPresencePercentage: number;
   topTopics?: Array<{
     topic: string;
     occurrences: number;
@@ -19,6 +20,7 @@ interface Model {
     visibility: number;
     mentions: number;
   }>;
+  isBrand?: boolean;
 }
 
 interface VisibilityTableProps {
@@ -33,8 +35,7 @@ export const VisibilityTable = ({
   activeTab,
   models = [],
   selectedModels = [],
-  onModelToggle,
-  loading = false
+  onModelToggle
 }: VisibilityTableProps) => {
   const navigate = useNavigate();
   const [sortConfig, setSortConfig] = useState<{ key: keyof Model; direction: 'asc' | 'desc' }>({
@@ -44,6 +45,12 @@ export const VisibilityTable = ({
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const sortedModels = [...models].sort((a, b) => {
+    // Keep brand row at top for competitive view
+    if (activeTab === 'competitive') {
+      if (a.isBrand && !b.isBrand) return -1;
+      if (!a.isBrand && b.isBrand) return 1;
+    }
+
     const key = sortConfig.key;
     const aVal = a[key] || 0;
     const bVal = b[key] || 0;
@@ -70,7 +77,7 @@ export const VisibilityTable = ({
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden border border-[var(--border-default)] rounded-b-lg">
-      <div className="overflow-y-auto flex-1" aria-busy={loading}>
+      <div className="overflow-y-auto flex-1">
         <table className="w-full border-collapse text-sm bg-white">
           <thead className="sticky top-0 z-10">
             <tr>
@@ -85,7 +92,7 @@ export const VisibilityTable = ({
                 onClick={() => handleSort('score')}
               >
                 <div className="flex items-center gap-2">
-                  Visibility
+                  Visibility Score
                   <span className="text-xs text-[var(--text-caption)] min-w-[12px]">
                     {sortConfig.key === 'score' && (sortConfig.direction === 'desc' ? '↓' : '↑')}
                   </span>
@@ -102,6 +109,9 @@ export const VisibilityTable = ({
                   </span>
                 </div>
               </th>
+              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] min-w-[150px]">
+                Brand Presence
+              </th>
               <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)]">
                 Top Topic
               </th>
@@ -110,18 +120,17 @@ export const VisibilityTable = ({
           <tbody>
             {sortedModels.map((model) => {
               const selected = isSelected(model.id);
-              const changeValue = model.change ?? 0;
-              const hasChange = changeValue !== 0;
-              const isUp = changeValue > 0;
-              const shareChangeValue = model.shareOfSearchChange ?? 0;
-              const hasShareChange = shareChangeValue !== 0;
-              const isShareUp = shareChangeValue > 0;
+              const hasChange = model.change !== undefined && model.change !== 0;
+              const isUp = hasChange && (model.change ?? 0) > 0;
               const expanded = expandedRow === model.id;
 
               return (
-                <Fragment key={model.id}>
+                <>
                   <tr
-                    className="transition-colors cursor-pointer"
+                    key={model.id}
+                    className={`transition-colors cursor-pointer ${
+                      model.isBrand ? 'bg-[#f0f9ff] hover:bg-[#e0f2fe]' : ''
+                    }`}
                     onClick={() => handleRowClick(model.id)}
                   >
                     <td className="px-3 py-3 border-b border-[var(--border-default)] text-center">
@@ -134,8 +143,18 @@ export const VisibilityTable = ({
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">
                       <div className="flex items-center gap-3">
-                        {getLLMIcon(model.name)}
-                        <span className="text-[var(--text-body)] font-semibold">{model.name}</span>
+                        {activeTab === 'brand' ? getLLMIcon(model.name) : (
+                          <div className="w-6 h-6 flex items-center justify-center bg-[#8b90a7] rounded-md">
+                            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="white">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+                              <circle cx="12" cy="12" r="4"/>
+                            </svg>
+                          </div>
+                        )}
+                        <span className={`text-[var(--text-body)] font-semibold ${model.isBrand ? 'text-[#0d7c96]' : ''}`}>
+                          {model.name}
+                          {model.isBrand && <span className="ml-2 text-xs text-[#0d7c96] font-normal">(Your Brand)</span>}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">
@@ -150,7 +169,7 @@ export const VisibilityTable = ({
                             }`}
                           >
                             {isUp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            {Math.abs(changeValue)} pts
+                            {Math.abs(model.change ?? 0)} pts
                           </span>
                         )}
                       </div>
@@ -160,17 +179,22 @@ export const VisibilityTable = ({
                         <span className="text-sm font-semibold text-[var(--text-body)]">
                           {model.shareOfSearch}%
                         </span>
-                        {hasShareChange && (
+                        {model.shareOfSearchChange !== undefined && model.shareOfSearchChange !== 0 && (
                           <span
                             className={`inline-flex items-center gap-0.5 font-semibold text-xs ${
-                              isShareUp ? 'text-[var(--status-up)]' : 'text-[var(--status-down)]'
+                              model.shareOfSearchChange > 0 ? 'text-[var(--status-up)]' : 'text-[var(--status-down)]'
                             }`}
                           >
-                            {isShareUp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            {Math.abs(shareChangeValue)}%
+                            {model.shareOfSearchChange > 0 ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            {Math.abs(model.shareOfSearchChange)}%
                           </span>
                         )}
                       </div>
+                    </td>
+                    <td className="px-4 py-3 border-b border-[var(--border-default)]">
+                      <span className="text-sm font-semibold text-[var(--text-body)]">
+                        {model.brandPresencePercentage > 0 ? `${model.brandPresencePercentage}%` : '—'}
+                      </span>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">
                       <button
@@ -186,7 +210,7 @@ export const VisibilityTable = ({
                   </tr>
                   {expanded && (
                     <tr className="bg-[var(--bg-secondary)]">
-                      <td colSpan={5} className="px-4 py-4 border-b border-[var(--border-default)]">
+                      <td colSpan={6} className="px-4 py-4 border-b border-[var(--border-default)]">
                         <div className="grid grid-cols-3 gap-4 ml-12">
                           <div>
                             <h4 className="text-xs font-semibold text-[var(--text-caption)] uppercase mb-2">
@@ -225,29 +249,29 @@ export const VisibilityTable = ({
                               Visibility change:{' '}
                               <span
                                 className={`font-semibold ${
-                                  changeValue > 0
+                                  model.change && model.change > 0
                                     ? 'text-[var(--status-up)]'
-                                    : changeValue < 0
+                                    : model.change && model.change < 0
                                       ? 'text-[var(--status-down)]'
                                       : ''
                                 }`}
                               >
-                                {hasChange ? `${changeValue > 0 ? '+' : ''}${changeValue} pts` : 'Stable'}
+                                {model.change ? `${model.change > 0 ? '+' : ''}${model.change} pts` : 'Stable'}
                               </span>
                             </p>
                             <p className="text-sm text-[var(--text-body)] mt-1">
                               Share of search change:{' '}
                               <span
                                 className={`font-semibold ${
-                                  shareChangeValue > 0
+                                  model.shareOfSearchChange && model.shareOfSearchChange > 0
                                     ? 'text-[var(--status-up)]'
-                                    : shareChangeValue < 0
+                                    : model.shareOfSearchChange && model.shareOfSearchChange < 0
                                       ? 'text-[var(--status-down)]'
                                       : ''
                                 }`}
                               >
-                                {hasShareChange
-                                  ? `${shareChangeValue > 0 ? '+' : ''}${shareChangeValue}%`
+                                {model.shareOfSearchChange
+                                  ? `${model.shareOfSearchChange > 0 ? '+' : ''}${model.shareOfSearchChange}%`
                                   : 'Stable'}
                               </span>
                             </p>
@@ -256,7 +280,7 @@ export const VisibilityTable = ({
                       </td>
                     </tr>
                   )}
-                </Fragment>
+                </>
               );
             })}
           </tbody>

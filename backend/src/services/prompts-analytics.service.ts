@@ -20,6 +20,7 @@ interface NormalizedRange {
 interface PromptHighlights {
   brand: string[]
   products: string[]
+  keywords: string[]
 }
 
 interface PromptEntryPayload {
@@ -200,6 +201,17 @@ const roundToPrecision = (value: number, precision = 1): number => {
   return Math.round(value * factor) / factor
 }
 
+const normalizeSentiment = (values: number[]): number => {
+  if (!values.length) {
+    return 50
+  }
+  const sum = values.reduce((acc, v) => acc + v, 0)
+  const avgRaw = sum / values.length
+  // incoming scores are expected on [-1, 1]; map to [0, 100]
+  const normalized = ((avgRaw + 1) / 2) * 100
+  return Math.min(100, Math.max(0, normalized))
+}
+
 const normalizeRange = (start?: string, end?: string): NormalizedRange => {
   const now = new Date()
   const defaultEnd = new Date(now)
@@ -350,6 +362,7 @@ export class PromptsAnalyticsService {
       highlights: {
         brand: Set<string>
         products: Set<string>
+        keywords: Set<string>
       }
     }
 
@@ -396,7 +409,8 @@ export class PromptsAnalyticsService {
           response: null,
           highlights: {
             brand: new Set<string>(),
-            products: new Set<string>()
+            products: new Set<string>(),
+            keywords: new Set<string>()
           }
         })
       }
@@ -427,6 +441,169 @@ export class PromptsAnalyticsService {
       }
     }
 
+    // Fetch keywords from generated_keywords table for all prompts
+    const allQueryIds = Array.from(
+      new Set(
+        Array.from(promptAggregates.values())
+          .map((agg) => agg.queryId)
+          .filter((id): id is string => id !== null)
+      )
+    )
+    const allCollectorResultIds = Array.from(
+      new Set(
+        Array.from(promptAggregates.values())
+          .map((agg) => agg.collectorResultId)
+          .filter((id): id is number => id !== null)
+      )
+    )
+
+    const keywordMap = new Map<string, Set<string>>()
+    const sentimentMap = new Map<string, number[]>() // key: query_id or collector:<id> -> sentiment values
+
+    if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
+      const keywordRows: Array<{ keyword: string; query_id: string | null; collector_result_id: number | null }> = []
+      let keywordError: any = null
+
+      // Fetch keywords by query_id
+      if (allQueryIds.length > 0) {
+        const { data: queryKeywordRows, error: queryKeywordError } = await supabaseAdmin
+          .from('generated_keywords')
+          .select('keyword, query_id, collector_result_id')
+          .eq('brand_id', brandRow.id)
+          .eq('customer_id', customerId)
+          .in('query_id', allQueryIds)
+
+        if (queryKeywordError) {
+          keywordError = queryKeywordError
+        } else if (queryKeywordRows) {
+          keywordRows.push(...queryKeywordRows)
+        }
+      }
+
+      // Fetch keywords by collector_result_id
+      if (!keywordError && allCollectorResultIds.length > 0) {
+        const { data: collectorKeywordRows, error: collectorKeywordError } = await supabaseAdmin
+          .from('generated_keywords')
+          .select('keyword, query_id, collector_result_id')
+          .eq('brand_id', brandRow.id)
+          .eq('customer_id', customerId)
+          .in('collector_result_id', allCollectorResultIds)
+
+        if (collectorKeywordError) {
+          keywordError = collectorKeywordError
+        } else if (collectorKeywordRows) {
+          keywordRows.push(...collectorKeywordRows)
+        }
+      }
+
+      if (keywordError) {
+        console.warn(`Failed to load keywords: ${keywordError.message}`)
+      } else {
+        console.log(`📊 Fetched ${keywordRows.length} keywords for ${allQueryIds.length} queries and ${allCollectorResultIds.length} collector results`)
+        keywordRows.forEach((row) => {
+          if (typeof row.keyword === 'string' && row.keyword.trim().length > 0) {
+            const keyword = row.keyword.trim()
+            const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+            const collectorResultId =
+              typeof row.collector_result_id === 'number' ? row.collector_result_id : null
+
+            // Map keywords by both query_id (primary) and collector_result_id (secondary)
+            if (queryId) {
+              if (!keywordMap.has(queryId)) {
+                keywordMap.set(queryId, new Set<string>())
+              }
+              keywordMap.get(queryId)!.add(keyword)
+            }
+            if (collectorResultId !== null) {
+              const collectorKey = `collector:${collectorResultId}`
+              if (!keywordMap.has(collectorKey)) {
+                keywordMap.set(collectorKey, new Set<string>())
+              }
+              keywordMap.get(collectorKey)!.add(keyword)
+            }
+          }
+        })
+      }
+    }
+
+    // Add keywords to prompt aggregates - match by query_id first, then collector_result_id
+    let keywordsMatched = 0
+    promptAggregates.forEach((aggregate) => {
+      let matched = 0
+      // Try to match by query_id first (primary key for prompts)
+      if (aggregate.queryId && keywordMap.has(aggregate.queryId)) {
+        const queryKeywords = keywordMap.get(aggregate.queryId)!
+        queryKeywords.forEach((keyword) => aggregate.highlights.keywords.add(keyword))
+        matched += queryKeywords.size
+      }
+      // Also match by collector_result_id if no query_id match or as additional source
+      if (aggregate.collectorResultId !== null) {
+        const collectorKey = `collector:${aggregate.collectorResultId}`
+        if (keywordMap.has(collectorKey)) {
+          const collectorKeywords = keywordMap.get(collectorKey)!
+          collectorKeywords.forEach((keyword) => aggregate.highlights.keywords.add(keyword))
+          matched += collectorKeywords.size
+        }
+      }
+      if (matched > 0) {
+        keywordsMatched++
+        console.log(`✅ Matched ${matched} keywords to prompt "${aggregate.question.substring(0, 50)}..."`)
+      }
+    })
+    console.log(`📊 Matched keywords to ${keywordsMatched} out of ${promptAggregates.size} prompts`)
+
+    // Fetch sentiments from extracted_positions for these prompts
+    if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
+      const { data: sentimentRows, error: sentimentError } = await supabaseAdmin
+        .from('extracted_positions')
+        .select('query_id, collector_result_id, sentiment_score, competitor_name')
+        .eq('brand_id', brandRow.id)
+        .eq('customer_id', customerId)
+        .gte('processed_at', normalizedRange.startIsoBound)
+        .lte('processed_at', normalizedRange.endIsoBound)
+        .or(
+          [
+            allQueryIds.length > 0 ? `query_id.in.(${allQueryIds.join(',')})` : '',
+            allCollectorResultIds.length > 0 ? `collector_result_id.in.(${allCollectorResultIds.join(',')})` : ''
+          ]
+            .filter(Boolean)
+            .join(',')
+        )
+
+      if (sentimentError) {
+        console.warn(`Failed to load sentiments for prompts: ${sentimentError.message}`)
+      } else {
+        ;(sentimentRows ?? []).forEach((row: any) => {
+          const value =
+            typeof row?.sentiment_score === 'number'
+              ? row.sentiment_score
+              : typeof row?.sentiment_score === 'string'
+                ? Number(row.sentiment_score)
+                : null
+          if (value === null || !Number.isFinite(value)) {
+            return
+          }
+          const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
+          // Prefer brand rows when present; but store all and filter later
+          const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+          const keyByCollector =
+            typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
+
+          const pushValue = (key: string) => {
+            const arr = sentimentMap.get(key) ?? []
+            arr.push(value)
+            sentimentMap.set(key, arr)
+          }
+          if (keyByQuery) {
+            pushValue(keyByQuery + (isBrandRow ? ':brand' : ':all'))
+          }
+          if (keyByCollector) {
+            pushValue(keyByCollector + (isBrandRow ? ':brand' : ':all'))
+          }
+        })
+      }
+    }
+
     const totalResponses = Array.from(promptAggregates.values()).reduce((sum, aggregate) => sum + aggregate.count, 0)
 
     const prompts = Array.from(promptAggregates.values()).map<PromptEntryPayload>((aggregate) => ({
@@ -442,10 +619,29 @@ export class PromptsAnalyticsService {
       volumeCount: aggregate.count,
       volumePercentage:
         totalResponses > 0 ? roundToPrecision((aggregate.count / totalResponses) * 100, 1) : 0,
-      sentimentScore: null,
+      sentimentScore: (() => {
+        // Prefer brand-only sentiment if available; otherwise use all rows
+        const byQueryBrand = aggregate.queryId ? sentimentMap.get(`${aggregate.queryId}:brand`) ?? [] : []
+        const byQueryAll = aggregate.queryId ? sentimentMap.get(`${aggregate.queryId}:all`) ?? [] : []
+        const byCollectorBrand =
+          aggregate.collectorResultId !== null ? sentimentMap.get(`collector:${aggregate.collectorResultId}:brand`) ?? [] : []
+        const byCollectorAll =
+          aggregate.collectorResultId !== null ? sentimentMap.get(`collector:${aggregate.collectorResultId}:all`) ?? [] : []
+
+        const preferred = [...byQueryBrand, ...byCollectorBrand]
+        const fallback = [...byQueryAll, ...byCollectorAll]
+        const values = preferred.length > 0 ? preferred : fallback
+        if (values.length === 0) {
+          return null
+        }
+        // Return RAW average sentiment in [-1, 1], rounded to 1 decimal
+        const avg = values.reduce((sum, v) => sum + v, 0) / values.length
+        return roundToPrecision(avg, 1)
+      })(),
       highlights: {
         brand: Array.from(aggregate.highlights.brand),
-        products: Array.from(aggregate.highlights.products)
+        products: Array.from(aggregate.highlights.products),
+        keywords: Array.from(aggregate.highlights.keywords)
       }
     }))
 

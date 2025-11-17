@@ -62,7 +62,7 @@ export const Prompts = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
+  const { brands, selectedBrandId, selectedBrand, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
 
   const dateRangeOptions = useMemo(
     () =>
@@ -199,6 +199,9 @@ export const Prompts = () => {
           onLLMChange={setSelectedLLMs}
           selectedRegion={selectedRegion}
           onRegionChange={setSelectedRegion}
+          brands={brands}
+          selectedBrandId={selectedBrandId}
+          onBrandChange={selectBrand}
         />
 
         {error && (

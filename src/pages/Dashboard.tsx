@@ -1,12 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { Layout } from '../components/Layout/Layout';
 import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
-import { mockPromptsData } from '../data/mockPromptsData';
-import { mockSourcesData } from '../data/mockSourcesData';
-import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
 import type { Topic } from '../types/topic';
 import { featureFlags } from '../config/featureFlags';
 import { onboardingUtils } from '../utils/onboardingUtils';
@@ -21,14 +18,14 @@ import {
   Target,
   Eye,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Info
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
 import { apiClient } from '../lib/apiClient';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
-import { Bar, Doughnut } from 'react-chartjs-2';
-import { SourcesChartContainer } from '../components/Citations/SourcesChartContainer';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { Bar } from 'react-chartjs-2';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -44,6 +41,23 @@ interface DashboardScoreMetric {
   description: string;
 }
 
+interface ActionItem {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  category: 'content' | 'technical' | 'distribution' | 'monitoring';
+}
+
+interface CollectorSummary {
+  collectorType?: string;
+  status: 'completed' | 'failed' | 'pending' | 'running';
+  successRate: number;
+  completed: number;
+  failed: number;
+  lastRunAt?: string | null;
+}
+
 interface DashboardPayload {
   brandId: string;
   brandName: string;
@@ -54,6 +68,10 @@ interface DashboardPayload {
     end: string;
   };
   totalQueries: number;
+  queriesWithBrandPresence: number;
+  collectorResultsWithBrandPresence: number;
+  brandPresenceRows: number;
+  totalBrandRows: number;
   totalResponses: number;
   trendPercentage: number;
   visibilityPercentage: number;
@@ -67,18 +85,132 @@ interface DashboardPayload {
   llmVisibility: Array<{
     provider: string;
     share: number;
+    shareOfSearch?: number;
+    visibility?: number;
     delta: number;
+    brandPresenceCount: number;
+    totalQueries?: number;
     color?: string;
+    topTopic?: string | null;
+    topTopics?: Array<{
+      topic: string;
+      occurrences: number;
+      share: number;
+      visibility: number;
+      mentions: number;
+    }>;
+  }>;
+  actionItems?: ActionItem[];
+  collectorSummaries?: CollectorSummary[];
+  topBrandSources: Array<{
+    id: string;
+    title: string;
+    url: string;
+    domain: string;
+    impactScore: number | null;
+    change: number | null;
+    visibility: number;
+    share: number;
+    usage: number;
+  }>;
+  topTopics: Array<{
+    topic: string;
+    promptsTracked: number;
+    averageVolume: number;
+    sentimentScore: number | null;
+    avgVisibility?: number | null;
+    avgShare?: number | null;
+    brandPresencePercentage?: number | null;
   }>;
 }
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+
+const formatDateForInput = (date: Date): string => date.toISOString().split('T')[0];
+
+const getDefaultDateRange = () => {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 29);
+  return {
+    start: formatDateForInput(start),
+    end: formatDateForInput(end)
+  };
+};
+
+interface InfoTooltipProps {
+  description: string;
+}
+
+const InfoTooltip = ({ description }: InfoTooltipProps) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  return (
+    <div className="relative inline-flex items-center">
+      <button
+        type="button"
+        className="flex items-center justify-center w-4 h-4 rounded-full text-[#64748b] hover:text-[#1a1d29] transition-colors focus:outline-none"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+        onFocus={() => setShowTooltip(true)}
+        onBlur={() => setShowTooltip(false)}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        aria-label="More information"
+      >
+        <Info size={14} />
+      </button>
+      {showTooltip && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-[#1a1d29] text-white text-[12px] rounded-lg shadow-lg z-[100] pointer-events-none">
+          <div className="whitespace-normal leading-relaxed">{description}</div>
+          <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#1a1d29]"></div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface UrlTooltipProps {
+  url: string;
+  fullUrl: string;
+}
+
+const UrlTooltip = ({ url, fullUrl }: UrlTooltipProps) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  return (
+    <div className="relative inline-flex items-center">
+      <a
+        href={fullUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[12px] text-[#00bcdc] hover:text-[#0096b0] font-medium flex items-center gap-1 transition-colors"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
+        <ExternalLink size={12} />
+        View URL
+      </a>
+      {showTooltip && (
+        <div className="absolute left-0 bottom-full mb-2 w-80 max-w-[90vw] p-2.5 bg-[#1a1d29] text-white text-[11px] rounded-lg shadow-lg z-[100] pointer-events-none break-all">
+          <div className="whitespace-normal leading-relaxed" style={{ wordBreak: 'break-all' }}>
+            {url}
+          </div>
+          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#1a1d29]"></div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const Dashboard = () => {
   const user = useAuthStore((state) => state.user);
   const authLoading = useAuthStore((state) => state.isLoading);
-  const [startDate, setStartDate] = useState('2024-10-01');
-  const [endDate, setEndDate] = useState('2024-10-31');
+  const defaultDateRange = useMemo(getDefaultDateRange, []);
+  const [startDate, setStartDate] = useState(defaultDateRange.start);
+  const [endDate, setEndDate] = useState(defaultDateRange.end);
   const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
@@ -99,63 +231,94 @@ export const Dashboard = () => {
     return { name: 'Your Brand', industry: 'Technology' };
   };
 
+  const {
+    brands,
+    isLoading: brandsLoading,
+    error: brandsError,
+    selectedBrandId,
+    selectedBrand,
+    selectBrand
+  } = useManualBrandDashboard();
+
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const clearTimer = () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+
     // Skip setup check if feature flag is set (for testing)
     if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
       console.log('🚀 Skipping setup check (feature flag enabled)');
-      return;
+      return () => clearTimer();
     }
 
     // Force setup if feature flag is set
     if (featureFlags.forceSetup || featureFlags.forceOnboarding) {
       console.log('🚀 Forcing setup (feature flag enabled)');
       navigate('/setup');
-      return;
+      return () => clearTimer();
     }
 
+    if (brandsLoading) {
+      return () => clearTimer();
+    }
+
+    const hasBackendBrands = brands.length > 0;
     const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
     const hasCompletedTopicSelection = onboardingUtils.getOnboardingTopics();
     const hasCompletedPromptSelection = onboardingUtils.getOnboardingPrompts();
 
     console.log('Dashboard useEffect - Checking flow:', {
+      hasBackendBrands,
       hasCompletedSetup,
       hasCompletedTopicSelection: !!hasCompletedTopicSelection,
       hasCompletedPromptSelection: !!hasCompletedPromptSelection
     });
 
-    // Redirect to setup if not complete
-    if (!hasCompletedSetup) {
+    // Redirect to setup if not complete (only when brand data is absent)
+    if (!hasBackendBrands && !hasCompletedSetup) {
       console.log('No setup - redirecting to /setup');
       navigate('/setup');
-      return;
+      return () => clearTimer();
+    }
+
+    if (hasBackendBrands) {
+      console.log('✅ Backend brands found - skipping onboarding modal');
+      setShowTopicModal(false);
+      return () => clearTimer();
     }
 
     // Testing mode (only in development)
     if (featureFlags.enableTestingMode && featureFlags.isDevelopment) {
       console.log('🧪 Testing mode enabled - showing topic modal');
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         setShowTopicModal(true);
       }, 500);
-      return () => clearTimeout(timer);
+      return () => clearTimer();
     }
 
     // Production flow: Check for incomplete steps
     if (!hasCompletedTopicSelection) {
       console.log('No topics - showing topic modal in 500ms');
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         setShowTopicModal(true);
       }, 500);
-      return () => clearTimeout(timer);
+      return () => clearTimer();
     } else if (!hasCompletedPromptSelection) {
       console.log('No prompts - redirecting to /prompt-selection in 500ms');
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         navigate('/prompt-selection');
       }, 500);
-      return () => clearTimeout(timer);
+      return () => clearTimer();
     } else {
       console.log('All setup complete - showing full dashboard');
     }
-  }, [navigate]);
+
+    return () => clearTimer();
+  }, [brands, brandsLoading, navigate]);
 
   const handleTopicsSelected = (selectedTopics: Topic[]) => {
     localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
@@ -169,26 +332,14 @@ export const Dashboard = () => {
 
   const displayName = user?.fullName || user?.email?.split('@')[0] || 'there';
 
-  const criticalAlerts = mockSourcesData.insights.warnings.length;
-  const brandPages = [
-    { id: 1, title: 'Product Features Page', url: 'your-brand.com/features', impactScore: 8.5, delta: 1.2 },
-    { id: 2, title: 'Pricing & Plans', url: 'your-brand.com/pricing', impactScore: 9.2, delta: 0.8 },
-    { id: 3, title: 'Case Studies & Success Stories', url: 'your-brand.com/case-studies', impactScore: 7.8, delta: -0.5 },
-    { id: 4, title: 'Integration Documentation', url: 'your-brand.com/docs/integrations', impactScore: 6.9, delta: 0.3 },
-    { id: 5, title: 'Product Comparison Guide', url: 'your-brand.com/compare', impactScore: 8.1, delta: -1.1 },
-  ];
-
-  const {
-    brands,
-    isLoading: brandsLoading,
-    error: brandsError,
-    selectedBrandId,
-    selectedBrand,
-    selectBrand
-  } = useManualBrandDashboard();
+  const actionItems: ActionItem[] = dashboardData?.actionItems ?? [];
+  const highPriorityActions = actionItems.filter((item: ActionItem) => item.priority === 'high');
+  const criticalAlerts = highPriorityActions.length;
+  const brandPages = dashboardData?.topBrandSources ?? [];
+  const topTopics = dashboardData?.topTopics ?? [];
 
   useEffect(() => {
-    if (authLoading || brandsLoading || !selectedBrandId) {
+    if (authLoading || !selectedBrandId || !startDate || !endDate) {
       return;
     }
 
@@ -199,9 +350,13 @@ export const Dashboard = () => {
       setDashboardError(null);
 
       try {
-        const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(
-          `/brands/${selectedBrandId}/dashboard`
-        );
+        const params = new URLSearchParams({
+          startDate,
+          endDate
+        });
+
+        const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+        const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(endpoint);
 
         if (!dashboardResponse.success || !dashboardResponse.data) {
           throw new Error(
@@ -230,18 +385,19 @@ export const Dashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, brandsLoading, reloadKey, selectedBrandId]);
+  }, [authLoading, endDate, reloadKey, selectedBrandId, startDate]);
 
   const handleRetryFetch = () => {
     setReloadKey((prev) => prev + 1);
   };
 
-  const combinedLoading = authLoading || brandsLoading || dashboardLoading;
+  const brandSelectionPending = !selectedBrandId && brandsLoading;
+  const combinedLoading = authLoading || dashboardLoading || brandSelectionPending;
 
   if (combinedLoading) {
     return (
       <Layout>
-        <div className="p-6 bg-[#f9f9fb] min-h-screen">
+        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
           <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-10 flex flex-col items-center justify-center">
             <div className="h-12 w-12 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mb-4" />
             <p className="text-[14px] text-[#64748b]">Loading dashboard insights…</p>
@@ -260,7 +416,7 @@ export const Dashboard = () => {
         : 'Dashboard data is currently unavailable.');
     return (
       <Layout>
-        <div className="p-6 bg-[#f9f9fb] min-h-screen">
+        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
           <div className="max-w-xl mx-auto bg-white border border-[#fadddb] rounded-lg shadow-sm p-6 text-center">
             <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-2">Unable to load dashboard</h2>
             <p className="text-[13px] text-[#64748b] mb-4">
@@ -309,47 +465,57 @@ export const Dashboard = () => {
   const visibilityMetric = findScore('Visibility Index');
   const shareMetric = findScore('Share of Answers');
   const sentimentMetric = findScore('Sentiment Score');
+  const brandPresenceRows = dashboardData?.brandPresenceRows ?? 0;
+  const totalBrandRows = dashboardData?.totalBrandRows ?? 0;
+  // Brand Presence % = (rows where competitor_name is null AND has_brand_presence is true) / (rows where competitor_name is null) * 100, capped at 100%
+  const brandPresencePercentage = totalBrandRows > 0 
+    ? Math.min(100, Math.round((brandPresenceRows / totalBrandRows) * 100))
+    : 0;
 
   const metricCards: Array<MetricCardProps & { key: string }> = [
     {
       key: 'visibility-index',
       title: 'Visibility Index',
-      value: formatMetricValue(visibilityMetric),
-      subtitle: `Across ${formatNumber(dashboardData.totalQueries, 0)} queries`,
+      value: formatMetricValue(visibilityMetric, ''),
+      subtitle: '',
       trend: computeTrend(visibilityMetric?.delta),
       icon: <Eye size={20} />,
       color: '#498cf9',
-      linkTo: '/search-visibility'
+      linkTo: '/search-visibility',
+      description: 'Measures your brand\'s average prominence across all AI-generated answers. Higher scores indicate your brand appears more prominently in responses, calculated as the average position-weighted visibility across all queries.'
     },
     {
       key: 'share-of-answers',
       title: 'Share of Answers',
       value: formatMetricValue(shareMetric),
-      subtitle: 'Share across tracked queries',
+      subtitle: '',
       trend: computeTrend(shareMetric?.delta),
       icon: <Target size={20} />,
       color: '#06c686',
-      linkTo: '/ai-sources'
+      linkTo: '/ai-sources',
+      description: 'Represents your brand\'s share of the total answer space across all AI models. This metric shows what percentage of all mentions (your brand + competitors) belong to your brand, indicating your relative market presence.'
     },
     {
       key: 'sentiment-score',
       title: 'Sentiment Score',
-      value: formatMetricValue(sentimentMetric),
-      subtitle: 'Normalized 0-100 sentiment',
+      value: formatMetricValue(sentimentMetric, ''),
+      subtitle: '',
       trend: computeTrend(sentimentMetric?.delta),
       icon: <MessageSquare size={20} />,
       color: '#00bcdc',
-      linkTo: '/prompts'
+      linkTo: '/prompts',
+      description: 'Average sentiment of how your brand is discussed in AI-generated answers. Scores range from -1 (very negative) to +1 (very positive), with 0 being neutral. This reflects overall brand perception across all queries.'
     },
     {
-      key: 'tracked-queries',
-      title: 'Tracked Queries',
-      value: formatNumber(dashboardData.totalQueries, 0),
-      subtitle: `Total responses: ${formatNumber(dashboardData.totalResponses, 0)}`,
+      key: 'brand-presence',
+      title: 'Brand Presence',
+      value: `${brandPresencePercentage}%`,
+      subtitle: '',
       trend: computeTrend(dashboardData.trendPercentage),
       icon: <Activity size={20} />,
       color: '#7c3aed',
-      linkTo: '/topics'
+      linkTo: '/topics',
+      description: 'Percentage of queries where your brand appears in AI-generated answers. Calculated as (queries with brand presence / total queries) × 100. Higher percentages indicate your brand is mentioned more frequently across different queries.'
     }
   ];
 
@@ -357,62 +523,65 @@ export const Dashboard = () => {
     ? `Here's your AI visibility performance overview for ${selectedBrand?.name ?? dashboardData.brandName}`
     : `Here's your AI visibility performance overview`;
 
-  const fallbackLlmSlices: LLMVisibilitySliceUI[] = mockSourcesData.sources.slice(0, 5).map((source) => ({
-    provider: source.name,
-    share: Math.round(source.mentionRate * 100),
-    delta: source.trendPercent ?? 0,
-    color: source.color
-  }));
+  const llmSlices: LLMVisibilitySliceUI[] = (dashboardData?.llmVisibility ?? [])
+    .map((slice): LLMVisibilitySliceUI => {
+      const totalQueries = slice.totalQueries ?? 0;
+      const brandPresenceCount = slice.brandPresenceCount ?? 0;
+      // Brand Presence % = (queries with brand presence / total queries) * 100, capped at 100%
+      const brandPresencePercentage = totalQueries > 0 
+        ? Math.min(100, Math.round((brandPresenceCount / totalQueries) * 100))
+        : 0;
+      
+      return {
+        provider: slice.provider,
+        share: slice.shareOfSearch ?? slice.share,
+        shareOfSearch: slice.shareOfSearch ?? slice.share,
+        visibility: slice.visibility ?? 0,
+        delta: slice.delta ?? 0,
+        brandPresenceCount: brandPresencePercentage, // Store percentage instead of count
+        color: slice.color || '#64748b',
+        topTopic: slice.topTopic ?? null,
+        topTopics: slice.topTopics
+      };
+    })
+    .filter((slice) => Number.isFinite(slice.visibility ?? 0) && (slice.visibility ?? 0) >= 0);
 
-  const llmSlices: LLMVisibilitySliceUI[] =
-    dashboardData.llmVisibility && dashboardData.llmVisibility.length > 0
-      ? dashboardData.llmVisibility.map((slice) => ({
-          provider: slice.provider,
-          share: slice.share,
-          delta: slice.delta ?? 0,
-          color: slice.color || '#64748b'
-        }))
-      : fallbackLlmSlices;
-
-const fallbackSourceSlices = mockCitationSourcesData.sourceTypeDistribution.map((item) => ({
-  type: item.type,
-  percentage: item.percentage,
-  color: item.color
-}));
-
-const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDistribution.length > 0
-  ? dashboardData.sourceDistribution.map((slice) => ({
+  const sourceSlices = (dashboardData?.sourceDistribution ?? [])
+    .map((slice): { type: string; percentage: number; color: string } => ({
       type: slice.label,
       percentage: slice.percentage,
       color: slice.color || '#64748b'
     }))
-  : fallbackSourceSlices;
+    .filter((slice) => Number.isFinite(slice.percentage) && slice.percentage >= 0);
+
+  const hasLlmData = llmSlices.length > 0;
+  const hasSourceData = sourceSlices.length > 0;
+  const collectorSummaries: CollectorSummary[] = dashboardData?.collectorSummaries ?? [];
 
   return (
     <Layout>
-      <div className="p-6 bg-[#f9f9fb] min-h-screen">
-        {criticalAlerts > 0 && (
-          <div className="bg-[#fff8f0] border border-[#f9db43] rounded-lg p-4 mb-6 flex items-start gap-3">
-            <AlertTriangle size={20} className="text-[#fa8a40] flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1">
-                {criticalAlerts} Alert{criticalAlerts > 1 ? 's' : ''} Requiring Attention
-              </h3>
-              {mockSourcesData.insights.warnings.map((warning, idx) => (
-                <p key={idx} className="text-[13px] text-[#393e51]">
-                  <span className="font-medium">{warning.source}:</span> {warning.message}
+      <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+        <div className="bg-[#fff8f0] border border-[#f9db43] rounded-lg p-4 mb-6 flex items-start gap-3">
+          <AlertTriangle size={20} className="text-[#fa8a40] flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1">
+              {criticalAlerts > 0
+                ? `${criticalAlerts} High-Priority Action${criticalAlerts > 1 ? 's' : ''} Identified`
+                : 'No high-priority actions detected right now'}
+            </h3>
+            {criticalAlerts > 0 ? (
+              highPriorityActions.slice(0, 3).map((action: ActionItem) => (
+                <p key={action.id} className="text-[13px] text-[#393e51]">
+                  <span className="font-medium">{action.title}:</span> {action.description}
                 </p>
-              ))}
-            </div>
-            <Link
-              to="/search-sources"
-              className="text-[13px] font-medium text-[#00bcdc] hover:text-[#0096b0] flex items-center gap-1"
-            >
-              View Details
-              <ArrowRight size={14} />
-            </Link>
+              ))
+            ) : (
+              <p className="text-[13px] text-[#393e51]">
+                Keep monitoring your queries—we’ll surface urgent recommendations here as they appear.
+              </p>
+            )}
           </div>
-        )}
+        </div>
 
         <div className="mb-6">
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
@@ -451,21 +620,31 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
             </h2>
             <div className="flex items-center gap-3">
               <label className="text-[13px] text-[#64748b] font-medium">Date Range:</label>
-              <label htmlFor="start-date" className="sr-only">Start Date</label>
               <input
-                id="start-date"
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                max={endDate}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setStartDate(value);
+                  if (value && endDate && value > endDate) {
+                    setEndDate(value);
+                  }
+                }}
                 className="px-3 py-1.5 border border-[#e8e9ed] rounded-lg text-[13px] bg-white focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc]"
               />
               <span className="text-[13px] text-[#64748b]">to</span>
-              <label htmlFor="end-date" className="sr-only">End Date</label>
               <input
-                id="end-date"
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                min={startDate}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEndDate(value);
+                  if (value && startDate && value < startDate) {
+                    setStartDate(value);
+                  }
+                }}
                 className="px-3 py-1.5 border border-[#e8e9ed] rounded-lg text-[13px] bg-white focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc]"
               />
             </div>
@@ -473,69 +652,87 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
 
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
-              <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-4">Source Type Distribution</h3>
-              <StackedRacingChart data={sourceSlices} />
+              <div className="flex items-center gap-2 mb-4">
+                <h3 className="text-[14px] font-semibold text-[#1a1d29]">Source Type Distribution</h3>
+                <InfoTooltip description="Shows the breakdown of citation sources by category (Editorial, Corporate, Reference, UGC, Social, Institutional). This helps you understand where your brand is being cited across different types of content sources in AI-generated answers." />
+              </div>
+              {hasSourceData ? (
+                <StackedRacingChart data={sourceSlices} />
+              ) : (
+                <EmptyState message="No source distribution data available for this period." />
+              )}
             </div>
 
             <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
-              <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-4">LLM Visibility (7 Days)</h3>
-              <div className="flex gap-6 items-center">
-                <div className="flex flex-col items-center gap-2">
-                  <div className="w-[130px] h-[130px] flex-shrink-0">
-                    <LLMVisibilityDonut data={llmSlices} />
-                  </div>
-                  <span className="text-[11px] font-medium text-[#64748b]">Total Visibility</span>
-                </div>
-                <div className="flex-1 space-y-2">
-                  {llmSlices.map((slice) => (
-                    <div key={slice.provider} className="flex items-center gap-2">
-                      {/* eslint-disable-next-line react/forbid-dom-props */}
-                      <div
-                        className="w-3 h-3 rounded-sm flex-shrink-0"
-                        style={{ backgroundColor: slice.color }}
-                      />
-                      <div className="flex-shrink-0">
-                        {getLLMIcon(slice.provider)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-medium text-[#1a1d29]">{slice.provider}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[13px] font-semibold text-[#1a1d29]">
-                          {Math.round(slice.share)}%
-                        </span>
-                        {slice.delta !== 0 && (
-                          <span
-                            className={`flex items-center text-[11px] font-semibold ${
-                              slice.delta > 0 ? 'text-[#06c686]' : 'text-[#f94343]'
-                            }`}
-                          >
-                            {slice.delta > 0 ? (
-                              <ChevronUp size={12} strokeWidth={2.5} />
-                            ) : (
-                              <ChevronDown size={12} strokeWidth={2.5} />
-                            )}
-                            {Math.abs(slice.delta).toFixed(1)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex items-center gap-2 mb-4">
+                <h3 className="text-[14px] font-semibold text-[#1a1d29]">LLM Visibility (7 Days)</h3>
+                <InfoTooltip description="Displays your brand's visibility score and brand presence percentage across different AI models (ChatGPT, Gemini, Claude, etc.) over the last 7 days. Visibility score measures prominence, while brand presence shows the percentage of queries where your brand appears." />
               </div>
+              {hasLlmData ? (
+                <table className="w-full text-left text-[13px]">
+                  <thead>
+                    <tr className="text-[#64748b] uppercase text-[11px] tracking-wide">
+                      <th className="py-2 font-medium">LLM</th>
+                      <th className="py-2 font-medium text-right">Visibility</th>
+                      <th className="py-2 font-medium text-right">Brand Presence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {llmSlices.map((slice) => (
+                      <tr key={slice.provider} className="border-t border-[#f0f0f3]">
+                        <td className="py-3 pr-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex-shrink-0">{getLLMIcon(slice.provider)}</div>
+                            <span className="text-[#1a1d29] font-medium">{slice.provider}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 text-right text-[#1a1d29] font-semibold">
+                          {Math.round(slice.visibility ?? 0)}
+                          {slice.delta !== 0 && (
+                            <span
+                              className={`inline-flex items-center gap-1 text-[11px] font-semibold ml-2 ${
+                                slice.delta > 0 ? 'text-[#06c686]' : 'text-[#f94343]'
+                              }`}
+                            >
+                              {slice.delta > 0 ? (
+                                <ChevronUp size={12} strokeWidth={2.5} />
+                              ) : (
+                                <ChevronDown size={12} strokeWidth={2.5} />
+                              )}
+                              {Math.abs(slice.delta).toFixed(1)} pts
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 text-right text-[#1a1d29] font-semibold">
+                          {slice.brandPresenceCount}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <EmptyState message="No LLM visibility data available for this period." />
+              )}
             </div>
           </div>
 
           <div className="mt-5 pt-5 border-t border-[#e8e9ed]">
             <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-3">Recommended Actions</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {mockSourcesData.insights.recommendations.slice(0, 4).map((rec, idx) => (
-                <div key={idx} className="flex items-start gap-2 p-3 bg-[#f9f9fb] rounded-lg">
-                  <CheckCircle size={16} className="text-[#06c686] flex-shrink-0 mt-0.5" />
-                  <p className="text-[13px] text-[#393e51]">{rec}</p>
-                </div>
-              ))}
-            </div>
+            {actionItems.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                {actionItems.slice(0, 4).map((item: ActionItem) => (
+                  <div key={item.id} className="flex items-start gap-2 p-3 bg-[#f9f9fb] rounded-lg">
+                    <CheckCircle size={16} className="text-[#06c686] flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[13px] text-[#1a1d29] font-medium">{item.title}</p>
+                      <p className="text-[12px] text-[#64748b]">{item.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState message="No tailored recommendations yet. Check back after more data is collected." />
+            )}
           </div>
         </div>
 
@@ -560,9 +757,12 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
           <div className="col-span-2">
             <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
               <div className="flex items-center justify-between mb-5">
-                <h2 className="text-[18px] font-semibold text-[#1a1d29]">
-                  Top Brand Sources
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">
+                    Top Brand Sources
+                  </h2>
+                  <InfoTooltip description="Lists the web pages and sources where your brand is most frequently cited in AI-generated answers. Impact Score reflects how prominently your brand appears, helping you identify high-value content partnerships and citation opportunities." />
+                </div>
                 <Link
                   to="/ai-sources"
                   className="text-[13px] font-medium text-[#00bcdc] hover:text-[#0096b0] flex items-center gap-1"
@@ -572,57 +772,96 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
                 </Link>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[#e8e9ed]">
-                      <th className="text-left py-3 px-3 text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                        Page Title
-                      </th>
-                      <th className="text-left py-3 px-3 text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                        Page URL
-                      </th>
-                      <th className="text-center py-3 px-3 text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                        Impact Score
-                      </th>
-                      <th className="text-center py-3 px-3 text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                        Change
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {brandPages.map((page) => (
-                      <tr key={page.id} className="border-b border-[#f4f4f6] last:border-0 hover:bg-[#f9f9fb] transition-colors">
-                        <td className="py-3 px-3">
-                          <span className="text-[14px] font-medium text-[#1a1d29]">{page.title}</span>
-                        </td>
-                        <td className="py-3 px-3">
-                          <span className="text-[13px] text-[#64748b]">{page.url}</span>
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <div className="inline-flex items-center justify-center">
-                            <span className="text-[14px] font-semibold text-[#1a1d29]">
-                              {page.impactScore.toFixed(1)}
+              <div className="space-y-3">
+                {brandPages.length > 0 ? (
+                  brandPages.map((page) => {
+                    const hasImpactScore =
+                      typeof page.impactScore === 'number' && Number.isFinite(page.impactScore);
+                    const impactLabel = hasImpactScore
+                      ? page.impactScore!.toFixed(1)
+                      : '—';
+                    const hasChange =
+                      typeof page.change === 'number' && Number.isFinite(page.change);
+                    const changeValue = hasChange ? page.change! : 0;
+                    const changeLabel = hasChange ? Math.abs(changeValue).toFixed(1) : '—';
+                    const changeClass = hasChange
+                      ? changeValue > 0
+                        ? 'text-[#06c686]'
+                        : changeValue < 0
+                        ? 'text-[#f94343]'
+                        : 'text-[#64748b]'
+                      : 'text-[#64748b]';
+                    const rawUrl =
+                      (typeof page.url === 'string' && page.url.trim().length > 0
+                        ? page.url.trim()
+                        : typeof page.domain === 'string'
+                        ? `https://${page.domain}`
+                        : '') || '';
+                    const fullUrl = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`;
+                    const displayUrl = rawUrl.replace(/^https?:\/\//, '') || '—';
+                    const title =
+                      (typeof page.title === 'string' && page.title.trim().length > 0
+                        ? page.title.trim()
+                        : page.domain) || 'Unknown Source';
+                    const domain = page.domain || displayUrl.split('/')[0] || '—';
+
+                    return (
+                      <div
+                        key={page.id}
+                        className="group flex items-center justify-between p-4 bg-white border border-[#e8e9ed] rounded-lg hover:border-[#00bcdc] hover:shadow-sm transition-all"
+                      >
+                        <div className="flex-1 min-w-0 mr-4">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <h3 className="text-[14px] font-semibold text-[#1a1d29] truncate">
+                              {title}
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[12px] text-[#64748b] font-medium">
+                              {domain}
                             </span>
-                            <span className="text-[12px] text-[#64748b] ml-1">/10</span>
+                            <UrlTooltip url={displayUrl} fullUrl={fullUrl} />
                           </div>
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <div className={`inline-flex items-center gap-1 text-[13px] font-semibold ${
-                            page.delta > 0 ? 'text-[#06c686]' : 'text-[#f94343]'
-                          }`}>
-                            {page.delta > 0 ? (
-                              <ChevronUp size={16} />
-                            ) : (
-                              <ChevronDown size={16} />
-                            )}
-                            {Math.abs(page.delta).toFixed(1)}
+                        </div>
+                        <div className="flex items-center gap-6 flex-shrink-0">
+                          <div className="text-center min-w-[80px]">
+                            <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1">
+                              Impact
+                            </div>
+                            <div className="flex items-baseline justify-center gap-1">
+                              <span className="text-[16px] font-bold text-[#1a1d29]">
+                                {impactLabel}
+                              </span>
+                              {hasImpactScore && (
+                                <span className="text-[11px] text-[#64748b]">/10</span>
+                              )}
+                            </div>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          <div className="text-center min-w-[70px]">
+                            <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1">
+                              Change
+                            </div>
+                            <div className={`inline-flex items-center gap-1 text-[14px] font-semibold ${changeClass}`}>
+                              {hasChange ? (
+                                <>
+                                  {changeValue > 0 && <ChevronUp size={14} />}
+                                  {changeValue < 0 && <ChevronDown size={14} />}
+                                  {changeValue === 0 ? '0.0' : changeLabel}
+                                </>
+                              ) : (
+                                <span className="text-[#64748b]">—</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-8 text-center text-[13px] text-[#64748b] border border-dashed border-[#e8e9ed] rounded-lg">
+                    No branded sources detected for this period.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -663,9 +902,12 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
         <div className="grid grid-cols-2 gap-5 mb-6">
           <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-[18px] font-semibold text-[#1a1d29]">
-                Top Performing Topics
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-[18px] font-semibold text-[#1a1d29]">
+                  Top Performing Topics
+                </h2>
+                <InfoTooltip description="Shows topics where your brand performs best. Visibility Score measures how prominently your brand appears in AI answers. Brand Presence shows what percentage of queries include your brand. Sentiment indicates how positively your brand is discussed (0-5 scale, higher is better)." />
+              </div>
               <Link
                 to="/prompts"
                 className="text-[13px] font-medium text-[#00bcdc] hover:text-[#0096b0] flex items-center gap-1"
@@ -678,53 +920,108 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
             <div className="space-y-3">
               {topTopics.length > 0 ? (
                 topTopics.map((topic) => {
-                  const averageVolume = Number.isFinite(topic.averageVolume)
-                    ? topic.averageVolume
-                    : 0;
-                  const sentimentScore = Number.isFinite(topic.sentimentScore)
+                  // Only show if we have actual data - no fallbacks
+                  const visibility = Number.isFinite(topic.avgVisibility) && topic.avgVisibility !== undefined 
+                    ? topic.avgVisibility 
+                    : null;
+                  const brandPresence = Number.isFinite(topic.brandPresencePercentage) && topic.brandPresencePercentage !== undefined
+                    ? topic.brandPresencePercentage 
+                    : null;
+                  const sentimentScore = topic.sentimentScore !== null && topic.sentimentScore !== undefined && Number.isFinite(topic.sentimentScore)
                     ? topic.sentimentScore
-                    : 0;
-                  const sentimentClass =
-                    sentimentScore >= 4.5
-                      ? { background: 'bg-[#e6f7f1]', text: 'text-[#06c686]' }
-                      : sentimentScore >= 3.5
-                      ? { background: 'bg-[#fff8e6]', text: 'text-[#f9db43]' }
-                      : { background: 'bg-[#fff0f0]', text: 'text-[#f94343]' };
+                    : null;
+                  
+                  // Sentiment color coding for -1 to 1 scale
+                  const getSentimentColor = (score: number | null) => {
+                    if (score === null) return { bg: 'bg-[#f4f4f6]', text: 'text-[#64748b]', label: 'No Data' };
+                    if (score >= 0.5) return { bg: 'bg-[#e6f7f1]', text: 'text-[#06c686]', label: 'Very Positive' };
+                    if (score >= 0.1) return { bg: 'bg-[#fff8e6]', text: 'text-[#f9db43]', label: 'Positive' };
+                    if (score >= -0.1) return { bg: 'bg-[#fff4e6]', text: 'text-[#fa8a40]', label: 'Neutral' };
+                    if (score >= -0.5) return { bg: 'bg-[#fff0f0]', text: 'text-[#f94343]', label: 'Negative' };
+                    return { bg: 'bg-[#ffe6e6]', text: 'text-[#d32f2f]', label: 'Very Negative' };
+                  };
+                  const sentimentStyle = getSentimentColor(sentimentScore);
 
                   return (
                     <div
                       key={topic.topic}
-                      className="flex items-center justify-between py-2 border-b border-[#f4f4f6] last:border-0"
+                      className="group p-4 bg-white border border-[#e8e9ed] rounded-lg hover:border-[#00bcdc] hover:shadow-sm transition-all"
                     >
-                      <div className="flex-1">
-                        <h3 className="text-[14px] font-medium text-[#1a1d29] mb-1">
-                          {topic.topic}
-                        </h3>
-                        <p className="text-[12px] text-[#64748b]">
-                          {topic.promptsTracked} {topic.promptsTracked === 1 ? 'prompt' : 'prompts'} tracked
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[14px] font-semibold text-[#1a1d29]">
-                          {averageVolume.toFixed(1)}%
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1 min-w-0 mr-4">
+                          <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1.5 truncate">
+                            {topic.topic}
+                          </h3>
+                          <p className="text-[12px] text-[#64748b]">
+                            {topic.promptsTracked} {topic.promptsTracked === 1 ? 'query' : 'queries'} tracked
+                          </p>
                         </div>
-                        <div className="text-[12px] text-[#64748b]">Avg volume</div>
+                        {sentimentScore !== null && (
+                          <div className={`flex items-center justify-center w-12 h-12 rounded-lg ${sentimentStyle.bg} flex-shrink-0`}>
+                            <div className="text-center">
+                              <span className={`text-[16px] font-bold ${sentimentStyle.text} block leading-none`}>
+                                {sentimentScore > 0 ? '+' : ''}{sentimentScore.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="ml-4">
-                        <div
-                          className={`flex items-center justify-center w-10 h-10 rounded-lg ${sentimentClass.background}`}
-                        >
-                          <span className={`text-[14px] font-semibold ${sentimentClass.text}`}>
-                            {sentimentScore.toFixed(1)}
-                          </span>
+                      
+                      <div className="grid grid-cols-3 gap-3 pt-3 border-t border-[#f4f4f6]">
+                        <div className="text-center">
+                          <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1.5">
+                            Visibility
+                          </div>
+                          {visibility !== null ? (
+                            <>
+                              <div className="text-[16px] font-bold text-[#1a1d29]">
+                                {visibility.toFixed(0)}
+                              </div>
+                              <div className="text-[10px] text-[#64748b] mt-0.5">score</div>
+                            </>
+                          ) : (
+                            <div className="text-[13px] text-[#64748b]">—</div>
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1.5">
+                            Brand Presence
+                          </div>
+                          {brandPresence !== null ? (
+                            <>
+                              <div className="text-[16px] font-bold text-[#1a1d29]">
+                                {brandPresence.toFixed(0)}%
+                              </div>
+                              <div className="text-[10px] text-[#64748b] mt-0.5">of queries</div>
+                            </>
+                          ) : (
+                            <div className="text-[13px] text-[#64748b]">—</div>
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1.5">
+                            Sentiment
+                          </div>
+                          {sentimentScore !== null ? (
+                            <>
+                              <div className={`text-[13px] font-semibold ${sentimentStyle.text}`}>
+                                {sentimentStyle.label}
+                              </div>
+                              <div className="text-[10px] text-[#64748b] mt-0.5">
+                                {sentimentScore > 0 ? '+' : ''}{sentimentScore.toFixed(2)}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-[13px] text-[#64748b]">—</div>
+                          )}
                         </div>
                       </div>
                     </div>
-                );
-              })
+                  );
+                })
               ) : (
-                <div className="text-center py-8 text-[#64748b] text-[14px]">
-                  No topics available
+                <div className="py-8 text-center text-[13px] text-[#64748b] border border-dashed border-[#e8e9ed] rounded-lg">
+                  We haven't detected enough topic data for this window yet.
                 </div>
               )}
             </div>
@@ -732,9 +1029,12 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
 
           <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-[18px] font-semibold text-[#1a1d29]">
-                Partnership Opportunities
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-[18px] font-semibold text-[#1a1d29]">
+                  Partnership Opportunities
+                </h2>
+                <InfoTooltip description="Highlights AI models (collectors) where your brand has strong presence and success rates. These represent potential partnership opportunities or areas where your brand is performing well in AI-generated answers. Success rate indicates how often your brand appears when queried." />
+              </div>
               <Link
                 to="/ai-sources"
                 className="text-[13px] font-medium text-[#00bcdc] hover:text-[#0096b0] flex items-center gap-1"
@@ -744,33 +1044,42 @@ const sourceSlices = dashboardData.sourceDistribution && dashboardData.sourceDis
               </Link>
             </div>
 
-            <div className="space-y-3">
-              {mockCitationSourcesData.insights.partnershipOpportunities.map((opp) => (
-                <div key={opp.rank} className="p-3 bg-[#f9f9fb] rounded-lg border border-[#e8e9ed]">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[12px] font-semibold flex items-center justify-center">
-                        {opp.rank}
+            {collectorSummaries.length > 0 ? (
+              <div className="space-y-3">
+                {collectorSummaries.slice(0, 4).map((summary: CollectorSummary, index) => (
+                  <div key={summary.collectorType ?? index} className="p-3 bg-[#f9f9fb] rounded-lg border border-[#e8e9ed]">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[12px] font-semibold flex items-center justify-center">
+                          {index + 1}
+                        </div>
+                        <h3 className="text-[14px] font-medium text-[#1a1d29] capitalize">
+                          {summary.collectorType?.replace(/[-_]/g, ' ') ?? 'Unknown Collector'}
+                        </h3>
                       </div>
-                      <h3 className="text-[14px] font-medium text-[#1a1d29]">{opp.source}</h3>
+                      <div className="flex items-center gap-1 text-[12px] font-medium text-[#64748b]">
+                        <TrendingUp size={12} className="text-[#06c686]" />
+                        {Math.round(summary.successRate ?? 0)}% success
+                      </div>
                     </div>
-                    <div className={`flex items-center gap-1 text-[12px] font-medium ${
-                      opp.trend.direction === 'up' ? 'text-[#06c686]' : 'text-[#64748b]'
-                    }`}>
-                      {opp.trend.direction === 'up' && <TrendingUp size={12} />}
-                      {opp.trend.percent}%
+                    <p className="text-[12px] text-[#64748b] mb-2">
+                      {summary.completed} completed · {summary.failed} failed · Last run{' '}
+                      {summary.lastRunAt ? new Date(summary.lastRunAt).toLocaleDateString() : 'N/A'}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-[#64748b] bg-white px-2 py-1 rounded">
+                        Status: {summary.status}
+                      </span>
+                      <span className="text-[12px] font-medium text-[#1a1d29]">
+                        {summary.completed}/{summary.completed + summary.failed} runs successful
+                      </span>
                     </div>
                   </div>
-                  <p className="text-[12px] text-[#64748b] mb-2">{opp.recommendation}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-[#64748b] bg-white px-2 py-1 rounded">
-                      {opp.type}
-                    </span>
-                    <span className="text-[12px] font-medium text-[#1a1d29]">{opp.usage}% usage</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState message="No partnership opportunities identified yet." />
+            )}
           </div>
         </div>
       </div>
@@ -799,20 +1108,22 @@ interface MetricCardProps {
   icon: React.ReactNode;
   color: string;
   linkTo: string;
+  description?: string;
 }
 
-const MetricCard = ({ title, value, subtitle, trend, icon, color, linkTo }: MetricCardProps) => (
+const MetricCard = ({ title, value, subtitle, trend, icon, color, linkTo, description }: MetricCardProps) => (
   <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 flex flex-col">
-    <div className="flex items-center gap-3 mb-3">
-      {/* eslint-disable-next-line react/forbid-dom-props */}
+    <div className="flex items-center gap-2 mb-3">
       <div
         className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
-        {/* eslint-disable-next-line react/forbid-dom-props */}
         <div style={{ color }}>{icon}</div>
       </div>
-      <div className="text-[14px] font-semibold text-[#1a1d29]">{title}</div>
+      <div className="flex items-center gap-1.5 flex-1">
+        <div className="text-[14px] font-semibold text-[#1a1d29]">{title}</div>
+        {description && <InfoTooltip description={description} />}
+      </div>
     </div>
     <div className="flex items-end gap-2 mb-1">
       <div className="text-[28px] font-bold text-[#1a1d29] leading-none">{value}</div>
@@ -825,7 +1136,7 @@ const MetricCard = ({ title, value, subtitle, trend, icon, color, linkTo }: Metr
         </div>
       )}
     </div>
-    <div className="text-[12px] text-[#64748b] mb-auto">{subtitle}</div>
+    {subtitle && <div className="text-[12px] text-[#64748b] mb-auto">{subtitle}</div>}
     <div className="mt-4 pt-3 border-t border-[#e8e9ed]">
       <Link
         to={linkTo}
@@ -851,12 +1162,10 @@ const ActionCard = ({ title, description, link, icon, color }: ActionCardProps) 
     className="block p-3 border border-[#e8e9ed] rounded-lg hover:border-[#00bcdc] hover:bg-[#f9fbfc] transition-all group"
   >
     <div className="flex items-start gap-3">
-      {/* eslint-disable-next-line react/forbid-dom-props */}
       <div
         className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
-        {/* eslint-disable-next-line react/forbid-dom-props */}
         <div style={{ color }}>{icon}</div>
       </div>
       <div className="flex-1 min-w-0">
@@ -868,6 +1177,12 @@ const ActionCard = ({ title, description, link, icon, color }: ActionCardProps) 
       <ArrowRight size={16} className="text-[#c6c9d2] group-hover:text-[#00bcdc] transition-colors flex-shrink-0 mt-1" />
     </div>
   </Link>
+);
+
+const EmptyState = ({ message }: { message: string }) => (
+  <div className="py-6 text-center text-[13px] text-[#64748b] bg-white border border-dashed border-[#e8e9ed] rounded-lg">
+    {message}
+  </div>
 );
 
 interface StackedRacingChartProps {
@@ -920,7 +1235,7 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
         caretSize: 0,
         callbacks: {
           label: (context: any) => {
-            return `${context.dataset.label}: ${context.parsed.x}%`;
+            return `${context.dataset.label}: ${context.parsed.x}`;
           },
         },
       },
@@ -929,13 +1244,12 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
 
   return (
     <div>
-      <div className="h-10">
+      <div style={{ height: '40px' }}>
         <Bar data={chartData} options={options} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
         {data.map((item) => (
           <div key={item.type} className="flex items-center gap-2">
-            {/* eslint-disable-next-line react/forbid-dom-props */}
             <div
               className="w-3 h-3 rounded-sm flex-shrink-0"
               style={{ backgroundColor: item.color }}
@@ -954,45 +1268,17 @@ const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
 interface LLMVisibilitySliceUI {
   provider: string;
   share: number;
+  shareOfSearch?: number;
+  visibility?: number;
   delta: number;
+  brandPresenceCount: number;
   color: string;
+  topTopic?: string | null;
+  topTopics?: Array<{
+    topic: string;
+    occurrences: number;
+    share: number;
+    visibility: number;
+    mentions: number;
+  }>;
 }
-
-interface LLMVisibilityDonutProps {
-  data: LLMVisibilitySliceUI[];
-}
-
-const LLMVisibilityDonut = ({ data }: LLMVisibilityDonutProps) => {
-  const chartData = {
-    labels: data.map(item => item.provider),
-    datasets: [
-      {
-        data: data.map(item => item.share),
-        backgroundColor: data.map(item => item.color),
-        borderWidth: 0,
-        borderRadius: 2,
-      },
-    ],
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: true,
-    cutout: '65%',
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        caretSize: 0,
-        callbacks: {
-          label: (context: any) => {
-            return `${context.label}: ${context.parsed.toFixed(1)}%`;
-          },
-        },
-      },
-    },
-  };
-
-  return <Doughnut data={chartData} options={options} />;
-};

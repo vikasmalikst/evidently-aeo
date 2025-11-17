@@ -9,6 +9,7 @@ interface ResponseViewerProps {
 export const ResponseViewer = ({ prompt, showHighlighting = true }: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
   const [highlightProducts, setHighlightProducts] = useState(true);
+  const [highlightKeywords, setHighlightKeywords] = useState(true);
 
   const formattedTimestamp = useMemo(() => {
     if (!prompt?.lastUpdated) {
@@ -81,6 +82,15 @@ export const ResponseViewer = ({ prompt, showHighlighting = true }: ResponseView
               />
               <span className="text-xs font-medium text-[#AC59FB]">Product</span>
             </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={highlightKeywords}
+                onChange={() => setHighlightKeywords(!highlightKeywords)}
+                className="w-3 h-3 rounded border-2 border-[#10B981] text-[#10B981] focus:ring-0 focus:ring-offset-0"
+              />
+              <span className="text-xs font-medium text-[#10B981]">Keywords</span>
+            </label>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-caption)] font-medium">
@@ -100,6 +110,7 @@ export const ResponseViewer = ({ prompt, showHighlighting = true }: ResponseView
             keywords={prompt.highlights}
             highlightBrand={highlightBrand}
             highlightProducts={highlightProducts}
+            highlightKeywords={highlightKeywords}
           />
         ) : (
           <p className="text-sm text-[var(--text-caption)]">

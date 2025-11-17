@@ -115,7 +115,7 @@ export class DataCollectionService {
     // ChatGPT Collector (via Priority-based fallback: Oxylabs → BrightData → OpenAI)
     this.collectors.set('chatgpt', {
       name: 'ChatGPT Collector',
-      enabled: false,
+      enabled: true,
       baseUrl: 'priority',
       timeout: 30000, // Reduced to 30s for faster fallback
       retries: 1, // Reduced retries
@@ -135,7 +135,7 @@ export class DataCollectionService {
     // Perplexity Collector (via Oxylabs)
     this.collectors.set('perplexity', {
       name: 'Perplexity Collector',
-      enabled: false,
+      enabled: true,
       baseUrl: 'oxylabs',
       timeout: 60000, // 60s for Perplexity
       retries: 2,
@@ -143,19 +143,10 @@ export class DataCollectionService {
     });
 
     // Bing Copilot Collector (via BrightData)
+    // Note: 'copilot' and 'microsoft-copilot' are mapped to 'bing_copilot' in brand.service.ts
     this.collectors.set('bing_copilot', {
       name: 'Bing Copilot Collector',
-      enabled: false, // ✅ Enabled with BrightData
-      baseUrl: 'priority',
-      timeout: 300000, // Increased to 5 minutes for BrightData async processing
-      retries: 2,
-      priority: 4
-    });
-
-    // Copilot (alias for Bing Copilot - for frontend compatibility)
-    this.collectors.set('copilot', {
-      name: 'Bing Copilot Collector',
-      enabled: false, // ✅ Enabled with BrightData
+      enabled: true, // ✅ Enabled with BrightData
       baseUrl: 'priority',
       timeout: 300000, // Increased to 5 minutes for BrightData async processing
       retries: 2,
@@ -185,7 +176,7 @@ export class DataCollectionService {
     // Gemini Collector (replacing YouTube)
     this.collectors.set('gemini', {
       name: 'Gemini Collector',
-      enabled: false, // ✅ Enabled with priority-based fallback
+      enabled: true, // ✅ Enabled with priority-based fallback
       baseUrl: 'priority',
       timeout: 45000,
       retries: 2,

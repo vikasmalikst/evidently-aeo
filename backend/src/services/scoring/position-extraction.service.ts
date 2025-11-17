@@ -73,6 +73,7 @@ interface PositionInsertRow {
 interface PositionExtractionPayload {
   brandRow: PositionInsertRow;
   competitorRows: PositionInsertRow[];
+  productNames?: string[]; // Product names extracted during processing
 }
 
 export interface ExtractPositionsOptions {
@@ -263,12 +264,6 @@ export class PositionExtractionService {
       }
     }
 
-    const positionMetadata = topicName
-      ? {
-          topic_name: topicName
-        }
-      : null;
-
     // Fetch brand metadata for product names
     const { data: brand } = await this.supabase
       .from('brands')
@@ -289,6 +284,17 @@ export class PositionExtractionService {
       parsedBrand.metadata,
       result.raw_answer
     );
+
+    // Build position metadata with topic and product names
+    const positionMetadata: Record<string, any> = {};
+    if (topicName) {
+      positionMetadata.topic_name = topicName;
+    }
+    if (productNames.length > 0) {
+      positionMetadata.product_names = productNames;
+      positionMetadata.productNames = productNames; // Support both naming conventions
+      positionMetadata.products = productNames;
+    }
 
     // Normalize competitors array (handle both string[] and object[] formats)
     const normalizedCompetitors = result.competitors.map(comp => 
@@ -432,6 +438,7 @@ export class PositionExtractionService {
     return {
       brandRow,
       competitorRows,
+      productNames, // Return product names so they can be saved to collector_results
     };
   }
 
@@ -926,6 +933,44 @@ Example response:
 
     if (insertError) {
       throw new Error(`Failed to save positions: ${insertError.message}`);
+    }
+
+    // Update collector_results.metadata with product names if available
+    if (payload.productNames && payload.productNames.length > 0) {
+      try {
+        // Fetch current metadata
+        const { data: currentResult, error: fetchError } = await this.supabase
+          .from('collector_results')
+          .select('metadata')
+          .eq('id', payload.brandRow.collector_result_id)
+          .single();
+
+        if (fetchError) {
+          console.warn(`⚠️ Could not fetch collector_results metadata to update product names: ${fetchError.message}`);
+        } else {
+          // Merge product names into existing metadata
+          const currentMetadata = currentResult?.metadata || {};
+          const updatedMetadata = {
+            ...currentMetadata,
+            product_names: payload.productNames,
+            productNames: payload.productNames, // Support both naming conventions
+            products: payload.productNames,
+          };
+
+          const { error: updateError } = await this.supabase
+            .from('collector_results')
+            .update({ metadata: updatedMetadata })
+            .eq('id', payload.brandRow.collector_result_id);
+
+          if (updateError) {
+            console.warn(`⚠️ Could not update collector_results metadata with product names: ${updateError.message}`);
+          } else {
+            console.log(`✅ Updated collector_results metadata with ${payload.productNames.length} product names`);
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error updating collector_results metadata with product names:`, error instanceof Error ? error.message : error);
+      }
     }
   }
 }

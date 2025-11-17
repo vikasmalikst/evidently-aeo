@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SourceTabs } from '../components/Sources/SourceTabs';
 import { SourceCoverageHeatmap } from '../components/Sources/SourceCoverageHeatmap';
@@ -10,7 +10,10 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { IconTarget, IconDownload, IconTrendingUp, IconTrendingDown, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, IconChartBar, IconArrowUpRight } from '@tabler/icons-react';
+import { IconDownload, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, IconChartBar, IconArrowUpRight } from '@tabler/icons-react';
+import { apiClient } from '../lib/apiClient';
+import { useManualBrandDashboard } from '../manual-dashboard';
+import { useAuthStore } from '../store/authStore';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
@@ -48,289 +51,77 @@ interface SourceData {
   pages: string[];
 }
 
-const topicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
 
-const samplePrompts = [
-  'What are the best CRM solutions for small businesses?',
-  'How does AI improve customer service automation?',
-  'Compare enterprise software pricing models',
-  'What features should I look for in project management tools?',
-  'Best practices for implementing SaaS solutions',
-  'How to choose the right analytics platform?',
-  'What are the top trends in digital transformation?',
-  'Enterprise software security considerations',
-  'Cloud vs on-premise deployment options',
-  'Integration capabilities for business software'
-];
-
-const samplePages = [
-  'Product Overview',
-  'Pricing Page',
-  'Features Comparison',
-  'Customer Success Stories',
-  'Integration Documentation',
-  'Security & Compliance',
-  'Enterprise Solutions',
-  'Getting Started Guide',
-  'API Documentation',
-  'Best Practices'
-];
-
-const generateSourceData = (): SourceData[] => {
-  const sources: SourceData[] = [];
-
-  // Helper to generate random items from array
-  const getRandomItems = (arr: string[], min: number, max: number) => {
-    const count = Math.floor(Math.random() * (max - min + 1)) + min;
-    const shuffled = [...arr].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, count);
-  };
-
-  // Brand source
-  sources.push({
-    name: 'your-brand.com',
-    url: 'https://your-brand.com',
-    type: 'brand',
-    mentionRate: 45,
-    mentionChange: 8,
-    soa: 2.8,
-    soaChange: 0.4,
-    sentiment: 0.88,
-    sentimentChange: 0.15,
-    citations: 28,
-    topics: ['Innovation', 'Pricing'],
-    prompts: getRandomItems(samplePrompts, 5, 10),
-    pages: getRandomItems(samplePages, 4, 8)
-  });
-
-  // Editorial sources (25)
-  const editorialSources = [
-    'techcrunch.com', 'forbes.com', 'wired.com', 'bloomberg.com', 'theverge.com',
-    'cnet.com', 'arstechnica.com', 'engadget.com', 'technologyreview.com', 'venturebeat.com',
-    'zdnet.com', 'businessinsider.com', 'fastcompany.com', 'inc.com', 'entrepreneur.com',
-    'wsj.com', 'nytimes.com', 'reuters.com', 'apnews.com', 'bbc.com',
-    'theguardian.com', 'washingtonpost.com', 'fortune.com', 'cnbc.com', 'marketwatch.com'
-  ];
-
-  editorialSources.forEach(domain => {
-    sources.push({
-      name: domain,
-      url: `https://${domain}`,
-      type: 'editorial',
-      mentionRate: Math.floor(Math.random() * 40) + 1,
-      mentionChange: Math.floor(Math.random() * 26) - 10,
-      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
-      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
-      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
-      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
-      citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1),
-      prompts: getRandomItems(samplePrompts, 3, 8),
-      pages: getRandomItems(samplePages, 2, 6)
-    });
-  });
-
-  // Corporate sources (20)
-  const corporateSources = [
-    'microsoft.com', 'apple.com', 'google.com', 'salesforce.com', 'ibm.com',
-    'oracle.com', 'sap.com', 'adobe.com', 'cisco.com', 'intel.com',
-    'nvidia.com', 'aws.amazon.com', 'azure.microsoft.com', 'cloud.google.com', 'dell.com',
-    'hp.com', 'lenovo.com', 'vmware.com', 'redhat.com', 'atlassian.com'
-  ];
-
-  corporateSources.forEach(domain => {
-    sources.push({
-      name: domain,
-      url: `https://${domain}`,
-      type: 'corporate',
-      mentionRate: Math.floor(Math.random() * 40) + 1,
-      mentionChange: Math.floor(Math.random() * 26) - 10,
-      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
-      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
-      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
-      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
-      citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1),
-      prompts: getRandomItems(samplePrompts, 3, 8),
-      pages: getRandomItems(samplePages, 2, 6)
-    });
-  });
-
-  // Reference sources (6)
-  const referenceSources = [
-    'wikipedia.org', 'britannica.com', 'investopedia.com', 'dictionary.com', 'merriam-webster.com', 'oxfordreference.com'
-  ];
-
-  referenceSources.forEach(domain => {
-    sources.push({
-      name: domain,
-      url: `https://${domain}`,
-      type: 'reference',
-      mentionRate: Math.floor(Math.random() * 40) + 1,
-      mentionChange: Math.floor(Math.random() * 26) - 10,
-      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
-      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
-      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
-      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
-      citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 2) + 1),
-      prompts: getRandomItems(samplePrompts, 3, 7),
-      pages: getRandomItems(samplePages, 2, 5)
-    });
-  });
-
-  // UGC sources (15)
-  const ugcSources = [
-    'reddit.com', 'github.com', 'stackoverflow.com', 'medium.com', 'dev.to',
-    'hackernews.com', 'producthunt.com', 'quora.com', 'discord.com', 'slack.com',
-    'twitter.com', 'linkedin.com', 'youtube.com', 'substack.com', 'devto.com'
-  ];
-
-  ugcSources.forEach(domain => {
-    sources.push({
-      name: domain,
-      url: `https://${domain}`,
-      type: 'ugc',
-      mentionRate: Math.floor(Math.random() * 40) + 1,
-      mentionChange: Math.floor(Math.random() * 26) - 10,
-      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
-      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
-      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
-      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
-      citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1),
-      prompts: getRandomItems(samplePrompts, 2, 6),
-      pages: getRandomItems(samplePages, 2, 5)
-    });
-  });
-
-  // Institutional sources (12)
-  const institutionalSources = [
-    'mit.edu', 'stanford.edu', 'harvard.edu', 'berkeley.edu', 'cmu.edu',
-    'nih.gov', 'nsf.gov', 'nasa.gov', 'energy.gov', 'commerce.gov',
-    'cambridge.org', 'oxford.ac.uk'
-  ];
-
-  institutionalSources.forEach(domain => {
-    sources.push({
-      name: domain,
-      url: `https://${domain}`,
-      type: 'institutional',
-      mentionRate: Math.floor(Math.random() * 40) + 1,
-      mentionChange: Math.floor(Math.random() * 26) - 10,
-      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
-      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
-      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
-      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
-      citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 2) + 1),
-      prompts: getRandomItems(samplePrompts, 2, 6),
-      pages: getRandomItems(samplePages, 2, 4)
-    });
-  });
-
-  // Fill remaining with more editorial and corporate (49 more to reach 127)
-  const extraDomains = [
-    { domain: 'protocol.com', type: 'editorial' as const },
-    { domain: 'techradar.com', type: 'editorial' as const },
-    { domain: 'digitaltrends.com', type: 'editorial' as const },
-    { domain: 'pcmag.com', type: 'editorial' as const },
-    { domain: 'gizmodo.com', type: 'editorial' as const },
-    { domain: 'mashable.com', type: 'editorial' as const },
-    { domain: 'lifehacker.com', type: 'editorial' as const },
-    { domain: 'axios.com', type: 'editorial' as const },
-    { domain: 'theatlantic.com', type: 'editorial' as const },
-    { domain: 'newyorker.com', type: 'editorial' as const },
-    { domain: 'vox.com', type: 'editorial' as const },
-    { domain: 'buzzfeed.com', type: 'editorial' as const },
-    { domain: 'huffpost.com', type: 'editorial' as const },
-    { domain: 'slate.com', type: 'editorial' as const },
-    { domain: 'polygon.com', type: 'editorial' as const },
-    { domain: 'theinformation.com', type: 'editorial' as const },
-    { domain: 'techmeme.com', type: 'editorial' as const },
-    { domain: '9to5mac.com', type: 'editorial' as const },
-    { domain: 'macrumors.com', type: 'editorial' as const },
-    { domain: 'androidcentral.com', type: 'editorial' as const },
-    { domain: 'xda-developers.com', type: 'editorial' as const },
-    { domain: 'tomshardware.com', type: 'editorial' as const },
-    { domain: 'anandtech.com', type: 'editorial' as const },
-    { domain: 'shopify.com', type: 'corporate' as const },
-    { domain: 'hubspot.com', type: 'corporate' as const },
-    { domain: 'mailchimp.com', type: 'corporate' as const },
-    { domain: 'zoom.us', type: 'corporate' as const },
-    { domain: 'dropbox.com', type: 'corporate' as const },
-    { domain: 'notion.so', type: 'corporate' as const },
-    { domain: 'figma.com', type: 'corporate' as const },
-    { domain: 'asana.com', type: 'corporate' as const },
-    { domain: 'trello.com', type: 'corporate' as const },
-    { domain: 'monday.com', type: 'corporate' as const },
-    { domain: 'zendesk.com', type: 'corporate' as const },
-    { domain: 'intercom.com', type: 'corporate' as const },
-    { domain: 'stripe.com', type: 'corporate' as const },
-    { domain: 'square.com', type: 'corporate' as const },
-    { domain: 'paypal.com', type: 'corporate' as const },
-    { domain: 'twilio.com', type: 'corporate' as const },
-    { domain: 'sendgrid.com', type: 'corporate' as const },
-    { domain: 'segment.com', type: 'corporate' as const },
-    { domain: 'amplitude.com', type: 'corporate' as const },
-    { domain: 'mixpanel.com', type: 'corporate' as const },
-    { domain: 'datadog.com', type: 'corporate' as const },
-    { domain: 'splunk.com', type: 'corporate' as const },
-    { domain: 'elastic.co', type: 'corporate' as const },
-    { domain: 'mongodb.com', type: 'corporate' as const },
-    { domain: 'redis.io', type: 'corporate' as const },
-    { domain: 'postgresql.org', type: 'corporate' as const },
-    { domain: 'docker.com', type: 'corporate' as const }
-  ];
-
-  extraDomains.forEach(({ domain, type }) => {
-    sources.push({
-      name: domain,
-      url: `https://${domain}`,
-      type,
-      mentionRate: Math.floor(Math.random() * 40) + 1,
-      mentionChange: Math.floor(Math.random() * 26) - 10,
-      soa: parseFloat((Math.random() * 3.3 + 0.2).toFixed(1)),
-      soaChange: parseFloat((Math.random() * 1.1 - 0.3).toFixed(1)),
-      sentiment: parseFloat((Math.random() * 1.5 - 0.5).toFixed(2)),
-      sentimentChange: parseFloat((Math.random() * 0.5 - 0.2).toFixed(2)),
-      citations: Math.floor(Math.random() * 29) + 2,
-      topics: topicOptions.slice(0, Math.floor(Math.random() * 3) + 1),
-      prompts: getRandomItems(samplePrompts, 2, 7),
-      pages: getRandomItems(samplePages, 2, 5)
-    });
-  });
-
-  return sources.slice(0, 127);
-};
+interface SourceAttributionResponse {
+  sources: SourceData[];
+  overallMentionRate: number;
+  overallMentionChange: number;
+  avgSentiment: number;
+  avgSentimentChange: number;
+  totalSources: number;
+  dateRange: { start: string; end: string };
+}
 
 type SortField = 'name' | 'type' | 'mentionRate' | 'soa' | 'sentiment' | 'topics' | 'pages' | 'prompts';
 type SortDirection = 'asc' | 'desc';
 
+const getDateRangeForTimeRange = (timeRange: string) => {
+  const end = new Date();
+  end.setUTCHours(23, 59, 59, 999);
+
+  const start = new Date(end);
+  const days = parseInt(timeRange) || 30;
+  start.setUTCDate(start.getUTCDate() - days);
+  start.setUTCHours(0, 0, 0, 0);
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString()
+  };
+};
+
 export const SearchSources = () => {
   const [activeTab, setActiveTab] = useState<'top-sources' | 'source-coverage'>('top-sources');
-  const [sourceData] = useState<SourceData[]>(generateSourceData());
+  const [sourceData, setSourceData] = useState<SourceData[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const [topicFilter, setTopicFilter] = useState('all');
 
-  // Generate heatmap data
+  const authLoading = useAuthStore((state) => state.isLoading);
+  const {
+    brands,
+    selectedBrandId,
+    selectedBrand,
+    isLoading: brandsLoading,
+    selectBrand
+  } = useManualBrandDashboard();
+
+  // Extract unique topics from all sources for heatmap
+  const allTopics = useMemo(() => {
+    const topicSet = new Set<string>();
+    sourceData.forEach(source => {
+      source.topics.forEach(topic => topicSet.add(topic));
+    });
+    return Array.from(topicSet);
+  }, [sourceData]);
+
+  // Generate heatmap data from real source data
   const heatmapData = useMemo(() => {
     const data: Record<string, number[]> = {};
     sourceData.forEach(source => {
-      data[source.name] = topicOptions.map((topic) => {
-        let baseRate = Math.random() * 40;
-
-        if (source.type === 'brand') baseRate = Math.random() * 15 + 30;
-        if (source.type === 'editorial') baseRate += 10;
-        if (source.type === 'corporate') {
-          if (topic === 'Innovation' || topic === 'Technology') baseRate += 15;
-        }
-        if (source.type === 'reference') baseRate = Math.max(2, baseRate - 15);
-
-        return Math.min(45, Math.max(0, Math.round(baseRate)));
+      data[source.name] = allTopics.map((topic) => {
+        // If source has this topic, use its mention rate, otherwise 0
+        return source.topics.includes(topic) ? source.mentionRate : 0;
       });
     });
     return data;
-  }, [sourceData]);
+  }, [sourceData, allTopics]);
 
   const heatmapSources = useMemo(() => {
     return sourceData.map(s => ({
@@ -349,6 +140,114 @@ export const SearchSources = () => {
   const [modalTitle, setModalTitle] = useState('');
   const [sortField, setSortField] = useState<SortField>('mentionRate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // CSV Export function
+  const exportToCSV = () => {
+    const headers = ['Source', 'Type', 'Mention Rate (%)', 'Mention Rate Change (%)', 'Share of Answer (%)', 'Share of Answer Change (%)', 'Sentiment', 'Sentiment Change', 'Top Topics', 'Pages', 'Prompts'];
+    const rows = filteredData.map(source => [
+      source.name,
+      sourceTypeLabels[source.type] || source.type,
+      source.mentionRate.toFixed(2),
+      source.mentionChange.toFixed(2),
+      source.soa.toFixed(2),
+      source.soaChange.toFixed(2),
+      source.sentiment.toFixed(2),
+      source.sentimentChange.toFixed(2),
+      source.topics.join('; '),
+      source.pages.join('; '),
+      source.prompts.join('; ')
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `source-attribution-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  const [overallMentionRate, setOverallMentionRate] = useState<number>(0);
+  const [overallMentionChange, setOverallMentionChange] = useState<number>(0);
+  const [avgSentiment, setAvgSentiment] = useState<number>(0);
+  const [avgSentimentChange, setAvgSentimentChange] = useState<number>(0);
+  const [topSource, setTopSource] = useState<SourceData | null>(null);
+
+  // Fetch source data from API
+  useEffect(() => {
+    if (authLoading || brandsLoading || !selectedBrandId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchSourceData = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const dateRange = getDateRangeForTimeRange(timeRange);
+        const params = new URLSearchParams({
+          startDate: dateRange.start,
+          endDate: dateRange.end
+        });
+
+        const endpoint = `/brands/${selectedBrandId}/sources?${params.toString()}`;
+        console.log('[SearchSources] Fetching source data from:', endpoint);
+        
+        const response = await apiClient.request<ApiResponse<SourceAttributionResponse>>(endpoint);
+
+        console.log('[SearchSources] API Response:', response);
+
+        if (!response.success || !response.data) {
+          const errorMsg = response.error || response.message || 'Failed to load source data.';
+          console.error('[SearchSources] API Error:', errorMsg);
+          throw new Error(errorMsg);
+        }
+
+        if (!cancelled) {
+          console.log('[SearchSources] Received sources:', response.data.sources.length);
+          setSourceData(response.data.sources);
+          setOverallMentionRate(response.data.overallMentionRate);
+          setOverallMentionChange(response.data.overallMentionChange);
+          setAvgSentiment(response.data.avgSentiment);
+          setAvgSentimentChange(response.data.avgSentimentChange);
+          
+          // Set top source (highest mention rate)
+          if (response.data.sources.length > 0) {
+            setTopSource(response.data.sources[0]);
+            console.log('[SearchSources] Top source:', response.data.sources[0]);
+          } else {
+            console.warn('[SearchSources] No sources returned from API');
+            setTopSource(null);
+          }
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load source data.';
+        console.error('[SearchSources] Error fetching source data:', err);
+        if (!cancelled) {
+          setError(message);
+          setSourceData([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchSourceData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, brandsLoading, selectedBrandId, timeRange]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -417,20 +316,6 @@ export const SearchSources = () => {
     });
   }, [sourceData, topicFilter, sentimentFilter, typeFilter, sortField, sortDirection]);
 
-  const overallMentionRate = useMemo(() => {
-    const avg = filteredData.reduce((sum, s) => sum + s.mentionRate, 0) / filteredData.length;
-    return Math.round(avg);
-  }, [filteredData]);
-
-  const avgSentiment = useMemo(() => {
-    const avg = filteredData.reduce((sum, s) => sum + s.sentiment, 0) / filteredData.length;
-    return avg.toFixed(2);
-  }, [filteredData]);
-
-  const topSource = useMemo(() => {
-    return filteredData.reduce((max, s) => s.mentionRate > max.mentionRate ? s : max, filteredData[0]);
-  }, [filteredData]);
-
   const chartData = {
     datasets: filteredData.map(source => ({
       label: source.name,
@@ -468,7 +353,7 @@ export const SearchSources = () => {
               '',
               `Type: ${source.type.charAt(0).toUpperCase() + source.type.slice(1)}`,
               `Mention Rate: ${source.mentionRate}%`,
-              `Share of Answer: ${source.soa}×`,
+              `Share of Answer: ${source.soa}%`,
               `Citations: ${source.citations}`,
               '',
               `${sentimentEmoji} Sentiment: ${sentimentLabel} (${source.sentiment > 0 ? '+' : ''}${source.sentiment})`,
@@ -495,12 +380,12 @@ export const SearchSources = () => {
       y: {
         title: {
           display: true,
-          text: 'Share of Answer (×)',
+          text: 'Share of Answer (%)',
           font: { size: 14, weight: '600', family: 'IBM Plex Sans, sans-serif' },
           color: '#212534'
         },
         min: 0,
-        max: 3.5,
+        max: 100,
         grid: { color: '#e8e9ed' },
         ticks: { color: '#393e51' }
       }
@@ -526,7 +411,7 @@ export const SearchSources = () => {
       }
 
       const xMid = xScale.getPixelForValue(22.5);
-      const yMid = yScale.getPixelForValue(1.75);
+      const yMid = yScale.getPixelForValue(50);
 
       ctx.save();
       ctx.strokeStyle = '#e8e9ed';
@@ -571,12 +456,59 @@ export const SearchSources = () => {
             marginBottom: '24px'
           }}
         >
-          <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-            Answer Sources
-          </h1>
-          <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
-            Understand which sources are cited in AI answers, measure share of answer across prompts, and identify optimization opportunities
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+            <div>
+              <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
+                Answer Sources
+              </h1>
+              <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
+                Understand which sources are cited in AI answers, measure share of answer across prompts, and identify optimization opportunities
+              </p>
+            </div>
+            {brands.length > 1 && selectedBrandId && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label
+                  htmlFor="brand-selector"
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: '#6c7289',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}
+                >
+                  Brand
+                </label>
+                <select
+                  id="brand-selector"
+                  value={selectedBrandId}
+                  onChange={(event) => selectBrand(event.target.value)}
+                  style={{
+                    fontSize: '13px',
+                    border: '1px solid #dcdfe5',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: '#ffffff',
+                    color: '#1a1d29',
+                    cursor: 'pointer',
+                    fontFamily: 'IBM Plex Sans, sans-serif',
+                    minWidth: '150px'
+                  }}
+                >
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.id}>
+                      {brand.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+          {selectedBrand && (
+            <p style={{ fontSize: '12px', color: '#8b90a7', margin: '0 0 24px 0' }}>
+              Viewing data for <span style={{ fontWeight: '500', color: '#1a1d29' }}>{selectedBrand.name}</span>
+            </p>
+          )}
         </div>
 
         {/* Tabs */}
@@ -608,12 +540,14 @@ export const SearchSources = () => {
                 <span style={{ fontSize: '32px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
                   {overallMentionRate}%
                 </span>
-                <span style={{ fontSize: '10px', color: '#06c686', display: 'flex', alignItems: 'center' }}>
-                  ↑ 3%
+                {overallMentionChange !== 0 && (
+                  <span style={{ fontSize: '10px', color: overallMentionChange >= 0 ? '#06c686' : '#f94343', display: 'flex', alignItems: 'center' }}>
+                    {overallMentionChange >= 0 ? '↑' : '↓'} {Math.abs(overallMentionChange)}%
                 </span>
+                )}
               </div>
               <div style={{ fontSize: '12px', color: '#393e51' }}>
-                Brand mentioned in {overallMentionRate} of 100 responses
+                Brand mentioned in {Math.round(overallMentionRate)}% of responses
               </div>
             </div>
 
@@ -625,11 +559,13 @@ export const SearchSources = () => {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                   <span style={{ fontSize: '20px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
-                    +{avgSentiment}
+                    {avgSentiment > 0 ? '+' : ''}{avgSentiment.toFixed(2)}
                   </span>
-                  <span style={{ fontSize: '10px', color: '#06c686' }}>
-                    ↑ 0.12
+                  {avgSentimentChange !== 0 && (
+                    <span style={{ fontSize: '10px', color: avgSentimentChange >= 0 ? '#06c686' : '#f94343' }}>
+                      {avgSentimentChange >= 0 ? '↑' : '↓'} {Math.abs(avgSentimentChange).toFixed(2)}
                   </span>
+                  )}
                 </div>
                 <div style={{ fontSize: '11px', color: '#393e51' }}>Positive sentiment across mentions</div>
               </div>
@@ -640,13 +576,17 @@ export const SearchSources = () => {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                   <span style={{ fontSize: '16px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#1a1d29' }}>
-                    {topSource?.name}
+                    {topSource?.name || 'N/A'}
                   </span>
-                  <span style={{ fontSize: '10px', color: '#06c686' }}>
-                    ↑ 8%
+                  {topSource && topSource.mentionChange !== 0 && (
+                    <span style={{ fontSize: '10px', color: topSource.mentionChange >= 0 ? '#06c686' : '#f94343' }}>
+                      {topSource.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(topSource.mentionChange)}%
                   </span>
+                  )}
                 </div>
-                <div style={{ fontSize: '11px', color: '#393e51' }}>{topSource?.mentionRate}% mention · {filteredData.length} sources tracked</div>
+                <div style={{ fontSize: '11px', color: '#393e51' }}>
+                  {topSource?.mentionRate || 0}% mention · {filteredData.length} sources tracked
+                </div>
               </div>
             </div>
 
@@ -734,7 +674,7 @@ export const SearchSources = () => {
             }}
           >
             <option value="all">All Topics</option>
-            {topicOptions.map(topic => (
+            {allTopics.map(topic => (
               <option key={topic} value={topic}>{topic}</option>
             ))}
           </select>
@@ -867,43 +807,72 @@ export const SearchSources = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
-              Source Attribution Details
-            </h2>
-            <a
-              href="#"
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <h2 style={{ fontSize: '20px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 4px 0' }}>
+                Source Attribution Details
+              </h2>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                {filteredData.length} source{filteredData.length !== 1 ? 's' : ''} found
+              </p>
+            </div>
+            <button
+              onClick={exportToCSV}
               style={{
                 fontSize: '13px',
-                color: '#00bcdc',
-                textDecoration: 'none',
+                fontWeight: '600',
+                color: '#ffffff',
+                backgroundColor: '#00bcdc',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '10px 16px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px'
+                gap: '6px',
+                cursor: 'pointer',
+                fontFamily: 'IBM Plex Sans, sans-serif',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 1px 3px rgba(0, 188, 220, 0.2)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#00a8c5';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 188, 220, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#00bcdc';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 188, 220, 0.2)';
               }}
             >
-              Export CSV <IconDownload size={14} />
-            </a>
+              <IconDownload size={16} />
+              Export CSV
+            </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e8e9ed' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#ffffff' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f4f4f6', borderBottom: '2px solid #e8e9ed' }}>
+                <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e8e9ed' }}>
                   <th
                     onClick={() => handleSort('name')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px',
+                      position: 'sticky',
+                      left: 0,
+                      backgroundColor: '#f8f9fa',
+                      zIndex: 1
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Source
                       {sortField === 'name' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -914,16 +883,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('type')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Type
                       {sortField === 'type' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -934,16 +904,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('mentionRate')}
                     style={{
                       textAlign: 'right',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                       Mention Rate
                       {sortField === 'mentionRate' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -954,16 +925,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('soa')}
                     style={{
                       textAlign: 'right',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                       Share of Answer
                       {sortField === 'soa' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -974,16 +946,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('sentiment')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Sentiment
                       {sortField === 'sentiment' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1000,7 +973,8 @@ export const SearchSources = () => {
                       color: '#393e51',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1014,16 +988,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('pages')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Pages
                       {sortField === 'pages' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1034,16 +1009,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('prompts')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Prompts
                       {sortField === 'prompts' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1054,19 +1030,19 @@ export const SearchSources = () => {
               </thead>
               <tbody>
                 {filteredData.map((source, idx) => {
-                  const sentimentEmoji = source.sentiment > 0.5 ? '😊' : source.sentiment < 0 ? '😟' : '😐';
                   return (
                     <tr
                       key={source.name}
                       style={{
                         borderBottom: '1px solid #e8e9ed',
-                        backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f9f9fb'
+                        backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafbfc',
+                        transition: 'background-color 0.15s ease'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f4f4f6';
+                        e.currentTarget.style.backgroundColor = '#f0f4f8';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#f9f9fb';
+                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#fafbfc';
                       }}
                     >
                       <td style={{ padding: '16px 12px' }}>
@@ -1075,17 +1051,26 @@ export const SearchSources = () => {
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
-                            color: '#00bcdc',
+                            color: '#1a1d29',
                             textDecoration: 'none',
-                            fontSize: '13px',
-                            fontFamily: 'IBM Plex Sans, sans-serif'
+                            fontSize: '14px',
+                            fontFamily: 'IBM Plex Sans, sans-serif',
+                            fontWeight: '500',
+                            display: 'inline-block',
+                            maxWidth: '300px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
                           }}
                           onMouseEnter={(e) => {
+                            e.currentTarget.style.color = '#00bcdc';
                             e.currentTarget.style.textDecoration = 'underline';
                           }}
                           onMouseLeave={(e) => {
+                            e.currentTarget.style.color = '#1a1d29';
                             e.currentTarget.style.textDecoration = 'none';
                           }}
+                          title={source.name}
                         >
                           {source.name}
                         </a>
@@ -1093,131 +1078,209 @@ export const SearchSources = () => {
                       <td style={{ padding: '16px 12px' }}>
                         <span
                           style={{
-                            padding: '4px 8px',
-                            borderRadius: '12px',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
                             fontSize: '11px',
                             fontWeight: '600',
                             textTransform: 'uppercase',
                             backgroundColor: sourceTypeColors[source.type],
-                            color: '#ffffff'
+                            color: '#ffffff',
+                            letterSpacing: '0.3px',
+                            display: 'inline-block'
                           }}
                         >
-                          {source.type}
+                          {sourceTypeLabels[source.type] || source.type}
                         </span>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                          <span style={{ fontSize: '13px', fontFamily: 'IBM Plex Mono, monospace', color: '#212534' }}>
-                            {source.mentionRate}%
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          <span style={{ fontSize: '14px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '600', color: '#1a1d29' }}>
+                            {source.mentionRate.toFixed(1)}%
                           </span>
-                          <span style={{ fontSize: '10px', color: source.mentionChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(source.mentionChange)}%
-                          </span>
+                          {source.mentionChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.mentionChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(source.mentionChange).toFixed(1)}%
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                          <span style={{ fontSize: '13px', fontFamily: 'IBM Plex Mono, monospace', color: '#212534' }}>
-                            {source.soa}×
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          <span style={{ fontSize: '14px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '600', color: '#1a1d29' }}>
+                            {source.soa.toFixed(1)}%
                           </span>
-                          <span style={{ fontSize: '10px', color: source.soaChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.soaChange >= 0 ? '↑' : '↓'} {Math.abs(source.soaChange)}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '16px 12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '16px' }}>{sentimentEmoji}</span>
-                          <span
-                            style={{
-                              fontSize: '13px',
-                              fontFamily: 'IBM Plex Mono, monospace',
-                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < 0 ? '#f94343' : '#393e51'
-                            }}
-                          >
-                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
-                          </span>
-                          <span style={{ fontSize: '10px', color: source.sentimentChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '16px 12px' }}>
-                        <div
-                          style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', position: 'relative' }}
-                          onMouseEnter={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setTooltipPosition({ x: rect.left, y: rect.top });
-                            setHoveredTopics(source.topics);
-                          }}
-                          onMouseLeave={() => setHoveredTopics(null)}
-                        >
-                          {source.topics.slice(0, 2).map(topic => (
-                            <span
-                              key={topic}
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                backgroundColor: '#f4f4f6',
-                                color: '#393e51',
-                                cursor: 'default'
-                              }}
-                            >
-                              {topic}
-                            </span>
-                          ))}
-                          {source.topics.length > 2 && (
-                            <span
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                backgroundColor: '#e8e9ed',
-                                color: '#393e51',
-                                cursor: 'default'
-                              }}
-                            >
-                              +{source.topics.length - 2}
+                          {source.soaChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.soaChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.soaChange >= 0 ? '↑' : '↓'} {Math.abs(source.soaChange).toFixed(1)}%
                             </span>
                           )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            color: '#00bcdc',
-                            cursor: 'pointer',
-                            textDecoration: 'underline'
-                          }}
-                          onClick={() => {
-                            setModalType('pages');
-                            setModalData(source.pages);
-                            setModalTitle(`Pages citing ${source.name}`);
-                          }}
-                        >
-                          {source.pages.slice(0, 1).join(', ')}
-                          {source.pages.length > 1 && ` +${source.pages.length - 1} more`}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span
+                            style={{
+                              fontSize: '14px',
+                              fontFamily: 'IBM Plex Mono, monospace',
+                              fontWeight: '600',
+                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < -0.1 ? '#f94343' : '#64748b'
+                            }}
+                          >
+                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
+                          </span>
+                          {source.sentimentChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.sentimentChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            color: '#00bcdc',
-                            cursor: 'pointer',
-                            textDecoration: 'underline'
-                          }}
-                          onClick={() => {
-                            setModalType('prompts');
-                            setModalData(source.prompts);
-                            setModalTitle(`Prompts citing ${source.name}`);
-                          }}
-                        >
-                          {source.prompts.slice(0, 1).join(', ')}
-                          {source.prompts.length > 1 && ` +${source.prompts.length - 1} more`}
-                        </div>
+                        {source.topics.length > 0 ? (
+                          <div
+                            style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', position: 'relative', maxWidth: '250px' }}
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setTooltipPosition({ x: rect.left, y: rect.top });
+                              setHoveredTopics(source.topics);
+                            }}
+                            onMouseLeave={() => setHoveredTopics(null)}
+                          >
+                            {source.topics.slice(0, 2).map(topic => (
+                              <span
+                                key={topic}
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  fontWeight: '500',
+                                  backgroundColor: '#e0f2fe',
+                                  color: '#0369a1',
+                                  cursor: 'default',
+                                  border: '1px solid #bae6fd'
+                                }}
+                              >
+                                {topic}
+                              </span>
+                            ))}
+                            {source.topics.length > 2 && (
+                              <span
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  fontWeight: '500',
+                                  backgroundColor: '#f1f5f9',
+                                  color: '#64748b',
+                                  cursor: 'default',
+                                  border: '1px solid #e2e8f0'
+                                }}
+                                title={source.topics.slice(2).join(', ')}
+                              >
+                                +{source.topics.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '16px 12px', maxWidth: '250px' }}>
+                        {source.pages.length > 0 ? (
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              color: '#00bcdc',
+                              cursor: 'pointer',
+                              fontWeight: '500',
+                              display: 'inline-block',
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            onClick={() => {
+                              setModalType('pages');
+                              setModalData(source.pages);
+                              setModalTitle(`Pages citing ${source.name}`);
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.textDecoration = 'underline';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.textDecoration = 'none';
+                            }}
+                            title={source.pages[0]}
+                          >
+                            {source.pages[0]}
+                            {source.pages.length > 1 && (
+                              <span style={{ color: '#64748b', marginLeft: '4px' }}>
+                                +{source.pages.length - 1} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '16px 12px', maxWidth: '300px' }}>
+                        {source.prompts.length > 0 ? (
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              color: '#00bcdc',
+                              cursor: 'pointer',
+                              fontWeight: '500',
+                              display: 'inline-block',
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            onClick={() => {
+                              setModalType('prompts');
+                              setModalData(source.prompts);
+                              setModalTitle(`Prompts citing ${source.name}`);
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.textDecoration = 'underline';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.textDecoration = 'none';
+                            }}
+                            title={source.prompts[0]}
+                          >
+                            {source.prompts[0]}
+                            {source.prompts.length > 1 && (
+                              <span style={{ color: '#64748b', marginLeft: '4px' }}>
+                                +{source.prompts.length - 1} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1404,9 +1467,65 @@ export const SearchSources = () => {
         {activeTab === 'source-coverage' && (
           <SourceCoverageHeatmap
             sources={heatmapSources}
-            topics={topicOptions}
+            topics={allTopics.length > 0 ? allTopics : ['No topics available']}
             data={heatmapData}
           />
+        )}
+
+        {/* Loading State */}
+        {loading && (
+          <div style={{ 
+            backgroundColor: '#ffffff', 
+            padding: '48px', 
+            borderRadius: '8px', 
+            textAlign: 'center',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+          }}>
+            <div style={{ 
+              width: '48px', 
+              height: '48px', 
+              border: '3px solid #e8e9ed', 
+              borderTopColor: '#00bcdc', 
+              borderRadius: '50%', 
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto 16px'
+            }} />
+            <p style={{ fontSize: '14px', color: '#393e51' }}>Loading source data...</p>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div style={{ 
+            backgroundColor: '#fff5f5', 
+            border: '1px solid #fecaca', 
+            padding: '24px', 
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <IconAlertCircle size={20} style={{ color: '#f94343' }} />
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
+                Error Loading Source Data
+              </h3>
+            </div>
+            <p style={{ fontSize: '14px', color: '#393e51', margin: 0 }}>{error}</p>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loading && !error && sourceData.length === 0 && (
+          <div style={{ 
+            backgroundColor: '#ffffff', 
+            padding: '48px', 
+            borderRadius: '8px', 
+            textAlign: 'center',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+          }}>
+            <p style={{ fontSize: '16px', color: '#393e51', margin: 0 }}>
+              No source data available for the selected time range.
+            </p>
+          </div>
         )}
       </div>
     </Layout>

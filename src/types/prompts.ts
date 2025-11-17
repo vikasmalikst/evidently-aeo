@@ -1,6 +1,7 @@
 export interface PromptHighlights {
   brand: string[]
   products: string[]
+  keywords: string[]
 }
 
 export interface PromptEntry {

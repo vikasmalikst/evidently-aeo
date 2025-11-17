@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { Scatter } from 'react-chartjs-2';
 import {
@@ -12,6 +12,10 @@ import {
 import { IconX, IconTarget, IconFilter, IconTrendingUp } from '@tabler/icons-react';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
+import { useManualBrandDashboard } from '../manual-dashboard';
+import { useAuthStore } from '../store/authStore';
+import { apiClient } from '../lib/apiClient';
+import { ApiResponse } from '../types';
 
 // Design tokens
 const COLORS = {
@@ -48,62 +52,20 @@ interface KeywordData {
   };
 }
 
-// Generate dummy data
-const generateKeywordData = (): KeywordData[] => {
-  const keywords = [
-    'AI marketing automation', 'conversational AI platform', 'enterprise chatbot solution',
-    'AI content generation', 'natural language processing', 'machine learning platform',
-    'AI customer service', 'predictive analytics', 'AI data analysis', 'intelligent automation',
-    'AI sales assistant', 'voice AI technology', 'AI email marketing', 'sentiment analysis',
-    'AI recommendation engine', 'computer vision API', 'AI workflow optimization', 'chatbot builder',
-    'AI personalization', 'automated lead scoring', 'AI transcription service', 'deep learning framework',
-    'AI code assistant', 'intelligent document processing', 'AI video generation', 'speech recognition',
-    'AI search optimization', 'neural network training', 'AI fraud detection', 'conversational commerce',
-    'AI writing assistant', 'virtual agent platform', 'AI market research', 'text analytics',
-    'AI customer insights', 'robotic process automation', 'AI image recognition', 'intent detection',
-    'AI social listening', 'automated testing AI', 'AI supply chain', 'predictive maintenance',
-  ];
-
-  return keywords.map((keyword) => {
-    const searchVolume = Math.floor(Math.random() * 18000) + 2000;
-    const ownership = Math.floor(Math.random() * 100);
-    const mentions = Math.floor(Math.random() * 150) + 10;
-
-    const categories: ('brand' | 'competitor' | 'trending')[] = [];
-    if (ownership > 60) categories.push('brand');
-    if (ownership > 30 && ownership < 70) categories.push('contested');
-    if (ownership < 40) categories.push('competitor');
-    if (mentions > 100) categories.push('trending');
-
-    const numProviders = Math.floor(Math.random() * 3) + 1;
-    const llmProviders = LLM_PROVIDERS.slice(0, numProviders);
-
-    const brandMentions = Math.floor(mentions * (ownership / 100));
-    const competitorMentions = Math.floor(mentions * 0.3);
-    const trendingMentions = mentions - brandMentions - competitorMentions;
-
-    const hasPrevious = Math.random() > 0.5;
-    const previousPosition = hasPrevious ? {
-      searchVolume: searchVolume + Math.floor((Math.random() - 0.5) * 3000),
-      ownership: ownership + Math.floor((Math.random() - 0.5) * 20),
-    } : undefined;
-
-    return {
-      keyword,
-      searchVolume,
-      ownership,
-      mentions,
-      categories: categories as ('brand' | 'competitor' | 'trending')[],
-      llmProviders,
-      previousPosition,
-      sourceDetail: {
-        brandMentions,
-        competitorMentions,
-        trendingMentions,
-      },
-    };
-  });
-};
+// API payload shape from backend
+interface KeywordAnalyticsItem {
+  keyword: string;
+  mentions: number;
+  volume: number;
+  brandPositions: number;
+  competitorPositions: number;
+  sources: string[];
+}
+interface KeywordAnalyticsPayload {
+  keywords: KeywordAnalyticsItem[];
+  startDate?: string;
+  endDate?: string;
+}
 
 const getKeywordColor = (keyword: KeywordData): string => {
   if (keyword.categories.includes('brand')) return COLORS.brand;
@@ -121,6 +83,12 @@ const getQuadrant = (keyword: KeywordData): string => {
   if (!highOwnership && highVolume) return 'Opportunity Zone';
   if (highOwnership && !highVolume) return 'Niche Dominance';
   return 'Low Priority';
+};
+
+const formatCount = (value: number): string => {
+  if (value >= 1000000) return `${(value / 1000000).toFixed(1)}m`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return value.toLocaleString();
 };
 
 interface DetailPanelProps {
@@ -337,12 +305,67 @@ const DetailPanel = ({ keyword, onClose }: DetailPanelProps) => (
 );
 
 export const Keywords = () => {
-  const [keywordData] = useState<KeywordData[]>(generateKeywordData());
+  const authLoading = useAuthStore((state) => state.isLoading);
+  const { selectedBrandId, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  const [loading, setLoading] = useState(false);
+  const [keywordData, setKeywordData] = useState<KeywordData[]>([]);
   const [selectedKeyword, setSelectedKeyword] = useState<KeywordData | null>(null);
   const [showMovement, setShowMovement] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [llmFilter, setLlmFilter] = useState<string>('all');
   const [quadrantFilter, setQuadrantFilter] = useState<string>('all');
+
+  // Fetch real keyword analytics
+  useEffect(() => {
+    const fetchKeywords = async () => {
+      if (authLoading || brandsLoading || !selectedBrandId) return;
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        // optional: add date range later
+        const endpoint = `/brands/${selectedBrandId}/keywords?${params.toString()}`;
+        const response = await apiClient.request<ApiResponse<KeywordAnalyticsPayload>>(endpoint);
+        if (response.success && response.data) {
+          const items = response.data.keywords || [];
+          // Map to visualization model
+          const maxVolume = items.reduce((m, x) => Math.max(m, x.volume), 1);
+          const mapped: KeywordData[] = items.map((it) => {
+            // Ownership is average brand share across all positions where the keyword appeared
+            const ownership = it.volume > 0 ? Math.round((it.brandPositions / it.volume) * 100) : 0;
+            const searchVolume = it.volume; // use real volume (positions count)
+            const categories: ('brand' | 'competitor' | 'trending')[] = [];
+            if (ownership > 60) categories.push('brand');
+            if (ownership > 30 && ownership < 70) categories.push('contested');
+            if (ownership < 40) categories.push('competitor');
+            if (it.volume >= Math.max(5, Math.ceil(0.75 * maxVolume))) categories.push('trending');
+            const trendingMentions = Math.max(0, it.volume - it.brandPositions - it.competitorPositions);
+            return {
+              keyword: it.keyword,
+              searchVolume,
+              ownership,
+              mentions: it.mentions,
+              categories,
+              llmProviders: it.sources || [],
+              sourceDetail: {
+                brandMentions: it.brandPositions,
+                competitorMentions: it.competitorPositions,
+                trendingMentions
+              }
+            };
+          });
+          setKeywordData(mapped);
+        } else {
+          setKeywordData([]);
+        }
+      } catch (e) {
+        console.error('Failed to load keyword analytics', e);
+        setKeywordData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchKeywords();
+  }, [authLoading, brandsLoading, selectedBrandId]);
 
   const filteredData = useMemo(() => {
     return keywordData.filter((kw) => {
@@ -410,8 +433,8 @@ export const Keywords = () => {
             if (!kw) return '';
             return [
               `Ownership: ${kw.ownership}%`,
-              `Volume: ${(kw.searchVolume / 1000).toFixed(1)}k`,
-              `Mentions: ${kw.mentions}`,
+              `Positions (volume): ${kw.searchVolume.toLocaleString()}`,
+              `Responses: ${kw.mentions.toLocaleString()}`,
             ];
           },
         },
@@ -421,17 +444,18 @@ export const Keywords = () => {
       x: {
         title: {
           display: true,
-          text: 'Search Volume',
+          text: 'Positions (Volume)',
           font: { size: 13, weight: '600' },
           color: COLORS.textBody,
         },
         grid: { color: COLORS.gridLines },
         ticks: {
           color: '#64748b',
-          callback: (value: number) => `${(value / 1000).toFixed(0)}k`,
+          callback: (value: number) => `${value}`,
         },
         min: 0,
-        max: 20000,
+        // dynamic max from data
+        max: Math.max(10, Math.ceil((filteredData.reduce((m, k) => Math.max(m, k.searchVolume), 0) || 10) * 1.1)),
       },
       y: {
         title: {
@@ -526,6 +550,30 @@ export const Keywords = () => {
           }}
         >
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
+            {brands.length > 1 && selectedBrandId && (
+              <div>
+                <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
+                  Brand
+                </label>
+                <select
+                  value={selectedBrandId}
+                  onChange={(e) => selectBrand(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    border: `1px solid ${COLORS.gridLines}`,
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    backgroundColor: COLORS.bgPrimary,
+                    color: COLORS.textBody,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {brands.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
                 Category
@@ -618,7 +666,13 @@ export const Keywords = () => {
           </div>
 
           <div style={{ height: '600px', position: 'relative' }}>
-            <Scatter data={chartData} options={options} />
+            {loading ? (
+              <div className="flex items-center justify-center h-full text-sm text-[var(--text-caption)]">
+                Loading keywords…
+              </div>
+            ) : (
+              <Scatter data={chartData} options={options} />
+            )}
           </div>
         </div>
 
@@ -676,7 +730,7 @@ export const Keywords = () => {
                       {kw.keyword}
                     </td>
                     <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right' }}>
-                      {(kw.searchVolume / 1000).toFixed(1)}k
+                      {formatCount(kw.searchVolume)}
                     </td>
                     <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right', fontWeight: '600' }}>
                       {kw.ownership}%
@@ -701,7 +755,7 @@ export const Keywords = () => {
                       </div>
                     </td>
                     <td style={{ padding: '12px', fontSize: '12px', color: '#64748b' }}>
-                      {kw.llmProviders.join(', ')}
+                      {kw.llmProviders.length > 0 ? kw.llmProviders.join(', ') : '—'}
                     </td>
                   </tr>
                 ))}

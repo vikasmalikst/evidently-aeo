@@ -155,86 +155,90 @@ export class QueryGenerationService {
         }
       }
 
-      // Save to database
-      brandName = await this.saveGenerationToDatabase(generationId, request, queries, request.llm_provider, brandName);
+      // CRITICAL: Process queries FIRST before saving to database
+      // This ensures NO fallback queries are saved to database
+      
+      // Enforce topic completeness and uniqueness FIRST
+      if (request.topics && request.topics.length > 0) {
+        console.log(`📋 Enforcing topic completeness for ${request.topics.length} topics...`);
+        queries = await this.enforceTopicCompletenessAndUniqueness(queries, request, brandName);
+      }
+      
+      // Remove duplicates before formatting (safety check)
+      const uniqueQueries = this.removeDuplicateQueries(queries);
+      
+      // Validate query neutrality with enhanced scoring and reporting
+      const { neutralQueries, neutralityReport } = this.validateAndFilterNeutralQueriesWithScoring(
+        uniqueQueries, 
+        brandName, 
+        request.competitors
+      );
+      
+      // Log neutrality validation summary
+      console.log(`📊 Neutrality validation summary (${this.neutralityStrictness} mode):`);
+      console.log(`   Total queries: ${neutralityReport.totalQueries}`);
+      console.log(`   Passed: ${neutralityReport.passedQueries} (${Math.round((neutralityReport.passedQueries / neutralityReport.totalQueries) * 100)}%)`);
+      console.log(`   Filtered: ${neutralityReport.filteredQueries} (${Math.round((neutralityReport.filteredQueries / neutralityReport.totalQueries) * 100)}%)`);
+      console.log(`   Average neutrality score: ${neutralityReport.averageScore.toFixed(2)}`);
+      
+      if (Object.keys(neutralityReport.filteredByReason).length > 0) {
+        console.log(`   Filtered by reason:`, neutralityReport.filteredByReason);
+      }
+      
+      if (neutralQueries.length < uniqueQueries.length) {
+        const removedCount = uniqueQueries.length - neutralQueries.length;
+        console.warn(`⚠️ Removed ${removedCount} non-neutral queries that mentioned brand name "${brandName}"`);
+        console.warn(`   Remaining neutral queries: ${neutralQueries.length}`);
+      } else {
+        console.log(`✅ All ${neutralQueries.length} queries passed neutrality validation`);
+      }
+      
+      // Log the AI-generated queries
+      console.log(`🤖 Final Generated ${neutralQueries.length} neutral queries for ${brandName}:`);
+      neutralQueries.forEach((q, index) => {
+        console.log(`  ${index + 1}. [${q.topic || 'N/A'}] [${q.intent}] ${q.query}`);
+      });
+      
+      // Final validation
+      if (request.topics && request.topics.length > 0) {
+        const queryTexts = neutralQueries.map(q => q.query.toLowerCase().trim());
+        const duplicates = queryTexts.filter((query, index) => queryTexts.indexOf(query) !== index);
+        if (duplicates.length > 0) {
+          console.error(`❌ CRITICAL: Still found ${duplicates.length} duplicate queries after enforcement!`);
+          duplicates.forEach(dup => {
+            const dupQueries = neutralQueries.filter(q => q.query.toLowerCase().trim() === dup);
+            console.error(`  Duplicate: "${dup}" appears in topics: ${dupQueries.map(q => q.topic).join(', ')}`);
+          });
+        } else {
+          console.log(`✅ No duplicate queries found - all queries are unique!`);
+        }
+        
+        // Verify all topics have queries
+        const generatedTopics = neutralQueries.map(q => q.topic).filter(Boolean);
+        const missingTopics = request.topics.filter(topic => !generatedTopics.includes(topic));
+        if (missingTopics.length > 0) {
+          console.error(`❌ CRITICAL: Missing queries for ${missingTopics.length} topics: ${missingTopics.join(', ')}`);
+        } else {
+          console.log(`✅ All ${request.topics.length} topics have queries!`);
+        }
+      }
+      
+      // Only use AI-generated queries, don't fall back to generic ones
+      let aeoTopics;
+      if (neutralQueries.length >= 4) {
+        console.log(`✅ Using ${neutralQueries.length} AI-generated neutral queries (no fallback needed)`);
+        aeoTopics = neutralQueries.slice(0, 8); // Take up to 8 queries
+      } else {
+        console.warn(`⚠️ Only ${neutralQueries.length} AI-generated neutral queries available, but proceeding with AI queries only`);
+        aeoTopics = neutralQueries;
+      }
+
+      // NOW save to database - AFTER all processing, with final queries only
+      // This ensures NO fallback queries are saved
+      brandName = await this.saveGenerationToDatabase(generationId, request, aeoTopics, request.llm_provider, brandName);
 
       const runTime = Date.now() - startTime;
       const runTimeSeconds = runTime / 1000;
-
-    // CRITICAL: Enforce topic completeness and uniqueness FIRST before any processing
-    if (request.topics && request.topics.length > 0) {
-      console.log(`📋 Enforcing topic completeness for ${request.topics.length} topics...`);
-      queries = await this.enforceTopicCompletenessAndUniqueness(queries, request, brandName);
-    }
-    
-    // Remove duplicates before formatting (safety check)
-    const uniqueQueries = this.removeDuplicateQueries(queries);
-    
-    // 🎯 NEW: Validate query neutrality with enhanced scoring and reporting
-    const { neutralQueries, neutralityReport } = this.validateAndFilterNeutralQueriesWithScoring(
-      uniqueQueries, 
-      brandName, 
-      request.competitors
-    );
-    
-    // Log neutrality validation summary
-    console.log(`📊 Neutrality validation summary (${this.neutralityStrictness} mode):`);
-    console.log(`   Total queries: ${neutralityReport.totalQueries}`);
-    console.log(`   Passed: ${neutralityReport.passedQueries} (${Math.round((neutralityReport.passedQueries / neutralityReport.totalQueries) * 100)}%)`);
-    console.log(`   Filtered: ${neutralityReport.filteredQueries} (${Math.round((neutralityReport.filteredQueries / neutralityReport.totalQueries) * 100)}%)`);
-    console.log(`   Average neutrality score: ${neutralityReport.averageScore.toFixed(2)}`);
-    
-    if (Object.keys(neutralityReport.filteredByReason).length > 0) {
-      console.log(`   Filtered by reason:`, neutralityReport.filteredByReason);
-    }
-    
-    if (neutralQueries.length < uniqueQueries.length) {
-      const removedCount = uniqueQueries.length - neutralQueries.length;
-      console.warn(`⚠️ Removed ${removedCount} non-neutral queries that mentioned brand name "${brandName}"`);
-      console.warn(`   Remaining neutral queries: ${neutralQueries.length}`);
-    } else {
-      console.log(`✅ All ${neutralQueries.length} queries passed neutrality validation`);
-    }
-    
-    // Log the AI-generated queries
-    console.log(`🤖 Final Generated ${neutralQueries.length} neutral queries for ${brandName}:`);
-    neutralQueries.forEach((q, index) => {
-      console.log(`  ${index + 1}. [${q.topic || 'N/A'}] [${q.intent}] ${q.query}`);
-    });
-    
-    // Final validation
-    if (request.topics && request.topics.length > 0) {
-      const queryTexts = neutralQueries.map(q => q.query.toLowerCase().trim());
-      const duplicates = queryTexts.filter((query, index) => queryTexts.indexOf(query) !== index);
-      if (duplicates.length > 0) {
-        console.error(`❌ CRITICAL: Still found ${duplicates.length} duplicate queries after enforcement!`);
-        duplicates.forEach(dup => {
-          const dupQueries = neutralQueries.filter(q => q.query.toLowerCase().trim() === dup);
-          console.error(`  Duplicate: "${dup}" appears in topics: ${dupQueries.map(q => q.topic).join(', ')}`);
-        });
-      } else {
-        console.log(`✅ No duplicate queries found - all queries are unique!`);
-      }
-      
-      // Verify all topics have queries
-      const generatedTopics = neutralQueries.map(q => q.topic).filter(Boolean);
-      const missingTopics = request.topics.filter(topic => !generatedTopics.includes(topic));
-      if (missingTopics.length > 0) {
-        console.error(`❌ CRITICAL: Missing queries for ${missingTopics.length} topics: ${missingTopics.join(', ')}`);
-      } else {
-        console.log(`✅ All ${request.topics.length} topics have queries!`);
-      }
-    }
-    
-    // Only use AI-generated queries, don't fall back to generic ones
-    let aeoTopics;
-    if (neutralQueries.length >= 4) {
-      console.log(`✅ Using ${neutralQueries.length} AI-generated neutral queries (no fallback needed)`);
-      aeoTopics = neutralQueries.slice(0, 8); // Take up to 8 queries
-    } else {
-      console.warn(`⚠️ Only ${neutralQueries.length} AI-generated neutral queries available, but proceeding with AI queries only`);
-      aeoTopics = neutralQueries;
-    }
 
       // Convert queries to the expected format
     const formattedQueries = aeoTopics.map((q, index) => ({
@@ -665,40 +669,25 @@ CRITICAL: Return exactly one query per topic. No duplicates across topics. Each 
       if (intentQueries.length >= expectedPerIntent) {
         // Take the first 2 queries
         balancedQueries.push(...intentQueries.slice(0, expectedPerIntent));
+        console.log(`✅ ${intent}: Using ${expectedPerIntent} existing queries`);
       } else if (intentQueries.length > 0) {
-        // Take what we have and generate unique fallback queries for the remaining
+        // Take what we have - NO FALLBACK
         balancedQueries.push(...intentQueries);
-        const remaining = expectedPerIntent - intentQueries.length;
-        const fallbackQueries = this.generateFallbackQueriesForIntent(intent, queries[0]?.topic || 'General');
-        // Take only the number of fallback queries needed
-        balancedQueries.push(...fallbackQueries.slice(0, remaining));
+        console.log(`⚠️ ${intent}: Only ${intentQueries.length} queries available (expected ${expectedPerIntent}) - no fallback generated`);
       } else {
-        // Generate fallback queries for missing intents
-        const fallbackQueries = this.generateFallbackQueriesForIntent(intent, queries[0]?.topic || 'General');
-        balancedQueries.push(...fallbackQueries);
+        // No queries for this intent - skip it, NO FALLBACK
+        console.warn(`❌ ${intent}: No queries available - skipping (no fallback generated)`);
       }
     });
     
-    // Ensure we have exactly 8 queries total
+    // Return what we have - don't try to fill gaps with fallbacks
     if (balancedQueries.length !== totalExpected) {
-      console.warn(`⚠️ Expected ${totalExpected} queries, got ${balancedQueries.length}. Adjusting...`);
-      
-      // If we have too many, take the first 8
-      if (balancedQueries.length > totalExpected) {
-        return balancedQueries.slice(0, totalExpected);
-      }
-      
-      // If we have too few, generate more fallback queries
-      while (balancedQueries.length < totalExpected) {
-        const intentIndex = balancedQueries.length % requiredIntents.length;
-        const intent = requiredIntents[intentIndex];
-        const fallbackQueries = this.generateFallbackQueriesForIntent(intent, queries[0]?.topic || 'General');
-        if (fallbackQueries.length > 0) {
-          balancedQueries.push(fallbackQueries[0]);
-        } else {
-          break; // Prevent infinite loop
-        }
-      }
+      console.warn(`⚠️ Expected ${totalExpected} queries, got ${balancedQueries.length}. Returning ${balancedQueries.length} AI-generated queries (no fallbacks)`);
+    }
+    
+    // If we have too many, take the first 8
+    if (balancedQueries.length > totalExpected) {
+      return balancedQueries.slice(0, totalExpected);
     }
     
     // Remove any duplicate queries
@@ -740,39 +729,23 @@ CRITICAL: Return exactly one query per topic. No duplicates across topics. Each 
         balancedQueries.push(...intentQueries.slice(0, expectedPerIntent));
         console.log(`✅ ${intent}: Using ${expectedPerIntent} existing queries`);
       } else if (intentQueries.length > 0) {
-        // Take what we have and generate fallback for remaining
+        // Take what we have - NO FALLBACK
         balancedQueries.push(...intentQueries);
-        const remaining = expectedPerIntent - intentQueries.length;
-        const fallbackQueries = this.generateFallbackQueriesForIntent(intent, brandName);
-        balancedQueries.push(...fallbackQueries.slice(0, remaining));
-        console.log(`⚠️ ${intent}: Using ${intentQueries.length} existing + ${remaining} fallback queries`);
+        console.log(`⚠️ ${intent}: Only ${intentQueries.length} queries available (expected ${expectedPerIntent}) - no fallback generated`);
       } else {
-        // Generate all fallback queries for missing intents
-        const fallbackQueries = this.generateFallbackQueriesForIntent(intent, brandName);
-        balancedQueries.push(...fallbackQueries.slice(0, expectedPerIntent));
-        console.log(`❌ ${intent}: Using ${expectedPerIntent} fallback queries`);
+        // No queries for this intent - skip it, NO FALLBACK
+        console.warn(`❌ ${intent}: No queries available - skipping (no fallback generated)`);
       }
     });
     
-    // Final validation and adjustment
+    // Return what we have - don't try to fill gaps with fallbacks
     if (balancedQueries.length !== totalExpected) {
-      console.warn(`⚠️ AEO Balance: Expected ${totalExpected}, got ${balancedQueries.length}. Adjusting...`);
-      
-      if (balancedQueries.length > totalExpected) {
-        return balancedQueries.slice(0, totalExpected);
-      }
-      
-      // Generate additional queries if needed
-      while (balancedQueries.length < totalExpected) {
-        const intentIndex = balancedQueries.length % requiredIntents.length;
-        const intent = requiredIntents[intentIndex];
-        const fallbackQueries = this.generateFallbackQueriesForIntent(intent, brandName);
-        if (fallbackQueries.length > 0) {
-          balancedQueries.push(fallbackQueries[0]);
-        } else {
-          break;
-        }
-      }
+      console.warn(`⚠️ AEO Balance: Expected ${totalExpected}, got ${balancedQueries.length}. Returning ${balancedQueries.length} AI-generated queries (no fallbacks)`);
+    }
+    
+    // If we have too many, take the first 8
+    if (balancedQueries.length > totalExpected) {
+      return balancedQueries.slice(0, totalExpected);
     }
     
     // Remove duplicates
@@ -901,33 +874,33 @@ CRITICAL: Return exactly one query per topic. No duplicates across topics. Each 
               topicToQuery.set(topic, generatedQuery);
               console.log(`✅ Generated query for "${topic}": "${generatedQuery.query}"`);
             } else {
-              console.warn(`⚠️ Generated query for "${topic}" is still a duplicate, generating fallback...`);
-              const fallbackQuery = this.generateTopicSpecificFallback(topic, brandName, request, Array.from(queryTexts));
-              queryTexts.add(fallbackQuery.query.toLowerCase().trim());
-              topicToQuery.set(topic, fallbackQuery);
+              console.warn(`⚠️ Generated query for "${topic}" is still a duplicate after normalization - skipping (no fallback)`);
+              // NO FALLBACK - skip this topic if we can't generate a unique query
             }
           }
         } catch (error) {
           console.error(`❌ Failed to generate query for topic "${topic}":`, error);
-          // Use fallback
-          const fallbackQuery = this.generateTopicSpecificFallback(topic, brandName, request, Array.from(queryTexts));
-          queryTexts.add(fallbackQuery.query.toLowerCase().trim());
-          topicToQuery.set(topic, fallbackQuery);
+          // NO FALLBACK - skip this topic if AI generation fails
+          console.warn(`⚠️ Skipping topic "${topic}" - AI query generation failed, no fallback will be used`);
         }
       }
     }
     
-    // Build final array ensuring all topics are covered
+    // Build final array - only include queries that were successfully generated by AI
+    // NO FALLBACK QUERIES - if AI fails, skip that topic
+    const missingTopics: string[] = [];
     for (const topic of expectedTopics) {
       if (topicToQuery.has(topic)) {
         finalQueries.push(topicToQuery.get(topic)!);
       } else {
-        // Fallback: create a topic-specific query
-        const fallbackQuery = this.generateTopicSpecificFallback(topic, brandName, request, Array.from(queryTexts));
-        queryTexts.add(fallbackQuery.query.toLowerCase().trim());
-        finalQueries.push(fallbackQuery);
-        console.warn(`⚠️ Used fallback query for "${topic}": "${fallbackQuery.query}"`);
+        missingTopics.push(topic);
+        console.warn(`⚠️ No query generated for topic "${topic}" - AI generation failed, skipping (no fallback)`);
       }
+    }
+    
+    if (missingTopics.length > 0) {
+      console.warn(`❌ CRITICAL: Missing queries for ${missingTopics.length} topics: ${missingTopics.join(', ')}`);
+      console.warn(`⚠️ These topics will be skipped - no fallback queries will be generated`);
     }
     
     // Final validation
@@ -938,7 +911,7 @@ CRITICAL: Return exactly one query per topic. No duplicates across topics. Each 
       console.error(`❌ Still have duplicates after regeneration: ${duplicates.join(', ')}`);
     }
     
-    console.log(`✅ Final result: ${finalQueries.length} unique queries for ${expectedTopics.length} topics`);
+    console.log(`✅ Final result: ${finalQueries.length} AI-generated queries for ${expectedTopics.length} topics (${missingTopics.length} topics skipped due to AI failure)`);
     
     return finalQueries;
   }
@@ -1040,33 +1013,17 @@ Generate a single query as JSON:
 
   /**
    * Generate a topic-specific fallback query when AI fails
+   * DISABLED: No fallback queries should be generated
    */
   private generateTopicSpecificFallback(
     topic: string,
     brandName: string,
     request: QueryGenerationRequest,
     existingQueries: string[]
-  ): { topic: string; query: string; intent: string; priority: number } {
-    // Create a topic-specific query using the topic name explicitly
-    const topicKeywords = topic.toLowerCase().split(/[&\s]+/).filter(w => w.length > 2);
-    const query = `What are ${brandName}'s ${topic.toLowerCase()} options and features?`;
-    
-    // Determine intent based on topic keywords
-    let intent = 'awareness';
-    if (topic.toLowerCase().includes('comparison') || topic.toLowerCase().includes('vs') || topic.toLowerCase().includes('alternative')) {
-      intent = 'comparison';
-    } else if (topic.toLowerCase().includes('price') || topic.toLowerCase().includes('cost') || topic.toLowerCase().includes('buy') || topic.toLowerCase().includes('purchase')) {
-      intent = 'purchase';
-    } else if (topic.toLowerCase().includes('support') || topic.toLowerCase().includes('help') || topic.toLowerCase().includes('customer service')) {
-      intent = 'support';
-    }
-    
-    return {
-      topic,
-      query,
-      intent,
-      priority: 1
-    };
+  ): { topic: string; query: string; intent: string; priority: number } | null {
+    // FALLBACK DISABLED - Return null instead of generating fallback queries
+    console.warn(`🚫 Fallback query generation disabled for topic "${topic}" - returning null`);
+    return null;
   }
 
   /**
@@ -1201,49 +1158,12 @@ Generate a single query as JSON:
 
   /**
    * Generate fallback queries for missing intents
+   * DISABLED: No fallback queries should be generated
    */
   private generateFallbackQueriesForIntent(intent: string, topic: string): Array<{ topic: string; query: string; intent: string; priority: number }> {
-    const fallbackQueries: Record<string, string[]> = {
-      awareness: [
-        `What is ${topic} and how does it work?`,
-        `Benefits and features of ${topic}`,
-        `Introduction to ${topic} for beginners`,
-        `What makes ${topic} different from competitors?`,
-        `How does ${topic} help users?`,
-        `What are the key features of ${topic}?`
-      ],
-      comparison: [
-        `${topic} vs alternatives comparison`,
-        `Best ${topic} options available`,
-        `Top ${topic} alternatives to consider`,
-        `How does ${topic} compare to industry leaders?`,
-        `Which ${topic} is better for my needs?`,
-        `Compare ${topic} with competitors`
-      ],
-      purchase: [
-        `Where to buy ${topic} and pricing`,
-        `${topic} deals and discounts available`,
-        `Best places to purchase ${topic}`,
-        `${topic} pricing plans and packages`,
-        `How much does ${topic} cost?`,
-        `Where can I find ${topic} for sale?`
-      ],
-      support: [
-        `How to contact ${topic} customer support?`,
-        `What is ${topic}'s return policy?`,
-        `How to get refund from ${topic}?`,
-        `Troubleshooting ${topic} issues`,
-        `${topic} customer service phone number`,
-        `How to cancel ${topic} subscription?`
-      ]
-    };
-    
-    return fallbackQueries[intent]?.map((query, index) => ({
-      topic,
-      query,
-      intent,
-      priority: index + 1
-    })) || [];
+    // FALLBACK DISABLED - Return empty array instead of generating fallback queries
+    console.warn(`🚫 Fallback query generation disabled for intent "${intent}" and topic "${topic}" - returning empty array`);
+    return [];
   }
 
   /**
@@ -2421,7 +2341,7 @@ CRITICAL VALIDATION BEFORE RETURNING:
         return {
           score: patternInfo.severity,
           reason: `Query matches forbidden pattern: "${patternInfo.pattern}"`,
-          reasonCode: patternInfo.reasonCode
+          reasonCode: patternInfo.reasonCode as 'BRAND_MENTION' | 'BRAND_PREFERENCE' | 'BRAND_SPECIFIC' | 'NEUTRAL' | 'COMPARISON_OK'
         };
       }
     }

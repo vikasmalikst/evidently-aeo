@@ -421,15 +421,68 @@ export class BrightDataCollectorService {
         // Check if data is ready - look for answer_text field directly
         if (downloadResult && downloadResult.answer_text) {
           console.log(`✅ Data is ready! Found answer_text field`);
+          console.log(`🔍 Full snapshot response structure:`, JSON.stringify(downloadResult, null, 2).substring(0, 1000));
           
           // Extract answer directly from the response
           const answer = downloadResult.answer_text || 'No response';
           
-          // Extract sources/urls from the response
-          const sources = downloadResult.sources || downloadResult.citations || [];
-          const urls = Array.isArray(sources) ? sources.map((s: any) => s.url || s).filter(Boolean) : [];
+          // Extract sources/urls from the response - check multiple possible field names and structures
+          let sources: any[] = [];
           
-          console.log(`✅ Extracted answer length: ${answer.length}, URLs count: ${urls.length}`);
+          // Try different field names for citations/sources
+          if (downloadResult.sources && Array.isArray(downloadResult.sources)) {
+            sources = downloadResult.sources;
+          } else if (downloadResult.citations && Array.isArray(downloadResult.citations)) {
+            sources = downloadResult.citations;
+          } else if (downloadResult.urls && Array.isArray(downloadResult.urls)) {
+            sources = downloadResult.urls;
+          } else if (downloadResult.links && Array.isArray(downloadResult.links)) {
+            sources = downloadResult.links;
+          } else if (downloadResult.references && Array.isArray(downloadResult.references)) {
+            sources = downloadResult.references;
+          } else if (downloadResult.source_urls && Array.isArray(downloadResult.source_urls)) {
+            sources = downloadResult.source_urls;
+          }
+          
+          // If sources is in a nested structure, try to extract it
+          if (sources.length === 0 && downloadResult.data) {
+            if (Array.isArray(downloadResult.data) && downloadResult.data.length > 0) {
+              const firstItem = downloadResult.data[0];
+              sources = firstItem.sources || firstItem.citations || firstItem.urls || firstItem.links || [];
+            } else if (downloadResult.data.sources) {
+              sources = downloadResult.data.sources;
+            } else if (downloadResult.data.citations) {
+              sources = downloadResult.data.citations;
+            }
+          }
+          
+          // Extract URLs from sources array (handle both string arrays and object arrays)
+          let urls = Array.isArray(sources) 
+            ? sources.map((s: any) => {
+                if (typeof s === 'string') return s;
+                if (typeof s === 'object' && s.url) return s.url;
+                if (typeof s === 'object' && s.source) return s.source;
+                if (typeof s === 'object' && s.link) return s.link;
+                if (typeof s === 'object' && s.href) return s.href;
+                return String(s);
+              }).filter((url: string) => url && (url.startsWith('http://') || url.startsWith('https://')))
+            : [];
+          
+          // If no URLs found in structured fields, try extracting from answer text
+          if (urls.length === 0 && answer) {
+            console.log(`🔍 No URLs in structured fields, extracting from answer text...`);
+            const urlRegex = /https?:\/\/[^\s\)]+/g;
+            const extractedUrls = answer.match(urlRegex) || [];
+            urls = [...new Set(extractedUrls)]; // Remove duplicates
+            console.log(`📎 Extracted ${urls.length} URLs from answer text`);
+          }
+          
+          console.log(`✅ Extracted answer length: ${answer.length}, Sources found: ${sources.length}, URLs extracted: ${urls.length}`);
+          if (urls.length > 0) {
+            console.log(`📎 Sample URLs:`, urls.slice(0, 3));
+          } else {
+            console.warn(`⚠️ No URLs/citations found in response. Available keys:`, Object.keys(downloadResult || {}));
+          }
           
           return {
             query_id: `brightdata_${collectorType}_${Date.now()}`,

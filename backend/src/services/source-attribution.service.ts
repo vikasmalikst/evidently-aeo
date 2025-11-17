@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../config/database'
 import { DatabaseError } from '../types/auth'
 import { normalizeDateRange, round, toNumber, average, toPercentage } from './brand-dashboard/utils'
+import { sourceAttributionCacheService } from './source-attribution-cache.service'
 
 export interface SourceAttributionData {
   name: string
@@ -27,6 +28,7 @@ export interface SourceAttributionResponse {
   totalSources: number
   dateRange: { start: string; end: string }
 }
+
 
 const sourceTypeMapping: Record<string, 'brand' | 'editorial' | 'corporate' | 'reference' | 'ugc' | 'institutional'> = {
   'brand': 'brand',
@@ -87,6 +89,19 @@ export class SourceAttributionService {
       const normalizedRange = normalizeDateRange(dateRange)
       const startIso = normalizedRange.startIso
       const endIso = normalizedRange.endIso
+
+      // Try Supabase cache first
+      const cached = await sourceAttributionCacheService.getCachedSourceAttribution(
+        brandId,
+        customerId,
+        startIso,
+        endIso
+      )
+      if (cached) {
+        const ageMs = sourceAttributionCacheService.getAgeMs(cached.computed_at)
+        console.log(`[SourceAttribution] ✅ Cache hit for brand=${brandId} range=${startIso}→${endIso} (age: ${ageMs}ms)`)
+        return cached.payload
+      }
 
       // Get brand domain for comparison
       const { data: brandData } = await supabaseAdmin
@@ -627,7 +642,7 @@ export class SourceAttributionService {
         ? round(average(Array.from(previousSourceAggregates.values()).map(p => p.sentiment)), 2)
         : 0
 
-      return {
+      const payload: SourceAttributionResponse = {
         sources,
         overallMentionRate,
         overallMentionChange: round(overallMentionRate - previousOverallMentionRate, 1),
@@ -636,9 +651,22 @@ export class SourceAttributionService {
         totalSources: sources.length,
         dateRange: { start: startIso, end: endIso }
       }
+
+      // Cache the computed payload in Supabase (async, don't await to avoid blocking response)
+      sourceAttributionCacheService.upsertSourceAttributionSnapshot(
+        brandId,
+        customerId,
+        payload,
+        startIso,
+        endIso
+      ).catch(err => {
+        console.warn('[SourceAttribution] Failed to cache snapshot (non-blocking):', err)
+      })
+
+      return payload
     } catch (error) {
       console.error('[SourceAttribution] Error:', error)
-      throw error
+      throw new DatabaseError(error instanceof Error ? error.message : 'Unknown error in source attribution')
     }
   }
 }

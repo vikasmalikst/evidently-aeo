@@ -8,6 +8,9 @@ interface PromptFiltersProps {
   onLLMChange: (llms: string[]) => void;
   selectedRegion: string;
   onRegionChange: (region: string) => void;
+  brands: Array<{ id: string; name: string }>;
+  selectedBrandId: string | null;
+  onBrandChange: (brandId: string) => void;
 }
 
 const regionOptions = [
@@ -29,7 +32,10 @@ export const PromptFilters = ({
   selectedLLMs,
   onLLMChange,
   selectedRegion,
-  onRegionChange
+  onRegionChange,
+  brands,
+  selectedBrandId,
+  onBrandChange
 }: PromptFiltersProps) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -59,9 +65,48 @@ export const PromptFilters = ({
   };
 
   const currentRegion = regionOptions.find(r => r.value === selectedRegion);
+  const currentBrand = brands.find(b => b.id === selectedBrandId);
 
   return (
     <div ref={dropdownRef} className="flex items-center justify-end gap-3 mb-6">
+      {brands.length > 1 && (
+        <div className="relative min-w-[200px]">
+          <button
+            className="flex items-center gap-2 w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--accent-primary)] hover:bg-[var(--bg-secondary)]"
+            onClick={() => setOpenDropdown(openDropdown === 'brand' ? null : 'brand')}
+          >
+            <span className="text-[var(--text-body)] whitespace-nowrap overflow-hidden text-ellipsis flex-1 text-left font-medium">
+              {currentBrand?.name || 'Select Brand'}
+            </span>
+            <ChevronDown
+              size={16}
+              className={`text-[var(--text-caption)] transition-transform duration-150 flex-shrink-0 ${
+                openDropdown === 'brand' ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+          {openDropdown === 'brand' && (
+            <div className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[300px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]">
+              {brands.map((brand) => (
+                <button
+                  key={brand.id}
+                  className={`block w-full px-4 py-2 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] ${
+                    selectedBrandId === brand.id
+                      ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
+                      : ''
+                  }`}
+                  onClick={() => {
+                    onBrandChange(brand.id);
+                    setOpenDropdown(null);
+                  }}
+                >
+                  {brand.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="relative min-w-[200px]">
         <button
           className="flex items-center gap-2 w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--accent-primary)] hover:bg-[var(--bg-secondary)]"

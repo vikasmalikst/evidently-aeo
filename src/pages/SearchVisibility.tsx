@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { VisibilityTabs } from '../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../components/Visibility/ChartControls';
@@ -32,6 +32,7 @@ interface LlmVisibilitySlice {
   delta?: number;
   color?: string;
   brandPresenceCount?: number;
+  totalQueries?: number;
   topTopic?: string | null;
   topTopics?: LlmTopic[];
 }
@@ -69,8 +70,10 @@ interface ModelData {
   topTopic: string;
   change?: number;
   referenceCount: number;
+  brandPresencePercentage: number;
   data: number[];
   topTopics?: LlmTopic[];
+  color?: string;
 }
 
 const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -127,6 +130,8 @@ export const SearchVisibility = () => {
     error: brandsError
   } = useManualBrandDashboard();
 
+  const dateRange = useMemo(() => getDateRangeForTimeframe(timeframe), [timeframe]);
+
   useEffect(() => {
     if (authLoading || brandsLoading || !selectedBrandId) {
       return;
@@ -139,10 +144,9 @@ export const SearchVisibility = () => {
       setError(null);
 
       try {
-        const { startDate, endDate } = getDateRangeForTimeframe(timeframe);
         const params = new URLSearchParams({
-          startDate,
-          endDate
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate
         });
         const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
         const response = await apiClient.request<ApiResponse<DashboardPayload>>(
@@ -158,21 +162,32 @@ export const SearchVisibility = () => {
         }
 
         const llmSlices = response.data.llmVisibility ?? [];
-        const llmModels = llmSlices.map((slice) => ({
-          id: normalizeId(slice.provider),
-          name: slice.provider,
-          score: Math.round(slice.visibility ?? slice.share ?? 0),
-          shareOfSearch: Math.round(slice.shareOfSearch ?? slice.share ?? 0),
-          shareOfSearchChange: slice.delta ? Math.round(slice.delta) : 0,
-          topTopic:
-            slice.topTopic ??
-            slice.topTopics?.[0]?.topic ??
-            '—',
-          change: slice.delta ? Math.round(slice.delta) : 0,
-          referenceCount: slice.brandPresenceCount ?? 0,
-          data: buildTimeseries(slice.visibility ?? slice.share ?? 0),
-          topTopics: slice.topTopics ?? []
-        }));
+        const llmModels = llmSlices.map((slice) => {
+          const totalQueries = slice.totalQueries ?? 0;
+          const brandPresenceCount = slice.brandPresenceCount ?? 0;
+          // Brand Presence % = (queries with brand presence / total queries) * 100, capped at 100%
+          const brandPresencePercentage = totalQueries > 0 
+            ? Math.min(100, Math.round((brandPresenceCount / totalQueries) * 100))
+            : 0;
+          
+          return {
+            id: normalizeId(slice.provider),
+            name: slice.provider,
+            score: Math.round(slice.visibility ?? 0), // Use visibility, not share
+            shareOfSearch: Math.round(slice.shareOfSearch ?? slice.share ?? 0),
+            shareOfSearchChange: slice.delta ? Math.round(slice.delta) : 0,
+            topTopic:
+              slice.topTopic ??
+              slice.topTopics?.[0]?.topic ??
+              '—',
+            change: slice.delta ? Math.round(slice.delta) : 0,
+            referenceCount: brandPresenceCount,
+            brandPresencePercentage,
+            data: buildTimeseries(slice.visibility ?? 0),
+            topTopics: slice.topTopics ?? [],
+            color: slice.color // Include color from backend
+          };
+        });
 
         const competitorEntries = response.data.competitorVisibility ?? [];
 
@@ -184,6 +199,7 @@ export const SearchVisibility = () => {
           topTopic: '—',
           change: 0,
           referenceCount: entry.mentions ?? 0,
+          brandPresencePercentage: 0, // Not applicable for competitors
           data: buildTimeseries(entry.visibility ?? 0),
           topTopics: []
         }));
@@ -210,7 +226,7 @@ export const SearchVisibility = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, brandsLoading, selectedBrandId, timeframe, reloadToken]);
+  }, [authLoading, brandsLoading, selectedBrandId, dateRange.startDate, dateRange.endDate, reloadToken]);
 
   const currentModels = activeTab === 'brand' ? brandModels : competitorModels;
 
@@ -225,11 +241,11 @@ export const SearchVisibility = () => {
     });
   }, [activeTab, currentModels]);
 
-  const handleModelToggle = (modelId: string) => {
+  const handleModelToggle = useCallback((modelId: string) => {
     setSelectedModels((prev) =>
       prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
     );
-  };
+  }, []);
 
   const chartData = useMemo(() => ({
     labels: chartLabels,
@@ -243,10 +259,10 @@ export const SearchVisibility = () => {
   const combinedLoading = authLoading || brandsLoading || loading;
   const combinedError = brandsError || error;
 
-  const handleRetry = () => {
+  const handleRetry = useCallback(() => {
     setError(null);
     setReloadToken((prev) => prev + 1);
-  };
+  }, []);
 
   const EmptyState = ({ message }: { message: string }) => (
     <div className="flex flex-col items-center justify-center py-12 text-center text-sm text-[#6c7289]">
@@ -330,6 +346,7 @@ export const SearchVisibility = () => {
               selectedModels={selectedModels}
               loading={combinedLoading}
               activeTab={activeTab}
+              models={currentModels}
             />
           </div>
 

@@ -184,7 +184,7 @@ export const PromptsList = ({
                                 </span>
                               </div>
                             </td>
-                            <td className="px-2 py-3 w-32">
+                            <td className="px-2 py-3 w-32 text-center">
                               <span className="text-sm font-medium text-[var(--text-caption)]">
                                 {prompt.sentimentScore !== null ? `${prompt.sentimentScore.toFixed(1)}` : '—'}
                               </span>

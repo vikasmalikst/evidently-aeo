@@ -69,26 +69,41 @@ export const TopicSelectionModal = ({
       const brandData = localStorage.getItem('onboarding_brand');
       const brand = brandData ? JSON.parse(brandData) : {};
       
+      // During onboarding, brand hasn't been created yet, so don't pass brand_id
+      // brand_id should only be used after brand creation is complete
       const response = await fetchTopicsForBrand({
         brand_name: brandName,
         industry,
         competitors: competitors.map((c: any) => c.name || c.companyName || ''),
         locale: 'en-US',
         country: 'US',
-        brand_id: localStorage.getItem('current_brand_id') || undefined,
+        // Don't pass brand_id during onboarding - it may be stale from previous sessions
+        brand_id: undefined,
         website_url: brand.website || brand.domain || undefined
       });
       
       if (response.success && response.data) {
-        setAvailableTopics(response.data);
+        // Ensure all required properties exist with default empty arrays
+        const topicsData = {
+          trending: Array.isArray(response.data.trending) ? response.data.trending : [],
+          aiGenerated: {
+            awareness: Array.isArray(response.data.aiGenerated?.awareness) ? response.data.aiGenerated.awareness : [],
+            comparison: Array.isArray(response.data.aiGenerated?.comparison) ? response.data.aiGenerated.comparison : [],
+            purchase: Array.isArray(response.data.aiGenerated?.purchase) ? response.data.aiGenerated.purchase : [],
+            support: Array.isArray(response.data.aiGenerated?.support) ? response.data.aiGenerated.support : []
+          },
+          preset: Array.isArray(response.data.preset) ? response.data.preset : []
+        };
+        
+        setAvailableTopics(topicsData);
         setTopicsError(null);
         console.log('✅ Loaded topics:', {
-          trending: response.data.trending.length,
-          awareness: response.data.aiGenerated.awareness.length,
-          comparison: response.data.aiGenerated.comparison.length,
-          purchase: response.data.aiGenerated.purchase.length,
-          support: response.data.aiGenerated.support.length,
-          preset: response.data.preset.length
+          trending: topicsData.trending.length,
+          awareness: topicsData.aiGenerated.awareness.length,
+          comparison: topicsData.aiGenerated.comparison.length,
+          purchase: topicsData.aiGenerated.purchase.length,
+          support: topicsData.aiGenerated.support.length,
+          preset: topicsData.preset.length
         });
       } else {
         const errorMsg = response.error || 'Failed to load recommended topics';

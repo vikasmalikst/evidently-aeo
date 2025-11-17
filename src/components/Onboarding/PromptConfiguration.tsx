@@ -66,15 +66,16 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
       const topic = selectedTopics.find(t => t.id === topicId);
       if (!topic) return;
       
+      // Get fresh brand data from localStorage (should be current onboarding session)
       const brandData = localStorage.getItem('onboarding_brand');
       const competitorsData = localStorage.getItem('onboarding_competitors');
       const brand = brandData ? JSON.parse(brandData) : {};
       const competitors = competitorsData ? JSON.parse(competitorsData) : [];
       
-      // Get brand_id if available (might not exist yet during onboarding)
-      const brandId = localStorage.getItem('current_brand_id') || undefined;
+      // Don't use brand_id during onboarding - brand hasn't been created yet
+      // brand_id from localStorage may be stale from previous sessions
       
-      console.log('🔍 Fetching prompts for topic:', topic.name);
+      console.log('🔍 Fetching prompts for topic:', topic.name, 'for brand:', brand.companyName || brand.name);
       
       const response = await fetchPromptsForTopics({
         brand_name: brand.companyName || brand.name || 'Brand',
@@ -83,7 +84,8 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
         topics: [topic.name],
         locale: 'en-US',
         country: 'US',
-        brand_id: brandId,
+        // Don't pass brand_id during onboarding - it may be stale
+        brand_id: undefined,
         website_url: brand.website || brand.domain || undefined
       });
       

@@ -3,9 +3,11 @@ interface KeywordHighlighterProps {
   keywords: {
     brand: string[];
     products: string[];
+    keywords: string[];
   };
   highlightBrand: boolean;
   highlightProducts: boolean;
+  highlightKeywords?: boolean;
 }
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -14,7 +16,8 @@ export const KeywordHighlighter = ({
   text,
   keywords,
   highlightBrand,
-  highlightProducts
+  highlightProducts,
+  highlightKeywords = true
 }: KeywordHighlighterProps) => {
   const highlights: Array<{ start: number; end: number; type: string }> = [];
 
@@ -35,20 +38,46 @@ export const KeywordHighlighter = ({
     });
   };
 
-  if (highlightBrand) addHighlights(keywords.brand, 'brand');
-  if (highlightProducts) addHighlights(keywords.products, 'product');
+  if (highlightBrand && keywords.brand && keywords.brand.length > 0) addHighlights(keywords.brand, 'brand');
+  if (highlightProducts && keywords.products && keywords.products.length > 0) addHighlights(keywords.products, 'product');
+  if (highlightKeywords && keywords.keywords && keywords.keywords.length > 0) addHighlights(keywords.keywords, 'keyword');
 
-  highlights.sort((a, b) => a.start - b.start);
+  // Resolve overlaps by preferring higher priority and longer matches
+  // Priority: product > keyword > brand
+  const priorityOf = (type: string) => {
+    if (type === 'product') return 3;
+    if (type === 'keyword') return 2;
+    if (type === 'brand') return 1;
+    return 0;
+  };
+
+  // Sort by:
+  // 1) priority desc
+  // 2) length desc
+  // 3) start asc
+  const sortedByPreference = highlights
+    .slice()
+    .sort((a, b) => {
+      const pr = priorityOf(b.type) - priorityOf(a.type);
+      if (pr !== 0) return pr;
+      const lenDiff = (b.end - b.start) - (a.end - a.start);
+      if (lenDiff !== 0) return lenDiff;
+      return a.start - b.start;
+    });
 
   const resolvedHighlights: Array<{ start: number; end: number; type: string }> = [];
-  highlights.forEach(highlight => {
-    const overlapping = resolvedHighlights.find(
-      h => h.start <= highlight.start && h.end >= highlight.start
-    );
-    if (!overlapping) {
-      resolvedHighlights.push(highlight);
+  const intersects = (x: { start: number; end: number }, y: { start: number; end: number }) =>
+    !(x.end <= y.start || x.start >= y.end);
+
+  // Greedily keep non-overlapping spans in preferred order
+  for (const h of sortedByPreference) {
+    if (!resolvedHighlights.some(r => intersects(h, r))) {
+      resolvedHighlights.push(h);
     }
-  });
+  }
+
+  // Render in reading order
+  resolvedHighlights.sort((a, b) => a.start - b.start);
 
   if (resolvedHighlights.length === 0) {
     return <p className="text-sm text-[var(--text-body)] leading-relaxed whitespace-pre-wrap">{text}</p>;
@@ -69,6 +98,7 @@ export const KeywordHighlighter = ({
     const getHighlightColor = (type: string) => {
       if (type === 'brand') return '#498CF9';
       if (type === 'product') return '#AC59FB';
+      if (type === 'keyword') return '#10B981';
       return '';
     };
 

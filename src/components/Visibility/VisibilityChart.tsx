@@ -43,6 +43,12 @@ const neutrals = {
   900: '#1a1d29',
 };
 
+interface Model {
+  id: string;
+  name: string;
+  color?: string;
+}
+
 interface VisibilityChartProps {
   data: {
     labels: string[];
@@ -57,13 +63,15 @@ interface VisibilityChartProps {
   selectedModels: string[];
   loading?: boolean;
   activeTab: string;
+  models?: Model[];
 }
 
 export const VisibilityChart = ({
   data,
   selectedModels = [],
   loading = false,
-  activeTab = 'brand'
+  activeTab = 'brand',
+  models = []
 }: VisibilityChartProps) => {
   const chartRef = useRef(null);
 
@@ -78,7 +86,9 @@ export const VisibilityChart = ({
       const modelData = data.datasets.find(d => d.id === modelId);
       if (!modelData) return null;
 
-      const color = chartColors[colorKeys[index % colorKeys.length] as keyof typeof chartColors];
+      // Use color from model if available, otherwise fall back to generic color palette
+      const model = models.find(m => m.id === modelId);
+      const color = model?.color || chartColors[colorKeys[index % colorKeys.length] as keyof typeof chartColors];
 
       return {
         label: modelData.label,
@@ -97,7 +107,7 @@ export const VisibilityChart = ({
       labels: data.labels,
       datasets
     };
-  }, [data, selectedModels]);
+  }, [data, selectedModels, models]);
 
   const options = useMemo(() => ({
     responsive: true,
@@ -111,18 +121,30 @@ export const VisibilityChart = ({
       legend: {
         display: true,
         position: 'bottom' as const,
-        align: 'center' as const,
+        align: 'start' as const,
         labels: {
-          color: neutrals[800],
+          usePointStyle: true,
+          pointStyle: 'line',
+          padding: 15,
           font: {
-            size: 12,
-            weight: 500,
+            size: 11,
             family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            weight: 400,
           },
-          padding: 16,
-          boxWidth: 10,
-          boxHeight: 10,
-          usePointStyle: false,
+          color: neutrals[700],
+          generateLabels: (chart: any) => {
+            const datasets = chart.data.datasets || [];
+            return datasets.map((dataset: any, index: number) => {
+              return {
+                text: dataset.label || `Dataset ${index + 1}`,
+                fillStyle: dataset.borderColor || dataset.backgroundColor,
+                strokeStyle: dataset.borderColor || dataset.backgroundColor,
+                lineWidth: 2,
+                hidden: !chart.isDatasetVisible(index),
+                index: index,
+              };
+            });
+          },
         },
       },
       tooltip: {
@@ -133,7 +155,7 @@ export const VisibilityChart = ({
         borderColor: neutrals[300],
         borderWidth: 1,
         padding: 10,
-        displayColors: true,
+        displayColors: false,
         boxPadding: 6,
         position: 'nearest' as const,
         xAlign: 'right' as const,
@@ -166,8 +188,8 @@ export const VisibilityChart = ({
     },
     scales: {
       y: {
-        beginAtZero: false,
-        min: 40,
+        beginAtZero: true,
+        min: 0,
         max: 100,
         ticks: {
           color: neutrals[700],
@@ -212,7 +234,7 @@ export const VisibilityChart = ({
       padding: {
         top: 16,
         right: 16,
-        bottom: 12,
+        bottom: 40,
         left: 8,
       },
     },

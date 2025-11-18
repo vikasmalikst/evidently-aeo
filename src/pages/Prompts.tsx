@@ -54,7 +54,7 @@ const getDateBounds = (preset: DatePreset) => {
 export const Prompts = () => {
   const [selectedPrompt, setSelectedPrompt] = useState<PromptEntry | null>(null);
   const navigate = useNavigate();
-  const [selectedLLMs, setSelectedLLMs] = useState<string[]>([]);
+  const [selectedLLM, setSelectedLLM] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState('us');
   const [dateRangeKey, setDateRangeKey] = useState<string>(DATE_PRESETS[2]?.value ?? 'last30');
   const [topics, setTopics] = useState<PromptTopic[]>([]);
@@ -62,7 +62,7 @@ export const Prompts = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { brands, selectedBrandId, selectedBrand, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  const { brands, selectedBrandId, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
 
   const dateRangeOptions = useMemo(
     () =>
@@ -105,8 +105,8 @@ export const Prompts = () => {
           endDate: bounds.endIso
         });
 
-        if (selectedLLMs.length > 0) {
-          params.set('collectors', selectedLLMs.join(','));
+        if (selectedLLM) {
+          params.set('collectors', selectedLLM);
         }
 
         const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
@@ -126,12 +126,12 @@ export const Prompts = () => {
 
         setTopics(normalizedTopics);
         setLlmOptions(availableCollectors);
-        setSelectedLLMs((current) => {
-          const filtered = current.filter((collector) => availableCollectors.includes(collector));
-          const unchanged =
-            filtered.length === current.length &&
-            filtered.every((value, index) => value === current[index]);
-          return unchanged ? current : filtered;
+        // Set default to first available LLM if none selected or current selection is invalid
+        setSelectedLLM((current) => {
+          if (current && availableCollectors.includes(current)) {
+            return current;
+          }
+          return availableCollectors.length > 0 ? availableCollectors[0] : null;
         });
 
         const flattenedPrompts = normalizedTopics.flatMap((topic) => topic.prompts);
@@ -167,7 +167,7 @@ export const Prompts = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedBrandId, dateRangeKey, selectedLLMs, brandsLoading]);
+  }, [selectedBrandId, dateRangeKey, selectedLLM, brandsLoading]);
 
   const handleManagePrompts = () => {
     navigate('/settings/manage-prompts');
@@ -195,8 +195,8 @@ export const Prompts = () => {
 
         <PromptFilters
           llmOptions={llmOptions}
-          selectedLLMs={selectedLLMs}
-          onLLMChange={setSelectedLLMs}
+          selectedLLM={selectedLLM}
+          onLLMChange={setSelectedLLM}
           selectedRegion={selectedRegion}
           onRegionChange={setSelectedRegion}
           brands={brands}

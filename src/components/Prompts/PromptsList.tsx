@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, CalendarDays } from 'lucide-react';
 import { PromptEntry, PromptTopic } from '../../types/prompts';
 
@@ -43,14 +43,6 @@ export const PromptsList = ({
     });
   }, [topics]);
 
-  const volumeFormatter = useMemo(
-    () =>
-      new Intl.NumberFormat(undefined, {
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1
-      }),
-    []
-  );
 
   const toggleTopic = (topicId: string) => {
     setExpandedTopics((current) =>
@@ -91,7 +83,7 @@ export const PromptsList = ({
           <thead className="bg-[var(--bg-secondary)] border-b border-[var(--border-default)]">
             <tr>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-4 py-2">Prompt</th>
-              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-20">Volume</th>
+              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-24">Visibility</th>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-32">Sentiment</th>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-4 py-2 w-32">Topic</th>
             </tr>
@@ -112,98 +104,102 @@ export const PromptsList = ({
           </div>
         )}
 
-        {topics.map((topic) => {
-          if (topic.prompts.length === 0) {
-            return null;
-          }
+        <table className="w-full">
+          <tbody>
+            {topics.map((topic) => {
+              if (topic.prompts.length === 0) {
+                return null;
+              }
 
-          const isExpanded = expandedTopics.includes(topic.id);
+              const isExpanded = expandedTopics.includes(topic.id);
 
-          return (
-            <div key={topic.id} className="border-b border-[var(--border-default)] last:border-b-0">
-              <button
-                onClick={() => toggleTopic(topic.id)}
-                className="w-full flex items-center justify-between px-4 py-2 hover:bg-[var(--bg-secondary)] transition-colors text-left"
-              >
-                <div className="flex items-center gap-2">
-                  {isExpanded ? (
-                    <ChevronDown size={16} className="text-[var(--text-caption)]" />
-                  ) : (
-                    <ChevronRight size={16} className="text-[var(--text-caption)]" />
-                  )}
-                  <span className="text-sm font-semibold text-[var(--text-headings)]">
-                    {topic.name}
-                  </span>
-                  <span className="text-xs text-[var(--text-caption)]">
-                    ({topic.promptCount})
-                  </span>
-                </div>
-              </button>
+              return (
+                <>
+                  <tr key={topic.id} className="border-b border-[var(--border-default)]">
+                    <td className="px-4 py-2">
+                      <button
+                        onClick={() => toggleTopic(topic.id)}
+                        className="w-full flex items-center gap-2 hover:bg-[var(--bg-secondary)] transition-colors text-left"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown size={16} className="text-[var(--text-caption)]" />
+                        ) : (
+                          <ChevronRight size={16} className="text-[var(--text-caption)]" />
+                        )}
+                        <span className="text-sm font-semibold text-[var(--text-headings)]">
+                          {topic.name}
+                        </span>
+                        <span className="text-xs text-[var(--text-caption)]">
+                          ({topic.promptCount})
+                        </span>
+                      </button>
+                    </td>
+                    <td className="px-2 py-2 w-24 text-center">
+                      <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                        {topic.visibilityScore !== null ? `${topic.visibilityScore.toFixed(1)}` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 w-32 text-center">
+                      <span className="text-sm font-medium text-[var(--text-caption)]">
+                        {topic.sentimentScore !== null ? `${topic.sentimentScore.toFixed(1)}` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 w-32"></td>
+                  </tr>
+                  {isExpanded &&
+                    topic.prompts.map((prompt) => {
+                      const isSelected = selectedPromptId === prompt.id;
 
-              {isExpanded && (
-                <div>
-                  <table className="w-full">
-                    <tbody>
-                      {topic.prompts.map((prompt) => {
-                        const isSelected = selectedPromptId === prompt.id;
-
-                        return (
-                          <tr
-                            key={prompt.id}
-                            onClick={() => handlePromptClick(prompt)}
-                            className={`cursor-pointer border-t border-[var(--border-default)] transition-all ${
-                              isSelected
-                                ? 'bg-[var(--accent-light)]'
-                                : 'hover:bg-[var(--bg-secondary)]'
-                            }`}
-                          >
-                            <td className="px-4 py-3">
-                              <p className="text-sm text-[var(--text-body)] font-data leading-snug">
-                                {prompt.question}
-                              </p>
-                              {prompt.collectorTypes.length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {prompt.collectorTypes.map((collector) => (
-                                    <span
-                                      key={collector}
-                                      className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[10px] font-semibold text-[var(--text-caption)]"
-                                    >
-                                      {collector}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-2 py-3 w-20 text-center">
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-sm font-semibold font-data text-[var(--text-body)]">
-                                  {volumeFormatter.format(prompt.volumePercentage)}%
-                                </span>
-                                <span className="text-[10px] text-[var(--text-caption)] font-medium">
-                                  {prompt.volumeCount} responses
-                                </span>
+                      return (
+                        <tr
+                          key={prompt.id}
+                          onClick={() => handlePromptClick(prompt)}
+                          className={`cursor-pointer border-b border-[var(--border-default)] transition-all ${
+                            isSelected
+                              ? 'bg-[var(--accent-light)]'
+                              : 'hover:bg-[var(--bg-secondary)]'
+                          }`}
+                        >
+                          <td className="px-4 py-3">
+                            <p className="text-sm text-[var(--text-body)] font-data leading-snug">
+                              {prompt.question}
+                            </p>
+                            {prompt.collectorTypes.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {prompt.collectorTypes.map((collector) => (
+                                  <span
+                                    key={collector}
+                                    className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[10px] font-semibold text-[var(--text-caption)]"
+                                  >
+                                    {collector}
+                                  </span>
+                                ))}
                               </div>
-                            </td>
-                            <td className="px-2 py-3 w-32 text-center">
-                              <span className="text-sm font-medium text-[var(--text-caption)]">
-                                {prompt.sentimentScore !== null ? `${prompt.sentimentScore.toFixed(1)}` : '—'}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 w-32 text-center">
-                              <span className="text-xs text-[var(--text-caption)] font-data">
-                                {topic.name}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                            )}
+                          </td>
+                          <td className="px-2 py-3 w-24 text-center">
+                            <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                              {prompt.visibilityScore !== null ? `${prompt.visibilityScore.toFixed(1)}` : '—'}
+                            </span>
+                          </td>
+                          <td className="px-2 py-3 w-32 text-center">
+                            <span className="text-sm font-medium text-[var(--text-caption)]">
+                              {prompt.sentimentScore !== null ? `${prompt.sentimentScore.toFixed(1)}` : '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 w-32 text-center">
+                            <span className="text-xs text-[var(--text-caption)] font-data">
+                              {topic.name}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

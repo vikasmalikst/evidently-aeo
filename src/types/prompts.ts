@@ -2,6 +2,7 @@ export interface PromptHighlights {
   brand: string[]
   products: string[]
   keywords: string[]
+  competitors: string[]
 }
 
 export interface PromptEntry {
@@ -17,6 +18,7 @@ export interface PromptEntry {
   volumePercentage: number
   volumeCount: number
   sentimentScore: number | null
+  visibilityScore: number | null
   highlights: PromptHighlights
 }
 
@@ -25,6 +27,8 @@ export interface PromptTopic {
   name: string
   promptCount: number
   volumeCount: number
+  visibilityScore: number | null
+  sentimentScore: number | null
   prompts: PromptEntry[]
 }
 

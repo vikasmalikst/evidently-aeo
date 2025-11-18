@@ -82,14 +82,14 @@ export const TopicsRacingBarChart = ({
   const avgIndustrySoA = useMemo(() => {
     if (!showComparison || sortedTopics.length === 0) return 0;
     const sum = sortedTopics.reduce((acc, topic) => {
-      const seed = (topic.id.charCodeAt(0) * 13) % 100;
-      const baseSoA = topic.currentSoA ?? (topic.soA * 20);
+    const seed = (topic.id.charCodeAt(0) * 13) % 100;
+    const baseSoA = topic.currentSoA ?? (topic.soA * 20);
       const industrySoA = Math.max(0, Math.min(100, baseSoA * (0.7 + (seed / 100) * 0.6)));
       return acc + industrySoA;
     }, 0);
     return sum / sortedTopics.length;
   }, [sortedTopics, showComparison]);
-
+  
   // Chart keys: brand, avgCompetitor (removed avgIndustry - now shown as marker line)
   const chartKeys = useMemo(() => {
     if (showComparison) {

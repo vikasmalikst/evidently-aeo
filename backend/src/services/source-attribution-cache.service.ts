@@ -65,7 +65,10 @@ export class SourceAttributionCacheService {
     startIso: string,
     endIso: string
   ): Promise<SourceSnapshotRow | null> {
+    const cacheLookupStart = Date.now()
     try {
+      // Use primary key lookup for optimal performance
+      const queryStart = Date.now()
       const { data, error } = await supabaseAdmin
         .from('source_attribution_snapshots')
         .select('payload, computed_at')
@@ -74,38 +77,48 @@ export class SourceAttributionCacheService {
         .eq('range_start', startIso)
         .eq('range_end', endIso)
         .maybeSingle()
+      const queryTime = Date.now() - queryStart
 
       if (error) {
-        console.warn('[SourceAttribution] Failed to load snapshot:', error)
+        console.warn(`[SourceAttribution] ❌ Cache query failed (${queryTime}ms):`, error)
         return null
       }
 
       if (!data) {
-        console.log(`[SourceAttribution] No cached snapshot found for brand ${brandId}, range ${startIso} → ${endIso}`)
+        const totalTime = Date.now() - cacheLookupStart
+        console.log(`[SourceAttribution] ⚠️ No cached snapshot found (query: ${queryTime}ms, total: ${totalTime}ms)`)
         return null
       }
 
+      const validationStart = Date.now()
       const payload = data.payload as SourceAttributionResponse
 
       // Validate cached payload structure - if invalid, treat as missing
       if (!this.isValidCachedPayload(payload)) {
-        console.log('[SourceAttribution] ⚠️ Cached payload structure invalid - will recompute')
+        const totalTime = Date.now() - cacheLookupStart
+        console.log(`[SourceAttribution] ⚠️ Cached payload structure invalid (query: ${queryTime}ms, validation: ${Date.now() - validationStart}ms, total: ${totalTime}ms) - will recompute`)
         return null
       }
 
       // Check if cache is still valid (within TTL)
+      const ageMs = this.getSnapshotAgeMs(data.computed_at)
       if (!this.isCacheValid(data.computed_at)) {
-        console.log(`[SourceAttribution] Cached snapshot expired (age: ${this.getSnapshotAgeMs(data.computed_at)}ms) - will recompute`)
+        const totalTime = Date.now() - cacheLookupStart
+        const ageMinutes = ageMs ? (ageMs / 60000).toFixed(1) : 'unknown'
+        console.log(`[SourceAttribution] ⏰ Cache expired (age: ${ageMinutes}min, TTL: 5min, query: ${queryTime}ms, total: ${totalTime}ms) - will recompute`)
         return null
       }
 
-      console.log(`[SourceAttribution] ✅ Found valid cached snapshot: ${payload.sources?.length ?? 0} sources`)
+      const totalTime = Date.now() - cacheLookupStart
+      const validationTime = Date.now() - validationStart
+      console.log(`[SourceAttribution] ✅ Cache HIT (query: ${queryTime}ms, validation: ${validationTime}ms, total: ${totalTime}ms) - ${payload.sources?.length ?? 0} sources`)
       return {
         payload,
         computed_at: data.computed_at
       }
     } catch (error) {
-      console.error('[SourceAttribution] Unexpected error in getCachedSourceAttribution:', error)
+      const totalTime = Date.now() - cacheLookupStart
+      console.error(`[SourceAttribution] ❌ Unexpected error in cache lookup (${totalTime}ms):`, error)
       return null
     }
   }

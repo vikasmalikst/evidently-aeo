@@ -1,7 +1,6 @@
 import { X } from 'lucide-react';
 import { ConfigurationComparison } from './ConfigurationComparison';
 import { ScoreDeltaVisualization } from './ScoreDeltaVisualization';
-import { ChartPreview } from './ChartPreview';
 import { RECALIBRATION_MESSAGES } from '../../utils/recalibrationMessages';
 import type { CurrentConfiguration, PendingChanges } from '../../hooks/usePromptConfiguration';
 import type { ImpactEstimate } from '../../utils/impactCalculator';
@@ -28,12 +27,6 @@ export const ImpactPreviewModal = ({
   isSubmitting
 }: ImpactPreviewModalProps) => {
   if (!isOpen) return null;
-
-  const recalibrationDate = new Date().toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
 
   return (
     <div
@@ -74,12 +67,6 @@ export const ImpactPreviewModal = ({
                 currentConfig={currentConfig}
                 effectiveConfig={effectiveConfig}
                 pendingChanges={pendingChanges}
-              />
-
-              <ChartPreview
-                currentScore={currentConfig.visibilityScore}
-                newScore={impact.newScore}
-                recalibrationDate={recalibrationDate}
               />
             </>
           )}

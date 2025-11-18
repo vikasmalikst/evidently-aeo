@@ -1,26 +1,37 @@
-refactor: improve topic management UI and add dev auth bypass
+feat: enhance Manage Prompts page UI and version revert functionality
 
-- Refactor TopicEditModal with improved filtering and UI
-  - Replace section-based layout with tab-based filtering (All/Trending/Recommended/General)
-  - Add category filtering via clickable category pills
-  - Add progress bar showing topic selection count
-  - Add "Currently Tracking" section with removable topic chips
-  - Move custom topic input inline with Add Topic button
-  - Improve review step with better visual feedback and version info
-  - Add floating info tip explaining filter usage
+- Add configuration version info icon with hover tooltip
+  - Display info icon next to configuration version text
+  - Show tooltip explaining configuration versions on hover
+  - Use brand teal color for info icon
 
-- Update Settings navigation and labels
-  - Change "Topic Configuration" to "Manage Topics" for consistency
-  - Update SettingsLayout and Settings page labels
+- Improve coverage summary cards layout
+  - Center-align statistics in all coverage cards
+  - Extend cards width to match prompts section (col-span-6)
+  - Use flex layout with min-width for responsive card sizing
 
-- Enhance ChartControls component
-  - Add brand selector dropdown when multiple brands available
-  - Improve dropdown selection logic for brand filtering
+- Enhance configuration history section
+  - Constrain width to match prompts section width
+  - Remove bottom border from version info section
+  - Display version info and revert button below header, right-aligned
 
-- Add development authentication bypass
-  - Add BYPASS_AUTH_IN_DEV environment variable support
-  - Update auth middleware to bypass authentication in dev mode
-  - Set mock dev user when bypass is enabled
+- Add version revert functionality
+  - Show "Configuration Version vX • Date" with warning 600 color
+  - Add "Revert to vX" button next to version info
+  - Calculate all differences between current and selected version
+  - Present proposed changes modal before applying revert
+  - Enable complete revert including all topics and prompts
+  - Replace entire topics structure on confirmation
 
-- Update SearchVisibility to support brand switching
-  - Pass brand props to ChartControls for brand selection
+- Fix prompt action buttons visibility
+  - Show edit/delete/add buttons when selectedVersion is null or undefined
+  - Ensure buttons are visible in all valid states
+
+- Improve prompt editing UI
+  - Right-align save and cancel buttons when editing
+  - Position save button rightmost, cancel to its left
+
+- Update recalibration flow components
+  - Enhance ImpactPreviewModal for version revert scenarios
+  - Update ConfigurationComparison to show all changes
+  - Improve ScoreDeltaVisualization display

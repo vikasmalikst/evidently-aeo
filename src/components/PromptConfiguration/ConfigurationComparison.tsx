@@ -31,13 +31,7 @@ export const ConfigurationComparison = ({
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider">Coverage:</span>
-            <span className="text-lg font-bold text-[var(--text-headings)]">
-              {currentConfig.coverage.toFixed(1)}%
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider">Score:</span>
+            <span className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider">Current Score:</span>
             <span className="text-lg font-bold text-[var(--text-headings)]">
               {currentConfig.visibilityScore.toFixed(1)}
             </span>
@@ -78,15 +72,9 @@ export const ConfigurationComparison = ({
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider">Coverage:</span>
-            <span className="text-lg font-bold text-[var(--success500)]">
-              {effectiveConfig.coverage.toFixed(1)}%
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider">Score:</span>
-            <span className="text-lg font-bold text-[var(--success500)]">
-              {effectiveConfig.visibilityScore.toFixed(1)}
+            <span className="text-sm text-[var(--text-body)]">
+              Visibility Score will be recalculated
             </span>
           </div>
         </div>

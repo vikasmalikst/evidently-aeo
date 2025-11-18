@@ -3,20 +3,384 @@ import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { ManagePromptsList } from '../components/Settings/ManagePromptsList';
 import { ResponseViewer } from '../components/Prompts/ResponseViewer';
-import { PromptConfigurationWorkflow } from '../components/PromptConfiguration';
 import { topicsToConfiguration } from '../utils/promptConfigAdapter';
 import { mockPromptsData, type Prompt, type Topic } from '../data/mockPromptsData';
-import { useNavigate } from 'react-router-dom';
-import { CheckCircle, AlertCircle } from 'lucide-react';
+import { IconForms, IconTags, IconUmbrella, IconEye, IconHistory, IconInfoCircle } from '@tabler/icons-react';
+import { Eye, RotateCcw, GitCompare, X } from 'lucide-react';
+import type { PromptEntry } from '../types/prompts';
 
-export const ManagePrompts = () => {
-  const navigate = useNavigate();
+// Configuration version type for prompts
+type PromptChangeType = 'initial_setup' | 'prompt_added' | 'prompt_removed' | 'prompt_edited';
+
+interface PromptConfiguration {
+  id: string;
+  version: number;
+  is_active: boolean;
+  change_type: PromptChangeType;
+  change_summary: string;
+  topics: Topic[];
+  created_at: string;
+  analysis_count: number;
+}
+
+// Convert Prompt to PromptEntry format for ResponseViewer
+const convertPromptToEntry = (prompt: Prompt, topicName: string): PromptEntry => {
+  return {
+    id: prompt.id.toString(),
+    queryId: null,
+    collectorResultId: null,
+    question: prompt.text,
+    topic: topicName,
+    collectorTypes: [],
+    latestCollectorType: null,
+    lastUpdated: prompt.lastUpdated,
+    response: prompt.response || null,
+    volumePercentage: prompt.volume,
+    volumeCount: 0,
+    sentimentScore: prompt.sentiment,
+    highlights: {
+      brand: prompt.keywords.brand || [],
+      products: prompt.keywords.target || [], // Map target to products
+      keywords: prompt.keywords.top || [] // Map top to keywords
+    }
+  };
+};
+
+// Mock configuration history data
+const createMockConfigHistory = (currentTopics: Topic[]): PromptConfiguration[] => {
+  const now = new Date();
+  
+  return [
+    {
+      id: 'config-3',
+      version: 3,
+      is_active: true,
+      change_type: 'prompt_edited',
+      change_summary: 'Updated prompts in Product Features and Pricing topics',
+      topics: currentTopics,
+      created_at: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days ago
+      analysis_count: 12
+    },
+    {
+      id: 'config-2',
+      version: 2,
+      is_active: false,
+      change_type: 'prompt_added',
+      change_summary: 'Added 5 new prompts across Security and Performance topics',
+      topics: currentTopics.slice(0, 6), // Simulate fewer topics
+      created_at: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days ago
+      analysis_count: 8
+    },
+    {
+      id: 'config-1',
+      version: 1,
+      is_active: false,
+      change_type: 'initial_setup',
+      change_summary: 'Initial prompt configuration setup',
+      topics: currentTopics.slice(0, 4), // Simulate initial setup with fewer topics
+      created_at: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days ago
+      analysis_count: 3
+    }
+  ];
+};
+
+// Timeline Item Component for Prompts
+interface PromptTimelineItemProps {
+  config: PromptConfiguration;
+  isActive: boolean;
+  isLast: boolean;
+  onView: () => void;
+  onRevert: () => void;
+  onCompare: () => void;
+}
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const PromptTimelineItem = ({
+  config,
+  isActive,
+  isLast,
+  onView,
+  onRevert,
+  onCompare,
+}: PromptTimelineItemProps) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const totalPrompts = config.topics.reduce((sum, topic) => sum + topic.prompts.length, 0);
+
+  return (
+    <div className="relative flex gap-4">
+      {/* Timeline connector line */}
+      {!isLast && (
+        <div className="absolute left-[11px] top-8 bottom-0 w-0.5 bg-[var(--border-default)]" />
+      )}
+
+      {/* Version circle */}
+      <div
+        className={`relative z-10 flex-shrink-0 w-6 h-6 rounded-full border-2 ${
+          isActive
+            ? 'bg-[var(--accent-primary)] border-[var(--accent-primary)]'
+            : 'bg-white border-[var(--border-default)]'
+        }`}
+      />
+
+      {/* Content */}
+      <div className="flex-1 pb-6">
+        <div className="bg-white border border-[var(--border-default)] rounded-lg p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-semibold text-[var(--text-headings)]">
+                  v{config.version}
+                </span>
+                {isActive && (
+                  <span className="px-2 py-0.5 bg-[var(--success500)]/20 text-[var(--success500)] rounded text-xs font-medium">
+                    Active
+                  </span>
+                )}
+                <span className="text-sm text-[var(--text-caption)]">
+                  {formatDate(config.created_at)}
+                </span>
+              </div>
+              <p className="text-sm text-[var(--text-body)] mb-2">
+                {config.change_summary}
+              </p>
+              <p className="text-xs text-[var(--text-caption)]">
+                {config.topics.length} topics • {totalPrompts} prompts • Used by {config.analysis_count} analyses
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={onView}
+                className="p-2 hover:bg-[var(--bg-secondary)] rounded-lg transition-colors"
+                title="View details"
+              >
+                <Eye size={16} className="text-[var(--text-caption)]" />
+              </button>
+              {!isActive && (
+                <>
+                  <button
+                    onClick={onRevert}
+                    className="p-2 hover:bg-[var(--bg-secondary)] rounded-lg transition-colors"
+                    title="Revert to this version"
+                  >
+                    <RotateCcw size={16} className="text-[var(--text-caption)]" />
+                  </button>
+                  <button
+                    onClick={onCompare}
+                    className="p-2 hover:bg-[var(--bg-secondary)] rounded-lg transition-colors"
+                    title="Compare with current"
+                  >
+                    <GitCompare size={16} className="text-[var(--text-caption)]" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {isExpanded && (
+            <div className="mt-4 pt-4 border-t border-[var(--border-default)]">
+              <div className="flex flex-wrap gap-2">
+                {config.topics.map((topic) => (
+                  <span
+                    key={topic.id}
+                    className="px-2 py-1 bg-[var(--bg-secondary)] rounded text-xs text-[var(--text-body)]"
+                  >
+                    {topic.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="mt-2 text-xs text-[var(--accent-primary)] hover:underline"
+          >
+            {isExpanded ? 'Show less' : 'Show topics'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// History Section Component for Prompts
+interface PromptHistorySectionProps {
+  history: PromptConfiguration[];
+  currentVersion: number;
+  onViewVersion: (config: PromptConfiguration) => void;
+  onRevertVersion: (versionId: string) => void;
+  onCompareVersion: (config: PromptConfiguration) => void;
+}
+
+const PromptHistorySection = ({
+  history,
+  currentVersion,
+  onViewVersion,
+  onRevertVersion,
+  onCompareVersion,
+}: PromptHistorySectionProps) => {
+  return (
+    <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm p-6">
+      <h2 className="text-xl font-semibold text-[var(--text-headings)] mb-4">
+        Configuration History
+      </h2>
+
+      <div className="mb-4 p-3 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-default)]">
+        <p className="text-sm text-[var(--text-body)] leading-relaxed">
+          Past analyses are not affected by prompt changes. All historical data is preserved, and changes only apply to future analyses.
+        </p>
+      </div>
+
+      {history.length === 0 ? (
+        <p className="text-sm text-[var(--text-caption)] text-center py-8">
+          No configuration history available
+        </p>
+      ) : (
+        <div className="space-y-0">
+          {history.map((config, index) => (
+            <PromptTimelineItem
+              key={config.id}
+              config={config}
+              isActive={config.version === currentVersion}
+              isLast={index === history.length - 1}
+              onView={() => onViewVersion(config)}
+              onRevert={() => onRevertVersion(config.id)}
+              onCompare={() => onCompareVersion(config)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// History Modal Component for Prompts
+interface PromptHistoryModalProps {
+  history: PromptConfiguration[];
+  currentVersion: number;
+  isOpen: boolean;
+  onClose: () => void;
+  onViewVersion: (config: PromptConfiguration) => void;
+  onRevertVersion: (versionId: string) => void;
+  onCompareVersion: (config: PromptConfiguration) => void;
+}
+
+const PromptHistoryModal = ({
+  history,
+  currentVersion,
+  isOpen,
+  onClose,
+  onViewVersion,
+  onRevertVersion,
+  onCompareVersion,
+}: PromptHistoryModalProps) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div 
+        className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-[var(--border-default)]">
+          <h2 className="text-2xl font-semibold text-[var(--text-headings)]">
+            Configuration History
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-[var(--bg-secondary)] rounded-lg transition-colors"
+          >
+            <X size={24} className="text-[var(--text-caption)]" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <PromptHistorySection
+            history={history}
+            currentVersion={currentVersion}
+            onViewVersion={onViewVersion}
+            onRevertVersion={onRevertVersion}
+            onCompareVersion={onCompareVersion}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Compact Configuration History Component
+// This component displays a compact view of configuration history
+interface CompactHistoryCardProps {
+  history: PromptConfiguration[];
+  onViewTimeline: () => void;
+}
+
+const CompactHistoryCard = ({
+  history,
+  onViewTimeline,
+}: CompactHistoryCardProps) => {
+  const versionCount = history.length;
+
+  return (
+    <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm p-4 mb-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">
+            <IconHistory size={20} className="text-[var(--accent-primary)]" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--text-headings)]">
+              Configuration History
+            </h3>
+            <p className="text-xs text-[var(--text-caption)]">
+              {versionCount} {versionCount === 1 ? 'version' : 'versions'} • Can revert anytime
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onViewTimeline}
+          className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--accent-primary)] hover:bg-[var(--accent-light)] rounded-lg transition-colors font-medium"
+        >
+          View Timeline
+          <span>→</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export const ManagePrompts = () => {  
   const [topics, setTopics] = useState<Topic[]>(mockPromptsData);
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
+  const [selectedTopicName, setSelectedTopicName] = useState<string>('');
   const [dateRange, setDateRange] = useState('30d');
-  const [hasChanges, setHasChanges] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  
+  // Configuration version data
+  const configHistory = useMemo(() => createMockConfigHistory(topics), [topics]);
+  const currentConfigVersion = configHistory.find(c => c.is_active)?.version || configHistory[0]?.version || 1;
+  
+  // Get topics for selected version, or current topics if no version selected
+  const displayedTopics = useMemo(() => {
+    if (selectedVersion === null) {
+      return topics;
+    }
+    const selectedConfig = configHistory.find(c => c.version === selectedVersion);
+    return selectedConfig ? selectedConfig.topics : topics;
+  }, [selectedVersion, configHistory, topics]);
 
-  // Convert topics to configuration format for the workflow
+  // Convert topics to configuration format for summary stats
   const currentConfig = useMemo(() => {
     return topicsToConfiguration(topics, 94, 72.4);
   }, [topics]);
@@ -39,17 +403,12 @@ export const ManagePrompts = () => {
     return 'text-[var(--dataviz-4)]';
   };
 
-  const getCoverageIcon = (coverage: number) => {
-    if (coverage >= 90) return <CheckCircle size={16} className="text-[var(--success500)]" />;
-    return <AlertCircle size={16} className="text-[var(--dataviz-4)]" />;
-  };
-
-  const handlePromptSelect = (prompt: Prompt) => {
+  const handlePromptSelect = (prompt: Prompt, topicName: string) => {
     setSelectedPrompt(prompt);
+    setSelectedTopicName(topicName);
   };
 
   const handlePromptEdit = useCallback((prompt: Prompt, newText: string) => {
-    setHasChanges(true);
     setTopics(prevTopics => 
       prevTopics.map(topic => ({
         ...topic,
@@ -66,7 +425,6 @@ export const ManagePrompts = () => {
   }, [selectedPrompt]);
 
   const handlePromptDelete = useCallback((prompt: Prompt) => {
-    setHasChanges(true);
     setTopics(prevTopics => 
       prevTopics.map(topic => ({
         ...topic,
@@ -81,7 +439,6 @@ export const ManagePrompts = () => {
   }, [selectedPrompt]);
 
   const handlePromptAdd = useCallback((topicId: number, promptText: string) => {
-    setHasChanges(true);
     // Find the topic and create a new prompt
     const topic = topics.find(t => t.id === topicId);
     if (!topic) return;
@@ -111,48 +468,42 @@ export const ManagePrompts = () => {
     );
   }, [topics]);
 
-  // Handler for workflow changes - syncs back to topics state
-  const handleWorkflowChanges = useCallback((updatedConfig: typeof currentConfig) => {
-    // Convert configuration back to topics format
-    // This is a simplified sync - in production, you'd want more robust mapping
-    setTopics(prevTopics => {
-      const updatedTopics = prevTopics.map(topic => ({
-        ...topic,
-        prompts: topic.prompts.map(prompt => {
-          const configPrompt = updatedConfig.prompts.find(cp => cp.id === prompt.id);
-          if (configPrompt) {
-            return {
-              ...prompt,
-              text: configPrompt.text,
-              // Note: isSelected state is managed differently in the workflow
-            };
-          }
-          return prompt;
-        })
-      }));
+  const handleChangesApplied = useCallback(() => {
+    // Called when changes are confirmed and applied
+    // Could refresh data or show success message here
+  }, []);
 
-      // Add new prompts from workflow
-      const newPrompts = updatedConfig.prompts.filter(cp => cp.id < 0); // Temporary IDs
-      newPrompts.forEach(newPrompt => {
-        const topic = updatedTopics.find(t => t.name === newPrompt.topic);
-        if (topic) {
-          const maxId = Math.max(...updatedTopics.flatMap(t => t.prompts.map(p => p.id)), 0);
-          topic.prompts.push({
-            id: maxId + 1,
-            text: newPrompt.text,
-            response: '',
-            lastUpdated: new Date().toISOString().split('T')[0],
-            sentiment: 3,
-            volume: 0,
-            keywords: { brand: [], target: [], top: [] }
-          });
-        }
-      });
+  const handleTopicsReplace = useCallback((newTopics: Topic[]) => {
+    setTopics(newTopics);
+  }, []);
 
-      return updatedTopics;
-    });
+  const handleViewTimeline = useCallback(() => {
+    setShowHistoryModal(true);
+  }, []);
 
-    setHasChanges(false);
+  const handleCloseHistoryModal = useCallback(() => {
+    setShowHistoryModal(false);
+  }, []);
+
+  const handleViewVersion = useCallback((config: PromptConfiguration) => {
+    // TODO: Implement view version functionality
+    console.log('View version:', config);
+  }, []);
+
+  const handleRevertVersion = useCallback((versionId: string) => {
+    // TODO: Implement revert version functionality
+    console.log('Revert to version:', versionId);
+    // After reverting, close the modal
+    setShowHistoryModal(false);
+  }, []);
+
+  const handleCompareVersion = useCallback((config: PromptConfiguration) => {
+    // TODO: Implement compare version functionality
+    console.log('Compare version:', config);
+  }, []);
+
+  const handleVersionChange = useCallback((version: number | null) => {
+    setSelectedVersion(version);
   }, []);
 
   return (
@@ -169,106 +520,150 @@ export const ManagePrompts = () => {
           </div>
 
           {/* Prompt Coverage Summary */}
-          <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm p-6 mb-6">
-            <h3 className="text-lg font-semibold text-[var(--text-headings)] mb-4">
-              Prompt Coverage Summary
-            </h3>
+          <div className="mb-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-[var(--text-headings)] mb-1">
+                Prompt Coverage Summary
+              </h3>
+              {currentConfigVersion && configHistory.length > 0 && (() => {
+                const currentConfig = configHistory.find(c => c.is_active) || configHistory[0];
+                return (
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-[var(--text-caption)]">
+                      Configuration version v{currentConfigVersion} • Created {formatDate(currentConfig.created_at)}
+                    </p>
+                    <div className="relative group">
+                      <IconInfoCircle 
+                        size={16} 
+                        className="text-[var(--accent-primary)] cursor-help" 
+                      />
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-[var(--text-headings)] text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 pointer-events-none">
+                        Configuration versions track changes to your prompt setup. Each time you add, remove, or edit prompts, a new version is created. Past analyses remain unchanged, and you can revert to any previous version at any time.
+                        <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[var(--text-headings)]"></div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
             
-            <div className="grid grid-cols-4 gap-6">
-              {/* Total Prompts */}
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[var(--dataviz-1)]/10 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[var(--dataviz-1)] font-semibold text-sm">{summaryStats.totalPrompts}</span>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider mb-1">
-                    Total Prompts
+            <div className="grid grid-cols-10 gap-6">
+              <div className="col-span-6">
+                <div className="flex flex-wrap gap-4">
+                  {/* Total Prompts Card */}
+                  <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm p-5 flex-1 min-w-[200px] hover:shadow-md transition-all">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-lg bg-[var(--accent-primary)]/10 flex items-center justify-center flex-shrink-0">
+                        <IconForms size={20} className="text-[var(--accent-primary)]" />
+                      </div>
+                      <div className="text-sm font-semibold text-[var(--text-headings)]">
+                        Total Prompts
+                      </div>
+                    </div>
+                    <div className="text-3xl font-bold text-[var(--text-headings)] text-center">
+                      {summaryStats.totalPrompts}
+                    </div>
                   </div>
-                  <div className="text-2xl font-bold text-[var(--text-headings)]">
-                    {summaryStats.totalPrompts}
-                  </div>
-                </div>
-              </div>
 
-              {/* Total Topics */}
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[var(--dataviz-2)]/10 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[var(--dataviz-2)] font-semibold text-sm">{summaryStats.totalTopics}</span>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider mb-1">
-                    Topics Covered
+                  {/* Total Topics Card */}
+                  <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm p-5 flex-1 min-w-[200px] hover:shadow-md transition-all">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-lg bg-[var(--accent-primary)]/10 flex items-center justify-center flex-shrink-0">
+                        <IconTags size={20} className="text-[var(--accent-primary)]" />
+                      </div>
+                      <div className="text-sm font-semibold text-[var(--text-headings)]">
+                        Topics Covered
+                      </div>
+                    </div>
+                    <div className="text-3xl font-bold text-[var(--text-headings)] text-center">
+                      {summaryStats.totalTopics}
+                    </div>
                   </div>
-                  <div className="text-2xl font-bold text-[var(--text-headings)]">
-                    {summaryStats.totalTopics}
-                  </div>
-                </div>
-              </div>
 
-              {/* Coverage */}
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[var(--success500)]/10 flex items-center justify-center flex-shrink-0">
-                  {getCoverageIcon(summaryStats.coverage)}
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider mb-1">
-                    Coverage
+                  {/* Coverage Card */}
+                  <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm p-5 flex-1 min-w-[200px] hover:shadow-md transition-all">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-lg bg-[var(--success500)]/10 flex items-center justify-center flex-shrink-0">
+                        <IconUmbrella size={20} className={`${getCoverageColor(summaryStats.coverage)}`} />
+                      </div>
+                      <div className="text-sm font-semibold text-[var(--text-headings)]">
+                        Coverage
+                      </div>
+                    </div>
+                    <div className={`text-3xl font-bold ${getCoverageColor(summaryStats.coverage)} text-center`}>
+                      {summaryStats.coverage.toFixed(1)}%
+                    </div>
                   </div>
-                  <div className={`text-2xl font-bold ${getCoverageColor(summaryStats.coverage)}`}>
-                    {summaryStats.coverage.toFixed(1)}%
-                  </div>
-                </div>
-              </div>
 
-              {/* Visibility Score */}
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[var(--accent-light)] flex items-center justify-center flex-shrink-0">
-                  <span className="text-[var(--accent-primary)] font-semibold text-sm">VS</span>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider mb-1">
-                    Visibility Score
-                  </div>
-                  <div className="text-2xl font-bold text-[var(--text-headings)]">
-                    {summaryStats.visibilityScore.toFixed(1)}
+                  {/* Visibility Score Card */}
+                  <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm p-5 flex-1 min-w-[200px] hover:shadow-md transition-all">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-lg bg-[var(--accent-primary)]/10 flex items-center justify-center flex-shrink-0">
+                        <IconEye size={20} className="text-[var(--accent-primary)]" />
+                      </div>
+                      <div className="text-sm font-semibold text-[var(--text-headings)]">
+                        Visibility Score
+                      </div>
+                    </div>
+                    <div className="text-3xl font-bold text-[var(--text-headings)] text-center">
+                      {summaryStats.visibilityScore.toFixed(1)}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Progressive Disclosure Workflow - Shows when changes are made */}
-          {hasChanges && (
-            <div className="mb-6">
-              <PromptConfigurationWorkflow
-                key={currentConfig.lastUpdated} // Reset workflow when config changes
-                initialConfig={currentConfig}
-                onViewChart={() => navigate('/prompts')}
-                onComplete={() => setHasChanges(false)}
-                onDismiss={() => setHasChanges(false)}
+          {/* Configuration History */}
+          <div className="grid grid-cols-10 gap-6">
+            <div className="col-span-6">
+              <CompactHistoryCard
+                history={configHistory}
+                onViewTimeline={handleViewTimeline}
               />
             </div>
-          )}
+          </div>
 
           <div className="grid grid-cols-10 gap-6">
             <div className="col-span-6">
               <ManagePromptsList
-                topics={topics}
+                topics={displayedTopics}
                 selectedPromptId={selectedPrompt?.id || null}
                 onPromptSelect={handlePromptSelect}
                 onPromptEdit={handlePromptEdit}
                 onPromptDelete={handlePromptDelete}
                 onPromptAdd={handlePromptAdd}
+                onTopicsReplace={handleTopicsReplace}
                 dateRange={dateRange}
                 onDateRangeChange={setDateRange}
+                onChangesApplied={handleChangesApplied}
+                currentConfigVersion={currentConfigVersion}
+                configHistory={configHistory}
+                selectedVersion={selectedVersion}
+                onVersionChange={handleVersionChange}
               />
             </div>
 
             <div className="col-span-4">
-              <ResponseViewer prompt={selectedPrompt} showHighlighting={false} />
+              <ResponseViewer 
+                prompt={selectedPrompt && selectedTopicName 
+                  ? convertPromptToEntry(selectedPrompt, selectedTopicName) 
+                  : null} 
+              />
             </div>
           </div>
         </div>
+
+        {/* History Modal */}
+        <PromptHistoryModal
+          history={configHistory}
+          currentVersion={currentConfigVersion}
+          isOpen={showHistoryModal}
+          onClose={handleCloseHistoryModal}
+          onViewVersion={handleViewVersion}
+          onRevertVersion={handleRevertVersion}
+          onCompareVersion={handleCompareVersion}
+        />
       </SettingsLayout>
     </Layout>
   );

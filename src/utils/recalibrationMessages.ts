@@ -12,7 +12,7 @@ export const RECALIBRATION_MESSAGES = {
     paragraph: "Your visibility score reflects how often your brand appears in AI responses to your specific prompts. When you change prompts, you're measuring something slightly different—not because your brand changed, but because the measurement changed. We use a dotted line to show exactly where this happens so you can compare apples to apples.",
     example: {
       title: "Example",
-      text: "If you remove questions about competitors, your visibility score might look lower. That's not because you lost visibility—it's because we're not asking about that topic anymore."
+      text: "If you remove questions about competitors, your visibility score time series may have a visual break, indicating a new configuration version was created. That's not because you lost visibility—it's because we're not asking about that topic anymore."
     }
   },
   

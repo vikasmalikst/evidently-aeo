@@ -107,13 +107,13 @@ export class SourceAttributionService {
       
       if (cached) {
         const ageMs = sourceAttributionCacheService.getAgeMs(cached.computed_at)
+        const ageMinutes = ageMs ? (ageMs / 60000).toFixed(1) : 'unknown'
         const totalTime = Date.now() - serviceStartTime;
-        console.log(`[SourceAttribution] ✅ Cache HIT for brand=${brandId} range=${startIso}→${endIso} (age: ${ageMs}ms, lookup: ${stepTimings['cache_lookup']}ms, total: ${totalTime}ms)`)
+        console.log(`[SourceAttribution] ✅ Cache HIT - returning cached data (age: ${ageMinutes}min, lookup: ${stepTimings['cache_lookup']}ms, total: ${totalTime}ms)`)
         return cached.payload
       }
       
-      console.log(`[SourceAttribution] ❌ Cache MISS for brand=${brandId} range=${startIso}→${endIso} (lookup: ${stepTimings['cache_lookup']}ms)`)
-      console.log(`[SourceAttribution] 🔄 Computing fresh data...`)
+      console.log(`[SourceAttribution] ❌ Cache MISS (lookup: ${stepTimings['cache_lookup']}ms) - computing fresh data...`)
 
       // Step 3: Get brand domain for comparison
       const brandDomainStartTime = Date.now();
@@ -207,8 +207,6 @@ export class SourceAttributionService {
         id: number;
         query_id: string | null;
         question: string | null;
-        total_brand_mentions: number | null;
-        has_brand_presence: boolean | null;
       }> = []
 
       if (collectorResultIds.length > 0) {
@@ -217,9 +215,7 @@ export class SourceAttributionService {
           .select(`
             id,
             query_id,
-            question,
-            total_brand_mentions,
-            has_brand_presence
+            question
           `)
           .in('id', collectorResultIds)
           .eq('brand_id', brandId)
@@ -259,12 +255,13 @@ export class SourceAttributionService {
         return topicName
       }
 
-      // Step 8: Fetch extracted positions (SoA, sentiment, topics)
+      // Step 8: Fetch extracted positions (SoA, sentiment, topics, mention counts)
       const positionsStartTime = Date.now();
       let extractedPositions: Array<{
         collector_result_id: number | null;
         share_of_answers_brand: number | null;
         sentiment_score: number | null;
+        total_brand_mentions: number | null;
         metadata: any;
       }> = []
 
@@ -275,6 +272,7 @@ export class SourceAttributionService {
             collector_result_id,
             share_of_answers_brand,
             sentiment_score,
+            total_brand_mentions,
             metadata
           `)
           .in('collector_result_id', collectorResultIds)
@@ -300,10 +298,11 @@ export class SourceAttributionService {
       )
       console.log(`[SourceAttribution] Created queryMap with ${queryMap.size} entries`)
       
-      // Create maps for share of answer and sentiment by collector_result_id
+      // Create maps for share of answer, sentiment, and mention counts by collector_result_id
       // Multiple positions can exist per collector_result_id, so we'll average them
       const shareOfAnswerByCollectorResult = new Map<number, number[]>()
       const sentimentByCollectorResult = new Map<number, number[]>()
+      const mentionCountsByCollectorResult = new Map<number, number[]>()
       
       for (const position of extractedPositions) {
         if (position.collector_result_id) {
@@ -323,6 +322,14 @@ export class SourceAttributionService {
               sentimentByCollectorResult.set(collectorId, [])
             }
             sentimentByCollectorResult.get(collectorId)!.push(toNumber(position.sentiment_score))
+          }
+          
+          // Collect mention counts (from extracted_positions, not collector_results)
+          if (position.total_brand_mentions !== null && position.total_brand_mentions !== undefined) {
+            if (!mentionCountsByCollectorResult.has(collectorId)) {
+              mentionCountsByCollectorResult.set(collectorId, [])
+            }
+            mentionCountsByCollectorResult.get(collectorId)!.push(toNumber(position.total_brand_mentions))
           }
         }
       }
@@ -450,6 +457,13 @@ export class SourceAttributionService {
             aggregate.sentimentValues.push(avgSentiment)
           }
           
+          // Get mention counts from extracted_positions (average if multiple)
+          const mentionCounts = mentionCountsByCollectorResult.get(citation.collector_result_id)
+          if (mentionCounts && mentionCounts.length > 0) {
+            const avgMentions = average(mentionCounts)
+            aggregate.mentionCounts.push(Math.round(avgMentions))
+          }
+          
           if (collectorResult) {
             // Add question/prompt from collector_results
             if (collectorResult.question) {
@@ -461,9 +475,6 @@ export class SourceAttributionService {
               }
             }
             
-            if (collectorResult.total_brand_mentions !== null && collectorResult.total_brand_mentions !== undefined) {
-              aggregate.mentionCounts.push(collectorResult.total_brand_mentions)
-            }
             // Also add query_id from collector result if citation doesn't have it
             if (!citation.query_id && collectorResult.query_id) {
               aggregate.queryIds.add(collectorResult.query_id)

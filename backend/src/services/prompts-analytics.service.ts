@@ -21,6 +21,7 @@ interface PromptHighlights {
   brand: string[]
   products: string[]
   keywords: string[]
+  competitors: string[]
 }
 
 interface PromptEntryPayload {
@@ -36,6 +37,7 @@ interface PromptEntryPayload {
   volumePercentage: number
   volumeCount: number
   sentimentScore: number | null
+  visibilityScore: number | null
   highlights: PromptHighlights
 }
 
@@ -44,6 +46,8 @@ interface PromptTopicPayload {
   name: string
   promptCount: number
   volumeCount: number
+  visibilityScore: number | null
+  sentimentScore: number | null
   prompts: PromptEntryPayload[]
 }
 
@@ -129,6 +133,35 @@ const extractProductNames = (...candidates: Array<MetadataRecord | null | undefi
     'productEntities',
     'productHighlights',
     'highlighted_products'
+  ]
+  const collected = new Set<string>()
+  for (const metadata of candidates) {
+    if (!metadata) continue
+    for (const key of keys) {
+      if (metadata[key] !== undefined) {
+        toArray(metadata[key]).forEach((value) => {
+          const sanitized = value.replace(/\s+/g, ' ').trim()
+          if (sanitized.length > 0) {
+            collected.add(sanitized)
+          }
+        })
+      }
+    }
+  }
+  return Array.from(collected)
+}
+
+const extractCompetitorNames = (...candidates: Array<MetadataRecord | null | undefined>): string[] => {
+  const keys = [
+    'competitors',
+    'competitor_names',
+    'competitorNames',
+    'competitor_entities',
+    'competitorEntities',
+    'competitor_mentions',
+    'competitorMentions',
+    'rivals',
+    'rival_names'
   ]
   const collected = new Set<string>()
   for (const metadata of candidates) {
@@ -304,8 +337,18 @@ export class PromptsAnalyticsService {
       (row) => typeof row?.collector_type === 'string' && typeof row?.raw_answer === 'string'
     )
 
+    // Fetch ALL available collectors for this brand (not filtered by current selection)
+    const { data: allCollectorRows } = await supabaseAdmin
+      .from('collector_results')
+      .select('collector_type')
+      .eq('brand_id', brandRow.id)
+      .eq('customer_id', customerId)
+      .gte('created_at', normalizedRange.startIsoBound)
+      .lte('created_at', normalizedRange.endIsoBound)
+      .not('raw_answer', 'is', null)
+
     const availableCollectors = new Set<string>()
-    rows.forEach((row) => {
+    ;(allCollectorRows ?? []).forEach((row) => {
       const collectorType = normalizeCollectorType(row.collector_type)
       if (collectorType) {
         availableCollectors.add(collectorType)
@@ -363,6 +406,7 @@ export class PromptsAnalyticsService {
         brand: Set<string>
         products: Set<string>
         keywords: Set<string>
+        competitors: Set<string>
       }
     }
 
@@ -410,7 +454,8 @@ export class PromptsAnalyticsService {
           highlights: {
             brand: new Set<string>(),
             products: new Set<string>(),
-            keywords: new Set<string>()
+            keywords: new Set<string>(),
+            competitors: new Set<string>()
           }
         })
       }
@@ -426,6 +471,9 @@ export class PromptsAnalyticsService {
 
       const productHighlights = extractProductNames(metadata, queryMetadata)
       productHighlights.forEach((product) => aggregate.highlights.products.add(product))
+
+      const competitorHighlights = extractCompetitorNames(metadata, queryMetadata)
+      competitorHighlights.forEach((competitor) => aggregate.highlights.competitors.add(competitor))
 
       const createdAt =
         typeof row.created_at === 'string' && row.created_at.trim().length > 0 ? row.created_at.trim() : null
@@ -552,11 +600,38 @@ export class PromptsAnalyticsService {
     })
     console.log(`📊 Matched keywords to ${keywordsMatched} out of ${promptAggregates.size} prompts`)
 
-    // Fetch sentiments from extracted_positions for these prompts
+    // Fetch competitor names from brand_competitors table
+    const { data: competitorRows, error: competitorError } = await supabaseAdmin
+      .from('brand_competitors')
+      .select('competitor_name')
+      .eq('brand_id', brandRow.id)
+      .eq('customer_id', customerId)
+
+    if (competitorError) {
+      console.warn(`Failed to load competitors: ${competitorError.message}`)
+    } else {
+      const competitorNames = (competitorRows ?? [])
+        .map((row) => {
+          const name = typeof row?.competitor_name === 'string' ? row.competitor_name.trim() : null
+          return name && name.length > 0 ? name : null
+        })
+        .filter((name): name is string => name !== null)
+
+      if (competitorNames.length > 0) {
+        console.log(`📊 Fetched ${competitorNames.length} competitors: ${competitorNames.join(', ')}`)
+        // Add competitors to all prompt aggregates
+        promptAggregates.forEach((aggregate) => {
+          competitorNames.forEach((name) => aggregate.highlights.competitors.add(name))
+        })
+      }
+    }
+
+    // Fetch sentiments and visibility scores from extracted_positions for these prompts
+    const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       const { data: sentimentRows, error: sentimentError } = await supabaseAdmin
         .from('extracted_positions')
-        .select('query_id, collector_result_id, sentiment_score, competitor_name')
+        .select('query_id, collector_result_id, sentiment_score, visibility_index, competitor_name')
         .eq('brand_id', brandRow.id)
         .eq('customer_id', customerId)
         .gte('processed_at', normalizedRange.startIsoBound)
@@ -574,35 +649,98 @@ export class PromptsAnalyticsService {
         console.warn(`Failed to load sentiments for prompts: ${sentimentError.message}`)
       } else {
         ;(sentimentRows ?? []).forEach((row: any) => {
-          const value =
+          const sentimentValue =
             typeof row?.sentiment_score === 'number'
               ? row.sentiment_score
               : typeof row?.sentiment_score === 'string'
                 ? Number(row.sentiment_score)
                 : null
-          if (value === null || !Number.isFinite(value)) {
-            return
-          }
-          const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
-          // Prefer brand rows when present; but store all and filter later
-          const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
-          const keyByCollector =
-            typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
+          if (sentimentValue !== null && Number.isFinite(sentimentValue)) {
+            const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
+            // Prefer brand rows when present; but store all and filter later
+            const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+            const keyByCollector =
+              typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
 
-          const pushValue = (key: string) => {
-            const arr = sentimentMap.get(key) ?? []
-            arr.push(value)
-            sentimentMap.set(key, arr)
+            const pushSentiment = (key: string) => {
+              const arr = sentimentMap.get(key) ?? []
+              arr.push(sentimentValue)
+              sentimentMap.set(key, arr)
+            }
+            if (keyByQuery) {
+              pushSentiment(keyByQuery + (isBrandRow ? ':brand' : ':all'))
+            }
+            if (keyByCollector) {
+              pushSentiment(keyByCollector + (isBrandRow ? ':brand' : ':all'))
+            }
           }
-          if (keyByQuery) {
-            pushValue(keyByQuery + (isBrandRow ? ':brand' : ':all'))
+
+          // Extract visibility scores (only from brand rows)
+          const visibilityValue =
+            typeof row?.visibility_index === 'number'
+              ? row.visibility_index
+              : typeof row?.visibility_index === 'string'
+                ? Number(row.visibility_index)
+                : null
+          if (visibilityValue !== null && Number.isFinite(visibilityValue)) {
+            const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
+            if (isBrandRow) {
+              const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+              const keyByCollector =
+                typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
+
+              const pushVisibility = (key: string) => {
+                const arr = visibilityMap.get(key) ?? []
+                arr.push(visibilityValue)
+                visibilityMap.set(key, arr)
+              }
+              if (keyByQuery) {
+                pushVisibility(keyByQuery)
+              }
+              if (keyByCollector) {
+                pushVisibility(keyByCollector)
+              }
+            }
           }
-          if (keyByCollector) {
-            pushValue(keyByCollector + (isBrandRow ? ':brand' : ':all'))
+
+          // Extract competitor names from extracted_positions
+          const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
+          if (!isBrandRow) {
+            const competitorName = String(row.competitor_name).trim()
+            if (competitorName.length > 0) {
+              const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+              const keyByCollector =
+                typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
+              if (keyByQuery) {
+                const aggregate = promptAggregates.get(keyByQuery)
+                if (aggregate) {
+                  aggregate.highlights.competitors.add(competitorName)
+                }
+              }
+              if (keyByCollector) {
+                const aggregate = promptAggregates.get(keyByCollector)
+                if (aggregate) {
+                  aggregate.highlights.competitors.add(competitorName)
+                }
+              }
+            }
           }
         })
       }
     }
+
+    // Remove competitor names from brand highlights to ensure they're highlighted as competitors
+    // Use case-insensitive matching to catch variations
+    promptAggregates.forEach((aggregate) => {
+      const competitorLower = new Set(Array.from(aggregate.highlights.competitors).map(c => c.toLowerCase()))
+      const brandNamesToRemove: string[] = []
+      aggregate.highlights.brand.forEach((brandName) => {
+        if (competitorLower.has(brandName.toLowerCase())) {
+          brandNamesToRemove.push(brandName)
+        }
+      })
+      brandNamesToRemove.forEach((name) => aggregate.highlights.brand.delete(name))
+    })
 
     const totalResponses = Array.from(promptAggregates.values()).reduce((sum, aggregate) => sum + aggregate.count, 0)
 
@@ -638,10 +776,23 @@ export class PromptsAnalyticsService {
         const avg = values.reduce((sum, v) => sum + v, 0) / values.length
         return roundToPrecision(avg, 1)
       })(),
+      visibilityScore: (() => {
+        const byQuery = aggregate.queryId ? visibilityMap.get(aggregate.queryId) ?? [] : []
+        const byCollector =
+          aggregate.collectorResultId !== null ? visibilityMap.get(`collector:${aggregate.collectorResultId}`) ?? [] : []
+        const values = [...byQuery, ...byCollector]
+        if (values.length === 0) {
+          return null
+        }
+        // Return average visibility (0-1 scale), rounded to 2 decimals, then convert to 0-100 scale
+        const avg = values.reduce((sum, v) => sum + v, 0) / values.length
+        return roundToPrecision(avg * 100, 1)
+      })(),
       highlights: {
         brand: Array.from(aggregate.highlights.brand),
         products: Array.from(aggregate.highlights.products),
-        keywords: Array.from(aggregate.highlights.keywords)
+        keywords: Array.from(aggregate.highlights.keywords),
+        competitors: Array.from(aggregate.highlights.competitors)
       }
     }))
 
@@ -655,6 +806,8 @@ export class PromptsAnalyticsService {
           name: prompt.topic || 'Uncategorized',
           promptCount: 0,
           volumeCount: 0,
+          visibilityScore: null,
+          sentimentScore: null,
           prompts: []
         })
       }
@@ -665,12 +818,34 @@ export class PromptsAnalyticsService {
     })
 
     const topics = Array.from(topicsMap.values())
-      .map((topic) => ({
-        ...topic,
-        prompts: topic.prompts
-          .slice()
-          .sort((a, b) => b.volumeCount - a.volumeCount || a.question.localeCompare(b.question))
-      }))
+      .map((topic) => {
+        // Calculate average visibility score for the topic
+        const visibilityScores = topic.prompts
+          .map((p) => p.visibilityScore)
+          .filter((v): v is number => v !== null)
+        const avgVisibility =
+          visibilityScores.length > 0
+            ? roundToPrecision(visibilityScores.reduce((sum, v) => sum + v, 0) / visibilityScores.length, 1)
+            : null
+
+        // Calculate average sentiment score for the topic
+        const sentimentScores = topic.prompts
+          .map((p) => p.sentimentScore)
+          .filter((v): v is number => v !== null)
+        const avgSentiment =
+          sentimentScores.length > 0
+            ? roundToPrecision(sentimentScores.reduce((sum, v) => sum + v, 0) / sentimentScores.length, 1)
+            : null
+
+        return {
+          ...topic,
+          visibilityScore: avgVisibility,
+          sentimentScore: avgSentiment,
+          prompts: topic.prompts
+            .slice()
+            .sort((a, b) => b.volumeCount - a.volumeCount || a.question.localeCompare(b.question))
+        }
+      })
       .sort((a, b) => b.volumeCount - a.volumeCount || a.name.localeCompare(b.name))
 
     return {

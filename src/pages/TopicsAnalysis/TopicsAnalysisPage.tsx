@@ -6,6 +6,14 @@ import { TopicAnalysisMultiView } from './components/TopicAnalysisMultiView';
 import { ChartTitle } from './components/ChartTitle';
 import { CountryFlag } from '../../components/CountryFlag';
 import DatePickerMultiView from '../../components/DatePicker/DatePickerMultiView';
+import { IconBrandOpenai } from '@tabler/icons-react';
+import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
+import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
+import deepseekLogoSrc from '../../assets/Deepseek-Logo-Icon.svg';
+import geminiLogoSrc from '../../assets/Google-Gemini-Icon.svg';
+import grokLogoSrc from '../../assets/Grok-icon.svg';
+import mistralLogoSrc from '../../assets/Mistral_AI_icon.svg';
+import perplexityLogoSrc from '../../assets/Perplexity-Simple-Icon.svg';
 import type { TopicsAnalysisData, Topic } from './types';
 import type { PodId } from './components/CompactMetricsPods';
 
@@ -98,6 +106,40 @@ export const TopicsAnalysisPage = ({
 
   // Manage country/region state
   const [selectedCountry, setSelectedCountry] = useState<string>('us');
+
+  // AI Models configuration (matching account configuration)
+  const AI_MODELS = [
+    { id: 'chatgpt', name: 'ChatGPT', icon: 'openai' },
+    { id: 'claude', name: 'Claude', icon: 'claude' },
+    { id: 'gemini', name: 'Google Gemini', icon: 'gemini' },
+    { id: 'perplexity', name: 'Perplexity', icon: 'perplexity' },
+    { id: 'copilot', name: 'Microsoft Copilot', icon: 'copilot' },
+    { id: 'deepseek', name: 'DeepSeek', icon: 'deepseek' },
+    { id: 'mistral', name: 'Mistral', icon: 'mistral' },
+    { id: 'grok', name: 'Grok', icon: 'grok' },
+  ];
+
+  // Mock selected models (in real app, get from account/brand configuration)
+  const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'claude', 'perplexity']);
+  const [selectedModel, setSelectedModel] = useState<string>('all');
+
+  // Mock competitors (in real app, get from brand configuration)
+  const competitorsList = [
+    { id: 'competitor-1', name: 'Competitor 1', favicon: 'https://logo.clearbit.com/competitor1.com' },
+    { id: 'competitor-2', name: 'Competitor 2', favicon: 'https://logo.clearbit.com/competitor2.com' },
+    { id: 'competitor-3', name: 'Competitor 3', favicon: 'https://logo.clearbit.com/competitor3.com' },
+    { id: 'competitor-4', name: 'Competitor 4', favicon: 'https://logo.clearbit.com/competitor4.com' },
+    { id: 'competitor-5', name: 'Competitor 5', favicon: 'https://logo.clearbit.com/competitor5.com' },
+  ];
+  const [competitors] = useState(competitorsList);
+  const [selectedCompetitor, setSelectedCompetitor] = useState<string>(() => {
+    // Default to first competitor if available, otherwise empty string
+    return competitorsList.length > 0 ? competitorsList[0].id : '';
+  });
+  
+  // Mock brand favicon (in real app, get from brand configuration)
+  // For now, use a generic favicon service or brand domain
+  const brandFavicon = 'https://www.google.com/s2/favicons?domain=example.com&sz=12';
 
   // Helper function to format dates
   const formatDate = (date: Date) => {
@@ -378,8 +420,61 @@ export const TopicsAnalysisPage = ({
               countryOptions={[...countryOptions, ...regionOptions]}
             />
 
-            {/* Right: Dropdowns (Date Picker Button, Country, Category) - right to left order */}
+            {/* Right: Dropdowns (Country/Region, Date, Models, Competitors) - left to right order */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              {/* Country Dropdown */}
+              <div style={{ position: 'relative', minWidth: '180px' }}>
+                <div style={{ 
+                  position: 'absolute', 
+                  left: '12px', 
+                  top: '50%', 
+                  transform: 'translateY(-50%)',
+                  pointerEvents: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  zIndex: 1
+                }}>
+                  <CountryFlag 
+                    countryCode={selectedCountry} 
+                    className="w-4 h-4"
+                    style={{ display: 'block' }}
+                  />
+                </div>
+                <select
+                  value={selectedCountry}
+                  onChange={(e) => setSelectedCountry(e.target.value)}
+                  style={{
+                    padding: '8px 12px 8px 36px',
+                    fontSize: '13px',
+                    fontFamily: 'IBM Plex Sans, sans-serif',
+                    color: '#212534',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #dcdfe5',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    MozAppearance: 'none'
+                  }}
+                >
+                  <optgroup label="Countries">
+                    {countryOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Regions">
+                    {regionOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+
               {/* Date Picker Button */}
               <div style={{ position: 'relative' }}>
                 <button
@@ -461,53 +556,11 @@ export const TopicsAnalysisPage = ({
                 )}
               </div>
 
-              {/* Category Dropdown */}
-              {uniqueCategories.length > 0 && (
+              {/* AI Model Selector */}
+              <div style={{ position: 'relative', minWidth: '160px' }}>
                 <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    fontSize: '13px',
-                    fontFamily: 'IBM Plex Sans, sans-serif',
-                    color: '#212534',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #dcdfe5',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    minWidth: '140px'
-                  }}
-                >
-                  <option value="all">All Categories</option>
-                  {uniqueCategories.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {/* Country Dropdown */}
-              <div style={{ position: 'relative', minWidth: '180px' }}>
-                <div style={{ 
-                  position: 'absolute', 
-                  left: '12px', 
-                  top: '50%', 
-                  transform: 'translateY(-50%)',
-                  pointerEvents: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  zIndex: 1
-                }}>
-                  <CountryFlag 
-                    countryCode={selectedCountry} 
-                    className="w-4 h-4"
-                    style={{ display: 'block' }}
-                  />
-                </div>
-                <select
-                  value={selectedCountry}
-                  onChange={(e) => setSelectedCountry(e.target.value)}
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
                   style={{
                     padding: '8px 12px 8px 36px',
                     fontSize: '13px',
@@ -523,22 +576,101 @@ export const TopicsAnalysisPage = ({
                     MozAppearance: 'none'
                   }}
                 >
-                  <optgroup label="Countries">
-                    {countryOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Regions">
-                    {regionOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
+                  <option value="all">All Models</option>
+                  {AI_MODELS.filter(model => selectedModels.includes(model.id)).map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
                 </select>
+                {selectedModel !== 'all' && (
+                  <div style={{ 
+                    position: 'absolute', 
+                    left: '12px', 
+                    top: '50%', 
+                    transform: 'translateY(-50%)',
+                    pointerEvents: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    zIndex: 1
+                  }}>
+                    {selectedModel === 'chatgpt' && <IconBrandOpenai size={16} />}
+                    {selectedModel === 'claude' && (
+                      <img src={claudeLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                    )}
+                    {selectedModel === 'gemini' && (
+                      <img src={geminiLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                    )}
+                    {selectedModel === 'perplexity' && (
+                      <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                    )}
+                    {selectedModel === 'copilot' && (
+                      <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                    )}
+                    {selectedModel === 'deepseek' && (
+                      <img src={deepseekLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                    )}
+                    {selectedModel === 'mistral' && (
+                      <img src={mistralLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                    )}
+                    {selectedModel === 'grok' && (
+                      <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* Competitor Dropdown */}
+              {competitors.length > 0 && (
+                <div style={{ position: 'relative', minWidth: '180px' }}>
+                  <select
+                    value={selectedCompetitor}
+                    onChange={(e) => setSelectedCompetitor(e.target.value)}
+                    style={{
+                      padding: '8px 12px 8px 36px',
+                      fontSize: '13px',
+                      fontFamily: 'IBM Plex Sans, sans-serif',
+                      color: '#212534',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #dcdfe5',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      width: '100%',
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      MozAppearance: 'none'
+                    }}
+                  >
+                    {competitors.map((competitor) => (
+                      <option key={competitor.id} value={competitor.id}>
+                        {competitor.name}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedCompetitor && (
+                    <div style={{ 
+                      position: 'absolute', 
+                      left: '12px', 
+                      top: '50%', 
+                      transform: 'translateY(-50%)',
+                      pointerEvents: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      zIndex: 1
+                    }}>
+                      <img 
+                        src={competitors.find(c => c.id === selectedCompetitor)?.favicon} 
+                        alt=""
+                        style={{ width: '16px', height: '16px', borderRadius: '2px' }}
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
           </div>
@@ -554,6 +686,9 @@ export const TopicsAnalysisPage = ({
             onCategoryChange={setSelectedCategory}
             selectedDateRange={selectedDateRange}
             selectedCountry={selectedCountry}
+            competitors={competitors}
+            selectedCompetitor={selectedCompetitor}
+            brandFavicon={brandFavicon}
             onExport={() => {
               // Export functionality - can be implemented later
               console.log('Export chart data...', { chartType: 'racing-bar', selectedCategory, selectedDateRange, selectedCountry });
@@ -571,6 +706,8 @@ export const TopicsAnalysisPage = ({
             onSelectedTopicsChange={setSelectedTopics}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
+            competitors={competitors}
+            brandFavicon={brandFavicon}
           />
         </div>
       </div>

@@ -41,9 +41,14 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
 
-  --dataviz-1: #498cf9;
-  --dataviz-2: #06c686;
-  --dataviz-3: #f9db43;
+  --dataviz-1: #06B6d4;
+  --dataviz-2: #498cf9;
+  --dataviz-3: #ac59fb;
   --dataviz-4: #fa8a40;
-  --dataviz-5: #f94343;
+  --dataviz-5: #f155a2;
+  --dataviz-6: #0d7c96;
+  --dataviz-7: #0d3196;
+  --dataviz-8: #54079c;
+  --dataviz-9: #b14700;
+  --dataviz-10: #960d64;
 }

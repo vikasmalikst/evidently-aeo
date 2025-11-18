@@ -1,37 +1,38 @@
-feat: enhance Manage Prompts page UI and version revert functionality
+feat: enhance Topics Analysis racing bar chart visualization and data display
 
-- Add configuration version info icon with hover tooltip
-  - Display info icon next to configuration version text
-  - Show tooltip explaining configuration versions on hover
-  - Use brand teal color for info icon
+- Update racing bar chart color scheme
+  - Change brand color to data-viz-02 (blue) from CSS variables
+  - Change industry average from bar to vertical dashed marker line (neutral-400)
+  - Change competitor average to data-viz-04 at 48% opacity
+  - Update legend to show dashed line indicator for industry average
 
-- Improve coverage summary cards layout
-  - Center-align statistics in all coverage cards
-  - Extend cards width to match prompts section (col-span-6)
-  - Use flex layout with min-width for responsive card sizing
+- Improve chart readability and spacing
+  - Increase vertical spacing between bars (padding 0.25, row height 65px)
+  - Add vertical spacing between grouped bars (innerPadding: 4px)
+  - Add more vertical grid lines every 10% for better scannability
+  - Increase right margin to 60px to accommodate SoA value labels
 
-- Enhance configuration history section
-  - Constrain width to match prompts section width
-  - Remove bottom border from version info section
-  - Display version info and revert button below header, right-aligned
+- Add SoA value labels to chart
+  - Display SoA percentage values to the right of brand bars
+  - Show values formatted as "X.X%" with proper positioning
+  - Include SoA metric (0-5x scale) in chart data structure
 
-- Add version revert functionality
-  - Show "Configuration Version vX • Date" with warning 600 color
-  - Add "Revert to vX" button next to version info
-  - Calculate all differences between current and selected version
-  - Present proposed changes modal before applying revert
-  - Enable complete revert including all topics and prompts
-  - Replace entire topics structure on confirmation
+- Update table SoA display format
+  - Convert all SoA values from "X.XXx" format to percentage "X.X%"
+  - Update brand, industry average, and competitor average SoA columns
+  - Convert trend delta values to percentages for consistency
 
-- Fix prompt action buttons visibility
-  - Show edit/delete/add buttons when selectedVersion is null or undefined
-  - Ensure buttons are visible in all valid states
+- Remove features and simplify UI
+  - Remove stack selector checkbox from chart controls
+  - Remove brand favicon from legend (kept in table)
+  - Remove playback/animation features and time-series controls
 
-- Improve prompt editing UI
-  - Right-align save and cancel buttons when editing
-  - Position save button rightmost, cancel to its left
+- Enhance brand label customization
+  - Change legend label from "Brand" to "[brandname] SoA"
+  - Add brandName prop to TopicsRacingBarChart component
+  - Pass brandName through TopicAnalysisMultiView component
+  - Update tooltip to use dynamic brand name
 
-- Update recalibration flow components
-  - Enhance ImpactPreviewModal for version revert scenarios
-  - Update ConfigurationComparison to show all changes
-  - Improve ScoreDeltaVisualization display
+- Update design tokens
+  - Add data-viz color tokens (dataviz-1 through dataviz-10)
+  - Ensure consistent color usage across chart components

@@ -1,21 +1,40 @@
 import { useMemo } from 'react';
 import { ResponsiveBar } from '@nivo/bar';
 import type { Topic } from '../types';
+import type { Competitor } from '../utils/competitorColors';
 
 interface TopicsRacingBarChartProps {
   topics: Topic[];
   onBarClick?: (topic: Topic) => void;
+  stackData?: boolean;
+  competitors?: Competitor[];
+  brandFavicon?: string;
+  brandName?: string;
 }
 
-export const TopicsRacingBarChart = ({ topics, onBarClick }: TopicsRacingBarChartProps) => {
+export const TopicsRacingBarChart = ({ 
+  topics, 
+  onBarClick, 
+  stackData = false,
+  competitors = [],
+  brandFavicon: _brandFavicon, // Unused - removed from legend
+  brandName = 'Brand'
+}: TopicsRacingBarChartProps) => {
+  // Always show brand, avg competitor, and avg industry SoA when competitors are available
+  const showComparison = competitors.length > 0;
+  
+  // Determine if bars should be stacked or grouped
+  const isStacked = stackData && showComparison;
+  const isGrouped = !stackData && showComparison;
+  
   // Helper function to resolve CSS variable at runtime
   const getCSSVariable = (variableName: string): string => {
     if (typeof window !== 'undefined') {
       return getComputedStyle(document.documentElement)
         .getPropertyValue(variableName)
-        .trim() || '#e8e9ed'; // Fallback to default if not found
+        .trim() || ''; // Return empty string if not found
     }
-    return '#e8e9ed'; // Fallback for SSR
+    return ''; // Fallback for SSR
   };
 
   // Resolve CSS variables for chart colors
@@ -23,6 +42,13 @@ export const TopicsRacingBarChart = ({ topics, onBarClick }: TopicsRacingBarChar
   const chartLabelColor = useMemo(() => getCSSVariable('--chart-label'), []);
   const chartAxisColor = useMemo(() => getCSSVariable('--chart-axis'), []);
   const textCaptionColor = useMemo(() => getCSSVariable('--text-caption'), []);
+  
+  // Brand color (data viz 02) - resolved from CSS variable
+  const BRAND_COLOR = useMemo(() => getCSSVariable('--dataviz-2') || '#498cf9', []); // data-viz-02 (blue)
+  // Avg Competitor color (data viz 04 at 48% opacity - orange)
+  const AVG_COMPETITOR_COLOR = 'rgba(250, 138, 64, 0.48)'; // --dataviz-4 at 48% opacity
+  // Avg Industry color (neutral 400)
+  const AVG_INDUSTRY_COLOR = '#8b90a7'; // neutral-400
 
   // Sort topics by SoA descending (largest to smallest) for left to right display
   // Convert SoA (0-5x scale) to percentage (0-100) for display
@@ -45,34 +71,120 @@ export const TopicsRacingBarChart = ({ topics, onBarClick }: TopicsRacingBarChar
     return map;
   }, [sortedTopics]);
 
-  const chartData = useMemo(() => {
-    // Reverse the array so highest values appear at top (Nivo renders bottom-to-top for horizontal bars)
-    return [...sortedTopics].reverse().map((topic) => ({
-      topic: topic.name,
-      value: topic.currentSoA ?? 0,
-    }));
-  }, [sortedTopics]);
+  // Generate mock average competitor and industry SoA data for each topic (deterministic)
+  const getAvgCompetitorSoA = (topic: Topic, numCompetitors: number): number => {
+    const seed = (topic.id.charCodeAt(0) + numCompetitors * 19) % 100;
+    const baseSoA = topic.currentSoA ?? (topic.soA * 20);
+    return Math.max(0, Math.min(100, baseSoA * (0.65 + (seed / 100) * 0.7)));
+  };
 
-  // Calculate dynamic height based on number of topics (minimum 400px, add ~40px per topic)
+  // Calculate average industry SoA across all topics for the marker line
+  const avgIndustrySoA = useMemo(() => {
+    if (!showComparison || sortedTopics.length === 0) return 0;
+    const sum = sortedTopics.reduce((acc, topic) => {
+      const seed = (topic.id.charCodeAt(0) * 13) % 100;
+      const baseSoA = topic.currentSoA ?? (topic.soA * 20);
+      const industrySoA = Math.max(0, Math.min(100, baseSoA * (0.7 + (seed / 100) * 0.6)));
+      return acc + industrySoA;
+    }, 0);
+    return sum / sortedTopics.length;
+  }, [sortedTopics, showComparison]);
+
+  // Chart keys: brand, avgCompetitor (removed avgIndustry - now shown as marker line)
+  const chartKeys = useMemo(() => {
+    if (showComparison) {
+      return ['brand', 'avgCompetitor'];
+    }
+    return ['value'];
+  }, [showComparison]);
+
+  const chartData = useMemo(() => {
+    if (!showComparison) {
+      // Single value per topic (no comparison)
+      return [...sortedTopics].reverse().map((topic) => ({
+        topic: topic.name,
+        value: topic.currentSoA ?? 0,
+        soA: topic.soA, // Include SoA metric (0-5x scale)
+      }));
+    } else {
+      // Brand and avg competitor SoA per topic (industry avg shown as marker line)
+      return [...sortedTopics].reverse().map((topic) => {
+        const data: Record<string, string | number> = { 
+          topic: topic.name,
+          soA: topic.soA, // Include SoA metric (0-5x scale) for brand
+        };
+        
+        // Add brand performance
+        data['brand'] = topic.currentSoA ?? 0;
+        
+        // Add avg competitor SoA (muted color)
+        data['avgCompetitor'] = getAvgCompetitorSoA(topic, competitors.length);
+        
+        return data;
+      });
+    }
+  }, [sortedTopics, showComparison, competitors.length]);
+
+  // Calculate dynamic height based on number of topics
+  // Balance between expanding height and reducing bar size
   const chartHeight = useMemo(() => {
-    return Math.max(400, sortedTopics.length * 40 + 100);
-  }, [sortedTopics.length]);
+    // Increase row height for better visibility of bars and more vertical space
+    const rowHeight = showComparison ? 65 : 55;
+    const baseHeight = sortedTopics.length * rowHeight;
+    // Add padding but cap max height to prevent excessive scrolling
+    // Add extra space for legend when showing comparison
+    const legendSpace = showComparison ? 80 : 0;
+    return Math.min(Math.max(400, baseHeight + 120 + legendSpace), 1200);
+  }, [sortedTopics.length, showComparison]);
 
   return (
     <div className="p-3 sm:p-4 lg:p-6">
       <div style={{ height: `${chartHeight}px`, cursor: 'pointer', position: 'relative' }}>
         <ResponsiveBar
           data={chartData}
-          keys={['value']}
+          keys={chartKeys}
           indexBy="topic"
           layout="horizontal"
-          margin={{ top: 16, right: 16, bottom: 12, left: 120 }}
-          padding={0.1}
+          margin={{ top: 16, right: 60, bottom: showComparison ? 100 : 12, left: 120 }}
+          padding={showComparison ? 0.25 : 0.20} // Increased spacing between bars for more vertical space
+          innerPadding={showComparison && isGrouped ? 4 : 0} // Vertical spacing between bars in grouped mode
+          groupMode={isStacked ? 'stacked' : isGrouped ? 'grouped' : undefined}
           valueScale={{ type: 'linear', min: 0, max: 100 }}
           indexScale={{ type: 'band', round: true }}
-          colors="#498cf9" // Data viz 02 - matches Chart.js color
-          borderRadius={4}
-          borderWidth={0}
+          colors={showComparison
+            ? (bar: any) => {
+                const key = bar.id as string;
+                if (key === 'brand') {
+                  return BRAND_COLOR; // Data viz 02 (blue) for brand
+                } else if (key === 'avgCompetitor') {
+                  return AVG_COMPETITOR_COLOR; // Data viz 04 (orange) at 48% opacity for avg competitor
+                }
+                return '#498cf9';
+              }
+            : "#498cf9" // Data viz 01 - matches Chart.js color
+          }
+          markers={showComparison ? [
+            {
+              axis: 'x',
+              value: avgIndustrySoA,
+              lineStyle: {
+                stroke: AVG_INDUSTRY_COLOR,
+                strokeWidth: 2,
+                strokeDasharray: '4 4',
+              },
+              legend: 'Avg Industry SoA',
+              legendPosition: 'top-left',
+              textStyle: {
+                fill: chartLabelColor || '#393e51',
+                fontSize: 11,
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              },
+            },
+          ] : []}
+          borderRadius={0} // Remove border radius on all bars
+          borderWidth={showComparison ? (isGrouped ? 0 : 1) : 0}
+          borderColor={showComparison && !isGrouped ? '#ffffff' : 'transparent'}
+          enableLabel={false}
           axisTop={null}
           axisRight={null}
           axisBottom={{
@@ -80,7 +192,7 @@ export const TopicsRacingBarChart = ({ topics, onBarClick }: TopicsRacingBarChar
             tickPadding: 8,
             tickRotation: 0,
             format: (value: number) => `${value}%`,
-            tickValues: [0, 20, 40, 60, 80, 100],
+            tickValues: [0, 20, 40, 60, 80, 100], // Keep major ticks at 20% intervals
             legend: 'Share of Answer (SoA)',
             legendPosition: 'middle',
             legendOffset: 40,
@@ -111,7 +223,7 @@ export const TopicsRacingBarChart = ({ topics, onBarClick }: TopicsRacingBarChar
           }}
           enableGridX={true}
           enableGridY={false}
-          gridXValues={[0, 20, 40, 60, 80, 100]}
+          gridXValues={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]} // More grid lines for better scannability
           gridYValues={[]}
           theme={{
             axis: {
@@ -149,7 +261,6 @@ export const TopicsRacingBarChart = ({ topics, onBarClick }: TopicsRacingBarChar
               },
             },
           }}
-          enableLabel={false}
           labelSkipWidth={12}
           labelSkipHeight={12}
           labelTextColor={{
@@ -177,81 +288,249 @@ export const TopicsRacingBarChart = ({ topics, onBarClick }: TopicsRacingBarChar
             const topic = topicMap.get(topicName);
             if (!topic) return null;
             
+            const key = showComparison ? props.id : null;
             const value = props.value as number;
-            return (
-              <div
-                style={{
-                  backgroundColor: 'rgba(26, 29, 41, 0.96)',
-                  color: '#ffffff',
-                  border: `1px solid ${chartAxisColor}`,
-                  borderWidth: '1px',
-                  borderRadius: '4px',
-                  padding: '10px',
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-                  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                  minWidth: '220px',
-                }}
-              >
-                {/* Title */}
+            
+            let label = '';
+            let barColor = '#498cf9';
+            
+            if (showComparison && key) {
+              if (key === 'brand') {
+                label = `${brandName} SoA`;
+                barColor = BRAND_COLOR; // Data viz 02 (blue) for brand
+              } else if (key === 'avgCompetitor') {
+                label = 'Avg Competitor SoA';
+                barColor = AVG_COMPETITOR_COLOR;
+              }
+            }
+            
+            if (showComparison && key && label) {
+              // Comparison view: show specific tooltip
+              return (
                 <div
                   style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    marginBottom: '0px',
+                    backgroundColor: 'rgba(26, 29, 41, 0.96)',
                     color: '#ffffff',
+                    border: `1px solid ${chartAxisColor}`,
+                    borderWidth: '1px',
+                    borderRadius: '4px',
+                    padding: '10px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                    minWidth: '220px',
                   }}
                 >
-                  {topic.name}
-                </div>
-                {/* Body items with color indicator */}
-                <div style={{ 
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  marginTop: '6px',
-                }}>
                   <div
                     style={{
-                      width: '10px',
-                      height: '10px',
-                      backgroundColor: '#498cf9',
-                      borderRadius: '2px',
-                      flexShrink: 0,
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      marginBottom: '4px',
+                      color: '#ffffff',
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                     }}
-                  />
+                  >
+                    {topic.name}
+                  </div>
+                  <div style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginTop: '6px',
+                  }}>
+                    <div
+                      style={{
+                        width: '10px',
+                        height: '10px',
+                        backgroundColor: barColor,
+                        borderRadius: '2px',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ 
+                      fontSize: '11px', 
+                      color: '#ffffff',
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                    }}>
+                      {label}: {value.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+              );
+            } else {
+              // Non-stacked view: show topic tooltip
+              return (
+                <div
+                  style={{
+                    backgroundColor: 'rgba(26, 29, 41, 0.96)',
+                    color: '#ffffff',
+                    border: `1px solid ${chartAxisColor}`,
+                    borderWidth: '1px',
+                    borderRadius: '4px',
+                    padding: '10px',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                    minWidth: '220px',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      marginBottom: '0px',
+                      color: '#ffffff',
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                    }}
+                  >
+                    {topic.name}
+                  </div>
+                  <div style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginTop: '6px',
+                  }}>
+                    <div
+                      style={{
+                        width: '10px',
+                        height: '10px',
+                        backgroundColor: barColor,
+                        borderRadius: '2px',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ 
+                      fontSize: '11px', 
+                      color: '#ffffff',
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                    }}>
+                      {topic.name}: {value.toFixed(1)}%
+                    </div>
+                  </div>
                   <div style={{ 
                     fontSize: '11px', 
                     color: '#ffffff',
+                    marginTop: '6px',
+                    paddingLeft: '16px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                   }}>
-                    {topic.name}: {value.toFixed(1)}%
+                    SoA: {topic.soA.toFixed(2)}×
+                  </div>
+                  <div style={{ 
+                    fontSize: '11px', 
+                    color: '#ffffff',
+                    marginTop: '6px',
+                    paddingLeft: '16px',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                  }}>
+                    Rank: {topic.rank}
                   </div>
                 </div>
-                <div style={{ 
-                  fontSize: '11px', 
-                  color: '#ffffff',
-                  marginTop: '6px',
-                  paddingLeft: '16px', // Align with text above (6px gap + 10px color box)
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-                }}>
-                  SoA: {topic.soA.toFixed(2)}×
-                </div>
-                <div style={{ 
-                  fontSize: '11px', 
-                  color: '#ffffff',
-                  marginTop: '6px',
-                  paddingLeft: '16px',
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-                }}>
-                  Rank: {topic.rank}
-                </div>
-              </div>
-            );
+              );
+            }
           }}
           legends={[]}
+          layers={[
+            'grid',
+            'markers',
+            'axes',
+            'bars',
+            'legends',
+            (props: any) => {
+              // Custom layer to add SoA labels to the right of bars
+              const { bars, xScale, yScale } = props;
+              
+              return (
+                <g>
+                  {bars.map((bar: any) => {
+                    // Only show label for brand bars (or single value bars)
+                    const isBrandBar = showComparison ? bar.id === 'brand' : true;
+                    if (!isBrandBar) return null;
+                    
+                    const topicName = bar.data.topic as string;
+                    const topic = topicMap.get(topicName);
+                    if (!topic) return null;
+                    
+                    // Get the SoA value as percentage
+                    const soAValue = topic.currentSoA ?? (topic.soA * 20);
+                    const xPosition = xScale(soAValue) + 8; // Position to the right of the bar
+                    const yPosition = yScale(bar.data.topic) + (yScale.bandwidth() / 2);
+                    
+                    return (
+                      <text
+                        key={`label-${bar.id}-${bar.data.topic}`}
+                        x={xPosition}
+                        y={yPosition}
+                        textAnchor="start"
+                        dominantBaseline="middle"
+                        style={{
+                          fill: textCaptionColor,
+                          fontSize: 11,
+                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {soAValue.toFixed(1)}%
+                      </text>
+                    );
+                  })}
+                </g>
+              );
+            },
+          ]}
         />
       </div>
+      
+      {/* Custom Legend with Brand, Avg Competitor SoA, and Avg Industry SoA Marker */}
+      {showComparison && (
+        <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pb-2">
+          {/* Brand */}
+          <div className="flex items-center gap-1.5">
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: BRAND_COLOR,
+                borderRadius: '2px',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
+              {brandName} SoA
+            </span>
+          </div>
+          
+          {/* Avg Competitor SoA */}
+          <div className="flex items-center gap-1.5">
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: AVG_COMPETITOR_COLOR,
+                borderRadius: '2px',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
+              Avg Competitor SoA
+            </span>
+          </div>
+          
+          {/* Avg Industry SoA - Marker Line */}
+          <div className="flex items-center gap-1.5">
+            <div
+              style={{
+                width: '20px',
+                height: '2px',
+                background: `repeating-linear-gradient(to right, ${AVG_INDUSTRY_COLOR} 0, ${AVG_INDUSTRY_COLOR} 4px, transparent 4px, transparent 8px)`,
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
+              Avg Industry SoA
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,8 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import type { Topic, SortColumn, SortDirection, SortState, TopicSource } from '../types';
+import { useState, useMemo, useCallback } from 'react';
+import { ChevronUp, ChevronDown, Minus } from 'lucide-react';
+import type { Topic, SortColumn, SortState, TopicSource } from '../types';
+import type { Competitor } from '../utils/competitorColors';
+import { createCompetitorColorMap, getCompetitorColorById } from '../utils/competitorColors';
 import { SourceDetailModal } from './SourceDetailModal';
 
 // Source type colors matching the sources page
@@ -21,47 +23,66 @@ interface TopicsRankedTableProps {
   onSelectedTopicsChange?: (selectedTopics: Set<string>) => void;
   selectedCategory?: string;
   onCategoryChange?: (category: string) => void;
+  competitors?: Competitor[];
+  brandFavicon?: string;
 }
 
-// Get SoA color based on scale
-const getSoAColor = (soA: number): string => {
-  if (soA >= 3.0) return 'var(--accent500)'; // Cyan - Strong Position
-  if (soA >= 2.0) return 'var(--accent600)'; // Teal - Competitive
-  if (soA >= 1.0) return 'var(--dataviz-4)'; // Orange - Opportunity
-  return 'var(--text-headings)'; // Navy - Citation Gap
-};
-
-// Get SoA tooltip text
-const getSoATooltip = (soA: number): string => {
-  if (soA >= 3.0) return 'Leading position. Your content dominates this topic.';
-  if (soA >= 2.0) return 'Competitive position. Strong presence in this topic.';
-  if (soA >= 1.0) return 'Competitive. Opportunity to gain share with targeted content.';
-  return "Citation gap. Competitors are cited, you're not. Strategic choice.";
-};
-
-// Get trend icon and color
-const getTrendDisplay = (direction: string, delta: number) => {
-  switch (direction) {
-    case 'up':
-      return {
-        icon: TrendingUp,
-        color: 'var(--success500)',
-        symbol: '↑',
-      };
-    case 'down':
-      return {
-        icon: TrendingDown,
-        color: 'var(--dataviz-4)',
-        symbol: '↓',
-      };
-    default:
-      return {
-        icon: Minus,
-        color: 'var(--primary300)',
-        symbol: '→',
-      };
+// Generate mock average industry SoA data for a topic (deterministic)
+const getAvgIndustrySoA = (topic: Topic): { soA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number } } => {
+  // Use deterministic seed based on topic
+  const seed = (topic.id.charCodeAt(0) * 13) % 100;
+  const baseSoA = topic.soA * (0.7 + (seed / 100) * 0.6); // Industry SoA between 70% and 130% of brand SoA
+  
+  // Generate trend delta deterministically
+  const trendSeed = (seed * 11) % 100;
+  const delta = (trendSeed - 50) / 10; // Delta between -5.0 and 5.0
+  
+  let direction: 'up' | 'down' | 'neutral';
+  if (delta > 0.1) {
+    direction = 'up';
+  } else if (delta < -0.1) {
+    direction = 'down';
+  } else {
+    direction = 'neutral';
   }
+  
+  return {
+    soA: Math.max(0, Math.min(5, baseSoA)),
+    trend: {
+      direction,
+      delta: Math.abs(delta)
+    }
+  };
 };
+
+// Generate mock average competitor SoA data for a topic (deterministic)
+const getAvgCompetitorSoA = (topic: Topic, numCompetitors: number): { soA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number } } => {
+  // Use deterministic seed based on topic and number of competitors
+  const seed = (topic.id.charCodeAt(0) + numCompetitors * 19) % 100;
+  const baseSoA = topic.soA * (0.65 + (seed / 100) * 0.7); // Competitor SoA between 65% and 135% of brand SoA
+  
+  // Generate trend delta deterministically
+  const trendSeed = (seed * 13) % 100;
+  const delta = (trendSeed - 50) / 10; // Delta between -5.0 and 5.0
+  
+  let direction: 'up' | 'down' | 'neutral';
+  if (delta > 0.1) {
+    direction = 'up';
+  } else if (delta < -0.1) {
+    direction = 'down';
+  } else {
+    direction = 'neutral';
+  }
+  
+  return {
+    soA: Math.max(0, Math.min(5, baseSoA)),
+    trend: {
+      direction,
+      delta: Math.abs(delta)
+    }
+  };
+};
+
 
 export const TopicsRankedTable = ({ 
   topics, 
@@ -70,8 +91,14 @@ export const TopicsRankedTable = ({
   selectedTopics: externalSelectedTopics,
   onSelectedTopicsChange,
   selectedCategory: externalSelectedCategory,
-  onCategoryChange
+  onCategoryChange,
+  competitors = [],
+  brandFavicon
 }: TopicsRankedTableProps) => {
+  // Create color map for competitors
+  const competitorColorMap = useMemo(() => {
+    return createCompetitorColorMap(competitors);
+  }, [competitors]);
   const [sortState, setSortState] = useState<SortState>({ column: 'soA', direction: 'desc' });
   const [internalSelectedCategory, setInternalSelectedCategory] = useState<string>('all');
   
@@ -222,13 +249,30 @@ export const TopicsRankedTable = ({
                   <SortButton column="name">Topic</SortButton>
                 </th>
                 <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
-                  <SortButton column="soA">SoA</SortButton>
+                  <div className="flex items-center gap-1.5">
+                    {brandFavicon && (
+                      <img 
+                        src={brandFavicon} 
+                        alt="Brand" 
+                        className="w-3 h-3 flex-shrink-0"
+                        style={{ width: '12px', height: '12px' }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    )}
+                    <SortButton column="soA">SoA</SortButton>
+                  </div>
                 </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative hidden sm:table-cell">
-                  <SortButton column="trend">Trend</SortButton>
+                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
+                  <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
+                    Avg Industry SoA
+                  </span>
                 </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative hidden md:table-cell">
-                  <SortButton column="volume">Volume</SortButton>
+                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
+                  <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
+                    Avg Competitor SoA
+                  </span>
                 </th>
                 <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
                   <SortButton column="sources">Sources</SortButton>
@@ -237,9 +281,6 @@ export const TopicsRankedTable = ({
             </thead>
             <tbody>
               {filteredAndSortedTopics.map((topic) => {
-                const soAColor = getSoAColor(topic.soA);
-                const trendDisplay = getTrendDisplay(topic.trend.direction, topic.trend.delta);
-
                 return (
                   <tr
                     key={topic.id}
@@ -277,28 +318,113 @@ export const TopicsRankedTable = ({
                     </td>
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
                       <div className="flex items-center gap-1.5 sm:gap-2">
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: soAColor }}
-                          title={getSoATooltip(topic.soA)}
-                        ></span>
-                        <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
-                          {topic.soA.toFixed(2)}x
+                        {brandFavicon && (
+                          <img 
+                            src={brandFavicon} 
+                            alt="Brand" 
+                            className="w-3 h-3 flex-shrink-0"
+                            style={{ width: '12px', height: '12px' }}
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        )}
+                        <span className="text-sm sm:text-base font-semibold whitespace-nowrap text-[var(--text-headings)]">
+                          {(topic.soA * 20).toFixed(1)}%
                         </span>
+                        <div className="flex items-center gap-0.5">
+                          {topic.trend.direction === 'up' && (
+                            <ChevronUp size={14} className="text-[var(--success500)]" />
+                          )}
+                          {topic.trend.direction === 'down' && (
+                            <ChevronDown size={14} className="text-[var(--dataviz-4)]" />
+                          )}
+                          {topic.trend.direction === 'neutral' && (
+                            <Minus size={14} className="text-[var(--primary300)]" />
+                          )}
+                          <span 
+                            className="text-[10px] sm:text-xs font-medium whitespace-nowrap"
+                            style={{
+                              color: topic.trend.direction === 'up' 
+                                ? 'var(--success500)' 
+                                : topic.trend.direction === 'down' 
+                                ? 'var(--dataviz-4)' 
+                                : '#64748b' // neutral-700 equivalent
+                            }}
+                          >
+                                  {topic.trend.direction === 'up' ? '+' : topic.trend.direction === 'down' ? '-' : ''}{(topic.trend.delta * 20).toFixed(1)}%
+                          </span>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 hidden sm:table-cell">
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        <trendDisplay.icon size={14} className="sm:w-4 sm:h-4" style={{ color: trendDisplay.color }} />
-                        <span className="text-xs sm:text-sm font-medium whitespace-nowrap" style={{ color: trendDisplay.color }}>
-                          {trendDisplay.symbol}
-                          {Math.abs(topic.trend.delta).toFixed(1)}x
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-xs sm:text-sm text-[var(--text-body)] hidden md:table-cell whitespace-nowrap">
-                      {topic.searchVolume ? topic.searchVolume.toLocaleString() : '?'}
-                    </td>
+                    {(() => {
+                      const avgIndustryData = getAvgIndustrySoA(topic);
+                      const avgCompetitorData = getAvgCompetitorSoA(topic, competitors.length);
+                      return (
+                        <>
+                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
+                            <div className="flex items-center gap-1.5 sm:gap-2">
+                              <span className="text-sm sm:text-base font-semibold whitespace-nowrap text-[var(--text-headings)]">
+                                {(avgIndustryData.soA * 20).toFixed(1)}%
+                              </span>
+                              <div className="flex items-center gap-0.5">
+                                {avgIndustryData.trend.direction === 'up' && (
+                                  <ChevronUp size={14} className="text-[var(--success500)]" />
+                                )}
+                                {avgIndustryData.trend.direction === 'down' && (
+                                  <ChevronDown size={14} className="text-[var(--dataviz-4)]" />
+                                )}
+                                {avgIndustryData.trend.direction === 'neutral' && (
+                                  <Minus size={14} className="text-[var(--primary300)]" />
+                                )}
+                                <span 
+                                  className="text-[10px] sm:text-xs font-medium whitespace-nowrap"
+                                  style={{
+                                    color: avgIndustryData.trend.direction === 'up' 
+                                      ? 'var(--success500)' 
+                                      : avgIndustryData.trend.direction === 'down' 
+                                      ? 'var(--dataviz-4)' 
+                                      : '#64748b' // neutral-700 equivalent
+                                  }}
+                                >
+                                  {avgIndustryData.trend.direction === 'up' ? '+' : avgIndustryData.trend.direction === 'down' ? '-' : ''}{(avgIndustryData.trend.delta * 20).toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
+                            <div className="flex items-center gap-1.5 sm:gap-2">
+                              <span className="text-sm sm:text-base font-semibold whitespace-nowrap text-[var(--text-headings)]">
+                                {(avgCompetitorData.soA * 20).toFixed(1)}%
+                              </span>
+                              <div className="flex items-center gap-0.5">
+                                {avgCompetitorData.trend.direction === 'up' && (
+                                  <ChevronUp size={14} className="text-[var(--success500)]" />
+                                )}
+                                {avgCompetitorData.trend.direction === 'down' && (
+                                  <ChevronDown size={14} className="text-[var(--dataviz-4)]" />
+                                )}
+                                {avgCompetitorData.trend.direction === 'neutral' && (
+                                  <Minus size={14} className="text-[var(--primary300)]" />
+                                )}
+                                <span 
+                                  className="text-[10px] sm:text-xs font-medium whitespace-nowrap"
+                                  style={{
+                                    color: avgCompetitorData.trend.direction === 'up' 
+                                      ? 'var(--success500)' 
+                                      : avgCompetitorData.trend.direction === 'down' 
+                                      ? 'var(--dataviz-4)' 
+                                      : '#64748b' // neutral-700 equivalent
+                                  }}
+                                >
+                                  {avgCompetitorData.trend.direction === 'up' ? '+' : avgCompetitorData.trend.direction === 'down' ? '-' : ''}{(avgCompetitorData.trend.delta * 20).toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                        </>
+                      );
+                    })()}
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
                       <div className="flex flex-wrap items-center gap-1">
                         {topic.sources.slice(0, 2).map((source, idx) => {

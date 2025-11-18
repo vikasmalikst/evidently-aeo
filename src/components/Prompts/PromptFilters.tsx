@@ -5,8 +5,8 @@ import { CountryFlag } from '../CountryFlag';
 
 interface PromptFiltersProps {
   llmOptions: string[];
-  selectedLLMs: string[];
-  onLLMChange: (llms: string[]) => void;
+  selectedLLM: string | null;
+  onLLMChange: (llm: string | null) => void;
   selectedRegion: string;
   onRegionChange: (region: string) => void;
   brands: Array<{ id: string; name: string }>;
@@ -23,7 +23,7 @@ const regionOptions = [
 
 export const PromptFilters = ({
   llmOptions,
-  selectedLLMs,
+  selectedLLM,
   onLLMChange,
   selectedRegion,
   onRegionChange,
@@ -42,21 +42,18 @@ export const PromptFilters = ({
     };
 
     if (openDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+      // Use a small timeout to ensure click events on dropdown items fire first
+      const timeoutId = setTimeout(() => {
+        document.addEventListener('click', handleClickOutside);
+      }, 0);
 
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+      return () => {
+        clearTimeout(timeoutId);
+        document.removeEventListener('click', handleClickOutside);
+      };
+    }
   }, [openDropdown]);
 
-  const handleLLMToggle = (llm: string) => {
-    if (selectedLLMs.includes(llm)) {
-      onLLMChange(selectedLLMs.filter(l => l !== llm));
-    } else {
-      onLLMChange([...selectedLLMs, llm]);
-    }
-  };
 
   const currentRegion = regionOptions.find(r => r.value === selectedRegion);
   const currentBrand = brands.find(b => b.id === selectedBrandId);
@@ -103,15 +100,15 @@ export const PromptFilters = ({
       )}
       <div className="relative min-w-[200px]">
         <button
+          type="button"
           className="flex items-center gap-2 w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--accent-primary)] hover:bg-[var(--bg-secondary)]"
-          onClick={() => setOpenDropdown(openDropdown === 'llm' ? null : 'llm')}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpenDropdown(openDropdown === 'llm' ? null : 'llm');
+          }}
         >
           <span className="text-[var(--text-body)] whitespace-nowrap overflow-hidden text-ellipsis flex-1 text-left font-medium">
-            {selectedLLMs.length === 0
-              ? 'All LLMs'
-              : selectedLLMs.length === 1
-              ? selectedLLMs[0]
-              : `${selectedLLMs.length} LLMs selected`}
+            {selectedLLM || 'Select LLM'}
           </span>
           <ChevronDown
             size={16}
@@ -121,23 +118,31 @@ export const PromptFilters = ({
           />
         </button>
         {openDropdown === 'llm' && llmOptions.length > 0 && (
-          <div className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[400px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]">
+          <div 
+            className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[400px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]"
+            onClick={(e) => e.stopPropagation()}
+          >
             {llmOptions.map((llm) => (
-              <label
+              <button
                 key={llm}
-                className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--bg-secondary)] transition-all duration-150"
+                type="button"
+                className={`w-full px-4 py-3 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] flex items-center gap-2 ${
+                  selectedLLM === llm
+                    ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
+                    : ''
+                }`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (selectedLLM !== llm) {
+                    onLLMChange(llm);
+                  }
+                  setOpenDropdown(null);
+                }}
               >
-                <input
-                  type="checkbox"
-                  checked={selectedLLMs.includes(llm)}
-                  onChange={() => handleLLMToggle(llm)}
-                  className="w-4 h-4 text-[var(--accent-primary)] border-[var(--border-default)] rounded focus:ring-[var(--accent-primary)]"
-                />
-                <div className="flex items-center gap-2 flex-1">
-                  {getLLMIcon(llm)}
-                  <span className="text-sm text-[var(--text-body)]">{llm}</span>
-                </div>
-              </label>
+                {getLLMIcon(llm)}
+                <span>{llm}</span>
+              </button>
             ))}
           </div>
         )}

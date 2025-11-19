@@ -4,6 +4,7 @@ import { onboardingIntelService } from '../services/onboarding-intel.service';
 import { trendingKeywordsService } from '../services/keywords/trending-keywords.service';
 import { aeoCategorizationService } from '../services/aeo-categorization.service';
 import { brandService } from '../services/brand.service';
+import { topicsQueryGenerationService } from '../services/topics-query-generation.service';
 
 const router = Router();
 
@@ -234,22 +235,157 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       }
     }
 
-    // 1. Get trending keywords/topics from Gemini
-    const trendingResult = await trendingKeywordsService.getTrendingKeywords({
-      brand: brand_name,
-      industry: brandIndustry || 'General',
-      competitors: brandCompetitors,
-      locale,
-      country,
-      max_keywords: 12
-    });
+    // Use new topics-query-generation service (generates topics and queries together)
+    let topicsAndQueriesResult: any = null;
+    try {
+      console.log('🤖 Using new topics-query-generation service...');
+      topicsAndQueriesResult = await topicsQueryGenerationService.generateTopicsAndQueries({
+        brandName: brand_name,
+        industry: brandIndustry || industry || 'General',
+        competitors: brandCompetitors,
+        maxTopics: 20
+      });
+      console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics with queries`);
+    } catch (topicsError) {
+      console.error('❌ New topics-query-generation service failed:', topicsError);
+      // Fall back to old approach if new service fails
+      topicsAndQueriesResult = null;
+    }
+
+    // If new service succeeded, use its results
+    if (topicsAndQueriesResult && topicsAndQueriesResult.topics && topicsAndQueriesResult.topics.length > 0) {
+      // Organize topics by category using intent archetype mapping
+      const aiGenerated: Record<string, any[]> = {
+        awareness: [],
+        comparison: [],
+        purchase: [],
+        'post-purchase support': []
+      };
+
+      topicsAndQueriesResult.topics.forEach((topicWithQuery: any, index: number) => {
+        const category = topicsQueryGenerationService.mapIntentToCategory(topicWithQuery.intentArchetype);
+        const categoryKey = category === 'post-purchase support' ? 'post-purchase support' : category;
+        
+        if (aiGenerated[categoryKey]) {
+          aiGenerated[categoryKey].push({
+            id: `ai-${index}`,
+            name: topicWithQuery.topic,
+            description: topicWithQuery.description,
+            query: topicWithQuery.query, // Store the query for later use
+            source: 'ai_generated' as const,
+            category: category,
+            relevance: topicWithQuery.priority * 20, // Convert 1-5 priority to 20-100 relevance
+            priority: topicWithQuery.priority
+          });
+        }
+      });
+
+      // Include existing topics from database
+      const existingTopicsFormatted = existingTopics.map((topic: any, index: number) => {
+        const topicName = topic.topic_name || topic.topic || topic;
+        const category = topic.category || 'awareness';
+        const categoryKey = category === 'support' || category === 'post-purchase support' ? 'post-purchase support' : category;
+        
+        return {
+          id: `existing-${index}`,
+          name: topicName,
+          source: 'existing' as const,
+          category: category,
+          relevance: 90
+        };
+      });
+
+      // Merge existing topics into appropriate categories
+      existingTopicsFormatted.forEach((topic) => {
+        const categoryKey = topic.category === 'support' || topic.category === 'post-purchase support' ? 'post-purchase support' : topic.category;
+        if (aiGenerated[categoryKey]) {
+          const exists = aiGenerated[categoryKey].some(t => t.name.toLowerCase() === topic.name.toLowerCase());
+          if (!exists) {
+            aiGenerated[categoryKey].push(topic);
+          }
+        }
+      });
+
+      // Get trending topics as fallback (optional, for variety)
+      let trendingTopics: any[] = [];
+      try {
+        const trendingResult = await trendingKeywordsService.getTrendingKeywords({
+          brand: brand_name,
+          industry: brandIndustry || 'General',
+          competitors: brandCompetitors,
+          locale,
+          country,
+          max_keywords: 6
+        });
+        
+        if (trendingResult.success && trendingResult.data) {
+          trendingTopics = trendingResult.data.keywords.slice(0, 6).map((kw: any, index: number) => ({
+            id: `trend-${index}`,
+            name: kw.keyword,
+            source: 'trending' as const,
+            relevance: Math.round(kw.trend_score * 100),
+            trendingIndicator: kw.trend_score > 0.85 ? 'rising' : 'stable'
+          }));
+        }
+      } catch (trendingError) {
+        console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
+      }
+
+      // Add minimal preset topics (keep a small set for fallback)
+      const preset = [
+        { id: 'preset-1', name: 'Product features', source: 'preset' as const, relevance: 85 },
+        { id: 'preset-2', name: 'Customer testimonials', source: 'preset' as const, relevance: 82 },
+        { id: 'preset-3', name: 'Integration capabilities', source: 'preset' as const, relevance: 80 },
+        { id: 'preset-4', name: 'Security and compliance', source: 'preset' as const, relevance: 78 }
+      ];
+
+      // Map 'post-purchase support' back to 'support' for frontend compatibility
+      const aiGeneratedForFrontend = {
+        awareness: Array.isArray(aiGenerated.awareness) ? aiGenerated.awareness : [],
+        comparison: Array.isArray(aiGenerated.comparison) ? aiGenerated.comparison : [],
+        purchase: Array.isArray(aiGenerated.purchase) ? aiGenerated.purchase : [],
+        support: Array.isArray(aiGenerated['post-purchase support']) ? aiGenerated['post-purchase support'] : []
+      };
+
+      const response = {
+        trending: trendingTopics,
+        aiGenerated: aiGeneratedForFrontend,
+        preset,
+        existing_count: existingTopics.length,
+        primaryDomain: topicsAndQueriesResult.primaryDomain
+      };
+
+      console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics using new service, ${Object.values(aiGenerated).flat().length} total AI topics, and found ${existingTopics.length} existing topics`);
+
+      res.json({
+        success: true,
+        data: response
+      });
+      return;
+    }
+
+    // Fallback to old approach if new service failed
+    console.log('⚠️ Falling back to old topic generation approach...');
+    
+    // 1. Get trending keywords/topics from Gemini (with error handling - don't fail entire endpoint)
+    let trendingResult: any = { success: false, data: null };
+    try {
+      trendingResult = await trendingKeywordsService.getTrendingKeywords({
+        brand: brand_name,
+        industry: brandIndustry || 'General',
+        competitors: brandCompetitors,
+        locale,
+        country,
+        max_keywords: 12
+      });
+    } catch (trendingError) {
+      console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
+    }
 
     // 2. Get trending keywords which will serve as topics
     const trendingTopics: any[] = [];
-    const trendingPrompts: any[] = [];
     
     if (trendingResult.success && trendingResult.data) {
-      // Use keywords as topics (these are already keyword-like)
       trendingResult.data.keywords.forEach((kw: any, index: number) => {
         trendingTopics.push({
           id: `trend-${index}`,
@@ -259,19 +395,6 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
           trendingIndicator: kw.trend_score > 0.85 ? 'rising' : 'stable'
         });
       });
-      
-      // Store prompts separately (these are for query generation, not topic generation)
-      if (trendingResult.data.prompts && Array.isArray(trendingResult.data.prompts)) {
-        trendingResult.data.prompts.forEach((prompt: any, index: number) => {
-          trendingPrompts.push({
-            id: `prompt-${index}`,
-            name: prompt.prompt,
-            source: 'trending' as const,
-            category: prompt.category?.toLowerCase() || 'awareness',
-            relevance: 85
-          });
-        });
-      }
     }
 
     // 3. Include existing topics from database (if any)
@@ -282,86 +405,38 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
         name: topicName,
         source: 'existing' as const,
         category: topic.category || 'awareness',
-        relevance: 90 // Existing topics have high relevance
+        relevance: 90
       };
     });
 
-    // 4. Normalize all topics to ensure they are keyword-like (not prompt-like)
-    // Combine keywords from trending and existing topics
+    // 4. Generate categorized topics using AEO categorization
     const allTopicNames = [
       ...trendingTopics.map((t: any) => t.name),
       ...existingTopicsFormatted.map((t: any) => t.name)
     ];
-    
-    // Normalize topics using the trending keywords service (already imported at top)
-    const normalizedTopicNames = await trendingKeywordsService.normalizeTopicsToKeywords(
-      allTopicNames,
-      brand_name,
-      brandIndustry || 'General'
-    );
-    
-    // Create a map of original topic names to normalized names
-    // Since normalizeTopicsToKeywords processes topics in order, we can match them by index
-    // But we need to handle cases where some topics are skipped
-    const topicNameMap = new Map<string, string>();
-    let normalizedIndex = 0;
-    
-    for (const original of allTopicNames) {
-      // Check if this topic was normalized (it should be in the normalized array)
-      // We'll match by checking if the normalized version exists and is similar
-      const normalized = normalizedTopicNames[normalizedIndex];
-      
-      if (normalized) {
-        // Check if this normalized topic corresponds to the current original
-        // (either exact match, or the original was converted to this)
-        if (normalized.toLowerCase() === original.toLowerCase() || 
-            original.toLowerCase().includes(normalized.toLowerCase()) ||
-            normalized.toLowerCase().includes(original.toLowerCase().split(' ').slice(-2).join(' '))) {
-          topicNameMap.set(original.toLowerCase(), normalized);
-          normalizedIndex++;
-        } else {
-          // This original topic was skipped, don't map it
-          topicNameMap.set(original.toLowerCase(), original); // Keep original if not normalized
-        }
-      } else {
-        // No more normalized topics, keep original
-        topicNameMap.set(original.toLowerCase(), original);
+
+    let categorizedResult: any = { categorized_topics: [] };
+    if (allTopicNames.length > 0) {
+      try {
+        categorizedResult = await aeoCategorizationService.categorizeTopics({
+          topics: allTopicNames,
+          brand_name,
+          industry: brandIndustry || 'General',
+          competitors: brandCompetitors
+        });
+      } catch (categorizeError) {
+        console.warn('⚠️ AI categorization failed (continuing without AI-recommended topics):', categorizeError);
       }
     }
-    
-    // Map normalized topics back to their original structure
-    const normalizedTrendingTopics = trendingTopics
-      .map((t: any) => {
-        const normalized = topicNameMap.get(t.name.toLowerCase()) || t.name;
-        return { ...t, name: normalized };
-      });
-    
-    const normalizedExistingTopics = existingTopicsFormatted
-      .map((t: any) => {
-        const normalized = topicNameMap.get(t.name.toLowerCase()) || t.name;
-        return { ...t, name: normalized };
-      });
 
-    // 5. Generate categorized topics using AEO categorization
-    // Use normalized keywords (not prompts) for categorization
-    const categorizationRequest = {
-      topics: normalizedTopicNames,
-      brand_name,
-      industry: brandIndustry || 'General',
-      competitors: brandCompetitors
-    };
-
-    const categorizedResult = await aeoCategorizationService.categorizeTopics(categorizationRequest);
-
-    // 6. Organize topics by category
+    // 5. Organize topics by category
     const aiGenerated: Record<string, any[]> = {
       awareness: [],
       comparison: [],
       purchase: [],
-      'post-purchase support': [] // Use full category name
+      'post-purchase support': []
     };
 
-    // Helper function to normalize category name for lookup
     const normalizeCategoryForLookup = (cat: string): string => {
       const normalized = cat.toLowerCase().trim();
       if (normalized === 'support' || normalized === 'post-purchase' || normalized === 'postpurchase') {
@@ -372,23 +447,20 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
 
     if (categorizedResult.categorized_topics) {
       categorizedResult.categorized_topics.forEach((ct: any, index: number) => {
-        // Normalize category name for lookup
         const category = normalizeCategoryForLookup(ct.category || 'awareness');
         
-        // Find matching topic from normalized topics
-        const matchingTopic = normalizedTrendingTopics.find((t: any) => t.name === ct.topic_name) ||
-                             normalizedExistingTopics.find((t: any) => t.name === ct.topic_name);
+        const matchingTopic = trendingTopics.find((t: any) => t.name === ct.topic_name) ||
+                             existingTopicsFormatted.find((t: any) => t.name === ct.topic_name);
         
         if (matchingTopic && aiGenerated[category]) {
           aiGenerated[category].push({
             id: matchingTopic.id || `ai-${index}`,
-            name: ct.topic_name, // Use the normalized topic name
+            name: ct.topic_name,
             source: matchingTopic.source || 'ai_generated' as const,
             category: category,
             relevance: Math.round((ct.confidence || 0.8) * 100)
           });
         } else if (aiGenerated[category]) {
-          // If no matching topic found, create a new one
           aiGenerated[category].push({
             id: `ai-${index}`,
             name: ct.topic_name,
@@ -400,12 +472,10 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       });
     }
 
-    // 7. Merge normalized existing topics into appropriate categories (if not already added)
-    normalizedExistingTopics.forEach((topic) => {
-      // Normalize category name for lookup
+    // 6. Merge existing topics
+    existingTopicsFormatted.forEach((topic) => {
       const category = normalizeCategoryForLookup(topic.category || 'awareness');
       if (aiGenerated[category]) {
-        // Check if topic already exists to avoid duplicates
         const exists = aiGenerated[category].some(t => t.name.toLowerCase() === topic.name.toLowerCase());
         if (!exists) {
           aiGenerated[category].push(topic);
@@ -413,7 +483,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       }
     });
 
-    // 8. Add minimal preset topics (keep a small set for fallback)
+    // 7. Add preset topics
     const preset = [
       { id: 'preset-1', name: 'Product features', source: 'preset' as const, relevance: 85 },
       { id: 'preset-2', name: 'Customer testimonials', source: 'preset' as const, relevance: 82 },
@@ -421,24 +491,21 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       { id: 'preset-4', name: 'Security and compliance', source: 'preset' as const, relevance: 78 }
     ];
 
-    // Map 'post-purchase support' back to 'support' for frontend compatibility
-    // (database still stores 'post-purchase support', but frontend expects 'support')
-    // Ensure all keys exist as arrays (frontend expects them to be iterable)
     const aiGeneratedForFrontend = {
       awareness: Array.isArray(aiGenerated.awareness) ? aiGenerated.awareness : [],
       comparison: Array.isArray(aiGenerated.comparison) ? aiGenerated.comparison : [],
       purchase: Array.isArray(aiGenerated.purchase) ? aiGenerated.purchase : [],
-      support: Array.isArray(aiGenerated['post-purchase support']) ? aiGenerated['post-purchase support'] : [] // Map to 'support' for frontend
+      support: Array.isArray(aiGenerated['post-purchase support']) ? aiGenerated['post-purchase support'] : []
     };
 
     const response = {
-      trending: normalizedTrendingTopics.slice(0, 6),
+      trending: trendingTopics.slice(0, 6),
       aiGenerated: aiGeneratedForFrontend,
       preset,
       existing_count: existingTopics.length
     };
 
-    console.log(`✅ Generated ${trendingTopics.length} trending topics, ${Object.values(aiGenerated).flat().length} AI topics, and found ${existingTopics.length} existing topics`);
+    console.log(`✅ Generated ${trendingTopics.length} trending topics, ${Object.values(aiGenerated).flat().length} AI topics, and found ${existingTopics.length} existing topics (fallback mode)`);
 
     res.json({
       success: true,
@@ -537,7 +604,8 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
     // Use Cerebras as primary, Gemini as secondary for prompt generation
     const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
     const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
-    const geminiApiKey = process.env['GEMINI_API_KEY'];
+    // Standardize on GOOGLE_GEMINI_API_KEY (fallback to GEMINI_API_KEY for compatibility)
+    const geminiApiKey = process.env['GOOGLE_GEMINI_API_KEY'] || process.env['GEMINI_API_KEY'];
 
     let generatedQueries: Array<{ topic: string; query: string }> = [];
 
@@ -581,7 +649,14 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
       ? `Competitors: ${brandCompetitors.join(', ')}. ` 
       : '';
     
-    const prompt = `You are an SEO expert. Generate 3-5 realistic search queries for each topic about ${brand_name} in the ${finalIndustry} industry. ${finalCompetitors}
+    const prompt = `You are an SEO expert. Generate 3-5 realistic, neutral search queries for each topic in the ${finalIndustry} industry. ${finalCompetitors}
+
+CRITICAL RULES:
+- Queries must be NEUTRAL and INDUSTRY-FOCUSED
+- DO NOT include the brand name "${brand_name}" in any query
+- DO NOT include competitor names in queries (unless it's a comparison query)
+- Queries should help users find and evaluate options in the ${finalIndustry} industry
+- Think from customer perspective: "How would someone search when researching ${finalIndustry} options?"
 
 Topics:
 ${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
@@ -589,11 +664,11 @@ ${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 CRITICAL: Return ONLY a valid JSON array. No explanations, no markdown, no code blocks. Just the JSON array.
 Format:
 [
-  {"topic": "Topic Name", "query": "search query text"},
-  {"topic": "Topic Name", "query": "another search query"}
+  {"topic": "Topic Name", "query": "neutral industry-focused search query without brand name"},
+  {"topic": "Topic Name", "query": "another neutral search query"}
 ]
 
-Generate queries that real users would type into Google. Make them specific and actionable.`;
+Generate queries that real users would type into Google. Make them specific, actionable, and NEUTRAL (no brand mentions).`;
 
     let cerebrasFailed = false;
     let geminiFailed = false;
@@ -658,13 +733,15 @@ Generate queries that real users would type into Google. Make them specific and 
     if (generatedQueries.length === 0 && geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
       try {
         console.log('🤖 Attempting prompt generation with Gemini (secondary)...');
+        const geminiModel = process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash-002';
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{
+                role: 'user',
                 parts: [{
                   text: `You are an SEO expert. Return only valid JSON arrays. No explanations, no markdown, no code blocks.\n\n${prompt}`,
                 }],

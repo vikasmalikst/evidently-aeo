@@ -8,6 +8,7 @@ import {
 } from '../types/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { queryGenerationService } from './query-generation.service';
+import { topicsQueryGenerationService, TopicsAndQueriesResponse } from './topics-query-generation.service';
 import { dataCollectionService, QueryExecutionRequest } from './data-collection/data-collection.service';
 
 type NormalizedCompetitor = {
@@ -570,23 +571,51 @@ export class BrandService {
           // If no user-selected queries or save failed, generate queries with AI
           if (!queryGenResult || queryGenResult.total_queries === 0) {
             try {
-              console.log(`🚀 Triggering AI query generation for ${topicsForQueryGen.length} topics`);
-              console.log(`📋 Topics for query generation:`, topicsForQueryGen);
+              // Check if we should use the new topics+queries generation approach
+              const useNewApproach = process.env.USE_NEW_TOPICS_QUERY_GENERATION === 'true';
               
-              queryGenResult = await queryGenerationService.generateSeedQueries({
-                url: brandData.website_url,
-                locale: 'en-US',
-                country: 'US',
-                industry: brandData.industry,
-                competitors: competitorNames.join(', '),
-                keywords: brandData.keywords?.join(', '),
-                llm_provider: 'cerebras', // Use Cerebras as primary
-                brand_id: newBrand.id,
-                customer_id: customerId,
-                topics: topicsForQueryGen // Pass topicsForQueryGen instead of topicLabels
-              });
-              
-              console.log(`✅ Query generation completed for brand ${newBrand.id} - Generated ${queryGenResult.total_queries} queries`);
+              if (useNewApproach && topicsForQueryGen.length === 0) {
+                // Use new approach: generate topics and queries together
+                console.log(`🚀 Using NEW topics+queries generation approach for brand ${newBrand.name}`);
+                
+                const topicsAndQueries = await topicsQueryGenerationService.generateTopicsAndQueries({
+                  brandName: newBrand.name,
+                  industry: brandData.industry,
+                  competitors: competitorNames,
+                  description: brandData.description,
+                  maxTopics: 20, // Filter to top 20 topics
+                });
+
+                // Store topics and queries
+                await this.storeTopicsAndQueriesFromNewService(
+                  newBrand.id,
+                  customerId,
+                  topicsAndQueries,
+                  newBrand.name
+                );
+
+                queryGenResult = { total_queries: topicsAndQueries.topics.length };
+                console.log(`✅ New approach: Generated ${topicsAndQueries.topics.length} topics with queries`);
+              } else {
+                // Use original approach: generate queries for existing topics
+                console.log(`🚀 Triggering AI query generation for ${topicsForQueryGen.length} topics`);
+                console.log(`📋 Topics for query generation:`, topicsForQueryGen);
+                
+                queryGenResult = await queryGenerationService.generateSeedQueries({
+                  url: brandData.website_url,
+                  locale: 'en-US',
+                  country: 'US',
+                  industry: brandData.industry,
+                  competitors: competitorNames.join(', '),
+                  keywords: brandData.keywords?.join(', '),
+                  llm_provider: 'cerebras', // Use Cerebras as primary
+                  brand_id: newBrand.id,
+                  customer_id: customerId,
+                  topics: topicsForQueryGen // Pass topicsForQueryGen instead of topicLabels
+                });
+                
+                console.log(`✅ Query generation completed for brand ${newBrand.id} - Generated ${queryGenResult.total_queries} queries`);
+              }
             } catch (genError) {
               console.error('⚠️ AI query generation failed:', genError);
               queryGenResult = { total_queries: 0 };
@@ -2091,6 +2120,104 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
   /**
    * Save user-selected queries directly to database
    */
+  /**
+   * Store topics and queries from the new topics+queries generation service
+   */
+  private async storeTopicsAndQueriesFromNewService(
+    brandId: string,
+    customerId: string,
+    topicsAndQueries: TopicsAndQueriesResponse,
+    brandName: string
+  ): Promise<void> {
+    console.log(`💾 Storing ${topicsAndQueries.topics.length} topics with queries from new service...`);
+
+    try {
+      // Step 1: Insert topics into brand_topics table
+      const topicRecords = topicsAndQueries.topics.map((item) => {
+        // Map intent archetype to existing category system
+        const category = topicsQueryGenerationService.mapIntentToCategory(item.intentArchetype);
+        
+        return {
+          brand_id: brandId,
+          topic_name: item.topic,
+          category: category,
+          description: item.description,
+          // Store intent archetype in metadata if needed
+          metadata: {
+            intentArchetype: item.intentArchetype,
+            priority: item.priority,
+            primaryDomain: topicsAndQueries.primaryDomain,
+          },
+        };
+      });
+
+      const { error: topicError } = await supabaseAdmin
+        .from('brand_topics')
+        .insert(topicRecords);
+
+      if (topicError) {
+        console.error('⚠️ Failed to insert topics:', topicError);
+        throw topicError;
+      }
+
+      console.log(`✅ Inserted ${topicRecords.length} topics`);
+
+      // Step 2: Insert queries into generated_queries table
+      const queryRecords = topicsAndQueries.topics.map((item, index) => {
+        // Map intent archetype to existing intent system
+        const intent = this.mapIntentArchetypeToIntent(item.intentArchetype);
+        
+        return {
+          brand_id: brandId,
+          customer_id: customerId,
+          query_text: item.query,
+          topic: item.topic,
+          intent: intent,
+          priority: item.priority,
+          is_active: true,
+          metadata: {
+            intentArchetype: item.intentArchetype,
+            generatedBy: 'new-topics-query-service',
+          },
+        };
+      });
+
+      const { error: queryError } = await supabaseAdmin
+        .from('generated_queries')
+        .insert(queryRecords);
+
+      if (queryError) {
+        console.error('⚠️ Failed to insert queries:', queryError);
+        throw queryError;
+      }
+
+      console.log(`✅ Inserted ${queryRecords.length} queries`);
+    } catch (error) {
+      console.error('❌ Failed to store topics and queries:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Map intent archetype to existing intent system
+   */
+  private mapIntentArchetypeToIntent(intentArchetype: string): 'awareness' | 'comparison' | 'purchase' | 'support' {
+    const mapping: Record<string, 'awareness' | 'comparison' | 'purchase' | 'support'> = {
+      'best_of': 'awareness',
+      'comparison': 'comparison',
+      'alternatives': 'comparison',
+      'pricing_or_value': 'purchase',
+      'use_case': 'awareness',
+      'how_to': 'awareness',
+      'problem_solving': 'support',
+      'beginner_explain': 'awareness',
+      'expert_explain': 'awareness',
+      'technical_deep_dive': 'awareness',
+    };
+
+    return mapping[intentArchetype] || 'awareness';
+  }
+
   private async saveUserSelectedQueries(
     brandId: string,
     customerId: string,

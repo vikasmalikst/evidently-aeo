@@ -16,6 +16,7 @@ import dataCollectionRoutes from './routes/data-collection.routes';
 import keywordGenerationRoutes from './routes/keyword-generation.routes';
 import citationCategorizationRoutes from './routes/citation-categorization.routes';
 import onboardingRoutes from './routes/onboarding.routes';
+import promptManagementRoutes from './routes/prompt-management.routes';
 // TEMPORARY: Admin routes commented out
 // import adminRoutes from './routes/admin.routes';
 // import userManagementRoutes from './routes/user-management.routes';
@@ -85,6 +86,7 @@ app.use('/api/trending-keywords', trendingKeywordsRoutes);
 app.use('/api/data-collection', dataCollectionRoutes);
 app.use('/api/keywords', keywordGenerationRoutes);
 app.use('/api/citations', citationCategorizationRoutes);
+app.use('/api', promptManagementRoutes);
 // TEMPORARY: Admin routes commented out
 // app.use('/api/admin', adminRoutes);
 // app.use('/api/users', userManagementRoutes);

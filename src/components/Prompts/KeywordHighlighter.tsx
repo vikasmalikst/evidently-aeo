@@ -4,10 +4,12 @@ interface KeywordHighlighterProps {
     brand: string[];
     products: string[];
     keywords: string[];
+    competitors: string[];
   };
   highlightBrand: boolean;
   highlightProducts: boolean;
   highlightKeywords?: boolean;
+  highlightCompetitors?: boolean;
 }
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -17,7 +19,8 @@ export const KeywordHighlighter = ({
   keywords,
   highlightBrand,
   highlightProducts,
-  highlightKeywords = true
+  highlightKeywords = true,
+  highlightCompetitors = true
 }: KeywordHighlighterProps) => {
   const highlights: Array<{ start: number; end: number; type: string }> = [];
 
@@ -41,11 +44,13 @@ export const KeywordHighlighter = ({
   if (highlightBrand && keywords.brand && keywords.brand.length > 0) addHighlights(keywords.brand, 'brand');
   if (highlightProducts && keywords.products && keywords.products.length > 0) addHighlights(keywords.products, 'product');
   if (highlightKeywords && keywords.keywords && keywords.keywords.length > 0) addHighlights(keywords.keywords, 'keyword');
+  if (highlightCompetitors && keywords.competitors && keywords.competitors.length > 0) addHighlights(keywords.competitors, 'competitor');
 
   // Resolve overlaps by preferring higher priority and longer matches
-  // Priority: product > keyword > brand
+  // Priority: product > competitor > keyword > brand
   const priorityOf = (type: string) => {
-    if (type === 'product') return 3;
+    if (type === 'product') return 4;
+    if (type === 'competitor') return 3;
     if (type === 'keyword') return 2;
     if (type === 'brand') return 1;
     return 0;
@@ -99,6 +104,7 @@ export const KeywordHighlighter = ({
       if (type === 'brand') return '#498CF9';
       if (type === 'product') return '#AC59FB';
       if (type === 'keyword') return '#10B981';
+      if (type === 'competitor') return '#F59E0B';
       return '';
     };
 

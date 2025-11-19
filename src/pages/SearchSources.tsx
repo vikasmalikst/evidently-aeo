@@ -458,12 +458,12 @@ export const SearchSources = () => {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
             <div>
-              <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-                Answer Sources
-              </h1>
-              <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
-                Understand which sources are cited in AI answers, measure share of answer across prompts, and identify optimization opportunities
-              </p>
+          <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
+            Answer Sources
+          </h1>
+          <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
+            Understand which sources are cited in AI answers, measure share of answer across prompts, and identify optimization opportunities
+          </p>
             </div>
             {brands.length > 1 && selectedBrandId && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -517,6 +517,117 @@ export const SearchSources = () => {
         </div>
 
         {activeTab === 'top-sources' && (
+          <>
+            {loading ? (
+              /* Loading State - Show skeleton for all sections */
+              <>
+                {/* Metrics Section Skeleton */}
+                <div
+                  style={{
+                    backgroundColor: '#ffffff',
+                    padding: '24px',
+                    borderRadius: '8px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                    marginBottom: '24px'
+                  }}
+                >
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginTop: '24px' }}>
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} style={{ backgroundColor: '#f4f4f6', borderRadius: '6px', padding: '20px', minHeight: '100px' }}>
+                        <div style={{ width: '60%', height: '12px', backgroundColor: '#e8e9ed', borderRadius: '4px', marginBottom: '12px' }} />
+                        <div style={{ width: '40%', height: '32px', backgroundColor: '#e8e9ed', borderRadius: '4px', marginBottom: '8px' }} />
+                        <div style={{ width: '80%', height: '10px', backgroundColor: '#e8e9ed', borderRadius: '4px' }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Filters Skeleton */}
+                <div
+                  style={{
+                    backgroundColor: '#ffffff',
+                    padding: '16px 24px',
+                    borderRadius: '8px',
+                    marginBottom: '24px',
+                    display: 'flex',
+                    gap: '12px'
+                  }}
+                >
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} style={{ width: '150px', height: '36px', backgroundColor: '#f4f4f6', borderRadius: '4px' }} />
+                  ))}
+                </div>
+
+                {/* Chart Skeleton */}
+                <div
+                  style={{
+                    backgroundColor: '#ffffff',
+                    padding: '24px',
+                    borderRadius: '8px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                    marginBottom: '24px'
+                  }}
+                >
+                  <div style={{ height: '500px', backgroundColor: '#f9f9fb', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ 
+                        width: '48px', 
+                        height: '48px', 
+                        border: '3px solid #e8e9ed', 
+                        borderTopColor: '#00bcdc', 
+                        borderRadius: '50%', 
+                        animation: 'spin 1s linear infinite',
+                        margin: '0 auto 16px'
+                      }} />
+                      <p style={{ fontSize: '14px', color: '#64748b' }}>Loading chart data...</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table Skeleton */}
+                <div
+                  style={{
+                    backgroundColor: '#ffffff',
+                    padding: '24px',
+                    borderRadius: '8px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                  }}
+                >
+                  <div style={{ height: '400px', backgroundColor: '#f9f9fb', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ 
+                        width: '48px', 
+                        height: '48px', 
+                        border: '3px solid #e8e9ed', 
+                        borderTopColor: '#00bcdc', 
+                        borderRadius: '50%', 
+                        animation: 'spin 1s linear infinite',
+                        margin: '0 auto 16px'
+                      }} />
+                      <p style={{ fontSize: '14px', color: '#64748b' }}>Loading source data...</p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : error ? (
+              /* Error State */
+              <div style={{ 
+                backgroundColor: '#fff5f5', 
+                border: '1px solid #fecaca', 
+                padding: '24px', 
+                borderRadius: '8px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                marginBottom: '24px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                  <IconAlertCircle size={20} style={{ color: '#f94343' }} />
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
+                    Error Loading Source Data
+                  </h3>
+                </div>
+                <p style={{ fontSize: '14px', color: '#393e51', margin: 0 }}>{error}</p>
+              </div>
+            ) : (
           <>
             {/* Metrics Section */}
             <div
@@ -810,8 +921,8 @@ export const SearchSources = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <div>
               <h2 style={{ fontSize: '20px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 4px 0' }}>
-                Source Attribution Details
-              </h2>
+              Source Attribution Details
+            </h2>
               <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
                 {filteredData.length} source{filteredData.length !== 1 ? 's' : ''} found
               </p>
@@ -1107,7 +1218,7 @@ export const SearchSources = () => {
                               gap: '2px'
                             }}>
                               {source.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(source.mentionChange).toFixed(1)}%
-                            </span>
+                          </span>
                           )}
                         </div>
                       </td>
@@ -1126,7 +1237,7 @@ export const SearchSources = () => {
                               gap: '2px'
                             }}>
                               {source.soaChange >= 0 ? '↑' : '↓'} {Math.abs(source.soaChange).toFixed(1)}%
-                            </span>
+                          </span>
                           )}
                         </div>
                       </td>
@@ -1151,45 +1262,45 @@ export const SearchSources = () => {
                               alignItems: 'center',
                               gap: '2px'
                             }}>
-                              {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
-                            </span>
+                            {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
+                          </span>
                           )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
                         {source.topics.length > 0 ? (
-                          <div
+                        <div
                             style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', position: 'relative', maxWidth: '250px' }}
-                            onMouseEnter={(e) => {
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              setTooltipPosition({ x: rect.left, y: rect.top });
-                              setHoveredTopics(source.topics);
-                            }}
-                            onMouseLeave={() => setHoveredTopics(null)}
-                          >
-                            {source.topics.slice(0, 2).map(topic => (
-                              <span
-                                key={topic}
-                                style={{
+                          onMouseEnter={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setTooltipPosition({ x: rect.left, y: rect.top });
+                            setHoveredTopics(source.topics);
+                          }}
+                          onMouseLeave={() => setHoveredTopics(null)}
+                        >
+                          {source.topics.slice(0, 2).map(topic => (
+                            <span
+                              key={topic}
+                              style={{
                                   padding: '5px 10px',
                                   borderRadius: '6px',
-                                  fontSize: '11px',
+                                fontSize: '11px',
                                   fontWeight: '500',
                                   backgroundColor: '#e0f2fe',
                                   color: '#0369a1',
                                   cursor: 'default',
                                   border: '1px solid #bae6fd'
-                                }}
-                              >
-                                {topic}
-                              </span>
-                            ))}
-                            {source.topics.length > 2 && (
-                              <span
-                                style={{
+                              }}
+                            >
+                              {topic}
+                            </span>
+                          ))}
+                          {source.topics.length > 2 && (
+                            <span
+                              style={{
                                   padding: '5px 10px',
                                   borderRadius: '6px',
-                                  fontSize: '11px',
+                                fontSize: '11px',
                                   fontWeight: '500',
                                   backgroundColor: '#f1f5f9',
                                   color: '#64748b',
@@ -1197,34 +1308,34 @@ export const SearchSources = () => {
                                   border: '1px solid #e2e8f0'
                                 }}
                                 title={source.topics.slice(2).join(', ')}
-                              >
-                                +{source.topics.length - 2}
-                              </span>
-                            )}
-                          </div>
+                            >
+                              +{source.topics.length - 2}
+                            </span>
+                          )}
+                        </div>
                         ) : (
                           <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
                         )}
                       </td>
                       <td style={{ padding: '16px 12px', maxWidth: '250px' }}>
                         {source.pages.length > 0 ? (
-                          <div
-                            style={{
-                              fontSize: '13px',
-                              color: '#00bcdc',
-                              cursor: 'pointer',
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: '#00bcdc',
+                            cursor: 'pointer',
                               fontWeight: '500',
                               display: 'inline-block',
                               maxWidth: '100%',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap'
-                            }}
-                            onClick={() => {
-                              setModalType('pages');
-                              setModalData(source.pages);
-                              setModalTitle(`Pages citing ${source.name}`);
-                            }}
+                          }}
+                          onClick={() => {
+                            setModalType('pages');
+                            setModalData(source.pages);
+                            setModalTitle(`Pages citing ${source.name}`);
+                          }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.textDecoration = 'underline';
                             }}
@@ -1239,30 +1350,30 @@ export const SearchSources = () => {
                                 +{source.pages.length - 1} more
                               </span>
                             )}
-                          </div>
+                        </div>
                         ) : (
                           <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
                         )}
                       </td>
                       <td style={{ padding: '16px 12px', maxWidth: '300px' }}>
                         {source.prompts.length > 0 ? (
-                          <div
-                            style={{
-                              fontSize: '13px',
-                              color: '#00bcdc',
-                              cursor: 'pointer',
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: '#00bcdc',
+                            cursor: 'pointer',
                               fontWeight: '500',
                               display: 'inline-block',
                               maxWidth: '100%',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap'
-                            }}
-                            onClick={() => {
-                              setModalType('prompts');
-                              setModalData(source.prompts);
-                              setModalTitle(`Prompts citing ${source.name}`);
-                            }}
+                          }}
+                          onClick={() => {
+                            setModalType('prompts');
+                            setModalData(source.prompts);
+                            setModalTitle(`Prompts citing ${source.name}`);
+                          }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.textDecoration = 'underline';
                             }}
@@ -1277,7 +1388,7 @@ export const SearchSources = () => {
                                 +{source.prompts.length - 1} more
                               </span>
                             )}
-                          </div>
+                        </div>
                         ) : (
                           <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
                         )}
@@ -1461,71 +1572,71 @@ export const SearchSources = () => {
             </div>
           </div>
         )}
+              {/* Empty State */}
+              {sourceData.length === 0 && (
+                <div style={{ 
+                  backgroundColor: '#ffffff', 
+                  padding: '48px', 
+                  borderRadius: '8px', 
+                  textAlign: 'center',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                  marginBottom: '24px'
+                }}>
+                  <p style={{ fontSize: '16px', color: '#393e51', margin: 0 }}>
+                    No source data available for the selected time range.
+                  </p>
+          </div>
+              )}
+              </>
+        )}
           </>
         )}
 
         {activeTab === 'source-coverage' && (
+          loading ? (
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                padding: '48px',
+                borderRadius: '8px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                textAlign: 'center'
+              }}
+            >
+              <div style={{ 
+                width: '48px', 
+                height: '48px', 
+                border: '3px solid #e8e9ed', 
+                borderTopColor: '#00bcdc', 
+                borderRadius: '50%', 
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 16px'
+              }} />
+              <p style={{ fontSize: '14px', color: '#64748b' }}>Loading source coverage data...</p>
+            </div>
+          ) : error ? (
+            <div style={{ 
+              backgroundColor: '#fff5f5', 
+              border: '1px solid #fecaca', 
+              padding: '24px', 
+              borderRadius: '8px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                <IconAlertCircle size={20} style={{ color: '#f94343' }} />
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
+                  Error Loading Source Coverage
+                </h3>
+              </div>
+              <p style={{ fontSize: '14px', color: '#393e51', margin: 0 }}>{error}</p>
+            </div>
+          ) : (
           <SourceCoverageHeatmap
             sources={heatmapSources}
-            topics={allTopics.length > 0 ? allTopics : ['No topics available']}
+              topics={allTopics.length > 0 ? allTopics : ['No topics available']}
             data={heatmapData}
           />
-        )}
-
-        {/* Loading State */}
-        {loading && (
-          <div style={{ 
-            backgroundColor: '#ffffff', 
-            padding: '48px', 
-            borderRadius: '8px', 
-            textAlign: 'center',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
-          }}>
-            <div style={{ 
-              width: '48px', 
-              height: '48px', 
-              border: '3px solid #e8e9ed', 
-              borderTopColor: '#00bcdc', 
-              borderRadius: '50%', 
-              animation: 'spin 1s linear infinite',
-              margin: '0 auto 16px'
-            }} />
-            <p style={{ fontSize: '14px', color: '#393e51' }}>Loading source data...</p>
-          </div>
-        )}
-
-        {/* Error State */}
-        {error && !loading && (
-          <div style={{ 
-            backgroundColor: '#fff5f5', 
-            border: '1px solid #fecaca', 
-            padding: '24px', 
-            borderRadius: '8px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-              <IconAlertCircle size={20} style={{ color: '#f94343' }} />
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
-                Error Loading Source Data
-              </h3>
-            </div>
-            <p style={{ fontSize: '14px', color: '#393e51', margin: 0 }}>{error}</p>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loading && !error && sourceData.length === 0 && (
-          <div style={{ 
-            backgroundColor: '#ffffff', 
-            padding: '48px', 
-            borderRadius: '8px', 
-            textAlign: 'center',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
-          }}>
-            <p style={{ fontSize: '16px', color: '#393e51', margin: 0 }}>
-              No source data available for the selected time range.
-            </p>
-          </div>
+          )
         )}
       </div>
     </Layout>

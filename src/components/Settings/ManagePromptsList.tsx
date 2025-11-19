@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { ChevronDown, ChevronRight, CalendarDays, Plus, Edit2, Trash2, X, Check, Info, RotateCcw } from 'lucide-react';
-import { Topic, Prompt } from '../../data/mockPromptsData';
+import { ChevronDown, ChevronRight, CalendarDays, Plus, Edit2, Trash2, X, Check, RotateCcw } from 'lucide-react';
+import { Topic, Prompt } from '../../api/promptManagementApi';
 import { PendingChangesIndicator } from '../PromptConfiguration/PendingChangesIndicator';
 import { RecalibrationWarning } from '../PromptConfiguration/RecalibrationWarning';
 import { RecalibrationInfoModal } from '../PromptConfiguration/RecalibrationInfoModal';
@@ -9,6 +9,11 @@ import { RecalibrationSuccessState } from '../PromptConfiguration/RecalibrationS
 import { useImpactCalculation } from '../../hooks/useImpactCalculation';
 import { useRecalibrationLogic } from '../../hooks/useRecalibrationLogic';
 import { topicsToConfiguration } from '../../utils/promptConfigAdapter';
+import {
+  addPrompt,
+  applyBatchChanges,
+  calculateImpact as calculateImpactApi,
+} from '../../api/promptManagementApi';
 import type { PendingChanges } from '../../hooks/usePromptConfiguration';
 
 interface PromptConfiguration {
@@ -23,6 +28,7 @@ interface PromptConfiguration {
 }
 
 interface ManagePromptsListProps {
+  brandId: string;
   topics: Topic[];
   selectedPromptId: number | null;
   onPromptSelect: (prompt: Prompt, topicName: string) => void;
@@ -74,6 +80,7 @@ const formatDate = (dateString: string) => {
 };
 
 export const ManagePromptsList = ({ 
+  brandId,
   topics, 
   selectedPromptId, 
   onPromptSelect,
@@ -158,7 +165,7 @@ export const ManagePromptsList = ({
   }, [currentConfig, pendingChanges]);
 
   // Impact calculation hook
-  const { impact, isCalculating, calculateImpactEstimate } = useImpactCalculation(
+  const { impact, calculateImpactEstimate } = useImpactCalculation(
     currentConfig,
     pendingChanges
   );
@@ -166,13 +173,11 @@ export const ManagePromptsList = ({
   // Recalibration logic hook
   const {
     isPreviewModalOpen,
-    isExplanationExpanded,
     isSubmitting,
     submitted,
     error,
     openPreviewModal,
     closePreviewModal,
-    toggleExplanation,
     submitRecalibration,
     resetState
   } = useRecalibrationLogic();
@@ -234,7 +239,11 @@ export const ManagePromptsList = ({
           }
           return {
             ...prev,
-            edited: [...prev.edited, { id: editingPrompt.id, oldText: originalText, newText }]
+            edited: [...prev.edited, { 
+              id: editingPrompt.id, 
+              oldText: originalText, 
+              newText 
+            }]
           };
         });
       } else {
@@ -257,7 +266,7 @@ export const ManagePromptsList = ({
     setEditText('');
   };
 
-  const handleDeleteClick = (prompt: Prompt, e: React.MouseEvent) => {
+  const handleDeleteClick = async (prompt: Prompt, e: React.MouseEvent) => {
     e.stopPropagation();
     
     // If it was a newly added prompt, just remove it from added list
@@ -285,6 +294,7 @@ export const ManagePromptsList = ({
     }
     
     // Delete the prompt immediately - user can preview impact and confirm/revert later
+    // Note: We don't call API here - deletion happens on batch apply
     onPromptDelete(prompt);
   };
 
@@ -294,26 +304,34 @@ export const ManagePromptsList = ({
     setNewPromptText('');
   };
 
-  const handleAddSave = (topicId: number, e: React.MouseEvent) => {
+  const handleAddSave = async (topicId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (newPromptText.trim()) {
       const topic = topics.find(t => t.id === topicId);
       const promptText = newPromptText.trim();
       
-      // Get the max ID to predict the new prompt's ID
-      const maxId = Math.max(...topics.flatMap(t => t.prompts.map(p => p.id)), 0);
-      const newPromptId = maxId + 1;
-      
-      // Track as pending change and mark as newly added
-      setPendingChanges(prev => ({
-        ...prev,
-        added: [...prev.added, { text: promptText, topic: topic?.name || '' }]
-      }));
-      setNewlyAddedPromptIds(prev => new Set([...prev, newPromptId]));
-      
-      onPromptAdd(topicId, promptText);
-      setShowAddModal(null);
-      setNewPromptText('');
+      try {
+        // Add prompt via API (but don't create version yet - that happens on batch apply)
+        await addPrompt(brandId, promptText, topic?.name || 'Uncategorized');
+        
+        // Get the max ID to predict the new prompt's ID
+        const maxId = Math.max(...topics.flatMap(t => t.prompts.map(p => p.id)), 0);
+        const newPromptId = maxId + 1;
+        
+        // Track as pending change and mark as newly added
+        setPendingChanges(prev => ({
+          ...prev,
+          added: [...prev.added, { text: promptText, topic: topic?.name || '' }]
+        }));
+        setNewlyAddedPromptIds(prev => new Set([...prev, newPromptId]));
+        
+        onPromptAdd(topicId, promptText);
+        setShowAddModal(null);
+        setNewPromptText('');
+      } catch (err) {
+        console.error('Error adding prompt:', err);
+        // Still add to UI for optimistic update, but mark as error
+      }
     }
   };
 
@@ -324,6 +342,23 @@ export const ManagePromptsList = ({
   };
 
   const handlePreviewClick = async () => {
+    // Use real API for impact calculation (optional - falls back to local if fails)
+    try {
+      await calculateImpactApi(brandId, {
+        added: pendingChanges.added,
+        removed: pendingChanges.removed.map(r => ({ 
+          id: typeof r.id === 'number' ? r.id.toString() : r.id 
+        })),
+        edited: pendingChanges.edited.map(e => ({ 
+          id: typeof e.id === 'number' ? e.id.toString() : e.id.toString(), 
+          newText: e.newText || '' 
+        })),
+      });
+    } catch (apiErr) {
+      console.warn('API impact calculation failed, using local calculation:', apiErr);
+    }
+    
+    // Use local calculation for now (can be enhanced to use API result)
     await calculateImpactEstimate();
     openPreviewModal();
   };
@@ -331,36 +366,70 @@ export const ManagePromptsList = ({
   const handleConfirm = async () => {
     if (!impact) return;
 
-    // If reverting to a version, replace entire topics structure to match selected version exactly
-    if (revertingToVersion !== null && onTopicsReplace) {
-      const selectedConfig = configHistory.find(c => c.version === revertingToVersion);
-      if (selectedConfig) {
-        // Deep clone the selected config's topics to avoid reference issues
-        const revertedTopics = selectedConfig.topics.map(topic => ({
-          ...topic,
-          prompts: topic.prompts.map(prompt => ({ ...prompt }))
-        }));
-        onTopicsReplace(revertedTopics);
+    try {
+      // If reverting to a version, replace entire topics structure to match selected version exactly
+      if (revertingToVersion !== null && onTopicsReplace) {
+        const selectedConfig = configHistory.find(c => c.version === revertingToVersion);
+        if (selectedConfig) {
+          // Deep clone the selected config's topics to avoid reference issues
+          const revertedTopics = selectedConfig.topics.map(topic => ({
+            ...topic,
+            prompts: topic.prompts.map(prompt => ({ ...prompt }))
+          }));
+          onTopicsReplace(revertedTopics);
+        }
       }
-    }
 
-    await submitRecalibration(pendingChanges, impact);
-    
-    // Clear pending changes and reset original prompts
-    setPendingChanges({ added: [], removed: [], edited: [] });
-    setNewlyAddedPromptIds(new Set());
-    setRevertingToVersion(null);
-    const newOriginalMap = new Map<number, Prompt>();
-    topics.forEach(topic => {
-      topic.prompts.forEach(prompt => {
-        newOriginalMap.set(prompt.id, { ...prompt });
+      // Apply batch changes via API
+      const changeSummary = generateChangeSummary(pendingChanges);
+      await applyBatchChanges(brandId, {
+        added: pendingChanges.added,
+        removed: pendingChanges.removed.map(r => ({ 
+          id: typeof r.id === 'number' ? r.id.toString() : r.id 
+        })),
+        edited: pendingChanges.edited.map(e => ({ 
+          id: typeof e.id === 'number' ? e.id.toString() : e.id.toString(), 
+          newText: e.newText || '' 
+        })),
+      }, changeSummary);
+
+      await submitRecalibration(pendingChanges, impact);
+      
+      // Clear pending changes and reset original prompts
+      setPendingChanges({ added: [], removed: [], edited: [] });
+      setNewlyAddedPromptIds(new Set());
+      setRevertingToVersion(null);
+      const newOriginalMap = new Map<number, Prompt>();
+      topics.forEach(topic => {
+        topic.prompts.forEach(prompt => {
+          newOriginalMap.set(prompt.id, { ...prompt });
+        });
       });
-    });
-    setOriginalPrompts(newOriginalMap);
-    
-    if (onChangesApplied) {
-      onChangesApplied();
+      setOriginalPrompts(newOriginalMap);
+      
+      if (onChangesApplied) {
+        onChangesApplied();
+      }
+    } catch (err) {
+      console.error('Error applying changes:', err);
+      // Still call submitRecalibration for UI state, but show error
+      await submitRecalibration(pendingChanges, impact);
     }
+  };
+
+  // Helper function to generate change summary
+  const generateChangeSummary = (changes: PendingChanges): string => {
+    const parts: string[] = [];
+    if (changes.added.length > 0) {
+      parts.push(`Added ${changes.added.length} prompt${changes.added.length > 1 ? 's' : ''}`);
+    }
+    if (changes.removed.length > 0) {
+      parts.push(`Removed ${changes.removed.length} prompt${changes.removed.length > 1 ? 's' : ''}`);
+    }
+    if (changes.edited.length > 0) {
+      parts.push(`Edited ${changes.edited.length} prompt${changes.edited.length > 1 ? 's' : ''}`);
+    }
+    return parts.length > 0 ? parts.join(', ') : 'No changes';
   };
 
   const handleMakeMoreChanges = () => {

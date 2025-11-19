@@ -78,6 +78,13 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
   const soAChange = currentSoA - previousSoA;
   const soAChangePercent = previousSoA > 0 ? ((soAChange / previousSoA) * 100) : 0;
   
+  // Calculate avg competitor SoA deterministically (using default of 5 competitors)
+  const numCompetitors = 5;
+  const competitorSeed = (topic.id.charCodeAt(0) + numCompetitors * 19) % 100;
+  const baseSoA = topic.currentSoA ?? (topic.soA * 20);
+  const avgCompetitorSoA = Math.max(0, Math.min(100, baseSoA * (0.65 + (competitorSeed / 100) * 0.7)));
+  const avgCompetitorSoAScale = avgCompetitorSoA / 20;
+  
   const trendDisplay = getTrendDisplay(topic.trend.direction, topic.trend.delta);
   const TrendIcon = trendDisplay.icon;
 
@@ -215,10 +222,10 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
                   className="text-2xl font-bold"
                   style={{ color: getSoAColor(currentSoAScale) }}
                 >
-                  {currentSoAScale.toFixed(2)}×
+                  {currentSoA.toFixed(1)}%
                 </span>
                 <span className="text-sm text-[var(--text-caption)]">
-                  ({currentSoA.toFixed(1)}%)
+                  ({currentSoAScale.toFixed(2)}×)
                 </span>
               </div>
             </div>
@@ -228,10 +235,10 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
               <div className="text-xs text-[var(--text-caption)] mb-1">Previous Period</div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-[var(--text-body)]">
-                  {(previousSoA / 20).toFixed(2)}×
+                  {previousSoA.toFixed(1)}%
                 </span>
                 <span className="text-sm text-[var(--text-caption)]">
-                  ({previousSoA.toFixed(1)}%)
+                  ({(previousSoA / 20).toFixed(2)}×)
                 </span>
               </div>
             </div>
@@ -256,11 +263,16 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
               </div>
             </div>
 
-            {/* Search Volume */}
+            {/* Avg Competitive SoA */}
             <div className="bg-[var(--bg-secondary)] rounded-lg p-4">
-              <div className="text-xs text-[var(--text-caption)] mb-1">Search Volume</div>
-              <div className="text-2xl font-bold text-[var(--text-body)]">
-                {topic.searchVolume ? topic.searchVolume.toLocaleString() : 'N/A'}
+              <div className="text-xs text-[var(--text-caption)] mb-1">Avg Competitive SoA</div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-[var(--text-body)]">
+                  {avgCompetitorSoA.toFixed(1)}%
+                </span>
+                <span className="text-sm text-[var(--text-caption)]">
+                  ({avgCompetitorSoAScale.toFixed(2)}×)
+                </span>
               </div>
             </div>
           </div>

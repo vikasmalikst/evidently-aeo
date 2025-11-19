@@ -1,5 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
 import { ChevronUp, ChevronDown, Minus } from 'lucide-react';
+import { IconBrandOpenai } from '@tabler/icons-react';
+import claudeLogoSrc from '../../../assets/Claude-AI-icon.svg';
+import copilotLogoSrc from '../../../assets/Microsoft-Copilot-icon.svg';
+import deepseekLogoSrc from '../../../assets/Deepseek-Logo-Icon.svg';
+import geminiLogoSrc from '../../../assets/Google-Gemini-Icon.svg';
+import grokLogoSrc from '../../../assets/Grok-icon.svg';
+import mistralLogoSrc from '../../../assets/Mistral_AI_icon.svg';
+import perplexityLogoSrc from '../../../assets/Perplexity-Simple-Icon.svg';
 import type { Topic, SortColumn, SortState, TopicSource } from '../types';
 import type { Competitor } from '../utils/competitorColors';
 import { createCompetitorColorMap, getCompetitorColorById } from '../utils/competitorColors';
@@ -25,6 +33,8 @@ interface TopicsRankedTableProps {
   onCategoryChange?: (category: string) => void;
   competitors?: Competitor[];
   brandFavicon?: string;
+  selectedModel?: string;
+  aiModels?: Array<{ id: string; name: string; icon: string }>;
 }
 
 // Generate mock average industry SoA data for a topic (deterministic)
@@ -93,12 +103,46 @@ export const TopicsRankedTable = ({
   selectedCategory: externalSelectedCategory,
   onCategoryChange,
   competitors = [],
-  brandFavicon
+  brandFavicon,
+  selectedModel,
+  aiModels = []
 }: TopicsRankedTableProps) => {
   // Create color map for competitors
   const competitorColorMap = useMemo(() => {
     return createCompetitorColorMap(competitors);
   }, [competitors]);
+
+  // Get model info
+  const modelInfo = useMemo(() => {
+    if (!selectedModel || !aiModels.length) return null;
+    return aiModels.find(m => m.id === selectedModel);
+  }, [selectedModel, aiModels]);
+
+  // Get model favicon component
+  const getModelFavicon = () => {
+    if (!selectedModel) return null;
+    
+    switch (selectedModel) {
+      case 'chatgpt':
+        return <IconBrandOpenai size={16} />;
+      case 'claude':
+        return <img src={claudeLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'gemini':
+        return <img src={geminiLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'perplexity':
+        return <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'copilot':
+        return <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'deepseek':
+        return <img src={deepseekLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'mistral':
+        return <img src={mistralLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'grok':
+        return <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      default:
+        return null;
+    }
+  };
   const [sortState, setSortState] = useState<SortState>({ column: 'soA', direction: 'desc' });
   const [internalSelectedCategory, setInternalSelectedCategory] = useState<string>('all');
   
@@ -250,6 +294,14 @@ export const TopicsRankedTable = ({
                 </th>
                 <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
                   <div className="flex items-center gap-1.5">
+                    {getModelFavicon()}
+                    <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
+                      Model
+                    </span>
+                  </div>
+                </th>
+                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
+                  <div className="flex items-center gap-1.5">
                     {brandFavicon && (
                       <img 
                         src={brandFavicon} 
@@ -314,6 +366,16 @@ export const TopicsRankedTable = ({
                         <span className="px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-medium rounded bg-[var(--bg-secondary)] text-[var(--text-caption)] whitespace-nowrap">
                           {topic.category}
                         </span>
+                      </div>
+                    </td>
+                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
+                      <div className="flex items-center gap-1.5">
+                        {getModelFavicon()}
+                        {modelInfo && (
+                          <span className="text-xs sm:text-sm text-[var(--text-body)]">
+                            {modelInfo.name}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">

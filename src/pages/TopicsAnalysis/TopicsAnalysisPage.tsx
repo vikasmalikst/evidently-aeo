@@ -1,8 +1,9 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { Layout } from '../../components/Layout/Layout';
 import { CompactMetricsPods } from './components/CompactMetricsPods';
 import { TopicsRankedTable } from './components/TopicsRankedTable';
 import { TopicAnalysisMultiView } from './components/TopicAnalysisMultiView';
+import { TopicDetailModal } from './components/TopicDetailModal';
 import { ChartTitle } from './components/ChartTitle';
 import { CountryFlag } from '../../components/CountryFlag';
 import DatePickerMultiView from '../../components/DatePicker/DatePickerMultiView';
@@ -121,7 +122,7 @@ export const TopicsAnalysisPage = ({
 
   // Mock selected models (in real app, get from account/brand configuration)
   const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'claude', 'perplexity']);
-  const [selectedModel, setSelectedModel] = useState<string>('all');
+  const [selectedModel, setSelectedModel] = useState<string>('chatgpt'); // Default to first model instead of 'all'
 
   // Mock competitors (in real app, get from brand configuration)
   const competitorsList = [
@@ -132,10 +133,6 @@ export const TopicsAnalysisPage = ({
     { id: 'competitor-5', name: 'Competitor 5', favicon: 'https://logo.clearbit.com/competitor5.com' },
   ];
   const [competitors] = useState(competitorsList);
-  const [selectedCompetitor, setSelectedCompetitor] = useState<string>(() => {
-    // Default to first competitor if available, otherwise empty string
-    return competitorsList.length > 0 ? competitorsList[0].id : '';
-  });
   
   // Mock brand favicon (in real app, get from brand configuration)
   // For now, use a generic favicon service or brand domain
@@ -325,11 +322,22 @@ export const TopicsAnalysisPage = ({
     });
   }, [data.topics]);
 
-  // Handle topic row click
-  const handleTopicClick = (topic: Topic) => {
+  // Modal state for topic detail
+  const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Handle topic row click - opens the modal
+  const handleTopicClick = useCallback((topic: Topic) => {
+    setSelectedTopic(topic);
+    setIsModalOpen(true);
     onTopicClick?.(topic);
-    // Future: Open drill-down detail panel
-  };
+  }, [onTopicClick]);
+
+  // Handle modal close
+  const handleCloseModal = useCallback(() => {
+    setIsModalOpen(false);
+    setSelectedTopic(null);
+  }, []);
 
   // Filter topics based on selection for chart
   const selectedTopicsData = useMemo(() => {
@@ -418,6 +426,8 @@ export const TopicsAnalysisPage = ({
               dateRange={currentDateRangeLabel}
               baseTitle="Topics Share of Answer"
               countryOptions={[...countryOptions, ...regionOptions]}
+              selectedModel={selectedModel}
+              aiModels={AI_MODELS}
             />
 
             {/* Right: Dropdowns (Country/Region, Date, Models, Competitors) - left to right order */}
@@ -576,101 +586,46 @@ export const TopicsAnalysisPage = ({
                     MozAppearance: 'none'
                   }}
                 >
-                  <option value="all">All Models</option>
                   {AI_MODELS.filter(model => selectedModels.includes(model.id)).map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.name}
                     </option>
                   ))}
                 </select>
-                {selectedModel !== 'all' && (
-                  <div style={{ 
-                    position: 'absolute', 
-                    left: '12px', 
-                    top: '50%', 
-                    transform: 'translateY(-50%)',
-                    pointerEvents: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    zIndex: 1
-                  }}>
-                    {selectedModel === 'chatgpt' && <IconBrandOpenai size={16} />}
-                    {selectedModel === 'claude' && (
-                      <img src={claudeLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                    )}
-                    {selectedModel === 'gemini' && (
-                      <img src={geminiLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                    )}
-                    {selectedModel === 'perplexity' && (
-                      <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                    )}
-                    {selectedModel === 'copilot' && (
-                      <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                    )}
-                    {selectedModel === 'deepseek' && (
-                      <img src={deepseekLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                    )}
-                    {selectedModel === 'mistral' && (
-                      <img src={mistralLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                    )}
-                    {selectedModel === 'grok' && (
-                      <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Competitor Dropdown */}
-              {competitors.length > 0 && (
-                <div style={{ position: 'relative', minWidth: '180px' }}>
-                  <select
-                    value={selectedCompetitor}
-                    onChange={(e) => setSelectedCompetitor(e.target.value)}
-                    style={{
-                      padding: '8px 12px 8px 36px',
-                      fontSize: '13px',
-                      fontFamily: 'IBM Plex Sans, sans-serif',
-                      color: '#212534',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #dcdfe5',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      width: '100%',
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      MozAppearance: 'none'
-                    }}
-                  >
-                    {competitors.map((competitor) => (
-                      <option key={competitor.id} value={competitor.id}>
-                        {competitor.name}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedCompetitor && (
-                    <div style={{ 
-                      position: 'absolute', 
-                      left: '12px', 
-                      top: '50%', 
-                      transform: 'translateY(-50%)',
-                      pointerEvents: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      zIndex: 1
-                    }}>
-                      <img 
-                        src={competitors.find(c => c.id === selectedCompetitor)?.favicon} 
-                        alt=""
-                        style={{ width: '16px', height: '16px', borderRadius: '2px' }}
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                        }}
-                      />
-                    </div>
+                <div style={{ 
+                  position: 'absolute', 
+                  left: '12px', 
+                  top: '50%', 
+                  transform: 'translateY(-50%)',
+                  pointerEvents: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  zIndex: 1
+                }}>
+                  {selectedModel === 'chatgpt' && <IconBrandOpenai size={16} />}
+                  {selectedModel === 'claude' && (
+                    <img src={claudeLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                  )}
+                  {selectedModel === 'gemini' && (
+                    <img src={geminiLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                  )}
+                  {selectedModel === 'perplexity' && (
+                    <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                  )}
+                  {selectedModel === 'copilot' && (
+                    <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                  )}
+                  {selectedModel === 'deepseek' && (
+                    <img src={deepseekLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                  )}
+                  {selectedModel === 'mistral' && (
+                    <img src={mistralLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                  )}
+                  {selectedModel === 'grok' && (
+                    <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
                   )}
                 </div>
-              )}
+              </div>
 
             </div>
           </div>
@@ -687,7 +642,7 @@ export const TopicsAnalysisPage = ({
             selectedDateRange={selectedDateRange}
             selectedCountry={selectedCountry}
             competitors={competitors}
-            selectedCompetitor={selectedCompetitor}
+            selectedCompetitor="all"
             brandFavicon={brandFavicon}
             onExport={() => {
               // Export functionality - can be implemented later
@@ -708,9 +663,18 @@ export const TopicsAnalysisPage = ({
             onCategoryChange={setSelectedCategory}
             competitors={competitors}
             brandFavicon={brandFavicon}
+            selectedModel={selectedModel}
+            aiModels={AI_MODELS}
           />
         </div>
       </div>
+
+      {/* Topic Detail Modal */}
+      <TopicDetailModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        topic={selectedTopic}
+      />
     </Layout>
   );
 };

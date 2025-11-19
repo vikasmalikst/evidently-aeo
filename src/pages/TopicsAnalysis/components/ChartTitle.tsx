@@ -1,5 +1,13 @@
 import { useMemo } from 'react';
 import { CountryFlag } from '../../../components/CountryFlag';
+import { IconBrandOpenai } from '@tabler/icons-react';
+import claudeLogoSrc from '../../../assets/Claude-AI-icon.svg';
+import copilotLogoSrc from '../../../assets/Microsoft-Copilot-icon.svg';
+import deepseekLogoSrc from '../../../assets/Deepseek-Logo-Icon.svg';
+import geminiLogoSrc from '../../../assets/Google-Gemini-Icon.svg';
+import grokLogoSrc from '../../../assets/Grok-icon.svg';
+import mistralLogoSrc from '../../../assets/Mistral_AI_icon.svg';
+import perplexityLogoSrc from '../../../assets/Perplexity-Simple-Icon.svg';
 
 interface ChartTitleProps {
   category?: string;
@@ -7,6 +15,8 @@ interface ChartTitleProps {
   dateRange?: string;
   baseTitle?: string;
   countryOptions?: Array<{ value: string; label: string }>;
+  selectedModel?: string;
+  aiModels?: Array<{ id: string; name: string; icon: string }>;
 }
 
 export const ChartTitle = ({
@@ -15,6 +25,8 @@ export const ChartTitle = ({
   dateRange = '',
   baseTitle = 'Topics Share of Answer',
   countryOptions = [],
+  selectedModel,
+  aiModels = [],
 }: ChartTitleProps) => {
   // Get country label from options
   const countryLabel = useMemo(() => {
@@ -43,6 +55,38 @@ export const ChartTitle = ({
     
     return parts.join(' ');
   }, [baseTitle, category]);
+
+  // Get model info
+  const modelInfo = useMemo(() => {
+    if (!selectedModel || !aiModels.length) return null;
+    return aiModels.find(m => m.id === selectedModel);
+  }, [selectedModel, aiModels]);
+
+  // Get model favicon component
+  const getModelFavicon = () => {
+    if (!selectedModel || !modelInfo) return null;
+    
+    switch (selectedModel) {
+      case 'chatgpt':
+        return <IconBrandOpenai size={16} />;
+      case 'claude':
+        return <img src={claudeLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'gemini':
+        return <img src={geminiLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'perplexity':
+        return <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'copilot':
+        return <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'deepseek':
+        return <img src={deepseekLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'mistral':
+        return <img src={mistralLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'grok':
+        return <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      default:
+        return null;
+    }
+  };
 
   // Generate subtitle based on filters
   const subtitle = useMemo(() => {
@@ -105,6 +149,17 @@ export const ChartTitle = ({
                   style={{ display: 'inline-block', verticalAlign: 'middle' }}
                 />
                 <span>in {countryLabel}</span>
+              </span>
+            </>
+          )}
+          
+          {/* Model part with favicon */}
+          {modelInfo && (
+            <>
+              {(dateRange || (country && countryLabel)) && <span style={{ margin: '0 4px' }}>•</span>}
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {getModelFavicon()}
+                <span>{modelInfo.name}</span>
               </span>
             </>
           )}

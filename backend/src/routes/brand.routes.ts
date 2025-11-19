@@ -439,16 +439,23 @@ router.get('/:brandId/prompts', authenticateToken, async (req: Request, res: Res
 
 /**
  * GET /brands/:id/topics
- * Get AEO topics for a specific brand
+ * Get AEO topics for a specific brand with analytics
+ * Query params: startDate, endDate (optional, defaults to last 30 days)
  */
 router.get('/:id/topics', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const customerId = req.user!.customer_id;
+    const { startDate, endDate } = req.query;
     
-    console.log(`🎯 Fetching AEO topics for brand ${id}, customer ${customerId}`);
+    console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
     
-    const topics = await brandService.getBrandTopics(id, customerId);
+    const topics = await brandService.getBrandTopicsWithAnalytics(
+      id, 
+      customerId,
+      startDate as string | undefined,
+      endDate as string | undefined
+    );
     
     res.json({
       success: true,

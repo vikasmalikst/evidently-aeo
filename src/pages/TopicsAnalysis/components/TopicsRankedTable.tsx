@@ -227,9 +227,6 @@ export const TopicsRankedTable = ({
                 <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative hidden sm:table-cell">
                   <SortButton column="trend">Trend</SortButton>
                 </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative hidden md:table-cell">
-                  <SortButton column="volume">Volume</SortButton>
-                </th>
                 <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
                   <SortButton column="sources">Sources</SortButton>
                 </th>
@@ -276,16 +273,22 @@ export const TopicsRankedTable = ({
                       </div>
                     </td>
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: soAColor }}
-                          title={getSoATooltip(topic.soA)}
-                        ></span>
-                        <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
-                          {topic.soA.toFixed(2)}x
+                      {topic.soA > 0 ? (
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <span
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: soAColor }}
+                            title={getSoATooltip(topic.soA)}
+                          ></span>
+                          <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
+                            {topic.soA.toFixed(2)}x
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs sm:text-sm text-[var(--text-caption)]" title="Share of Answer data not yet available">
+                          —
                         </span>
-                      </div>
+                      )}
                     </td>
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 hidden sm:table-cell">
                       <div className="flex items-center gap-1.5 sm:gap-2">
@@ -296,12 +299,10 @@ export const TopicsRankedTable = ({
                         </span>
                       </div>
                     </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-xs sm:text-sm text-[var(--text-body)] hidden md:table-cell whitespace-nowrap">
-                      {topic.searchVolume ? topic.searchVolume.toLocaleString() : '?'}
-                    </td>
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {topic.sources.slice(0, 2).map((source, idx) => {
+                      {topic.sources.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {topic.sources.slice(0, 2).map((source, idx) => {
                           // Extract domain from URL for favicon
                           const domain = source.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
                           const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
@@ -364,7 +365,12 @@ export const TopicsRankedTable = ({
                             +{topic.sources.length - 2}
                           </span>
                         )}
-                      </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs sm:text-sm text-[var(--text-caption)]" title="Source citation data not yet available">
+                          —
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );

@@ -1210,6 +1210,140 @@ export class BrandService {
   }
 
   /**
+   * Get brand topics WITH analytics data (SoA, sentiment, visibility, sources)
+   */
+  async getBrandTopicsWithAnalytics(
+    brandId: string,
+    customerId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<any[]> {
+    try {
+      console.log(`🎯 Fetching topics WITH analytics for brand ${brandId}`);
+      
+      // Get base topics
+      const baseTopics = await this.getBrandTopics(brandId, customerId);
+      
+      // Set default date range (last 30 days)
+      const end = endDate ? new Date(endDate) : new Date();
+      const start = startDate ? new Date(startDate) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const startIso = start.toISOString();
+      const endIso = end.toISOString();
+      
+      console.log(`📅 Date range: ${startIso} to ${endIso}`);
+      
+      // Fetch analytics data for each topic
+      const topicsWithAnalytics = await Promise.all(
+        baseTopics.map(async (topic) => {
+          const topicName = topic.topic_name || topic.topic || topic;
+          
+          // Query analytics from extracted_positions joined with generated_queries
+          const { data: analytics, error } = await supabaseAdmin
+            .from('extracted_positions')
+            .select(`
+              share_of_answers_brand,
+              sentiment_score,
+              visibility_index,
+              has_brand_presence,
+              collector_result_id,
+              collector_results!inner(
+                query_id,
+                generated_queries!inner(
+                  topic,
+                  query_text
+                )
+              )
+            `)
+            .eq('brand_id', brandId)
+            .eq('customer_id', customerId)
+            .gte('processed_at', startIso)
+            .lte('processed_at', endIso);
+          
+          if (error) {
+            console.error(`❌ Error fetching analytics for topic ${topicName}:`, error);
+            return {
+              ...topic,
+              avgShareOfAnswer: 0,
+              avgSentiment: null,
+              avgVisibility: null,
+              brandPresencePercentage: null,
+              totalQueries: 0
+            };
+          }
+          
+          // Filter analytics for this specific topic
+          const topicAnalytics = (analytics || []).filter((row: any) => {
+            const queryTopic = row.collector_results?.generated_queries?.topic;
+            return queryTopic && queryTopic.toLowerCase() === topicName.toLowerCase();
+          });
+          
+          if (topicAnalytics.length === 0) {
+            console.log(`⚠️ No analytics found for topic: ${topicName}`);
+            return {
+              ...topic,
+              avgShareOfAnswer: 0,
+              avgSentiment: null,
+              avgVisibility: null,
+              brandPresencePercentage: null,
+              totalQueries: 0
+            };
+          }
+          
+          // Calculate metrics
+          const soaValues = topicAnalytics
+            .map((row: any) => row.share_of_answers_brand)
+            .filter((v: any) => typeof v === 'number' && isFinite(v));
+          
+          const sentimentValues = topicAnalytics
+            .map((row: any) => row.sentiment_score)
+            .filter((v: any) => typeof v === 'number' && isFinite(v));
+          
+          const visibilityValues = topicAnalytics
+            .map((row: any) => row.visibility_index)
+            .filter((v: any) => typeof v === 'number' && isFinite(v));
+          
+          const brandPresenceCount = topicAnalytics.filter((row: any) => row.has_brand_presence).length;
+          const totalQueries = topicAnalytics.length;
+          
+          const avgShareOfAnswer = soaValues.length > 0
+            ? soaValues.reduce((sum: number, v: number) => sum + v, 0) / soaValues.length
+            : 0;
+          
+          const avgSentiment = sentimentValues.length > 0
+            ? sentimentValues.reduce((sum: number, v: number) => sum + v, 0) / sentimentValues.length
+            : null;
+          
+          const avgVisibility = visibilityValues.length > 0
+            ? visibilityValues.reduce((sum: number, v: number) => sum + v, 0) / visibilityValues.length
+            : null;
+          
+          const brandPresencePercentage = totalQueries > 0
+            ? (brandPresenceCount / totalQueries) * 100
+            : null;
+          
+          console.log(`✅ Topic "${topicName}": SoA=${avgShareOfAnswer.toFixed(2)}, Sentiment=${avgSentiment?.toFixed(2)}, Visibility=${avgVisibility?.toFixed(0)}, BP=${brandPresencePercentage?.toFixed(0)}%`);
+          
+          return {
+            ...topic,
+            avgShareOfAnswer: Number(avgShareOfAnswer.toFixed(2)),
+            avgSentiment: avgSentiment !== null ? Number(avgSentiment.toFixed(2)) : null,
+            avgVisibility: avgVisibility !== null ? Number(avgVisibility.toFixed(0)) : null,
+            brandPresencePercentage: brandPresencePercentage !== null ? Number(brandPresencePercentage.toFixed(0)) : null,
+            totalQueries
+          };
+        })
+      );
+      
+      console.log(`✅ Enriched ${topicsWithAnalytics.length} topics with analytics`);
+      return topicsWithAnalytics;
+      
+    } catch (error) {
+      console.error('❌ Error in getBrandTopicsWithAnalytics:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Categorize topic using simple rules
    */
   public categorizeTopicByRules(topic: string): string {

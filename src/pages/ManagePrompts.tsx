@@ -1,27 +1,25 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { ManagePromptsList } from '../components/Settings/ManagePromptsList';
 import { ResponseViewer } from '../components/Prompts/ResponseViewer';
 import { topicsToConfiguration } from '../utils/promptConfigAdapter';
-import { mockPromptsData, type Prompt, type Topic } from '../data/mockPromptsData';
+import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
+import {
+  getActivePrompts,
+  getVersionHistory,
+  getVersionDetails,
+  revertToVersion,
+  type Prompt,
+  type Topic,
+  type PromptConfiguration,
+} from '../api/promptManagementApi';
 import { IconForms, IconTags, IconUmbrella, IconEye, IconHistory, IconInfoCircle } from '@tabler/icons-react';
 import { Eye, RotateCcw, GitCompare, X } from 'lucide-react';
 import type { PromptEntry } from '../types/prompts';
 
 // Configuration version type for prompts
 type PromptChangeType = 'initial_setup' | 'prompt_added' | 'prompt_removed' | 'prompt_edited';
-
-interface PromptConfiguration {
-  id: string;
-  version: number;
-  is_active: boolean;
-  change_type: PromptChangeType;
-  change_summary: string;
-  topics: Topic[];
-  created_at: string;
-  analysis_count: number;
-}
 
 // Convert Prompt to PromptEntry format for ResponseViewer
 const convertPromptToEntry = (prompt: Prompt, topicName: string): PromptEntry => {
@@ -46,43 +44,6 @@ const convertPromptToEntry = (prompt: Prompt, topicName: string): PromptEntry =>
   };
 };
 
-// Mock configuration history data
-const createMockConfigHistory = (currentTopics: Topic[]): PromptConfiguration[] => {
-  const now = new Date();
-  
-  return [
-    {
-      id: 'config-3',
-      version: 3,
-      is_active: true,
-      change_type: 'prompt_edited',
-      change_summary: 'Updated prompts in Product Features and Pricing topics',
-      topics: currentTopics,
-      created_at: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days ago
-      analysis_count: 12
-    },
-    {
-      id: 'config-2',
-      version: 2,
-      is_active: false,
-      change_type: 'prompt_added',
-      change_summary: 'Added 5 new prompts across Security and Performance topics',
-      topics: currentTopics.slice(0, 6), // Simulate fewer topics
-      created_at: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days ago
-      analysis_count: 8
-    },
-    {
-      id: 'config-1',
-      version: 1,
-      is_active: false,
-      change_type: 'initial_setup',
-      change_summary: 'Initial prompt configuration setup',
-      topics: currentTopics.slice(0, 4), // Simulate initial setup with fewer topics
-      created_at: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days ago
-      analysis_count: 3
-    }
-  ];
-};
 
 // Timeline Item Component for Prompts
 interface PromptTimelineItemProps {
@@ -359,43 +320,94 @@ const CompactHistoryCard = ({
   );
 };
 
-export const ManagePrompts = () => {  
-  const [topics, setTopics] = useState<Topic[]>(mockPromptsData);
+export const ManagePrompts = () => {
+  const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [selectedTopicName, setSelectedTopicName] = useState<string>('');
   const [dateRange, setDateRange] = useState('30d');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [configHistory, setConfigHistory] = useState<PromptConfiguration[]>([]);
+  const [currentConfigVersion, setCurrentConfigVersion] = useState<number>(0);
+  const [summaryStats, setSummaryStats] = useState({
+    totalPrompts: 0,
+    totalTopics: 0,
+    coverage: 0,
+    avgVisibility: 0,
+    avgSentiment: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch active prompts and version history
+  useEffect(() => {
+    if (!selectedBrandId || brandsLoading) return;
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Fetch active prompts
+        const promptsData = await getActivePrompts(selectedBrandId);
+        setTopics(promptsData.topics);
+        setCurrentConfigVersion(promptsData.currentVersion);
+        setSummaryStats({
+          totalPrompts: promptsData.summary.totalPrompts,
+          totalTopics: promptsData.summary.totalTopics,
+          coverage: promptsData.summary.coverage,
+          avgVisibility: promptsData.summary.avgVisibility || 0,
+          avgSentiment: promptsData.summary.avgSentiment || 0,
+        });
+
+        // Fetch version history
+        const historyData = await getVersionHistory(selectedBrandId);
+        setConfigHistory(historyData.versions);
+        setCurrentConfigVersion(historyData.currentVersion);
+      } catch (err) {
+        console.error('Error fetching prompts data:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load prompts');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [selectedBrandId, brandsLoading]);
   
-  // Configuration version data
-  const configHistory = useMemo(() => createMockConfigHistory(topics), [topics]);
-  const currentConfigVersion = configHistory.find(c => c.is_active)?.version || configHistory[0]?.version || 1;
-  
+  // Load version details when a version is selected
+  const [versionTopics, setVersionTopics] = useState<Topic[]>([]);
+  useEffect(() => {
+    if (selectedVersion === null || !selectedBrandId) {
+      setVersionTopics([]);
+      return;
+    }
+
+    const loadVersionDetails = async () => {
+      try {
+        const versionDetails = await getVersionDetails(selectedBrandId, selectedVersion);
+        setVersionTopics(versionDetails.topics);
+      } catch (err) {
+        console.error('Error loading version details:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load version details');
+      }
+    };
+
+    loadVersionDetails();
+  }, [selectedVersion, selectedBrandId]);
+
   // Get topics for selected version, or current topics if no version selected
   const displayedTopics = useMemo(() => {
     if (selectedVersion === null) {
       return topics;
     }
-    const selectedConfig = configHistory.find(c => c.version === selectedVersion);
-    return selectedConfig ? selectedConfig.topics : topics;
-  }, [selectedVersion, configHistory, topics]);
+    return versionTopics.length > 0 ? versionTopics : topics;
+  }, [selectedVersion, versionTopics, topics]);
 
   // Convert topics to configuration format for summary stats
   const currentConfig = useMemo(() => {
-    return topicsToConfiguration(topics, 94, 72.4);
-  }, [topics]);
-
-  // Calculate summary statistics
-  const summaryStats = useMemo(() => {
-    const totalPrompts = topics.reduce((sum, topic) => sum + topic.prompts.length, 0);
-    const totalTopics = topics.length;
-    return {
-      totalPrompts,
-      totalTopics,
-      coverage: currentConfig.coverage,
-      visibilityScore: currentConfig.visibilityScore
-    };
-  }, [topics, currentConfig]);
+    return topicsToConfiguration(topics, summaryStats.coverage, summaryStats.avgVisibility);
+  }, [topics, summaryStats]);
 
   const getCoverageColor = (coverage: number) => {
     if (coverage >= 90) return 'text-[var(--success500)]';
@@ -468,10 +480,29 @@ export const ManagePrompts = () => {
     );
   }, [topics]);
 
-  const handleChangesApplied = useCallback(() => {
-    // Called when changes are confirmed and applied
-    // Could refresh data or show success message here
-  }, []);
+  const handleChangesApplied = useCallback(async () => {
+    // Reload data after changes are applied
+    if (!selectedBrandId) return;
+    
+    try {
+      const promptsData = await getActivePrompts(selectedBrandId);
+      setTopics(promptsData.topics);
+      setCurrentConfigVersion(promptsData.currentVersion);
+      setSummaryStats({
+        totalPrompts: promptsData.summary.totalPrompts,
+        totalTopics: promptsData.summary.totalTopics,
+        coverage: promptsData.summary.coverage,
+        avgVisibility: promptsData.summary.avgVisibility || 0,
+        avgSentiment: promptsData.summary.avgSentiment || 0,
+      });
+      
+      const historyData = await getVersionHistory(selectedBrandId);
+      setConfigHistory(historyData.versions);
+    } catch (err) {
+      console.error('Error reloading data after changes:', err);
+      setError(err instanceof Error ? err.message : 'Failed to reload data');
+    }
+  }, [selectedBrandId]);
 
   const handleTopicsReplace = useCallback((newTopics: Topic[]) => {
     setTopics(newTopics);
@@ -490,12 +521,29 @@ export const ManagePrompts = () => {
     console.log('View version:', config);
   }, []);
 
-  const handleRevertVersion = useCallback((versionId: string) => {
-    // TODO: Implement revert version functionality
-    console.log('Revert to version:', versionId);
-    // After reverting, close the modal
-    setShowHistoryModal(false);
-  }, []);
+  const handleRevertVersion = useCallback(async (versionId: string) => {
+    if (!selectedBrandId) return;
+    
+    try {
+      const config = configHistory.find(c => c.id === versionId);
+      if (!config) return;
+
+      await revertToVersion(selectedBrandId, config.version, 'Reverted via UI');
+      
+      // Reload data after revert
+      const promptsData = await getActivePrompts(selectedBrandId);
+      setTopics(promptsData.topics);
+      setCurrentConfigVersion(promptsData.currentVersion);
+      
+      const historyData = await getVersionHistory(selectedBrandId);
+      setConfigHistory(historyData.versions);
+      
+      setShowHistoryModal(false);
+    } catch (err) {
+      console.error('Error reverting version:', err);
+      setError(err instanceof Error ? err.message : 'Failed to revert version');
+    }
+  }, [selectedBrandId, configHistory]);
 
   const handleCompareVersion = useCallback((config: PromptConfiguration) => {
     // TODO: Implement compare version functionality
@@ -520,17 +568,29 @@ export const ManagePrompts = () => {
           </div>
 
           {/* Prompt Coverage Summary */}
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="mb-6 p-8 text-center">
+              <p className="text-[var(--text-caption)]">Loading prompts...</p>
+            </div>
+          ) : (
+            <>
           <div className="mb-6">
             <div className="mb-4">
               <h3 className="text-lg font-semibold text-[var(--text-headings)] mb-1">
                 Prompt Coverage Summary
               </h3>
-              {currentConfigVersion && configHistory.length > 0 && (() => {
+              {currentConfigVersion > 0 && configHistory.length > 0 && (() => {
                 const currentConfig = configHistory.find(c => c.is_active) || configHistory[0];
                 return (
                   <div className="flex items-center gap-2">
                     <p className="text-sm text-[var(--text-caption)]">
-                      Configuration version v{currentConfigVersion} • Created {formatDate(currentConfig.created_at)}
+                      Configuration version v{currentConfigVersion} • Created {currentConfig ? formatDate(currentConfig.created_at) : 'N/A'}
                     </p>
                     <div className="relative group">
                       <IconInfoCircle 
@@ -606,7 +666,7 @@ export const ManagePrompts = () => {
                       </div>
                     </div>
                     <div className="text-3xl font-bold text-[var(--text-headings)] text-center">
-                      {summaryStats.visibilityScore.toFixed(1)}
+                      {summaryStats.avgVisibility.toFixed(1)}
                     </div>
                   </div>
                 </div>
@@ -627,6 +687,7 @@ export const ManagePrompts = () => {
           <div className="grid grid-cols-10 gap-6">
             <div className="col-span-6">
               <ManagePromptsList
+                brandId={selectedBrandId || ''}
                 topics={displayedTopics}
                 selectedPromptId={selectedPrompt?.id || null}
                 onPromptSelect={handlePromptSelect}
@@ -652,18 +713,20 @@ export const ManagePrompts = () => {
               />
             </div>
           </div>
-        </div>
 
-        {/* History Modal */}
-        <PromptHistoryModal
-          history={configHistory}
-          currentVersion={currentConfigVersion}
-          isOpen={showHistoryModal}
-          onClose={handleCloseHistoryModal}
-          onViewVersion={handleViewVersion}
-          onRevertVersion={handleRevertVersion}
-          onCompareVersion={handleCompareVersion}
-        />
+          {/* History Modal */}
+          <PromptHistoryModal
+            history={configHistory}
+            currentVersion={currentConfigVersion}
+            isOpen={showHistoryModal}
+            onClose={handleCloseHistoryModal}
+            onViewVersion={handleViewVersion}
+            onRevertVersion={handleRevertVersion}
+            onCompareVersion={handleCompareVersion}
+          />
+            </>
+          )}
+        </div>
       </SettingsLayout>
     </Layout>
   );

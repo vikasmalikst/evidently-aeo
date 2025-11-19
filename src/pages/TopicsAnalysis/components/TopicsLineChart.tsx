@@ -15,6 +15,70 @@ import { getChartColor } from '../utils/chartColors';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
+// Custom plugin to draw horizontal industry average line with label
+const industryAverageLinePlugin = {
+  id: 'industryAverageLine',
+  afterDraw: (chart: any) => {
+    const avgIndustrySoA = chart.config.options.plugins?.industryAverageLine?.value;
+    const lineColor = chart.config.options.plugins?.industryAverageLine?.color || '#8b90a7';
+    const labelColor = chart.config.options.plugins?.industryAverageLine?.labelColor || '#8b90a7';
+    const label = chart.config.options.plugins?.industryAverageLine?.label || 'Avg Industry SoA';
+    
+    if (!avgIndustrySoA) return;
+
+    const ctx = chart.ctx;
+    const chartArea = chart.chartArea;
+    const yScale = chart.scales.y;
+
+    if (!yScale || !chartArea) return;
+
+    const yPosition = yScale.getPixelForValue(avgIndustrySoA);
+
+    ctx.save();
+    
+    // Draw the dashed line
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]); // Dashed line
+    ctx.beginPath();
+    ctx.moveTo(chartArea.left, yPosition);
+    ctx.lineTo(chartArea.right, yPosition);
+    ctx.stroke();
+    
+    // Draw the label on the top-left (matching racing bar chart style)
+    // Ensure label is within chart bounds
+    const labelX = chartArea.left + 8;
+    let labelY = yPosition - 8; // Position above the line
+    
+    // Ensure label doesn't go above the chart area
+    const minLabelY = chartArea.top + 10;
+    if (labelY < minLabelY) {
+      labelY = minLabelY;
+    }
+    
+    // Draw text with background for better visibility
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    
+    const textMetrics = ctx.measureText(label);
+    const textWidth = textMetrics.width;
+    const textHeight = 14;
+    
+    // Draw semi-transparent background
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(labelX - 4, labelY - textHeight / 2, textWidth + 8, textHeight);
+    
+    // Draw the text
+    ctx.fillStyle = labelColor;
+    ctx.fillText(label, labelX, labelY);
+    
+    ctx.restore();
+  },
+};
+
+ChartJS.register(industryAverageLinePlugin);
+
 interface TopicsLineChartProps {
   topics: Topic[];
   onBarClick?: (topic: Topic) => void;
@@ -34,6 +98,10 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
 
   // Resolve chart grid color from CSS variable
   const chartGridColor = useMemo(() => getCSSVariable('--chart-grid'), []);
+  const chartLabelColor = useMemo(() => getCSSVariable('--chart-label'), []);
+  
+  // Avg Industry color (neutral 400)
+  const AVG_INDUSTRY_COLOR = '#8b90a7'; // neutral-400
 
   // Sort topics by currentSoA descending (largest to smallest), limit to top 10
   const sortedTopics = useMemo(() => {
@@ -45,6 +113,18 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
       .sort((a, b) => (b.currentSoA ?? 0) - (a.currentSoA ?? 0))
       .slice(0, 10);
   }, [topics]);
+
+  // Calculate average industry SoA across all topics for the horizontal line
+  const avgIndustrySoA = useMemo(() => {
+    if (sortedTopics.length === 0) return 0;
+    const sum = sortedTopics.reduce((acc, topic) => {
+      const seed = (topic.id.charCodeAt(0) * 13) % 100;
+      const baseSoA = topic.currentSoA ?? (topic.soA * 20);
+      const industrySoA = Math.max(0, Math.min(100, baseSoA * (0.7 + (seed / 100) * 0.6)));
+      return acc + industrySoA;
+    }, 0);
+    return sum / sortedTopics.length;
+  }, [sortedTopics]);
 
   // Generate 12-week labels
   const weekLabels = useMemo(() => {
@@ -236,6 +316,12 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
         filler: {
           propagate: false,
         },
+        industryAverageLine: {
+          value: avgIndustrySoA,
+          color: AVG_INDUSTRY_COLOR,
+          labelColor: chartLabelColor,
+          label: 'Avg Industry SoA',
+        },
       },
       scales: {
         x: {
@@ -301,7 +387,7 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
         easing: 'easeInOutQuart' as const,
       },
     };
-  }, [sortedTopics, onBarClick, chartGridColor]);
+  }, [sortedTopics, onBarClick, chartGridColor, chartLabelColor, avgIndustrySoA, AVG_INDUSTRY_COLOR]);
 
   // Color key for topics
   const colorKeyItems = sortedTopics.map((topic, index) => ({

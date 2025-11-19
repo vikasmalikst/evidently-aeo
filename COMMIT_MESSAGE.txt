@@ -1,38 +1,50 @@
-feat: enhance Topics Analysis racing bar chart visualization and data display
+feat: enhance Topics Analysis with competitive data, model display, and improved interactivity
 
-- Update racing bar chart color scheme
-  - Change brand color to data-viz-02 (blue) from CSS variables
-  - Change industry average from bar to vertical dashed marker line (neutral-400)
-  - Change competitor average to data-viz-04 at 48% opacity
-  - Update legend to show dashed line indicator for industry average
+- Refactor TopicsBarChart from Chart.js to Nivo
+  - Replace Chart.js Bar component with Nivo ResponsiveBar
+  - Migrate chart configuration, tooltips, and click handlers to Nivo API
+  - Update chart styling and theming to match Nivo conventions
+  - Maintain all existing functionality (grouped bars, tooltips, click handlers)
 
-- Improve chart readability and spacing
-  - Increase vertical spacing between bars (padding 0.25, row height 65px)
-  - Add vertical spacing between grouped bars (innerPadding: 4px)
-  - Add more vertical grid lines every 10% for better scannability
-  - Increase right margin to 60px to accommodate SoA value labels
+- Add competitive average and industry average visualization
+  - Add competitive average bars to TopicsBarChart (data-viz-04 at 48% opacity)
+  - Add horizontal industry average line to TopicsBarChart and TopicsLineChart
+  - Use neutral-400 color for industry average line with dashed pattern
+  - Position industry average label at top-left matching racing bar chart style
+  - Add custom legend below charts showing brand, avg competitor, and industry average
 
-- Add SoA value labels to chart
-  - Display SoA percentage values to the right of brand bars
-  - Show values formatted as "X.X%" with proper positioning
-  - Include SoA metric (0-5x scale) in chart data structure
+- Remove competitor selection dropdown
+  - Remove competitor dropdown UI from TopicsAnalysisPage
+  - Remove selectedCompetitor state and related logic
+  - Always show comparison mode (brand + avg competitor + industry line) when competitors available
+  - Simplify TopicsBarChart props by removing selectedCompetitor parameter
 
-- Update table SoA display format
-  - Convert all SoA values from "X.XXx" format to percentage "X.X%"
-  - Update brand, industry average, and competitor average SoA columns
-  - Convert trend delta values to percentages for consistency
+- Add model column to topics table
+  - Add model column header with favicon to TopicsRankedTable
+  - Display model favicon and name in each table row
+  - Add selectedModel and aiModels props to TopicsRankedTable component
+  - Create getModelFavicon helper function for consistent favicon rendering
 
-- Remove features and simplify UI
-  - Remove stack selector checkbox from chart controls
-  - Remove brand favicon from legend (kept in table)
-  - Remove playback/animation features and time-series controls
+- Update model dropdown and chart title
+  - Remove "All Models" option from model dropdown
+  - Set default selected model to first available model instead of 'all'
+  - Add model favicon and name to ChartTitle component after region
+  - Display model info in subtitle: "for the [date] • in [region] • [favicon] [Model Name]"
 
-- Enhance brand label customization
-  - Change legend label from "Brand" to "[brandname] SoA"
-  - Add brandName prop to TopicsRacingBarChart component
-  - Pass brandName through TopicAnalysisMultiView component
-  - Update tooltip to use dynamic brand name
+- Add table row interactivity
+  - Add modal state management to TopicsAnalysisPage
+  - Import and render TopicDetailModal at page level
+  - Update handleTopicClick to open modal when table rows are clicked
+  - Table rows now open same modal as chart data clicks
 
-- Update design tokens
-  - Add data-viz color tokens (dataviz-1 through dataviz-10)
-  - Ensure consistent color usage across chart components
+- Update topic detail modal metrics
+  - Remove search volume metric card
+  - Add avg competitive SoA metric card with deterministic calculation
+  - Change SoA metrics display format: percentage as primary, scale (×) as secondary
+  - Update Current SoA, Previous Period, and Avg Competitive SoA cards to show percentage first
+
+- Improve tooltip styling consistency
+  - Update TopicsBarChart tooltip to match TopicsRacingBarChart styling
+  - Add full tooltip container styling with background, border, and shadow
+  - Include color indicator boxes and structured content layout
+  - Match tooltip appearance across all chart types

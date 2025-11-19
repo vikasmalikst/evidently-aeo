@@ -69,14 +69,19 @@ export class SourceAttributionService {
     customerId: string,
     dateRange?: { start: string; end: string }
   ): Promise<SourceAttributionResponse> {
+    const serviceStartTime = Date.now();
+    const stepTimings: Record<string, number> = {};
+    
     try {
-      // Resolve brand
+      // Step 1: Resolve brand
+      const brandStartTime = Date.now();
       const { data: brand, error: brandError } = await supabaseAdmin
         .from('brands')
         .select('id, name, slug')
         .eq('id', brandId)
         .eq('customer_id', customerId)
         .maybeSingle()
+      stepTimings['brand_resolution'] = Date.now() - brandStartTime;
 
       if (brandError) {
         throw new DatabaseError(`Failed to load brand: ${brandError.message}`)
@@ -90,29 +95,39 @@ export class SourceAttributionService {
       const startIso = normalizedRange.startIso
       const endIso = normalizedRange.endIso
 
-      // Try Supabase cache first
+      // Step 2: Try Supabase cache first
+      const cacheStartTime = Date.now();
       const cached = await sourceAttributionCacheService.getCachedSourceAttribution(
         brandId,
         customerId,
         startIso,
         endIso
       )
+      stepTimings['cache_lookup'] = Date.now() - cacheStartTime;
+      
       if (cached) {
         const ageMs = sourceAttributionCacheService.getAgeMs(cached.computed_at)
-        console.log(`[SourceAttribution] ✅ Cache hit for brand=${brandId} range=${startIso}→${endIso} (age: ${ageMs}ms)`)
+        const ageMinutes = ageMs ? (ageMs / 60000).toFixed(1) : 'unknown'
+        const totalTime = Date.now() - serviceStartTime;
+        console.log(`[SourceAttribution] ✅ Cache HIT - returning cached data (age: ${ageMinutes}min, lookup: ${stepTimings['cache_lookup']}ms, total: ${totalTime}ms)`)
         return cached.payload
       }
+      
+      console.log(`[SourceAttribution] ❌ Cache MISS (lookup: ${stepTimings['cache_lookup']}ms) - computing fresh data...`)
 
-      // Get brand domain for comparison
+      // Step 3: Get brand domain for comparison
+      const brandDomainStartTime = Date.now();
       const { data: brandData } = await supabaseAdmin
         .from('brands')
         .select('website_url')
         .eq('id', brandId)
         .single()
+      stepTimings['brand_domain'] = Date.now() - brandDomainStartTime;
 
       const brandDomain = brandData?.website_url ? new URL(brandData.website_url).hostname.replace(/^www\./, '') : null
 
-      // Fetch citations - this is the main source of data
+      // Step 4: Fetch citations - this is the main source of data
+      const citationsStartTime = Date.now();
       const { data: citationsData, error: citationsError } = await supabaseAdmin
         .from('citations')
         .select(`
@@ -129,13 +144,14 @@ export class SourceAttributionService {
         .eq('customer_id', customerId)
         .gte('created_at', startIso)
         .lte('created_at', endIso)
+      stepTimings['citations_query'] = Date.now() - citationsStartTime;
 
       if (citationsError) {
         console.error('[SourceAttribution] Citations query error:', citationsError)
         throw new DatabaseError(`Failed to fetch citations: ${citationsError.message}`)
       }
 
-      console.log(`[SourceAttribution] Found ${citationsData?.length || 0} citations for brand ${brandId}`)
+      console.log(`[SourceAttribution] 📊 Found ${citationsData?.length || 0} citations (query: ${stepTimings['citations_query']}ms)`)
 
       if (!citationsData || citationsData.length === 0) {
         // Return empty response if no citations found
@@ -150,23 +166,25 @@ export class SourceAttributionService {
         }
       }
 
-      // Get unique query IDs from citations (citations table has query_id directly)
+      // Step 5: Extract IDs
+      const idsExtractionStartTime = Date.now();
       const queryIdsFromCitations = Array.from(new Set(
         (citationsData || [])
           .map(c => c.query_id)
           .filter((id): id is string => typeof id === 'string' && id.length > 0)
       ))
 
-      // Also get collector result IDs for share of answer and sentiment
       const collectorResultIds = Array.from(new Set(
         (citationsData || [])
           .map(c => c.collector_result_id)
           .filter((id): id is number => typeof id === 'number')
       ))
+      stepTimings['ids_extraction'] = Date.now() - idsExtractionStartTime;
 
-      console.log(`[SourceAttribution] Found ${queryIdsFromCitations.length} unique queries and ${collectorResultIds.length} collector results`)
+      console.log(`[SourceAttribution] 🔑 Extracted ${queryIdsFromCitations.length} unique queries and ${collectorResultIds.length} collector results (${stepTimings['ids_extraction']}ms)`)
 
-      // Fetch queries for prompts (generated_queries doesn't have topic_name column)
+      // Step 6: Fetch queries for prompts
+      const queriesStartTime = Date.now();
       let queries: Array<{ id: string; query_text: string }> = []
       if (queryIdsFromCitations.length > 0) {
         const { data: queriesData, error: queriesError } = await supabaseAdmin
@@ -180,15 +198,15 @@ export class SourceAttributionService {
           queries = queriesData || []
         }
       }
+      stepTimings['queries_query'] = Date.now() - queriesStartTime;
+      console.log(`[SourceAttribution] 📝 Fetched ${queries.length} queries (${stepTimings['queries_query']}ms)`)
 
-      // Fetch collector results for query_id and question (prompt)
-      // Note: sentiment_score is in extracted_positions, not collector_results
+      // Step 7: Fetch collector results
+      const collectorResultsStartTime = Date.now();
       let collectorResults: Array<{
         id: number;
         query_id: string | null;
         question: string | null;
-        total_brand_mentions: number | null;
-        has_brand_presence: boolean | null;
       }> = []
 
       if (collectorResultIds.length > 0) {
@@ -197,9 +215,7 @@ export class SourceAttributionService {
           .select(`
             id,
             query_id,
-            question,
-            total_brand_mentions,
-            has_brand_presence
+            question
           `)
           .in('id', collectorResultIds)
           .eq('brand_id', brandId)
@@ -209,13 +225,8 @@ export class SourceAttributionService {
         } else {
           collectorResults = collectorResultsData || []
           const resultsWithQuestions = collectorResults.filter(cr => cr.question).length
-          console.log(`[SourceAttribution] Fetched ${collectorResults.length} collector results, ${resultsWithQuestions} have questions`)
-          if (resultsWithQuestions > 0) {
-            console.log('[SourceAttribution] Sample collector result with question:', {
-              id: collectorResults.find(cr => cr.question)?.id,
-              question: collectorResults.find(cr => cr.question)?.question?.substring(0, 100)
-            })
-          }
+          stepTimings['collector_results_query'] = Date.now() - collectorResultsStartTime;
+          console.log(`[SourceAttribution] 📋 Fetched ${collectorResults.length} collector results, ${resultsWithQuestions} have questions (${stepTimings['collector_results_query']}ms)`)
         }
       }
 
@@ -244,11 +255,13 @@ export class SourceAttributionService {
         return topicName
       }
 
-      // Fetch share of answer, sentiment, and metadata from extracted_positions table
+      // Step 8: Fetch extracted positions (SoA, sentiment, topics, mention counts)
+      const positionsStartTime = Date.now();
       let extractedPositions: Array<{
         collector_result_id: number | null;
         share_of_answers_brand: number | null;
         sentiment_score: number | null;
+        total_brand_mentions: number | null;
         metadata: any;
       }> = []
 
@@ -259,6 +272,7 @@ export class SourceAttributionService {
             collector_result_id,
             share_of_answers_brand,
             sentiment_score,
+            total_brand_mentions,
             metadata
           `)
           .in('collector_result_id', collectorResultIds)
@@ -269,7 +283,8 @@ export class SourceAttributionService {
         } else {
           extractedPositions = positionsData || []
           const withSentiment = extractedPositions.filter(ep => ep.sentiment_score !== null).length
-          console.log(`[SourceAttribution] Found ${extractedPositions.length} extracted positions (SoA may be null), ${withSentiment} have sentiment scores`)
+          stepTimings['extracted_positions_query'] = Date.now() - positionsStartTime;
+          console.log(`[SourceAttribution] 📊 Found ${extractedPositions.length} extracted positions, ${withSentiment} have sentiment scores (${stepTimings['extracted_positions_query']}ms)`)
         }
       }
 
@@ -283,10 +298,11 @@ export class SourceAttributionService {
       )
       console.log(`[SourceAttribution] Created queryMap with ${queryMap.size} entries`)
       
-      // Create maps for share of answer and sentiment by collector_result_id
+      // Create maps for share of answer, sentiment, and mention counts by collector_result_id
       // Multiple positions can exist per collector_result_id, so we'll average them
       const shareOfAnswerByCollectorResult = new Map<number, number[]>()
       const sentimentByCollectorResult = new Map<number, number[]>()
+      const mentionCountsByCollectorResult = new Map<number, number[]>()
       
       for (const position of extractedPositions) {
         if (position.collector_result_id) {
@@ -306,6 +322,14 @@ export class SourceAttributionService {
               sentimentByCollectorResult.set(collectorId, [])
             }
             sentimentByCollectorResult.get(collectorId)!.push(toNumber(position.sentiment_score))
+          }
+          
+          // Collect mention counts (from extracted_positions, not collector_results)
+          if (position.total_brand_mentions !== null && position.total_brand_mentions !== undefined) {
+            if (!mentionCountsByCollectorResult.has(collectorId)) {
+              mentionCountsByCollectorResult.set(collectorId, [])
+            }
+            mentionCountsByCollectorResult.get(collectorId)!.push(toNumber(position.total_brand_mentions))
           }
         }
       }
@@ -333,11 +357,14 @@ export class SourceAttributionService {
         }
       }
       
-      console.log(`[SourceAttribution] Calculated average share of answer for ${avgShareByCollectorResult.size} collector results`)
-      console.log(`[SourceAttribution] Calculated average sentiment for ${avgSentimentByCollectorResult.size} collector results`)
-      console.log(`[SourceAttribution] Mapped topics for ${collectorResultTopicMap.size} collector results`)
+      const calculationsStartTime = Date.now();
+      console.log(`[SourceAttribution] 🧮 Calculated average share of answer for ${avgShareByCollectorResult.size} collector results`)
+      console.log(`[SourceAttribution] 🧮 Calculated average sentiment for ${avgSentimentByCollectorResult.size} collector results`)
+      console.log(`[SourceAttribution] 🏷️  Mapped topics for ${collectorResultTopicMap.size} collector results`)
+      stepTimings['calculations'] = Date.now() - calculationsStartTime;
 
-      // Aggregate sources by domain
+      // Step 9: Aggregate sources by domain
+      const aggregationStartTime = Date.now();
       const sourceAggregates = new Map<
         string,
         {
@@ -357,6 +384,7 @@ export class SourceAttributionService {
         }
       >()
 
+      console.log(`[SourceAttribution] 🔄 Starting aggregation of ${citationsData.length} citations...`)
       for (const citation of citationsData) {
         // Use domain from citations table (it's already there)
         const domain = citation.domain || (citation.url ? (() => {
@@ -429,6 +457,13 @@ export class SourceAttributionService {
             aggregate.sentimentValues.push(avgSentiment)
           }
           
+          // Get mention counts from extracted_positions (average if multiple)
+          const mentionCounts = mentionCountsByCollectorResult.get(citation.collector_result_id)
+          if (mentionCounts && mentionCounts.length > 0) {
+            const avgMentions = average(mentionCounts)
+            aggregate.mentionCounts.push(Math.round(avgMentions))
+          }
+          
           if (collectorResult) {
             // Add question/prompt from collector_results
             if (collectorResult.question) {
@@ -440,9 +475,6 @@ export class SourceAttributionService {
               }
             }
             
-            if (collectorResult.total_brand_mentions !== null && collectorResult.total_brand_mentions !== undefined) {
-              aggregate.mentionCounts.push(collectorResult.total_brand_mentions)
-            }
             // Also add query_id from collector result if citation doesn't have it
             if (!citation.query_id && collectorResult.query_id) {
               aggregate.queryIds.add(collectorResult.query_id)
@@ -455,7 +487,8 @@ export class SourceAttributionService {
         }
       }
 
-      console.log(`[SourceAttribution] Aggregated ${sourceAggregates.size} unique sources`)
+      stepTimings['aggregation'] = Date.now() - aggregationStartTime;
+      console.log(`[SourceAttribution] ✅ Aggregated ${sourceAggregates.size} unique sources (${stepTimings['aggregation']}ms)`)
       
       // Debug: Check prompts per source
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
@@ -466,12 +499,14 @@ export class SourceAttributionService {
         }
       }
 
-      // Calculate previous period for change metrics
+      // Step 10: Calculate previous period for change metrics
+      const previousPeriodStartTime = Date.now();
       const periodDays = Math.ceil((normalizedRange.endDate.getTime() - normalizedRange.startDate.getTime()) / (1000 * 60 * 60 * 24))
       const previousStart = new Date(normalizedRange.startDate)
       previousStart.setUTCDate(previousStart.getUTCDate() - periodDays)
       const previousEnd = normalizedRange.startDate
 
+      console.log(`[SourceAttribution] 📊 Fetching previous period data (${periodDays} days before)...`)
       const { data: previousCitations } = await supabaseAdmin
         .from('citations')
         .select('domain, usage_count, collector_result_id')
@@ -568,8 +603,11 @@ export class SourceAttributionService {
         }
       }
 
-      // Get total responses count for mention rate calculation
-      // This should be the total number of collector results in the date range
+      stepTimings['previous_period'] = Date.now() - previousPeriodStartTime;
+      console.log(`[SourceAttribution] ✅ Previous period data processed (${stepTimings['previous_period']}ms)`)
+
+      // Step 11: Get total responses count for mention rate calculation
+      const totalResponsesStartTime = Date.now();
       const { count: totalResponses } = await supabaseAdmin
         .from('collector_results')
         .select('*', { count: 'exact', head: true })
@@ -578,11 +616,14 @@ export class SourceAttributionService {
         .lte('created_at', endIso)
 
       const totalResponsesCount = totalResponses || 1 // Avoid division by zero
-      console.log(`[SourceAttribution] Total collector results: ${totalResponsesCount}`)
+      stepTimings['total_responses'] = Date.now() - totalResponsesStartTime;
+      console.log(`[SourceAttribution] 📊 Total collector results: ${totalResponsesCount} (${stepTimings['total_responses']}ms)`)
 
-      // Convert aggregates to source data
+      // Step 12: Convert aggregates to source data
+      const conversionStartTime = Date.now();
       const sources: SourceAttributionData[] = []
       
+      console.log(`[SourceAttribution] 🔄 Converting ${sourceAggregates.size} aggregates to source data...`)
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         // Share of Answer: Average across all collector results where this source is cited
         // share_of_answers_brand is stored as a decimal (0.0-1.0) or percentage (0-100)
@@ -660,7 +701,8 @@ export class SourceAttributionService {
       // Sort by mention rate descending
       sources.sort((a, b) => b.mentionRate - a.mentionRate)
       
-      console.log(`[SourceAttribution] Returning ${sources.length} sources`)
+      stepTimings['conversion'] = Date.now() - conversionStartTime;
+      console.log(`[SourceAttribution] ✅ Converted to ${sources.length} sources (${stepTimings['conversion']}ms)`)
 
       // Calculate overall metrics
       const overallMentionRate = sources.length > 0
@@ -690,7 +732,8 @@ export class SourceAttributionService {
         dateRange: { start: startIso, end: endIso }
       }
 
-      // Cache the computed payload in Supabase (async, don't await to avoid blocking response)
+      // Step 13: Cache the computed payload in Supabase (async, don't await to avoid blocking response)
+      const cacheSaveStartTime = Date.now();
       sourceAttributionCacheService.upsertSourceAttributionSnapshot(
         brandId,
         customerId,
@@ -700,6 +743,18 @@ export class SourceAttributionService {
       ).catch(err => {
         console.warn('[SourceAttribution] Failed to cache snapshot (non-blocking):', err)
       })
+      stepTimings['cache_save'] = Date.now() - cacheSaveStartTime;
+
+      // Final summary
+      const totalTime = Date.now() - serviceStartTime;
+      console.log(`\n[SourceAttribution] ⏱️  PERFORMANCE SUMMARY:`)
+      console.log(`[SourceAttribution]    Total time: ${totalTime}ms`)
+      console.log(`[SourceAttribution]    Step timings:`)
+      Object.entries(stepTimings).forEach(([step, time]) => {
+        const percentage = ((time / totalTime) * 100).toFixed(1)
+        console.log(`[SourceAttribution]      - ${step}: ${time}ms (${percentage}%)`)
+      })
+      console.log(`[SourceAttribution] ✅ Service completed successfully\n`)
 
       return payload
     } catch (error) {

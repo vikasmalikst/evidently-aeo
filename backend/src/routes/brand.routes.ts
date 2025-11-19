@@ -439,16 +439,23 @@ router.get('/:brandId/prompts', authenticateToken, async (req: Request, res: Res
 
 /**
  * GET /brands/:id/topics
- * Get AEO topics for a specific brand
+ * Get AEO topics for a specific brand with analytics
+ * Query params: startDate, endDate (optional, defaults to last 30 days)
  */
 router.get('/:id/topics', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const customerId = req.user!.customer_id;
+    const { startDate, endDate } = req.query;
     
-    console.log(`🎯 Fetching AEO topics for brand ${id}, customer ${customerId}`);
+    console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
     
-    const topics = await brandService.getBrandTopics(id, customerId);
+    const topics = await brandService.getBrandTopicsWithAnalytics(
+      id, 
+      customerId,
+      startDate as string | undefined,
+      endDate as string | undefined
+    );
     
     res.json({
       success: true,
@@ -549,11 +556,20 @@ router.post('/:id/categorize-topics', authenticateToken, async (req: Request, re
  * Get source attribution data for a specific brand
  */
 router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Response) => {
+  const requestStartTime = Date.now();
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
   try {
+    console.log(`\n[SourceAttribution API] 🚀 Request ${requestId} started at ${new Date().toISOString()}`);
+    console.log(`[SourceAttribution API] 📍 Endpoint: GET /brands/:brandId/sources`);
+    
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
     const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
     const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    
+    console.log(`[SourceAttribution API] 📊 Params: brandId=${brandId}, customerId=${customerId}`);
+    console.log(`[SourceAttribution API] 📅 Date Range: startDate=${startQuery || 'default'}, endDate=${endQuery || 'default'}`);
     
     let dateRange: { start: string; end: string } | undefined;
     
@@ -607,18 +623,31 @@ router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Res
       return;
     }
 
+    const serviceStartTime = Date.now();
+    console.log(`[SourceAttribution API] ⏱️  Calling service.getSourceAttribution()...`);
+    
     const sourceData = await sourceAttributionService.getSourceAttribution(
       brandId,
       customerId,
       dateRange
     );
+    
+    const serviceEndTime = Date.now();
+    const serviceDuration = serviceEndTime - serviceStartTime;
+    console.log(`[SourceAttribution API] ✅ Service completed in ${serviceDuration}ms`);
+    console.log(`[SourceAttribution API] 📦 Response: ${sourceData.sources.length} sources, ${sourceData.totalSources} total`);
 
-    res.json({
-      success: true,
-      data: sourceData
-    });
+    const responseStartTime = Date.now();
+    res.json({ success: true, data: sourceData });
+    
+    const totalDuration = Date.now() - requestStartTime;
+    const responseDuration = Date.now() - responseStartTime;
+    console.log(`[SourceAttribution API] 📤 Response sent in ${responseDuration}ms`);
+    console.log(`[SourceAttribution API] ⏱️  Total request duration: ${totalDuration}ms`);
+    console.log(`[SourceAttribution API] ✅ Request ${requestId} completed successfully\n`);
   } catch (error) {
-    console.error('Error fetching source attribution:', error);
+    const totalDuration = Date.now() - requestStartTime;
+    console.error(`[SourceAttribution API] ❌ Request ${requestId} failed after ${totalDuration}ms:`, error);
 
     if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
       res.status(404).json({ success: false, error: error.message });

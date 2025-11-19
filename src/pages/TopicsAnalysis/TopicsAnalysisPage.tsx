@@ -7,14 +7,9 @@ import { TopicDetailModal } from './components/TopicDetailModal';
 import { ChartTitle } from './components/ChartTitle';
 import { CountryFlag } from '../../components/CountryFlag';
 import DatePickerMultiView from '../../components/DatePicker/DatePickerMultiView';
-import { IconBrandOpenai } from '@tabler/icons-react';
-import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
-import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
-import deepseekLogoSrc from '../../assets/Deepseek-Logo-Icon.svg';
-import geminiLogoSrc from '../../assets/Google-Gemini-Icon.svg';
-import grokLogoSrc from '../../assets/Grok-icon.svg';
-import mistralLogoSrc from '../../assets/Mistral_AI_icon.svg';
-import perplexityLogoSrc from '../../assets/Perplexity-Simple-Icon.svg';
+import { DataAvailabilityCard } from './components/DataAvailabilityCard';
+import { TopicsDataStatusBanner } from './components/TopicsDataStatusBanner';
+import { useManualBrandDashboard } from '../../manual-dashboard';
 import type { TopicsAnalysisData, Topic } from './types';
 import type { PodId } from './components/CompactMetricsPods';
 
@@ -76,6 +71,8 @@ export const TopicsAnalysisPage = ({
   onTopicClick,
   onCategoryFilter,
 }: TopicsAnalysisPageProps) => {
+  const { selectedBrand, brands } = useManualBrandDashboard();
+  
   // Extract unique categories from topics
   const uniqueCategories = useMemo(() => {
     const cats = new Set(data.topics.map((t) => t.category));
@@ -364,6 +361,10 @@ export const TopicsAnalysisPage = ({
     );
   }
 
+  // Check if we have real data or mock data
+  const hasRealData = data.topics.some(t => t.soA > 0 || t.sources.length > 0);
+  const brandName = selectedBrand?.name || 'Your Brand';
+
   return (
     <Layout>
       <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
@@ -378,12 +379,18 @@ export const TopicsAnalysisPage = ({
           }}
         >
           <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-            Topics Analysis
+            Topics Analysis {brandName && `— ${brandName}`}
           </h1>
           <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
             Monitor your brand's presence across AI search engines by topic
           </p>
         </div>
+
+        {/* Status Banner */}
+        <TopicsDataStatusBanner hasRealData={hasRealData} topicCount={data.topics.length} />
+
+        {/* Data Availability Card - Show when we don't have complete data */}
+        {!hasRealData && <DataAvailabilityCard />}
 
         {/* Section 1: Compact Metrics Pods */}
         <div style={{ marginBottom: '24px' }}>

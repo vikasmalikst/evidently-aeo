@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ChevronUp, ChevronDown, Minus } from 'lucide-react';
+import { ChevronUp, ChevronDown, Minus, TrendingUp, TrendingDown } from 'lucide-react';
 import { IconBrandOpenai } from '@tabler/icons-react';
 import claudeLogoSrc from '../../../assets/Claude-AI-icon.svg';
 import copilotLogoSrc from '../../../assets/Microsoft-Copilot-icon.svg';
@@ -10,7 +10,7 @@ import mistralLogoSrc from '../../../assets/Mistral_AI_icon.svg';
 import perplexityLogoSrc from '../../../assets/Perplexity-Simple-Icon.svg';
 import type { Topic, SortColumn, SortState, TopicSource } from '../types';
 import type { Competitor } from '../utils/competitorColors';
-import { createCompetitorColorMap, getCompetitorColorById } from '../utils/competitorColors';
+import { createCompetitorColorMap } from '../utils/competitorColors';
 import { SourceDetailModal } from './SourceDetailModal';
 
 // Source type colors matching the sources page
@@ -65,6 +65,46 @@ const getAvgIndustrySoA = (topic: Topic): { soA: number; trend: { direction: 'up
   };
 };
 
+// Get SoA color based on scale
+const getSoAColor = (soA: number): string => {
+  if (soA >= 3.0) return '#00bcdc'; // Cyan - Strong Position
+  if (soA >= 2.0) return '#0d7c96'; // Teal - Competitive
+  if (soA >= 1.0) return '#f97316'; // Orange - Opportunity
+  return '#1a1d29'; // Navy - Citation Gap
+};
+
+// Get SoA tooltip text
+const getSoATooltip = (soA: number): string => {
+  if (soA >= 3.0) return 'Strong Position (3.0x+)';
+  if (soA >= 2.0) return 'Competitive (2.0-2.9x)';
+  if (soA >= 1.0) return 'Opportunity (1.0-1.9x)';
+  return 'Citation Gap (<1.0x)';
+};
+
+// Get trend icon and color
+const getTrendDisplay = (direction: string) => {
+  switch (direction) {
+    case 'up':
+      return {
+        icon: TrendingUp,
+        color: 'var(--success500)',
+        symbol: '↑',
+      };
+    case 'down':
+      return {
+        icon: TrendingDown,
+        color: 'var(--dataviz-4)',
+        symbol: '↓',
+      };
+    default:
+      return {
+        icon: Minus,
+        color: 'var(--primary300)',
+        symbol: '→',
+      };
+  }
+};
+
 // Generate mock average competitor SoA data for a topic (deterministic)
 const getAvgCompetitorSoA = (topic: Topic, numCompetitors: number): { soA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number } } => {
   // Use deterministic seed based on topic and number of competitors
@@ -96,21 +136,15 @@ const getAvgCompetitorSoA = (topic: Topic, numCompetitors: number): { soA: numbe
 
 export const TopicsRankedTable = ({ 
   topics, 
-  categories, 
   onRowClick,
   selectedTopics: externalSelectedTopics,
   onSelectedTopicsChange,
   selectedCategory: externalSelectedCategory,
   onCategoryChange,
-  competitors = [],
   brandFavicon,
   selectedModel,
   aiModels = []
 }: TopicsRankedTableProps) => {
-  // Create color map for competitors
-  const competitorColorMap = useMemo(() => {
-    return createCompetitorColorMap(competitors);
-  }, [competitors]);
 
   // Get model info
   const modelInfo = useMemo(() => {
@@ -148,14 +182,6 @@ export const TopicsRankedTable = ({
   
   const selectedCategory = externalSelectedCategory ?? internalSelectedCategory;
   
-  const handleCategoryChange = (category: string) => {
-    if (onCategoryChange) {
-      onCategoryChange(category);
-    } else {
-      setInternalSelectedCategory(category);
-    }
-  };
-  
   // Use external selectedTopics if provided, otherwise use internal state
   const [internalSelectedTopics, setInternalSelectedTopics] = useState<Set<string>>(() => {
     // Default: all topics selected
@@ -163,19 +189,28 @@ export const TopicsRankedTable = ({
   });
 
   const selectedTopics = externalSelectedTopics ?? internalSelectedTopics;
-  const setSelectedTopics = onSelectedTopicsChange ?? setInternalSelectedTopics;
 
   const handleTopicToggle = (topicId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedTopics(prev => {
-      const newSet = new Set(prev);
+    if (onSelectedTopicsChange) {
+      const newSet = new Set(selectedTopics);
       if (newSet.has(topicId)) {
         newSet.delete(topicId);
       } else {
         newSet.add(topicId);
       }
-      return newSet;
-    });
+      onSelectedTopicsChange(newSet);
+    } else {
+      setInternalSelectedTopics((prev: Set<string>) => {
+        const newSet = new Set(prev);
+        if (newSet.has(topicId)) {
+          newSet.delete(topicId);
+        } else {
+          newSet.add(topicId);
+        }
+        return newSet;
+      });
+    }
   };
   const [selectedSource, setSelectedSource] = useState<TopicSource | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -278,9 +313,19 @@ export const TopicsRankedTable = ({
                     onChange={(e) => {
                       e.stopPropagation();
                       if (e.target.checked) {
-                        setSelectedTopics(new Set(filteredAndSortedTopics.map(t => t.id)));
+                        const newSet = new Set(filteredAndSortedTopics.map(t => t.id));
+                        if (onSelectedTopicsChange) {
+                          onSelectedTopicsChange(newSet);
+                        } else {
+                          setInternalSelectedTopics(newSet);
+                        }
                       } else {
-                        setSelectedTopics(new Set());
+                        const emptySet = new Set<string>();
+                        if (onSelectedTopicsChange) {
+                          onSelectedTopicsChange(emptySet);
+                        } else {
+                          setInternalSelectedTopics(emptySet);
+                        }
                       }
                     }}
                     className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-[var(--accent-primary)]"
@@ -319,11 +364,6 @@ export const TopicsRankedTable = ({
                 <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
                   <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
                     Avg Industry SoA
-                  </span>
-                </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
-                  <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
-                    Avg Competitor SoA
                   </span>
                 </th>
                 <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
@@ -379,117 +419,86 @@ export const TopicsRankedTable = ({
                       </div>
                     </td>
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        {brandFavicon && (
-                          <img 
-                            src={brandFavicon} 
-                            alt="Brand" 
-                            className="w-3 h-3 flex-shrink-0"
-                            style={{ width: '12px', height: '12px' }}
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        )}
-                        <span className="text-sm sm:text-base font-semibold whitespace-nowrap text-[var(--text-headings)]">
-                          {(topic.soA * 20).toFixed(1)}%
-                        </span>
-                        <div className="flex items-center gap-0.5">
-                          {topic.trend.direction === 'up' && (
-                            <ChevronUp size={14} className="text-[var(--success500)]" />
-                          )}
-                          {topic.trend.direction === 'down' && (
-                            <ChevronDown size={14} className="text-[var(--dataviz-4)]" />
-                          )}
-                          {topic.trend.direction === 'neutral' && (
-                            <Minus size={14} className="text-[var(--primary300)]" />
-                          )}
-                          <span 
-                            className="text-[10px] sm:text-xs font-medium whitespace-nowrap"
-                            style={{
-                              color: topic.trend.direction === 'up' 
-                                ? 'var(--success500)' 
-                                : topic.trend.direction === 'down' 
-                                ? 'var(--dataviz-4)' 
-                                : '#64748b' // neutral-700 equivalent
-                            }}
-                          >
-                                  {topic.trend.direction === 'up' ? '+' : topic.trend.direction === 'down' ? '-' : ''}{(topic.trend.delta * 20).toFixed(1)}%
+                      {(() => {
+                        const soAColor = getSoAColor(topic.soA);
+                        return topic.soA > 0 ? (
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <span
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: soAColor }}
+                              title={getSoATooltip(topic.soA)}
+                            ></span>
+                            <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
+                              {topic.soA.toFixed(2)}x
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs sm:text-sm text-[var(--text-caption)]" title="Share of Answer data not yet available">
+                            —
                           </span>
-                        </div>
-                      </div>
+                        );
+                      })()}
                     </td>
-                    {(() => {
-                      const avgIndustryData = getAvgIndustrySoA(topic);
-                      const avgCompetitorData = getAvgCompetitorSoA(topic, competitors.length);
-                      return (
-                        <>
-                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                            <div className="flex items-center gap-1.5 sm:gap-2">
-                              <span className="text-sm sm:text-base font-semibold whitespace-nowrap text-[var(--text-headings)]">
-                                {(avgIndustryData.soA * 20).toFixed(1)}%
+                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 hidden sm:table-cell">
+                      {(() => {
+                        const trendDisplay = getTrendDisplay(topic.trend.direction);
+                        const TrendIcon = trendDisplay.icon;
+                        return (
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <TrendIcon size={14} className="sm:w-4 sm:h-4" style={{ color: trendDisplay.color }} />
+                            <span className="text-xs sm:text-sm font-medium whitespace-nowrap" style={{ color: trendDisplay.color }}>
+                              {trendDisplay.symbol}
+                              {Math.abs(topic.trend.delta).toFixed(1)}x
+                            </span>
+                            <div className="flex items-center gap-0.5">
+                              {topic.trend.direction === 'up' && (
+                                <ChevronUp size={14} className="text-[var(--success500)]" />
+                              )}
+                              {topic.trend.direction === 'down' && (
+                                <ChevronDown size={14} className="text-[var(--dataviz-4)]" />
+                              )}
+                              {topic.trend.direction === 'neutral' && (
+                                <Minus size={14} className="text-[var(--primary300)]" />
+                              )}
+                              <span 
+                                className="text-[10px] sm:text-xs font-medium whitespace-nowrap"
+                                style={{
+                                  color: topic.trend.direction === 'up' 
+                                    ? 'var(--success500)' 
+                                    : topic.trend.direction === 'down' 
+                                    ? 'var(--dataviz-4)' 
+                                    : '#64748b' // neutral-700 equivalent
+                                }}
+                              >
+                                {topic.trend.direction === 'up' ? '+' : topic.trend.direction === 'down' ? '-' : ''}{(topic.trend.delta * 20).toFixed(1)}%
                               </span>
-                              <div className="flex items-center gap-0.5">
-                                {avgIndustryData.trend.direction === 'up' && (
-                                  <ChevronUp size={14} className="text-[var(--success500)]" />
-                                )}
-                                {avgIndustryData.trend.direction === 'down' && (
-                                  <ChevronDown size={14} className="text-[var(--dataviz-4)]" />
-                                )}
-                                {avgIndustryData.trend.direction === 'neutral' && (
-                                  <Minus size={14} className="text-[var(--primary300)]" />
-                                )}
-                                <span 
-                                  className="text-[10px] sm:text-xs font-medium whitespace-nowrap"
-                                  style={{
-                                    color: avgIndustryData.trend.direction === 'up' 
-                                      ? 'var(--success500)' 
-                                      : avgIndustryData.trend.direction === 'down' 
-                                      ? 'var(--dataviz-4)' 
-                                      : '#64748b' // neutral-700 equivalent
-                                  }}
-                                >
-                                  {avgIndustryData.trend.direction === 'up' ? '+' : avgIndustryData.trend.direction === 'down' ? '-' : ''}{(avgIndustryData.trend.delta * 20).toFixed(1)}%
-                                </span>
-                              </div>
                             </div>
-                          </td>
-                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                            <div className="flex items-center gap-1.5 sm:gap-2">
-                              <span className="text-sm sm:text-base font-semibold whitespace-nowrap text-[var(--text-headings)]">
-                                {(avgCompetitorData.soA * 20).toFixed(1)}%
-                              </span>
-                              <div className="flex items-center gap-0.5">
-                                {avgCompetitorData.trend.direction === 'up' && (
-                                  <ChevronUp size={14} className="text-[var(--success500)]" />
-                                )}
-                                {avgCompetitorData.trend.direction === 'down' && (
-                                  <ChevronDown size={14} className="text-[var(--dataviz-4)]" />
-                                )}
-                                {avgCompetitorData.trend.direction === 'neutral' && (
-                                  <Minus size={14} className="text-[var(--primary300)]" />
-                                )}
-                                <span 
-                                  className="text-[10px] sm:text-xs font-medium whitespace-nowrap"
-                                  style={{
-                                    color: avgCompetitorData.trend.direction === 'up' 
-                                      ? 'var(--success500)' 
-                                      : avgCompetitorData.trend.direction === 'down' 
-                                      ? 'var(--dataviz-4)' 
-                                      : '#64748b' // neutral-700 equivalent
-                                  }}
-                                >
-                                  {avgCompetitorData.trend.direction === 'up' ? '+' : avgCompetitorData.trend.direction === 'down' ? '-' : ''}{(avgCompetitorData.trend.delta * 20).toFixed(1)}%
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-                        </>
-                      );
-                    })()}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {topic.sources.slice(0, 2).map((source, idx) => {
+                      {(() => {
+                        const avgIndustrySoA = getAvgIndustrySoA(topic);
+                        const avgSoAColor = getSoAColor(avgIndustrySoA.soA);
+                        return (
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <span
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: avgSoAColor }}
+                              title={getSoATooltip(avgIndustrySoA.soA)}
+                            ></span>
+                            <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: avgSoAColor }}>
+                              {avgIndustrySoA.soA.toFixed(2)}x
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
+                      {topic.sources.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {topic.sources.slice(0, 2).map((source, idx) => {
                           // Extract domain from URL for favicon
                           const domain = source.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
                           const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
@@ -552,7 +561,12 @@ export const TopicsRankedTable = ({
                             +{topic.sources.length - 2}
                           </span>
                         )}
-                      </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs sm:text-sm text-[var(--text-caption)]" title="Source citation data not yet available">
+                          —
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );

@@ -26,6 +26,8 @@ import { getLLMIcon } from '../components/Visibility/LLMIcons';
 import { apiClient } from '../lib/apiClient';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import { SourcesChartContainer } from '../components/Citations/SourcesChartContainer';
+import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
 
 interface ApiResponse<T> {
   success: boolean;

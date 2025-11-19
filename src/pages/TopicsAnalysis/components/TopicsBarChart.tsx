@@ -10,15 +10,31 @@ import {
   Legend
 } from 'chart.js';
 import type { Topic } from '../types';
+import type { Competitor } from '../utils/competitorColors';
+import { createCompetitorColorMap, getCompetitorColorById } from '../utils/competitorColors';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 interface TopicsBarChartProps {
   topics: Topic[];
   onBarClick?: (topic: Topic) => void;
+  competitors?: Competitor[];
+  selectedCompetitor?: string;
 }
 
-export const TopicsBarChart = ({ topics, onBarClick }: TopicsBarChartProps) => {
+export const TopicsBarChart = ({ 
+  topics, 
+  onBarClick,
+  competitors = [],
+  selectedCompetitor = 'all'
+}: TopicsBarChartProps) => {
+  // Determine if we should show competitor breakdown
+  const showCompetitorBreakdown = selectedCompetitor === 'all' && competitors.length > 0;
+  
+  // Create color map for competitors
+  const competitorColorMap = useMemo(() => {
+    return createCompetitorColorMap(competitors);
+  }, [competitors]);
   // Helper function to resolve CSS variable at runtime
   const getCSSVariable = (variableName: string): string => {
     if (typeof window !== 'undefined') {
@@ -46,20 +62,78 @@ export const TopicsBarChart = ({ topics, onBarClick }: TopicsBarChartProps) => {
       .sort((a, b) => (b.currentSoA ?? 0) - (a.currentSoA ?? 0));
   }, [topics]);
 
+  // Generate mock competitor data for each topic (deterministic based on topic index)
+  const competitorData = useMemo(() => {
+    if (!showCompetitorBreakdown) return null;
+    
+    const competitorMap = new Map<string, Map<string, number>>();
+    
+    sortedTopics.forEach((topic, topicIndex) => {
+      const topicCompetitors = new Map<string, number>();
+      const baseSoA = topic.currentSoA ?? 0;
+      
+      // Generate competitor values that sum to approximately the base SoA
+      // Use deterministic distribution based on topic index for consistency
+      const seed = topicIndex * 17; // Deterministic seed
+      let remaining = baseSoA;
+      const portions: number[] = [];
+      
+      // Generate portions deterministically
+      for (let compIndex = 0; compIndex < competitors.length; compIndex++) {
+        if (compIndex < competitors.length - 1) {
+          // Use deterministic pseudo-random distribution
+          const pseudoRandom = ((seed + compIndex * 7) % 100) / 100;
+          const portion = remaining * (0.05 + pseudoRandom * 0.15);
+          portions.push(Math.max(0, Math.min(portion, remaining)));
+          remaining = Math.max(0, remaining - portion);
+        } else {
+          // Last competitor gets the remainder
+          portions.push(remaining);
+        }
+      }
+      
+      // Assign portions to competitors
+      competitors.forEach((competitor, compIndex) => {
+        topicCompetitors.set(competitor.id, portions[compIndex] ?? 0);
+      });
+      
+      competitorMap.set(topic.name, topicCompetitors);
+    });
+    
+    return competitorMap;
+  }, [sortedTopics, showCompetitorBreakdown, competitors]);
+
   const chartData = useMemo(() => {
-    return {
-      labels: sortedTopics.map((t) => t.name),
-      datasets: [
-        {
-          label: 'Share of Answer (SoA)',
-          data: sortedTopics.map((t) => t.currentSoA ?? 0),
-          backgroundColor: '#498cf9', // Data viz 02
-          borderRadius: 4,
+    if (!showCompetitorBreakdown) {
+      return {
+        labels: sortedTopics.map((t) => t.name),
+        datasets: [
+          {
+            label: 'Share of Answer (SoA)',
+            data: sortedTopics.map((t) => t.currentSoA ?? 0),
+            backgroundColor: '#498cf9', // Data viz 02
+            borderRadius: 0, // Remove border radius
+            borderSkipped: false,
+          },
+        ],
+      };
+    } else {
+      // Stacked bar chart with competitors
+      return {
+        labels: sortedTopics.map((t) => t.name),
+        datasets: competitors.map((competitor) => ({
+          label: competitor.name,
+          data: sortedTopics.map((topic) => {
+            const topicCompetitors = competitorData?.get(topic.name);
+            return topicCompetitors?.get(competitor.id) ?? 0;
+          }),
+          backgroundColor: getCompetitorColorById(competitor.id, competitorColorMap),
+          borderRadius: 0, // Remove border radius
           borderSkipped: false,
-        },
-      ],
-    };
-  }, [sortedTopics]);
+        })),
+      };
+    }
+  }, [sortedTopics, showCompetitorBreakdown, competitors, competitorData, competitorColorMap]);
 
   const options = useMemo(() => {
     return {
@@ -78,7 +152,18 @@ export const TopicsBarChart = ({ topics, onBarClick }: TopicsBarChartProps) => {
       },
       plugins: {
         legend: {
-          display: false,
+          display: showCompetitorBreakdown,
+          position: 'bottom' as const,
+          labels: {
+            usePointStyle: true,
+            pointStyle: 'rect',
+            padding: 15,
+            font: {
+              size: 11,
+              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            },
+            color: chartLabelColor,
+          },
         },
         tooltip: {
           enabled: true,
@@ -112,12 +197,25 @@ export const TopicsBarChart = ({ topics, onBarClick }: TopicsBarChartProps) => {
             label: (context: any) => {
               const elementIndex = context.dataIndex;
               const topic = sortedTopics[elementIndex];
-              const lines = [`${context.parsed.y.toFixed(1)}%`];
-              if (topic) {
-                lines.push(`SoA: ${topic.soA.toFixed(2)}×`);
-                lines.push(`Rank: ${topic.rank}`);
+              const datasetLabel = context.dataset.label || '';
+              const value = context.parsed.y;
+              
+              if (showCompetitorBreakdown) {
+                // Stacked view: show competitor-specific info
+                const lines = [`${datasetLabel}: ${value.toFixed(1)}%`];
+                if (topic) {
+                  lines.push(`SoA: ${topic.soA.toFixed(2)}×`);
+                }
+                return lines;
+              } else {
+                // Non-stacked view: show topic info
+                const lines = [`${value.toFixed(1)}%`];
+                if (topic) {
+                  lines.push(`SoA: ${topic.soA.toFixed(2)}×`);
+                  lines.push(`Rank: ${topic.rank}`);
+                }
+                return lines;
               }
-              return lines;
             },
           },
         },
@@ -151,8 +249,8 @@ export const TopicsBarChart = ({ topics, onBarClick }: TopicsBarChartProps) => {
             maxRotation: 45,
             minRotation: 45,
           },
-          categoryPercentage: 0.6, // Reduce bar width to 60% of category
-          barPercentage: 0.8, // Bars take 80% of available space
+          categoryPercentage: showCompetitorBreakdown ? 0.7 : 0.6, // Slightly wider when stacked
+          barPercentage: showCompetitorBreakdown ? 0.9 : 0.8, // More space when stacked
         },
         y: {
           beginAtZero: true,
@@ -193,7 +291,7 @@ export const TopicsBarChart = ({ topics, onBarClick }: TopicsBarChartProps) => {
         padding: {
           top: 16,
           right: 16,
-          bottom: 12,
+          bottom: showCompetitorBreakdown ? 60 : 12, // Extra space for legend when stacked
           left: 8,
         },
       },
@@ -202,11 +300,19 @@ export const TopicsBarChart = ({ topics, onBarClick }: TopicsBarChartProps) => {
         easing: 'easeInOutQuart' as const,
       },
     };
-  }, [sortedTopics, onBarClick, chartGridColor, chartLabelColor, chartAxisColor, textCaptionColor]);
+  }, [sortedTopics, onBarClick, chartGridColor, chartLabelColor, chartAxisColor, textCaptionColor, showCompetitorBreakdown]);
+
+  // Calculate dynamic height based on number of topics
+  // Balance between expanding height and reducing bar size
+  const chartHeight = useMemo(() => {
+    const baseHeight = Math.min(Math.max(400, sortedTopics.length * 50 + 100), 800);
+    // Add extra height for legend when showing competitors
+    return showCompetitorBreakdown ? baseHeight + 40 : baseHeight;
+  }, [sortedTopics.length, showCompetitorBreakdown]);
 
   return (
     <div className="p-3 sm:p-4 lg:p-6">
-      <div className="h-[400px] sm:h-[500px] lg:h-[600px]" style={{ cursor: 'pointer' }}>
+      <div style={{ height: `${chartHeight}px`, cursor: 'pointer' }}>
         <Bar data={chartData} options={options} />
       </div>
     </div>

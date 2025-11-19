@@ -6,6 +6,7 @@ import { TopicsLineChart } from './TopicsLineChart';
 import { TopicsChartTypeSelector } from './TopicsChartTypeSelector';
 import { TopicDetailModal } from './TopicDetailModal';
 import type { Topic } from '../types';
+import type { Competitor } from '../utils/competitorColors';
 
 export type ChartType = 'racing-bar' | 'bar' | 'line';
 
@@ -19,6 +20,10 @@ interface TopicAnalysisMultiViewProps {
   onCategoryChange?: (category: string) => void;
   selectedDateRange?: string;
   selectedCountry?: string;
+  competitors?: Competitor[];
+  selectedCompetitor?: string;
+  brandFavicon?: string;
+  brandName?: string;
   onExport?: () => void;
 }
 
@@ -32,6 +37,10 @@ export const TopicAnalysisMultiView = ({
   onCategoryChange,
   selectedDateRange,
   selectedCountry,
+  competitors = [],
+  selectedCompetitor = '',
+  brandFavicon,
+  brandName,
   onExport,
 }: TopicAnalysisMultiViewProps) => {
   const [chartType, setChartType] = useState<ChartType>(defaultChartType);
@@ -133,10 +142,12 @@ export const TopicAnalysisMultiView = ({
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm">
       {/* Chart Type Selector and Controls */}
       <div className="p-4 border-b border-[var(--border-default)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <TopicsChartTypeSelector
-          activeChart={mapChartTypeReverse(chartType)}
-          onChartChange={(type) => handleChartTypeChange(mapChartType(type))}
-        />
+        <div className="flex items-center gap-3">
+          <TopicsChartTypeSelector
+            activeChart={mapChartTypeReverse(chartType)}
+            onChartChange={(type) => handleChartTypeChange(mapChartType(type))}
+          />
+        </div>
         
         {/* Export Control */}
         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
@@ -167,12 +178,17 @@ export const TopicAnalysisMultiView = ({
             <TopicsRacingBarChart
               topics={preparedTopics}
               onBarClick={handleTopicClick}
+              competitors={competitors}
+              brandFavicon={brandFavicon}
+              brandName={brandName}
             />
           )}
           {chartType === 'bar' && (
             <TopicsBarChart
               topics={preparedTopics}
               onBarClick={handleTopicClick}
+              competitors={competitors}
+              selectedCompetitor={selectedCompetitor}
             />
           )}
           {chartType === 'line' && (

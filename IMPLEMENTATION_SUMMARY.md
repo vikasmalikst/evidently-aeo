@@ -1,539 +1,237 @@
-# Manage Prompts - Implementation Summary
+# New Topics & Query Generation Implementation Summary
 
-## 🎉 What's Been Completed
+## ✅ What Was Implemented
 
-### ✅ Backend Implementation (100% Complete)
+### 1. New Service File
+**File:** `backend/src/services/topics-query-generation.service.ts`
 
-I've built a **complete, production-ready backend** for the Manage Prompts feature with clean, modular architecture.
+- Implements the improved prompt approach
+- Generates topics and queries together
+- Flexible topic count (3-7 per intent, filtered to top 15-20)
+- Maps new intent archetypes to existing category system
+- Uses structured JSON output format
 
-### Key Achievements:
+### 2. Modified Brand Intelligence Service
+**File:** `backend/src/services/onboarding-intel.service.ts`
 
-#### 1. **Database Schema (Phase 1)** ✅
-Created 4 new tables with proper relationships and indexes:
-- `prompt_configurations` - Version metadata
-- `prompt_configuration_snapshots` - Historical prompt data
-- `prompt_change_log` - Audit trail
-- `prompt_metrics_snapshots` - Performance metrics
+- Added `skipTopics` parameter to `generateBrandIntelWithLLM()`
+- When `USE_NEW_TOPICS_QUERY_GENERATION=true`, topics are not generated in brand intel call
+- Original functionality remains intact (backward compatible)
 
-**Plus:** Added versioning columns to existing tables (`generated_queries`, `collector_results`)
+### 3. Updated Brand Service
+**File:** `backend/src/services/brand.service.ts`
 
-#### 2. **Modular Services (Phase 2)** ✅
-Built 5 specialized service modules following clean code principles:
-
-```
-prompt-management/
-├── prompt-crud.service.ts       → CRUD operations
-├── prompt-versioning.service.ts → Version management  
-├── prompt-metrics.service.ts    → Metrics calculation
-├── prompt-impact.service.ts     → Impact estimation
-└── prompt-comparison.service.ts → Version comparison
-```
-
-Each service is:
-- **Self-contained** - Clear responsibilities
-- **Well-documented** - Inline comments and JSDoc
-- **Type-safe** - Full TypeScript coverage
-- **Error-handled** - Proper error messages and rollback
-
-#### 3. **RESTful API Endpoints (Phase 3)** ✅
-Implemented 11 API endpoints:
-
-**Prompt Management:**
-- `GET /api/brands/:brandId/prompts/manage` - Get all prompts
-- `POST /api/brands/:brandId/prompts` - Add prompt
-- `PUT /api/brands/:brandId/prompts/:promptId` - Edit prompt
-- `DELETE /api/brands/:brandId/prompts/:promptId` - Delete/archive prompt
-
-**Batch Operations:**
-- `POST /api/brands/:brandId/prompts/batch` - Apply multiple changes
-
-**Impact Analysis:**
-- `POST /api/brands/:brandId/prompts/calculate-impact` - Preview impact
-
-**Version Management:**
-- `GET /api/brands/:brandId/prompts/versions` - Get history
-- `GET /api/brands/:brandId/prompts/versions/:version` - Get version details
-- `POST /api/brands/:brandId/prompts/versions/:version/revert` - Revert
-- `GET /api/brands/:brandId/prompts/versions/compare` - Compare versions
-
-All endpoints are:
-- **Authenticated** - JWT middleware applied
-- **Validated** - Input validation on all requests
-- **Documented** - Clear response formats
-- **Production-ready** - Error handling and logging
+- Added integration with new topics+queries service
+- Feature flag: `USE_NEW_TOPICS_QUERY_GENERATION` environment variable
+- New method: `storeTopicsAndQueriesFromNewService()` - stores topics and queries in database
+- New method: `mapIntentArchetypeToIntent()` - maps new archetypes to existing intent system
+- Falls back to original approach if feature flag is off or topics already exist
 
 ---
 
-## 📁 Files Created
+## 🔧 How It Works
 
-### Database Migrations:
-```
-/supabase/migrations/
-├── 20251118000000_create_prompt_versioning_tables.sql ← Main migration
-└── 20251118000001_rollback_prompt_versioning.sql      ← Rollback script
-```
+### Flow with New Approach (Feature Flag ON)
 
-### Backend Services:
 ```
-/backend/src/services/prompt-management/
-├── index.ts                        ← Central exports
-├── types.ts                        ← TypeScript types (200+ lines)
-├── utils.ts                        ← Utility functions
-├── prompt-crud.service.ts          ← CRUD operations (300+ lines)
-├── prompt-versioning.service.ts    ← Versioning (400+ lines)
-├── prompt-metrics.service.ts       ← Metrics (200+ lines)
-├── prompt-impact.service.ts        ← Impact analysis (150+ lines)
-├── prompt-comparison.service.ts    ← Version comparison (130+ lines)
-└── README.md                       ← Developer documentation
-```
-
-### API Routes:
-```
-/backend/src/routes/
-└── prompt-management.routes.ts     ← API endpoints (400+ lines)
-
-/backend/src/
-└── app.ts                          ← Updated to register routes
+1. Brand Onboarding Request
+   ↓
+2. Brand Intelligence Generation (skips topics)
+   ↓
+3. Check: Are topics provided by user?
+   - YES → Use user topics
+   - NO → Use NEW topics+queries service
+   ↓
+4. New Service generates:
+   - Primary domain
+   - 20-50 topics (filtered to top 20)
+   - 1 query per topic
+   - Intent archetypes mapped to categories
+   ↓
+5. Store in database:
+   - Topics → brand_topics table
+   - Queries → generated_queries table
+   ↓
+6. Continue with data collection (unchanged)
 ```
 
-### Documentation:
+### Flow with Original Approach (Feature Flag OFF)
+
 ```
-/
-├── MANAGE_PROMPTS_IMPLEMENTATION_PLAN.md     ← Original plan (900+ lines)
-├── MANAGE_PROMPTS_REVISED_APPROACH.md        ← Revised approach (800+ lines)
-├── MANAGE_PROMPTS_IMPLEMENTATION_STATUS.md   ← Status tracker (500+ lines)
-└── IMPLEMENTATION_SUMMARY.md                 ← This file
+1. Brand Onboarding Request
+   ↓
+2. Brand Intelligence Generation (includes topics)
+   ↓
+3. Store topics in brand_topics
+   ↓
+4. Generate queries for topics (original service)
+   ↓
+5. Store queries in generated_queries
+   ↓
+6. Continue with data collection
 ```
 
 ---
 
-## 🎯 How It Works
+## 🚀 How to Enable
 
-### Data Flow:
+### Environment Variable
 
-```
-┌─────────────────────┐
-│ User edits prompts  │
-│ in frontend         │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│ Pending changes     │
-│ tracked in state    │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│ Preview Impact      │
-│ API call            │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│ User confirms       │
-│ "Apply Changes"     │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│ Batch API call      │
-│ creates new version │
-└──────────┬──────────┘
-           │
-           ├─→ Update generated_queries
-           ├─→ Deactivate old version
-           ├─→ Create new version
-           ├─→ Create snapshots
-           ├─→ Calculate metrics
-           └─→ Log changes
-                   │
-                   ↓
-┌─────────────────────┐
-│ Version created!    │
-│ Future data uses it │
-└─────────────────────┘
-```
-
-### Version Lifecycle:
-
-```
-Onboarding Complete
-        ↓
-    Version 1 (initial_setup)
-        ↓
-    User makes changes
-        ↓
-    Version 2 (prompt_added)
-        ↓
-    User makes more changes
-        ↓
-    Version 3 (bulk_update)
-        ↓
-    User reverts to V1
-        ↓
-    Version 4 (version_revert, config = V1)
-```
-
-**Key Point:** Historical versions are NEVER modified. Reverting creates a new version with the old configuration.
-
----
-
-## 🚀 Quick Start Guide
-
-### 1. Run Database Migrations
+Add to your `.env` file:
 
 ```bash
-cd /Users/avayasharma/evidently
-cd supabase
-
-# Option A: Using Supabase CLI
-supabase db push
-
-# Option B: Manually in Supabase Dashboard
-# Copy contents of migrations/20251118000000_create_prompt_versioning_tables.sql
-# Paste and run in SQL Editor
+USE_NEW_TOPICS_QUERY_GENERATION=true
 ```
 
-### 2. Start Backend Server
+### When It Activates
 
-```bash
-cd /Users/avayasharma/evidently/backend
-npm run dev
+The new approach is used when:
+1. `USE_NEW_TOPICS_QUERY_GENERATION=true`
+2. User hasn't provided topics in onboarding request
+3. No topics exist from brand intelligence call
 
-# Backend should start on http://localhost:3001
-```
-
-### 3. Test API Endpoints
-
-```bash
-# Get your JWT token first (from login)
-export TOKEN="your-jwt-token-here"
-export BRAND_ID="your-brand-id"
-
-# Test: Get active prompts
-curl -X GET \
-  "http://localhost:3001/api/brands/$BRAND_ID/prompts/manage" \
-  -H "Authorization: Bearer $TOKEN"
-
-# Test: Add a prompt
-curl -X POST \
-  "http://localhost:3001/api/brands/$BRAND_ID/prompts" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "What are the security features?",
-    "topic": "Security"
-  }'
-
-# Test: Get version history
-curl -X GET \
-  "http://localhost:3001/api/brands/$BRAND_ID/prompts/versions" \
-  -H "Authorization: Bearer $TOKEN"
-```
+Otherwise, the original approach is used (backward compatible).
 
 ---
 
-## 📋 What's Next (Frontend Integration)
+## 📊 Database Schema
 
-### Immediate Next Steps:
+### Topics Storage (`brand_topics` table)
+- `topic_name`: Topic text
+- `category`: Mapped from intent archetype (awareness/comparison/purchase/support)
+- `description`: Topic description
+- `metadata`: Stores intent archetype, priority, primary domain
 
-#### 1. **Create API Client Methods** (portal/src/lib/)
-
-```typescript
-// portal/src/lib/promptManagementApi.ts
-export const promptManagementApi = {
-  getPrompts: (brandId: string) => 
-    apiClient.get(`/brands/${brandId}/prompts/manage`),
-  
-  addPrompt: (brandId: string, data: { text: string; topic: string }) =>
-    apiClient.post(`/brands/${brandId}/prompts`, data),
-  
-  updatePrompt: (brandId: string, promptId: string, data: any) =>
-    apiClient.put(`/brands/${brandId}/prompts/${promptId}`, data),
-  
-  applyChanges: (brandId: string, changes: PendingChanges) =>
-    apiClient.post(`/brands/${brandId}/prompts/batch`, { changes }),
-  
-  calculateImpact: (brandId: string, changes: PendingChanges) =>
-    apiClient.post(`/brands/${brandId}/prompts/calculate-impact`, { changes }),
-  
-  getVersionHistory: (brandId: string) =>
-    apiClient.get(`/brands/${brandId}/prompts/versions`),
-  
-  revertToVersion: (brandId: string, version: number) =>
-    apiClient.post(`/brands/${brandId}/prompts/versions/${version}/revert`)
-}
-```
-
-#### 2. **Create React Hooks** (portal/src/hooks/)
-
-```typescript
-// portal/src/hooks/usePromptManagement.ts
-export function usePromptManagement(brandId: string) {
-  const [prompts, setPrompts] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  
-  const fetchPrompts = async () => {
-    setLoading(true)
-    try {
-      const response = await promptManagementApi.getPrompts(brandId)
-      setPrompts(response.data.topics)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-  
-  return { prompts, loading, error, fetchPrompts }
-}
-```
-
-#### 3. **Update Components** (portal/src/pages/)
-
-```typescript
-// portal/src/pages/ManagePrompts.tsx
-
-// Remove this:
-import { mockPromptsData } from '../data/mockPromptsData'
-
-// Add this:
-import { usePromptManagement } from '../hooks/usePromptManagement'
-
-export const ManagePrompts = () => {
-  const { brands, selectedBrandId } = useManualBrandDashboard()
-  const { prompts, loading, fetchPrompts } = usePromptManagement(selectedBrandId)
-  
-  useEffect(() => {
-    if (selectedBrandId) {
-      fetchPrompts()
-    }
-  }, [selectedBrandId])
-  
-  // Rest of component uses real prompts...
-}
-```
-
-#### 4. **Integrate with Onboarding**
-
-```typescript
-// backend/src/services/onboarding.service.ts
-
-// After prompts are generated and saved, create Version 1:
-import { promptVersioningService } from './prompt-management'
-
-await promptVersioningService.createInitialVersion(
-  brandId,
-  customerId,
-  userId
-)
-```
-
-#### 5. **Update Data Collection**
-
-```typescript
-// backend/src/services/data-collection.service.ts
-
-// Before running collectors, get active version:
-const activeVersion = await promptVersioningService.getCurrentVersion(
-  brandId,
-  customerId
-)
-
-// When saving collector_results:
-await supabase.from('collector_results').insert({
-  // ... other fields
-  configuration_version: activeVersion.version,
-  configuration_id: activeVersion.id
-})
-```
+### Queries Storage (`generated_queries` table)
+- `query_text`: The generated query
+- `topic`: Topic name
+- `intent`: Mapped from intent archetype
+- `priority`: Priority score (1-5)
+- `metadata`: Stores intent archetype, generation source
 
 ---
 
-## 🧪 Testing Plan
+## 🔄 Frontend Compatibility
 
-### Backend Testing (Now Available):
+**No frontend changes required!**
 
-```bash
-# Test endpoints with curl
-./scripts/test-prompt-management.sh
+The new approach:
+- ✅ Uses same database tables
+- ✅ Stores data in same format
+- ✅ Works with existing API endpoints
+- ✅ Frontend receives same data structure
 
-# Or use Postman collection (to be created)
-```
-
-### Frontend Testing (After Integration):
-
-1. **Unit Tests:** Test hooks and API client methods
-2. **Integration Tests:** Test component interactions
-3. **E2E Tests:** Test complete user workflows
+The frontend will automatically see the new topics and queries when fetching from the database.
 
 ---
 
-## 📊 Metrics & Monitoring
+## 🧪 Testing
 
-### What Gets Tracked:
+### Test New Approach
 
-- **Versions Created:** How many versions per brand
-- **Analyses Count:** How many times each version was used
-- **Metrics per Version:** Coverage, visibility, sentiment
-- **Change Types:** prompt_added, prompt_removed, etc.
-- **Revert Frequency:** How often users revert
+1. Set environment variable:
+   ```bash
+   export USE_NEW_TOPICS_QUERY_GENERATION=true
+   ```
 
-### Monitoring Queries:
+2. Create a new brand via onboarding API (without providing topics)
 
-```sql
--- Get version activity
-SELECT 
-  brand_id,
-  COUNT(*) as version_count,
-  MAX(version) as latest_version
-FROM prompt_configurations
-GROUP BY brand_id;
+3. Check logs for:
+   - `🚀 Using NEW topics+queries generation approach`
+   - `✅ New approach: Generated X topics with queries`
 
--- Get most used versions
-SELECT 
-  version,
-  analyses_count
-FROM prompt_metrics_snapshots pms
-JOIN prompt_configurations pc ON pms.configuration_id = pc.id
-ORDER BY analyses_count DESC;
-```
+4. Verify in database:
+   - Topics in `brand_topics` table
+   - Queries in `generated_queries` table
+   - Metadata contains intent archetypes
 
----
+### Test Original Approach
 
-## 🎓 Key Concepts
+1. Unset or set to false:
+   ```bash
+   export USE_NEW_TOPICS_QUERY_GENERATION=false
+   ```
 
-### 1. **Versions are Immutable**
-Once created, versions never change. This ensures audit trail integrity.
+2. Create a new brand
 
-### 2. **Active Version**
-Only ONE version is active at a time per brand. This is enforced by database constraint.
-
-### 3. **Snapshots**
-Each version stores a complete snapshot of all prompts at that time.
-
-### 4. **Revert Creates New Version**
-Reverting to V2 creates V4 (with V2's config), not reactivates V2.
-
-### 5. **Two-Table Model**
-- `generated_queries` = Configuration (what to track)
-- `collector_results` = Execution (what was tracked)
+3. Should use original flow (topics from brand intel, then query generation)
 
 ---
 
-## 🏆 Success Criteria
+## 📝 Key Features
 
-### Backend (✅ COMPLETE):
-- [x] Clean, modular code architecture
-- [x] Full TypeScript type safety
-- [x] Comprehensive error handling
-- [x] RESTful API design
-- [x] Database migrations ready
-- [x] Production-ready code
-- [x] Zero linter errors
-- [x] Complete documentation
+### Improvements in New Approach
 
-### Frontend (⏳ NEXT):
-- [ ] API integration
-- [ ] Real data display
-- [ ] Loading states
-- [ ] Error handling UI
-- [ ] Version selection
-- [ ] Impact preview modal
+1. **Better Alignment**: Topics and queries generated together ensures perfect matching
+2. **More Structured**: 10 intent archetypes vs 4 categories
+3. **Flexible Count**: 3-7 topics per intent (not fixed 5)
+4. **Smart Filtering**: Automatically filters to top 15-20 most relevant topics
+5. **Priority Scoring**: Each topic has priority (1-5) for ranking
+6. **Simpler Input**: Only needs brand name (uses context if available)
 
----
+### Backward Compatibility
 
-## 📞 Support & Resources
-
-### Documentation:
-1. **Implementation Plan** - Complete technical spec
-2. **Revised Approach** - Data model clarification
-3. **Status Tracker** - Phase-by-phase progress
-4. **Service README** - Developer guide
-
-### Code Navigation:
-- Services: `/backend/src/services/prompt-management/`
-- Routes: `/backend/src/routes/prompt-management.routes.ts`
-- Types: `/backend/src/services/prompt-management/types.ts`
-- Migrations: `/supabase/migrations/20251118000000_*.sql`
-
-### Testing:
-- Use curl commands above
-- Check logs in `backend.log`
-- Inspect database tables in Supabase dashboard
+- ✅ Original approach still works
+- ✅ Feature flag controls which approach to use
+- ✅ Existing brands unaffected
+- ✅ Frontend requires no changes
+- ✅ Database schema unchanged (uses metadata for new fields)
 
 ---
 
-## 🎯 Priority Actions
+## 🐛 Troubleshooting
 
-### High Priority (Do First):
-1. ✅ Run database migrations
-2. ✅ Test backend APIs
-3. ⏳ Create API client methods
-4. ⏳ Build React hooks
-5. ⏳ Connect ManagePrompts page
+### New approach not activating?
 
-### Medium Priority (Do Next):
-6. ⏳ Integrate with onboarding
-7. ⏳ Update data collection
-8. ⏳ Add loading states
-9. ⏳ Add error handling UI
+1. Check environment variable is set: `USE_NEW_TOPICS_QUERY_GENERATION=true`
+2. Check logs for feature flag status
+3. Verify no topics were provided in onboarding request
+4. Check Cerebras API key is configured
 
-### Low Priority (Do Later):
-10. ⏳ Write frontend tests
-11. ⏳ Add analytics tracking
-12. ⏳ Performance optimization
-13. ⏳ Advanced features
+### Errors storing topics/queries?
 
----
+1. Check database schema matches expected structure
+2. Verify `brand_topics` and `generated_queries` tables exist
+3. Check foreign key constraints (brand_id, customer_id)
+4. Review error logs for specific database errors
 
-## 💡 Tips & Best Practices
+### LLM response parsing errors?
 
-### For Backend:
-- Always wrap service calls in try-catch
-- Validate inputs before calling services
-- Log important actions for debugging
-- Use transactions for multi-step operations
-
-### For Frontend:
-- Show loading states during API calls
-- Handle errors gracefully with user-friendly messages
-- Optimistic UI updates for better UX
-- Debounce search/filter inputs
-
-### For Database:
-- Don't modify version tables manually
-- Use migrations for schema changes
-- Backup before major updates
-- Monitor query performance
+1. Check Cerebras API response in logs
+2. Verify JSON structure matches expected format
+3. Check max_tokens is sufficient (currently 4000)
+4. Review prompt for clarity
 
 ---
 
-## 🌟 Highlights
+## 📚 Files Modified
 
-### What Makes This Implementation Great:
+1. ✅ `backend/src/services/topics-query-generation.service.ts` (NEW)
+2. ✅ `backend/src/services/onboarding-intel.service.ts` (MODIFIED)
+3. ✅ `backend/src/services/brand.service.ts` (MODIFIED)
 
-1. **Modular Design** - Easy to maintain and extend
-2. **Type Safety** - Catch errors at compile time
-3. **Production Ready** - Error handling, validation, logging
-4. **Well Documented** - Comments, READMEs, examples
-5. **Clean Architecture** - SOLID principles applied
-6. **Scalable** - Handles growth gracefully
-7. **Testable** - Services are independent and mockable
+## 📚 Files NOT Modified (Original Intact)
 
----
-
-**Status:** Backend Complete ✅ | Frontend Integration Ready ⏳
-
-**Next Action:** Create API client methods and React hooks
-
-**Estimated Time to Complete:** 2-3 days for full frontend integration
-
-**Last Updated:** November 18, 2025
+- ✅ `backend/src/services/query-generation.service.ts` (ORIGINAL - untouched)
+- ✅ All frontend files (no changes needed)
+- ✅ Database migrations (uses existing schema)
 
 ---
 
-**Questions or issues?** Refer to the documentation files or examine the service code comments.
+## 🎯 Next Steps
 
+1. **Test the new approach** with a few brands
+2. **Compare results** with original approach
+3. **Gather feedback** on topic quality and relevance
+4. **Adjust filtering/ranking** if needed
+5. **Consider making it default** if results are better
+
+---
+
+## 💡 Future Enhancements
+
+- Add API endpoint to test new approach independently
+- Add UI toggle in frontend to choose approach
+- Add metrics to compare both approaches
+- Fine-tune topic filtering algorithm
+- Add support for custom intent archetypes

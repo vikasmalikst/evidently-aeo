@@ -93,6 +93,7 @@ export class PositionExtractionService {
   private supabase: SupabaseClient;
   private cerebrasApiKey: string | null;
   private geminiApiKey: string | null;
+  private geminiModel: string;
   
   // Cache for product names (avoid re-extracting for same brand)
   private productCache = new Map<string, string[]>();
@@ -114,7 +115,8 @@ export class PositionExtractionService {
     });
 
     this.cerebrasApiKey = process.env.CEREBRAS_API_KEY || null;
-    this.geminiApiKey = process.env.GEMINI_API_KEY || null;
+    this.geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || null;
+    this.geminiModel = process.env.GOOGLE_GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash-002';
 
     if (!this.cerebrasApiKey && !this.geminiApiKey) {
       throw new Error('At least one LLM API key (Cerebras or Gemini) is required');
@@ -832,7 +834,7 @@ Example response:
    */
   private async callGemini(prompt: string): Promise<string> {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

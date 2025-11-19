@@ -1,4 +1,12 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
+import { IconBrandOpenai } from '@tabler/icons-react';
+import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
+import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
+import deepseekLogoSrc from '../../assets/Deepseek-Logo-Icon.svg';
+import geminiLogoSrc from '../../assets/Google-Gemini-Icon.svg';
+import grokLogoSrc from '../../assets/Grok-icon.svg';
+import mistralLogoSrc from '../../assets/Mistral_AI_icon.svg';
+import perplexityLogoSrc from '../../assets/Perplexity-Simple-Icon.svg';
 import { Layout } from '../../components/Layout/Layout';
 import { CompactMetricsPods } from './components/CompactMetricsPods';
 import { TopicsRankedTable } from './components/TopicsRankedTable';
@@ -131,9 +139,11 @@ export const TopicsAnalysisPage = ({
   ];
   const [competitors] = useState(competitorsList);
   
-  // Mock brand favicon (in real app, get from brand configuration)
-  // For now, use a generic favicon service or brand domain
-  const brandFavicon = 'https://www.google.com/s2/favicons?domain=example.com&sz=12';
+  // Get brand favicon from selected brand, or use undefined if not available
+  // In real app, get from brand configuration
+  const brandFavicon = selectedBrand?.domain 
+    ? `https://www.google.com/s2/favicons?domain=${selectedBrand.domain}&sz=12`
+    : undefined;
 
   // Helper function to format dates
   const formatDate = (date: Date) => {

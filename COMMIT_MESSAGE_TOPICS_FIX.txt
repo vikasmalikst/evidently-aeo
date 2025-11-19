@@ -1,0 +1,31 @@
+fix: resolve merge conflicts and runtime errors in Topics Analysis page
+
+- Resolve merge conflict in TopicsRankedTable.tsx
+  * Merge Model column from HEAD with SoA and Trend columns from incoming branch
+  * Add getTrendDisplay() helper function for trend visualization
+  * Add missing TrendingUp/TrendingDown imports from lucide-react
+
+- Fix missing imports in TopicsAnalysisPage.tsx
+  * Add IconBrandOpenai import from @tabler/icons-react
+  * Add all AI model logo asset imports (Claude, Copilot, DeepSeek, Gemini, Grok, Mistral, Perplexity)
+  * Fixes "Uncaught ReferenceError: Ic" runtime error
+
+- Fix favicon 404 errors
+  * Make brandFavicon conditional - only load if brand has domain
+  * Remove hardcoded example.com favicon URL
+  * Eliminates console 404 errors for non-existent favicons
+
+- Improve table structure
+  * Add Avg Industry SoA column with color-coded display
+  * Add Trend column (hidden on small screens) with direction indicators
+  * Fix TypeScript type errors in setSelectedTopics callbacks
+
+- Code quality improvements
+  * Resolve all linting errors
+  * Improve error handling for image loading
+  * Maintain backward compatibility
+
+Files modified:
+- src/pages/TopicsAnalysis/components/TopicsRankedTable.tsx
+- src/pages/TopicsAnalysis/TopicsAnalysisPage.tsx
+

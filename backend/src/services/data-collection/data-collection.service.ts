@@ -854,7 +854,7 @@ export class DataCollectionService {
         executionId,
         collectorType,
         status: 'failed',
-        error: errorMessage,
+        error: collectorError.message,
         executionTimeMs: executionTime
       };
     }
@@ -911,39 +911,6 @@ export class DataCollectionService {
     }
   }
 
-  /**
-   * Update execution status
-   */
-  private async updateExecutionStatus(
-    executionId: string, 
-    collectorType: string, 
-    status: string, 
-    errorMessage?: string,
-    snapshotId?: string
-  ): Promise<void> {
-    const mappedCollectorType = this.mapCollectorTypeToDatabase(collectorType);
-    
-    const updateData: any = {
-      collector_type: mappedCollectorType,
-      status,
-      error_message: errorMessage,
-      executed_at: new Date().toISOString()
-    };
-
-    // Add snapshot_id if provided (for BrightData collectors)
-    if (snapshotId) {
-      updateData.brightdata_snapshot_id = snapshotId;
-    }
-
-    const { error } = await supabase
-      .from('query_executions')
-      .update(updateData)
-      .eq('id', executionId);
-
-    if (error) {
-      console.error('Failed to update execution status:', error);
-    }
-  }
 
   /**
    * Store collector result

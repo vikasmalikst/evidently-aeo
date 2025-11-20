@@ -1239,19 +1239,20 @@ export class BrandService {
   }
 
   /**
-   * Get brand topics WITH analytics data (SoA, sentiment, visibility, sources)
+   * Get brand topics WITH analytics data - ONLY topics that have collector_results
+   * Queries from generated_queries table (topics that actually have query execution data)
+   * Filters by collector_type (model), country, and date range
    */
   async getBrandTopicsWithAnalytics(
     brandId: string,
     customerId: string,
     startDate?: string,
-    endDate?: string
+    endDate?: string,
+    collectorType?: string,
+    country?: string
   ): Promise<any[]> {
     try {
-      console.log(`🎯 Fetching topics WITH analytics for brand ${brandId}`);
-      
-      // Get base topics
-      const baseTopics = await this.getBrandTopics(brandId, customerId);
+      console.log(`🎯 Fetching topics WITH analytics (only topics with collector_results) for brand ${brandId}`);
       
       // Set default date range (last 30 days)
       const end = endDate ? new Date(endDate) : new Date();
@@ -1261,115 +1262,343 @@ export class BrandService {
       
       console.log(`📅 Date range: ${startIso} to ${endIso}`);
       
-      // Fetch analytics data for each topic
-      const topicsWithAnalytics = await Promise.all(
-        baseTopics.map(async (topic) => {
-          const topicName = topic.topic_name || topic.topic || topic;
-          
-          // Query analytics from extracted_positions joined with generated_queries
-          const { data: analytics, error } = await supabaseAdmin
-            .from('extracted_positions')
-            .select(`
-              share_of_answers_brand,
-              sentiment_score,
-              visibility_index,
-              has_brand_presence,
-              collector_result_id,
-              collector_results!inner(
-                query_id,
-                generated_queries!inner(
-                  topic,
-                  query_text
-                )
-              )
-            `)
-            .eq('brand_id', brandId)
-            .eq('customer_id', customerId)
-            .gte('processed_at', startIso)
-            .lte('processed_at', endIso);
-          
-          if (error) {
-            console.error(`❌ Error fetching analytics for topic ${topicName}:`, error);
-            return {
-              ...topic,
-              avgShareOfAnswer: 0,
-              avgSentiment: null,
-              avgVisibility: null,
-              brandPresencePercentage: null,
-              totalQueries: 0
-            };
-          }
-          
-          // Filter analytics for this specific topic
-          const topicAnalytics = (analytics || []).filter((row: any) => {
-            const queryTopic = row.collector_results?.generated_queries?.topic;
-            return queryTopic && queryTopic.toLowerCase() === topicName.toLowerCase();
-          });
-          
-          if (topicAnalytics.length === 0) {
-            console.log(`⚠️ No analytics found for topic: ${topicName}`);
-            return {
-              ...topic,
-              avgShareOfAnswer: 0,
-              avgSentiment: null,
-              avgVisibility: null,
-              brandPresencePercentage: null,
-              totalQueries: 0
-            };
-          }
-          
-          // Calculate metrics
-          const soaValues = topicAnalytics
-            .map((row: any) => row.share_of_answers_brand)
-            .filter((v: any) => typeof v === 'number' && isFinite(v));
-          
-          const sentimentValues = topicAnalytics
-            .map((row: any) => row.sentiment_score)
-            .filter((v: any) => typeof v === 'number' && isFinite(v));
-          
-          const visibilityValues = topicAnalytics
-            .map((row: any) => row.visibility_index)
-            .filter((v: any) => typeof v === 'number' && isFinite(v));
-          
-          const brandPresenceCount = topicAnalytics.filter((row: any) => row.has_brand_presence).length;
-          const totalQueries = topicAnalytics.length;
-          
-          const avgShareOfAnswer = soaValues.length > 0
-            ? soaValues.reduce((sum: number, v: number) => sum + v, 0) / soaValues.length
-            : 0;
-          
-          const avgSentiment = sentimentValues.length > 0
-            ? sentimentValues.reduce((sum: number, v: number) => sum + v, 0) / sentimentValues.length
-            : null;
-          
-          const avgVisibility = visibilityValues.length > 0
-            ? visibilityValues.reduce((sum: number, v: number) => sum + v, 0) / visibilityValues.length
-            : null;
-          
-          const brandPresencePercentage = totalQueries > 0
-            ? (brandPresenceCount / totalQueries) * 100
-            : null;
-          
-          console.log(`✅ Topic "${topicName}": SoA=${avgShareOfAnswer.toFixed(2)}, Sentiment=${avgSentiment?.toFixed(2)}, Visibility=${avgVisibility?.toFixed(0)}, BP=${brandPresencePercentage?.toFixed(0)}%`);
-          
-          return {
-            ...topic,
-            avgShareOfAnswer: Number(avgShareOfAnswer.toFixed(2)),
-            avgSentiment: avgSentiment !== null ? Number(avgSentiment.toFixed(2)) : null,
-            avgVisibility: avgVisibility !== null ? Number(avgVisibility.toFixed(0)) : null,
-            brandPresencePercentage: brandPresencePercentage !== null ? Number(brandPresencePercentage.toFixed(0)) : null,
-            totalQueries
-          };
-        })
-      );
+      // Step 1: Try to get queries from generated_queries (optional - topics might be in metadata only)
+      let queries: any[] = [];
+      let queryToTopicMap = new Map<string, { topic: string; intent: string }>();
       
-      console.log(`✅ Enriched ${topicsWithAnalytics.length} topics with analytics`);
-      return topicsWithAnalytics;
+      try {
+        const { data: queriesData, error: queriesError } = await supabaseAdmin
+          .from('generated_queries')
+          .select('id, topic, intent')
+          .eq('brand_id', brandId)
+          .eq('customer_id', customerId)
+          .not('topic', 'is', null);
+        
+        if (queriesError) {
+          console.warn('⚠️ Warning: Could not fetch queries (will use metadata only):', queriesError.message);
+          // Continue - we can still get topics from metadata
+        } else if (queriesData) {
+          queries = queriesData;
+          queries.forEach(q => {
+            if (q.topic) {
+              queryToTopicMap.set(q.id, { topic: q.topic.trim(), intent: q.intent || 'awareness' });
+            }
+          });
+          console.log(`📋 Found ${queries.length} queries in generated_queries`);
+        }
+      } catch (error) {
+        console.warn('⚠️ Warning: Error fetching queries, continuing with metadata extraction:', error);
+        // Continue - we can still get topics from metadata
+      }
+      
+      // Step 2: Get collector_results (optional - we can query positions directly)
+      let collectorResults: any[] = [];
+      let crToQueryMap = new Map<string, string>();
+      
+      if (queries.length > 0) {
+        try {
+          const queryIds = queries.map(q => q.id);
+          const { data: crData, error: crError } = await supabaseAdmin
+            .from('collector_results')
+            .select('id, query_id')
+            .in('query_id', queryIds);
+          
+          if (crError) {
+            console.warn('⚠️ Warning: Could not fetch collector_results (will query positions directly):', crError.message);
+          } else if (crData) {
+            collectorResults = crData;
+            collectorResults.forEach(cr => {
+              crToQueryMap.set(cr.id, cr.query_id);
+            });
+            console.log(`📋 Found ${collectorResults.length} collector_results`);
+          }
+        } catch (error) {
+          console.warn('⚠️ Warning: Error fetching collector_results, continuing with direct position query:', error);
+        }
+      }
+      
+      // Step 3: Get extracted_positions for this brand
+      // Include metadata to extract topic_name from there, and collector_type for filtering
+      // If we have collector_result_ids, filter by them; otherwise get all positions for this brand
+      let positions: any[] = [];
+      let positionsQuery = supabaseAdmin
+        .from('extracted_positions')
+        .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, metadata, collector_type')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .gte('processed_at', startIso)
+        .lte('processed_at', endIso);
+      
+      // Filter by collector_type (model) if provided and not empty
+      if (collectorType && collectorType.trim() !== '') {
+        // Map frontend model IDs to collector_type values
+        const collectorTypeMap: Record<string, string> = {
+          'chatgpt': 'chatgpt',
+          'claude': 'claude',
+          'gemini': 'gemini',
+          'perplexity': 'perplexity',
+          'copilot': 'copilot',
+          'deepseek': 'deepseek',
+          'mistral': 'mistral',
+          'grok': 'grok'
+        };
+        const mappedType = collectorTypeMap[collectorType.toLowerCase()] || collectorType;
+        positionsQuery = positionsQuery.eq('collector_type', mappedType);
+        console.log(`🔍 Filtering by collector_type: ${mappedType}`);
+      }
+      
+      if (collectorResults.length > 0) {
+        const collectorResultIds = collectorResults.map(cr => cr.id);
+        const { data: posData, error: positionsError } = await positionsQuery
+          .in('collector_result_id', collectorResultIds);
+        
+        if (positionsError) {
+          console.error('❌ Error fetching extracted_positions:', positionsError);
+          throw new DatabaseError('Failed to fetch positions');
+        }
+        positions = posData || [];
+      } else {
+        // If no collector_results, get positions directly by brand_id
+        console.log('⚠️ No collector_results found, querying positions directly by brand_id');
+        const { data: posData, error: positionsError } = await positionsQuery;
+        
+        if (positionsError) {
+          console.error('❌ Error fetching extracted_positions:', positionsError);
+          throw new DatabaseError('Failed to fetch positions');
+        }
+        positions = posData || [];
+      }
+      
+      if (!positions || positions.length === 0) {
+        console.log('⚠️ No extracted_positions found for these collector_results in date range');
+        return [];
+      }
+      
+      // Get distinct collector_types (models) available for this brand in the date range
+      const { data: distinctCollectors } = await supabaseAdmin
+        .from('extracted_positions')
+        .select('collector_type')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .gte('processed_at', startIso)
+        .lte('processed_at', endIso)
+        .not('collector_type', 'is', null);
+      
+      const availableModels = new Set<string>();
+      if (distinctCollectors) {
+        distinctCollectors.forEach((pos: any) => {
+          if (pos.collector_type) {
+            availableModels.add(pos.collector_type.toLowerCase());
+          }
+        });
+      }
+      
+      // Step 4: Group analytics by topic (distinct topics only, not by collector_type)
+      // Priority: 1) metadata.topic_name, 2) generated_queries.topic
+      const topicMap = new Map<string, {
+        topicName: string;
+        intent: string;
+        analytics: Array<{
+          share_of_answers_brand: number;
+          sentiment_score: number | null;
+          visibility_index: number | null;
+          has_brand_presence: boolean;
+          processed_at: string;
+          collector_type?: string;
+        }>;
+        collectorTypes: Set<string>; // Track which models have data for this topic
+      }>();
+      
+      // Group positions by topic - extract from metadata.topic_name first, fallback to generated_queries.topic
+      let metadataTopicsCount = 0;
+      let queryTopicsCount = 0;
+      let noTopicCount = 0;
+      
+      (positions || []).forEach(pos => {
+        let topicName: string | null = null;
+        let intent = 'awareness';
+        let topicSource = 'none';
+        
+        // Try to get topic from metadata.topic_name first
+        if (pos.metadata && typeof pos.metadata === 'object') {
+          const metadata = pos.metadata as any;
+          if (metadata.topic_name && typeof metadata.topic_name === 'string') {
+            topicName = metadata.topic_name.trim();
+            topicSource = 'metadata';
+            metadataTopicsCount++;
+          }
+        }
+        
+        // Fallback to generated_queries.topic if not in metadata
+        if (!topicName) {
+          const queryId = crToQueryMap.get(pos.collector_result_id);
+          if (queryId) {
+            const topicData = queryToTopicMap.get(queryId);
+            if (topicData && topicData.topic) {
+              topicName = topicData.topic;
+              intent = topicData.intent;
+              topicSource = 'generated_queries';
+              queryTopicsCount++;
+            }
+          }
+        }
+        
+        // Skip if no topic found
+        if (!topicName) {
+          noTopicCount++;
+          return;
+        }
+        
+        // Group by topic name only (not by collector_type) to get distinct topics
+        const normalizedTopicName = topicName.toLowerCase().trim();
+        const collectorType = pos.collector_type || 'unknown';
+        
+        if (!topicMap.has(normalizedTopicName)) {
+          topicMap.set(normalizedTopicName, {
+            topicName, // Keep original casing
+            intent,
+            analytics: [],
+            collectorTypes: new Set<string>()
+          });
+        }
+        
+        const topicData = topicMap.get(normalizedTopicName)!;
+        topicData.analytics.push({
+          share_of_answers_brand: pos.share_of_answers_brand || 0,
+          sentiment_score: pos.sentiment_score,
+          visibility_index: pos.visibility_index,
+          has_brand_presence: pos.has_brand_presence || false,
+          processed_at: pos.processed_at,
+          collector_type: collectorType
+        });
+        topicData.collectorTypes.add(collectorType.toLowerCase());
+      });
+      
+      console.log(`📊 Topic extraction summary:`);
+      console.log(`   - Topics from metadata: ${metadataTopicsCount}`);
+      console.log(`   - Topics from generated_queries: ${queryTopicsCount}`);
+      console.log(`   - Positions without topic: ${noTopicCount}`);
+      console.log(`   - Distinct topics found: ${topicMap.size}`);
+      
+      if (topicMap.size === 0) {
+        console.log('⚠️ No topics found with analytics data. Checking metadata format...');
+        // Debug: Check first position's metadata
+        if (positions && positions.length > 0 && positions[0].metadata) {
+          console.log('   Sample metadata:', JSON.stringify(positions[0].metadata, null, 2));
+        }
+      }
+      
+      // Step 3: Get topic metadata from brand_topics (if exists) for category/priority
+      const { data: brandTopics } = await supabaseAdmin
+        .from('brand_topics')
+        .select('topic_name, category, priority, description, id')
+        .eq('brand_id', brandId)
+        .eq('is_active', true);
+      
+      const brandTopicsMap = new Map<string, any>();
+      if (brandTopics) {
+        brandTopics.forEach(bt => {
+          brandTopicsMap.set(bt.topic_name.toLowerCase().trim(), bt);
+        });
+      }
+      
+      // Step 5: Calculate metrics for each distinct topic (aggregate across all collector_types)
+      const topicsWithAnalytics = Array.from(topicMap.entries()).map(([normalizedTopicName, data]) => {
+        const analytics = data.analytics;
+        
+        if (analytics.length === 0) {
+          return null; // Skip topics with no analytics in date range
+        }
+        
+        // Calculate metrics
+        const soaValues = analytics
+          .map(a => a.share_of_answers_brand)
+          .filter((v: any) => typeof v === 'number' && isFinite(v) && v !== null);
+        
+        const sentimentValues = analytics
+          .map(a => a.sentiment_score)
+          .filter((v: any) => typeof v === 'number' && isFinite(v) && v !== null);
+        
+        const visibilityValues = analytics
+          .map(a => a.visibility_index)
+          .filter((v: any) => typeof v === 'number' && isFinite(v) && v !== null);
+        
+        const brandPresenceCount = analytics.filter(a => a.has_brand_presence).length;
+        const totalQueries = analytics.length;
+        
+        const avgShareOfAnswer = soaValues.length > 0
+          ? soaValues.reduce((sum: number, v: number) => sum + v, 0) / soaValues.length
+          : 0;
+        
+        const avgSentiment = sentimentValues.length > 0
+          ? sentimentValues.reduce((sum: number, v: number) => sum + v, 0) / sentimentValues.length
+          : null;
+        
+        const avgVisibility = visibilityValues.length > 0
+          ? visibilityValues.reduce((sum: number, v: number) => sum + v, 0) / visibilityValues.length
+          : null;
+        
+        const brandPresencePercentage = totalQueries > 0
+          ? (brandPresenceCount / totalQueries) * 100
+          : null;
+        
+        // Get metadata from brand_topics if available
+        const brandTopicMeta = brandTopicsMap.get(normalizedTopicName);
+        
+        return {
+          id: brandTopicMeta?.id || `topic-${data.topicName.replace(/\s+/g, '-').toLowerCase()}`,
+          topic_name: data.topicName,
+          topic: data.topicName,
+          category: brandTopicMeta?.category || this.mapIntentToCategory(data.intent) || 'uncategorized',
+          priority: brandTopicMeta?.priority || 999,
+          description: brandTopicMeta?.description || null,
+          is_active: true,
+          created_at: brandTopicMeta?.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          // Analytics (aggregated across all collector_types)
+          avgShareOfAnswer: Number(avgShareOfAnswer.toFixed(2)),
+          avgSentiment: avgSentiment !== null ? Number(avgSentiment.toFixed(2)) : null,
+          avgVisibility: avgVisibility !== null ? Number(avgVisibility.toFixed(0)) : null,
+          brandPresencePercentage: brandPresencePercentage !== null ? Number(brandPresencePercentage.toFixed(0)) : null,
+          totalQueries,
+          // Available models for this topic (list of collector_types that have data)
+          availableModels: Array.from(data.collectorTypes)
+        };
+      }).filter(Boolean) as any[]; // Remove nulls
+      
+      // Sort by priority, then by SoA descending
+      topicsWithAnalytics.sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return (b.avgShareOfAnswer || 0) - (a.avgShareOfAnswer || 0);
+      });
+      
+      // Return topics with available models metadata
+      const response = {
+        topics: topicsWithAnalytics,
+        availableModels: Array.from(availableModels)
+      };
+      
+      console.log(`✅ Returned ${topicsWithAnalytics.length} distinct topics with analytics data`);
+      console.log(`📊 Available models: ${Array.from(availableModels).join(', ')}`);
+      return response;
       
     } catch (error) {
       console.error('❌ Error in getBrandTopicsWithAnalytics:', error);
       throw error;
     }
+  }
+
+  /**
+   * Map intent to category
+   */
+  private mapIntentToCategory(intent: string): string {
+    const mapping: Record<string, string> = {
+      'awareness': 'awareness',
+      'comparison': 'comparison',
+      'purchase': 'purchase',
+      'support': 'support'
+    };
+    return mapping[intent?.toLowerCase()] || 'uncategorized';
   }
 
   /**

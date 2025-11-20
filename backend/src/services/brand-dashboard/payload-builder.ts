@@ -1003,6 +1003,24 @@ export async function buildDashboardPayload(
     .sort((a, b) => b.impactScore - a.impactScore || b.usage - a.usage)
     .slice(0, 5)
 
+  // Calculate top 10 sources distribution by domain (for donut chart)
+  const domainUsageMap = new Map<string, number>()
+  sourceAggregateEntries.forEach((source) => {
+    const domain = source.domain || 'unknown'
+    const currentUsage = domainUsageMap.get(domain) || 0
+    domainUsageMap.set(domain, currentUsage + source.usage)
+  })
+
+  const totalDomainUsage = Array.from(domainUsageMap.values()).reduce((sum, usage) => sum + usage, 0)
+  const topSourcesDistribution: DistributionSlice[] = Array.from(domainUsageMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([domain, usage], index) => ({
+      label: domain,
+      percentage: totalDomainUsage > 0 ? round((usage / totalDomainUsage) * 100, 1) : 0,
+      color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
+    }))
+
   const ensureTopicAggregate = (topicName: string) => {
     if (!topicAggregates.has(topicName)) {
       topicAggregates.set(topicName, {
@@ -1268,6 +1286,7 @@ export async function buildDashboardPayload(
     visibilityComparison,
     scores,
     sourceDistribution,
+    topSourcesDistribution,
     categoryDistribution,
     llmVisibility,
     actionItems: actionItems.slice(0, 4),

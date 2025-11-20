@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconQuoteFilled, IconLayoutDashboard } from '@tabler/icons-react';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../lib/auth';
+import { useManualBrandDashboard } from '../../manual-dashboard';
+import { prefetchNow } from '../../lib/prefetch';
 
 interface NavItem {
   icon: React.ComponentType<{ size?: number | string; className?: string }>;
@@ -28,8 +30,43 @@ export const Sidebar = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const { selectedBrandId } = useManualBrandDashboard();
 
   const isActive = (path: string) => location.pathname === path;
+
+  // Generate prefetch endpoints for each nav item
+  const getPrefetchEndpoint = (path: string): string | null => {
+    if (!selectedBrandId) return null;
+    
+    const end = new Date();
+    const start = new Date(end);
+    
+    switch (path) {
+      case '/':
+        start.setDate(start.getDate() - 29);
+        return `/brands/${selectedBrandId}/dashboard?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`;
+      case '/search-visibility':
+        start.setDate(start.getDate() - 6);
+        return `/brands/${selectedBrandId}/dashboard?startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
+      case '/search-sources':
+        start.setDate(start.getDate() - 30);
+        return `/brands/${selectedBrandId}/sources?startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
+      case '/topics':
+        return `/brands/${selectedBrandId}/topics`;
+      case '/prompts':
+        start.setDate(start.getDate() - 30);
+        return `/brands/${selectedBrandId}/prompts?startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
+      default:
+        return null;
+    }
+  };
+
+  const handleNavHover = (path: string) => {
+    const endpoint = getPrefetchEndpoint(path);
+    if (endpoint) {
+      prefetchNow(endpoint, {}, { requiresAuth: true });
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -92,6 +129,7 @@ export const Sidebar = () => {
               <li key={item.path}>
                 <Link
                   to={item.path}
+                  onMouseEnter={() => handleNavHover(item.path)}
                   className="flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)]"
                 >
                   <div

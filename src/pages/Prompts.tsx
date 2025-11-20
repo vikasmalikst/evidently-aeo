@@ -4,9 +4,9 @@ import { Layout } from '../components/Layout/Layout';
 import { PromptFilters } from '../components/Prompts/PromptFilters';
 import { PromptsList } from '../components/Prompts/PromptsList';
 import { ResponseViewer } from '../components/Prompts/ResponseViewer';
-import { apiClient } from '../lib/apiClient';
+import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
-import { PromptAnalyticsPayload, PromptEntry, PromptTopic } from '../types/prompts';
+import { PromptAnalyticsPayload, PromptEntry } from '../types/prompts';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -57,11 +57,6 @@ export const Prompts = () => {
   const [selectedLLM, setSelectedLLM] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState('us');
   const [dateRangeKey, setDateRangeKey] = useState<string>(DATE_PRESETS[2]?.value ?? 'last30');
-  const [topics, setTopics] = useState<PromptTopic[]>([]);
-  const [llmOptions, setLlmOptions] = useState<string[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
   const { brands, selectedBrandId, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
 
   const dateRangeOptions = useMemo(
@@ -80,94 +75,81 @@ export const Prompts = () => {
     setSelectedPrompt(prompt);
   };
 
+  // Build endpoint
+  const promptsEndpoint = useMemo(() => {
+    if (!selectedBrandId || brandsLoading) return null;
+    const preset = DATE_PRESETS.find((item) => item.value === dateRangeKey) ?? DATE_PRESETS[0];
+    const bounds = getDateBounds(preset);
+    const params = new URLSearchParams({
+      startDate: bounds.startIso,
+      endDate: bounds.endIso
+    });
+
+    if (selectedLLM) {
+      params.set('collectors', selectedLLM);
+    }
+
+    return `/brands/${selectedBrandId}/prompts?${params.toString()}`;
+  }, [selectedBrandId, dateRangeKey, selectedLLM, brandsLoading]);
+
+  // Use cached data hook
+  const {
+    data: response,
+    loading,
+    error: fetchError
+  } = useCachedData<ApiResponse<PromptAnalyticsPayload>>(
+    promptsEndpoint,
+    {},
+    { requiresAuth: true },
+    { enabled: !!promptsEndpoint, refetchOnMount: false }
+  );
+
+  // Process response data
+  const topics = useMemo(() => {
+    if (!response?.success || !response.data) {
+      return [];
+    }
+    const payload = response.data;
+    return (payload.topics ?? []).filter((topic) => topic.prompts.length > 0);
+  }, [response]);
+
+  const llmOptions = useMemo(() => {
+    if (!response?.success || !response.data) {
+      return [];
+    }
+    return response.data.collectors ?? [];
+  }, [response]);
+
+  // Set default LLM
   useEffect(() => {
-    if (brandsLoading) {
-      return;
+    if (llmOptions.length > 0) {
+      setSelectedLLM((current) => {
+        if (current && llmOptions.includes(current)) {
+          return current;
+        }
+        return llmOptions[0];
+      });
     }
+  }, [llmOptions]);
 
-    if (!selectedBrandId) {
-      setTopics([]);
-      setSelectedPrompt(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const fetchPrompts = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const preset = DATE_PRESETS.find((item) => item.value === dateRangeKey) ?? DATE_PRESETS[0];
-        const bounds = getDateBounds(preset);
-        const params = new URLSearchParams({
-          startDate: bounds.startIso,
-          endDate: bounds.endIso
-        });
-
-        if (selectedLLM) {
-          params.set('collectors', selectedLLM);
-        }
-
-        const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
-        const response = await apiClient.request<ApiResponse<PromptAnalyticsPayload>>(endpoint);
-
-        if (!response.success || !response.data) {
-          throw new Error(response.error || response.message || 'Failed to load prompts.');
-        }
-
-        if (cancelled) {
-          return;
-        }
-
-        const payload = response.data;
-        const normalizedTopics = (payload.topics ?? []).filter((topic) => topic.prompts.length > 0);
-        const availableCollectors = payload.collectors ?? [];
-
-        setTopics(normalizedTopics);
-        setLlmOptions(availableCollectors);
-        // Set default to first available LLM if none selected or current selection is invalid
-        setSelectedLLM((current) => {
-          if (current && availableCollectors.includes(current)) {
-            return current;
-          }
-          return availableCollectors.length > 0 ? availableCollectors[0] : null;
-        });
-
-        const flattenedPrompts = normalizedTopics.flatMap((topic) => topic.prompts);
-        setSelectedPrompt((previous) => {
-          if (!flattenedPrompts.length) {
-            return null;
-          }
-          if (previous) {
-            const stillExists = flattenedPrompts.find((prompt) => prompt.id === previous.id);
-            if (stillExists) {
-              return stillExists;
-            }
-          }
-          return flattenedPrompts[0];
-        });
-      } catch (fetchError) {
-        const message =
-          fetchError instanceof Error ? fetchError.message : 'Failed to load prompts.';
-        if (!cancelled) {
-          setError(message);
-          setTopics([]);
-          setSelectedPrompt(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+  // Set selected prompt
+  useEffect(() => {
+    const flattenedPrompts = topics.flatMap((topic) => topic.prompts);
+    setSelectedPrompt((previous) => {
+      if (!flattenedPrompts.length) {
+        return null;
+      }
+      if (previous) {
+        const stillExists = flattenedPrompts.find((prompt) => prompt.id === previous.id);
+        if (stillExists) {
+          return stillExists;
         }
       }
-    };
+      return flattenedPrompts[0];
+    });
+  }, [topics]);
 
-    fetchPrompts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedBrandId, dateRangeKey, selectedLLM, brandsLoading]);
+  const error = fetchError?.message || (response && !response.success ? (response.error || response.message || 'Failed to load prompts.') : null);
 
   const handleManagePrompts = () => {
     navigate('/settings/manage-prompts');

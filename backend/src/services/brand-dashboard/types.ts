@@ -180,6 +180,7 @@ export interface BrandDashboardPayload {
   }>
   scores: ScoreMetric[]
   sourceDistribution: DistributionSlice[]
+  topSourcesDistribution: DistributionSlice[] // Top 10 sources by domain
   categoryDistribution: DistributionSlice[]
   llmVisibility: LlmVisibilitySlice[]
   actionItems: ActionItem[]

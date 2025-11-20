@@ -270,7 +270,7 @@ export const CompactMetricsPods = ({
     [performance.minSoA, portfolio.totalTopics]
   );
   const soARange = useMemo(
-    () => `${performance.minSoA.toFixed(1)}x–${performance.maxSoA.toFixed(1)}x`,
+    () => `${(performance.minSoA * 20).toFixed(1)}%–${(performance.maxSoA * 20).toFixed(1)}%`,
     [performance.minSoA, performance.maxSoA]
   );
 
@@ -322,14 +322,14 @@ export const CompactMetricsPods = ({
       <MetricPod
         podId="performance"
         icon={<PieChart size={20} />}
-        primaryValue={`${performance.avgSoA.toFixed(2)}x`}
+        primaryValue={`${(performance.avgSoA * 20).toFixed(1)}%`}
         label="Avg SOA"
-        secondary={`Range: ${soARange}`}
+        secondary={`Range: ${(performance.minSoA * 20).toFixed(1)}%–${(performance.maxSoA * 20).toFixed(1)}%`}
         changeIndicator={{
-          value: 'vs 1.0x baseline',
+          value: 'vs 20% baseline',
           direction: performance.avgSoA >= 1.0 ? 'up' : 'down',
         }}
-        tooltip={`Your average Share of Answer is ${performance.avgSoA.toFixed(2)}x (${performance.avgSoA.toFixed(2)}x the presence of a competitor with equal mention rate). Range: ${soARange}.`}
+        tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}% (${performance.avgSoA.toFixed(2)}x multiplier). Range: ${(performance.minSoA * 20).toFixed(1)}%–${(performance.maxSoA * 20).toFixed(1)}%.`}
         borderColor="#00bcdc"
         iconColor="#00bcdc"
         hoverBgColor="#e6f7f9"
@@ -358,14 +358,14 @@ export const CompactMetricsPods = ({
       <MetricPod
         podId="momentum"
         icon={<TrendingUp size={20} />}
-        primaryValue={`+${performance.weeklyGainer.delta.toFixed(1)}x`}
+        primaryValue={`+${(performance.weeklyGainer.delta * 20).toFixed(1)}%`}
         label="Trending"
         secondary={performance.weeklyGainer.topic}
         changeIndicator={{
           value: '(This week)',
           direction: 'up',
         }}
-        tooltip={`${performance.weeklyGainer.topic} is trending fastest (+${performance.weeklyGainer.delta.toFixed(1)}x this week). Currently at ${performance.maxSoA.toFixed(1)}x SoA. Momentum is accelerating. [Scale investment]`}
+        tooltip={`${performance.weeklyGainer.topic} is trending fastest (+${(performance.weeklyGainer.delta * 20).toFixed(1)}% this week). Currently at ${(performance.maxSoA * 20).toFixed(1)}% SoA. Momentum is accelerating. [Scale investment]`}
         borderColor="#06c686"
         iconColor="#06c686"
         hoverBgColor="#eefbf5"

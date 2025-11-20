@@ -28,6 +28,7 @@ export interface Topic {
   searchVolume: number | null; // null if missing
   sentiment: 'positive' | 'neutral' | 'negative';
   sources: TopicSource[];
+  collectorType?: string; // AI model/collector type (chatgpt, claude, etc.)
 }
 
 export interface Category {

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { IconBrandOpenai } from '@tabler/icons-react';
 import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
 import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
@@ -15,7 +15,6 @@ import { TopicDetailModal } from './components/TopicDetailModal';
 import { ChartTitle } from './components/ChartTitle';
 import { CountryFlag } from '../../components/CountryFlag';
 import DatePickerMultiView from '../../components/DatePicker/DatePickerMultiView';
-import { DataAvailabilityCard } from './components/DataAvailabilityCard';
 import { TopicsDataStatusBanner } from './components/TopicsDataStatusBanner';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import type { TopicsAnalysisData, Topic } from './types';
@@ -26,6 +25,8 @@ interface TopicsAnalysisPageProps {
   isLoading?: boolean;
   onTopicClick?: (topic: Topic) => void;
   onCategoryFilter?: (categoryId: string) => void;
+  onFiltersChange?: (filters: { startDate?: string; endDate?: string; collectorType?: string; country?: string }) => void;
+  availableModels?: string[]; // Available models from backend
 }
 
 // Loading skeleton component
@@ -78,6 +79,8 @@ export const TopicsAnalysisPage = ({
   isLoading = false,
   onTopicClick,
   onCategoryFilter,
+  onFiltersChange,
+  availableModels: backendAvailableModels = [],
 }: TopicsAnalysisPageProps) => {
   const { selectedBrand, brands } = useManualBrandDashboard();
   
@@ -101,8 +104,8 @@ export const TopicsAnalysisPage = ({
   
   // Manage date range state - now using Date object from DatePickerMultiView
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
-    // Default to 8 weeks ago
-    const date = new Date('2025-11-01');
+    // Default to 8 weeks ago from today
+    const date = new Date();
     date.setDate(date.getDate() - 56); // 8 weeks ago
     return date;
   });
@@ -124,10 +127,32 @@ export const TopicsAnalysisPage = ({
     { id: 'mistral', name: 'Mistral', icon: 'mistral' },
     { id: 'grok', name: 'Grok', icon: 'grok' },
   ];
-
+  
   // Mock selected models (in real app, get from account/brand configuration)
   const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'claude', 'perplexity']);
-  const [selectedModel, setSelectedModel] = useState<string>('chatgpt'); // Default to first model instead of 'all'
+  // Default to empty string (All Models) - will show all models in data
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  
+  // Use available models from backend (from collector_results.collector_type)
+  const availableModels = useMemo(() => {
+    if (backendAvailableModels && backendAvailableModels.length > 0) {
+      return backendAvailableModels.map(m => m.toLowerCase());
+    }
+    // Fallback: extract from topics' availableModels if backend doesn't provide
+    const modelSet = new Set<string>();
+    data.topics.forEach(topic => {
+      if ((topic as any).availableModels && Array.isArray((topic as any).availableModels)) {
+        (topic as any).availableModels.forEach((m: string) => {
+          modelSet.add(m.toLowerCase());
+        });
+      }
+    });
+    // Final fallback to default selected models
+    if (modelSet.size === 0) {
+      return selectedModels;
+    }
+    return Array.from(modelSet);
+  }, [backendAvailableModels, data.topics, selectedModels]);
 
   // Mock competitors (in real app, get from brand configuration)
   const competitorsList = [
@@ -154,7 +179,7 @@ export const TopicsAnalysisPage = ({
 
   // Generate date ranges based on period type
   const dateRanges = useMemo(() => {
-    const today = new Date('2025-11-01');
+    const today = new Date();
     const ranges: Array<{ value: string; label: string }> = [];
 
     if (datePeriodType === 'daily') {
@@ -217,7 +242,7 @@ export const TopicsAnalysisPage = ({
 
   // Convert selected date to date range format for compatibility
   const selectedDateRange = useMemo(() => {
-    const today = new Date('2025-11-01');
+    const today = new Date();
     const daysDiff = Math.floor((today.getTime() - selectedDate.getTime()) / (1000 * 60 * 60 * 24));
     
     if (datePeriodType === 'daily') {
@@ -240,7 +265,7 @@ export const TopicsAnalysisPage = ({
 
   // Get current date range label for subtitle
   const currentDateRangeLabel = useMemo(() => {
-    const today = new Date('2025-11-01');
+    const today = new Date();
     const daysDiff = Math.floor((today.getTime() - selectedDate.getTime()) / (1000 * 60 * 60 * 24));
     
     if (datePeriodType === 'daily') {
@@ -267,20 +292,133 @@ export const TopicsAnalysisPage = ({
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
     setShowDatePicker(false);
+    // State change will trigger useEffect which sends filters
   };
 
   // Handle apply button from DatePickerMultiView
   const handleDateRangeApply = (startDate: Date, endDate: Date | null) => {
     if (endDate) {
-      // For range selections, we'll use the end date as the selected date
-      // You may want to update this based on your data structure
       setSelectedDate(endDate);
     } else {
       setSelectedDate(startDate);
     }
     setShowDatePicker(false);
-    // Trigger chart update here if needed
+    // Mark that filters have been changed so useEffect will trigger
+    // The useEffect will handle sending the filters after state updates
   };
+  
+  // Helper to calculate actual date range for API
+  const getDateRangeForAPI = useMemo(() => {
+    const today = new Date();
+    let start: Date;
+    let end: Date = today;
+    
+    if (datePeriodType === 'daily') {
+      const daysDiff = Math.floor((today.getTime() - selectedDate.getTime()) / (1000 * 60 * 60 * 24));
+      start = new Date(today);
+      start.setDate(today.getDate() - daysDiff);
+    } else if (datePeriodType === 'weekly') {
+      const weekStart = new Date(selectedDate);
+      weekStart.setDate(selectedDate.getDate() - selectedDate.getDay());
+      start = weekStart;
+      end = new Date(weekStart);
+      end.setDate(weekStart.getDate() + 6);
+    } else {
+      // Monthly
+      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+      end = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+    }
+    
+    return {
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0]
+    };
+  }, [selectedDate, datePeriodType]);
+  
+  // Track initial values ONCE - only set on first render
+  const initialValuesRef = useRef<{
+    selectedModel: string;
+    selectedCountry: string;
+    selectedDate: number;
+    datePeriodType: 'daily' | 'weekly' | 'monthly';
+  } | null>(null);
+  const hasMounted = useRef(false);
+  const lastSentFilters = useRef<string>('');
+  
+  // Set initial values only once on first render
+  if (initialValuesRef.current === null) {
+    initialValuesRef.current = {
+      selectedModel: selectedModel,
+      selectedCountry: selectedCountry,
+      selectedDate: selectedDate.getTime(),
+      datePeriodType: datePeriodType
+    };
+  }
+  
+  // Mark component as mounted after first render
+  useEffect(() => {
+    hasMounted.current = true;
+    console.log('🚀 Initial mount complete - no filters sent (backend will use default: last 30 days)');
+  }, []); // Only run once on mount
+  
+  // Only send filters when user explicitly changes them, NOT on initial mount
+  useEffect(() => {
+    if (!onFiltersChange || !hasMounted.current || !initialValuesRef.current) {
+      return; // Skip until component has fully mounted and initial values are set
+    }
+    
+    // Check if any filter value has actually changed from initial values
+    const initial = initialValuesRef.current;
+    const hasChanged = 
+      initial.selectedModel !== selectedModel ||
+      initial.selectedCountry !== selectedCountry ||
+      initial.selectedDate !== selectedDate.getTime() ||
+      initial.datePeriodType !== datePeriodType;
+    
+    if (!hasChanged) {
+      return; // No changes detected, skip sending filters
+    }
+    
+    // After mount and changes detected, send filters
+    // Calculate date range inside effect
+    const today = new Date();
+    let start: Date;
+    let end: Date = today;
+    
+    if (datePeriodType === 'daily') {
+      const daysDiff = Math.floor((today.getTime() - selectedDate.getTime()) / (1000 * 60 * 60 * 24));
+      start = new Date(today);
+      start.setDate(today.getDate() - daysDiff);
+    } else if (datePeriodType === 'weekly') {
+      const weekStart = new Date(selectedDate);
+      weekStart.setDate(selectedDate.getDate() - selectedDate.getDay());
+      start = weekStart;
+      end = new Date(weekStart);
+      end.setDate(weekStart.getDate() + 6);
+    } else {
+      // Monthly
+      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+      end = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+    }
+    
+    // Send filters when user changes them
+    const newFilters = {
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+      collectorType: selectedModel && selectedModel !== '' ? selectedModel : undefined,
+      country: selectedCountry && selectedCountry !== '' ? selectedCountry : undefined
+    };
+    
+    // Create a stable key to avoid sending duplicate filters
+    const filterKey = JSON.stringify(newFilters);
+    if (filterKey === lastSentFilters.current) {
+      return; // Skip if filters haven't actually changed
+    }
+    lastSentFilters.current = filterKey;
+    
+    console.log('🔍 Sending filters (user changed):', newFilters);
+    onFiltersChange(newFilters);
+  }, [selectedModel, selectedCountry, selectedDate, datePeriodType, onFiltersChange]);
 
   // Handle view change from DatePickerMultiView
   const handleViewChange = (view: 'daily' | 'weekly' | 'monthly') => {
@@ -397,10 +535,9 @@ export const TopicsAnalysisPage = ({
         </div>
 
         {/* Status Banner */}
-        <TopicsDataStatusBanner hasRealData={hasRealData} topicCount={data.topics.length} />
-
-        {/* Data Availability Card - Show when we don't have complete data */}
-        {!hasRealData && <DataAvailabilityCard />}
+        {data.topics.length > 0 && (
+          <TopicsDataStatusBanner hasRealData={hasRealData} topicCount={data.topics.length} />
+        )}
 
         {/* Section 1: Compact Metrics Pods */}
         <div style={{ marginBottom: '24px' }}>
@@ -469,7 +606,10 @@ export const TopicsAnalysisPage = ({
                 </div>
                 <select
                   value={selectedCountry}
-                  onChange={(e) => setSelectedCountry(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedCountry(e.target.value);
+                    // State change will trigger useEffect which sends filters
+                  }}
                   style={{
                     padding: '8px 12px 8px 36px',
                     fontSize: '13px',
@@ -587,7 +727,10 @@ export const TopicsAnalysisPage = ({
               <div style={{ position: 'relative', minWidth: '160px' }}>
                 <select
                   value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedModel(e.target.value);
+                    // State change will trigger useEffect which sends filters
+                  }}
                   style={{
                     padding: '8px 12px 8px 36px',
                     fontSize: '13px',
@@ -603,7 +746,8 @@ export const TopicsAnalysisPage = ({
                     MozAppearance: 'none'
                   }}
                 >
-                  {AI_MODELS.filter(model => selectedModels.includes(model.id)).map((model) => (
+                  <option value="">All Models</option>
+                  {AI_MODELS.filter(model => availableModels.includes(model.id) || selectedModels.includes(model.id)).map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.name}
                     </option>

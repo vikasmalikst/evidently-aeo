@@ -146,37 +146,8 @@ export const TopicsRankedTable = ({
   aiModels = []
 }: TopicsRankedTableProps) => {
 
-  // Get model info
-  const modelInfo = useMemo(() => {
-    if (!selectedModel || !aiModels.length) return null;
-    return aiModels.find(m => m.id === selectedModel);
-  }, [selectedModel, aiModels]);
-
-  // Get model favicon component
-  const getModelFavicon = () => {
-    if (!selectedModel) return null;
-    
-    switch (selectedModel) {
-      case 'chatgpt':
-        return <IconBrandOpenai size={16} />;
-      case 'claude':
-        return <img src={claudeLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      case 'gemini':
-        return <img src={geminiLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      case 'perplexity':
-        return <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      case 'copilot':
-        return <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      case 'deepseek':
-        return <img src={deepseekLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      case 'mistral':
-        return <img src={mistralLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      case 'grok':
-        return <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      default:
-        return null;
-    }
-  };
+  // Model functions removed - topics are now distinct, not grouped by model
+  // Model filtering happens via the filter dropdown, not per-row
   const [sortState, setSortState] = useState<SortState>({ column: 'soA', direction: 'desc' });
   const [internalSelectedCategory, setInternalSelectedCategory] = useState<string>('all');
   
@@ -339,14 +310,6 @@ export const TopicsRankedTable = ({
                 </th>
                 <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
                   <div className="flex items-center gap-1.5">
-                    {getModelFavicon()}
-                    <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
-                      Model
-                    </span>
-                  </div>
-                </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
-                  <div className="flex items-center gap-1.5">
                     {brandFavicon && (
                       <img 
                         src={brandFavicon} 
@@ -380,7 +343,7 @@ export const TopicsRankedTable = ({
                     className="border-b border-[var(--border-default)] transition-colors cursor-pointer hover:bg-[var(--bg-secondary)]"
                     role="button"
                     tabIndex={0}
-                    aria-label={`Topic: ${topic.name}, SoA: ${topic.soA.toFixed(2)}x, Rank: ${topic.rank}`}
+                    aria-label={`Topic: ${topic.name}, SoA: ${(topic.currentSoA || topic.soA * 20).toFixed(1)}%, Rank: ${topic.rank}`}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
@@ -409,16 +372,6 @@ export const TopicsRankedTable = ({
                       </div>
                     </td>
                     <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                      <div className="flex items-center gap-1.5">
-                        {getModelFavicon()}
-                        {modelInfo && (
-                          <span className="text-xs sm:text-sm text-[var(--text-body)]">
-                            {modelInfo.name}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
                       {(() => {
                         const soAColor = getSoAColor(topic.soA);
                         return topic.soA > 0 ? (
@@ -429,7 +382,7 @@ export const TopicsRankedTable = ({
                               title={getSoATooltip(topic.soA)}
                             ></span>
                             <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
-                              {topic.soA.toFixed(2)}x
+                              {(topic.currentSoA || topic.soA * 20).toFixed(1)}%
                             </span>
                           </div>
                         ) : (
@@ -489,7 +442,7 @@ export const TopicsRankedTable = ({
                               title={getSoATooltip(avgIndustrySoA.soA)}
                             ></span>
                             <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: avgSoAColor }}>
-                              {avgIndustrySoA.soA.toFixed(2)}x
+                              {(avgIndustrySoA.soA * 20).toFixed(1)}%
                             </span>
                           </div>
                         );

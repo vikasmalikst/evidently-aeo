@@ -139,9 +139,8 @@ export class OpenRouterCollectorService {
     if (resolvedConfig.enableWebSearch) {
       body.tools = [
         {
-          name: 'web_search',
-          type: 'web_search',
-          description: 'Search the web for recent or factual information.'
+          type: 'web_search_20250305',
+          name: 'web_search'
         }
       ];
     }

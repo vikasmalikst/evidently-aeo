@@ -25,16 +25,29 @@ interface BackendTopic {
   avgVisibility?: number | null;
   brandPresencePercentage?: number | null;
   totalQueries?: number;
+  // Collector/Model info
+  collectorType?: string;
 }
 
 /**
- * Fetch topics for a specific brand
+ * Fetch topics for a specific brand (only topics with collector_results)
+ * @param brandId - Brand ID
+ * @param startDate - Optional start date (ISO string, defaults to 30 days ago)
+ * @param endDate - Optional end date (ISO string, defaults to today)
  */
-export async function fetchBrandTopics(brandId: string): Promise<TopicsAnalysisData> {
+export async function fetchBrandTopics(
+  brandId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<TopicsAnalysisData> {
   try {
-    const response = await apiClient.request<ApiResponse<BackendTopic[]>>(
-      `/brands/${brandId}/topics`
-    );
+    // Build query params if date range provided
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    
+    const endpoint = `/brands/${brandId}/topics${params.toString() ? `?${params.toString()}` : ''}`;
+    const response = await apiClient.request<ApiResponse<BackendTopic[]>>(endpoint);
 
     if (!response.success || !response.data) {
       throw new Error(response.error || 'Failed to fetch topics');
@@ -61,8 +74,9 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
   const uniqueCategories = new Set(backendTopics.map(t => t.category));
   
   // Transform topics with real analytics data
+  // Only include topics that have actual collector_results data (totalQueries > 0)
   const topics: Topic[] = backendTopics
-    .filter(t => t.is_active)
+    .filter(t => t.is_active && (t.totalQueries || 0) > 0)
     .map((t, index) => {
       // Convert Share of Answer from percentage (0-100) to multiplier scale (0-5x)
       // Formula: SoA% = 0-100, so 20% = 1x, 100% = 5x
@@ -89,6 +103,7 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
         searchVolume: null, // Removed per user request
         sentiment,
         sources: [], // Will need separate query for sources
+        collectorType: t.collectorType, // AI model/collector type from backend
       };
     })
     .sort((a, b) => a.rank - b.rank);

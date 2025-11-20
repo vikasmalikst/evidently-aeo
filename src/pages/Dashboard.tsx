@@ -23,11 +23,9 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
-import { apiClient } from '../lib/apiClient';
+import { useCachedData } from '../hooks/useCachedData';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
-import { SourcesChartContainer } from '../components/Citations/SourcesChartContainer';
-import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -80,6 +78,11 @@ interface DashboardPayload {
   sentimentScore: number;
   scores: DashboardScoreMetric[];
   sourceDistribution: Array<{
+    label: string;
+    percentage: number;
+    color?: string;
+  }>;
+  topSourcesDistribution?: Array<{
     label: string;
     percentage: number;
     color?: string;
@@ -213,9 +216,6 @@ export const Dashboard = () => {
   const defaultDateRange = useMemo(getDefaultDateRange, []);
   const [startDate, setStartDate] = useState(defaultDateRange.start);
   const [endDate, setEndDate] = useState(defaultDateRange.end);
-  const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const [showTopicModal, setShowTopicModal] = useState(false);
@@ -334,63 +334,44 @@ export const Dashboard = () => {
 
   const displayName = user?.fullName || user?.email?.split('@')[0] || 'there';
 
+  // Build endpoint with current params
+  const dashboardEndpoint = useMemo(() => {
+    if (!selectedBrandId || !startDate || !endDate) return null;
+    const params = new URLSearchParams({
+      startDate,
+      endDate
+    });
+    return `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+  }, [selectedBrandId, startDate, endDate, reloadKey]);
+
+  // Use cached data hook
+  const {
+    data: dashboardResponse,
+    loading: dashboardLoading,
+    error: dashboardError,
+    refetch: refetchDashboard
+  } = useCachedData<ApiResponse<DashboardPayload>>(
+    dashboardEndpoint,
+    {},
+    { requiresAuth: true },
+    { enabled: !authLoading && !!dashboardEndpoint, refetchOnMount: false }
+  );
+
+  const dashboardData: DashboardPayload | null = dashboardResponse?.success ? dashboardResponse.data || null : null;
+  const dashboardErrorMsg: string | null = dashboardResponse?.success 
+    ? null 
+    : (dashboardError?.message || dashboardResponse?.error || dashboardResponse?.message || null);
+
   const actionItems: ActionItem[] = dashboardData?.actionItems ?? [];
   const highPriorityActions = actionItems.filter((item: ActionItem) => item.priority === 'high');
   const criticalAlerts = highPriorityActions.length;
   const brandPages = dashboardData?.topBrandSources ?? [];
   const topTopics = dashboardData?.topTopics ?? [];
 
-  useEffect(() => {
-    if (authLoading || !selectedBrandId || !startDate || !endDate) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const fetchDashboard = async () => {
-      setDashboardLoading(true);
-      setDashboardError(null);
-
-      try {
-        const params = new URLSearchParams({
-          startDate,
-          endDate
-        });
-
-        const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
-        const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(endpoint);
-
-        if (!dashboardResponse.success || !dashboardResponse.data) {
-          throw new Error(
-            dashboardResponse.error || dashboardResponse.message || 'Failed to load dashboard data.'
-          );
-        }
-
-        if (!cancelled) {
-          setDashboardData(dashboardResponse.data);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to load dashboard data.';
-        if (!cancelled) {
-          setDashboardError(message);
-          setDashboardData(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setDashboardLoading(false);
-        }
-      }
-    };
-
-    fetchDashboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, endDate, reloadKey, selectedBrandId, startDate]);
 
   const handleRetryFetch = () => {
     setReloadKey((prev) => prev + 1);
+    refetchDashboard();
   };
 
   const brandSelectionPending = !selectedBrandId && brandsLoading;
@@ -409,10 +390,10 @@ export const Dashboard = () => {
     );
   }
 
-  if (brandsError || dashboardError || !dashboardData) {
+  if (brandsError || dashboardErrorMsg || !dashboardData) {
     const errorMessage =
       brandsError ||
-      dashboardError ||
+      dashboardErrorMsg ||
       (brands.length === 0
         ? 'No brands found for this account. Please add a brand to view the dashboard.'
         : 'Dashboard data is currently unavailable.');
@@ -736,17 +717,6 @@ export const Dashboard = () => {
               <EmptyState message="No tailored recommendations yet. Check back after more data is collected." />
             )}
           </div>
-        </div>
-
-        {/* Citation Sources Chart with Type Selector */}
-        <div className="mb-6">
-          <SourcesChartContainer
-            racingChartData={mockCitationSourcesData.racingChartData}
-            categories={['Editorial', 'Corporate', 'Reference', 'UGC', 'Institutional']}
-            onExport={() => {
-              console.log('Exporting citation sources data...');
-            }}
-          />
         </div>
 
         <div className="grid grid-cols-4 gap-5 mb-6">

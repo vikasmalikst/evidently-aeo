@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../config/database'
 import { DatabaseError } from '../types/auth'
-import { normalizeDateRange, round, toNumber, average, toPercentage } from './brand-dashboard/utils'
+import { normalizeDateRange, round, toNumber, average } from './brand-dashboard/utils'
 import { sourceAttributionCacheService } from './source-attribution-cache.service'
 
 export interface SourceAttributionData {

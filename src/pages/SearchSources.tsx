@@ -1035,6 +1035,7 @@ export const SearchSources = () => {
                       userSelect: 'none',
                       letterSpacing: '0.5px'
                     }}
+                    title="Average Brand Share of Answer when this source is cited (0-100%)"
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                       Share of Answer

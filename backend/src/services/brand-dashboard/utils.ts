@@ -44,6 +44,10 @@ export const average = (values: number[]): number => {
   return sum / values.length
 }
 
+/**
+ * @deprecated Use raw sentiment values (-1 to 1 scale) instead. This normalization loses original sentiment information.
+ * Use: average(sentimentValues) instead of normalizeSentiment(sentimentValues)
+ */
 export const normalizeSentiment = (values: number[]): number => {
   if (!values.length) {
     return 50
@@ -62,6 +66,11 @@ export const truncateLabel = (label: string, maxLength = 52): string => {
 
 export const clampPercentage = (value: number): number => Math.min(100, Math.max(0, value))
 
+/**
+ * @deprecated SOA values are already stored as 0-100 percentage format. 
+ * This function incorrectly assumes values <= 1 are decimals and multiplies by 100.
+ * Use raw values directly: avgShare (already 0-100) instead of toPercentage(avgShare)
+ */
 export const toPercentage = (value: number): number => {
   if (!Number.isFinite(value)) {
     return 0

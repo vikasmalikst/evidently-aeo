@@ -265,7 +265,7 @@ export class VisibilityService {
       const brandShare = brandShareArray.length > 0 ? average(brandShareArray) : 0
       const brandVisibility = brandVisibilityArray.length > 0 ? average(brandVisibilityArray) : 0
       const brandSentiment =
-        brandSentimentArray.length > 0 ? round(normalizeSentiment(brandSentimentArray)) : null
+        brandSentimentArray.length > 0 ? round(average(brandSentimentArray), 2) : null // Raw sentiment -1 to 1 scale
 
       const competitors = Array.from(competitorAggregates.entries())
         .map(([competitorName, aggregate]) => {
@@ -276,7 +276,7 @@ export class VisibilityService {
           const avgShare = stats.shareSum / Math.max(1, stats.count)
           const avgVisibility = stats.visibilitySum / Math.max(1, stats.count)
           const sentiment =
-            stats.sentimentValues.length > 0 ? round(normalizeSentiment(stats.sentimentValues)) : null
+            stats.sentimentValues.length > 0 ? round(average(stats.sentimentValues), 2) : null // Raw sentiment -1 to 1 scale
           return {
             competitor: competitorName,
             share: round(avgShare),

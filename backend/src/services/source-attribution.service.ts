@@ -646,10 +646,9 @@ export class SourceAttributionService {
       console.log(`[SourceAttribution] 🔄 Converting ${sourceAggregates.size} aggregates to source data...`)
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         // Share of Answer: Average across all collector results where this source is cited
-        // share_of_answers_brand is stored as a decimal (0.0-1.0) or percentage (0-100)
-        // We normalize it to a percentage using toPercentage which handles both cases
+        // share_of_answers_brand is stored as 0-100 percentage format (confirmed in position-extraction.service.ts:736)
         const avgShareRaw = aggregate.shareValues.length > 0 ? average(aggregate.shareValues) : 0
-        const avgShare = toPercentage(avgShareRaw) // Convert to percentage if needed (handles both 0-1 and 0-100)
+        const avgShare = avgShareRaw // Already in 0-100 format, no normalization needed
         
         const avgSentiment = aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
         const totalMentions = aggregate.mentionCounts.reduce((sum, count) => sum + count, 0)
@@ -669,7 +668,7 @@ export class SourceAttributionService {
         const previousSoaRaw = previous && previous.soaArray && previous.soaArray.length > 0
           ? average(previous.soaArray)
           : (previous ? previous.soa : 0)
-        const previousSoa = toPercentage(previousSoaRaw)
+        const previousSoa = previousSoaRaw // Already in 0-100 format, no normalization needed
         const previousSentiment = previous ? previous.sentiment : 0
 
         const mentionChange = mentionRate - previousMentionRate

@@ -446,20 +446,24 @@ router.get('/:id/topics', authenticateToken, async (req: Request, res: Response)
   try {
     const { id } = req.params;
     const customerId = req.user!.customer_id;
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, collectorType, country } = req.query;
     
     console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
+    console.log(`🔍 Filters: collectorType=${collectorType}, country=${country}, dateRange=${startDate} to ${endDate}`);
     
-    const topics = await brandService.getBrandTopicsWithAnalytics(
+    const result = await brandService.getBrandTopicsWithAnalytics(
       id, 
       customerId,
       startDate as string | undefined,
-      endDate as string | undefined
+      endDate as string | undefined,
+      collectorType as string | undefined,
+      country as string | undefined
     );
     
     res.json({
       success: true,
-      data: topics
+      data: result.topics || result, // Handle both old format (array) and new format (object)
+      availableModels: result.availableModels || []
     });
   } catch (error) {
     console.error('Error fetching brand topics:', error);

@@ -11,7 +11,7 @@ import {
   Legend,
 } from 'chart.js';
 import { IconDownload, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, IconChartBar, IconArrowUpRight } from '@tabler/icons-react';
-import { apiClient } from '../lib/apiClient';
+import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 
@@ -88,9 +88,6 @@ const getDateRangeForTimeRange = (timeRange: string) => {
 
 export const SearchSources = () => {
   const [activeTab, setActiveTab] = useState<'top-sources' | 'source-coverage'>('top-sources');
-  const [sourceData, setSourceData] = useState<SourceData[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [topicFilter, setTopicFilter] = useState('all');
 
   const authLoading = useAuthStore((state) => state.isLoading);
@@ -102,34 +99,6 @@ export const SearchSources = () => {
     selectBrand
   } = useManualBrandDashboard();
 
-  // Extract unique topics from all sources for heatmap
-  const allTopics = useMemo(() => {
-    const topicSet = new Set<string>();
-    sourceData.forEach(source => {
-      source.topics.forEach(topic => topicSet.add(topic));
-    });
-    return Array.from(topicSet);
-  }, [sourceData]);
-
-  // Generate heatmap data from real source data
-  const heatmapData = useMemo(() => {
-    const data: Record<string, number[]> = {};
-    sourceData.forEach(source => {
-      data[source.name] = allTopics.map((topic) => {
-        // If source has this topic, use its mention rate, otherwise 0
-        return source.topics.includes(topic) ? source.mentionRate : 0;
-      });
-    });
-    return data;
-  }, [sourceData, allTopics]);
-
-  const heatmapSources = useMemo(() => {
-    return sourceData.map(s => ({
-      name: s.name,
-      type: s.type,
-      url: s.url
-    }));
-  }, [sourceData]);
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [timeRange, setTimeRange] = useState('30');
@@ -179,75 +148,96 @@ export const SearchSources = () => {
   const [avgSentimentChange, setAvgSentimentChange] = useState<number>(0);
   const [topSource, setTopSource] = useState<SourceData | null>(null);
 
-  // Fetch source data from API
+  // Build endpoint
+  const sourcesEndpoint = useMemo(() => {
+    if (!selectedBrandId) return null;
+    const dateRange = getDateRangeForTimeRange(timeRange);
+    const params = new URLSearchParams({
+      startDate: dateRange.start,
+      endDate: dateRange.end
+    });
+    return `/brands/${selectedBrandId}/sources?${params.toString()}`;
+  }, [selectedBrandId, timeRange]);
+
+  // Use cached data hook
+  const {
+    data: response,
+    loading,
+    error: fetchError
+  } = useCachedData<ApiResponse<SourceAttributionResponse>>(
+    sourcesEndpoint,
+    {},
+    { requiresAuth: true },
+    { enabled: !authLoading && !brandsLoading && !!sourcesEndpoint, refetchOnMount: false }
+  );
+
+  // Process response data
+  const sourceData: SourceData[] = response?.success && response.data ? response.data.sources : [];
+  
+  // Extract unique topics from all sources for heatmap
+  const allTopics = useMemo(() => {
+    const topicSet = new Set<string>();
+    sourceData.forEach(source => {
+      source.topics.forEach(topic => topicSet.add(topic));
+    });
+    return Array.from(topicSet);
+  }, [sourceData]);
+
+  // Generate heatmap data from real source data - includes all metrics
+  type HeatmapData = Record<string, {
+    mentionRate: number[];
+    soa: number[];
+    sentiment: number[];
+    citations: number[];
+  }>;
+  
+  const heatmapData = useMemo<HeatmapData>(() => {
+    const data: HeatmapData = {};
+    
+    sourceData.forEach(source => {
+      data[source.name] = {
+        mentionRate: allTopics.map((topic) => {
+          return source.topics.includes(topic) ? source.mentionRate : 0;
+        }),
+        soa: allTopics.map((topic) => {
+          return source.topics.includes(topic) ? source.soa : 0;
+        }),
+        sentiment: allTopics.map((topic) => {
+          return source.topics.includes(topic) ? source.sentiment : 0;
+        }),
+        citations: allTopics.map((topic) => {
+          return source.topics.includes(topic) ? source.citations : 0;
+        })
+      };
+    });
+    return data;
+  }, [sourceData, allTopics]);
+
+  const heatmapSources = useMemo(() => {
+    return sourceData.map(s => ({
+      name: s.name,
+      type: s.type,
+      url: s.url
+    }));
+  }, [sourceData]);
+  
   useEffect(() => {
-    if (authLoading || brandsLoading || !selectedBrandId) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const fetchSourceData = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const dateRange = getDateRangeForTimeRange(timeRange);
-        const params = new URLSearchParams({
-          startDate: dateRange.start,
-          endDate: dateRange.end
-        });
-
-        const endpoint = `/brands/${selectedBrandId}/sources?${params.toString()}`;
-        console.log('[SearchSources] Fetching source data from:', endpoint);
-        
-        const response = await apiClient.request<ApiResponse<SourceAttributionResponse>>(endpoint);
-
-        console.log('[SearchSources] API Response:', response);
-
-        if (!response.success || !response.data) {
-          const errorMsg = response.error || response.message || 'Failed to load source data.';
-          console.error('[SearchSources] API Error:', errorMsg);
-          throw new Error(errorMsg);
-        }
-
-        if (!cancelled) {
-          console.log('[SearchSources] Received sources:', response.data.sources.length);
-          setSourceData(response.data.sources);
-          setOverallMentionRate(response.data.overallMentionRate);
-          setOverallMentionChange(response.data.overallMentionChange);
-          setAvgSentiment(response.data.avgSentiment);
-          setAvgSentimentChange(response.data.avgSentimentChange);
-          
-          // Set top source (highest mention rate)
-          if (response.data.sources.length > 0) {
-            setTopSource(response.data.sources[0]);
-            console.log('[SearchSources] Top source:', response.data.sources[0]);
-          } else {
-            console.warn('[SearchSources] No sources returned from API');
-            setTopSource(null);
-          }
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to load source data.';
-        console.error('[SearchSources] Error fetching source data:', err);
-        if (!cancelled) {
-          setError(message);
-          setSourceData([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+    if (response?.success && response.data) {
+      setOverallMentionRate(response.data.overallMentionRate);
+      setOverallMentionChange(response.data.overallMentionChange);
+      setAvgSentiment(response.data.avgSentiment);
+      setAvgSentimentChange(response.data.avgSentimentChange);
+      
+      // Set top source (highest mention rate)
+      if (response.data.sources.length > 0) {
+        setTopSource(response.data.sources[0]);
+      } else {
+        setTopSource(null);
       }
-    };
+    }
+  }, [response]);
 
-    fetchSourceData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, brandsLoading, selectedBrandId, timeRange]);
+  const error = fetchError?.message || (response && !response.success ? (response.error || response.message || 'Failed to load source data.') : null);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -1045,6 +1035,7 @@ export const SearchSources = () => {
                       userSelect: 'none',
                       letterSpacing: '0.5px'
                     }}
+                    title="Average Brand Share of Answer when this source is cited (0-100%)"
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                       Share of Answer

@@ -28,7 +28,7 @@ export class CitationExtractionService {
   private readonly perResultConcurrency =
     Number.isFinite(Number(process.env.CITATIONS_CONCURRENCY))
       ? Math.max(1, Number(process.env.CITATIONS_CONCURRENCY))
-      : 1; // Reduced from 2 to 1 to avoid rate limits
+      : 2; // Process 2 URLs in parallel for better performance
   private readonly interResultDelayMs =
     Number.isFinite(Number(process.env.CITATIONS_INTER_RESULT_DELAY_MS))
       ? Math.max(0, Number(process.env.CITATIONS_INTER_RESULT_DELAY_MS))
@@ -125,20 +125,20 @@ export class CitationExtractionService {
     pageName: string | null;
     category: string;
     confidence?: 'high' | 'medium' | 'low';
-    source?: 'hardcoded' | 'ai';
+    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default';
   }> {
     // Extract domain using the same categorization service helper to maximize cache hits
     const domain = citationCategorizationService.extractDomain(url);
     const cached = this.domainCategorizationCache.get(domain);
     if (cached) {
-      return {
-        url,
-        domain: cached.domain,
-        pageName: cached.pageName,
-        category: cached.category,
-        confidence: cached.confidence,
-        source: cached.source as any
-      };
+        return {
+          url,
+          domain: cached.domain,
+          pageName: cached.pageName,
+          category: cached.category,
+          confidence: cached.confidence,
+          source: cached.source
+        };
     }
     const processed = await this.withBackoff(
       () => citationCategorizationService.processCitation(url, true),
@@ -156,14 +156,157 @@ export class CitationExtractionService {
   }
 
   /**
+   * Normalize URL: remove fragments, normalize protocol, remove trailing slash
+   */
+  private normalizeUrl(url: string): string {
+    try {
+      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+      urlObj.hash = ''; // Remove fragment
+      return urlObj.toString().replace(/\/$/, ''); // Remove trailing slash
+    } catch {
+      return url; // Return as-is if parsing fails
+    }
+  }
+
+  /**
+   * Check if string looks like a domain name
+   */
+  private looksLikeDomain(str: string): boolean {
+    // Check if string looks like a domain name (e.g., "www.uber.com", "reddit.com")
+    return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,}$/i.test(str);
+  }
+
+  /**
+   * Check if string looks like a title or description (not a URL)
+   */
+  private looksLikeTitleOrDescription(str: string): boolean {
+    // Heuristics: titles/descriptions are usually longer, contain spaces, don't have protocols
+    if (str.length > 100) return true; // Likely a description
+    if (str.includes(' | ') || str.includes(' - ')) return true; // Likely a title with separator
+    if (!/^https?:\/\//i.test(str) && str.split(' ').length > 5) return true; // Long text without protocol
+    return false;
+  }
+
+  /**
+   * Extract citations from raw_answer text when citations column is empty
+   * Handles markdown format: [1](url), [1]url, and plain URLs
+   */
+  private extractCitationsFromRawAnswer(rawAnswer: string | null | undefined): string[] {
+    if (!rawAnswer || typeof rawAnswer !== 'string') {
+      return [];
+    }
+
+    const urls: string[] = [];
+    const text = rawAnswer.trim();
+    const foundUrls = new Set<string>(); // Track found URLs to avoid duplicates
+
+    // Pattern 1: Markdown citations [1](https://...) - highest priority
+    const markdownCitationRegex = /\[(\d+)\]\((https?:\/\/[^\s\)]+)\)/gi;
+    let match;
+    while ((match = markdownCitationRegex.exec(text)) !== null) {
+      const url = match[2].trim();
+      if (url && !this.isSkippableUrl(url)) {
+        const normalized = this.normalizeUrl(url);
+        if (!foundUrls.has(normalized)) {
+          urls.push(normalized);
+          foundUrls.add(normalized);
+        }
+      }
+    }
+
+    // Pattern 2: Numbered citations [1]https://... or [1] https://...
+    const numberedCitationRegex = /\[(\d+)\]\s*(https?:\/\/[^\s\)\]]+)/gi;
+    while ((match = numberedCitationRegex.exec(text)) !== null) {
+      const url = match[2].trim();
+      if (url && !this.isSkippableUrl(url)) {
+        const normalized = this.normalizeUrl(url);
+        if (!foundUrls.has(normalized)) {
+          urls.push(normalized);
+          foundUrls.add(normalized);
+        }
+      }
+    }
+
+    // Pattern 3: Plain URLs in text (only if we haven't found many markdown citations)
+    // This catches any URLs that might not be in markdown format
+    // But skip if we already found markdown citations (to avoid noise)
+    if (urls.length < 3) {
+      const urlRegex = /https?:\/\/[^\s\)\]<>"]+/gi;
+      while ((match = urlRegex.exec(text)) !== null) {
+        const url = match[0].trim();
+        if (url && !this.isSkippableUrl(url)) {
+          const normalized = this.normalizeUrl(url);
+          if (!foundUrls.has(normalized)) {
+            urls.push(normalized);
+            foundUrls.add(normalized);
+          }
+        }
+      }
+    }
+
+    return urls; // Already deduplicated via Set
+  }
+
+  /**
+   * Extract URLs from mixed citation array format
+   * Handles: objects {url, title, domain}, URLs, domain names, filters titles/descriptions
+   */
+  private extractUrlsFromCitations(citations: any[]): string[] {
+    const urls: string[] = [];
+    
+    for (const item of citations) {
+      if (!item) continue;
+      
+      // Handle object format: {url, title, domain}
+      if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+        if (item.url) {
+          const url = String(item.url).trim();
+          if (url && !this.isSkippableUrl(url)) {
+            urls.push(this.normalizeUrl(url));
+          }
+        }
+        continue;
+      }
+      
+      // Handle string format
+      if (typeof item === 'string') {
+        const str = item.trim();
+        if (!str) continue;
+        
+        // Skip if it's clearly not a URL (title, description, etc.)
+        if (this.looksLikeTitleOrDescription(str)) continue;
+        
+        // If it's a valid URL, use it
+        if (/^https?:\/\//i.test(str)) {
+          if (!this.isSkippableUrl(str)) {
+            urls.push(this.normalizeUrl(str));
+          }
+          continue;
+        }
+        
+        // If it looks like a domain name, convert to URL
+        if (this.looksLikeDomain(str)) {
+          const url = `https://${str}`;
+          if (!this.isSkippableUrl(url)) {
+            urls.push(this.normalizeUrl(url));
+          }
+          continue;
+        }
+      }
+    }
+    
+    return [...new Set(urls)]; // Remove duplicates
+  }
+
+  /**
    * Heuristics to skip junk/non-actionable URLs before hitting LLM
    */
   private isSkippableUrl(raw: string): boolean {
     if (!raw) return true;
     const url = String(raw).trim();
     const lower = url.toLowerCase();
-    // Not a URL
-    if (!/^https?:\/\//i.test(url)) return true;
+    // Not a URL (but allow domain names that will be converted)
+    if (!/^https?:\/\//i.test(url) && !this.looksLikeDomain(url)) return true;
     // Image/CDN/favicon or thumbnail domains
     if (lower.includes('encrypted-tbn') || lower.includes('gstatic.com')) return true;
     if (/\.(png|jpe?g|gif|webp|svg|ico)(\?|$)/i.test(lower)) return true;
@@ -171,14 +314,17 @@ export class CitationExtractionService {
     if (lower.includes('myactivity.google.com')) return true;
     // Obvious trackers or redirects
     if (lower.includes('utm_') || lower.includes('doubleclick.net')) return true;
+    // Very long URLs (likely malformed)
+    if (url.length > 500) return true;
     return false;
   }
 
   /**
    * Extract and store citations from collector_results
    * Processes all collector_results that have citations
+   * @param brandId Optional brand ID to filter by - if provided, only processes results for that brand
    */
-  async extractAndStoreCitations(): Promise<{
+  async extractAndStoreCitations(brandId?: string): Promise<{
     processed: number;
     inserted: number;
     skipped: number;
@@ -192,14 +338,24 @@ export class CitationExtractionService {
     };
 
     try {
-      console.log('🔄 Starting citation extraction from collector_results...');
+      if (brandId) {
+        console.log(`🔄 Starting citation extraction from collector_results for brand_id: ${brandId}...`);
+      } else {
+        console.log('🔄 Starting citation extraction from collector_results...');
+      }
 
-      // Fetch all collector_results with citations
-      const { data: results, error } = await this.supabase
+      // Fetch collector_results - include those with empty citations to extract from raw_answer
+      let query = this.supabase
         .from('collector_results')
-        .select('id, customer_id, brand_id, query_id, execution_id, citations, urls')
-        .not('citations', 'is', null)
+        .select('id, customer_id, brand_id, query_id, execution_id, citations, urls, raw_answer')
         .order('created_at', { ascending: false });
+      
+      // Filter by brand_id if provided
+      if (brandId) {
+        query = query.eq('brand_id', brandId);
+      }
+
+      const { data: results, error } = await query;
 
       if (error) {
         console.error('❌ Error fetching collector_results:', error);
@@ -207,57 +363,73 @@ export class CitationExtractionService {
       }
 
       if (!results || results.length === 0) {
-        console.log('✅ No collector_results with citations found');
+        console.log('✅ No collector_results found');
         return stats;
       }
 
-      console.log(`📊 Found ${results.length} collector_results with citations`);
+      console.log(`📊 Found ${results.length} collector_results to process`);
 
       for (const result of results) {
         try {
           stats.processed++;
 
           // Parse citations array (can be JSONB or already parsed)
-          let citations: string[] = [];
+          let citations: any[] = [];
+          let hasCitationsInColumn = false;
           
           if (typeof result.citations === 'string') {
             try {
-              citations = JSON.parse(result.citations);
+              const parsed = JSON.parse(result.citations);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                citations = parsed;
+                hasCitationsInColumn = true;
+              }
             } catch (parseError) {
               console.warn(`⚠️ Failed to parse citations JSON for result ${result.id}`);
-              stats.skipped++;
-              continue;
             }
-          } else if (Array.isArray(result.citations)) {
+          } else if (Array.isArray(result.citations) && result.citations.length > 0) {
             citations = result.citations;
-          } else {
-            // Also check urls column as fallback
+            hasCitationsInColumn = true;
+          }
+
+          // If citations column is empty, try urls column
+          if (!hasCitationsInColumn) {
             if (typeof result.urls === 'string') {
               try {
-                citations = JSON.parse(result.urls);
+                const parsed = JSON.parse(result.urls);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  citations = parsed;
+                  hasCitationsInColumn = true;
+                }
               } catch (parseError) {
                 console.warn(`⚠️ Failed to parse urls JSON for result ${result.id}`);
-                stats.skipped++;
-                continue;
               }
-            } else if (Array.isArray(result.urls)) {
+            } else if (Array.isArray(result.urls) && result.urls.length > 0) {
               citations = result.urls;
-            } else {
-              stats.skipped++;
-              continue;
+              hasCitationsInColumn = true;
             }
           }
 
-          if (!Array.isArray(citations) || citations.length === 0) {
+          // Extract URLs from citations array if available
+          let urlList: string[] = [];
+          if (hasCitationsInColumn && citations.length > 0) {
+            // Extract URLs from mixed citation array format
+            urlList = this.extractUrlsFromCitations(citations);
+          }
+
+          // If no URLs found in citations/urls columns, extract from raw_answer text
+          if (urlList.length === 0 && result.raw_answer) {
+            console.log(`📝 No citations in column for result ${result.id}, extracting from raw_answer text...`);
+            urlList = this.extractCitationsFromRawAnswer(result.raw_answer);
+            if (urlList.length > 0) {
+              console.log(`✅ Extracted ${urlList.length} URLs from raw_answer text for result ${result.id}`);
+            }
+          }
+
+          if (urlList.length === 0) {
             stats.skipped++;
             continue;
           }
-
-          // Normalize list of URL strings
-          const urlList: string[] = citations
-            .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
-            .map((u) => u.trim())
-            .filter((u) => !this.isSkippableUrl(u));
 
           // Limit per-result concurrency to avoid provider 429s
           // Tuneable via env if needed later
@@ -414,7 +586,7 @@ export class CitationExtractionService {
   async extractCitationsForResult(collectorResultId: string | number): Promise<number> {
     const { data: result, error } = await this.supabase
       .from('collector_results')
-      .select('id, customer_id, brand_id, query_id, execution_id, citations, urls')
+      .select('id, customer_id, brand_id, query_id, execution_id, citations, urls, raw_answer')
       .eq('id', collectorResultId)
       .single();
 
@@ -422,29 +594,66 @@ export class CitationExtractionService {
       throw new Error(`Collector result ${collectorResultId} not found`);
     }
 
-    // Parse citations
-    let citations: string[] = [];
+    // Parse citations array (can be JSONB or already parsed)
+    let citations: any[] = [];
+    let hasCitationsInColumn = false;
     
     if (typeof result.citations === 'string') {
-      citations = JSON.parse(result.citations);
-    } else if (Array.isArray(result.citations)) {
+      try {
+        const parsed = JSON.parse(result.citations);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          citations = parsed;
+          hasCitationsInColumn = true;
+        }
+      } catch (parseError) {
+        throw new Error(`Failed to parse citations JSON for result ${collectorResultId}`);
+      }
+    } else if (Array.isArray(result.citations) && result.citations.length > 0) {
       citations = result.citations;
-    } else if (typeof result.urls === 'string') {
-      citations = JSON.parse(result.urls);
-    } else if (Array.isArray(result.urls)) {
-      citations = result.urls;
+      hasCitationsInColumn = true;
     }
 
-    if (citations.length === 0) {
+    // If citations column is empty, try urls column
+    if (!hasCitationsInColumn) {
+      if (typeof result.urls === 'string') {
+        try {
+          const parsed = JSON.parse(result.urls);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            citations = parsed;
+            hasCitationsInColumn = true;
+          }
+        } catch (parseError) {
+          throw new Error(`Failed to parse urls JSON for result ${collectorResultId}`);
+        }
+      } else if (Array.isArray(result.urls) && result.urls.length > 0) {
+        citations = result.urls;
+        hasCitationsInColumn = true;
+      }
+    }
+
+    // Extract URLs from citations array if available
+    let urlList: string[] = [];
+    if (hasCitationsInColumn && citations.length > 0) {
+      urlList = this.extractUrlsFromCitations(citations);
+    }
+
+    // If no URLs found in citations/urls columns, extract from raw_answer text
+    if (urlList.length === 0 && result.raw_answer) {
+      console.log(`📝 No citations in column for result ${collectorResultId}, extracting from raw_answer text...`);
+      urlList = this.extractCitationsFromRawAnswer(result.raw_answer);
+      if (urlList.length > 0) {
+        console.log(`✅ Extracted ${urlList.length} URLs from raw_answer text for result ${collectorResultId}`);
+      }
+    }
+
+    if (urlList.length === 0) {
       return 0;
     }
 
     // Process citations (using AI for unknown domains)
     const citationRows = await Promise.all(
-      citations
-        .filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
-        .map(async (url) => {
-          const processed = await citationCategorizationService.processCitation(url.trim(), true);
+      urlList.map(async (url) => {
+        const processed = await citationCategorizationService.processCitation(url, true);
           
           return {
             customer_id: result.customer_id,

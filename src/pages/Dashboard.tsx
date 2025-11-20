@@ -23,11 +23,9 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getLLMIcon } from '../components/Visibility/LLMIcons';
-import { apiClient } from '../lib/apiClient';
+import { useCachedData } from '../hooks/useCachedData';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
-import { SourcesChartContainer } from '../components/Citations/SourcesChartContainer';
-import { mockCitationSourcesData } from '../data/mockCitationSourcesData';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -84,6 +82,11 @@ interface DashboardPayload {
     percentage: number;
     color?: string;
   }>;
+  topSourcesDistribution?: Array<{
+    label: string;
+    percentage: number;
+    color?: string;
+  }>;
   llmVisibility: Array<{
     provider: string;
     share: number;
@@ -108,6 +111,7 @@ interface DashboardPayload {
     id: string;
     title: string;
     url: string;
+    urls?: string[]; // All cited URLs for this domain
     domain: string;
     impactScore: number | null;
     change: number | null;
@@ -179,9 +183,69 @@ interface UrlTooltipProps {
   fullUrl: string;
 }
 
-const UrlTooltip = ({ url, fullUrl }: UrlTooltipProps) => {
-  const [showTooltip, setShowTooltip] = useState(false);
+interface UrlTooltipProps {
+  url: string;
+  fullUrl: string;
+  urls?: string[]; // All cited URLs for this domain
+}
 
+const UrlTooltip = ({ url, fullUrl, urls }: UrlTooltipProps) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const hasMultipleUrls = urls && urls.length > 1;
+
+  // If multiple URLs, show dropdown; otherwise show single link
+  if (hasMultipleUrls) {
+    return (
+      <div className="relative inline-flex items-center">
+        <button
+          onClick={() => setShowDropdown(!showDropdown)}
+          className="text-[12px] text-[#00bcdc] hover:text-[#0096b0] font-medium flex items-center gap-1 transition-colors"
+        >
+          <ExternalLink size={12} />
+          View URL ({urls.length})
+        </button>
+        {showDropdown && (
+          <div className="absolute left-0 bottom-full mb-2 w-80 max-w-[90vw] bg-white border border-[#e8e9ed] rounded-lg shadow-lg z-[100] overflow-hidden">
+            <div className="p-2 max-h-64 overflow-y-auto">
+              <div className="text-[11px] text-[#64748b] font-medium mb-2 px-2 py-1">
+                Select URL to visit:
+              </div>
+              {urls.map((urlItem, index) => {
+                const fullUrlItem = urlItem.startsWith('http') ? urlItem : `https://${urlItem}`;
+                return (
+                  <a
+                    key={index}
+                    href={fullUrlItem}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block px-3 py-2 text-[12px] text-[#1a1d29] hover:bg-[#f9f9fb] rounded transition-colors break-all"
+                    onClick={() => setShowDropdown(false)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ExternalLink size={12} className="flex-shrink-0 text-[#00bcdc]" />
+                      <span className="truncate" title={urlItem}>
+                        {urlItem.replace(/^https?:\/\//, '')}
+                      </span>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {/* Click outside to close */}
+        {showDropdown && (
+          <div
+            className="fixed inset-0 z-[99]"
+            onClick={() => setShowDropdown(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Single URL - show tooltip on hover
   return (
     <div className="relative inline-flex items-center">
       <a
@@ -213,9 +277,6 @@ export const Dashboard = () => {
   const defaultDateRange = useMemo(getDefaultDateRange, []);
   const [startDate, setStartDate] = useState(defaultDateRange.start);
   const [endDate, setEndDate] = useState(defaultDateRange.end);
-  const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const [showTopicModal, setShowTopicModal] = useState(false);
@@ -334,63 +395,44 @@ export const Dashboard = () => {
 
   const displayName = user?.fullName || user?.email?.split('@')[0] || 'there';
 
+  // Build endpoint with current params
+  const dashboardEndpoint = useMemo(() => {
+    if (!selectedBrandId || !startDate || !endDate) return null;
+    const params = new URLSearchParams({
+      startDate,
+      endDate
+    });
+    return `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+  }, [selectedBrandId, startDate, endDate, reloadKey]);
+
+  // Use cached data hook
+  const {
+    data: dashboardResponse,
+    loading: dashboardLoading,
+    error: dashboardError,
+    refetch: refetchDashboard
+  } = useCachedData<ApiResponse<DashboardPayload>>(
+    dashboardEndpoint,
+    {},
+    { requiresAuth: true },
+    { enabled: !authLoading && !!dashboardEndpoint, refetchOnMount: false }
+  );
+
+  const dashboardData: DashboardPayload | null = dashboardResponse?.success ? dashboardResponse.data || null : null;
+  const dashboardErrorMsg: string | null = dashboardResponse?.success 
+    ? null 
+    : (dashboardError?.message || dashboardResponse?.error || dashboardResponse?.message || null);
+
   const actionItems: ActionItem[] = dashboardData?.actionItems ?? [];
   const highPriorityActions = actionItems.filter((item: ActionItem) => item.priority === 'high');
   const criticalAlerts = highPriorityActions.length;
   const brandPages = dashboardData?.topBrandSources ?? [];
   const topTopics = dashboardData?.topTopics ?? [];
 
-  useEffect(() => {
-    if (authLoading || !selectedBrandId || !startDate || !endDate) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const fetchDashboard = async () => {
-      setDashboardLoading(true);
-      setDashboardError(null);
-
-      try {
-        const params = new URLSearchParams({
-          startDate,
-          endDate
-        });
-
-        const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
-        const dashboardResponse = await apiClient.request<ApiResponse<DashboardPayload>>(endpoint);
-
-        if (!dashboardResponse.success || !dashboardResponse.data) {
-          throw new Error(
-            dashboardResponse.error || dashboardResponse.message || 'Failed to load dashboard data.'
-          );
-        }
-
-        if (!cancelled) {
-          setDashboardData(dashboardResponse.data);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to load dashboard data.';
-        if (!cancelled) {
-          setDashboardError(message);
-          setDashboardData(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setDashboardLoading(false);
-        }
-      }
-    };
-
-    fetchDashboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, endDate, reloadKey, selectedBrandId, startDate]);
 
   const handleRetryFetch = () => {
     setReloadKey((prev) => prev + 1);
+    refetchDashboard();
   };
 
   const brandSelectionPending = !selectedBrandId && brandsLoading;
@@ -409,10 +451,10 @@ export const Dashboard = () => {
     );
   }
 
-  if (brandsError || dashboardError || !dashboardData) {
+  if (brandsError || dashboardErrorMsg || !dashboardData) {
     const errorMessage =
       brandsError ||
-      dashboardError ||
+      dashboardErrorMsg ||
       (brands.length === 0
         ? 'No brands found for this account. Please add a brand to view the dashboard.'
         : 'Dashboard data is currently unavailable.');
@@ -738,17 +780,6 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        {/* Citation Sources Chart with Type Selector */}
-        <div className="mb-6">
-          <SourcesChartContainer
-            racingChartData={mockCitationSourcesData.racingChartData}
-            categories={['Editorial', 'Corporate', 'Reference', 'UGC', 'Institutional']}
-            onExport={() => {
-              console.log('Exporting citation sources data...');
-            }}
-          />
-        </div>
-
         <div className="grid grid-cols-4 gap-5 mb-6">
           {metricCards.map(({ key, ...cardProps }) => (
             <MetricCard key={key} {...cardProps} />
@@ -766,7 +797,7 @@ export const Dashboard = () => {
                   <InfoTooltip description="Lists the web pages and sources where your brand is most frequently cited in AI-generated answers. Impact Score reflects how prominently your brand appears, helping you identify high-value content partnerships and citation opportunities." />
                 </div>
                 <Link
-                  to="/ai-sources"
+                  to="/search-sources"
                   className="text-[13px] font-medium text-[#00bcdc] hover:text-[#0096b0] flex items-center gap-1"
                 >
                   View All
@@ -822,7 +853,7 @@ export const Dashboard = () => {
                             <span className="text-[12px] text-[#64748b] font-medium">
                               {domain}
                             </span>
-                            <UrlTooltip url={displayUrl} fullUrl={fullUrl} />
+                            <UrlTooltip url={displayUrl} fullUrl={fullUrl} urls={page.urls} />
                           </div>
                         </div>
                         <div className="flex items-center gap-6 flex-shrink-0">
@@ -911,7 +942,7 @@ export const Dashboard = () => {
                 <InfoTooltip description="Shows topics where your brand performs best. Visibility Score measures how prominently your brand appears in AI answers. Brand Presence shows what percentage of queries include your brand. Sentiment indicates how positively your brand is discussed (0-5 scale, higher is better)." />
               </div>
               <Link
-                to="/prompts"
+                to="/topics"
                 className="text-[13px] font-medium text-[#00bcdc] hover:text-[#0096b0] flex items-center gap-1"
               >
                 View All

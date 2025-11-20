@@ -6,20 +6,20 @@ dotenv.config();
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Support multiple providers: Gemini (recommended), Cerebras (fallback), Hugging Face (last resort)
+// Support multiple providers: Cerebras (primary), Gemini (fallback), Hugging Face (last resort)
+const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
+const cerebrasModel = process.env.CEREBRAS_MODEL || 'qwen-3-235b-a22b-instruct-2507';
 // Accept both GEMINI_API_KEY and GOOGLE_GEMINI_API_KEY for compatibility
 const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
 // Allow overriding Gemini model via env (supports GOOGLE_GEMINI_MODEL or GEMINI_MODEL)
 const geminiModel = process.env.GOOGLE_GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
-const cerebrasModel = process.env.CEREBRAS_MODEL || 'qwen-3-235b-a22b-instruct-2507';
 const huggingFaceToken = process.env.HUGGINGFACE_API_TOKEN;
 const huggingFaceModelUrl =
   process.env.HF_SENTIMENT_MODEL_URL ??
   'https://router.huggingface.co/hf-inference/models/distilbert/distilbert-base-uncased-finetuned-sst-2-english';
 
-// Sentiment provider priority: Gemini > Cerebras > Hugging Face
-const SENTIMENT_PROVIDER = (process.env.SENTIMENT_PROVIDER || 'gemini').toLowerCase();
+// Sentiment provider priority: Cerebras > Gemini > Hugging Face
+const SENTIMENT_PROVIDER = (process.env.SENTIMENT_PROVIDER || 'cerebras').toLowerCase();
 
 if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error('Missing Supabase credentials (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
@@ -60,7 +60,7 @@ export class SentimentScoringService {
   }
 
   /**
-   * Score sentiment for extracted_positions rows that do not yet have a sentiment result.
+   * Score sentiment for collector_results rows that do not yet have a sentiment result.
    * Returns the number of rows updated.
    */
   public async scorePending(options: SentimentScoreOptions = {}): Promise<number> {
@@ -70,10 +70,10 @@ export class SentimentScoringService {
     
     // Show which provider is being used
     let providerInfo = 'Unknown';
-    if (SENTIMENT_PROVIDER === 'gemini' && geminiApiKey) {
+    if (SENTIMENT_PROVIDER === 'cerebras' && cerebrasApiKey) {
+      providerInfo = 'Cerebras (primary, high token limit)';
+    } else if (SENTIMENT_PROVIDER === 'gemini' && geminiApiKey) {
       providerInfo = 'Gemini (1M token limit - no truncation needed!)';
-    } else if (SENTIMENT_PROVIDER === 'cerebras' && cerebrasApiKey) {
-      providerInfo = 'Cerebras (high token limit)';
     } else if (huggingFaceToken) {
       providerInfo = 'Hugging Face (512 token limit - may truncate)';
     }
@@ -90,13 +90,15 @@ export class SentimentScoringService {
     }
     console.log('   ▶ limit:', limit, '\n');
 
+    // Query collector_results that need sentiment scoring
     let query = this.supabase
-      .from('extracted_positions')
+      .from('collector_results')
       .select(
-        'id, raw_answer, sentiment_label, sentiment_score, sentiment_positive_sentences, sentiment_negative_sentences'
+        'id, raw_answer, sentiment_label, sentiment_score, sentiment_positive_sentences, sentiment_negative_sentences, query_id, metadata'
       )
       .is('sentiment_label', null)
-      .order('processed_at', { ascending: false })
+      .not('raw_answer', 'is', null)
+      .order('created_at', { ascending: false })
       .limit(limit);
 
     if (options.customerId) {
@@ -106,7 +108,7 @@ export class SentimentScoringService {
       query = query.in('brand_id', options.brandIds);
     }
     if (options.since) {
-      query = query.gte('processed_at', options.since);
+      query = query.gte('created_at', options.since);
     }
 
     const { data: rows, error } = await query;
@@ -124,21 +126,21 @@ export class SentimentScoringService {
     let failed = 0;
 
     for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+      const row = rows[i] as any;
       try {
-        console.log(`\n📊 Processing ${i + 1}/${rows.length}: extracted_positions.id=${row.id}`);
+        console.log(`\n📊 Processing ${i + 1}/${rows.length}: collector_results.id=${row.id}`);
         
         // Check if raw_answer exists and is not empty
         if (!row.raw_answer || row.raw_answer.trim().length === 0) {
           console.warn(`⚠️ Skipping row ${row.id}: empty raw_answer`);
           // Set neutral sentiment for empty answers
           const { error: updateError } = await this.supabase
-            .from('extracted_positions')
+            .from('collector_results')
             .update({
               sentiment_label: 'NEUTRAL',
               sentiment_score: 0,
-              sentiment_positive_sentences: JSON.stringify([]),
-              sentiment_negative_sentences: JSON.stringify([]),
+              sentiment_positive_sentences: [],
+              sentiment_negative_sentences: [],
             })
             .eq('id', row.id);
 
@@ -151,14 +153,43 @@ export class SentimentScoringService {
 
         const sentiment = await this.analyzeSentiment(row.raw_answer);
 
+        // Get topic from generated_queries if query_id exists
+        let topic: string | null = null;
+        if (row.query_id) {
+          try {
+            const { data: queryData, error: queryError } = await this.supabase
+              .from('generated_queries')
+              .select('topic')
+              .eq('id', row.query_id)
+              .single();
+            
+            if (!queryError && queryData?.topic) {
+              topic = queryData.topic;
+            }
+          } catch (err) {
+            console.warn(`⚠️ Could not fetch topic for query_id ${row.query_id}:`, err);
+          }
+        }
+        
+        // Prepare metadata update - merge topic into existing metadata
+        const currentMetadata = row.metadata || {};
+        const updatedMetadata = {
+          ...currentMetadata,
+          ...(topic ? { topic } : {})
+        };
+
+        // Update collector_results with sentiment and topic in metadata
+        const updateData: any = {
+          sentiment_label: sentiment.label,
+          sentiment_score: sentiment.score,
+          sentiment_positive_sentences: sentiment.positiveSentences,
+          sentiment_negative_sentences: sentiment.negativeSentences,
+          metadata: updatedMetadata
+        };
+
         const { error: updateError } = await this.supabase
-          .from('extracted_positions')
-          .update({
-            sentiment_label: sentiment.label,
-            sentiment_score: sentiment.score,
-            sentiment_positive_sentences: JSON.stringify(sentiment.positiveSentences),
-            sentiment_negative_sentences: JSON.stringify(sentiment.negativeSentences),
-          })
+          .from('collector_results')
+          .update(updateData)
           .eq('id', row.id);
 
         if (updateError) {
@@ -166,27 +197,39 @@ export class SentimentScoringService {
         }
 
         processed += 1;
+        const topicInfo = topic ? ` | Topic: ${topic}` : '';
         console.log(
-          `✅ Sentiment scored: ${sentiment.label} (${sentiment.score.toFixed(2)}) | Positive: ${sentiment.positiveSentences.length}, Negative: ${sentiment.negativeSentences.length}`
+          `✅ Sentiment scored: ${sentiment.label} (${sentiment.score.toFixed(2)}) | Positive: ${sentiment.positiveSentences.length}, Negative: ${sentiment.negativeSentences.length}${topicInfo}`
         );
 
-        // Add small delay between API calls to avoid rate limits (except for last item)
+        // Add delay between API calls to avoid rate limits (except for last item)
         if (i < rows.length - 1) {
-          await this.sleep(200); // 200ms delay between requests
+          await this.sleep(2000); // 2 second delay between requests to avoid rate limits
         }
       } catch (scoringError) {
-        failed += 1;
         const message =
           scoringError instanceof Error ? scoringError.message : String(scoringError);
-        console.error(
-          `❌ Failed sentiment scoring for extracted_positions.id=${row.id}: ${message}`
-        );
         
-        // If it's a rate limit error, wait longer before continuing
-        if (message.includes('rate limit') || message.includes('429')) {
-          console.warn(`⏳ Waiting 5 seconds before continuing due to rate limit...`);
-          await this.sleep(5000);
+        // Check if it's a rate limit error (429)
+        const isRateLimit = message.includes('429') || 
+                           message.includes('rate limit') || 
+                           message.includes('too many requests') ||
+                           message.includes('request_quota_exceeded');
+        
+        if (isRateLimit) {
+          console.warn(`⚠️ Rate limit hit for row ${row.id}. Skipping this row (not scoring).`);
+          console.warn(`   Waiting 60 seconds before continuing...`);
+          await this.sleep(60000); // Wait 60 seconds on rate limit
+          // Don't increment failed, don't update DB - just skip this row
+          continue;
         }
+        
+        failed += 1;
+        console.error(
+          `❌ Failed sentiment scoring for collector_results.id=${row.id}: ${message}`
+        );
+        // For non-rate-limit errors, don't update DB - skip the row
+        // Only update DB on successful scoring
       }
     }
 
@@ -199,7 +242,24 @@ export class SentimentScoringService {
       return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
     }
 
-    // Use Gemini or Cerebras for full text analysis (no chunking needed due to high token limits)
+    // Use Cerebras (primary) or Gemini (fallback) for full text analysis (no chunking needed due to high token limits)
+    if (SENTIMENT_PROVIDER === 'cerebras' && cerebrasApiKey) {
+      try {
+        return await this.analyzeSentimentWithCerebras(text);
+      } catch (error) {
+        console.warn('⚠️ Cerebras sentiment analysis failed, trying Gemini fallback...');
+        if (geminiApiKey) {
+          try {
+            return await this.analyzeSentimentWithGemini(text);
+          } catch (geminiError) {
+            console.warn('⚠️ Gemini fallback also failed, using Hugging Face...');
+            // Fall through to Hugging Face
+          }
+        }
+        // Fall through to Hugging Face if no Gemini fallback
+      }
+    }
+    
     if (SENTIMENT_PROVIDER === 'gemini' && geminiApiKey) {
       try {
         return await this.analyzeSentimentWithGemini(text);
@@ -210,10 +270,6 @@ export class SentimentScoringService {
         }
         throw error;
       }
-    }
-    
-    if (SENTIMENT_PROVIDER === 'cerebras' && cerebrasApiKey) {
-      return await this.analyzeSentimentWithCerebras(text);
     }
 
     // Fallback to Hugging Face with chunking (for backward compatibility)
@@ -431,16 +487,33 @@ Respond with ONLY valid JSON in this exact format:
       }
 
       const data = await response.json() as any;
+      
+      // Check for API errors in response
+      if (data.error) {
+        throw new Error(`Gemini API error: ${data.error.message || JSON.stringify(data.error)}`);
+      }
+      
+      // Check if response was blocked or filtered
+      if (data.candidates?.[0]?.finishReason) {
+        const finishReason = data.candidates[0].finishReason;
+        if (finishReason === 'SAFETY' || finishReason === 'RECITATION' || finishReason === 'OTHER') {
+          console.warn(`⚠️ Gemini response blocked/filtered (reason: ${finishReason}), using neutral sentiment`);
+          return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
+        }
+      }
+      
       const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
       
-      if (!content) {
-        throw new Error('No content in Gemini response');
+      if (!content || content.trim().length === 0) {
+        console.warn('⚠️ Empty content in Gemini response, using neutral sentiment');
+        return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
       }
 
       // Extract JSON from response (handle markdown code blocks)
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        throw new Error('No JSON found in Gemini response');
+        console.warn('⚠️ No JSON found in Gemini response, response preview:', content.substring(0, 200));
+        return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
       }
 
       const result = JSON.parse(jsonMatch[0]);
@@ -452,8 +525,8 @@ Respond with ONLY valid JSON in this exact format:
         negativeSentences: Array.isArray(result.negativeSentences) ? result.negativeSentences : [],
       };
     } catch (error) {
-      console.error('Gemini sentiment analysis failed:', error);
-      // Fallback to neutral
+      console.error('Gemini sentiment analysis failed:', error instanceof Error ? error.message : error);
+      // Fallback to neutral - don't throw, just return neutral sentiment
       return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
     }
   }
@@ -472,7 +545,11 @@ Respond with ONLY valid JSON in this exact format:
 
     const prompt = `Analyze the sentiment of the following text and provide:
 1. Overall sentiment label: POSITIVE, NEGATIVE, or NEUTRAL
-2. Sentiment score: -1.0 (very negative) to 1.0 (very positive)
+2. Sentiment score: A precise decimal number from -1.0 (very negative) to 1.0 (very positive)
+   - Use granular scores like 0.23, -0.45, 0.67, -0.12, 0.89, etc.
+   - Avoid rounding to common values like 0.80, 0.70, 0.00
+   - Calculate based on the ratio of positive to negative sentiment
+   - Be precise: if text is mostly positive with some negatives, use 0.65-0.75, not 0.80
 3. List of positive sentences (sentences with positive sentiment)
 4. List of negative sentences (sentences with negative sentiment)
 
@@ -482,13 +559,18 @@ ${truncated}
 Respond with ONLY valid JSON in this exact format:
 {
   "label": "POSITIVE|NEGATIVE|NEUTRAL",
-  "score": -1.0 to 1.0,
+  "score": -1.0 to 1.0 (precise decimal, e.g., 0.67, -0.23, 0.45),
   "positiveSentences": ["sentence 1", "sentence 2"],
   "negativeSentences": ["sentence 1", "sentence 2"]
 }`;
 
     try {
-      const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+      // Use /v1/completions endpoint (not /v1/chat/completions) for Cerebras
+      const fullPrompt = `You are a sentiment analysis expert. Always respond with valid JSON only, no explanations.
+
+${prompt}`;
+
+      const response = await fetch('https://api.cerebras.ai/v1/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${cerebrasApiKey}`,
@@ -496,40 +578,70 @@ Respond with ONLY valid JSON in this exact format:
         },
         body: JSON.stringify({
           model: cerebrasModel,
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a sentiment analysis expert. Always respond with valid JSON only, no explanations.'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.1,
+          prompt: fullPrompt,
+          temperature: 0.3, // Increased from 0.1 to get more varied, granular scores
           max_tokens: 2000,
+          stop: ['---END---']
         }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Cerebras API error: ${response.status} ${errorText}`);
+        const error = new Error(`Cerebras API error: ${response.status} ${errorText}`);
+        // Preserve status code for rate limit detection
+        (error as any).statusCode = response.status;
+        throw error;
       }
 
       const data = await response.json() as any;
-      const content = data.choices?.[0]?.message?.content;
+      const content = data.choices?.[0]?.text || data.choices?.[0]?.message?.content;
       
       if (!content) {
         throw new Error('No content in Cerebras response');
       }
 
-      // Extract JSON from response (handle markdown code blocks)
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
+      // Extract JSON from response (handle markdown code blocks and extra text)
+      // First, try to find JSON object boundaries more precisely
+      let jsonStr = '';
+      
+      // Remove markdown code blocks if present
+      let cleanContent = content.trim();
+      if (cleanContent.includes('```json')) {
+        cleanContent = cleanContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+      } else if (cleanContent.includes('```')) {
+        cleanContent = cleanContent.replace(/```\s*/g, '');
+      }
+      
+      // Find the first complete JSON object by counting braces
+      let braceCount = 0;
+      let startIdx = -1;
+      for (let i = 0; i < cleanContent.length; i++) {
+        if (cleanContent[i] === '{') {
+          if (startIdx === -1) startIdx = i;
+          braceCount++;
+        } else if (cleanContent[i] === '}') {
+          braceCount--;
+          if (braceCount === 0 && startIdx !== -1) {
+            jsonStr = cleanContent.substring(startIdx, i + 1);
+            break;
+          }
+        }
+      }
+      
+      // Fallback to regex if brace counting didn't work
+      if (!jsonStr) {
+        const jsonMatch = cleanContent.match(/\{[\s\S]*?\}/);
+        if (jsonMatch) {
+          jsonStr = jsonMatch[0];
+        }
+      }
+      
+      if (!jsonStr) {
+        console.warn('⚠️ No valid JSON found in Cerebras response. Content preview:', content.substring(0, 500));
         throw new Error('No JSON found in Cerebras response');
       }
 
-      const result = JSON.parse(jsonMatch[0]);
+      const result = JSON.parse(jsonStr);
       
       return {
         label: result.label?.toUpperCase() || 'NEUTRAL',

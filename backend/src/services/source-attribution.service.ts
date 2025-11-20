@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../config/database'
 import { DatabaseError } from '../types/auth'
-import { normalizeDateRange, round, toNumber, average, toPercentage } from './brand-dashboard/utils'
+import { normalizeDateRange, round, toNumber, average } from './brand-dashboard/utils'
 import { sourceAttributionCacheService } from './source-attribution-cache.service'
 
 export interface SourceAttributionData {
@@ -255,12 +255,34 @@ export class SourceAttributionService {
         return topicName
       }
 
-      // Step 8: Fetch extracted positions (SoA, sentiment, topics, mention counts)
+      // Step 8: Fetch sentiment from collector_results and other data from extracted_positions
       const positionsStartTime = Date.now();
+      
+      // Fetch sentiment from collector_results (new location)
+      const sentimentByCollectorResult = new Map<number, number>()
+      if (collectorResultIds.length > 0) {
+        const { data: collectorResultsData, error: collectorResultsError } = await supabaseAdmin
+          .from('collector_results')
+          .select('id, sentiment_score')
+          .in('id', collectorResultIds)
+          .not('sentiment_score', 'is', null)
+
+        if (collectorResultsError) {
+          console.warn('[SourceAttribution] Failed to fetch sentiment from collector_results:', collectorResultsError)
+        } else if (collectorResultsData) {
+          for (const cr of collectorResultsData) {
+            if (cr.sentiment_score !== null) {
+              sentimentByCollectorResult.set(cr.id, toNumber(cr.sentiment_score))
+            }
+          }
+          console.log(`[SourceAttribution] 📊 Found sentiment for ${sentimentByCollectorResult.size} collector results`)
+        }
+      }
+
+      // Fetch SoA, mention counts, and topics from extracted_positions (still stored there)
       let extractedPositions: Array<{
         collector_result_id: number | null;
         share_of_answers_brand: number | null;
-        sentiment_score: number | null;
         total_brand_mentions: number | null;
         metadata: any;
       }> = []
@@ -271,7 +293,6 @@ export class SourceAttributionService {
           .select(`
             collector_result_id,
             share_of_answers_brand,
-            sentiment_score,
             total_brand_mentions,
             metadata
           `)
@@ -282,9 +303,8 @@ export class SourceAttributionService {
           console.warn('[SourceAttribution] Failed to fetch extracted positions:', positionsError)
         } else {
           extractedPositions = positionsData || []
-          const withSentiment = extractedPositions.filter(ep => ep.sentiment_score !== null).length
           stepTimings['extracted_positions_query'] = Date.now() - positionsStartTime;
-          console.log(`[SourceAttribution] 📊 Found ${extractedPositions.length} extracted positions, ${withSentiment} have sentiment scores (${stepTimings['extracted_positions_query']}ms)`)
+          console.log(`[SourceAttribution] 📊 Found ${extractedPositions.length} extracted positions (${stepTimings['extracted_positions_query']}ms)`)
         }
       }
 
@@ -298,10 +318,10 @@ export class SourceAttributionService {
       )
       console.log(`[SourceAttribution] Created queryMap with ${queryMap.size} entries`)
       
-      // Create maps for share of answer, sentiment, and mention counts by collector_result_id
+      // Create maps for share of answer and mention counts by collector_result_id
       // Multiple positions can exist per collector_result_id, so we'll average them
+      // Note: sentiment is now stored directly in collector_results (already fetched above)
       const shareOfAnswerByCollectorResult = new Map<number, number[]>()
-      const sentimentByCollectorResult = new Map<number, number[]>()
       const mentionCountsByCollectorResult = new Map<number, number[]>()
       
       for (const position of extractedPositions) {
@@ -314,14 +334,6 @@ export class SourceAttributionService {
               shareOfAnswerByCollectorResult.set(collectorId, [])
             }
             shareOfAnswerByCollectorResult.get(collectorId)!.push(toNumber(position.share_of_answers_brand))
-          }
-          
-          // Collect sentiment scores
-          if (position.sentiment_score !== null) {
-            if (!sentimentByCollectorResult.has(collectorId)) {
-              sentimentByCollectorResult.set(collectorId, [])
-            }
-            sentimentByCollectorResult.get(collectorId)!.push(toNumber(position.sentiment_score))
           }
           
           // Collect mention counts (from extracted_positions, not collector_results)
@@ -340,10 +352,11 @@ export class SourceAttributionService {
         avgShareByCollectorResult.set(collectorId, average(shareValues))
       }
       
-      // Calculate average sentiment per collector result
+      // Sentiment is already in sentimentByCollectorResult map (from collector_results)
+      // Convert to avgSentimentByCollectorResult for compatibility with existing code
       const avgSentimentByCollectorResult = new Map<number, number>()
-      for (const [collectorId, sentimentValues] of sentimentByCollectorResult.entries()) {
-        avgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
+      for (const [collectorId, sentimentScore] of sentimentByCollectorResult.entries()) {
+        avgSentimentByCollectorResult.set(collectorId, sentimentScore)
       }
       
       // Create map from collector_result_id to topic name (from extracted_positions metadata)
@@ -451,7 +464,7 @@ export class SourceAttributionService {
             aggregate.shareValues.push(avgShare)
           }
 
-          // Always add sentiment if we have it from extracted_positions, even if collector_results row is missing
+          // Always add sentiment if we have it from collector_results, even if extracted_positions row is missing
           const avgSentiment = avgSentimentByCollectorResult.get(citation.collector_result_id)
           if (avgSentiment !== undefined) {
             aggregate.sentimentValues.push(avgSentiment)
@@ -523,18 +536,35 @@ export class SourceAttributionService {
           previousCitations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
         ))
         
-        // Fetch previous period share of answer and sentiment from extracted_positions
+        // Fetch previous period sentiment from collector_results (new location)
+        const previousSentimentByCollectorResult = new Map<number, number>()
+        const { data: previousCollectorResults } = await supabaseAdmin
+          .from('collector_results')
+          .select('id, sentiment_score')
+          .in('id', previousCollectorIds)
+          .not('sentiment_score', 'is', null)
+          .gte('created_at', previousStart.toISOString())
+          .lt('created_at', previousEnd.toISOString())
+
+        if (previousCollectorResults) {
+          for (const cr of previousCollectorResults) {
+            if (cr.sentiment_score !== null) {
+              previousSentimentByCollectorResult.set(cr.id, toNumber(cr.sentiment_score))
+            }
+          }
+        }
+
+        // Fetch previous period share of answer from extracted_positions
         const { data: previousPositions } = await supabaseAdmin
           .from('extracted_positions')
-          .select('collector_result_id, share_of_answers_brand, sentiment_score')
+          .select('collector_result_id, share_of_answers_brand')
           .in('collector_result_id', previousCollectorIds)
           .eq('brand_id', brandId)
           .gte('processed_at', previousStart.toISOString())
           .lt('processed_at', previousEnd.toISOString())
 
-        // Calculate average share of answer and sentiment per collector result for previous period
+        // Calculate average share of answer per collector result for previous period
         const previousShareByCollectorResult = new Map<number, number[]>()
-        const previousSentimentByCollectorResult = new Map<number, number[]>()
         
         if (previousPositions) {
           for (const position of previousPositions) {
@@ -548,14 +578,6 @@ export class SourceAttributionService {
                 }
                 previousShareByCollectorResult.get(collectorId)!.push(toNumber(position.share_of_answers_brand))
               }
-              
-              // Collect sentiment scores
-              if (position.sentiment_score !== null) {
-                if (!previousSentimentByCollectorResult.has(collectorId)) {
-                  previousSentimentByCollectorResult.set(collectorId, [])
-                }
-                previousSentimentByCollectorResult.get(collectorId)!.push(toNumber(position.sentiment_score))
-              }
             }
           }
         }
@@ -565,10 +587,8 @@ export class SourceAttributionService {
           previousAvgShareByCollectorResult.set(collectorId, average(shareValues))
         }
         
-        const previousAvgSentimentByCollectorResult = new Map<number, number>()
-        for (const [collectorId, sentimentValues] of previousSentimentByCollectorResult.entries()) {
-          previousAvgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
-        }
+        // Sentiment is already in previousSentimentByCollectorResult map (from collector_results)
+        const previousAvgSentimentByCollectorResult = previousSentimentByCollectorResult
 
         for (const citation of previousCitations) {
           const domain = citation.domain || 'unknown'
@@ -594,7 +614,7 @@ export class SourceAttributionService {
               prev.soaArray.push(avgShare)
             }
             
-            // Get sentiment from extracted_positions
+            // Get sentiment from collector_results
             const avgSentiment = previousAvgSentimentByCollectorResult.get(citation.collector_result_id)
             if (avgSentiment !== undefined) {
               prev.sentiment += avgSentiment
@@ -626,10 +646,9 @@ export class SourceAttributionService {
       console.log(`[SourceAttribution] 🔄 Converting ${sourceAggregates.size} aggregates to source data...`)
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         // Share of Answer: Average across all collector results where this source is cited
-        // share_of_answers_brand is stored as a decimal (0.0-1.0) or percentage (0-100)
-        // We normalize it to a percentage using toPercentage which handles both cases
+        // share_of_answers_brand is stored as 0-100 percentage format (confirmed in position-extraction.service.ts:736)
         const avgShareRaw = aggregate.shareValues.length > 0 ? average(aggregate.shareValues) : 0
-        const avgShare = toPercentage(avgShareRaw) // Convert to percentage if needed (handles both 0-1 and 0-100)
+        const avgShare = avgShareRaw // Already in 0-100 format, no normalization needed
         
         const avgSentiment = aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
         const totalMentions = aggregate.mentionCounts.reduce((sum, count) => sum + count, 0)
@@ -649,7 +668,7 @@ export class SourceAttributionService {
         const previousSoaRaw = previous && previous.soaArray && previous.soaArray.length > 0
           ? average(previous.soaArray)
           : (previous ? previous.soa : 0)
-        const previousSoa = toPercentage(previousSoaRaw)
+        const previousSoa = previousSoaRaw // Already in 0-100 format, no normalization needed
         const previousSentiment = previous ? previous.sentiment : 0
 
         const mentionChange = mentionRate - previousMentionRate

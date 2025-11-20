@@ -15,7 +15,7 @@ export type CitationCategory =
 interface CategorizationResult {
   category: CitationCategory;
   confidence?: 'high' | 'medium' | 'low'; // Confidence level (high = hardcoded, medium/low = AI)
-  source?: 'hardcoded' | 'ai'; // Where the categorization came from
+  source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default'; // Where the categorization came from
 }
 
 interface DomainCategoryMapping {
@@ -126,12 +126,41 @@ export class CitationCategorizationService {
 
   /**
    * Categorize a citation based on its domain
-   * Always uses LLM-based categorization (no hardcoded patterns)
+   * Uses hardcoded patterns first, then falls back to AI if needed
    */
   async categorize(url: string, useAI: boolean = true): Promise<CategorizationResult> {
     const domain = this.extractDomain(url);
 
-    // Always use AI for categorization
+    // First, try hardcoded domain patterns (fast and reliable)
+    for (const mapping of DOMAIN_CATEGORIES) {
+      if (mapping.domain instanceof RegExp) {
+        if (mapping.domain.test(url) || mapping.domain.test(domain)) {
+          return {
+            category: mapping.category,
+            confidence: 'high',
+            source: 'hardcoded'
+          };
+        }
+      } else if (domain.toLowerCase().includes(mapping.domain.toLowerCase())) {
+        return {
+          category: mapping.category,
+          confidence: 'high',
+          source: 'hardcoded'
+        };
+      }
+    }
+
+    // If no hardcoded match, try simple domain-based heuristics
+    const simpleCategory = this.categorizeByDomainHeuristics(domain);
+    if (simpleCategory) {
+      return {
+        category: simpleCategory,
+        confidence: 'medium',
+        source: 'simple_domain_matching'
+      };
+    }
+
+    // Finally, try AI categorization if enabled
     if (useAI) {
       try {
         const aiCategory = await this.categorizeWithAI(url, domain);
@@ -142,25 +171,54 @@ export class CitationCategorizationService {
         };
       } catch (error) {
         console.error(`❌ AI categorization failed for ${domain}:`, error instanceof Error ? error.message : error);
-        throw new Error(`Failed to categorize citation: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        // Fall back to default category instead of throwing
+        console.warn(`⚠️ Using default 'Corporate' category for ${domain} due to AI failure`);
+        return {
+          category: 'Corporate', // Default fallback
+          confidence: 'low',
+          source: 'fallback_default'
+        };
       }
     }
 
-    // If AI is disabled, throw error (we don't support non-AI categorization anymore)
-    throw new Error('AI categorization is required. Set useAI=true or configure CEREBRAS_API_KEY or GOOGLE_GEMINI_API_KEY');
+    // If AI is disabled and no pattern matched, use default
+    return {
+      category: 'Corporate',
+      confidence: 'low',
+      source: 'fallback_default'
+    };
+  }
+
+  /**
+   * Simple domain-based heuristics for categorization (no AI needed)
+   */
+  private categorizeByDomainHeuristics(domain: string): CitationCategory | null {
+    const lowerDomain = domain.toLowerCase();
+    
+    // Check for common patterns
+    if (lowerDomain.endsWith('.edu')) return 'Institutional';
+    if (lowerDomain.endsWith('.gov') || lowerDomain.endsWith('.gov.uk') || lowerDomain.endsWith('.gov.au')) return 'Institutional';
+    if (lowerDomain.includes('university') || lowerDomain.includes('edu')) return 'Institutional';
+    if (lowerDomain.includes('news') || lowerDomain.includes('blog') || lowerDomain.includes('media')) return 'Editorial';
+    if (lowerDomain.includes('wiki')) return 'Reference';
+    if (lowerDomain.includes('review') || lowerDomain.includes('rating')) return 'UGC';
+    
+    return null; // No match found
   }
 
   /**
    * Retry wrapper with exponential backoff for rate limiting
+   * Early exit on persistent empty responses to avoid wasting time
    */
   private async withRetryBackoff<T>(
     fn: () => Promise<T>,
-    maxRetries: number = 5,
+    maxRetries: number = 2,
     baseDelayMs: number = 1000,
-    maxDelayMs: number = 30000
+    maxDelayMs: number = 10000
   ): Promise<T> {
     let attempt = 0;
     let lastError: Error | null = null;
+    let emptyResponseCount = 0;
 
     while (attempt < maxRetries) {
       try {
@@ -171,11 +229,23 @@ export class CitationCategorizationService {
         const isRateLimit = errorMsg.includes('429') || 
                            errorMsg.includes('too many requests') ||
                            errorMsg.includes('rate limit');
-        const isEmptyResponse = errorMsg.includes('empty response');
+        const isEmptyResponse = errorMsg.includes('empty response') || 
+                               errorMsg.includes('whitespace');
         const isServerError = errorMsg.includes('500') || 
                              errorMsg.includes('502') || 
                              errorMsg.includes('503') ||
                              errorMsg.includes('504');
+
+        // Track empty responses - if we get 2 in a row, likely the API is broken
+        if (isEmptyResponse) {
+          emptyResponseCount++;
+          if (emptyResponseCount >= 2) {
+            console.warn(`⚠️ Multiple empty responses detected, skipping remaining retries`);
+            throw lastError; // Early exit - API is clearly not working
+          }
+        } else {
+          emptyResponseCount = 0; // Reset counter on non-empty errors
+        }
 
         // Only retry on rate limits, empty responses, or server errors
         if (!isRateLimit && !isEmptyResponse && !isServerError) {
@@ -187,7 +257,7 @@ export class CitationCategorizationService {
           throw lastError;
         }
 
-        // Calculate exponential backoff with jitter
+        // Calculate exponential backoff with jitter (reduced delays)
         const delay = Math.min(
           baseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4),
           maxDelayMs
@@ -217,18 +287,18 @@ export class CitationCategorizationService {
       try {
         return await this.withRetryBackoff(
           () => this.categorizeWithCerebras(url, domain, cerebrasApiKey, cerebrasModel),
-          5, // max retries
+          2, // max retries (reduced from 5)
           1000, // base delay 1s
-          30000 // max delay 30s
+          10000 // max delay 10s (reduced from 30s)
         );
       } catch (error) {
         console.warn(`⚠️ Cerebras categorization failed, trying Gemini:`, error instanceof Error ? error.message : error);
         if (geminiApiKey) {
           return await this.withRetryBackoff(
             () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
-            5, // max retries
+            2, // max retries (reduced from 5)
             2000, // base delay 2s (Gemini has stricter rate limits)
-            60000 // max delay 60s
+            20000 // max delay 20s (reduced from 60s)
           );
         }
         throw error;
@@ -236,9 +306,9 @@ export class CitationCategorizationService {
     } else if (geminiApiKey) {
       return await this.withRetryBackoff(
         () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
-        5,
+        2, // max retries (reduced from 5)
         2000,
-        60000
+        20000 // max delay 20s (reduced from 60s)
       );
     } else {
       throw new Error('No AI API key configured (CEREBRAS_API_KEY or GOOGLE_GEMINI_API_KEY)');
@@ -254,21 +324,18 @@ export class CitationCategorizationService {
     apiKey: string,
     model: string
   ): Promise<CitationCategory> {
-    const prompt = `You are a citation categorization expert. Categorize the following website URL into one of these categories:
+    // Simplified prompt - direct instruction format that works better with Qwen models
+    const prompt = `Categorize the website "${domain}" into one of these categories: Editorial, Corporate, Reference, UGC, Social, or Institutional.
 
-Categories:
-1. **Editorial** - News websites, blogs, magazines, journalism sites (e.g., TechCrunch, Forbes, BBC, CNN, Medium)
-2. **Corporate** - Company websites, business/product pages (e.g., company.com, product pages, official brand sites)
-3. **Reference** - Knowledge bases, documentation, wikis (e.g., Wikipedia, Stack Overflow, GitHub, Quora)
-4. **UGC** - User-generated content, review sites (e.g., Amazon reviews, Yelp, TripAdvisor)
-5. **Social** - Social media platforms (e.g., Reddit, Twitter, Facebook, LinkedIn, Instagram, YouTube)
-6. **Institutional** - Educational (.edu), government (.gov), research institutions, archives
+Examples:
+- uber.com → Corporate
+- reddit.com → Social
+- wikipedia.org → Reference
+- techcrunch.com → Editorial
+- yelp.com → UGC
+- harvard.edu → Institutional
 
-URL to categorize: ${url}
-Domain: ${domain}
-
-Respond with ONLY the category name (one word: Editorial, Corporate, Reference, UGC, Social, or Institutional).
-Do not include any explanation or additional text.`;
+Respond with only the category name:`;
 
     const response = await fetch('https://api.cerebras.ai/v1/completions', {
       method: 'POST',
@@ -279,9 +346,9 @@ Do not include any explanation or additional text.`;
       body: JSON.stringify({
         model: model,
         prompt: prompt,
-        max_tokens: 50,
-        temperature: 0.3, // Low temperature for consistent categorization
-        stop: ['\n', '---']
+        max_tokens: 15, // Small - we only need one word
+        temperature: 0.0, // Zero temperature for most deterministic output
+        stop: ['\n', '.'] // Minimal stop tokens - just newline and period
       }),
       // Add timeout to prevent hanging
       signal: AbortSignal.timeout(30000) // 30 second timeout
@@ -296,10 +363,41 @@ Do not include any explanation or additional text.`;
     }
 
     const data = await response.json() as any;
-    const aiResponse = data.choices?.[0]?.text?.trim().toLowerCase();
+    
+    // Try multiple response formats
+    let aiResponse: string | undefined;
+    
+    // Format 1: choices[0].text
+    if (data.choices?.[0]?.text) {
+      aiResponse = data.choices[0].text.trim();
+    }
+    // Format 2: choices[0].message.content
+    else if (data.choices?.[0]?.message?.content) {
+      aiResponse = data.choices[0].message.content.trim();
+    }
+    // Format 3: text field directly
+    else if (data.text) {
+      aiResponse = data.text.trim();
+    }
+    // Format 4: Check for error in response
+    else if (data.error) {
+      throw new Error(`Cerebras API error: ${data.error.message || 'Unknown error'}`);
+    }
 
+    // Check if response is just whitespace or empty
+    if (!aiResponse || aiResponse.length === 0 || /^\s+$/.test(aiResponse)) {
+      // Log the full response for debugging
+      console.error('Cerebras API returned empty/whitespace response. Full response:', JSON.stringify(data, null, 2));
+      console.error('Prompt used:', prompt.substring(0, 200) + '...');
+      throw new Error('Empty response from Cerebras API - only whitespace or no text found');
+    }
+
+    // Clean up response - remove any leading/trailing whitespace and convert to lowercase
+    aiResponse = aiResponse.trim().toLowerCase();
+    
+    // If response is still empty after trimming, throw error
     if (!aiResponse || aiResponse.length === 0) {
-      throw new Error('Empty response from Cerebras API');
+      throw new Error('Empty response from Cerebras API - text was only whitespace');
     }
 
     // Map AI response to category
@@ -354,8 +452,8 @@ Respond with ONLY the category name.`;
           }]
         }],
         generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 20
+          temperature: 0.0, // Zero temperature for most deterministic output
+          maxOutputTokens: 150 // Significantly increased to account for "thoughts" tokens (Gemini uses ~49 tokens for reasoning)
         }
       }),
       // Add timeout to prevent hanging
@@ -380,10 +478,32 @@ Respond with ONLY the category name.`;
       throw new Error(`Gemini API error: ${data.error.message || 'Unknown error'}`);
     }
 
-    const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase();
+    // Try multiple response formats
+    let aiResponse: string | undefined;
+    
+    // Format 1: candidates[0].content.parts[0].text (standard)
+    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      aiResponse = data.candidates[0].content.parts[0].text.trim().toLowerCase();
+    }
+    // Format 2: candidates[0].text (alternative)
+    else if (data.candidates?.[0]?.text) {
+      aiResponse = data.candidates[0].text.trim().toLowerCase();
+    }
+    // Format 3: text field directly
+    else if (data.text) {
+      aiResponse = data.text.trim().toLowerCase();
+    }
+    // Format 4: Check if candidates array is empty or blocked
+    else if (data.candidates && data.candidates.length === 0) {
+      throw new Error('Gemini API returned empty candidates array - content may be blocked');
+    }
+    else if (data.candidates?.[0]?.finishReason === 'SAFETY') {
+      throw new Error('Gemini API blocked content due to safety filters');
+    }
 
     if (!aiResponse || aiResponse.length === 0) {
-      throw new Error('Empty response from Gemini API');
+      console.error('Gemini API response structure:', JSON.stringify(data, null, 2));
+      throw new Error('Empty response from Gemini API - no text found in response');
     }
 
     // Map AI response to category
@@ -416,7 +536,7 @@ Respond with ONLY the category name.`;
     pageName: string | null;
     category: CitationCategory;
     confidence?: 'high' | 'medium' | 'low';
-    source?: 'hardcoded' | 'ai';
+    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default';
   }> {
     const domain = this.extractDomain(url);
     const pageName = this.extractPageName(url, domain);

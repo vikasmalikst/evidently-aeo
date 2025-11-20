@@ -126,7 +126,8 @@ export interface QueryVisibilityRow {
 export interface TopBrandSource {
   id: string
   title: string
-  url: string
+  url: string // Primary URL (first one or most used)
+  urls: string[] // All cited URLs for this domain
   domain: string
   impactScore: number | null
   change: number | null
@@ -180,6 +181,7 @@ export interface BrandDashboardPayload {
   }>
   scores: ScoreMetric[]
   sourceDistribution: DistributionSlice[]
+  topSourcesDistribution: DistributionSlice[] // Top 10 sources by domain
   categoryDistribution: DistributionSlice[]
   llmVisibility: LlmVisibilitySlice[]
   actionItems: ActionItem[]

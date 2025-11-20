@@ -9,7 +9,12 @@ interface SourceCoverageHeatmapProps {
     url: string;
   }>;
   topics: string[];
-  data: Record<string, number[]>;
+  data: Record<string, {
+    mentionRate: number[];
+    soa: number[];
+    sentiment: number[];
+    citations: number[];
+  }>;
 }
 
 type MetricType = 'mentionRate' | 'soa' | 'sentiment' | 'citations';
@@ -28,6 +33,13 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
     shareOfAnswer: number;
   } | null>(null);
 
+  // Get current metric values for a source
+  const getMetricValues = (sourceName: string): number[] => {
+    const sourceData = data[sourceName];
+    if (!sourceData) return [];
+    return sourceData[metric] || [];
+  };
+
   const filteredSources = useMemo(() => {
     let filtered = sourceTypeFilter === 'all'
       ? sources
@@ -39,14 +51,16 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
       filtered = [...filtered].sort((a, b) => a.type.localeCompare(b.type));
     } else if (sortSources === 'total') {
       filtered = [...filtered].sort((a, b) => {
-        const aTotal = data[a.name].reduce((sum, val) => sum + val, 0);
-        const bTotal = data[b.name].reduce((sum, val) => sum + val, 0);
+        const aValues = getMetricValues(a.name);
+        const bValues = getMetricValues(b.name);
+        const aTotal = aValues.reduce((sum, val) => sum + val, 0);
+        const bTotal = bValues.reduce((sum, val) => sum + val, 0);
         return bTotal - aTotal;
       });
     }
 
     return filtered;
-  }, [sources, sourceTypeFilter, sortSources, data]);
+  }, [sources, sourceTypeFilter, sortSources, data, metric]);
 
   const sortedTopics = useMemo(() => {
     if (sortTopics === 'name') {
@@ -55,31 +69,73 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
       return [...topics].sort((a, b) => {
         const aIdx = topics.indexOf(a);
         const bIdx = topics.indexOf(b);
-        const aTotal = filteredSources.reduce((sum, s) => sum + (data[s.name]?.[aIdx] || 0), 0);
-        const bTotal = filteredSources.reduce((sum, s) => sum + (data[s.name]?.[bIdx] || 0), 0);
+        const aTotal = filteredSources.reduce((sum, s) => {
+          const values = getMetricValues(s.name);
+          return sum + (values[aIdx] || 0);
+        }, 0);
+        const bTotal = filteredSources.reduce((sum, s) => {
+          const values = getMetricValues(s.name);
+          return sum + (values[bIdx] || 0);
+        }, 0);
         return bTotal - aTotal;
       });
     }
     return topics;
-  }, [topics, sortTopics, filteredSources, data]);
+  }, [topics, sortTopics, filteredSources, data, metric]);
+
+  // Get max value for current metric to normalize colors
+  const getMaxValue = (): number => {
+    switch (metric) {
+      case 'mentionRate':
+        return 45;
+      case 'soa':
+        return 100;
+      case 'sentiment':
+        return 1;
+      case 'citations':
+        return 50;
+      default:
+        return 45;
+    }
+  };
 
   const stats = useMemo(() => {
-    const allValues = filteredSources.flatMap(s => data[s.name] || []);
+    if (filteredSources.length === 0 || topics.length === 0) {
+      return {
+        highestSource: null,
+        topTopic: { topic: 'N/A', avg: 0 },
+        gaps: 0,
+        highValue: 0
+      };
+    }
+    
+    const allValues = filteredSources.flatMap(s => getMetricValues(s.name));
     const highestSource = filteredSources.reduce((max, s) => {
-      const avg = (data[s.name] || []).reduce((sum, v) => sum + v, 0) / topics.length;
-      const maxAvg = (data[max.name] || []).reduce((sum, v) => sum + v, 0) / topics.length;
+      const values = getMetricValues(s.name);
+      const maxValues = getMetricValues(max.name);
+      const avg = values.reduce((sum, v) => sum + v, 0) / topics.length;
+      const maxAvg = maxValues.reduce((sum, v) => sum + v, 0) / topics.length;
       return avg > maxAvg ? s : max;
     }, filteredSources[0]);
 
-    const topicAverages = sortedTopics.map((topic, idx) => {
+    const topicAverages = sortedTopics.map((topic) => {
       const topicIdx = topics.indexOf(topic);
-      const avg = filteredSources.reduce((sum, s) => sum + (data[s.name]?.[topicIdx] || 0), 0) / filteredSources.length;
+      const avg = filteredSources.reduce((sum, s) => {
+        const values = getMetricValues(s.name);
+        return sum + (values[topicIdx] || 0);
+      }, 0) / (filteredSources.length || 1);
       return { topic, avg };
     });
-    const topTopic = topicAverages.reduce((max, t) => t.avg > max.avg ? t : max, topicAverages[0]);
+    const topTopic = topicAverages.length > 0 
+      ? topicAverages.reduce((max, t) => t.avg > max.avg ? t : max, topicAverages[0])
+      : { topic: 'N/A', avg: 0 };
 
-    const gaps = allValues.filter(v => v < 5).length;
-    const highValue = allValues.filter(v => v > 35).length;
+    // Adjust thresholds based on metric
+    const thresholdLow = metric === 'sentiment' ? 0.1 : (metric === 'citations' ? 2 : (metric === 'soa' ? 10 : 5));
+    const thresholdHigh = metric === 'sentiment' ? 0.7 : (metric === 'citations' ? 20 : (metric === 'soa' ? 50 : 35));
+    
+    const gaps = allValues.filter(v => v < thresholdLow).length;
+    const highValue = allValues.filter(v => v > thresholdHigh).length;
 
     return {
       highestSource,
@@ -87,13 +143,14 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
       gaps,
       highValue
     };
-  }, [filteredSources, topics, sortedTopics, data]);
+  }, [filteredSources, topics, sortedTopics, data, metric, sources]);
 
   const getCellColor = (value: number) => {
     if (value === 0) {
       return { bg: '#fafafa', color: '#393e51', border: '1px dashed #c6c9d2' };
     }
-    const intensity = value / 45;
+    const maxValue = getMaxValue();
+    const intensity = Math.min(value / maxValue, 1);
     // Using blue color scheme from dataviz-1 (#498cf9)
     const hue = 215;
     const saturation = 85 + (intensity * 10);
@@ -103,6 +160,36 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
       color: intensity > 0.4 ? '#ffffff' : '#212534',
       border: 'none'
     };
+  };
+
+  const formatMetricValue = (value: number): string => {
+    switch (metric) {
+      case 'mentionRate':
+        return `${value.toFixed(1)}%`;
+      case 'soa':
+        return `${value.toFixed(1)}%`;
+      case 'sentiment':
+        return value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2);
+      case 'citations':
+        return value.toFixed(0);
+      default:
+        return value.toFixed(1);
+    }
+  };
+
+  const getMetricLabel = (): string => {
+    switch (metric) {
+      case 'mentionRate':
+        return 'mention rate';
+      case 'soa':
+        return 'share of answer';
+      case 'sentiment':
+        return 'sentiment';
+      case 'citations':
+        return 'citations';
+      default:
+        return 'value';
+    }
   };
 
   return (
@@ -120,7 +207,11 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
             <span className="text-xs text-[var(--text-success)]">↑ 8%</span>
           </div>
           <div className="text-xs text-[var(--text-caption)] mt-1">
-            45% avg mention rate across topics
+            {(() => {
+              const values = stats.highestSource ? getMetricValues(stats.highestSource.name) : [];
+              const avg = values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
+              return `${formatMetricValue(avg)} avg ${getMetricLabel()} across topics`;
+            })()}
           </div>
         </div>
 
@@ -135,7 +226,7 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
             <span className="text-xs text-[var(--text-success)]">↑ 5%</span>
           </div>
           <div className="text-xs text-[var(--text-caption)] mt-1">
-            {stats.topTopic?.avg.toFixed(0)}% avg mention rate across sources
+            {formatMetricValue(stats.topTopic?.avg || 0)} avg {getMetricLabel()} across sources
           </div>
         </div>
 
@@ -150,7 +241,7 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
             <span className="text-xs text-[var(--text-error)]">↓ 3</span>
           </div>
           <div className="text-xs text-[var(--text-caption)] mt-1">
-            Source-topic pairs with &lt;5% mention
+            Source-topic pairs with low {getMetricLabel()}
           </div>
         </div>
 
@@ -165,7 +256,7 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
             <span className="text-xs text-[var(--text-success)]">↑ 4</span>
           </div>
           <div className="text-xs text-[var(--text-caption)] mt-1">
-            Pairs with &gt;35% mention rate
+            Pairs with high {getMetricLabel()}
           </div>
         </div>
       </div>
@@ -183,13 +274,45 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
           </h2>
           <a
             href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              // Export heatmap data as CSV
+              const headers = ['Source', 'Type', ...sortedTopics];
+              const rows = filteredSources.map(source => {
+                const values = getMetricValues(source.name);
+                return [
+                  source.name,
+                  source.type,
+                  ...sortedTopics.map((topic, idx) => {
+                    const topicIdx = topics.indexOf(topic);
+                    return formatMetricValue(values[topicIdx] || 0);
+                  })
+                ];
+              });
+              
+              const csvContent = [
+                headers.join(','),
+                ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+              ].join('\n');
+              
+              const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+              const link = document.createElement('a');
+              const url = URL.createObjectURL(blob);
+              link.setAttribute('href', url);
+              link.setAttribute('download', `heatmap-${metric}-${new Date().toISOString().split('T')[0]}.csv`);
+              link.style.visibility = 'hidden';
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }}
             style={{
               fontSize: '13px',
               color: '#00bcdc',
               textDecoration: 'none',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px'
+              gap: '4px',
+              cursor: 'pointer'
             }}
           >
             Export matrix <IconDownload size={14} />
@@ -392,8 +515,13 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
                 {/* Data cells */}
                 {sortedTopics.map((topic) => {
                   const topicIdx = topics.indexOf(topic);
-                  const value = data[source.name]?.[topicIdx] || 0;
+                  const sourceData = data[source.name];
+                  const value = sourceData ? (sourceData[metric]?.[topicIdx] || 0) : 0;
                   const cellStyle = getCellColor(value);
+                  
+                  // Get all metric values for the modal
+                  const mentionRate = sourceData?.mentionRate?.[topicIdx] || 0;
+                  const soa = sourceData?.soa?.[topicIdx] || 0;
 
                   return (
                     <div
@@ -418,12 +546,11 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
                       }}
                       onClick={(e) => {
                         e.preventDefault();
-                        const shareOfAnswer = parseFloat((Math.random() * 2 + 0.5).toFixed(2));
                         setSelectedCell({
                           source: source.name,
                           topic,
-                          mentionRate: value,
-                          shareOfAnswer
+                          mentionRate,
+                          shareOfAnswer: soa
                         });
                         setModalOpen(true);
                       }}
@@ -437,13 +564,13 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
                         e.currentTarget.style.boxShadow = 'none';
                         e.currentTarget.style.zIndex = '1';
                       }}
-                      title={`${source.name} × ${topic}\nMention Rate: ${value}%\nClick to drill down`}
+                      title={`${source.name} × ${topic}\n${getMetricLabel()}: ${formatMetricValue(value)}\nClick to drill down`}
                     >
                       <span style={{ fontSize: '18px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700' }}>
-                        {value}%
+                        {formatMetricValue(value)}
                       </span>
                       <span style={{ fontSize: '10px', opacity: 0.7 }}>
-                        mention rate
+                        {getMetricLabel()}
                       </span>
                     </div>
                   );
@@ -462,10 +589,14 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
           marginTop: '20px',
           padding: '16px',
           background: '#f4f4f6',
-          borderRadius: '6px'
+          borderRadius: '6px',
+          flexWrap: 'wrap'
         }}>
           <span style={{ fontSize: '12px', color: '#393e51', fontWeight: '600', marginRight: '8px' }}>
-            Brand Mention Rate:
+            {metric === 'mentionRate' ? 'Brand Mention Rate:' : 
+             metric === 'soa' ? 'Share of Answer:' :
+             metric === 'sentiment' ? 'Sentiment Score:' :
+             'Total Citations:'}
           </span>
           <div style={{
             height: '24px',
@@ -482,10 +613,35 @@ export const SourceCoverageHeatmap = ({ sources, topics, data }: SourceCoverageH
             color: '#393e51',
             marginLeft: '8px'
           }}>
-            <span>0%</span>
-            <span>15%</span>
-            <span>30%</span>
-            <span>45%+</span>
+            {metric === 'mentionRate' ? (
+              <>
+                <span>0%</span>
+                <span>15%</span>
+                <span>30%</span>
+                <span>45%+</span>
+              </>
+            ) : metric === 'soa' ? (
+              <>
+                <span>0%</span>
+                <span>25%</span>
+                <span>50%</span>
+                <span>100%</span>
+              </>
+            ) : metric === 'sentiment' ? (
+              <>
+                <span>-1.0</span>
+                <span>0.0</span>
+                <span>0.5</span>
+                <span>1.0</span>
+              </>
+            ) : (
+              <>
+                <span>0</span>
+                <span>12</span>
+                <span>25</span>
+                <span>50+</span>
+              </>
+            )}
           </div>
         </div>
       </div>

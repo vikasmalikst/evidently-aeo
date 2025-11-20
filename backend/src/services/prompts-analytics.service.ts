@@ -626,12 +626,40 @@ export class PromptsAnalyticsService {
       }
     }
 
-    // Fetch sentiments and visibility scores from extracted_positions for these prompts
+    // Fetch sentiments from collector_results and visibility scores from extracted_positions
+    const sentimentByCollectorResult = new Map<number, number>()
+    if (allCollectorResultIds.length > 0) {
+      const { data: collectorResultsData, error: sentimentError } = await supabaseAdmin
+        .from('collector_results')
+        .select('id, sentiment_score')
+        .in('id', allCollectorResultIds)
+        .not('sentiment_score', 'is', null)
+        .gte('created_at', normalizedRange.startIsoBound)
+        .lte('created_at', normalizedRange.endIsoBound)
+
+      if (sentimentError) {
+        console.warn(`Failed to load sentiments from collector_results: ${sentimentError.message}`)
+      } else if (collectorResultsData) {
+        collectorResultsData.forEach((row: any) => {
+          const sentimentValue =
+            typeof row?.sentiment_score === 'number'
+              ? row.sentiment_score
+              : typeof row?.sentiment_score === 'string'
+                ? Number(row.sentiment_score)
+                : null
+          if (sentimentValue !== null && Number.isFinite(sentimentValue)) {
+            sentimentByCollectorResult.set(row.id, sentimentValue)
+          }
+        })
+      }
+    }
+
+    // Fetch visibility scores from extracted_positions (still stored there)
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
-      const { data: sentimentRows, error: sentimentError } = await supabaseAdmin
+      const { data: visibilityRows, error: visibilityError } = await supabaseAdmin
         .from('extracted_positions')
-        .select('query_id, collector_result_id, sentiment_score, visibility_index, competitor_name')
+        .select('query_id, collector_result_id, visibility_index, competitor_name')
         .eq('brand_id', brandRow.id)
         .eq('customer_id', customerId)
         .gte('processed_at', normalizedRange.startIsoBound)
@@ -645,33 +673,32 @@ export class PromptsAnalyticsService {
             .join(',')
         )
 
-      if (sentimentError) {
-        console.warn(`Failed to load sentiments for prompts: ${sentimentError.message}`)
+      if (visibilityError) {
+        console.warn(`Failed to load visibility scores: ${visibilityError.message}`)
       } else {
-        ;(sentimentRows ?? []).forEach((row: any) => {
-          const sentimentValue =
-            typeof row?.sentiment_score === 'number'
-              ? row.sentiment_score
-              : typeof row?.sentiment_score === 'string'
-                ? Number(row.sentiment_score)
-                : null
-          if (sentimentValue !== null && Number.isFinite(sentimentValue)) {
-            const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
-            // Prefer brand rows when present; but store all and filter later
-            const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
-            const keyByCollector =
-              typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
+        ;(visibilityRows ?? []).forEach((row: any) => {
+          // Process visibility_index (sentiment is now from collector_results, handled separately above)
+          const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
+          
+          // Add sentiment from collector_results if available
+          if (row?.collector_result_id) {
+            const sentimentValue = sentimentByCollectorResult.get(row.collector_result_id)
+            if (sentimentValue !== null && sentimentValue !== undefined && Number.isFinite(sentimentValue)) {
+              const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+              const keyByCollector =
+                typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
 
-            const pushSentiment = (key: string) => {
-              const arr = sentimentMap.get(key) ?? []
-              arr.push(sentimentValue)
-              sentimentMap.set(key, arr)
-            }
-            if (keyByQuery) {
-              pushSentiment(keyByQuery + (isBrandRow ? ':brand' : ':all'))
-            }
-            if (keyByCollector) {
-              pushSentiment(keyByCollector + (isBrandRow ? ':brand' : ':all'))
+              const pushSentiment = (key: string) => {
+                const arr = sentimentMap.get(key) ?? []
+                arr.push(sentimentValue)
+                sentimentMap.set(key, arr)
+              }
+              if (keyByQuery) {
+                pushSentiment(keyByQuery + (isBrandRow ? ':brand' : ':all'))
+              }
+              if (keyByCollector) {
+                pushSentiment(keyByCollector + (isBrandRow ? ':brand' : ':all'))
+              }
             }
           }
 
@@ -682,29 +709,25 @@ export class PromptsAnalyticsService {
               : typeof row?.visibility_index === 'string'
                 ? Number(row.visibility_index)
                 : null
-          if (visibilityValue !== null && Number.isFinite(visibilityValue)) {
-            const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
-            if (isBrandRow) {
-              const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
-              const keyByCollector =
-                typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
+          if (visibilityValue !== null && Number.isFinite(visibilityValue) && isBrandRow) {
+            const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+            const keyByCollector =
+              typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
 
-              const pushVisibility = (key: string) => {
-                const arr = visibilityMap.get(key) ?? []
-                arr.push(visibilityValue)
-                visibilityMap.set(key, arr)
-              }
-              if (keyByQuery) {
-                pushVisibility(keyByQuery)
-              }
-              if (keyByCollector) {
-                pushVisibility(keyByCollector)
-              }
+            const pushVisibility = (key: string) => {
+              const arr = visibilityMap.get(key) ?? []
+              arr.push(visibilityValue)
+              visibilityMap.set(key, arr)
+            }
+            if (keyByQuery) {
+              pushVisibility(keyByQuery)
+            }
+            if (keyByCollector) {
+              pushVisibility(keyByCollector)
             }
           }
 
           // Extract competitor names from extracted_positions
-          const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
           if (!isBrandRow) {
             const competitorName = String(row.competitor_name).trim()
             if (competitorName.length > 0) {

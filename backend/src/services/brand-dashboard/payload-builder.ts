@@ -739,6 +739,7 @@ export async function buildDashboardPayload(
     {
       title: string | null
       url: string | null
+      urls: Set<string> // Track all unique URLs for this domain
       domain: string | null
       usage: number
       collectorIds: Set<number>
@@ -767,12 +768,35 @@ export async function buildDashboardPayload(
         }
       }
 
-      const sourceKey =
-        typeof citation.url === 'string' && citation.url.trim().length > 0
-          ? normalizeUrl(citation.url.trim().toLowerCase())
-          : citation.domain && citation.domain.trim().length > 0
-            ? `domain:${citation.domain.trim().toLowerCase()}`
-            : `source:${sourceAggregates.size + 1}`
+      // Extract and normalize domain from URL or use provided domain
+      const extractDomain = (url: string | null, domain: string | null): string | null => {
+        if (domain && domain.trim().length > 0) {
+          // Normalize domain: remove www. prefix and convert to lowercase
+          return domain.trim().toLowerCase().replace(/^www\./, '')
+        }
+        if (url && url.trim().length > 0) {
+          try {
+            const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`)
+            // Remove www. prefix and convert to lowercase
+            return urlObj.hostname.toLowerCase().replace(/^www\./, '')
+          } catch {
+            // If URL parsing fails, try to extract domain manually
+            const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/i)
+            return match ? match[1].toLowerCase().replace(/^www\./, '') : null
+          }
+        }
+        return null
+      }
+
+      // Use domain as the key to group all URLs from the same domain together
+      const normalizedDomain = extractDomain(
+        typeof citation.url === 'string' ? citation.url : null,
+        typeof citation.domain === 'string' ? citation.domain : null
+      )
+
+      const sourceKey = normalizedDomain
+        ? `domain:${normalizedDomain}`
+        : `source:${sourceAggregates.size + 1}`
 
       const normalizedUrl = typeof citation.url === 'string' && citation.url.trim().length > 0
         ? normalizeUrl(citation.url.trim())
@@ -785,6 +809,7 @@ export async function buildDashboardPayload(
               ? citation.page_name.trim()
               : null,
           url: normalizedUrl,
+          urls: new Set<string>(), // Track all unique URLs
           domain: citation.domain ?? null,
           usage: 0,
           collectorIds: new Set<number>()
@@ -798,11 +823,20 @@ export async function buildDashboardPayload(
       ) {
         existingSource.title = citation.page_name.trim()
       }
-      if (!existingSource.url && normalizedUrl) {
-        existingSource.url = normalizedUrl
+      // Track all unique URLs for this domain
+      if (normalizedUrl) {
+        existingSource.urls.add(normalizedUrl)
+        // Keep the first URL found as primary (or prefer shorter URLs)
+        if (!existingSource.url) {
+          existingSource.url = normalizedUrl
+        } else if (normalizedUrl.length < existingSource.url.length) {
+          // Prefer shorter URLs (usually the homepage) as primary
+          existingSource.url = normalizedUrl
+        }
       }
-      if (!existingSource.domain && typeof citation.domain === 'string') {
-        existingSource.domain = citation.domain
+      // Set normalized domain if not already set
+      if (normalizedDomain && (!existingSource.domain || existingSource.domain !== normalizedDomain)) {
+        existingSource.domain = normalizedDomain
       }
 
       if (
@@ -916,6 +950,7 @@ export async function buildDashboardPayload(
     }))
 
   const sourceAggregateEntries = Array.from(sourceAggregates.entries()).map(([key, aggregate]) => {
+    // Normalize domain: remove www. prefix and convert to lowercase
     let domain = aggregate.domain
     if ((!domain || domain.trim().length === 0) && aggregate.url) {
       try {
@@ -926,6 +961,10 @@ export async function buildDashboardPayload(
       } catch {
         domain = aggregate.url.replace(/^https?:\/\//, '')
       }
+    }
+    // Normalize domain to ensure consistency (remove www., lowercase)
+    if (domain && domain.trim().length > 0) {
+      domain = domain.trim().toLowerCase().replace(/^www\./, '')
     }
 
     const fallbackLabel =
@@ -962,14 +1001,20 @@ export async function buildDashboardPayload(
     const avgShare = shareValues.length > 0 ? average(shareValues) : 0
     const avgVisibilityRaw = visibilityValues.length > 0 ? average(visibilityValues) : 0
 
+    // Convert URLs Set to sorted array (prefer shorter URLs first)
+    const allUrls = Array.from(aggregate.urls || new Set<string>())
+      .filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
+      .sort((a, b) => a.length - b.length) // Sort by length (shorter first)
+
     return {
       key,
       title,
       url: aggregate.url ?? (domain ? `https://${domain}` : ''),
+      urls: allUrls.length > 0 ? allUrls : (aggregate.url ? [aggregate.url] : []), // All unique URLs
       domain: domain ?? 'unknown',
       usage: aggregate.usage,
-      share: toPercentage(avgShare),
-      visibility: toPercentage(avgVisibilityRaw)
+      share: avgShare, // Already in 0-100 format (from position-extraction.service.ts)
+      visibility: avgVisibilityRaw * 100 // Convert 0-1 scale to 0-100 percentage
     }
   })
 
@@ -978,19 +1023,69 @@ export async function buildDashboardPayload(
     0
   )
 
-  const topBrandSources = sourceAggregateEntries
+  // Group by normalized domain to ensure no duplicates
+  const domainMap = new Map<string, typeof sourceAggregateEntries[0] & { urls?: string[] | Set<string> }>()
+  
+  sourceAggregateEntries.forEach((source) => {
+    const normalizedDomain = source.domain?.toLowerCase().replace(/^www\./, '') || 'unknown'
+    const existing = domainMap.get(normalizedDomain)
+    
+    if (!existing) {
+      // Keep URLs as array for now
+      domainMap.set(normalizedDomain, { ...source })
+    } else {
+      // Merge entries with same domain: combine usage, share, visibility
+      existing.usage += source.usage
+      // Average share and visibility (weighted by usage)
+      const totalUsage = existing.usage + source.usage
+      if (totalUsage > 0) {
+        existing.share = (existing.share * existing.usage + source.share * source.usage) / totalUsage
+        existing.visibility = (existing.visibility * existing.usage + source.visibility * source.usage) / totalUsage
+      }
+      // Keep the shorter URL (usually homepage)
+      if (source.url && (!existing.url || source.url.length < existing.url.length)) {
+        existing.url = source.url
+      }
+      // Keep the better title if available
+      if (source.title && (!existing.title || source.title.length < existing.title.length)) {
+        existing.title = source.title
+      }
+    }
+  })
+
+  const topBrandSources = Array.from(domainMap.values())
     .map((source) => {
-      const usageNorm = maxSourceUsage > 0 ? source.usage / maxSourceUsage : 0
-      const shareNorm = source.share / 100
-      const visibilityNorm = source.visibility / 100
-      const hasImpact = usageNorm > 0 || shareNorm > 0 || visibilityNorm > 0
+      // Calculate impact score using real values (no normalization)
+      // Weighted combination: 35% SOA, 35% Visibility, 30% Usage (normalized to 0-10 scale for display)
+      const usageNorm = maxSourceUsage > 0 ? (source.usage / maxSourceUsage) * 10 : 0
+      const shareNorm = (source.share / 100) * 10 // SOA is 0-100, scale to 0-10
+      const visibilityNorm = (source.visibility / 100) * 10 // Visibility is 0-100, scale to 0-10
+      const hasImpact = source.usage > 0 || source.share > 0 || source.visibility > 0
       const impactScore = hasImpact
-        ? round((0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm) * 10, 1)
+        ? round((0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm), 1)
         : null
+      
+      // Get all unique URLs for this domain (only cited URLs, no homepage)
+      let allUrls: string[] = []
+      if (source.urls) {
+        if (source.urls instanceof Set) {
+          allUrls = Array.from(source.urls).filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
+        } else if (Array.isArray(source.urls)) {
+          allUrls = source.urls.filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
+        }
+        allUrls.sort((a, b) => a.length - b.length)
+      } else if (source.url && typeof source.url === 'string') {
+        allUrls = [source.url]
+      }
+      
+      // Primary URL is the first one (shortest, usually most relevant)
+      const primaryUrl = allUrls.length > 0 ? allUrls[0] : (source.url || null)
+      
       return {
         id: source.key,
         title: source.title,
-        url: source.url,
+        url: primaryUrl || '', // Primary URL (first cited URL)
+        urls: allUrls, // All cited URLs for this domain
         domain: source.domain,
         impactScore,
         change: hasImpact ? 0 : null,
@@ -999,9 +1094,27 @@ export async function buildDashboardPayload(
         usage: source.usage
       }
     })
-    .filter((source) => Number.isFinite(source.impactScore))
-    .sort((a, b) => b.impactScore - a.impactScore || b.usage - a.usage)
+    .filter((source) => source.impactScore !== null && Number.isFinite(source.impactScore))
+    .sort((a, b) => (b.impactScore || 0) - (a.impactScore || 0) || b.usage - a.usage)
     .slice(0, 5)
+
+  // Calculate top 10 sources distribution by domain (for donut chart)
+  const domainUsageMap = new Map<string, number>()
+  sourceAggregateEntries.forEach((source) => {
+    const domain = source.domain || 'unknown'
+    const currentUsage = domainUsageMap.get(domain) || 0
+    domainUsageMap.set(domain, currentUsage + source.usage)
+  })
+
+  const totalDomainUsage = Array.from(domainUsageMap.values()).reduce((sum, usage) => sum + usage, 0)
+  const topSourcesDistribution: DistributionSlice[] = Array.from(domainUsageMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([domain, usage], index) => ({
+      label: domain,
+      percentage: totalDomainUsage > 0 ? round((usage / totalDomainUsage) * 100, 1) : 0,
+      color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
+    }))
 
   const ensureTopicAggregate = (topicName: string) => {
     if (!topicAggregates.has(topicName)) {
@@ -1268,6 +1381,7 @@ export async function buildDashboardPayload(
     visibilityComparison,
     scores,
     sourceDistribution,
+    topSourcesDistribution,
     categoryDistribution,
     llmVisibility,
     actionItems: actionItems.slice(0, 4),

@@ -151,6 +151,58 @@ export class CitationCategorizationService {
   }
 
   /**
+   * Retry wrapper with exponential backoff for rate limiting
+   */
+  private async withRetryBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 5,
+    baseDelayMs: number = 1000,
+    maxDelayMs: number = 30000
+  ): Promise<T> {
+    let attempt = 0;
+    let lastError: Error | null = null;
+
+    while (attempt < maxRetries) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const errorMsg = lastError.message.toLowerCase();
+        const isRateLimit = errorMsg.includes('429') || 
+                           errorMsg.includes('too many requests') ||
+                           errorMsg.includes('rate limit');
+        const isEmptyResponse = errorMsg.includes('empty response');
+        const isServerError = errorMsg.includes('500') || 
+                             errorMsg.includes('502') || 
+                             errorMsg.includes('503') ||
+                             errorMsg.includes('504');
+
+        // Only retry on rate limits, empty responses, or server errors
+        if (!isRateLimit && !isEmptyResponse && !isServerError) {
+          throw lastError;
+        }
+
+        // Don't retry if we've exhausted attempts
+        if (attempt >= maxRetries - 1) {
+          throw lastError;
+        }
+
+        // Calculate exponential backoff with jitter
+        const delay = Math.min(
+          baseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4),
+          maxDelayMs
+        );
+
+        console.log(`⏳ Retry ${attempt + 1}/${maxRetries} after ${Math.round(delay)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        attempt++;
+      }
+    }
+
+    throw lastError || new Error('Max retries exceeded');
+  }
+
+  /**
    * Categorize an unknown domain using AI (Cerebras or Gemini)
    */
   private async categorizeWithAI(url: string, domain: string): Promise<CitationCategory> {
@@ -163,16 +215,31 @@ export class CitationCategorizationService {
     // Try Cerebras first (with hardcoded key), then Gemini
     if (cerebrasApiKey) {
       try {
-        return await this.categorizeWithCerebras(url, domain, cerebrasApiKey, cerebrasModel);
+        return await this.withRetryBackoff(
+          () => this.categorizeWithCerebras(url, domain, cerebrasApiKey, cerebrasModel),
+          5, // max retries
+          1000, // base delay 1s
+          30000 // max delay 30s
+        );
       } catch (error) {
         console.warn(`⚠️ Cerebras categorization failed, trying Gemini:`, error instanceof Error ? error.message : error);
         if (geminiApiKey) {
-          return await this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel);
+          return await this.withRetryBackoff(
+            () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
+            5, // max retries
+            2000, // base delay 2s (Gemini has stricter rate limits)
+            60000 // max delay 60s
+          );
         }
         throw error;
       }
     } else if (geminiApiKey) {
-      return await this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel);
+      return await this.withRetryBackoff(
+        () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
+        5,
+        2000,
+        60000
+      );
     } else {
       throw new Error('No AI API key configured (CEREBRAS_API_KEY or GOOGLE_GEMINI_API_KEY)');
     }
@@ -215,17 +282,23 @@ Do not include any explanation or additional text.`;
         max_tokens: 50,
         temperature: 0.3, // Low temperature for consistent categorization
         stop: ['\n', '---']
-      })
+      }),
+      // Add timeout to prevent hanging
+      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
 
     if (!response.ok) {
-      throw new Error(`Cerebras API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'Unknown error');
+      if (response.status === 429) {
+        throw new Error(`Cerebras API error: 429 Too Many Requests`);
+      }
+      throw new Error(`Cerebras API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json() as any;
     const aiResponse = data.choices?.[0]?.text?.trim().toLowerCase();
 
-    if (!aiResponse) {
+    if (!aiResponse || aiResponse.length === 0) {
       throw new Error('Empty response from Cerebras API');
     }
 
@@ -275,6 +348,7 @@ Respond with ONLY the category name.`;
       },
       body: JSON.stringify({
         contents: [{
+          role: 'user',
           parts: [{
             text: prompt
           }]
@@ -283,17 +357,32 @@ Respond with ONLY the category name.`;
           temperature: 0.3,
           maxOutputTokens: 20
         }
-      })
+      }),
+      // Add timeout to prevent hanging
+      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'Unknown error');
+      if (response.status === 429) {
+        throw new Error(`Gemini API error: 429 Too Many Requests`);
+      }
+      throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json() as any;
+    
+    // Check for API errors in response
+    if (data.error) {
+      if (data.error.code === 429) {
+        throw new Error(`Gemini API error: 429 Too Many Requests`);
+      }
+      throw new Error(`Gemini API error: ${data.error.message || 'Unknown error'}`);
+    }
+
     const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase();
 
-    if (!aiResponse) {
+    if (!aiResponse || aiResponse.length === 0) {
       throw new Error('Empty response from Gemini API');
     }
 

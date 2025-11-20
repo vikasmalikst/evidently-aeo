@@ -28,15 +28,15 @@ export class CitationExtractionService {
   private readonly perResultConcurrency =
     Number.isFinite(Number(process.env.CITATIONS_CONCURRENCY))
       ? Math.max(1, Number(process.env.CITATIONS_CONCURRENCY))
-      : 2;
+      : 1; // Reduced from 2 to 1 to avoid rate limits
   private readonly interResultDelayMs =
     Number.isFinite(Number(process.env.CITATIONS_INTER_RESULT_DELAY_MS))
       ? Math.max(0, Number(process.env.CITATIONS_INTER_RESULT_DELAY_MS))
-      : 300;
+      : 500; // Increased from 300 to 500ms for better rate limit handling
   private readonly perCallBaseDelayMs =
     Number.isFinite(Number(process.env.CITATIONS_BASE_DELAY_MS))
       ? Math.max(0, Number(process.env.CITATIONS_BASE_DELAY_MS))
-      : 200;
+      : 500; // Increased from 200 to 500ms to prevent rate limits
 
   constructor() {
     this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -339,6 +339,32 @@ export class CitationExtractionService {
 
           const uniqueRows = Array.from(uniqueCitationRows.values());
 
+          if (uniqueRows.length === 0) {
+            stats.skipped++;
+            continue;
+          }
+
+          // Validate brand_id exists before inserting (prevent foreign key violations)
+          if (result.brand_id) {
+            const { data: brandExists, error: brandCheckError } = await this.supabase
+              .from('brands')
+              .select('id')
+              .eq('id', result.brand_id)
+              .maybeSingle();
+
+            if (brandCheckError) {
+              console.warn(`⚠️ Error checking brand existence for result ${result.id}:`, brandCheckError.message);
+              stats.errors++;
+              continue;
+            }
+
+            if (!brandExists) {
+              console.warn(`⚠️ Brand ${result.brand_id} does not exist, skipping citations for result ${result.id}`);
+              stats.skipped++;
+              continue;
+            }
+          }
+
           // Insert citations (using upsert to avoid duplicates)
           const { error: insertError } = await this.supabase
             .from('citations')
@@ -348,8 +374,14 @@ export class CitationExtractionService {
             });
 
           if (insertError) {
-            console.error(`❌ Error inserting citations for result ${result.id}:`, insertError);
-            stats.errors++;
+            // Check if it's a foreign key constraint error
+            if (insertError.code === '23503') {
+              console.warn(`⚠️ Foreign key constraint violation for result ${result.id} (brand_id may not exist):`, insertError.message);
+              stats.skipped++;
+            } else {
+              console.error(`❌ Error inserting citations for result ${result.id}:`, insertError);
+              stats.errors++;
+            }
           } else {
             stats.inserted += uniqueRows.length;
             console.log(`✅ Inserted ${uniqueRows.length} citations for result ${result.id}`);
@@ -443,6 +475,27 @@ export class CitationExtractionService {
 
     const uniqueRows = Array.from(uniqueCitationRows.values());
 
+    if (uniqueRows.length === 0) {
+      return 0;
+    }
+
+    // Validate brand_id exists before inserting (prevent foreign key violations)
+    if (result.brand_id) {
+      const { data: brandExists, error: brandCheckError } = await this.supabase
+        .from('brands')
+        .select('id')
+        .eq('id', result.brand_id)
+        .maybeSingle();
+
+      if (brandCheckError) {
+        throw new Error(`Error checking brand existence: ${brandCheckError.message}`);
+      }
+
+      if (!brandExists) {
+        throw new Error(`Brand ${result.brand_id} does not exist, cannot insert citations`);
+      }
+    }
+
     // Insert citations
     const { error: insertError } = await this.supabase
       .from('citations')
@@ -452,6 +505,9 @@ export class CitationExtractionService {
       });
 
     if (insertError) {
+      if (insertError.code === '23503') {
+        throw new Error(`Foreign key constraint violation: brand_id ${result.brand_id} does not exist`);
+      }
       throw insertError;
     }
 

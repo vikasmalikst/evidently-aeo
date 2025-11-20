@@ -83,7 +83,7 @@ export interface ExtractPositionsOptions {
   limit?: number;
 }
 
-const DEFAULT_POSITION_LIMIT = 300;
+const DEFAULT_POSITION_LIMIT = 500;
 
 // ============================================================================
 // POSITION EXTRACTION SERVICE

@@ -7,7 +7,7 @@
 
 ## Step 1: Get Your Brand ID
 
-Run `get-brand-id.sql` in **Supabase SQL Editor**:
+Run `../get-brand-id.sql` in **Supabase SQL Editor**:
 
 ```sql
 SELECT 

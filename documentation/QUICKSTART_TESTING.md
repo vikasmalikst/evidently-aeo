@@ -93,7 +93,7 @@ curl -X GET \
 ## Step 6: Run Full Test Suite
 
 ```bash
-./test-prompt-apis.sh
+../test-prompt-apis.sh
 ```
 
 This will test:
@@ -303,8 +303,8 @@ Once backend is working:
 - **Backend Services:** `backend/src/services/prompt-management/*`
 - **API Routes:** `backend/src/routes/prompt-management.routes.ts`
 - **Full Testing Guide:** `TEST_BACKEND_APIS.md`
-- **Database Verification:** `test-backend-setup.sql`
-- **Automated Tests:** `test-prompt-apis.sh`
+- **Database Verification:** `../test-backend-setup.sql`
+- **Automated Tests:** `../test-prompt-apis.sh`
 - **Implementation Plan:** `MANAGE_PROMPTS_REVISED_APPROACH.md`
 - **Status Document:** `IMPLEMENTATION_SUMMARY.md`
 

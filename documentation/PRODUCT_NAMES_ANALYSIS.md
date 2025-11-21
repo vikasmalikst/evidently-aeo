@@ -160,3 +160,4 @@ For Uber brand, the `collector_results.metadata` shows:
   - Products in `extracted_positions.metadata.competitorProducts`
   - NOT stored separately in `collector_results.metadata`
 
+

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 1. **Ensure migrations ran successfully**
-   - Run `test-backend-setup.sql` in Supabase SQL Editor
+   - Run `../test-backend-setup.sql` in Supabase SQL Editor
    - Should see all 4 new tables created
    - Should see new columns in `collector_results` and `generated_queries`
 

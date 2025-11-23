@@ -52,7 +52,7 @@ async function testWithCerebras(brandName) {
     console.log('='.repeat(80));
     
     // Load the service
-    const { onboardingIntelService } = require('../src/services/onboarding-intel.service');
+    const { onboardingIntelService } = require('../src/services/onboarding');
     
     // Store original method
     const originalExtractJson = onboardingIntelService['extractJsonFromText'];

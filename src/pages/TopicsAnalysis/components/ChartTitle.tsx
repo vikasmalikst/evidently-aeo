@@ -3,10 +3,9 @@ import { CountryFlag } from '../../../components/CountryFlag';
 import { IconBrandOpenai } from '@tabler/icons-react';
 import claudeLogoSrc from '../../../assets/Claude-AI-icon.svg';
 import copilotLogoSrc from '../../../assets/Microsoft-Copilot-icon.svg';
-import deepseekLogoSrc from '../../../assets/Deepseek-Logo-Icon.svg';
 import geminiLogoSrc from '../../../assets/Google-Gemini-Icon.svg';
+import googleAioLogoSrc from '../../../assets/Google-AI-icon.svg';
 import grokLogoSrc from '../../../assets/Grok-icon.svg';
-import mistralLogoSrc from '../../../assets/Mistral_AI_icon.svg';
 import perplexityLogoSrc from '../../../assets/Perplexity-Simple-Icon.svg';
 
 interface ChartTitleProps {
@@ -77,10 +76,8 @@ export const ChartTitle = ({
         return <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
       case 'copilot':
         return <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      case 'deepseek':
-        return <img src={deepseekLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
-      case 'mistral':
-        return <img src={mistralLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
+      case 'google_aio':
+        return <img src={googleAioLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
       case 'grok':
         return <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
       default:

@@ -63,6 +63,8 @@ export const getLLMIcon = (name: string) => {
     return <GeminiIcon />;
   } else if (lowerName.includes('perplexity')) {
     return <PerplexityIcon />;
+  } else if (lowerName.includes('google aio') || lowerName.includes('googleaio') || lowerName.includes('google_aio')) {
+    return <GeminiIcon />; // Use Gemini icon for Google AIO as they're both Google products
   } else if (lowerName.includes('meta') || lowerName.includes('llama')) {
     return <MetaAIIcon />;
   } else if (lowerName.includes('grok') || lowerName.includes('x-ai')) {

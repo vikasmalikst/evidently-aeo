@@ -25,6 +25,9 @@ interface BrightDataResponse {
     brand?: string;
     locale?: string;
     country?: string;
+    // NEW: answer_section_html field added by BrightData for Grok Search scraper
+    answer_section_html?: string;
+    [key: string]: any; // Allow additional metadata fields for future BrightData schema changes
   };
 }
 
@@ -264,7 +267,8 @@ export class BrightDataCollectorService {
     try {
       console.log(`🚀 Executing Grok query via BrightData (dataset: ${datasetId})`);
       
-      // Correct payload structure based on BrightData docs
+      // Use same payload structure as Bing Copilot (synchronous /scrape endpoint)
+      // Array format: [{url, prompt, index, country}]
       const payload = [{
         url: 'https://grok.com/',
         prompt: request.prompt,
@@ -272,6 +276,7 @@ export class BrightDataCollectorService {
         country: request.country || ''
       }];
 
+      // Use /scrape endpoint (synchronous) - same as Bing Copilot which is working perfectly
       const response = await fetch(`https://api.brightdata.com/datasets/v3/scrape?dataset_id=${datasetId}`, {
         method: 'POST',
         headers: {
@@ -319,7 +324,20 @@ export class BrightDataCollectorService {
         const firstResult = responseData[0];
         
         // Try different field names for answer
-        answer = firstResult.answer || firstResult.answer_text || firstResult.response || firstResult.content || 'No response from Grok';
+        // NEW: BrightData added answer_section_html field - use it if available
+        const answerSectionHtml = firstResult.answer_section_html || '';
+        const answerText = firstResult.answer || firstResult.answer_text || firstResult.response || firstResult.content || '';
+        
+        // Prefer answer_text, but use answer_section_html if answer_text is empty
+        // If answer_section_html is HTML, we may want to extract text from it
+        if (answerText) {
+          answer = answerText;
+        } else if (answerSectionHtml) {
+          // If we only have HTML, strip tags (simple approach) or use as-is
+          answer = answerSectionHtml.replace(/<[^>]*>/g, '').trim() || answerSectionHtml;
+        } else {
+          answer = 'No response from Grok';
+        }
         
         // Try different field names for citations/urls
         citations = firstResult.citations || firstResult.sources || firstResult.urls || [];
@@ -358,7 +376,9 @@ export class BrightDataCollectorService {
           success: true,
           brand: request.brand,
           locale: request.locale,
-          country: request.country
+          country: request.country,
+          // NEW: Store answer_section_html if available for enhanced data
+          answer_section_html: responseData && responseData.length > 0 ? responseData[0].answer_section_html : undefined
         }
       };
 
@@ -418,13 +438,25 @@ export class BrightDataCollectorService {
           }
         }
         
-        // Check if data is ready - look for answer_text field directly
-        if (downloadResult && downloadResult.answer_text) {
-          console.log(`✅ Data is ready! Found answer_text field`);
+        // Check if data is ready - look for answer_text or answer_section_html field
+        // NEW: BrightData added answer_section_html field for Grok
+        const hasAnswerText = downloadResult && downloadResult.answer_text;
+        const hasAnswerSectionHtml = downloadResult && downloadResult.answer_section_html;
+        
+        if (downloadResult && (hasAnswerText || hasAnswerSectionHtml)) {
+          console.log(`✅ Data is ready! Found answer fields: answer_text=${!!hasAnswerText}, answer_section_html=${!!hasAnswerSectionHtml}`);
           console.log(`🔍 Full snapshot response structure:`, JSON.stringify(downloadResult, null, 2).substring(0, 1000));
           
-          // Extract answer directly from the response
-          const answer = downloadResult.answer_text || 'No response';
+          // Extract answer - prefer answer_text, fallback to answer_section_html
+          let answer = downloadResult.answer_text || 'No response';
+          
+          // If answer_text is empty but answer_section_html exists, extract text from HTML
+          if ((!answer || answer === 'No response') && downloadResult.answer_section_html) {
+            const htmlContent = downloadResult.answer_section_html;
+            // Simple HTML tag stripping (can be enhanced with a library if needed)
+            answer = htmlContent.replace(/<[^>]*>/g, '').trim() || htmlContent;
+            console.log(`📝 Extracted text from answer_section_html (length: ${answer.length})`);
+          }
           
           // Extract sources/urls from the response - check multiple possible field names and structures
           let sources: any[] = [];
@@ -468,13 +500,16 @@ export class BrightDataCollectorService {
               }).filter((url: string) => url && (url.startsWith('http://') || url.startsWith('https://')))
             : [];
           
-          // If no URLs found in structured fields, try extracting from answer text
-          if (urls.length === 0 && answer) {
-            console.log(`🔍 No URLs in structured fields, extracting from answer text...`);
-            const urlRegex = /https?:\/\/[^\s\)]+/g;
-            const extractedUrls = answer.match(urlRegex) || [];
-            urls = [...new Set(extractedUrls)]; // Remove duplicates
-            console.log(`📎 Extracted ${urls.length} URLs from answer text`);
+          // If no URLs found in structured fields, try extracting from answer text or answer_section_html
+          if (urls.length === 0) {
+            const textToSearch = answer || downloadResult.answer_section_html || '';
+            if (textToSearch) {
+              console.log(`🔍 No URLs in structured fields, extracting from ${answer ? 'answer text' : 'answer_section_html'}...`);
+              const urlRegex = /https?:\/\/[^\s\)<>"]+/g;
+              const extractedUrls = textToSearch.match(urlRegex) || [];
+              urls = [...new Set(extractedUrls)]; // Remove duplicates
+              console.log(`📎 Extracted ${urls.length} URLs from text content`);
+            }
           }
           
           console.log(`✅ Extracted answer length: ${answer.length}, Sources found: ${sources.length}, URLs extracted: ${urls.length}`);
@@ -502,7 +537,9 @@ export class BrightDataCollectorService {
               success: true,
               brand: request.brand,
               locale: request.locale,
-              country: request.country
+              country: request.country,
+              // NEW: Store answer_section_html if available (for Grok and future collectors)
+              answer_section_html: downloadResult.answer_section_html || undefined
             }
           };
         }

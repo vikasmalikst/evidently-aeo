@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Edit2, X, RotateCcw, ChevronRight, ChevronDown, Search } from 'lucide-react';
 import { IconBulb } from '@tabler/icons-react';
+import { apiClient } from '../../../lib/apiClient';
 import type { Topic } from '../../../types/topic';
 import type { TopicConfiguration } from '../types';
 
@@ -11,6 +12,7 @@ interface ActiveTopicsSectionProps {
   history: TopicConfiguration[];
   currentVersion: number;
   selectedVersion: number | null;
+  brandId: string;
   onEdit: () => void;
   onRemoveTopic: (topicId: string) => void;
   onVersionChange: (version: number | null) => void;
@@ -37,43 +39,21 @@ const formatDate = (dateString: string) => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-// Mock data - in production this would come from an API
-const topicPrompts: Record<string, string[]> = {
-  'topic-1': [
-    'best product reviews',
-    'product reviews 2024',
-    'top rated products',
-    'trusted product reviews',
-    'product comparison reviews',
-    'unbiased product reviews',
-    'where to buy products',
-    'product review sites'
-  ],
-  'topic-2': [
-    'product pricing comparison',
-    'best product deals',
-    'product cost',
-    'affordable products',
-    'product price range',
-    'discount products',
-    'product value for money',
-    'cheapest products'
-  ],
-  'topic-3': [
-    'sustainable products',
-    'eco friendly products',
-    'sustainable brands',
-    'green products',
-    'environmentally conscious products',
-    'carbon neutral products',
-    'recyclable products',
-    'eco-conscious brands'
-  ]
-};
-
-// Get prompts for a topic - fallback to mock data if not found
-const getTopicPrompts = (topicId: string, topicName: string): string[] => {
-  return topicPrompts[topicId] || Array(8).fill(null).map((_, i) => `${topicName.toLowerCase()} query ${i + 1}`);
+// Helper to get prompts for a topic from API data
+const getTopicPrompts = (topicId: string, topicName: string, promptsByTopic: Record<string, string[]> = {}): string[] => {
+  // Try to find prompts by topic ID first
+  if (promptsByTopic[topicId]) {
+    return promptsByTopic[topicId];
+  }
+  // Fallback: try to find by topic name (case-insensitive)
+  const topicKey = Object.keys(promptsByTopic).find(
+    key => key.toLowerCase().trim() === topicName.toLowerCase().trim()
+  );
+  if (topicKey) {
+    return promptsByTopic[topicKey];
+  }
+  // If no prompts found, return empty array (don't show mock data)
+  return [];
 };
 
 export const ActiveTopicsSection = ({
@@ -81,6 +61,7 @@ export const ActiveTopicsSection = ({
   history,
   currentVersion,
   selectedVersion,
+  brandId,
   onEdit,
   onRemoveTopic,
   onVersionChange,
@@ -89,6 +70,60 @@ export const ActiveTopicsSection = ({
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
   const [hoveredTopicId, setHoveredTopicId] = useState<string | null>(null);
   const [expandedTopicIds, setExpandedTopicIds] = useState<Set<string>>(new Set());
+  const [promptsByTopic, setPromptsByTopic] = useState<Record<string, string[]>>({});
+  const [loadingPrompts, setLoadingPrompts] = useState(false);
+
+  // Fetch prompts for topics
+  useEffect(() => {
+    if (!brandId || topics.length === 0) {
+      setPromptsByTopic({});
+      return;
+    }
+
+    const fetchPrompts = async () => {
+      try {
+        setLoadingPrompts(true);
+        // Fetch prompts for all topics
+        const endDate = new Date();
+        const startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 30);
+        
+        const response = await apiClient.request<{ 
+          success: boolean; 
+          data?: { 
+            topics?: Array<{ 
+              name: string; 
+              prompts?: Array<{ question: string }> 
+            }> 
+          } 
+        }>(
+          `/brands/${brandId}/prompts?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`
+        );
+
+        if (response.success && response.data?.topics) {
+          const promptsMap: Record<string, string[]> = {};
+          response.data.topics.forEach((topic) => {
+            if (topic.name && topic.prompts) {
+              // Map both by topic name and by normalized topic name for better matching
+              const normalizedName = topic.name.toLowerCase().trim();
+              promptsMap[normalizedName] = topic.prompts
+                .map(p => p.question)
+                .filter(Boolean);
+            }
+          });
+          setPromptsByTopic(promptsMap);
+        }
+      } catch (error) {
+        console.error('Failed to fetch prompts:', error);
+        // Don't show error to user, just use empty prompts
+        setPromptsByTopic({});
+      } finally {
+        setLoadingPrompts(false);
+      }
+    };
+
+    fetchPrompts();
+  }, [brandId, topics.length]); // Only depend on length to avoid re-fetching on every topic change
 
   const sortedTopics = [...topics].sort((a, b) => {
     switch (sortBy) {
@@ -103,7 +138,15 @@ export const ActiveTopicsSection = ({
     }
   });
 
-  const promptCounts: Record<string, number> = {}; // Would come from API
+  // Calculate prompt counts from fetched prompts
+  const promptCounts = useMemo<Record<string, number>>(() => {
+    const counts: Record<string, number> = {};
+    topics.forEach((topic) => {
+      const prompts = getTopicPrompts(topic.id, topic.name, promptsByTopic);
+      counts[topic.id] = prompts.length;
+    });
+    return counts;
+  }, [topics, promptsByTopic]);
   const isViewingOldVersion = selectedVersion !== null && selectedVersion !== currentVersion;
   const selectedConfig = selectedVersion !== null 
     ? history.find(c => c.version === selectedVersion) 
@@ -129,7 +172,7 @@ export const ActiveTopicsSection = ({
             Active Topics
           </h2>
           <p className="text-sm text-[var(--text-caption)]">
-            {topics.length} — {topics.length * 8} total search queries across all AI engines
+            {topics.length} topics — {Object.values(promptCounts).reduce((sum, count) => sum + count, 0)} total queries
             {isViewingOldVersion && selectedConfig && (
               <span className="ml-2 text-[var(--text-warning)]">
                 • Viewing v{selectedVersion} from {formatDate(selectedConfig.created_at)}
@@ -193,7 +236,7 @@ export const ActiveTopicsSection = ({
           const colors = getSourceBadgeColor(topic.source);
           const isHovered = hoveredTopicId === topic.id;
           const isExpanded = expandedTopicIds.has(topic.id);
-          const prompts = getTopicPrompts(topic.id, topic.name);
+          const prompts = getTopicPrompts(topic.id, topic.name, promptsByTopic);
           
           return (
             <div
@@ -239,7 +282,10 @@ export const ActiveTopicsSection = ({
                       </div>
                       <div className="flex items-center gap-4 text-sm text-[var(--text-caption)]">
                         <span>Relevance: <span className="font-medium text-[var(--text-headings)]">{topic.relevance}%</span></span>
-                        <span>Prompts: <span className="font-medium text-[var(--text-headings)]">{prompts.length}</span></span>
+                        <span>Prompts: <span className="font-medium text-[var(--text-headings)]">{prompts.length || 0}</span></span>
+                        {loadingPrompts && (
+                          <span className="text-xs text-[var(--text-caption)]">(Loading...)</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -260,19 +306,29 @@ export const ActiveTopicsSection = ({
               
               {isExpanded && (
                 <div className="border-t border-[var(--border-default)] bg-[var(--bg-secondary)] p-4">
-                  <div className="space-y-2">
-                    {prompts.map((prompt, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center gap-3 p-3 bg-white rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
-                      >
-                        <Search size={14} className="text-[var(--text-caption)] flex-shrink-0" />
-                        <p className="flex-1 text-sm text-[var(--text-body)]">
-                          {prompt}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                  {loadingPrompts ? (
+                    <div className="text-center py-4 text-sm text-[var(--text-caption)]">
+                      Loading prompts...
+                    </div>
+                  ) : prompts.length > 0 ? (
+                    <div className="space-y-2">
+                      {prompts.map((prompt, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-3 p-3 bg-white rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
+                        >
+                          <Search size={14} className="text-[var(--text-caption)] flex-shrink-0" />
+                          <p className="flex-1 text-sm text-[var(--text-body)]">
+                            {prompt}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-sm text-[var(--text-caption)]">
+                      No prompts available for this topic yet.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

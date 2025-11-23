@@ -62,6 +62,8 @@ export class OxylabsCollectorService {
       switch (oxylabsSource) {
         case 'chatgpt':
           // ChatGPT requires: source, prompt, parse, search, geo_location
+          // Note: Oxylabs ChatGPT uses the latest model by default
+          // Format matches official Oxylabs documentation
           oxylabsBody = {
             source: 'chatgpt',
             prompt: request.prompt,
@@ -137,9 +139,23 @@ export class OxylabsCollectorService {
             status: response.status,
             statusText: response.statusText,
             body: errorText,
-            request: oxylabsBody
+            request: oxylabsBody,
+            url: this.baseUrl,
+            source: request.source
           });
-          throw new Error(`Oxylabs API error: ${response.status} ${response.statusText} - ${errorText}`);
+          
+          // Try to parse error details for better error messages
+          let errorMessage = `Oxylabs API error: ${response.status} ${response.statusText}`;
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.message || errorJson.error) {
+              errorMessage += ` - ${errorJson.message || errorJson.error}`;
+            }
+          } catch {
+            errorMessage += ` - ${errorText}`;
+          }
+          
+          throw new Error(errorMessage);
         }
 
         const data = await response.json();

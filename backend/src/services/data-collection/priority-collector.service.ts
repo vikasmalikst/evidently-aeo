@@ -8,6 +8,7 @@ import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { oxylabsCollectorService } from './oxylabs-collector.service';
 import { dataForSeoCollectorService } from './dataforseo-collector.service';
 import { brightDataCollectorService } from './brightdata-collector.service';
+import { openRouterCollectorService } from './openrouter-collector.service';
 
 // Load environment variables
 loadEnvironment();
@@ -111,14 +112,14 @@ export class PriorityCollectorService {
           retries: 1,
           fallback_on_failure: true // Fallback to OpenAI direct when Oxylabs fails
         },
-        {
-          name: 'brightdata_chatgpt',
-          priority: 3,
-          enabled: false, // Disabled - skip BrightData for now
-          timeout: 30000,
-          retries: 1,
-          fallback_on_failure: false
-        },
+        // {
+        //   name: 'brightdata_chatgpt',
+        //   priority: 3,
+        //   enabled: false, // Disabled - skip BrightData for now
+        //   timeout: 30000,
+        //   retries: 1,
+        //   fallback_on_failure: false
+        // },
       ]
     });
 
@@ -200,12 +201,12 @@ export class PriorityCollectorService {
       ]
     });
 
-    // Claude Collector Priority Configuration (via DataForSEO)
+    // Claude Collector Priority Configuration (via OpenRouter)
     this.collectorConfigs.set('claude', {
       collector_type: 'claude',
       providers: [
         {
-          name: 'dataforseo_claude',
+          name: 'openrouter_claude',
           priority: 1,
           enabled: true,
           timeout: 60000,
@@ -472,7 +473,9 @@ export class PriorityCollectorService {
     console.log(`🔄 Calling ${provider.name} for ${collectorType}`);
 
     // Route to appropriate service based on provider name
-    if (provider.name.includes('oxylabs')) {
+    if (provider.name.includes('openrouter')) {
+      return await this.callOpenRouterProvider(provider, queryText, brandId, locale, country, collectorType);
+    } else if (provider.name.includes('oxylabs')) {
       return await this.callOxylabsProvider(provider, queryText, brandId, locale, country, collectorType);
     } else if (provider.name.includes('dataforseo')) {
       return await this.callDataForSeoProvider(provider, queryText, brandId, locale, country, collectorType);
@@ -483,6 +486,25 @@ export class PriorityCollectorService {
     } else {
       throw new Error(`Unknown provider type: ${provider.name}`);
     }
+  }
+
+  /**
+   * Call OpenRouter provider
+   */
+  private async callOpenRouterProvider(
+    provider: CollectorProvider,
+    queryText: string,
+    brandId: string,
+    locale: string,
+    country: string,
+    collectorType: string
+  ): Promise<any> {
+    console.log(`🔄 Calling OpenRouter ${provider.name} for ${collectorType}`);
+    
+    return await openRouterCollectorService.executeQuery({
+      prompt: queryText,
+      collectorType
+    });
   }
 
   /**
@@ -696,8 +718,11 @@ export class PriorityCollectorService {
 
     const apiUrl = 'https://api.openai.com/v1/chat/completions';
     
+    // Use newer model if available, fallback to gpt-3.5-turbo
+    const openaiModel = getEnvVar('OPENAI_MODEL', 'gpt-4o-mini');
+    
     const requestBody = {
-      model: 'gpt-3.5-turbo',
+      model: openaiModel,
       messages: [{
         role: 'user',
         content: queryText
@@ -706,7 +731,7 @@ export class PriorityCollectorService {
       temperature: 0.7
     };
 
-    console.log('🔄 Calling OpenAI Direct API (fallback)');
+    console.log(`🔄 Calling OpenAI Direct API (fallback) with model: ${openaiModel}`);
     
     try {
       const response = await fetch(apiUrl, {
@@ -753,11 +778,11 @@ export class PriorityCollectorService {
           response: answer,
           citations: [],
           urls: [],
-          model_used: result.model || 'gpt-3.5-turbo',
+          model_used: result.model || openaiModel,
           collector_type: 'chatgpt',
           metadata: {
             provider: 'openai_direct',
-            model: result.model || 'gpt-3.5-turbo',
+            model: result.model || openaiModel,
             usage: result.usage,
             finishReason: choice.finish_reason,
             brand: brandId,

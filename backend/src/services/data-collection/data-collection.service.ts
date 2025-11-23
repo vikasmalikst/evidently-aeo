@@ -156,7 +156,7 @@ export class DataCollectionService {
     // Claude Collector (via DataForSEO priority chain)
     this.collectors.set('claude', {
       name: 'Claude Collector',
-      enabled: false, // enable once DataForSEO credentials are configured
+      enabled: true, // enable once DataForSEO credentials are configured
       baseUrl: 'priority',
       timeout: 30000,
       retries: 2,
@@ -166,7 +166,7 @@ export class DataCollectionService {
     // Grok Collector (via BrightData)
     this.collectors.set('grok', {
       name: 'Grok Collector',
-      enabled: false, // ✅ Enabled with BrightData
+      enabled: true, // ✅ Enabled with BrightData
       baseUrl: 'priority',
       timeout: 300000, // Increased to 5 minutes for BrightData async processing
       retries: 2,
@@ -1078,6 +1078,29 @@ export class DataCollectionService {
         ).catch(error => {
           console.warn('⚠️ Keyword generation failed (non-blocking):', error);
         });
+      }
+
+      // 🎯 Trigger automatic scoring for this brand (position extraction, sentiment scoring, citation extraction)
+      // Run asynchronously to not block data collection
+      if (insertedData && insertedData.length > 0 && result.brandId && result.customerId) {
+        try {
+          console.log(`🔄 Triggering automatic scoring for brand ${result.brandId} (new collector result inserted)...`);
+          // Import and trigger scoring asynchronously (non-blocking)
+          const { brandScoringService } = await import('../scoring/brand-scoring.orchestrator');
+          // Use async method to not block data collection response
+          // Process all unprocessed results for this brand (don't use 'since' to process all pending results)
+          brandScoringService.scoreBrandAsync({
+            brandId: result.brandId,
+            customerId: result.customerId,
+            // Don't specify 'since' - process all unprocessed results for this brand
+            // The scoring services will only process results that haven't been scored yet
+            parallel: false // Run sequentially for better reliability
+          });
+          console.log(`✅ Automatic scoring triggered for brand ${result.brandId} (running in background)`);
+        } catch (scoringError) {
+          console.warn(`⚠️ Failed to trigger scoring for brand ${result.brandId} (non-blocking):`, scoringError);
+          // Don't throw - scoring failure shouldn't block data collection
+        }
       }
     }
   }

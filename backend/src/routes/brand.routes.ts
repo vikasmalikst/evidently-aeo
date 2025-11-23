@@ -665,4 +665,409 @@ router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Res
   }
 });
 
+/**
+ * GET /brands/:brandId/topic-configuration/current
+ * Get current topic configuration for a brand
+ */
+router.get('/:brandId/topic-configuration/current', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    // Get active topics from brand_topics table
+    const { data: topics, error } = await supabaseAdmin
+      .from('brand_topics')
+      .select('*')
+      .eq('brand_id', brandId)
+      .eq('is_active', true)
+      .order('priority', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching current topic configuration:', error);
+      throw error;
+    }
+
+    // Map database structure to frontend TopicConfiguration format
+    // Since we don't have versioning in the DB, we'll simulate it
+    const currentTopics = (topics || []).map((t: any) => ({
+      id: t.id,
+      name: t.topic_name || t.topic || '',
+      source: (t.metadata?.source as any) || 'custom', // Default to custom if not specified
+      category: t.category || 'general',
+      relevance: t.metadata?.relevance || 75, // Default relevance
+    }));
+
+    // Count analyses that use these topics (approximate by counting collector_results)
+    const { count: analysisCount } = await supabaseAdmin
+      .from('collector_results')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brandId)
+      .not('metadata->topic_name', 'is', null);
+
+    // Build configuration object
+    const config = {
+      id: `config-${brandId}-current`,
+      brand_id: brandId,
+      version: 1, // We'll calculate version from history
+      is_active: true,
+      change_type: 'initial_setup' as const,
+      change_summary: `Active configuration with ${currentTopics.length} topics`,
+      topics: currentTopics,
+      created_at: topics && topics.length > 0 ? topics[0].created_at : new Date().toISOString(),
+      analysis_count: analysisCount || 0,
+    };
+
+    res.json({ success: true, data: config });
+  } catch (error) {
+    console.error('Error fetching current topic configuration:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch topic configuration'
+    });
+  }
+});
+
+/**
+ * GET /brands/:brandId/topic-configuration/history
+ * Get topic configuration history for a brand
+ */
+router.get('/:brandId/topic-configuration/history', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    // Get all topics (active and inactive) ordered by created_at
+    const { data: allTopics, error } = await supabaseAdmin
+      .from('brand_topics')
+      .select('*')
+      .eq('brand_id', brandId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching topic configuration history:', error);
+      throw error;
+    }
+
+    if (!allTopics || allTopics.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Group topics by created_at date to simulate versions
+    // In a real system, you'd have a separate versioning table
+    const topicsByDate = new Map<string, any[]>();
+    
+    allTopics.forEach((topic: any) => {
+      const dateKey = new Date(topic.created_at).toISOString().split('T')[0];
+      if (!topicsByDate.has(dateKey)) {
+        topicsByDate.set(dateKey, []);
+      }
+      topicsByDate.get(dateKey)!.push(topic);
+    });
+
+    // Build history configurations
+    // For now, we'll return just the current config since we don't have proper versioning
+    const currentTopics = allTopics.filter((t: any) => t.is_active);
+    const mappedTopics = currentTopics.map((t: any) => ({
+      id: t.id,
+      name: t.topic_name || t.topic || '',
+      source: (t.metadata?.source as any) || 'custom',
+      category: t.category || 'general',
+      relevance: t.metadata?.relevance || 75,
+    }));
+
+    // Count analyses
+    const { count: analysisCount } = await supabaseAdmin
+      .from('collector_results')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brandId)
+      .not('metadata->topic_name', 'is', null);
+
+    // Return current config as version 1
+    // In production, you'd want a proper versioning table
+    const history = [{
+      id: `config-${brandId}-v1`,
+      brand_id: brandId,
+      version: 1,
+      is_active: true,
+      change_type: 'initial_setup' as const,
+      change_summary: `Configuration with ${mappedTopics.length} topics`,
+      topics: mappedTopics,
+      created_at: currentTopics.length > 0 ? currentTopics[0].created_at : new Date().toISOString(),
+      analysis_count: analysisCount || 0,
+    }];
+
+    res.json({ success: true, data: history });
+  } catch (error) {
+    console.error('Error fetching topic configuration history:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch topic configuration history'
+    });
+  }
+});
+
+/**
+ * POST /brands/:brandId/topic-configuration/update
+ * Update topic configuration for a brand
+ */
+router.post('/:brandId/topic-configuration/update', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const { topics } = req.body;
+
+    if (!topics || !Array.isArray(topics)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Topics array is required'
+      });
+    }
+
+    // Deactivate all current topics
+    const { error: deactivateError } = await supabaseAdmin
+      .from('brand_topics')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('brand_id', brandId)
+      .eq('is_active', true);
+
+    if (deactivateError) {
+      console.error('Error deactivating current topics:', deactivateError);
+      throw deactivateError;
+    }
+
+    // Insert/update new topics
+    const topicRecords = topics.map((topic: any, index: number) => ({
+      brand_id: brandId,
+      topic_name: topic.name || topic.topic_name,
+      category: topic.category || 'general',
+      description: topic.description || null,
+      priority: index + 1,
+      is_active: true,
+      metadata: {
+        source: topic.source || 'custom',
+        relevance: topic.relevance || 75,
+      },
+    }));
+
+    // Use upsert to handle both new and existing topics
+    const { data: insertedTopics, error: insertError } = await supabaseAdmin
+      .from('brand_topics')
+      .upsert(topicRecords, {
+        onConflict: 'brand_id,topic_name',
+        ignoreDuplicates: false,
+      })
+      .select();
+
+    if (insertError) {
+      console.error('Error inserting topics:', insertError);
+      throw insertError;
+    }
+
+    // Map to frontend format
+    const mappedTopics = (insertedTopics || []).map((t: any) => ({
+      id: t.id,
+      name: t.topic_name || t.topic || '',
+      source: (t.metadata?.source as any) || 'custom',
+      category: t.category || 'general',
+      relevance: t.metadata?.relevance || 75,
+    }));
+
+    // Build new config
+    const newConfig = {
+      id: `config-${brandId}-${Date.now()}`,
+      brand_id: brandId,
+      version: 1, // Would be incremented in a real versioning system
+      is_active: true,
+      change_type: 'topic_added' as const,
+      change_summary: `Updated to ${mappedTopics.length} topics`,
+      topics: mappedTopics,
+      created_at: new Date().toISOString(),
+      analysis_count: 0,
+    };
+
+    res.json({ success: true, data: newConfig });
+  } catch (error) {
+    console.error('Error updating topic configuration:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update topic configuration'
+    });
+  }
+});
+
+/**
+ * POST /brands/:brandId/topic-configuration/:versionId/revert
+ * Revert to a previous topic configuration version
+ * Note: This is a simplified version. In production, you'd want a proper versioning table.
+ */
+router.post('/:brandId/topic-configuration/:versionId/revert', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId, versionId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    // For now, this will just get current topics since we don't have proper versioning
+    // In production, you'd query a versioning table
+    const { data: currentTopics, error } = await supabaseAdmin
+      .from('brand_topics')
+      .select('*')
+      .eq('brand_id', brandId)
+      .eq('is_active', true);
+
+    if (error) {
+      throw error;
+    }
+
+    // Map and return current config
+    const mappedTopics = (currentTopics || []).map((t: any) => ({
+      id: t.id,
+      name: t.topic_name || t.topic || '',
+      source: (t.metadata?.source as any) || 'custom',
+      category: t.category || 'general',
+      relevance: t.metadata?.relevance || 75,
+    }));
+
+    const config = {
+      id: `config-${brandId}-reverted`,
+      brand_id: brandId,
+      version: 1,
+      is_active: true,
+      change_type: 'full_refresh' as const,
+      change_summary: `Reverted to version ${versionId}`,
+      topics: mappedTopics,
+      created_at: new Date().toISOString(),
+      analysis_count: 0,
+    };
+
+    res.json({ success: true, data: config });
+  } catch (error) {
+    console.error('Error reverting topic configuration:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to revert topic configuration'
+    });
+  }
+});
+
+/**
+ * GET /brands/:brandId/onboarding-progress
+ * Get real-time progress of data collection and scoring for onboarding
+ */
+router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    // Get total queries for this brand
+    const { count: totalQueries } = await supabaseAdmin
+      .from('generated_queries')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brandId)
+      .eq('customer_id', customerId);
+
+    // Get completed collector results
+    const { count: completedResults } = await supabaseAdmin
+      .from('collector_results')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brandId)
+      .eq('customer_id', customerId)
+      .eq('status', 'completed');
+
+    // Get currently running collector (for display)
+    const { data: runningResult } = await supabaseAdmin
+      .from('collector_results')
+      .select('collector_type')
+      .eq('brand_id', brandId)
+      .eq('customer_id', customerId)
+      .in('status', ['pending', 'running'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // Check scoring status
+    // Position extraction - check if positions exist
+    const { count: positionCount } = await supabaseAdmin
+      .from('extracted_positions')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brandId);
+
+    // Sentiment scoring - check if sentiments exist
+    const { data: sentimentResults } = await supabaseAdmin
+      .from('collector_results')
+      .select('sentiment_label')
+      .eq('brand_id', brandId)
+      .eq('customer_id', customerId)
+      .not('sentiment_label', 'is', null)
+      .limit(1);
+
+    // Citation extraction - check if citations exist
+    const { count: citationCount } = await supabaseAdmin
+      .from('citations')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brandId);
+
+    // Determine current operation
+    let currentOperation: 'collecting' | 'scoring' | 'finalizing' = 'collecting';
+    const completedQueries = completedResults || 0;
+    const total = totalQueries || 0;
+
+    if (completedQueries >= total && total > 0) {
+      const positionsDone = (positionCount || 0) > 0;
+      const sentimentsDone = (sentimentResults?.length || 0) > 0;
+      const citationsDone = (citationCount || 0) > 0;
+
+      if (positionsDone && sentimentsDone && citationsDone) {
+        currentOperation = 'finalizing';
+      } else {
+        currentOperation = 'scoring';
+      }
+    }
+
+    // Estimate time remaining (rough calculation)
+    const estimatedTimeRemaining = Math.max(
+      0,
+      Math.ceil(
+        ((total - completedQueries) * 3) + // 3 seconds per query remaining
+        ((positionCount || 0) === 0 ? 30 : 0) + // 30s for positions
+        ((sentimentResults?.length || 0) === 0 ? 30 : 0) + // 30s for sentiments
+        ((citationCount || 0) === 0 ? 20 : 0) // 20s for citations
+      )
+    );
+
+    const progress = {
+      queries: {
+        total: total || 0,
+        completed: completedQueries,
+        current: runningResult?.collector_type || undefined,
+      },
+      scoring: {
+        positions: (positionCount || 0) > 0,
+        sentiments: (sentimentResults?.length || 0) > 0,
+        citations: (citationCount || 0) > 0,
+      },
+      currentOperation,
+      estimatedTimeRemaining,
+    };
+
+    res.json({
+      success: true,
+      data: progress,
+    });
+  } catch (error) {
+    console.error('Error fetching onboarding progress:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch progress',
+    });
+  }
+});
+
 export default router;

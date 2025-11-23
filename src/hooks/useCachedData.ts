@@ -36,17 +36,89 @@ export function useCachedData<T>(
     refetchInterval,
   } = hookOptions;
 
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  // Initialize state from cache synchronously if available
+  const [data, setData] = useState<T | null>(() => {
+    if (!endpoint || !enabled) return null;
+    try {
+      const url = new URL(endpoint.startsWith('http') ? endpoint : `http://dummy${endpoint}`);
+      const params: Record<string, string> = {};
+      url.searchParams.forEach((value, key) => {
+        params[key] = value;
+      });
+      const baseKey = endpoint.split('?')[0];
+      const normalizedParams = params ? Object.keys(params)
+        .sort()
+        .map(key => `${key}=${String(params[key])}`)
+        .join('&') : '';
+      const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
+      const cached = cacheManager.get<T>(cacheKey);
+      if (cached) {
+        console.log(`[useCachedData] ✅ Initial state from cache for: ${endpoint}`);
+        return cached;
+      }
+    } catch (e) {
+      // Ignore errors in initial cache check
+    }
+    return null;
+  });
+  
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (!endpoint || !enabled) return false;
+    try {
+      const url = new URL(endpoint.startsWith('http') ? endpoint : `http://dummy${endpoint}`);
+      const params: Record<string, string> = {};
+      url.searchParams.forEach((value, key) => {
+        params[key] = value;
+      });
+      const baseKey = endpoint.split('?')[0];
+      const normalizedParams = params ? Object.keys(params)
+        .sort()
+        .map(key => `${key}=${String(params[key])}`)
+        .join('&') : '';
+      const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
+      const cached = cacheManager.get<T>(cacheKey);
+      const hasFreshCache = cached && cacheManager.isFresh(cacheKey);
+      if (hasFreshCache) {
+        console.log(`[useCachedData] ✅ Initial loading false (fresh cache) for: ${endpoint}`);
+        return false;
+      }
+    } catch (e) {
+      // Ignore errors in initial cache check
+    }
+    return true;
+  });
+  
   const [error, setError] = useState<Error | null>(null);
-  const [isStale, setIsStale] = useState<boolean>(false);
+  const [isStale, setIsStale] = useState<boolean>(() => {
+    if (!endpoint || !enabled) return false;
+    try {
+      const url = new URL(endpoint.startsWith('http') ? endpoint : `http://dummy${endpoint}`);
+      const params: Record<string, string> = {};
+      url.searchParams.forEach((value, key) => {
+        params[key] = value;
+      });
+      const baseKey = endpoint.split('?')[0];
+      const normalizedParams = params ? Object.keys(params)
+        .sort()
+        .map(key => `${key}=${String(params[key])}`)
+        .join('&') : '';
+      const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
+      return cacheManager.isStale(cacheKey);
+    } catch (e) {
+      return false;
+    }
+  });
   
   const abortControllerRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<number | null>(null);
   
 
   const fetchData = useCallback(async (showLoading = true) => {
+    const fetchStart = performance.now();
+    console.log(`[useCachedData] fetchData called for: ${endpoint} at`, fetchStart, `- showLoading: ${showLoading}`);
+    
     if (!endpoint || !enabled) {
+      console.log(`[useCachedData] fetchData skipped - endpoint: ${endpoint}, enabled: ${enabled}`);
       setLoading(false);
       return;
     }
@@ -66,6 +138,9 @@ export function useCachedData<T>(
       }
       setError(null);
 
+      console.log(`[useCachedData] Calling cachedRequest at`, performance.now(), `- Time since fetchData start: ${(performance.now() - fetchStart).toFixed(2)}ms`);
+      const requestStart = performance.now();
+      
       // Use cached request which handles stale-while-revalidate
       const result = await cachedRequest<T>(
         endpoint,
@@ -76,18 +151,28 @@ export function useCachedData<T>(
         config
       );
 
+      const requestDuration = performance.now() - requestStart;
+      console.log(`[useCachedData] cachedRequest completed at`, performance.now(), `- Request duration: ${requestDuration.toFixed(2)}ms - Total fetchData time: ${(performance.now() - fetchStart).toFixed(2)}ms`);
+
       // Check if this request was aborted (controller might have changed)
       if (currentController === abortControllerRef.current && !signal.aborted) {
         setData(result);
         setLoading(false);
         setIsStale(false);
+        console.log(`[useCachedData] ✅ Data set in state at`, performance.now());
+      } else {
+        console.log(`[useCachedData] Request was aborted, not setting data`);
       }
     } catch (err) {
+      const errorDuration = performance.now() - fetchStart;
       // Ignore AbortError - it's expected when requests are cancelled
       if (err instanceof Error && err.name === 'AbortError') {
+        console.log(`[useCachedData] Request aborted (expected) at`, performance.now(), `- Duration: ${errorDuration.toFixed(2)}ms`);
         // Silently ignore - this is expected behavior
         return;
       }
+      
+      console.error(`[useCachedData] ❌ Error in fetchData at`, performance.now(), `- Duration: ${errorDuration.toFixed(2)}ms - Error:`, err);
       
       // Check if this request was aborted (controller might have changed)
       if (currentController === abortControllerRef.current && !signal.aborted) {
@@ -101,13 +186,24 @@ export function useCachedData<T>(
 
   // Initial fetch - check cache first, then fetch if needed
   useEffect(() => {
-    if (!endpoint || !enabled) {
+    const hookStart = performance.now();
+    console.log(`[useCachedData] Hook effect triggered for: ${endpoint} at`, hookStart, `- enabled: ${enabled}`);
+    
+    if (!endpoint) {
+      console.log(`[useCachedData] No endpoint - clearing state`);
       setLoading(false);
       setData(null);
       return;
     }
     
+    // If disabled, don't clear data - just don't fetch
+    if (!enabled) {
+      console.log(`[useCachedData] Hook disabled - keeping existing data, not fetching`);
+      return;
+    }
+    
     // Check cache synchronously first
+    const cacheCheckStart = performance.now();
     let hasCache = false;
     try {
       const url = new URL(endpoint.startsWith('http') ? endpoint : `http://dummy${endpoint}`);
@@ -122,22 +218,38 @@ export function useCachedData<T>(
         .join('&') : '';
       const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
       
+      console.log(`[useCachedData] Checking cache for key: ${cacheKey} at`, performance.now());
       const cached = cacheManager.get<T>(cacheKey);
+      const cacheCheckTime = performance.now() - cacheCheckStart;
+      
       if (cached) {
+        const isStaleValue = cacheManager.isStale(cacheKey);
+        const isFreshValue = cacheManager.isFresh(cacheKey);
+        const isExpiredValue = cacheManager.isExpired(cacheKey);
+        console.log(`[useCachedData] ✅ CACHE HIT at`, performance.now(), `- Cache check took: ${cacheCheckTime.toFixed(2)}ms - Fresh: ${isFreshValue}, Stale: ${isStaleValue}, Expired: ${isExpiredValue}`);
         setData(cached);
         setLoading(false);
-        setIsStale(cacheManager.isStale(cacheKey));
+        setIsStale(isStaleValue);
         hasCache = true;
+        
+        // If expired, we still show it but fetch fresh in background
+        if (isExpiredValue) {
+          console.log(`[useCachedData] Cache expired - will fetch fresh in background`);
+        }
+      } else {
+        console.log(`[useCachedData] ❌ CACHE MISS at`, performance.now(), `- Cache check took: ${cacheCheckTime.toFixed(2)}ms`);
       }
     } catch (e) {
-      // Ignore errors in cache check
+      console.error(`[useCachedData] Error checking cache:`, e);
     }
     
-    // Fetch data (will use cache if available, or fetch fresh)
-    // Don't show loading if we already have cache and refetchOnMount is false
-    if (!hasCache || refetchOnMount) {
-      fetchData(!hasCache && !refetchOnMount);
-    }
+    // Always fetch if enabled (cachedRequest will handle cache logic)
+    // This ensures we fetch when enabled changes from false to true
+    const fetchStart = performance.now();
+    console.log(`[useCachedData] Starting fetch at`, fetchStart, `- Has cache: ${hasCache}, Refetch on mount: ${refetchOnMount}`);
+    // Don't show loading if we have fresh cache
+    const showLoading = !hasCache || refetchOnMount;
+    fetchData(showLoading);
 
     return () => {
       if (abortControllerRef.current) {

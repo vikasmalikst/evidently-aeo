@@ -1,11 +1,12 @@
-import { useRef, useMemo } from 'react';
-import { Line } from 'react-chartjs-2';
+import { useRef, useMemo, memo } from 'react';
+import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Tooltip,
   Legend,
   Filler
@@ -16,6 +17,7 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Tooltip,
   Legend,
   Filler
@@ -64,14 +66,17 @@ interface VisibilityChartProps {
   loading?: boolean;
   activeTab: string;
   models?: Model[];
+  stacked?: boolean;
 }
 
-export const VisibilityChart = ({
+export const VisibilityChart = memo(({
   data,
+  chartType = 'line',
   selectedModels = [],
   loading = false,
   activeTab = 'brand',
-  models = []
+  models = [],
+  stacked = false
 }: VisibilityChartProps) => {
   const chartRef = useRef(null);
 
@@ -81,72 +86,137 @@ export const VisibilityChart = ({
     }
 
     const colorKeys = Object.keys(chartColors);
+    const isBarChart = chartType === 'bar';
 
-    const datasets = selectedModels.map((modelId, index) => {
-      const modelData = data.datasets.find(d => d.id === modelId);
-      if (!modelData) return null;
+    const datasets = selectedModels
+      .map((modelId, index) => {
+        const modelData = data.datasets.find(d => d.id === modelId);
+        if (!modelData) return null;
 
-      // Use color from model if available, otherwise fall back to generic color palette
-      const model = models.find(m => m.id === modelId);
-      const color = model?.color || chartColors[colorKeys[index % colorKeys.length] as keyof typeof chartColors];
+        // Use color from model if available, otherwise fall back to generic color palette
+        const model = models.find(m => m.id === modelId);
+        const color = model?.color || chartColors[colorKeys[index % colorKeys.length] as keyof typeof chartColors];
 
-      return {
-        label: modelData.label,
-        data: modelData.data,
-        borderColor: color,
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        pointRadius: 0,
-        pointHoverRadius: 0,
-        tension: 0.4,
-        fill: false,
-      };
-    }).filter(Boolean);
+        if (isBarChart) {
+          // Bar chart configuration
+          return {
+            label: modelData.label,
+            data: modelData.data,
+            backgroundColor: color,
+            borderColor: color,
+            borderWidth: 1,
+            borderRadius: stacked ? 0 : 4,
+            borderSkipped: stacked ? false : ('start' as const),
+          };
+        } else {
+          // Line chart configuration
+          return {
+            label: modelData.label,
+            data: modelData.data,
+            borderColor: color,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            tension: 0.4,
+            fill: false,
+          };
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
 
     return {
       labels: data.labels,
       datasets
     };
-  }, [data, selectedModels, models]);
+  }, [data, selectedModels, models, chartType, stacked]);
 
-  const options = useMemo(() => ({
-    responsive: true,
-    maintainAspectRatio: true,
-    aspectRatio: 2.8,
-    interaction: {
-      intersect: false,
-      mode: 'index' as const,
-    },
-    plugins: {
-      legend: {
-        display: true,
-        position: 'bottom' as const,
-        align: 'start' as const,
-        labels: {
-          usePointStyle: true,
-          pointStyle: 'line',
-          padding: 15,
-          font: {
-            size: 11,
-            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-            weight: 400,
+  const options = useMemo(() => {
+    const isBarChart = chartType === 'bar';
+    return {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 2.8,
+      interaction: {
+        intersect: false,
+        mode: 'index' as const,
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          min: 0,
+          max: 100,
+          stacked: stacked && isBarChart,
+          ticks: {
+            color: neutrals[700],
+            font: {
+              size: 9,
+              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              weight: 400,
+            },
+            callback: (value: any) => String(value),
+            padding: 8,
+            stepSize: 10,
+            maxRotation: 0,
+            minRotation: 0,
           },
-          color: neutrals[700],
-          generateLabels: (chart: any) => {
-            const datasets = chart.data.datasets || [];
-            return datasets.map((dataset: any, index: number) => {
-              return {
-                text: dataset.label || `Dataset ${index + 1}`,
-                fillStyle: dataset.borderColor || dataset.backgroundColor,
-                strokeStyle: dataset.borderColor || dataset.backgroundColor,
-                lineWidth: 2,
-                hidden: !chart.isDatasetVisible(index),
-                index: index,
-              };
-            });
+          grid: {
+            color: neutrals[100],
+            lineWidth: 1,
+            drawBorder: false,
+            drawTicks: false,
+          },
+        },
+        x: {
+          stacked: stacked && isBarChart,
+          ticks: {
+            color: neutrals[700],
+            font: {
+              size: 9,
+              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              weight: 400,
+            },
+            padding: 8,
+            maxRotation: 0,
+            minRotation: 0,
+          },
+          grid: {
+            display: false,
+            drawBorder: false,
+            drawTicks: false,
           },
         },
       },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom' as const,
+          align: 'start' as const,
+          labels: {
+            usePointStyle: true,
+            pointStyle: isBarChart ? 'rect' : 'line',
+            padding: 15,
+            font: {
+              size: 11,
+              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              weight: 400,
+            },
+            color: neutrals[700],
+            generateLabels: (chart: any) => {
+              const datasets = chart.data.datasets || [];
+              return datasets.map((dataset: any, index: number) => {
+                return {
+                  text: dataset.label || `Dataset ${index + 1}`,
+                  fillStyle: dataset.backgroundColor || dataset.borderColor,
+                  strokeStyle: dataset.borderColor || dataset.backgroundColor,
+                  lineWidth: isBarChart ? 0 : 2,
+                  hidden: !chart.isDatasetVisible(index),
+                  index: index,
+                };
+              });
+            },
+          },
+        },
       tooltip: {
         enabled: true,
         backgroundColor: 'rgba(26, 29, 41, 0.96)',
@@ -164,7 +234,7 @@ export const VisibilityChart = ({
         cornerRadius: 4,
         titleFont: {
           size: 11,
-          weight: '600',
+          weight: 'bold' as const,
           family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
         },
         bodyFont: {
@@ -186,63 +256,20 @@ export const VisibilityChart = ({
         propagate: false,
       },
     },
-    scales: {
-      y: {
-        beginAtZero: true,
-        min: 0,
-        max: 100,
-        ticks: {
-          color: neutrals[700],
-          font: {
-            size: 9,
-            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-            weight: 400,
-          },
-          callback: (value: any) => String(value),
-          padding: 8,
-          stepSize: 10,
-          maxRotation: 0,
-          minRotation: 0,
-        },
-        grid: {
-          color: neutrals[100],
-          lineWidth: 1,
-          drawBorder: false,
-          drawTicks: false,
+      layout: {
+        padding: {
+          top: 16,
+          right: 16,
+          bottom: 40,
+          left: 8,
         },
       },
-      x: {
-        ticks: {
-          color: neutrals[700],
-          font: {
-            size: 9,
-            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-            weight: 400,
-          },
-          padding: 8,
-          maxRotation: 0,
-          minRotation: 0,
-        },
-        grid: {
-          display: false,
-          drawBorder: false,
-          drawTicks: false,
-        },
+      animation: {
+        duration: 500,
+        easing: 'easeInOutQuart' as const,
       },
-    },
-    layout: {
-      padding: {
-        top: 16,
-        right: 16,
-        bottom: 40,
-        left: 8,
-      },
-    },
-    animation: {
-      duration: 500,
-      easing: 'easeInOutQuart' as const,
-    },
-  }), []);
+    };
+  }, [stacked, chartType]);
 
   if (loading) {
     return (
@@ -262,11 +289,13 @@ export const VisibilityChart = ({
     );
   }
 
+  const ChartComponent = chartType === 'bar' ? Bar : Line;
+
   return (
     <div className="w-full h-auto bg-white rounded-lg p-6">
       <div className="relative w-full">
-        <Line data={chartData} options={options} ref={chartRef} />
+        <ChartComponent data={chartData} options={options} ref={chartRef} />
       </div>
     </div>
   );
-};
+});

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { PromptFilters } from '../components/Prompts/PromptFilters';
@@ -7,6 +7,13 @@ import { ResponseViewer } from '../components/Prompts/ResponseViewer';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { PromptAnalyticsPayload, PromptEntry } from '../types/prompts';
+
+// Performance logging
+const perfLog = (label: string, startTime: number) => {
+  const duration = performance.now() - startTime;
+  console.log(`[PERF] ${label}: ${duration.toFixed(2)}ms`);
+  return duration;
+};
 
 interface ApiResponse<T> {
   success: boolean;
@@ -52,12 +59,16 @@ const getDateBounds = (preset: DatePreset) => {
 };
 
 export const Prompts = () => {
+  const pageLoadStart = useRef(performance.now());
   const [selectedPrompt, setSelectedPrompt] = useState<PromptEntry | null>(null);
   const navigate = useNavigate();
   const [selectedLLM, setSelectedLLM] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState('us');
   const [dateRangeKey, setDateRangeKey] = useState<string>(DATE_PRESETS[2]?.value ?? 'last30');
   const { brands, selectedBrandId, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  
+  // Track if LLM was set programmatically (from API) vs user action
+  const isLLMSetProgrammatically = useRef(false);
 
   const dateRangeOptions = useMemo(
     () =>
@@ -75,8 +86,9 @@ export const Prompts = () => {
     setSelectedPrompt(prompt);
   };
 
-  // Build endpoint
+  // Build endpoint - only include selectedLLM if it was set by user, not programmatically
   const promptsEndpoint = useMemo(() => {
+    const endpointStart = performance.now();
     if (!selectedBrandId || brandsLoading) return null;
     const preset = DATE_PRESETS.find((item) => item.value === dateRangeKey) ?? DATE_PRESETS[0];
     const bounds = getDateBounds(preset);
@@ -85,14 +97,18 @@ export const Prompts = () => {
       endDate: bounds.endIso
     });
 
-    if (selectedLLM) {
+    // Only add LLM filter if it was set by user action, not from API response
+    if (selectedLLM && !isLLMSetProgrammatically.current) {
       params.set('collectors', selectedLLM);
     }
 
-    return `/brands/${selectedBrandId}/prompts?${params.toString()}`;
+    const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
+    perfLog('Prompts: Endpoint computation', endpointStart);
+    return endpoint;
   }, [selectedBrandId, dateRangeKey, selectedLLM, brandsLoading]);
 
   // Use cached data hook
+  const fetchStart = useRef(performance.now());
   const {
     data: response,
     loading,
@@ -104,13 +120,25 @@ export const Prompts = () => {
     { enabled: !!promptsEndpoint, refetchOnMount: false }
   );
 
-  // Process response data
+  // Log fetch completion
+  useEffect(() => {
+    if (response && !loading) {
+      perfLog('Prompts: Data fetch complete', fetchStart.current);
+      fetchStart.current = performance.now();
+    }
+  }, [response, loading]);
+
+  // Process response data with performance logging
+  const processStart = useRef(performance.now());
   const topics = useMemo(() => {
+    const start = performance.now();
     if (!response?.success || !response.data) {
       return [];
     }
     const payload = response.data;
-    return (payload.topics ?? []).filter((topic) => topic.prompts.length > 0);
+    const filtered = (payload.topics ?? []).filter((topic) => topic.prompts.length > 0);
+    perfLog('Prompts: Topics processing', start);
+    return filtered;
   }, [response]);
 
   const llmOptions = useMemo(() => {
@@ -120,14 +148,21 @@ export const Prompts = () => {
     return response.data.collectors ?? [];
   }, [response]);
 
-  // Set default LLM
+  // Set default LLM - mark as programmatic to prevent endpoint change
   useEffect(() => {
     if (llmOptions.length > 0) {
+      isLLMSetProgrammatically.current = true;
       setSelectedLLM((current) => {
         if (current && llmOptions.includes(current)) {
+          isLLMSetProgrammatically.current = false;
           return current;
         }
-        return llmOptions[0];
+        const newLLM = llmOptions[0];
+        // Reset flag after state update
+        setTimeout(() => {
+          isLLMSetProgrammatically.current = false;
+        }, 0);
+        return newLLM;
       });
     }
   }, [llmOptions]);
@@ -155,6 +190,19 @@ export const Prompts = () => {
     navigate('/settings/manage-prompts');
   };
 
+  // Log page render completion
+  useEffect(() => {
+    if (!loading && topics.length > 0) {
+      perfLog('Prompts: Page fully rendered', pageLoadStart.current);
+    }
+  }, [loading, topics.length]);
+
+  // Handle LLM change from user (not programmatic)
+  const handleLLMChange = (llm: string | null) => {
+    isLLMSetProgrammatically.current = false;
+    setSelectedLLM(llm);
+  };
+
   return (
     <Layout>
       <div className="p-6">
@@ -178,7 +226,7 @@ export const Prompts = () => {
         <PromptFilters
           llmOptions={llmOptions}
           selectedLLM={selectedLLM}
-          onLLMChange={setSelectedLLM}
+          onLLMChange={handleLLMChange}
           selectedRegion={selectedRegion}
           onRegionChange={setSelectedRegion}
           brands={brands}

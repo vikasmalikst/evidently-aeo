@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { VisibilityTabs } from '../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../components/Visibility/ChartControls';
@@ -8,6 +8,13 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useCachedData } from '../hooks/useCachedData';
 import '../styles/visibility.css';
+
+// Performance logging
+const perfLog = (label: string, startTime: number) => {
+  const duration = performance.now() - startTime;
+  console.log(`[PERF] ${label}: ${duration.toFixed(2)}ms`);
+  return duration;
+};
 
 interface ApiResponse<T> {
   success: boolean;
@@ -130,6 +137,7 @@ const getDateRangeForTimeframe = (timeframe: string) => {
 };
 
 export const SearchVisibility = () => {
+  const pageLoadStart = useRef(performance.now());
   const [activeTab, setActiveTab] = useState<'brand' | 'competitive'>('brand');
   const [timeframe, setTimeframe] = useState('weekly');
   const [chartType, setChartType] = useState('line');
@@ -153,15 +161,19 @@ export const SearchVisibility = () => {
 
   // Build endpoint
   const visibilityEndpoint = useMemo(() => {
+    const endpointStart = performance.now();
     if (!selectedBrandId) return null;
     const params = new URLSearchParams({
       startDate: dateRange.startDate,
       endDate: dateRange.endDate
     });
-    return `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+    const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+    perfLog('SearchVisibility: Endpoint computation', endpointStart);
+    return endpoint;
   }, [selectedBrandId, dateRange.startDate, dateRange.endDate, reloadToken]);
 
   // Use cached data hook
+  const fetchStart = useRef(performance.now());
   const {
     data: response,
     loading,
@@ -174,12 +186,19 @@ export const SearchVisibility = () => {
     { enabled: !authLoading && !brandsLoading && !!visibilityEndpoint, refetchOnMount: false }
   );
 
-  // Process response data
+  // Log fetch completion
   useEffect(() => {
+    if (response && !loading) {
+      perfLog('SearchVisibility: Data fetch complete', fetchStart.current);
+      fetchStart.current = performance.now();
+    }
+  }, [response, loading]);
+
+  // Process response data - moved to useMemo for better performance
+  const processedData = useMemo(() => {
+    const processStart = performance.now();
     if (!response?.success || !response.data) {
-      setBrandModels([]);
-      setCompetitorModels([]);
-      return;
+      return { brandModels: [], competitorModels: [] };
     }
 
     const llmSlices = response.data.llmVisibility ?? [];
@@ -327,13 +346,26 @@ export const SearchVisibility = () => {
       ? [brandCompetitiveModel, ...competitorModelsData]
       : competitorModelsData;
 
-    console.log('[SearchVisibility] brandCompetitiveModel:', brandCompetitiveModel);
-    console.log('[SearchVisibility] allCompetitorModels count:', allCompetitorModels.length);
-    console.log('[SearchVisibility] allCompetitorModels:', allCompetitorModels.map(m => ({ id: m.id, name: m.name, isBrand: m.isBrand })));
-
-    setBrandModels(llmModels);
-    setCompetitorModels(allCompetitorModels);
+    perfLog('SearchVisibility: Data processing', processStart);
+    
+    return {
+      brandModels: llmModels,
+      competitorModels: allCompetitorModels
+    };
   }, [response, selectedBrandId, selectedBrand]);
+
+  // Update state from processed data (batched update)
+  useEffect(() => {
+    setBrandModels(processedData.brandModels);
+    setCompetitorModels(processedData.competitorModels);
+  }, [processedData]);
+
+  // Log page render completion
+  useEffect(() => {
+    if (!loading && brandModels.length > 0) {
+      perfLog('SearchVisibility: Page fully rendered', pageLoadStart.current);
+    }
+  }, [loading, brandModels.length]);
 
   const currentModels = activeTab === 'brand' ? brandModels : competitorModels;
 
@@ -458,6 +490,7 @@ export const SearchVisibility = () => {
               loading={combinedLoading}
               activeTab={activeTab}
               models={currentModels}
+              stacked={stacked}
             />
           </div>
 

@@ -18,32 +18,7 @@ interface UseTopicConfigurationReturn {
   revertToVersion: (versionId: string) => Promise<void>;
 }
 
-// Mock data generator for development
-const generateMockConfig = (version: number, isActive: boolean): TopicConfiguration => {
-  const mockTopics: Topic[] = [
-    { id: '1', name: 'AI Assistants', source: 'trending', relevance: 85 },
-    { id: '2', name: 'Large Language Models', source: 'ai_generated', relevance: 78 },
-    { id: '3', name: 'AI Search', source: 'trending', relevance: 72 },
-    { id: '4', name: 'Search Results', source: 'preset', relevance: 68 },
-    { id: '5', name: 'Research Tools', source: 'ai_generated', relevance: 75 },
-  ].slice(0, version === 1 ? 3 : version === 2 ? 4 : 5);
-
-  return {
-    id: `config-${version}`,
-    brand_id: 'brand-1',
-    version,
-    is_active: isActive,
-    change_type: version === 1 ? 'initial_setup' : version === 2 ? 'topic_added' : 'topic_added',
-    change_summary: version === 1 
-      ? 'Initial topic setup' 
-      : version === 2 
-      ? "Added 'Research Tools'" 
-      : "Added 'Research Tools', removed 'Search Results'",
-    topics: mockTopics,
-    created_at: new Date(Date.now() - (3 - version) * 7 * 24 * 60 * 60 * 1000).toISOString(),
-    analysis_count: version === 1 ? 0 : version === 2 ? 2 : 4,
-  };
-};
+// Mock data generator removed - now using real API
 
 export const useTopicConfiguration = (brandId: string): UseTopicConfigurationReturn => {
   const [currentConfig, setCurrentConfig] = useState<TopicConfiguration | null>(null);
@@ -83,17 +58,21 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
   const fetchCurrentConfig = useCallback(async () => {
     try {
       setIsLoading(true);
-      // TODO: Replace with actual API call
-      // const config = await apiClient.request<TopicConfiguration>(
-      //   `/brands/${brandId}/topic-configuration/current`
-      // );
+      const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration }>(
+        `/brands/${brandId}/topic-configuration/current`
+      );
       
-      // Mock data for now
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
-      const config = generateMockConfig(3, true);
-      setCurrentConfig(config);
+      if (response.success && response.data) {
+        setCurrentConfig(response.data);
+      } else {
+        console.error('Failed to fetch current configuration: No data returned');
+        // Fallback to empty config if no data
+        setCurrentConfig(null);
+      }
     } catch (error) {
       console.error('Failed to fetch current configuration:', error);
+      // On error, set to null to show empty state
+      setCurrentConfig(null);
     } finally {
       setIsLoading(false);
     }
@@ -102,20 +81,19 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
   // Fetch history
   const fetchHistory = useCallback(async () => {
     try {
-      // TODO: Replace with actual API call
-      // const configs = await apiClient.request<TopicConfiguration[]>(
-      //   `/brands/${brandId}/topic-configuration/history`
-      // );
+      const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration[] }>(
+        `/brands/${brandId}/topic-configuration/history`
+      );
       
-      // Mock data for now
-      const configs = [
-        generateMockConfig(3, true),
-        generateMockConfig(2, false),
-        generateMockConfig(1, false),
-      ];
-      setHistory(configs);
+      if (response.success && response.data) {
+        setHistory(response.data);
+      } else {
+        console.error('Failed to fetch history: No data returned');
+        setHistory([]);
+      }
     } catch (error) {
       console.error('Failed to fetch history:', error);
+      setHistory([]);
     }
   }, [brandId]);
 
@@ -133,46 +111,35 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
 
     try {
       setIsUpdating(true);
-      // TODO: Replace with actual API call
-      // const newConfig = await apiClient.request<TopicConfiguration>(
-      //   `/brands/${brandId}/topic-configuration/update`,
-      //   {
-      //     method: 'POST',
-      //     body: JSON.stringify({ topics: unsavedChanges }),
-      //   }
-      // );
-      
-      // Mock: Create new version
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const newConfig: TopicConfiguration = {
-        ...currentConfig,
-        id: `config-${currentConfig.version + 1}`,
-        version: currentConfig.version + 1,
-        is_active: true,
-        change_type: changeImpact?.added.length ? 'topic_added' : 'topic_removed',
-        change_summary: changeImpact 
-          ? `Added ${changeImpact.added.length}, removed ${changeImpact.removed.length}`
-          : 'Updated topics',
-        topics: unsavedChanges,
-        created_at: new Date().toISOString(),
-        analysis_count: 0,
-      };
-
-      // Update current config and history
-      setCurrentConfig(prev => {
-        if (prev) {
-          setHistory(prevHistory => [newConfig, ...prevHistory.map(c => ({ ...c, is_active: false }))]);
+      const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration }>(
+        `/brands/${brandId}/topic-configuration/update`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ topics: unsavedChanges }),
         }
-        return newConfig;
-      });
-      setUnsavedChanges([]);
+      );
+      
+      if (response.success && response.data) {
+        const newConfig = response.data;
+        
+        // Update current config and history
+        setCurrentConfig(newConfig);
+        setHistory(prevHistory => {
+          // Mark old configs as inactive and add new one
+          const updatedHistory = prevHistory.map(c => ({ ...c, is_active: false }));
+          return [newConfig, ...updatedHistory];
+        });
+        setUnsavedChanges([]);
+      } else {
+        throw new Error('Failed to save changes: No data returned');
+      }
     } catch (error) {
       console.error('Failed to save changes:', error);
       throw error;
     } finally {
       setIsUpdating(false);
     }
-  }, [brandId, currentConfig, unsavedChanges, changeImpact]);
+  }, [brandId, currentConfig, unsavedChanges]);
 
   const discardChanges = useCallback(() => {
     setUnsavedChanges([]);
@@ -181,56 +148,45 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
   const resetTopics = useCallback(async () => {
     try {
       setIsUpdating(true);
-      // TODO: Replace with actual API call
-      // await apiClient.request(`/brands/${brandId}/topic-configuration/reset`, {
-      //   method: 'POST',
-      // });
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Refetch current config and history
       await fetchCurrentConfig();
       await fetchHistory();
+      setUnsavedChanges([]);
     } catch (error) {
       console.error('Failed to reset topics:', error);
       throw error;
     } finally {
       setIsUpdating(false);
     }
-  }, [brandId, fetchCurrentConfig, fetchHistory]);
+  }, [fetchCurrentConfig, fetchHistory]);
 
   const revertToVersion = useCallback(async (versionId: string) => {
     try {
       setIsUpdating(true);
-      // TODO: Replace with actual API call
-      // const newConfig = await apiClient.request<TopicConfiguration>(
-      //   `/brands/${brandId}/topic-configuration/${versionId}/revert`,
-      //   { method: 'POST' }
-      // );
+      const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration }>(
+        `/brands/${brandId}/topic-configuration/${versionId}/revert`,
+        { method: 'POST' }
+      );
       
-      const versionToRevert = history.find(c => c.id === versionId);
-      if (!versionToRevert) throw new Error('Version not found');
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const newConfig: TopicConfiguration = {
-        ...versionToRevert,
-        id: `config-${currentConfig ? currentConfig.version + 1 : 1}`,
-        version: currentConfig ? currentConfig.version + 1 : 1,
-        is_active: true,
-        change_type: 'full_refresh',
-        change_summary: `Reverted to v${versionToRevert.version}`,
-        created_at: new Date().toISOString(),
-        analysis_count: 0,
-      };
-
-      setCurrentConfig(newConfig);
-      setHistory(prev => [newConfig, ...prev.map(c => ({ ...c, is_active: false }))]);
-      setUnsavedChanges([]);
+      if (response.success && response.data) {
+        const newConfig = response.data;
+        setCurrentConfig(newConfig);
+        setHistory(prev => {
+          // Mark old configs as inactive and add new one
+          const updatedHistory = prev.map(c => ({ ...c, is_active: false }));
+          return [newConfig, ...updatedHistory];
+        });
+        setUnsavedChanges([]);
+      } else {
+        throw new Error('Failed to revert version: No data returned');
+      }
     } catch (error) {
       console.error('Failed to revert version:', error);
       throw error;
     } finally {
       setIsUpdating(false);
     }
-  }, [brandId, history, currentConfig]);
+  }, [brandId]);
 
   return {
     currentConfig,

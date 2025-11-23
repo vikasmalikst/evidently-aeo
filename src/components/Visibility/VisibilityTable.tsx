@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { getLLMIcon } from './LLMIcons';
@@ -31,7 +31,7 @@ interface VisibilityTableProps {
   loading?: boolean;
 }
 
-export const VisibilityTable = ({
+export const VisibilityTable = memo(({
   activeTab,
   models = [],
   selectedModels = [],
@@ -288,4 +288,4 @@ export const VisibilityTable = ({
       </div>
     </div>
   );
-};
+});

@@ -10,6 +10,7 @@ import { Keywords } from './pages/Keywords';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
+import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
 import { Settings } from './pages/Settings';
 import { ManagePrompts } from './pages/ManagePrompts';
 import { TopicManagementSettings } from './pages/BrandSettings/TopicManagementSettings';
@@ -67,6 +68,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Setup />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/onboarding/loading/:brandId" 
+          element={
+            <ProtectedRoute>
+              <DataCollectionLoadingScreenRoute />
             </ProtectedRoute>
           } 
         />

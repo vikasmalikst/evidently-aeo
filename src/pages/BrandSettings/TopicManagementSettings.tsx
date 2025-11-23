@@ -8,12 +8,12 @@ import { TopicEditModal } from './components/TopicEditModal';
 import { HistoryModal } from './components/HistoryModal';
 import { HowItWorksModal } from './components/HowItWorksModal';
 import { IconHandClick } from '@tabler/icons-react';
+import { useManualBrandDashboard } from '../../manual-dashboard';
 import type { TopicConfiguration } from './types';
 
-// TODO: Get brandId from auth/store/route params
-const BRAND_ID = 'brand-1'; // Placeholder
-
 export const TopicManagementSettings = () => {
+  const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
+
   const {
     currentConfig,
     history,
@@ -23,7 +23,7 @@ export const TopicManagementSettings = () => {
     saveChanges,
     discardChanges,
     revertToVersion,
-  } = useTopicConfiguration(BRAND_ID);
+  } = useTopicConfiguration(selectedBrandId || '');
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -113,7 +113,7 @@ export const TopicManagementSettings = () => {
     ? history.find(c => c.version === selectedVersion)?.topics || currentConfig?.topics || []
     : currentConfig?.topics || [];
 
-  if (isLoading) {
+  if (brandsLoading || isLoading) {
     return (
       <Layout>
         <SettingsLayout>
@@ -128,12 +128,24 @@ export const TopicManagementSettings = () => {
     );
   }
 
+  if (!selectedBrandId) {
+    return (
+      <Layout>
+        <SettingsLayout>
+          <div className="p-6">
+            <p className="text-[var(--text-caption)]">Please select a brand first.</p>
+          </div>
+        </SettingsLayout>
+      </Layout>
+    );
+  }
+
   if (!currentConfig) {
     return (
       <Layout>
         <SettingsLayout>
           <div className="p-6">
-            <p className="text-[var(--text-caption)]">No topic configuration found.</p>
+            <p className="text-[var(--text-caption)]">No topic configuration found. Create your first topic configuration by adding topics.</p>
           </div>
         </SettingsLayout>
       </Layout>
@@ -182,6 +194,7 @@ export const TopicManagementSettings = () => {
             history={history}
             currentVersion={currentConfig.version}
             selectedVersion={selectedVersion}
+            brandId={selectedBrandId || ''}
             onEdit={handleEdit}
             onRemoveTopic={handleRemoveTopic}
             onVersionChange={handleVersionChange}

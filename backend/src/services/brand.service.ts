@@ -780,6 +780,30 @@ export class BrandService {
         });
       }
 
+      // 🎯 PHASE 5: Trigger scoring for new brand (position extraction, sentiment scoring, citation extraction)
+      // Only run for newly created brands, not updates
+      if (!existingBrand) {
+        try {
+          console.log(`🔄 Triggering automatic scoring for new brand ${newBrand.id}...`);
+          // Import and trigger scoring asynchronously (non-blocking)
+          const { brandScoringService } = await import('./scoring/brand-scoring.orchestrator');
+          // Use async method to not block brand creation response
+          brandScoringService.scoreBrandAsync({
+            brandId: newBrand.id,
+            customerId,
+            // Process all existing collector_results for this brand (if any exist already)
+            // The scoring services will only process unprocessed results
+            parallel: false // Run sequentially for better reliability
+          });
+          console.log(`✅ Automatic scoring triggered for brand ${newBrand.id} (running in background)`);
+        } catch (scoringError) {
+          console.warn(`⚠️ Failed to trigger scoring for brand ${newBrand.id} (non-blocking):`, scoringError);
+          // Don't throw - scoring failure shouldn't block brand creation
+        }
+      } else {
+        console.log(`ℹ️ Skipping scoring trigger for existing brand ${newBrand.id} (update, not new creation)`);
+      }
+
       return {
         brand: newBrand,
         artifact_id: artifactId,

@@ -64,9 +64,9 @@ export class OpenRouterCollectorService {
     this.appName = getEnvVar('OPENROUTER_APP_NAME', 'AnswerIntel Collector');
     this.collectorConfigs = {
       claude: {
-        model: 'anthropic/claude-3.5-haiku',
-        systemPrompt: 'You are Claude, a precise research assistant. Provide factual, well-structured answers with bullet points where useful.',
-        enableWebSearch: false,
+        model: 'anthropic/claude-haiku-4.5',
+        systemPrompt: 'You are Claude, a precise research assistant. Provide factual, well-structured answers with bullet points where useful. When you receive a question, first gather fresh evidence using web search, cite the sources you rely on, and then deliver a concise, well-structured answer.',
+        enableWebSearch: true,
         maxTokens: 1024,
         temperature: 0.7,
         topP: 0.9
@@ -127,16 +127,32 @@ export class OpenRouterCollectorService {
 
     const body: Record<string, unknown> = {
       model: resolvedConfig.model,
-      temperature: resolvedConfig.temperature ?? 0.7,
-      max_tokens: resolvedConfig.maxTokens ?? 1024,
       messages,
     };
+
+    if (resolvedConfig.temperature !== undefined) {
+      body.temperature = resolvedConfig.temperature;
+    }
+
+    if (resolvedConfig.maxTokens !== undefined) {
+      body.max_tokens = resolvedConfig.maxTokens;
+    }
 
     if (resolvedConfig.topP !== undefined) {
       body.top_p = resolvedConfig.topP;
     }
 
-    if (resolvedConfig.enableWebSearch) {
+    // Always include tools for Claude (with web search)
+    const collectorType = request.collectorType || 'openrouter';
+    if (collectorType === 'claude') {
+      body.tools = [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search'
+        }
+      ];
+    } else if (resolvedConfig.enableWebSearch) {
+      // For other collectors, conditionally add tools if enableWebSearch is true
       body.tools = [
         {
           type: 'web_search_20250305',
@@ -190,8 +206,6 @@ export class OpenRouterCollectorService {
       response_length: answer.length,
       tokens_used: usage.total_tokens ?? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0)
     });
-
-    const collectorType = request.collectorType || 'openrouter';
 
     return {
       query_id: queryId,

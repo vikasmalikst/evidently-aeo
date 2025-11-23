@@ -145,7 +145,7 @@ const AI_MODELS: AIModel[] = [
   },
 ];
 
-const MAX_SELECTIONS = 4;
+const MAX_SELECTIONS = 6;
 
 export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelectionProps) => {
   const canSelectMore = selectedModels.length < MAX_SELECTIONS;

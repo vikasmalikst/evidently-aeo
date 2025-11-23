@@ -32,7 +32,7 @@ const COLORS = {
   gridLines: '#e8e9ed',
 };
 
-const LLM_PROVIDERS = ['ChatGPT', 'Claude', 'Gemini', 'Perplexity'];
+const LLM_PROVIDERS = ['ChatGPT', 'Claude', 'Gemini', 'Perplexity', 'Bing Copilot', 'Grok'];
 
 interface KeywordData {
   keyword: string;

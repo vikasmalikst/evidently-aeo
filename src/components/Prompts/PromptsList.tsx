@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, memo } from 'react';
 import { ChevronDown, ChevronRight, CalendarDays } from 'lucide-react';
 import { PromptEntry, PromptTopic } from '../../types/prompts';
 
@@ -17,7 +17,7 @@ interface PromptsListProps {
   loading: boolean;
 }
 
-export const PromptsList = ({
+export const PromptsList = memo(({
   topics,
   selectedPromptId,
   onPromptSelect,
@@ -203,4 +203,4 @@ export const PromptsList = ({
       </div>
     </div>
   );
-};
+});

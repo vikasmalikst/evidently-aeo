@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useManualBrandDashboard } from '../manual-dashboard';
@@ -272,6 +272,9 @@ const UrlTooltip = ({ url, fullUrl, urls }: UrlTooltipProps) => {
 };
 
 export const Dashboard = () => {
+  const pageMountTime = useRef(performance.now());
+  console.log('[DASHBOARD] Component mounting at', performance.now());
+  
   const user = useAuthStore((state) => state.user);
   const authLoading = useAuthStore((state) => state.isLoading);
   const defaultDateRange = useMemo(getDefaultDateRange, []);
@@ -280,6 +283,8 @@ export const Dashboard = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const [showTopicModal, setShowTopicModal] = useState(false);
+  
+  console.log('[DASHBOARD] Initial state set at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
 
   const getBrandData = () => {
     const brandInfo = localStorage.getItem('onboarding_brand');
@@ -302,6 +307,14 @@ export const Dashboard = () => {
     selectedBrand,
     selectBrand
   } = useManualBrandDashboard();
+  
+  useEffect(() => {
+    if (!brandsLoading && brands.length > 0) {
+      console.log('[DASHBOARD] Brands loaded at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Brands:', brands.length, '- Selected brand ID:', selectedBrandId);
+    } else if (brandsLoading) {
+      console.log('[DASHBOARD] Brands loading... at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
+    }
+  }, [brandsLoading, brands.length, selectedBrandId]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -397,15 +410,24 @@ export const Dashboard = () => {
 
   // Build endpoint with current params
   const dashboardEndpoint = useMemo(() => {
-    if (!selectedBrandId || !startDate || !endDate) return null;
+    const endpointStart = performance.now();
+    if (!selectedBrandId || !startDate || !endDate) {
+      console.log('[DASHBOARD] Endpoint computation skipped - missing params at', endpointStart, '- Time since mount:', (endpointStart - pageMountTime.current).toFixed(2) + 'ms');
+      return null;
+    }
     const params = new URLSearchParams({
       startDate,
       endDate
     });
-    return `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+    const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+    console.log('[DASHBOARD] Endpoint computed at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Endpoint:', endpoint);
+    return endpoint;
   }, [selectedBrandId, startDate, endDate, reloadKey]);
 
   // Use cached data hook
+  // Enable the hook as soon as we have an endpoint, even if auth is still loading
+  // The API client will handle auth requirements
+  const dataFetchStart = useRef(performance.now());
   const {
     data: dashboardResponse,
     loading: dashboardLoading,
@@ -415,13 +437,38 @@ export const Dashboard = () => {
     dashboardEndpoint,
     {},
     { requiresAuth: true },
-    { enabled: !authLoading && !!dashboardEndpoint, refetchOnMount: false }
+    { enabled: !!dashboardEndpoint, refetchOnMount: false }
   );
+  
+  useEffect(() => {
+    if (dashboardEndpoint) {
+      console.log('[DASHBOARD] useCachedData hook called at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Loading:', dashboardLoading, '- Has data:', !!dashboardResponse, '- Auth loading:', authLoading, '- Selected brand ID:', selectedBrandId);
+    } else {
+      console.log('[DASHBOARD] No endpoint yet at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Auth loading:', authLoading, '- Selected brand ID:', selectedBrandId, '- Brands loading:', brandsLoading);
+    }
+  }, [dashboardEndpoint, dashboardLoading, dashboardResponse, authLoading, selectedBrandId, brandsLoading]);
+  
+  useEffect(() => {
+    if (dashboardResponse && !dashboardLoading) {
+      const fetchDuration = performance.now() - dataFetchStart.current;
+      console.log('[DASHBOARD] ✅ Data fetch completed at', performance.now(), '- Fetch duration:', fetchDuration.toFixed(2) + 'ms', '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Success:', dashboardResponse.success);
+      dataFetchStart.current = performance.now();
+    }
+  }, [dashboardResponse, dashboardLoading]);
 
+  const dataProcessStart = useRef(performance.now());
   const dashboardData: DashboardPayload | null = dashboardResponse?.success ? dashboardResponse.data || null : null;
   const dashboardErrorMsg: string | null = dashboardResponse?.success 
     ? null 
     : (dashboardError?.message || dashboardResponse?.error || dashboardResponse?.message || null);
+  
+  useEffect(() => {
+    if (dashboardData) {
+      const processDuration = performance.now() - dataProcessStart.current;
+      console.log('[DASHBOARD] ✅ Data processed at', performance.now(), '- Process duration:', processDuration.toFixed(2) + 'ms', '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
+      dataProcessStart.current = performance.now();
+    }
+  }, [dashboardData]);
 
   const actionItems: ActionItem[] = dashboardData?.actionItems ?? [];
   const highPriorityActions = actionItems.filter((item: ActionItem) => item.priority === 'high');
@@ -437,6 +484,20 @@ export const Dashboard = () => {
 
   const brandSelectionPending = !selectedBrandId && brandsLoading;
   const combinedLoading = authLoading || dashboardLoading || brandSelectionPending;
+  
+  useEffect(() => {
+    if (!combinedLoading && dashboardData) {
+      const totalTime = performance.now() - pageMountTime.current;
+      console.log('[DASHBOARD] ✅✅✅ PAGE FULLY LOADED at', performance.now(), '- TOTAL TIME:', totalTime.toFixed(2) + 'ms');
+      console.log('[DASHBOARD] Breakdown:', {
+        'Time to brands load': brands.length > 0 ? 'N/A' : 'Waiting...',
+        'Time to endpoint ready': dashboardEndpoint ? 'Ready' : 'Waiting...',
+        'Time to data fetch': dashboardResponse ? 'Complete' : 'Waiting...',
+        'Time to data process': dashboardData ? 'Complete' : 'Waiting...',
+        'Total time': totalTime.toFixed(2) + 'ms'
+      });
+    }
+  }, [combinedLoading, dashboardData, brands.length, dashboardEndpoint, dashboardResponse]);
 
   if (combinedLoading) {
     return (
@@ -924,7 +985,7 @@ export const Dashboard = () => {
               <ActionCard
                 title="Citation Sources"
                 description="Explore domains citing your brand"
-                link="/ai-sources"
+                link="/search-sources"
                 icon={<ExternalLink size={18} />}
                 color="#fa8a40"
               />
@@ -1079,7 +1140,7 @@ export const Dashboard = () => {
 
             {collectorSummaries.length > 0 ? (
               <div className="space-y-3">
-                {collectorSummaries.slice(0, 4).map((summary: CollectorSummary, index) => (
+                {collectorSummaries.slice(0, 6).map((summary: CollectorSummary, index) => (
                   <div key={summary.collectorType ?? index} className="p-3 bg-[#f9f9fb] rounded-lg border border-[#e8e9ed]">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">

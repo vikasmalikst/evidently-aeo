@@ -3,10 +3,9 @@ import { ChevronUp, ChevronDown, Minus, TrendingUp, TrendingDown } from 'lucide-
 import { IconBrandOpenai } from '@tabler/icons-react';
 import claudeLogoSrc from '../../../assets/Claude-AI-icon.svg';
 import copilotLogoSrc from '../../../assets/Microsoft-Copilot-icon.svg';
-import deepseekLogoSrc from '../../../assets/Deepseek-Logo-Icon.svg';
 import geminiLogoSrc from '../../../assets/Google-Gemini-Icon.svg';
+import googleAioLogoSrc from '../../../assets/Google-AI-icon.svg';
 import grokLogoSrc from '../../../assets/Grok-icon.svg';
-import mistralLogoSrc from '../../../assets/Mistral_AI_icon.svg';
 import perplexityLogoSrc from '../../../assets/Perplexity-Simple-Icon.svg';
 import type { Topic, SortColumn, SortState, TopicSource } from '../types';
 import type { Competitor } from '../utils/competitorColors';

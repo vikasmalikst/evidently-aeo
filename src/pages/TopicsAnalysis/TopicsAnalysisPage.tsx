@@ -2,10 +2,9 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { IconBrandOpenai } from '@tabler/icons-react';
 import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
 import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
-import deepseekLogoSrc from '../../assets/Deepseek-Logo-Icon.svg';
 import geminiLogoSrc from '../../assets/Google-Gemini-Icon.svg';
+import googleAioLogoSrc from '../../assets/Google-AI-icon.svg';
 import grokLogoSrc from '../../assets/Grok-icon.svg';
-import mistralLogoSrc from '../../assets/Mistral_AI_icon.svg';
 import perplexityLogoSrc from '../../assets/Perplexity-Simple-Icon.svg';
 import { Layout } from '../../components/Layout/Layout';
 import { CompactMetricsPods } from './components/CompactMetricsPods';
@@ -123,8 +122,7 @@ export const TopicsAnalysisPage = ({
     { id: 'gemini', name: 'Google Gemini', icon: 'gemini' },
     { id: 'perplexity', name: 'Perplexity', icon: 'perplexity' },
     { id: 'copilot', name: 'Microsoft Copilot', icon: 'copilot' },
-    { id: 'deepseek', name: 'DeepSeek', icon: 'deepseek' },
-    { id: 'mistral', name: 'Mistral', icon: 'mistral' },
+    { id: 'google_aio', name: 'Google AIO', icon: 'google_aio' },
     { id: 'grok', name: 'Grok', icon: 'grok' },
   ];
   
@@ -776,11 +774,8 @@ export const TopicsAnalysisPage = ({
                   {selectedModel === 'copilot' && (
                     <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
                   )}
-                  {selectedModel === 'deepseek' && (
-                    <img src={deepseekLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                  )}
-                  {selectedModel === 'mistral' && (
-                    <img src={mistralLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
+                  {selectedModel === 'google_aio' && (
+                    <img src={googleAioLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
                   )}
                   {selectedModel === 'grok' && (
                     <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />

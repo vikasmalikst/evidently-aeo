@@ -690,7 +690,7 @@ export const Dashboard = () => {
 
         <div className="mb-6">
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
-            Welcome back, {displayName}
+            Welcome, {displayName}
           </h1>
           <div className="flex flex-wrap items-center gap-4">
             <p className="text-[15px] text-[#393e51]">

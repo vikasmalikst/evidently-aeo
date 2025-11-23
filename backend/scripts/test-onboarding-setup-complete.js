@@ -130,7 +130,7 @@ async function testBrandIntelLookup() {
     
     try {
       // Import service directly
-      const { onboardingIntelService } = require('../dist/services/onboarding-intel.service');
+      const { onboardingIntelService } = require('../dist/services/onboarding');
       
       const result = await onboardingIntelService.lookupBrandIntel({
         input: testBrand.name,
@@ -265,7 +265,7 @@ async function testCompetitorGeneration() {
     console.log(`\n📋 Testing competitors for: ${testBrand.name}`);
     
     try {
-      const { onboardingIntelService } = require('../dist/services/onboarding-intel.service');
+      const { onboardingIntelService } = require('../dist/services/onboarding');
       
       // First get brand intel to have brand data
       const brandIntel = await onboardingIntelService.lookupBrandIntel({
@@ -459,7 +459,7 @@ async function testTopicGeneration() {
     
     try {
       // Get brand intel first
-      const { onboardingIntelService } = require('../dist/services/onboarding-intel.service');
+      const { onboardingIntelService } = require('../dist/services/onboarding');
       const brandIntel = await onboardingIntelService.lookupBrandIntel({
         input: testBrand.name,
         locale: 'en-US',
@@ -797,7 +797,7 @@ async function testPromptGeneration() {
     
     try {
       // Get brand intel and topics first
-      const { onboardingIntelService } = require('../dist/services/onboarding-intel.service');
+      const { onboardingIntelService } = require('../dist/services/onboarding');
       const brandIntel = await onboardingIntelService.lookupBrandIntel({
         input: testBrand.name,
         locale: 'en-US',
@@ -1068,7 +1068,7 @@ async function testEndToEndIntegration() {
   try {
     // Step 1: Brand Intel
     console.log('\n  Step 1: Brand Intel Lookup...');
-    const { onboardingIntelService } = require('../dist/services/onboarding-intel.service');
+    const { onboardingIntelService } = require('../dist/services/onboarding');
     const brandIntel = await onboardingIntelService.lookupBrandIntel({
       input: testBrand.name,
       locale: 'en-US',

@@ -233,7 +233,7 @@ export const TopicSelectionModal = ({
   };
 
   return (
-    <div className="topic-modal-overlay" onClick={onClose}>
+    <div className="topic-modal-overlay">
       <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
         <StepIndicator currentStep="topics" />
         

@@ -3,11 +3,10 @@ import { IconBrandOpenai } from '@tabler/icons-react';
 import { Check } from 'lucide-react';
 import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
 import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
-import deepseekLogoSrc from '../../assets/Deepseek-Logo-Icon.svg';
 import geminiLogoSrc from '../../assets/Google-Gemini-Icon.svg';
+import googleAioLogoSrc from '../../assets/Google-AI-icon.svg';
 import grokLogoSrc from '../../assets/Grok-icon.svg';
 import llamaLogoSrc from '../../assets/LLaMA-Meta-Logo.svg';
-import mistralLogoSrc from '../../assets/Mistral_AI_icon.svg';
 import perplexityLogoSrc from '../../assets/Perplexity-Simple-Icon.svg';
 
 interface AIModel {
@@ -88,27 +87,13 @@ const AI_MODELS: AIModel[] = [
     available: true,
   },
   {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    provider: 'DeepSeek',
+    id: 'google_aio',
+    name: 'Google AIO',
+    provider: 'Google',
     logo: (
       <img
-        src={deepseekLogoSrc}
-        alt="DeepSeek logo"
-        className="ai-model-logo-image"
-        loading="lazy"
-      />
-    ),
-    available: true,
-  },
-  {
-    id: 'mistral',
-    name: 'Mistral',
-    provider: 'Mistral AI',
-    logo: (
-      <img
-        src={mistralLogoSrc}
-        alt="Mistral logo"
+        src={googleAioLogoSrc}
+        alt="Google AIO logo"
         className="ai-model-logo-image"
         loading="lazy"
       />

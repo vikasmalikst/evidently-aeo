@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
-import { onboardingIntelService } from '../services/onboarding-intel.service';
+import { onboardingIntelService } from '../services/onboarding';
 import { trendingKeywordsService } from '../services/keywords/trending-keywords.service';
 import { aeoCategorizationService } from '../services/aeo-categorization.service';
 import { brandService } from '../services/brand.service';

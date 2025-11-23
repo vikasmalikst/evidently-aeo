@@ -192,7 +192,7 @@ export const BrandInput = ({
 
       {showLoading ? (
         <div className="onboarding-loading">
-          <Spinner size="large" message="Resolving brand intelligence..." />
+          <Spinner size="large" message="Fetching your brand info ..." />
         </div>
       ) : (
         <>

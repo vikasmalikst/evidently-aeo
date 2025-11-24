@@ -544,23 +544,27 @@ export class BrandService {
           
           // 🎯 PHASE 3: Save user-selected queries OR generate new queries
           // This code is inside the else block (line 380) - topics were inserted successfully
-          // Check if user has selected queries in metadata.prompts
-          const userSelectedPrompts = (brandData.metadata as any)?.prompts || [];
+          // Check if user has selected queries in metadata.prompts or metadata.prompts_with_topics
+          const promptsWithTopics = (brandData.metadata as any)?.prompts_with_topics || (brandData.metadata as any)?.prompts || [];
           let queryGenResult: { total_queries: number };
           
-          if (userSelectedPrompts && Array.isArray(userSelectedPrompts) && userSelectedPrompts.length > 0) {
+          if (promptsWithTopics && Array.isArray(promptsWithTopics) && promptsWithTopics.length > 0) {
+            // Check if prompts are in new format (with topics) or old format (just strings)
+            const isNewFormat = promptsWithTopics.length > 0 && typeof promptsWithTopics[0] === 'object' && promptsWithTopics[0].prompt;
+            
             // Save user-selected queries directly
-            console.log(`💾 Saving ${userSelectedPrompts.length} user-selected queries to database`);
+            console.log(`💾 Saving ${promptsWithTopics.length} user-selected queries to database (format: ${isNewFormat ? 'with topics' : 'legacy'})`);
             try {
               await this.saveUserSelectedQueries(
                 newBrand.id,
                 customerId,
-                userSelectedPrompts,
+                promptsWithTopics,
                 topicsForQueryGen, // Use topicsForQueryGen instead of topicLabels
-                newBrand.name
+                newBrand.name,
+                isNewFormat // Pass flag indicating if prompts include topic information
               );
-              queryGenResult = { total_queries: userSelectedPrompts.length };
-              console.log(`✅ Saved ${userSelectedPrompts.length} user-selected queries for brand ${newBrand.id}`);
+              queryGenResult = { total_queries: promptsWithTopics.length };
+              console.log(`✅ Saved ${promptsWithTopics.length} user-selected queries for brand ${newBrand.id}`);
             } catch (saveError) {
               console.error('⚠️ Failed to save user-selected queries, falling back to AI generation:', saveError);
               // Fall through to AI generation
@@ -1274,7 +1278,7 @@ export class BrandService {
     endDate?: string,
     collectorType?: string,
     country?: string
-  ): Promise<any[]> {
+  ): Promise<{ topics: any[]; availableModels: string[] }> {
     try {
       console.log(`🎯 Fetching topics WITH analytics (only topics with collector_results) for brand ${brandId}`);
       
@@ -1342,12 +1346,12 @@ export class BrandService {
       }
       
       // Step 3: Get extracted_positions for this brand
-      // Include metadata to extract topic_name from there, and collector_type for filtering
+      // Include topic column and metadata to extract topic_name from there, and collector_type for filtering
       // If we have collector_result_ids, filter by them; otherwise get all positions for this brand
       let positions: any[] = [];
       let positionsQuery = supabaseAdmin
         .from('extracted_positions')
-        .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, metadata, collector_type')
+        .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
         .eq('brand_id', brandId)
         .eq('customer_id', customerId)
         .gte('processed_at', startIso)
@@ -1395,7 +1399,7 @@ export class BrandService {
       
       if (!positions || positions.length === 0) {
         console.log('⚠️ No extracted_positions found for these collector_results in date range');
-        return [];
+        return { topics: [], availableModels: [] };
       }
       
       // Get distinct collector_types (models) available for this brand in the date range
@@ -1443,8 +1447,11 @@ export class BrandService {
         let intent = 'awareness';
         let topicSource = 'none';
         
-        // Try to get topic from metadata.topic_name first
-        if (pos.metadata && typeof pos.metadata === 'object') {
+        // Priority: 1) extracted_positions.topic column, 2) metadata.topic_name, 3) generated_queries.topic
+        if (pos.topic && typeof pos.topic === 'string' && pos.topic.trim().length > 0) {
+          topicName = pos.topic.trim();
+          topicSource = 'extracted_positions_column';
+        } else if (pos.metadata && typeof pos.metadata === 'object') {
           const metadata = pos.metadata as any;
           if (metadata.topic_name && typeof metadata.topic_name === 'string') {
             topicName = metadata.topic_name.trim();
@@ -1453,7 +1460,7 @@ export class BrandService {
           }
         }
         
-        // Fallback to generated_queries.topic if not in metadata
+        // Fallback to generated_queries.topic if not in extracted_positions
         if (!topicName) {
           const queryId = crToQueryMap.get(pos.collector_result_id);
           if (queryId) {
@@ -2474,9 +2481,10 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
   private async saveUserSelectedQueries(
     brandId: string,
     customerId: string,
-    prompts: string[],
+    prompts: string[] | Array<{ prompt: string; topic: string }>,
     topics: string[],
-    brandName: string
+    brandName: string,
+    hasTopicInfo: boolean = false
   ): Promise<void> {
     const { v4: uuidv4 } = require('uuid');
     const generationId = uuidv4();
@@ -2505,18 +2513,30 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
       throw new Error(`Failed to create query generation record: ${genError.message}`);
     }
 
-    // Map prompts to topics (try to match by topic name in prompt, or assign to first topic)
-    const queryInserts = prompts.map((prompt, index) => {
-      // Try to find matching topic by checking if prompt contains topic name
-      let matchedTopic = topics.find(topic => 
-        prompt.toLowerCase().includes(topic.toLowerCase())
-      ) || topics[0] || 'General'; // Fallback to first topic or 'General'
+    // Map prompts to topics
+    const queryInserts = prompts.map((promptData, index) => {
+      let promptText: string;
+      let matchedTopic: string;
+      
+      if (hasTopicInfo && typeof promptData === 'object' && 'prompt' in promptData) {
+        // New format: prompts include topic information
+        promptText = promptData.prompt;
+        matchedTopic = promptData.topic || topics[0] || 'General';
+      } else {
+        // Legacy format: just prompt strings, need to match to topics
+        promptText = typeof promptData === 'string' ? promptData : (promptData as any).prompt || '';
+        // Try to find matching topic by checking if prompt contains topic name
+        matchedTopic = topics.find(topic => 
+          promptText.toLowerCase().includes(topic.toLowerCase())
+        ) || topics[0] || 'General'; // Fallback to first topic or 'General'
+      }
       
       return {
         generation_id: generationId,
         brand_id: brandId,
         customer_id: customerId,
-        query_text: prompt,
+        query_text: promptText,
+        topic: matchedTopic, // Store topic in dedicated column
         intent: 'data_collection', // Default intent
         brand: brandName,
         template_id: `user-selected-${index}`,

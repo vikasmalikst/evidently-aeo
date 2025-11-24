@@ -3,7 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import { WelcomeScreen } from '../Topics/WelcomeScreen';
 import { AIModelSelection } from './AIModelSelection';
 import { TopicSelectionModal } from '../Topics/TopicSelectionModal';
-import { PromptConfiguration } from './PromptConfiguration';
+import { PromptConfiguration, PromptWithTopic } from './PromptConfiguration';
 import { StepIndicator } from './StepIndicator';
 import type { Topic } from '../../types/topic';
 import { featureFlags } from '../../config/featureFlags';
@@ -18,7 +18,7 @@ interface SetupModalProps {
 export interface SetupData {
   models: string[];
   topics: Topic[];
-  prompts: string[];
+  prompts: PromptWithTopic[]; // Changed to include topic information
 }
 
 // Keep OnboardingData as alias for backward compatibility
@@ -37,7 +37,7 @@ export const SetupModal = ({
   const [currentStep, setCurrentStep] = useState<Step>(initialStep);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);
-  const [selectedPrompts, setSelectedPrompts] = useState<string[]>([]);
+  const [selectedPrompts, setSelectedPrompts] = useState<PromptWithTopic[]>([]);
 
   const handleBack = () => {
     if (currentStep === 'models') setCurrentStep('welcome');

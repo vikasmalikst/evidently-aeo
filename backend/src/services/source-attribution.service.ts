@@ -183,13 +183,13 @@ export class SourceAttributionService {
 
       console.log(`[SourceAttribution] 🔑 Extracted ${queryIdsFromCitations.length} unique queries and ${collectorResultIds.length} collector results (${stepTimings['ids_extraction']}ms)`)
 
-      // Step 6: Fetch queries for prompts
+      // Step 6: Fetch queries for prompts and topics
       const queriesStartTime = Date.now();
-      let queries: Array<{ id: string; query_text: string }> = []
+      let queries: Array<{ id: string; query_text: string; topic?: string | null; metadata?: any }> = []
       if (queryIdsFromCitations.length > 0) {
         const { data: queriesData, error: queriesError } = await supabaseAdmin
           .from('generated_queries')
-          .select('id, query_text')
+          .select('id, query_text, topic, metadata')
           .in('id', queryIdsFromCitations)
 
         if (queriesError) {
@@ -230,15 +230,20 @@ export class SourceAttributionService {
         }
       }
 
-      // Helper function to extract topic name from metadata
-      const extractTopicName = (metadata: any): string | null => {
-        if (!metadata) {
+      // Helper function to extract topic name (priority: row.topic column, then metadata)
+      const extractTopicName = (row: any, metadata?: any): string | null => {
+        // Priority: 1) row.topic column, 2) metadata
+        if (row?.topic && typeof row.topic === 'string' && row.topic.trim().length > 0) {
+          return row.topic.trim()
+        }
+        const meta = metadata || row?.metadata
+        if (!meta) {
           return null
         }
-        let parsed: any = metadata
-        if (typeof metadata === 'string') {
+        let parsed: any = meta
+        if (typeof meta === 'string') {
           try {
-            parsed = JSON.parse(metadata)
+            parsed = JSON.parse(meta)
           } catch {
             return null
           }
@@ -294,6 +299,7 @@ export class SourceAttributionService {
             collector_result_id,
             share_of_answers_brand,
             total_brand_mentions,
+            topic,
             metadata
           `)
           .in('collector_result_id', collectorResultIds)
@@ -359,11 +365,11 @@ export class SourceAttributionService {
         avgSentimentByCollectorResult.set(collectorId, sentimentScore)
       }
       
-      // Create map from collector_result_id to topic name (from extracted_positions metadata)
+      // Create map from collector_result_id to topic name (from extracted_positions topic column or metadata)
       const collectorResultTopicMap = new Map<number, string>()
       for (const position of extractedPositions) {
         if (position.collector_result_id) {
-          const topicName = extractTopicName(position.metadata)
+          const topicName = extractTopicName(position, position.metadata)
           if (topicName && !collectorResultTopicMap.has(position.collector_result_id)) {
             collectorResultTopicMap.set(position.collector_result_id, topicName)
           }
@@ -438,6 +444,17 @@ export class SourceAttributionService {
         // Add query_id from citation (citations table has query_id directly)
         if (citation.query_id) {
           aggregate.queryIds.add(citation.query_id)
+          
+          // Also get topic from query_id directly (in case collector_result doesn't have it)
+          const query = queryMap.get(citation.query_id)
+          if (query) {
+            // Priority: 1) query.topic column, 2) query.metadata->>'topic_name', 3) query.metadata->>'topic'
+            const queryTopic = query.topic || 
+              (query.metadata?.topic_name || query.metadata?.topic || null)
+            if (queryTopic) {
+              aggregate.topics.add(queryTopic)
+            }
+          }
         }
 
         // Add collector result data if available

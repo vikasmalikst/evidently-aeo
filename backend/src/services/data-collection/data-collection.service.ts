@@ -125,7 +125,7 @@ export class DataCollectionService {
     // Google AIO Collector (via Oxylabs)
     this.collectors.set('google_aio', {
       name: 'Google AIO Collector',
-      enabled: false,
+      enabled: true,
       baseUrl: 'oxylabs',
       timeout: 45000, // Increased to 45s
       retries: 2,
@@ -220,6 +220,29 @@ export class DataCollectionService {
           // Each collector will create its own execution record
           const collectorResults = await this.executeQueryAcrossCollectorsWithRetry(request, 2); // 2 retries
           console.log(`✅ [${queryNum}/${requests.length}] Completed ${collectorResults.length} collector executions`);
+          
+          // If all collectors failed, create a failed collector_result entry so the query is tracked
+          if (collectorResults.length === 0 || collectorResults.every(r => r.status === 'failed')) {
+            console.warn(`⚠️ [${queryNum}/${requests.length}] All collectors failed for query "${request.queryText.substring(0, 60)}...". Creating failed collector_result entry.`);
+            try {
+              // Create a failed collector_result entry to track this query attempt
+              await this.storeCollectorResult({
+                queryId: request.queryId,
+                executionId: '', // No execution ID since all collectors failed
+                collectorType: request.collectors.join(','),
+                status: 'failed',
+                error: collectorResults.length > 0 
+                  ? collectorResults.map(r => r.error).filter(Boolean).join('; ') 
+                  : 'All collectors failed',
+                brandId: request.brandId,
+                customerId: request.customerId,
+                executionTimeMs: 0
+              });
+            } catch (storeError) {
+              console.error(`❌ Failed to store failed collector_result for query ${request.queryId}:`, storeError);
+            }
+          }
+          
           return collectorResults;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -231,6 +254,23 @@ export class DataCollectionService {
             brandId: request.brandId,
             queryId: request.queryId
           });
+          
+          // Create a failed collector_result entry even when exception is thrown
+          try {
+            await this.storeCollectorResult({
+              queryId: request.queryId,
+              executionId: '',
+              collectorType: request.collectors.join(','),
+              status: 'failed',
+              error: errorMessage,
+              brandId: request.brandId,
+              customerId: request.customerId,
+              executionTimeMs: 0
+            });
+          } catch (storeError) {
+            console.error(`❌ Failed to store failed collector_result for query ${request.queryId}:`, storeError);
+          }
+          
           return [];
         }
       });
@@ -940,19 +980,28 @@ export class DataCollectionService {
       }
     }
 
-    // Get query text from generated_queries table
+    // Get query text and topic from generated_queries table
     let queryText = null;
+    let topicFromQuery: string | null = null;
     if (result.queryId) {
       try {
         const { data: queryData } = await this.supabase
           .from('generated_queries')
-          .select('query_text')
+          .select('query_text, topic, metadata')
           .eq('id', result.queryId)
           .single();
         
         if (queryData) {
           queryText = queryData.query_text;
+          // Priority: 1) topic column, 2) metadata->>'topic_name', 3) metadata->>'topic'
+          topicFromQuery = queryData.topic || 
+                          queryData.metadata?.topic_name || 
+                          queryData.metadata?.topic || 
+                          null;
           console.log(`✅ Retrieved query text: ${queryText?.substring(0, 50)}...`);
+          if (topicFromQuery) {
+            console.log(`✅ Retrieved topic: ${topicFromQuery}`);
+          }
         }
       } catch (error) {
         console.warn(`⚠️ Could not retrieve query text for ${result.queryId}:`, error);
@@ -980,20 +1029,30 @@ export class DataCollectionService {
     const insertData: any = {
       query_id: result.queryId,
       collector_type: mappedCollectorType,
-      raw_answer: result.response,
-      citations: result.citations,
-      urls: result.urls,
+      raw_answer: result.response || null, // Can be null for failed results
+      citations: result.citations || null, // Can be null for failed results
+      urls: result.urls || null, // Can be null for failed results
       brand: brandName, // Add brand name
       question: queryText, // Add query text
       competitors: competitorsList.length > 0 ? competitorsList : null, // Add competitors as JSONB array (not stringified)
+      topic: topicFromQuery || null, // Store topic in dedicated column
+      collection_time_ms: result.executionTimeMs || null, // Store collection time in dedicated column
       metadata: {
         ...result.metadata,
-        execution_time_ms: result.executionTimeMs,
+        execution_time_ms: result.executionTimeMs, // Also store in metadata for backward compatibility
         status: result.status,
         collected_by: 'main_process',
-        collected_at: new Date().toISOString()
+        collected_at: new Date().toISOString(),
+        ...(topicFromQuery ? { topic: topicFromQuery } : {}), // Also store in metadata for backward compatibility
+        ...(result.error ? { error: result.error } : {}), // Store error message for failed results
+        ...(result.status === 'failed' ? { failed: true, failed_at: new Date().toISOString() } : {})
       }
     };
+    
+    // Add error_message if status is failed
+    if (result.status === 'failed' && result.error) {
+      insertData.error_message = result.error;
+    }
 
     // Add brand and customer IDs for multi-tenant support
     if (result.brandId) {
@@ -1046,11 +1105,14 @@ export class DataCollectionService {
             question: queryText,
             competitors: competitorsList.length > 0 ? competitorsList : null,
             brightdata_snapshot_id: result.snapshotId,
+            topic: topicFromQuery || null, // Store topic in dedicated column
+            collection_time_ms: result.executionTimeMs || null, // Store collection time in dedicated column
             metadata: {
               ...result.metadata,
-              execution_time_ms: result.executionTimeMs,
+              execution_time_ms: result.executionTimeMs, // Also store in metadata for backward compatibility
               status: result.status,
-              execution_id: result.executionId // Store in metadata instead
+              execution_id: result.executionId, // Store in metadata instead
+              ...(topicFromQuery ? { topic: topicFromQuery } : {}) // Also store in metadata for backward compatibility
             }
           });
 

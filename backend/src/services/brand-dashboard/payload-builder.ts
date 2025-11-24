@@ -63,7 +63,7 @@ export async function buildDashboardPayload(
     const result = await supabaseAdmin
       .from('extracted_positions')
       .select(
-        'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions, has_brand_presence, metadata'
+        'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions, has_brand_presence, topic, metadata'
       )
       .eq('brand_id', brand.id)
       .eq('customer_id', customerId)
@@ -214,7 +214,11 @@ export async function buildDashboardPayload(
   >()
 
   const topicByQueryId = new Map<string, string>()
-  const extractTopicName = (metadata: any): string | null => {
+  const extractTopicName = (row: any, metadata?: any): string | null => {
+    // Priority: 1) row.topic column, 2) metadata.topic_name, 3) metadata.topic
+    if (row?.topic && typeof row.topic === 'string' && row.topic.trim().length > 0) {
+      return row.topic.trim()
+    }
     if (!metadata) {
       return null
     }
@@ -245,6 +249,9 @@ export async function buildDashboardPayload(
   const brandSentimentByQuery = new Map<string, number[]>()
   const queryTextMap = new Map<string, string>()
   const collectorVisibilityMap = new Map<number, number[]>()
+  
+  // Map collector_result_id to sentiment_score from collector_results (defined outside if block for scope)
+  const collectorResultSentimentMap = new Map<number, number | null>()
 
   if (positionRows.length > 0) {
     const uniqueCollectorResultIds = Array.from(
@@ -254,7 +261,7 @@ export async function buildDashboardPayload(
           .filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
       )
     )
-
+    
     if (uniqueCollectorResultIds.length > 0) {
       const {
         data: collectorRows,
@@ -263,7 +270,7 @@ export async function buildDashboardPayload(
         const start = Date.now()
         const result = await supabaseAdmin
           .from('collector_results')
-          .select('id, question')
+          .select('id, question, sentiment_score')
           .in('id', uniqueCollectorResultIds)
         console.log(`[Dashboard] ⏱ collector results query: ${Date.now() - start}ms`)
         return result
@@ -282,6 +289,13 @@ export async function buildDashboardPayload(
             ? collectorRow.question.trim()
             : 'Unlabeled query'
         queryTextMap.set(`collector-${collectorRow.id}`, label)
+        
+        // Store sentiment_score from collector_results
+        if (collectorRow.sentiment_score !== null && collectorRow.sentiment_score !== undefined) {
+          collectorResultSentimentMap.set(collectorRow.id, toNumber(collectorRow.sentiment_score))
+        } else {
+          collectorResultSentimentMap.set(collectorRow.id, null)
+        }
       })
     }
 
@@ -301,7 +315,7 @@ export async function buildDashboardPayload(
         const start = Date.now()
         const result = await supabaseAdmin
           .from('generated_queries')
-          .select('id, query_text, metadata')
+          .select('id, query_text, topic, metadata')
           .in('id', uniqueQueryIds)
         console.log(`[Dashboard] ⏱ generated queries lookup query: ${Date.now() - start}ms`)
         return result
@@ -320,13 +334,14 @@ export async function buildDashboardPayload(
           : 'Unlabeled query'
         queryTextMap.set(query.id, label)
 
+        // Priority: 1) topic column, 2) metadata.topic_name, 3) metadata.topic
         const metadata = query.metadata as Record<string, any> | null | undefined
-        const topicName =
-          typeof metadata?.topic_name === 'string' && metadata.topic_name.trim().length > 0
+        const topicName = query.topic ||
+          (typeof metadata?.topic_name === 'string' && metadata.topic_name.trim().length > 0
             ? metadata.topic_name.trim()
             : typeof metadata?.topic === 'string' && metadata.topic.trim().length > 0
               ? metadata.topic.trim()
-              : null
+              : null)
 
         if (topicName) {
           topicByQueryId.set(query.id, topicName)
@@ -360,8 +375,17 @@ export async function buildDashboardPayload(
 
     const brandShare = Math.max(0, toNumber(row.share_of_answers_brand))
     const brandVisibility = Math.max(0, toNumber(row.visibility_index))
-    const hasBrandSentiment = row.sentiment_score !== null && row.sentiment_score !== undefined
-    const brandSentiment = hasBrandSentiment ? toNumber(row.sentiment_score) : 0
+    
+    // Priority: 1) sentiment_score from collector_results (via collector_result_id), 2) sentiment_score from extracted_positions
+    let brandSentiment: number | null = null
+    if (row.collector_result_id && collectorResultSentimentMap.has(row.collector_result_id)) {
+      brandSentiment = collectorResultSentimentMap.get(row.collector_result_id) ?? null
+    } else if (row.sentiment_score !== null && row.sentiment_score !== undefined) {
+      brandSentiment = toNumber(row.sentiment_score)
+    }
+    const hasBrandSentiment = brandSentiment !== null && brandSentiment !== undefined
+    const brandSentimentValue = hasBrandSentiment ? brandSentiment : 0
+    
     const hasBrandPresence = row.has_brand_presence === true
     const brandMentions = Math.max(0, toNumber(row.total_brand_mentions))
 
@@ -380,7 +404,13 @@ export async function buildDashboardPayload(
     const shareArray = brandShareByQuery.get(queryId)!
     const visibilityArray = brandVisibilityByQuery.get(queryId)!
     const sentimentArray = brandSentimentByQuery.get(queryId)!
-    const metadataTopicName = extractTopicName(row.metadata)
+    
+    // Use the sentiment value we determined above
+    if (hasBrandSentiment) {
+      sentimentArray.push(brandSentimentValue)
+    }
+    // Priority: 1) row.topic column, 2) metadata, 3) query topic mapping
+    const metadataTopicName = extractTopicName(row, row.metadata)
     if (metadataTopicName && row.query_id) {
       topicByQueryId.set(row.query_id, metadataTopicName)
     }
@@ -417,7 +447,7 @@ export async function buildDashboardPayload(
     }
 
     if (hasBrandSentiment && (isBrandRow || sentimentArray.length === 0)) {
-      sentimentArray.push(brandSentiment)
+      sentimentArray.push(brandSentimentValue)
     }
 
     if (isBrandRow) {
@@ -440,7 +470,7 @@ export async function buildDashboardPayload(
         collectorStats.shareValues.push(brandShare)
         collectorStats.visibilityValues.push(brandVisibility)
         if (hasBrandSentiment) {
-          collectorStats.sentimentValues.push(brandSentiment)
+          collectorStats.sentimentValues.push(brandSentimentValue)
         }
         if (brandMentions > 0) {
           collectorStats.brandMentions += brandMentions
@@ -485,7 +515,7 @@ export async function buildDashboardPayload(
         topicAggregate.shareValues.push(brandShare)
         topicAggregate.visibilityValues.push(brandVisibility)
         if (hasBrandSentiment) {
-          topicAggregate.sentimentValues.push(brandSentiment)
+          topicAggregate.sentimentValues.push(brandSentimentValue)
         }
         if (hasBrandPresence) {
           topicAggregate.brandPresenceCount += 1
@@ -541,7 +571,7 @@ export async function buildDashboardPayload(
     }
 
     if (processedRowCount <= 3) {
-      console.log(`[Dashboard] ${collectorType} - Query ${queryId}: share=${brandShare}, visibility=${brandVisibility}, sentiment=${brandSentiment}`)
+      console.log(`[Dashboard] ${collectorType} - Query ${queryId}: share=${brandShare}, visibility=${brandVisibility}, sentiment=${brandSentimentValue}`)
     }
 
     const rawCompetitorName = row.competitor_name?.trim()
@@ -555,8 +585,17 @@ export async function buildDashboardPayload(
     const competitorName = rawCompetitorName
     const competitorShare = Math.max(0, toNumber(row.share_of_answers_competitor))
     const competitorVisibility = Math.max(0, toNumber(row.visibility_index_competitor))
-    const hasCompetitorSentiment = row.sentiment_score !== null && row.sentiment_score !== undefined
-    const competitorSentiment = hasCompetitorSentiment ? toNumber(row.sentiment_score) : 0
+    
+    // Priority: 1) sentiment_score from collector_results (via collector_result_id), 2) sentiment_score from extracted_positions
+    let competitorSentiment: number | null = null
+    if (row.collector_result_id && collectorResultSentimentMap.has(row.collector_result_id)) {
+      competitorSentiment = collectorResultSentimentMap.get(row.collector_result_id) ?? null
+    } else if (row.sentiment_score !== null && row.sentiment_score !== undefined) {
+      competitorSentiment = toNumber(row.sentiment_score)
+    }
+    const hasCompetitorSentiment = competitorSentiment !== null && competitorSentiment !== undefined
+    const competitorSentimentValue = hasCompetitorSentiment ? competitorSentiment : 0
+    
     const competitorMentions = Math.max(0, toNumber(row.competitor_mentions))
 
     if (!competitorAggregates.has(competitorName)) {
@@ -595,7 +634,7 @@ export async function buildDashboardPayload(
     competitorAggregate.shareValues.push(competitorShare)
     competitorAggregate.visibilityValues.push(competitorVisibility)
     if (hasCompetitorSentiment) {
-      competitorAggregate.sentimentValues.push(competitorSentiment)
+      competitorAggregate.sentimentValues.push(competitorSentimentValue)
     }
     if (competitorMentions > 0) {
       competitorAggregate.mentions += competitorMentions
@@ -619,7 +658,7 @@ export async function buildDashboardPayload(
       shareSum: competitorQueryAggregate.shareSum + competitorShare,
       visibilitySum: competitorQueryAggregate.visibilitySum + competitorVisibility,
       sentimentValues: hasCompetitorSentiment
-        ? [...competitorQueryAggregate.sentimentValues, competitorSentiment]
+        ? [...competitorQueryAggregate.sentimentValues, competitorSentimentValue]
         : competitorQueryAggregate.sentimentValues,
       mentionSum: competitorQueryAggregate.mentionSum + competitorMentions,
       count: competitorQueryAggregate.count + 1
@@ -1014,7 +1053,8 @@ export async function buildDashboardPayload(
       domain: domain ?? 'unknown',
       usage: aggregate.usage,
       share: avgShare, // Already in 0-100 format (from position-extraction.service.ts)
-      visibility: avgVisibilityRaw * 100 // Convert 0-1 scale to 0-100 percentage
+      visibility: avgVisibilityRaw * 100, // Convert 0-1 scale to 0-100 percentage
+      collectorIds: aggregate.collectorIds // Preserve collectorIds for mentionRate calculation
     }
   })
 
@@ -1024,15 +1064,19 @@ export async function buildDashboardPayload(
   )
 
   // Group by normalized domain to ensure no duplicates
-  const domainMap = new Map<string, typeof sourceAggregateEntries[0] & { urls?: string[] | Set<string> }>()
+  const domainMap = new Map<string, typeof sourceAggregateEntries[0] & { urls?: string[] | Set<string>; collectorIds?: Set<number> }>()
   
   sourceAggregateEntries.forEach((source) => {
     const normalizedDomain = source.domain?.toLowerCase().replace(/^www\./, '') || 'unknown'
     const existing = domainMap.get(normalizedDomain)
     
     if (!existing) {
-      // Keep URLs as array for now
-      domainMap.set(normalizedDomain, { ...source })
+      // Keep URLs as array and preserve collectorIds from source aggregate
+      const sourceAggregate = sourceAggregates.get(source.key)
+      domainMap.set(normalizedDomain, { 
+        ...source,
+        collectorIds: sourceAggregate?.collectorIds ? new Set(sourceAggregate.collectorIds) : new Set<number>()
+      })
     } else {
       // Merge entries with same domain: combine usage, share, visibility
       existing.usage += source.usage
@@ -1041,6 +1085,14 @@ export async function buildDashboardPayload(
       if (totalUsage > 0) {
         existing.share = (existing.share * existing.usage + source.share * source.usage) / totalUsage
         existing.visibility = (existing.visibility * existing.usage + source.visibility * source.usage) / totalUsage
+      }
+      // Merge collectorIds sets to track all collector results citing this domain
+      const sourceAggregate = sourceAggregates.get(source.key)
+      if (sourceAggregate?.collectorIds) {
+        if (!existing.collectorIds) {
+          existing.collectorIds = new Set<number>()
+        }
+        sourceAggregate.collectorIds.forEach(id => existing.collectorIds!.add(id))
       }
       // Keep the shorter URL (usually homepage)
       if (source.url && (!existing.url || source.url.length < existing.url.length)) {
@@ -1053,8 +1105,25 @@ export async function buildDashboardPayload(
     }
   })
 
+  // Calculate total collector_results count for mentionRate calculation
+  // Get unique collector_result_ids from all position rows
+  const uniqueCollectorResultIdsForMentionRate = new Set<number>()
+  positionRows.forEach((row) => {
+    if (row.collector_result_id && typeof row.collector_result_id === 'number' && Number.isFinite(row.collector_result_id)) {
+      uniqueCollectorResultIdsForMentionRate.add(row.collector_result_id)
+    }
+  })
+  const totalCollectorResultsCount = uniqueCollectorResultIdsForMentionRate.size || 1 // Avoid division by zero
+
   const topBrandSources = Array.from(domainMap.values())
     .map((source) => {
+      // Calculate mentionRate: percentage of total collector results where this source is cited
+      // Formula: (Number of unique collector results citing this source / Total collector results) * 100
+      const uniqueCollectorResultsCitingSource = source.collectorIds ? source.collectorIds.size : 0
+      const mentionRate = totalCollectorResultsCount > 0 
+        ? (uniqueCollectorResultsCitingSource / totalCollectorResultsCount) * 100 
+        : 0
+      
       // Calculate impact score using real values (no normalization)
       // Weighted combination: 35% SOA, 35% Visibility, 30% Usage (normalized to 0-10 scale for display)
       const usageNorm = maxSourceUsage > 0 ? (source.usage / maxSourceUsage) * 10 : 0
@@ -1087,6 +1156,7 @@ export async function buildDashboardPayload(
         url: primaryUrl || '', // Primary URL (first cited URL)
         urls: allUrls, // All cited URLs for this domain
         domain: source.domain,
+        mentionRate: round(mentionRate, 1), // Add mentionRate for ranking
         impactScore,
         change: hasImpact ? 0 : null,
         visibility: round(source.visibility, 1),
@@ -1095,7 +1165,8 @@ export async function buildDashboardPayload(
       }
     })
     .filter((source) => source.impactScore !== null && Number.isFinite(source.impactScore))
-    .sort((a, b) => (b.impactScore || 0) - (a.impactScore || 0) || b.usage - a.usage)
+    // Sort by mentionRate (descending) to match Source Attribution table, then by usage as tiebreaker
+    .sort((a, b) => (b.mentionRate || 0) - (a.mentionRate || 0) || b.usage - a.usage)
     .slice(0, 5)
 
   // Calculate top 10 sources distribution by domain (for donut chart)

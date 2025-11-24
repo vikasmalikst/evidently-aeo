@@ -2,11 +2,22 @@ import { IconInfoCircle, IconPlus, IconChevronDown, IconChevronUp } from '@table
 import { useState, useRef } from 'react';
 import type { Topic } from '../../types/topic';
 import { fetchPromptsForTopics } from '../../api/onboardingApi';
+import { Spinner } from './common/Spinner';
+
+interface PromptWithTopic {
+  prompt: string;
+  topic: string; // Topic name
+}
+
+export interface PromptWithTopic {
+  prompt: string;
+  topic: string; // Topic name
+}
 
 interface PromptConfigurationProps {
   selectedTopics: Topic[];
-  selectedPrompts: string[];
-  onPromptsChange: (prompts: string[]) => void;
+  selectedPrompts: PromptWithTopic[];
+  onPromptsChange: (prompts: PromptWithTopic[]) => void;
 }
 
 interface TopicPrompt {
@@ -118,22 +129,29 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
     }
   };
 
-  const handleTogglePrompt = (prompt: string) => {
-    if (selectedPrompts.includes(prompt)) {
-      onPromptsChange(selectedPrompts.filter(p => p !== prompt));
+  const handleTogglePrompt = (prompt: string, topicName: string) => {
+    const promptWithTopic: PromptWithTopic = { prompt, topic: topicName };
+    const isSelected = selectedPrompts.some(p => p.prompt === prompt && p.topic === topicName);
+    
+    if (isSelected) {
+      onPromptsChange(selectedPrompts.filter(p => !(p.prompt === prompt && p.topic === topicName)));
     } else {
-      onPromptsChange([...selectedPrompts, prompt]);
+      onPromptsChange([...selectedPrompts, promptWithTopic]);
     }
   };
 
   const handleAddCustomPrompt = () => {
-    if (customPrompt.trim() && selectedTopicForCustom && !selectedPrompts.includes(customPrompt.trim())) {
+    const promptText = customPrompt.trim();
+    const selectedTopic = selectedTopics.find(t => t.id === selectedTopicForCustom);
+    
+    if (promptText && selectedTopicForCustom && selectedTopic && 
+        !selectedPrompts.some(p => p.prompt === promptText && p.topic === selectedTopic.name)) {
       const updatedCustomPrompts = {
         ...customPromptsByTopic,
-        [selectedTopicForCustom]: [...(customPromptsByTopic[selectedTopicForCustom] || []), customPrompt.trim()]
+        [selectedTopicForCustom]: [...(customPromptsByTopic[selectedTopicForCustom] || []), promptText]
       };
       setCustomPromptsByTopic(updatedCustomPrompts);
-      onPromptsChange([...selectedPrompts, customPrompt.trim()]);
+      onPromptsChange([...selectedPrompts, { prompt: promptText, topic: selectedTopic.name }]);
       setCustomPrompt('');
       setSelectedTopicForCustom('');
       setShowCustomModal(false);
@@ -151,15 +169,12 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
     setSelectedTopicForCustom('');
   };
 
-  const handleRemovePrompt = (prompt: string) => {
-    onPromptsChange(selectedPrompts.filter(p => p !== prompt));
+  const handleRemovePrompt = (prompt: string, topicName: string) => {
+    onPromptsChange(selectedPrompts.filter(p => !(p.prompt === prompt && p.topic === topicName)));
   };
 
   const getSelectedCountForTopic = (topic: Topic): number => {
-    const apiPrompts = promptsByTopic[topic.id] || [];
-    const customPrompts = customPromptsByTopic[topic.id] || [];
-    const allPrompts = [...apiPrompts, ...customPrompts];
-    return allPrompts.filter(p => selectedPrompts.includes(p)).length;
+    return selectedPrompts.filter(p => p.topic === topic.name).length;
   };
 
   return (
@@ -226,21 +241,56 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
                 className="prompt-topic-header"
                 onClick={() => toggleTopic(topic.id)}
                 aria-expanded={isExpanded}
+                disabled={isLoading}
               >
                 <div className="prompt-topic-header-left">
                   <span className="prompt-topic-name">{topic.name}</span>
-                  {selectedCount > 0 && (
+                  {selectedCount > 0 && !isLoading && (
                     <span className="prompt-topic-badge">{selectedCount} selected</span>
+                  )}
+                  {isLoading && (
+                    <span className="prompt-topic-loading-badge" style={{ 
+                      display: 'inline-flex', 
+                      alignItems: 'center', 
+                      gap: '6px',
+                      color: '#00bcdc',
+                      fontSize: '12px',
+                      fontWeight: 500
+                    }}>
+                      <span className="onboarding-spinner onboarding-spinner--small" style={{ 
+                        width: '12px', 
+                        height: '12px',
+                        borderWidth: '2px'
+                      }} />
+                      Generating...
+                    </span>
                   )}
                 </div>
                 <div className="prompt-topic-header-right">
-                  {isExpanded ? <IconChevronUp size={20} /> : <IconChevronDown size={20} />}
+                  {isLoading ? (
+                    <span className="onboarding-spinner onboarding-spinner--small" style={{ 
+                      width: '16px', 
+                      height: '16px',
+                      borderWidth: '2px'
+                    }} />
+                  ) : isExpanded ? (
+                    <IconChevronUp size={20} />
+                  ) : (
+                    <IconChevronDown size={20} />
+                  )}
                 </div>
               </button>
 
               {isExpanded && isLoading && (
-                <div className="prompt-topic-loading" style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
-                  Loading prompts...
+                <div className="prompt-topic-loading" style={{ 
+                  padding: '32px 20px', 
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '16px'
+                }}>
+                  <Spinner size="medium" message="Your prompts are being generated" />
                 </div>
               )}
               
@@ -253,14 +303,14 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
                   ) : (
                     <div className="prompt-list">
                       {topicPrompts.map((prompt) => {
-                        const isSelected = selectedPrompts.includes(prompt);
+                        const isSelected = selectedPrompts.some(p => p.prompt === prompt && p.topic === topic.name);
                         const isCustom = isCustomPrompt(prompt, customPromptsByTopic);
                         return (
                           <label key={prompt} className="prompt-checkbox-item">
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              onChange={() => handleTogglePrompt(prompt)}
+                              onChange={() => handleTogglePrompt(prompt, topic.name)}
                               className="prompt-checkbox"
                             />
                             <span className="prompt-label">

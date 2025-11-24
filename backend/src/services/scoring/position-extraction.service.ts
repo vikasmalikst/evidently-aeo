@@ -35,6 +35,7 @@ const CollectorResultRow = z.object({
     z.array(z.object({ competitor_name: z.string() })), // Format 2: [{competitor_name: "Nike"}]
   ]),
   created_at: z.string(),
+  topic: z.string().nullable().optional(), // Topic column
   metadata: z.any().optional(),
 });
 
@@ -67,6 +68,7 @@ interface PositionInsertRow {
   total_competitor_product_mentions: number;
   has_brand_presence: boolean;
   processed_at: string;
+  topic?: string | null; // Topic column
   metadata?: Record<string, any> | null;
 }
 
@@ -114,9 +116,11 @@ export class PositionExtractionService {
       db: { schema: 'public' },
     });
 
-    this.cerebrasApiKey = process.env.CEREBRAS_API_KEY || null;
-    this.geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || null;
-    this.geminiModel = process.env.GOOGLE_GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash-002';
+    // Position Extraction uses CEREBRAS_API_KEY_1 (fallback: CEREBRAS_API_KEY)
+    const { getPositionExtractionKey, getGeminiKey, getGeminiModel } = require('../../utils/api-key-resolver');
+    this.cerebrasApiKey = getPositionExtractionKey();
+    this.geminiApiKey = getGeminiKey();
+    this.geminiModel = getGeminiModel('gemini-1.5-flash-002');
 
     if (!this.cerebrasApiKey && !this.geminiApiKey) {
       throw new Error('At least one LLM API key (Cerebras or Gemini) is required');
@@ -245,18 +249,20 @@ export class PositionExtractionService {
   private async extractPositions(
     result: z.infer<typeof CollectorResultRow>
   ): Promise<PositionExtractionPayload> {
-    let topicName = this.getTopicNameFromMetadata(result.metadata);
+    // Priority: 1) collector_results.topic column, 2) collector_results.metadata, 3) generated_queries.topic column, 4) generated_queries.metadata
+    let topicName = result.topic || this.getTopicNameFromMetadata(result.metadata);
 
     if (!topicName) {
       try {
         const { data: queryMetadataRow, error: queryMetadataError } = await this.supabase
           .from('generated_queries')
-          .select('metadata')
+          .select('topic, metadata')
           .eq('id', result.query_id)
           .maybeSingle();
 
-        if (!queryMetadataError && queryMetadataRow?.metadata) {
-          topicName = this.getTopicNameFromMetadata(queryMetadataRow.metadata);
+        if (!queryMetadataError && queryMetadataRow) {
+          // Priority: topic column first, then metadata
+          topicName = queryMetadataRow.topic || this.getTopicNameFromMetadata(queryMetadataRow.metadata);
         }
       } catch (topicError) {
         console.warn(
@@ -391,6 +397,7 @@ export class PositionExtractionService {
       total_competitor_product_mentions: totalCompetitorProductMentions,
       has_brand_presence: hasBrandPresence,
       processed_at: processedAt,
+      topic: topicName || null, // Store topic in dedicated column
       metadata: positionMetadata,
     };
 
@@ -433,6 +440,7 @@ export class PositionExtractionService {
         total_competitor_product_mentions: competitorProductMentions,
         has_brand_presence: hasBrandPresence,
         processed_at: processedAt,
+        topic: topicName || null, // Store topic in dedicated column
         metadata: positionMetadata,
       };
     });

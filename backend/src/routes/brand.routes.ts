@@ -703,7 +703,7 @@ router.get('/:brandId/topic-configuration/current', authenticateToken, async (re
       .from('collector_results')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brandId)
-      .not('metadata->topic_name', 'is', null);
+      .or('topic.not.is.null,metadata->topic_name.not.is.null');
 
     // Build configuration object
     const config = {
@@ -781,7 +781,7 @@ router.get('/:brandId/topic-configuration/history', authenticateToken, async (re
       .from('collector_results')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brandId)
-      .not('metadata->topic_name', 'is', null);
+      .or('topic.not.is.null,metadata->topic_name.not.is.null');
 
     // Return current config as version 1
     // In production, you'd want a proper versioning table

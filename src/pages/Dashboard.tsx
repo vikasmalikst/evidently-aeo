@@ -11,7 +11,6 @@ import {
   TrendingUp,
   MessageSquare,
   ExternalLink,
-  AlertTriangle,
   CheckCircle,
   ArrowRight,
   Activity,
@@ -275,7 +274,6 @@ export const Dashboard = () => {
   const pageMountTime = useRef(performance.now());
   console.log('[DASHBOARD] Component mounting at', performance.now());
   
-  const user = useAuthStore((state) => state.user);
   const authLoading = useAuthStore((state) => state.isLoading);
   const defaultDateRange = useMemo(getDefaultDateRange, []);
   const [startDate, setStartDate] = useState(defaultDateRange.start);
@@ -406,8 +404,6 @@ export const Dashboard = () => {
     setShowTopicModal(false);
   };
 
-  const displayName = user?.fullName || user?.email?.split('@')[0] || 'there';
-
   // Build endpoint with current params
   const dashboardEndpoint = useMemo(() => {
     const endpointStart = performance.now();
@@ -471,8 +467,6 @@ export const Dashboard = () => {
   }, [dashboardData]);
 
   const actionItems: ActionItem[] = dashboardData?.actionItems ?? [];
-  const highPriorityActions = actionItems.filter((item: ActionItem) => item.priority === 'high');
-  const criticalAlerts = highPriorityActions.length;
   const brandPages = dashboardData?.topBrandSources ?? [];
   const topTopics = dashboardData?.topTopics ?? [];
 
@@ -666,31 +660,9 @@ export const Dashboard = () => {
   return (
     <Layout>
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-        <div className="bg-[#fff8f0] border border-[#f9db43] rounded-lg p-4 mb-6 flex items-start gap-3">
-          <AlertTriangle size={20} className="text-[#fa8a40] flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1">
-              {criticalAlerts > 0
-                ? `${criticalAlerts} High-Priority Action${criticalAlerts > 1 ? 's' : ''} Identified`
-                : 'No high-priority actions detected right now'}
-            </h3>
-            {criticalAlerts > 0 ? (
-              highPriorityActions.slice(0, 3).map((action: ActionItem) => (
-                <p key={action.id} className="text-[13px] text-[#393e51]">
-                  <span className="font-medium">{action.title}:</span> {action.description}
-                </p>
-              ))
-            ) : (
-              <p className="text-[13px] text-[#393e51]">
-                Keep monitoring your queries—we’ll surface urgent recommendations here as they appear.
-              </p>
-            )}
-          </div>
-        </div>
-
         <div className="mb-6">
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
-            Welcome, {displayName}
+            AI Visibility Dashboard
           </h1>
           <div className="flex flex-wrap items-center gap-4">
             <p className="text-[15px] text-[#393e51]">

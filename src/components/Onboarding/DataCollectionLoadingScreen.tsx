@@ -26,10 +26,27 @@ interface ProgressData {
 
 interface DataCollectionLoadingScreenProps {
   brandId: string;
-  customerId?: string;
 }
 
-export const DataCollectionLoadingScreen = ({ brandId, customerId }: DataCollectionLoadingScreenProps) => {
+// Configurable polling intervals (in milliseconds)
+// Can be overridden via Vite environment variables: VITE_LOADING_INITIAL_DELAY_MS and VITE_LOADING_UPDATE_INTERVAL_MS
+const getEnvVar = (key: string, defaultValue: string): string => {
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+    return import.meta.env[key] as string;
+  }
+  return defaultValue;
+};
+
+const INITIAL_UPDATE_DELAY = parseInt(
+  getEnvVar('VITE_LOADING_INITIAL_DELAY_MS', '20000'),
+  10
+); // 20 seconds default (user requested 15-20 seconds)
+const SUBSEQUENT_UPDATE_INTERVAL = parseInt(
+  getEnvVar('VITE_LOADING_UPDATE_INTERVAL_MS', '30000'),
+  10
+); // 30 seconds default
+
+export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingScreenProps) => {
   const navigate = useNavigate();
   const [progress, setProgress] = useState<ProgressData>({
     queries: { total: 0, completed: 0 },
@@ -42,10 +59,72 @@ export const DataCollectionLoadingScreen = ({ brandId, customerId }: DataCollect
   });
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [hasShownInitialData, setHasShownInitialData] = useState(false);
+  const [dashboardData, setDashboardData] = useState<any>(null);
 
-  // Poll for progress updates
+  // Fetch dashboard data to show after initial delay
+  const fetchDashboardData = async () => {
+    try {
+      // Ensure we're fetching data for the correct brand
+      if (!brandId) {
+        console.warn('[LoadingScreen] No brandId provided, cannot fetch dashboard data');
+        return;
+      }
+      
+      console.log(`[LoadingScreen] Fetching dashboard data for brand: ${brandId}`);
+      const response = await fetch(`/api/brands/${brandId}/dashboard`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          // Verify the data is for the correct brand
+          if (data.data.brandId && data.data.brandId !== brandId) {
+            console.warn(`[LoadingScreen] Brand ID mismatch! Expected ${brandId}, got ${data.data.brandId}`);
+            return;
+          }
+          
+          console.log('[LoadingScreen] Dashboard data received for brand:', brandId, data.data);
+          setDashboardData(data.data);
+          setHasShownInitialData(true);
+        } else {
+          console.warn('[LoadingScreen] Dashboard response not successful:', data);
+        }
+      } else {
+        console.error('[LoadingScreen] Dashboard fetch failed:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('[LoadingScreen] Error fetching dashboard data:', error);
+    }
+  };
+
+  // Initial data fetch after 15-20 seconds (configurable)
   useEffect(() => {
-    const interval = setInterval(async () => {
+    if (!brandId) return;
+    
+    console.log(`[LoadingScreen] Will fetch dashboard data after ${INITIAL_UPDATE_DELAY}ms for brand: ${brandId}`);
+    const initialTimer = setTimeout(() => {
+      console.log(`[LoadingScreen] Initial delay elapsed, fetching dashboard data for brand: ${brandId}`);
+      fetchDashboardData();
+    }, INITIAL_UPDATE_DELAY);
+
+    return () => clearTimeout(initialTimer);
+  }, [brandId]);
+
+  // Don't redirect automatically - let user see the data on loading screen
+  // Only redirect when data collection is complete
+  // The loading screen will show available data after the initial delay
+
+  // Poll for progress updates and subsequent dashboard updates
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    let updateInterval: NodeJS.Timeout;
+
+    // Poll for progress updates (faster polling for progress)
+    interval = setInterval(async () => {
       try {
         const response = await fetch(`/api/brands/${brandId}/onboarding-progress`, {
           headers: {
@@ -67,6 +146,10 @@ export const DataCollectionLoadingScreen = ({ brandId, customerId }: DataCollect
             ) {
               setIsComplete(true);
               clearInterval(interval);
+              if (updateInterval) clearInterval(updateInterval);
+              
+              // Fetch final dashboard data before redirect
+              await fetchDashboardData();
               
               // Redirect after brief delay to show completion
               setTimeout(() => {
@@ -79,10 +162,20 @@ export const DataCollectionLoadingScreen = ({ brandId, customerId }: DataCollect
         console.error('Error fetching progress:', error);
         // Continue polling even on error
       }
-    }, 2000); // Poll every 2 seconds
+    }, 2000); // Poll every 2 seconds for progress
 
-    return () => clearInterval(interval);
-  }, [brandId, navigate]);
+    // Subsequent dashboard updates every 30 seconds (only after initial data shown)
+    if (hasShownInitialData) {
+      updateInterval = setInterval(() => {
+        fetchDashboardData();
+      }, SUBSEQUENT_UPDATE_INTERVAL);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (updateInterval) clearInterval(updateInterval);
+    };
+  }, [brandId, navigate, hasShownInitialData]);
 
   // Track elapsed time
   useEffect(() => {
@@ -157,7 +250,7 @@ export const DataCollectionLoadingScreen = ({ brandId, customerId }: DataCollect
               )}
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">
-              {isComplete ? 'Almost There!' : 'Setting Up Your Brand Intelligence'}
+              {isComplete ? 'Almost There!' : 'Your Data is Being Collected'}
             </h1>
             <p className="text-purple-200 text-lg">
               {isComplete 
@@ -261,6 +354,84 @@ export const DataCollectionLoadingScreen = ({ brandId, customerId }: DataCollect
             </div>
           </div>
 
+          {/* Show available dashboard data after initial delay */}
+          {hasShownInitialData && dashboardData && (
+            <div className="mt-6 bg-white/5 rounded-xl p-4 border border-white/10">
+              <p className="text-white font-semibold mb-3 text-sm">Available Data</p>
+              <div className="grid grid-cols-3 gap-3 text-center mb-3">
+                {/* Share of Answer */}
+                <div className="bg-white/5 rounded-lg p-2">
+                  <p className="text-purple-200 text-xs mb-1">Share of Answer</p>
+                  <p className="text-white font-bold text-lg">
+                    {(() => {
+                      const metric = dashboardData.scores?.find((m: any) => 
+                        m.label?.toLowerCase().includes('share of answer') || 
+                        m.label?.toLowerCase().includes('share of answers')
+                      );
+                      return metric ? `${metric.value?.toFixed(1) || '0'}%` : '0%';
+                    })()}
+                  </p>
+                </div>
+                {/* Visibility */}
+                <div className="bg-white/5 rounded-lg p-2">
+                  <p className="text-purple-200 text-xs mb-1">Visibility</p>
+                  <p className="text-white font-bold text-lg">
+                    {(() => {
+                      const metric = dashboardData.scores?.find((m: any) => 
+                        m.label?.toLowerCase().includes('visibility index')
+                      );
+                      return metric ? (metric.value?.toFixed(1) || '0') : '0';
+                    })()}
+                  </p>
+                </div>
+                {/* Sentiment */}
+                <div className="bg-white/5 rounded-lg p-2">
+                  <p className="text-purple-200 text-xs mb-1">Sentiment</p>
+                  <p className="text-white font-bold text-lg">
+                    {(() => {
+                      const metric = dashboardData.scores?.find((m: any) => 
+                        m.label?.toLowerCase().includes('sentiment score')
+                      );
+                      return metric ? (metric.value?.toFixed(1) || '0') : '0';
+                    })()}
+                  </p>
+                </div>
+              </div>
+              {/* Additional stats row */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-white/5 rounded-lg p-2">
+                  <p className="text-purple-200 text-xs mb-1">Total Queries</p>
+                  <p className="text-white font-bold text-lg">
+                    {dashboardData.totalQueries || 0}
+                  </p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2">
+                  <p className="text-purple-200 text-xs mb-1">Queries with Brand Presence</p>
+                  <p className="text-white font-bold text-lg">
+                    {dashboardData.queriesWithBrandPresence || 0}
+                  </p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2">
+                  <p className="text-purple-200 text-xs mb-1">Average Collection Time</p>
+                  <p className="text-white font-bold text-lg">
+                    {(() => {
+                      // Show average collection time if available in dashboard data
+                      // This would need to be added to the dashboard payload if not already there
+                      if (dashboardData.averageCollectionTimeMs) {
+                        const ms = dashboardData.averageCollectionTimeMs;
+                        return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+                      }
+                      return 'N/A';
+                    })()}
+                  </p>
+                </div>
+              </div>
+              <p className="text-purple-300/60 text-xs mt-3 text-center">
+                Data will update automatically every {SUBSEQUENT_UPDATE_INTERVAL / 1000} seconds
+              </p>
+            </div>
+          )}
+
           {/* Stats */}
           <div className="flex items-center justify-between text-sm text-purple-200 border-t border-white/10 pt-6">
             <div className="flex items-center gap-2">
@@ -276,7 +447,7 @@ export const DataCollectionLoadingScreen = ({ brandId, customerId }: DataCollect
           </div>
 
           {/* Loading animation hint */}
-          {!isComplete && (
+          {!isComplete && !hasShownInitialData && (
             <div className="mt-6 text-center">
               <p className="text-purple-300/60 text-sm">
                 This may take a few minutes. We're collecting and analyzing data from multiple AI sources...

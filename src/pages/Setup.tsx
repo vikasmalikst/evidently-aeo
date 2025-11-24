@@ -90,7 +90,8 @@ export const Setup = () => {
           ceo: brand.metadata?.ceo || brand.ceo,
           headquarters: brand.headquarters,
           founded_year: brand.founded,
-          prompts: data.prompts,
+          prompts: data.prompts, // Now includes topic information: { prompt: string, topic: string }[]
+          prompts_with_topics: data.prompts, // Explicit field for prompts with topics
           logo: brand.logo || brand.metadata?.brand_logo,
           domain: brand.domain || '',
           competitors_detail: competitorPayload,

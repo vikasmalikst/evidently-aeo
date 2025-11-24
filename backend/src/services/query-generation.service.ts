@@ -2127,8 +2127,9 @@ CRITICAL VALIDATION BEFORE RETURNING:
         evidence_source: 'query_generation_service',
         locale: request.locale,
         country: request.country,
+        topic: q.topic, // Store topic in dedicated column
         metadata: {
-          topic: q.topic, // CRITICAL: Preserve topic for frontend mapping
+          topic: q.topic, // CRITICAL: Preserve topic for frontend mapping (backward compatibility)
           topic_name: q.topic, // Also store as topic_name for compatibility
           priority: q.priority,
           index,

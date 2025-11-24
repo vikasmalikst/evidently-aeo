@@ -192,7 +192,7 @@ export const Sidebar = () => {
               </div>
             </div>
             <span
-              className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${
+              className={`whitespace-nowrap font-medium text-sm  relative z-10 transition-all duration-300 ease-in-out ${
                 isExpanded
                   ? 'opacity-100 translate-x-0'
                   : 'opacity-0 -translate-x-2 w-0 overflow-hidden'

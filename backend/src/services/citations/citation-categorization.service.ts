@@ -276,13 +276,29 @@ export class CitationCategorizationService {
    * Categorize an unknown domain using AI (Cerebras or Gemini)
    */
   private async categorizeWithAI(url: string, domain: string): Promise<CitationCategory> {
-    // HARDCODED CEREBRAS API KEY FOR CITATIONS SERVICE
-    const cerebrasApiKey = 'csk-tw3tw2dfrxkk3cj9pp4djtryt49txk6mm4nhcnwtjvwtd54h';
-    const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
-    const geminiApiKey = process.env['GOOGLE_GEMINI_API_KEY'];
-    const geminiModel = process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-2.5-flash';
+    // Citation Categorization uses GOOGLE_GEMINI_API_KEY_3 (fallback: GOOGLE_GEMINI_API_KEY)
+    // This is part of scoring services, so uses numbered key
+    const { getCitationCategorizationKey, getCerebrasKey, getGeminiModel, getCerebrasModel } = require('../../utils/api-key-resolver');
+    const geminiApiKey = getCitationCategorizationKey(); // Primary for citations (KEY_3)
+    const cerebrasApiKey = getCerebrasKey(); // Fallback
+    const geminiModel = getGeminiModel('gemini-2.5-flash');
+    const cerebrasModel = getCerebrasModel();
+    
 
-    // Try Cerebras first (with hardcoded key), then Gemini
+    // Try Gemini first (primary for citations), then Cerebras as fallback
+    if (geminiApiKey) {
+      try {
+        return await this.withRetryBackoff(
+          () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
+          2, // max retries
+          1000, // base delay 1s
+          10000 // max delay 10s
+        );
+      } catch (error) {
+        console.warn(`⚠️ Gemini categorization failed for ${domain}, trying Cerebras fallback...`);
+      }
+    }
+    
     if (cerebrasApiKey) {
       try {
         return await this.withRetryBackoff(

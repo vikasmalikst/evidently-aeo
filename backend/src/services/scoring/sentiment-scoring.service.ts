@@ -6,13 +6,14 @@ dotenv.config();
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Support multiple providers: Cerebras (primary), Gemini (fallback), Hugging Face (last resort)
-const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
-const cerebrasModel = process.env.CEREBRAS_MODEL || 'qwen-3-235b-a22b-instruct-2507';
+// Sentiment Scoring uses CEREBRAS_API_KEY_2 (fallback: CEREBRAS_API_KEY)
+const { getSentimentScoringKey, getGeminiKey, getGeminiModel, getCerebrasModel } = require('../../utils/api-key-resolver');
+const cerebrasApiKey = getSentimentScoringKey();
+const cerebrasModel = getCerebrasModel();
 // Accept both GEMINI_API_KEY and GOOGLE_GEMINI_API_KEY for compatibility
-const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+const geminiApiKey = getGeminiKey();
 // Allow overriding Gemini model via env (supports GOOGLE_GEMINI_MODEL or GEMINI_MODEL)
-const geminiModel = process.env.GOOGLE_GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const geminiModel = getGeminiModel('gemini-1.5-flash');
 const huggingFaceToken = process.env.HUGGINGFACE_API_TOKEN;
 const huggingFaceModelUrl =
   process.env.HF_SENTIMENT_MODEL_URL ??
@@ -159,31 +160,36 @@ export class SentimentScoringService {
           try {
             const { data: queryData, error: queryError } = await this.supabase
               .from('generated_queries')
-              .select('topic')
+              .select('topic, metadata')
               .eq('id', row.query_id)
               .single();
             
-            if (!queryError && queryData?.topic) {
-              topic = queryData.topic;
+            if (!queryError && queryData) {
+              // Priority: 1) topic column, 2) metadata->>'topic_name', 3) metadata->>'topic'
+              topic = queryData.topic || 
+                      queryData.metadata?.topic_name || 
+                      queryData.metadata?.topic || 
+                      null;
             }
           } catch (err) {
             console.warn(`⚠️ Could not fetch topic for query_id ${row.query_id}:`, err);
           }
         }
         
-        // Prepare metadata update - merge topic into existing metadata
+        // Prepare metadata update - merge topic into existing metadata (for backward compatibility)
         const currentMetadata = row.metadata || {};
         const updatedMetadata = {
           ...currentMetadata,
           ...(topic ? { topic } : {})
         };
 
-        // Update collector_results with sentiment and topic in metadata
+        // Update collector_results with sentiment and topic (both in column and metadata for backward compatibility)
         const updateData: any = {
           sentiment_label: sentiment.label,
           sentiment_score: sentiment.score,
           sentiment_positive_sentences: sentiment.positiveSentences,
           sentiment_negative_sentences: sentiment.negativeSentences,
+          topic: topic || null, // Store topic in dedicated column
           metadata: updatedMetadata
         };
 

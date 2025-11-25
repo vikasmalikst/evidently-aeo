@@ -352,3 +352,4 @@ ORDER BY vi_difference DESC, soa_difference DESC;
 3. **Competitor rows:** Always filter `competitor_name IS NULL` for brand metrics
 4. **Date ranges:** Ensure you're comparing data from the same time period as the dashboard
 
+

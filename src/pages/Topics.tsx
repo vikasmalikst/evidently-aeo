@@ -37,7 +37,7 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
   
   // Include active topics (relaxed filter - show topics even if totalQueries is 0 or undefined)
   // This allows showing topics that might not have analytics data yet
-  const topics = backendTopics
+  const topicsWithData = backendTopics
     .filter(t => t.is_active !== false) // Include topics that are active or undefined (default to active)
     .map((t, index) => {
       const soAPercentage = t.avgShareOfAnswer || 0;
@@ -52,7 +52,7 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
       
       return {
         id: t.id || `topic-${index}`,
-        rank: t.priority || index + 1,
+        rank: 0, // Will be assigned after sorting
         name: t.topic_name || t.topic || 'Unnamed Topic',
         category: t.category || 'uncategorized',
         soA: soAMultiplier, // Keep for internal calculations
@@ -62,12 +62,32 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
         searchVolume: null,
         sentiment,
         sources: [],
-        // Topics are now distinct, not grouped by model
-        // Store available models for filtering
-        availableModels: t.availableModels || []
+        // Store original priority for fallback sorting (will be removed before returning)
+        priority: t.priority || 999
       };
     })
-    .sort((a, b) => a.rank - b.rank);
+    // Sort by SoA (descending), then by priority, then alphabetically
+    .sort((a, b) => {
+      // Primary sort: by SoA percentage (descending)
+      if (b.currentSoA !== a.currentSoA) {
+        return b.currentSoA - a.currentSoA;
+      }
+      // Secondary sort: by priority (ascending - lower is better)
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
+      }
+      // Tertiary sort: alphabetically by name
+      return a.name.localeCompare(b.name);
+    });
+
+  // Assign ranks based on sorted order (1 = highest SoA)
+  const topics = topicsWithData.map((topic, index) => {
+    const { priority, ...topicWithoutPriority } = topic;
+    return {
+      ...topicWithoutPriority,
+      rank: index + 1
+    };
+  });
 
   const categoryMap = new Map<string, typeof topics>();
   topics.forEach(topic => {

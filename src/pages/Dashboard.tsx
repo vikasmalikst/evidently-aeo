@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { Layout } from '../components/Layout/Layout';
@@ -280,6 +280,7 @@ export const Dashboard = () => {
   const [endDate, setEndDate] = useState(defaultDateRange.end);
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
+  const location = useLocation();
   const [showTopicModal, setShowTopicModal] = useState(false);
   
   console.log('[DASHBOARD] Initial state set at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
@@ -313,6 +314,45 @@ export const Dashboard = () => {
       console.log('[DASHBOARD] Brands loading... at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
     }
   }, [brandsLoading, brands.length, selectedBrandId]);
+
+  // Auto-select brand when coming from onboarding
+  useEffect(() => {
+    if (brandsLoading || brands.length === 0) {
+      return;
+    }
+
+    const locationState = location.state as { autoSelectBrandId?: string; fromOnboarding?: boolean } | null;
+    
+    if (locationState?.autoSelectBrandId && locationState.fromOnboarding) {
+      const brandToSelect = locationState.autoSelectBrandId;
+      
+      // Check if the brand exists in the brands list
+      const brandExists = brands.some(brand => brand.id === brandToSelect);
+      
+      if (brandExists && selectedBrandId !== brandToSelect) {
+        console.log(`[DASHBOARD] Auto-selecting brand from onboarding: ${brandToSelect}`);
+        selectBrand(brandToSelect);
+        // Clear the location state to prevent re-selecting on re-renders
+        window.history.replaceState({}, document.title);
+      } else if (!brandExists) {
+        // If brand doesn't exist yet, select the latest brand (first in list, as they're sorted by created_at desc)
+        const latestBrand = brands[0];
+        if (latestBrand && selectedBrandId !== latestBrand.id) {
+          console.log(`[DASHBOARD] Brand ${brandToSelect} not found, selecting latest brand: ${latestBrand.id}`);
+          selectBrand(latestBrand.id);
+          window.history.replaceState({}, document.title);
+        }
+      }
+    } else if (locationState?.fromOnboarding && !selectedBrandId && brands.length > 0) {
+      // If coming from onboarding but no specific brandId, select the latest brand
+      const latestBrand = brands[0];
+      if (latestBrand) {
+        console.log(`[DASHBOARD] From onboarding, selecting latest brand: ${latestBrand.id}`);
+        selectBrand(latestBrand.id);
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [brands, brandsLoading, selectedBrandId, selectBrand, location.state]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -477,10 +517,14 @@ export const Dashboard = () => {
   };
 
   const brandSelectionPending = !selectedBrandId && brandsLoading;
-  const combinedLoading = authLoading || dashboardLoading || brandSelectionPending;
+  // Only show loading if we don't have data yet - if we have cached data, show it even if loading (background refresh)
+  // Also check if we're coming from onboarding - in that case, show data even if scoring is incomplete
+  const locationState = location.state as { fromOnboarding?: boolean } | null;
+  const fromOnboarding = locationState?.fromOnboarding || false;
+  const shouldShowLoading = (authLoading || brandSelectionPending || (dashboardLoading && !dashboardData && !fromOnboarding));
   
   useEffect(() => {
-    if (!combinedLoading && dashboardData) {
+    if (!shouldShowLoading && dashboardData) {
       const totalTime = performance.now() - pageMountTime.current;
       console.log('[DASHBOARD] ✅✅✅ PAGE FULLY LOADED at', performance.now(), '- TOTAL TIME:', totalTime.toFixed(2) + 'ms');
       console.log('[DASHBOARD] Breakdown:', {
@@ -491,9 +535,9 @@ export const Dashboard = () => {
         'Total time': totalTime.toFixed(2) + 'ms'
       });
     }
-  }, [combinedLoading, dashboardData, brands.length, dashboardEndpoint, dashboardResponse]);
+  }, [shouldShowLoading, dashboardData, brands.length, dashboardEndpoint, dashboardResponse]);
 
-  if (combinedLoading) {
+  if (shouldShowLoading) {
     return (
       <Layout>
         <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
@@ -657,9 +701,87 @@ export const Dashboard = () => {
   const hasSourceData = sourceSlices.length > 0;
   const collectorSummaries: CollectorSummary[] = dashboardData?.collectorSummaries ?? [];
 
+  // Check if data collection is still in progress
+  const [isDataCollectionInProgress, setIsDataCollectionInProgress] = useState(false);
+  
+  useEffect(() => {
+    if (selectedBrandId) {
+      const inProgress = localStorage.getItem(`data_collection_in_progress_${selectedBrandId}`) === 'true';
+      setIsDataCollectionInProgress(inProgress);
+      
+      // Check if collection is complete by polling progress endpoint
+      if (inProgress) {
+        const checkProgress = async () => {
+          try {
+            const response = await fetch(`/api/brands/${selectedBrandId}/onboarding-progress`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+              },
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.data) {
+                const isComplete = 
+                  data.data.queries.completed >= data.data.queries.total &&
+                  data.data.scoring.positions &&
+                  data.data.scoring.sentiments &&
+                  data.data.scoring.citations;
+                
+                if (isComplete) {
+                  localStorage.removeItem(`data_collection_in_progress_${selectedBrandId}`);
+                  setIsDataCollectionInProgress(false);
+                }
+              }
+            }
+          } catch (error) {
+            console.error('Error checking data collection progress:', error);
+          }
+        };
+        
+        // Check every 30 seconds
+        const interval = setInterval(checkProgress, 30000);
+        checkProgress(); // Check immediately
+        
+        return () => clearInterval(interval);
+      }
+    }
+  }, [selectedBrandId]);
+
   return (
     <Layout>
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+        {/* Data Collection In Progress Banner */}
+        {isDataCollectionInProgress && (
+          <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3 shadow-sm">
+            <div className="flex-shrink-0 mt-0.5">
+              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
+                <Activity className="w-5 h-5 text-white animate-pulse" />
+              </div>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1">
+                Your remaining data is being collected and scored
+              </h3>
+              <p className="text-[13px] text-[#64748b]">
+                We're still processing some of your queries in the background. Your dashboard will update automatically as new data becomes available. You'll be notified when everything is complete.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                localStorage.removeItem(`data_collection_in_progress_${selectedBrandId}`);
+                setIsDataCollectionInProgress(false);
+              }}
+              className="flex-shrink-0 text-[#64748b] hover:text-[#1a1d29] transition-colors"
+              aria-label="Dismiss notification"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
         <div className="mb-6">
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
             AI Visibility Dashboard

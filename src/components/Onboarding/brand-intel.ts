@@ -7,7 +7,6 @@
 
 import { BrandIntel, BrandIntelRequest, BrandIntelResponse, LLMProvider } from '../types/index';
 import { LLMService, createLLMServiceFromEnv } from '../server/llm';
-import { googleAIOBrandIntelService } from '../services/google-aio-brand-intel.service';
 import { validateBrandInput } from '../utils/validation';
 
 /**

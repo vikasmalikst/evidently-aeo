@@ -7,11 +7,12 @@
  * 2. Content strategy - Identifying gaps in content coverage
  * 3. Answer Engine Optimization - Optimizing content for answer engines
  * 
- * Uses LLM (Cerebras primary, Gemini fallback) to intelligently extract keywords from answers.
+ * Uses LLM (Cerebras primary with CEREBRAS_API_KEY_3, Gemini fallback) to intelligently extract keywords from answers.
  */
 
 import { supabaseAdmin } from '../../config/database';
 import { v4 as uuidv4 } from 'uuid';
+import { getKeywordGenerationKey, getCerebrasKey, getGeminiKey, getCerebrasModel, getGeminiModel } from '../../utils/api-key-resolver';
 
 export interface GeneratedKeyword {
   keyword: string;
@@ -63,16 +64,18 @@ export class KeywordGenerationService {
   }
 
   /**
-   * Generate keywords from answer using LLM (Cerebras primary, Gemini fallback)
+   * Generate keywords from answer using LLM (Cerebras primary with CEREBRAS_API_KEY_3, Gemini fallback)
    */
   private async generateKeywordsWithLLM(
     answer: string,
     maxKeywords: number
   ): Promise<GeneratedKeyword[]> {
-    const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
-    const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
-    const geminiApiKey = process.env['GEMINI_API_KEY'] || process.env['GOOGLE_GEMINI_API_KEY'];
-    const geminiModel = process.env['GEMINI_MODEL'] || process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash';
+    // Use CEREBRAS_API_KEY_3 for keyword generation (primary), fallback to generic CEREBRAS_API_KEY
+    const cerebrasApiKey = getKeywordGenerationKey();
+    const cerebrasModel = getCerebrasModel();
+    // Use Gemini as fallback
+    const geminiApiKey = getGeminiKey();
+    const geminiModel = getGeminiModel('gemini-1.5-flash');
 
     const prompt = `You are an expert in SEO and Answer Engine Optimization (AEO). 
 

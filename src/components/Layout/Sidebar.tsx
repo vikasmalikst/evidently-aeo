@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconQuoteFilled, IconLayoutDashboard } from '@tabler/icons-react';
 import { useAuthStore } from '../../store/authStore';
@@ -184,7 +184,7 @@ export const Sidebar = () => {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out text-[var(--text-body)] hover:bg-[var(--bg-secondary)]"
+            className="flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out text-[var(--text-body)] hover:bg-[var(--bg-secondary)] min-w-0 overflow-hidden"
           >
             <div className="flex-shrink-0 relative z-10">
               <div className="w-6 h-6 rounded-full bg-[var(--accent-primary)] text-white flex items-center justify-center text-xs font-semibold">
@@ -192,11 +192,12 @@ export const Sidebar = () => {
               </div>
             </div>
             <span
-              className={`whitespace-nowrap font-medium text-sm  relative z-10 transition-all duration-300 ease-in-out ${
+              className={`font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${
                 isExpanded
-                  ? 'opacity-100 translate-x-0'
+                  ? 'opacity-100 translate-x-0 flex-1 min-w-0 truncate block'
                   : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
               }`}
+              title={user?.email || ''}
             >
               {user?.email}
             </span>

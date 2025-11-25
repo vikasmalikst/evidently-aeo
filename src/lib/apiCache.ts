@@ -15,6 +15,13 @@ interface CacheStrategy {
 
 // Cache strategies per endpoint pattern
 const CACHE_STRATEGIES: Record<string, CacheStrategy> = {
+  // Brands endpoint - cache for longer since it doesn't change often
+  '/brands': {
+    ttl: 5 * 60 * 1000, // 5 minutes
+    staleTime: 12 * 60 * 60 * 1000, // 12 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    persist: true,
+  },
   // Dashboard endpoints
   '/dashboard': {
     ttl: 2 * 60 * 1000, // 2 minutes
@@ -65,13 +72,15 @@ const CACHE_STRATEGIES: Record<string, CacheStrategy> = {
 function generateCacheKey(endpoint: string, params?: Record<string, any>): string {
   const baseKey = endpoint.split('?')[0]; // Remove query string from endpoint
   
-  // Normalize params for consistent keys
+  // Normalize params for consistent keys (skip when no params)
   if (params) {
-    const normalizedParams = Object.keys(params)
-      .sort()
-      .map(key => `${key}=${String(params[key])}`)
-      .join('&');
-    return `${baseKey}?${normalizedParams}`;
+    const sortedKeys = Object.keys(params).sort();
+    if (sortedKeys.length > 0) {
+      const normalizedParams = sortedKeys
+        .map(key => `${key}=${String(params[key])}`)
+        .join('&');
+      return `${baseKey}?${normalizedParams}`;
+    }
   }
   
   return baseKey;
@@ -81,7 +90,13 @@ function generateCacheKey(endpoint: string, params?: Record<string, any>): strin
  * Get cache strategy for an endpoint
  */
 function getCacheStrategy(endpoint: string): CacheStrategy {
-  // Check for specific endpoint patterns
+  // Check for specific endpoint patterns (order matters - more specific first)
+  // Check exact matches first (e.g., /brands without query params)
+  if (endpoint === '/brands' || endpoint.startsWith('/brands?')) {
+    return CACHE_STRATEGIES['/brands'];
+  }
+  
+  // Then check for pattern matches
   for (const [pattern, strategy] of Object.entries(CACHE_STRATEGIES)) {
     if (pattern !== 'default' && endpoint.includes(pattern)) {
       return strategy;
@@ -219,20 +234,26 @@ export async function cachedRequest<T>(
     return data;
   } catch (error) {
     const apiRequestTime = performance.now() - apiRequestStart;
-    console.error(`[apiCache] ❌ API request failed at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms - Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms - Error:`, error);
     // Ignore AbortError - it's expected when requests are cancelled
     if (error instanceof Error && error.name === 'AbortError') {
       // If we have stale data, return it even on abort
       if (cachedData && !isExpired) {
+        console.log(`[apiCache] Request aborted, returning stale cache at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
         return cachedData;
       }
       // If we have any cached data at all, return it
       if (cachedData) {
+        console.log(`[apiCache] Request aborted, returning expired cache at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
         return cachedData;
       }
+      // Log but don't error - this is expected cleanup behavior
+      console.log(`[apiCache] Request aborted (no cache available) at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
       // Re-throw AbortError if no stale data available
       throw error;
     }
+    
+    // Only log non-abort errors as errors
+    console.error(`[apiCache] ❌ API request failed at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms - Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms - Error:`, error);
     
     // On error, try to return stale data if available
     if (cachedData && !isExpired) {

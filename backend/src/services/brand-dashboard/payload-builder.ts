@@ -1071,10 +1071,15 @@ export async function buildDashboardPayload(
     const existing = domainMap.get(normalizedDomain)
     
     if (!existing) {
-      // Keep URLs as array and preserve collectorIds from source aggregate
+      // Keep URLs as Set and preserve collectorIds from source aggregate
       const sourceAggregate = sourceAggregates.get(source.key)
+      // Convert URLs array to Set if needed, or use existing Set
+      const urlsSet = source.urls 
+        ? (Array.isArray(source.urls) ? new Set(source.urls) : (source.urls instanceof Set ? source.urls : new Set<string>()))
+        : new Set<string>()
       domainMap.set(normalizedDomain, { 
         ...source,
+        urls: urlsSet,
         collectorIds: sourceAggregate?.collectorIds ? new Set(sourceAggregate.collectorIds) : new Set<number>()
       })
     } else {
@@ -1094,7 +1099,21 @@ export async function buildDashboardPayload(
         }
         sourceAggregate.collectorIds.forEach(id => existing.collectorIds!.add(id))
       }
-      // Keep the shorter URL (usually homepage)
+      // Merge URLs sets to include all unique URLs from all merged sources
+      if (source.urls) {
+        if (!existing.urls) {
+          existing.urls = new Set<string>()
+        }
+        const existingUrlsSet = existing.urls instanceof Set ? existing.urls : new Set(existing.urls)
+        const sourceUrlsArray = Array.isArray(source.urls) ? source.urls : Array.from(source.urls)
+        sourceUrlsArray.forEach(url => {
+          if (url && typeof url === 'string' && url.trim().length > 0) {
+            existingUrlsSet.add(url.trim())
+          }
+        })
+        existing.urls = existingUrlsSet
+      }
+      // Keep the shorter URL (usually homepage) as primary
       if (source.url && (!existing.url || source.url.length < existing.url.length)) {
         existing.url = source.url
       }

@@ -455,7 +455,8 @@ export class PromptVersioningService {
 
     // Find prompts to remove (in current but not in target)
     currentQueries?.forEach(query => {
-      const key = `${query.topic}:${query.query_text}`
+      const topic = extractTopicName(parseMetadata(query.metadata)) || 'Uncategorized'
+      const key = `${topic}:${query.query_text}`
       if (!targetMap.has(key)) {
         changes.removed.push({
           id: query.id,

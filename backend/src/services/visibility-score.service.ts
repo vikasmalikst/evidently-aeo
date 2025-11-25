@@ -524,8 +524,8 @@ Return ONLY a JSON object with counts:
           const errorText = await res.text();
           console.warn(`⚠️ Cerebras API error: ${res.status} ${res.statusText} - ${errorText.substring(0, 200)}`);
         } else {
-          const data = await res.json();
-          response = data.choices[0].message.content;
+          const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+          response = data.choices?.[0]?.message?.content;
         }
       } catch (error) {
         console.warn('⚠️ Cerebras request failed:', error instanceof Error ? error.message : error);
@@ -549,8 +549,8 @@ Return ONLY a JSON object with counts:
           const errorText = await res.text();
           console.warn(`⚠️ Gemini API error: ${res.status} ${res.statusText} - ${errorText.substring(0, 200)}`);
         } else {
-          const data = await res.json();
-          response = data.candidates[0]?.content?.parts[0]?.text;
+          const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+          response = data.candidates?.[0]?.content?.parts?.[0]?.text;
         }
       } catch (error) {
         console.warn('⚠️ Gemini request failed:', error instanceof Error ? error.message : error);

@@ -36,6 +36,7 @@ router.use((req, res, next) => {
           req.user = {
             id: 'temp-admin-user',
             email: 'test@anvayalabs.com',
+            customer_id: null,
             role: 'AL_ADMIN'
           };
         }
@@ -45,6 +46,7 @@ router.use((req, res, next) => {
         req.user = {
           id: 'temp-admin-user',
           email: 'test@anvayalabs.com',
+          customer_id: null,
           role: 'AL_ADMIN'
         };
         next();
@@ -57,6 +59,7 @@ router.use((req, res, next) => {
   req.user = {
     id: 'temp-admin-user',
     email: 'test@anvayalabs.com',
+    customer_id: null,
     role: 'AL_ADMIN'
   };
   next();

@@ -78,7 +78,8 @@ export class EmailAuthService {
       const profile: UserProfile = {
         id: newCustomer.id,
         email: newCustomer.email,
-        name: newCustomer.name,
+        full_name: newCustomer.name,
+        role: null,
         avatar_url: null,
         provider: 'email',
         customer_id: newCustomer.id
@@ -158,7 +159,8 @@ export class EmailAuthService {
       const profile: UserProfile = {
         id: customer.id,
         email: customer.email,
-        name: customer.name,
+        full_name: customer.name,
+        role: null,
         avatar_url: null,
         provider: 'email',
         customer_id: customer.id

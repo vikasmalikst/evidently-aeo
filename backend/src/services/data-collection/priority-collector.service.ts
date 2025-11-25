@@ -9,6 +9,7 @@ import { oxylabsCollectorService } from './oxylabs-collector.service';
 import { dataForSeoCollectorService } from './dataforseo-collector.service';
 import { brightDataCollectorService } from './brightdata-collector.service';
 import { openRouterCollectorService } from './openrouter-collector.service';
+import { serpApiCollectorService } from './serpapi-collector.service';
 
 // Load environment variables
 loadEnvironment();
@@ -208,9 +209,17 @@ export class PriorityCollectorService {
       collector_type: 'bing_copilot',
       providers: [
         {
-          name: 'brightdata_bing_copilot',
+          name: 'serpapi_bing_copilot',
           priority: 1,
           enabled: true,
+          timeout: 60000, // 60 seconds for SerpApi (synchronous)
+          retries: 2,
+          fallback_on_failure: true
+        },
+        {
+          name: 'brightdata_bing_copilot',
+          priority: 2,
+          enabled: false,
           timeout: 300000, // Increased to 5 minutes for BrightData async processing
           retries: 2,
           fallback_on_failure: true
@@ -458,7 +467,9 @@ export class PriorityCollectorService {
     console.log(`🔄 Calling ${provider.name} for ${collectorType}`);
 
     // Route to appropriate service based on provider name
-    if (provider.name.includes('openrouter')) {
+    if (provider.name.includes('serpapi')) {
+      return await this.callSerpApiProvider(provider, queryText, brandId, locale, country, collectorType);
+    } else if (provider.name.includes('openrouter')) {
       return await this.callOpenRouterProvider(provider, queryText, brandId, locale, country, collectorType);
     } else if (provider.name.includes('oxylabs')) {
       return await this.callOxylabsProvider(provider, queryText, brandId, locale, country, collectorType);
@@ -537,6 +548,35 @@ export class PriorityCollectorService {
       locale,
       country
     });
+  }
+
+  /**
+   * Call SerpApi provider
+   */
+  private async callSerpApiProvider(
+    provider: CollectorProvider,
+    queryText: string,
+    brandId: string,
+    locale: string,
+    country: string,
+    collectorType: string
+  ): Promise<any> {
+    console.log(`🔄 Calling SerpApi ${provider.name} for ${collectorType}`);
+    
+    const request = {
+      prompt: queryText,
+      brand: brandId,
+      locale,
+      country
+    };
+
+    // Route to appropriate SerpApi method based on collector type
+    switch (collectorType) {
+      case 'bing_copilot':
+        return await serpApiCollectorService.executeBingCopilotQuery(request);
+      default:
+        throw new Error(`Unsupported collector type for SerpApi: ${collectorType}`);
+    }
   }
 
   /**

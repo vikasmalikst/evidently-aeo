@@ -794,17 +794,25 @@ export async function buildDashboardPayload(
       const count = citation.usage_count || 1
       citationCounts.set(categoryKey, (citationCounts.get(categoryKey) || 0) + count)
 
-      // Normalize URL by removing fragments (#) to avoid duplicate entries for same page
+      // COMMENTED OUT: Normalize URL by removing fragments (#) to avoid duplicate entries for same page
+      // This was causing URLs that differ only by trailing slash to be deduplicated
+      // Keeping this commented out so we can revert if needed
+      // const normalizeUrl = (url: string): string => {
+      //   try {
+      //     const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`)
+      //     // Remove fragment (everything after #)
+      //     urlObj.hash = ''
+      //     return urlObj.toString().replace(/\/$/, '') // Remove trailing slash for consistency
+      //   } catch {
+      //     // If URL parsing fails, just remove fragment manually
+      //     return url.split('#')[0].replace(/\/$/, '')
+      //   }
+      // }
+
+      // NEW: Use original URL from database (only trim whitespace, no normalization)
       const normalizeUrl = (url: string): string => {
-        try {
-          const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`)
-          // Remove fragment (everything after #)
-          urlObj.hash = ''
-          return urlObj.toString().replace(/\/$/, '') // Remove trailing slash for consistency
-        } catch {
-          // If URL parsing fails, just remove fragment manually
-          return url.split('#')[0].replace(/\/$/, '')
-        }
+        // Only trim whitespace, keep everything else as-is (including trailing slashes)
+        return url.trim()
       }
 
       // Extract and normalize domain from URL or use provided domain
@@ -837,8 +845,9 @@ export async function buildDashboardPayload(
         ? `domain:${normalizedDomain}`
         : `source:${sourceAggregates.size + 1}`
 
-      const normalizedUrl = typeof citation.url === 'string' && citation.url.trim().length > 0
-        ? normalizeUrl(citation.url.trim())
+      // Use original URL from database (only trimmed, not normalized)
+      const originalUrl = typeof citation.url === 'string' && citation.url.trim().length > 0
+        ? citation.url.trim()
         : null
 
       const existingSource =
@@ -847,8 +856,8 @@ export async function buildDashboardPayload(
             typeof citation.page_name === 'string' && citation.page_name.trim().length > 0
               ? citation.page_name.trim()
               : null,
-          url: normalizedUrl,
-          urls: new Set<string>(), // Track all unique URLs
+          url: originalUrl,
+          urls: new Set<string>(), // Track all unique URLs (exact matches, no normalization)
           domain: citation.domain ?? null,
           usage: 0,
           collectorIds: new Set<number>()
@@ -862,15 +871,15 @@ export async function buildDashboardPayload(
       ) {
         existingSource.title = citation.page_name.trim()
       }
-      // Track all unique URLs for this domain
-      if (normalizedUrl) {
-        existingSource.urls.add(normalizedUrl)
+      // Track all unique URLs for this domain (using exact URLs from database)
+      if (originalUrl) {
+        existingSource.urls.add(originalUrl)
         // Keep the first URL found as primary (or prefer shorter URLs)
         if (!existingSource.url) {
-          existingSource.url = normalizedUrl
-        } else if (normalizedUrl.length < existingSource.url.length) {
+          existingSource.url = originalUrl
+        } else if (originalUrl.length < existingSource.url.length) {
           // Prefer shorter URLs (usually the homepage) as primary
-          existingSource.url = normalizedUrl
+          existingSource.url = originalUrl
         }
       }
       // Set normalized domain if not already set
@@ -1041,6 +1050,7 @@ export async function buildDashboardPayload(
     const avgVisibilityRaw = visibilityValues.length > 0 ? average(visibilityValues) : 0
 
     // Convert URLs Set to sorted array (prefer shorter URLs first)
+    // NOTE: URLs are kept as-is from database (no normalization), so URLs differing only by trailing slash are separate
     const allUrls = Array.from(aggregate.urls || new Set<string>())
       .filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
       .sort((a, b) => a.length - b.length) // Sort by length (shorter first)
@@ -1100,6 +1110,8 @@ export async function buildDashboardPayload(
         sourceAggregate.collectorIds.forEach(id => existing.collectorIds!.add(id))
       }
       // Merge URLs sets to include all unique URLs from all merged sources
+      // NOTE: URLs are kept as-is from database (only trimmed, no normalization)
+      // This means URLs that differ only by trailing slash will be kept as separate entries
       if (source.urls) {
         if (!existing.urls) {
           existing.urls = new Set<string>()
@@ -1108,6 +1120,7 @@ export async function buildDashboardPayload(
         const sourceUrlsArray = Array.isArray(source.urls) ? source.urls : Array.from(source.urls)
         sourceUrlsArray.forEach(url => {
           if (url && typeof url === 'string' && url.trim().length > 0) {
+            // Add URL as-is (only trimmed) - Set will deduplicate exact matches
             existingUrlsSet.add(url.trim())
           }
         })
@@ -1153,7 +1166,8 @@ export async function buildDashboardPayload(
         ? round((0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm), 1)
         : null
       
-      // Get all unique URLs for this domain (only cited URLs, no homepage)
+      // Get all unique URLs for this domain (exact URLs from database, no normalization)
+      // URLs that differ only by trailing slash will be shown separately
       let allUrls: string[] = []
       if (source.urls) {
         if (source.urls instanceof Set) {

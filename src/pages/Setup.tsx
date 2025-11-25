@@ -114,17 +114,23 @@ export const Setup = () => {
 
       if (response.success) {
         console.log('✅ Onboarding completed successfully!');
-        
+
         // Save to localStorage for backward compatibility
         onboardingUtils.setOnboardingComplete(data);
-        
-        // Save brand ID for dashboard
-        if (response.data?.brand) {
-          localStorage.setItem('current_brand_id', response.data.brand.id);
-        }
 
-        // Navigate to dashboard
-        navigate('/dashboard');
+        const brandId = response.data?.brand?.id;
+
+        if (brandId) {
+          // Remember this brand for dashboard + mark data collection in progress
+          localStorage.setItem('current_brand_id', brandId);
+          localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
+
+          console.log('🎯 Redirecting to loading screen for brand:', brandId);
+          navigate(`/onboarding/loading/${brandId}`, { replace: true });
+        } else {
+          console.warn('⚠️ No brand ID returned from onboarding response, sending user to dashboard directly');
+          navigate('/dashboard');
+        }
       } else {
         throw new Error(response.error || 'Failed to complete onboarding');
       }

@@ -591,6 +591,7 @@ Return ONLY a JSON object with counts:
     brand: z.infer<typeof BrandRow>,
     questionText: string, // From collector_results.question
     queryId: string | null, // May be null
+    collectorType: string, // Type of collector (e.g., Perplexity, Gemini, Grok, Bing Copilot)
     competitors: z.infer<typeof CompetitorRow>[],
     rawAnswer: string,
     brandMetadata?: any,
@@ -805,6 +806,7 @@ Return ONLY a JSON object with counts:
           query_id: queryId,
           query_text: questionText,
           execution_id: executionId,
+          collector_type: collectorType,
           competitor_name: comp.competitor_name,
           visibility_index: brandVisibility,
           sentiment_score: brandSentiment,
@@ -883,6 +885,7 @@ Return ONLY a JSON object with counts:
           query_id: queryId,
           query_text: questionText,
           execution_id: executionId,
+          collector_type: collectorType,
           competitor_name: comp.competitor_name,
           // Brand scores (same across all rows from AI)
           visibility_index: brandVisibility,
@@ -958,6 +961,7 @@ Return ONLY a JSON object with counts:
           query_id: queryId,
           query_text: questionText,
           execution_id: executionId,
+          collector_type: collectorType,
           competitor_name: comp.competitor_name,
           // Brand scores (same across all rows)
           visibility_index: brandVisibility,
@@ -1625,6 +1629,7 @@ OUTPUT FORMAT (JSON array only):
     brand: z.infer<typeof BrandRow>,
     questionText: string, // From collector_results.question
     queryId: string | null, // May be null
+    collectorType: string, // Type of collector (e.g., Perplexity, Gemini, Grok, Bing Copilot)
     competitors: z.infer<typeof CompetitorRow>[],
     rawAnswer: string,
     brandMetadata?: any
@@ -1739,6 +1744,7 @@ OUTPUT FORMAT (JSON array only):
         query_id: queryId,
         query_text: questionText,
         execution_id: executionId,
+        collector_type: collectorType,
         competitor_name: comp.competitor_name,
         // Brand scores (same for all rows, representing the brand in this query)
         visibility_index: vib,

@@ -1879,63 +1879,6 @@ CRITICAL VALIDATION BEFORE RETURNING:
     }
   }
 
-  /**
-   * Generate queries using Google AIO Collector when OpenAI is not available
-   */
-  private async generateWithGoogleAIO(request: QueryGenerationRequest, brandName: string): Promise<Array<{ topic: string; query: string; intent: string; priority: number }>> {
-    try {
-      // Import Google AIO service
-      const { googleAIOCollectorService } = await import('./data-collection/google-aio-collector.service');
-      
-      // Create queries for the brand (max 5 queries allowed)
-      const queries = [
-        `${brandName} products and services`,
-        `${brandName} pricing and costs`,
-        `${brandName} vs competitors comparison`,
-        `${brandName} customer reviews and ratings`,
-        `${brandName} features and benefits`
-      ];
-
-      // Submit to Google AIO Collector
-      const batchResponse = await googleAIOCollectorService.submitQueries({
-        queries: queries.map(query => ({ prompt: query, country: request.country })),
-        brand: brandName,
-        category: 'Query Generation',
-        ui_country: request.country
-      });
-
-      // Poll for results
-      let attempts = 0;
-      const maxAttempts = 30; // 5 minutes max
-      
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-        
-        const status = await googleAIOCollectorService.getBatchStatus(batchResponse.batch_id);
-        
-        if (status.status === 'completed' && status.results) {
-          // Convert Google AIO results to query format
-          return status.results.map((result, index) => ({
-            topic: this.extractTopicFromQuery(result.prompt),
-            query: result.answer_text.substring(0, 200), // Truncate for display
-            intent: this.extractIntentFromQuery(result.prompt),
-            priority: index + 1
-          }));
-        } else if (status.status === 'error') {
-          throw new Error(`Google AIO processing failed: ${status.error}`);
-        }
-        
-        attempts++;
-      }
-      
-      throw new Error('Google AIO processing timed out');
-      
-    } catch (error) {
-      console.error('Google AIO query generation failed:', error);
-      // Fall back to mock queries
-      return this.generateMockQueries(request, brandName);
-    }
-  }
 
   /**
    * Generate mock queries when all other methods fail

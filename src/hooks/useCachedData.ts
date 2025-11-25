@@ -77,9 +77,11 @@ export function useCachedData<T>(
         .join('&') : '';
       const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
       const cached = cacheManager.get<T>(cacheKey);
-      const hasFreshCache = cached && cacheManager.isFresh(cacheKey);
-      if (hasFreshCache) {
-        console.log(`[useCachedData] ✅ Initial loading false (fresh cache) for: ${endpoint}`);
+      // If we have cached data (even if stale), set loading to false so we can show it immediately
+      // The background refresh will happen in useEffect
+      if (cached) {
+        const isFresh = cacheManager.isFresh(cacheKey);
+        console.log(`[useCachedData] ✅ Initial loading false (${isFresh ? 'fresh' : 'stale'} cache) for: ${endpoint}`);
         return false;
       }
     } catch (e) {
@@ -167,11 +169,18 @@ export function useCachedData<T>(
       const errorDuration = performance.now() - fetchStart;
       // Ignore AbortError - it's expected when requests are cancelled
       if (err instanceof Error && err.name === 'AbortError') {
+        // Check if this was a cleanup abort (expected) or an unexpected abort
+        const isCleanupAbort = (abortControllerRef.current as any)?._isCleanupAbort;
+        if (isCleanupAbort) {
+          // Silent - this is expected cleanup behavior
+          return;
+        }
+        // Log but don't treat as error - component might have unmounted
         console.log(`[useCachedData] Request aborted (expected) at`, performance.now(), `- Duration: ${errorDuration.toFixed(2)}ms`);
-        // Silently ignore - this is expected behavior
         return;
       }
       
+      // Only log non-abort errors
       console.error(`[useCachedData] ❌ Error in fetchData at`, performance.now(), `- Duration: ${errorDuration.toFixed(2)}ms - Error:`, err);
       
       // Check if this request was aborted (controller might have changed)
@@ -249,15 +258,24 @@ export function useCachedData<T>(
     console.log(`[useCachedData] Starting fetch at`, fetchStart, `- Has cache: ${hasCache}, Refetch on mount: ${refetchOnMount}`);
     // Don't show loading if we have fresh cache
     const showLoading = !hasCache || refetchOnMount;
-    fetchData(showLoading);
+    fetchData(showLoading).catch((err) => {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+      console.error('[useCachedData] Unhandled fetch error:', err);
+    });
 
     return () => {
       if (abortControllerRef.current) {
         // Abort without throwing - this is cleanup
+        // Use a flag to prevent error logging for expected aborts
+        const controller = abortControllerRef.current;
         try {
-          abortControllerRef.current.abort();
+          // Mark as cleanup abort to prevent error logging
+          (controller as any)._isCleanupAbort = true;
+          controller.abort();
         } catch (e) {
-          // Ignore any errors during cleanup
+          // Ignore any errors during cleanup - this is expected
         }
       }
     };
@@ -268,7 +286,12 @@ export function useCachedData<T>(
   useEffect(() => {
     if (refetchInterval && endpoint && enabled) {
       intervalRef.current = window.setInterval(() => {
-        fetchData(false); // Don't show loading on interval refetch
+        fetchData(false).catch((err) => {
+          if (err instanceof Error && err.name === 'AbortError') {
+            return;
+          }
+          console.error('[useCachedData] Unhandled interval fetch error:', err);
+        }); // Don't show loading on interval refetch
       }, refetchInterval);
 
       return () => {

@@ -7,7 +7,7 @@ export const DataCollectionLoadingScreenRoute = () => {
   if (!brandId) return <div>Invalid brand ID</div>;
   return <DataCollectionLoadingScreen brandId={brandId} />;
 };
-import { CheckCircle2, Loader2, Sparkles, TrendingUp, Database, BarChart3, Globe } from 'lucide-react';
+import { CheckCircle2, Sparkles, TrendingUp, Globe } from 'lucide-react';
 
 interface ProgressData {
   queries: {
@@ -61,6 +61,8 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
   const [isComplete, setIsComplete] = useState(false);
   const [hasShownInitialData, setHasShownInitialData] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
+  const [currentStage, setCurrentStage] = useState<'collecting' | 'scoring'>('collecting');
+  const [progressBarValue, setProgressBarValue] = useState(0);
 
   // Fetch dashboard data to show after initial delay
   const fetchDashboardData = async () => {
@@ -100,6 +102,58 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
       console.error('[LoadingScreen] Error fetching dashboard data:', error);
     }
   };
+
+  // Progress bar animation - transition from collecting to scoring
+  useEffect(() => {
+    let progressInterval: NodeJS.Timeout;
+    
+    // Animate progress bar smoothly based on elapsed time
+    const updateProgress = () => {
+      if (elapsedTime < 8) {
+        // Collecting stage: 0-50% over 8 seconds
+        setProgressBarValue((elapsedTime / 8) * 50);
+        if (currentStage !== 'collecting') {
+          setCurrentStage('collecting');
+        }
+      } else if (elapsedTime < 20) {
+        // Scoring stage: 50-90% over next 12 seconds
+        const scoringProgress = ((elapsedTime - 8) / 12) * 40;
+        setProgressBarValue(50 + scoringProgress);
+        if (currentStage !== 'scoring') {
+          setCurrentStage('scoring');
+        }
+      } else {
+        // After 20 seconds, show 100% briefly before navigation
+        setProgressBarValue(100);
+      }
+    };
+
+    // Update progress immediately
+    updateProgress();
+    
+    // Update progress every 100ms for smooth animation
+    progressInterval = setInterval(updateProgress, 100);
+
+    // After 20 seconds: Navigate to dashboard with brandId in state
+    const navigateTimer = setTimeout(() => {
+      console.log(`[LoadingScreen] 20 seconds elapsed, navigating to dashboard for brand: ${brandId}`);
+      // Store flag that we're showing partial data
+      localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
+      // Pass brandId in navigation state so dashboard can auto-select it
+      navigate('/dashboard', { 
+        replace: true,
+        state: { 
+          autoSelectBrandId: brandId,
+          fromOnboarding: true 
+        }
+      });
+    }, INITIAL_UPDATE_DELAY);
+
+    return () => {
+      clearTimeout(navigateTimer);
+      clearInterval(progressInterval);
+    };
+  }, [brandId, navigate, elapsedTime, currentStage]);
 
   // Initial data fetch after 15-20 seconds (configurable)
   useEffect(() => {
@@ -153,7 +207,13 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
               
               // Redirect after brief delay to show completion
               setTimeout(() => {
-                navigate('/dashboard', { replace: true });
+                navigate('/dashboard', { 
+                  replace: true,
+                  state: { 
+                    autoSelectBrandId: brandId,
+                    fromOnboarding: true 
+                  }
+                });
               }, 1500);
             }
           }
@@ -192,33 +252,6 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const getProgressPercentage = () => {
-    if (progress.queries.total === 0) return 0;
-    
-    const queryProgress = (progress.queries.completed / progress.queries.total) * 60; // 60% for queries
-    const scoringProgress = 
-      ((progress.scoring.positions ? 1 : 0) +
-       (progress.scoring.sentiments ? 1 : 0) +
-       (progress.scoring.citations ? 1 : 0)) / 3 * 40; // 40% for scoring
-    
-    return Math.min(100, queryProgress + scoringProgress);
-  };
-
-  const getOperationLabel = () => {
-    switch (progress.currentOperation) {
-      case 'collecting':
-        return progress.queries.current 
-          ? `Collecting from ${progress.queries.current}...`
-          : 'Collecting data from AI models...';
-      case 'scoring':
-        return 'Analyzing and scoring results...';
-      case 'finalizing':
-        return 'Finalizing your dashboard...';
-      default:
-        return 'Processing your brand data...';
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
       {/* Animated background particles */}
@@ -250,109 +283,42 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
               )}
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">
-              {isComplete ? 'Almost There!' : 'Your Data is Being Collected'}
+              {isComplete ? 'Almost There!' : 'Setting Up Your Brand'}
             </h1>
-            <p className="text-purple-200 text-lg">
-              {isComplete 
-                ? 'Your dashboard is ready! Redirecting...'
-                : getOperationLabel()
+            <p className="text-purple-200 text-lg mb-6">
+              {currentStage === 'collecting' 
+                ? 'Collecting your results...'
+                : 'Scoring the results...'
               }
             </p>
-          </div>
 
-          {/* Progress bar */}
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-purple-200">Overall Progress</span>
-              <span className="text-sm font-bold text-white">{Math.round(getProgressPercentage())}%</span>
-            </div>
-            <div className="h-3 bg-white/10 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 rounded-full transition-all duration-500 ease-out relative overflow-hidden"
-                style={{ width: `${getProgressPercentage()}%` }}
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+            {/* Animated Progress Bar */}
+            <div className="mb-8">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-sm font-medium text-purple-200">
+                  {currentStage === 'collecting' ? 'Collecting Results' : 'Scoring Results'}
+                </span>
+                <span className="text-sm font-bold text-white">{Math.round(progressBarValue)}%</span>
               </div>
-            </div>
-          </div>
-
-          {/* Progress steps */}
-          <div className="space-y-4 mb-8">
-            {/* Data Collection Step */}
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${
-                    progress.queries.completed >= progress.queries.total
-                      ? 'bg-green-500/20'
-                      : 'bg-blue-500/20'
-                  }`}>
-                    {progress.queries.completed >= progress.queries.total ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-400" />
-                    ) : (
-                      <Database className="w-5 h-5 text-blue-400 animate-pulse" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-white font-semibold">Data Collection</p>
-                    <p className="text-purple-200 text-sm">
-                      {progress.queries.completed} of {progress.queries.total} queries completed
-                    </p>
-                  </div>
+              <div className="h-4 bg-white/10 rounded-full overflow-hidden shadow-inner">
+                <div
+                  className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 rounded-full transition-all duration-300 ease-out relative overflow-hidden"
+                  style={{ width: `${progressBarValue}%` }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer" />
                 </div>
-                {progress.queries.completed < progress.queries.total && (
-                  <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                )}
               </div>
-              {progress.queries.total > 0 && (
-                <div className="h-2 bg-white/10 rounded-full overflow-hidden mt-2">
-                  <div
-                    className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                    style={{ width: `${(progress.queries.completed / progress.queries.total) * 100}%` }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Scoring Steps */}
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${
-                    progress.scoring.positions && progress.scoring.sentiments && progress.scoring.citations
-                      ? 'bg-green-500/20'
-                      : 'bg-purple-500/20'
-                  }`}>
-                    {progress.scoring.positions && progress.scoring.sentiments && progress.scoring.citations ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-400" />
-                    ) : (
-                      <BarChart3 className="w-5 h-5 text-purple-400 animate-pulse" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-white font-semibold">Scoring & Analysis</p>
-                    <p className="text-purple-200 text-sm">
-                      {[
-                        progress.scoring.positions && 'Positions',
-                        progress.scoring.sentiments && 'Sentiment',
-                        progress.scoring.citations && 'Citations',
-                      ]
-                        .filter(Boolean)
-                        .join(', ') || 'In progress...'}
-                    </p>
-                  </div>
-                </div>
-                {!(progress.scoring.positions && progress.scoring.sentiments && progress.scoring.citations) && (
-                  <Loader2 className="w-5 h-5 text-purple-400 animate-spin" />
-                )}
-              </div>
-              <div className="grid grid-cols-3 gap-2 mt-3">
-                <ScoringBadge label="Positions" completed={progress.scoring.positions} />
-                <ScoringBadge label="Sentiment" completed={progress.scoring.sentiments} />
-                <ScoringBadge label="Citations" completed={progress.scoring.citations} />
+              <div className="flex justify-between mt-2 text-xs text-purple-300/60">
+                <span className={currentStage === 'collecting' ? 'text-purple-300 font-medium' : ''}>
+                  {currentStage === 'collecting' ? '● Collecting' : '✓ Collecting'}
+                </span>
+                <span className={currentStage === 'scoring' ? 'text-purple-300 font-medium' : ''}>
+                  {currentStage === 'scoring' ? '● Scoring' : 'Scoring'}
+                </span>
               </div>
             </div>
           </div>
+
 
           {/* Show available dashboard data after initial delay */}
           {hasShownInitialData && dashboardData && (
@@ -484,24 +450,6 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     </div>
   );
 };
-
-interface ScoringBadgeProps {
-  label: string;
-  completed: boolean;
-}
-
-const ScoringBadge = ({ label, completed }: ScoringBadgeProps) => (
-  <div className={`text-center py-2 rounded-lg transition-all ${
-    completed
-      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-      : 'bg-white/5 text-purple-300 border border-white/10'
-  }`}>
-    <p className="text-xs font-medium">{label}</p>
-    {completed && (
-      <CheckCircle2 className="w-3 h-3 mx-auto mt-1" />
-    )}
-  </div>
-);
 
 // Hook for using loading screen in onboarding flow
 export const useDataCollectionProgress = (brandId: string) => {

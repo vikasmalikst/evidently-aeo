@@ -6,6 +6,7 @@
  * CEREBRAS_API_KEY_1 -> Position Extraction (fallback: CEREBRAS_API_KEY)
  * CEREBRAS_API_KEY_2 -> Sentiment Scoring (fallback: CEREBRAS_API_KEY)
  * GOOGLE_GEMINI_API_KEY_3 -> Citation Categorization (fallback: GOOGLE_GEMINI_API_KEY)
+ * CEREBRAS_API_KEY_3 -> Keyword Generation (fallback: CEREBRAS_API_KEY)
  * CEREBRAS_API_KEY_4 -> Topic/Query Generation (fallback: CEREBRAS_API_KEY)
  */
 
@@ -36,6 +37,14 @@ export function getCitationCategorizationKey(): string | null {
     process.env.GEMINI_API_KEY ||
     null
   );
+}
+
+/**
+ * Get API key for Keyword Generation
+ * Uses CEREBRAS_API_KEY_3, falls back to CEREBRAS_API_KEY
+ */
+export function getKeywordGenerationKey(): string | null {
+  return process.env.CEREBRAS_API_KEY_3 || process.env.CEREBRAS_API_KEY || null;
 }
 
 /**

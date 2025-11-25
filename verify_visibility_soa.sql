@@ -251,3 +251,4 @@ WHERE brand_id = '1d3a41cc-e83f-45ff-887f-8eb66d4eaadc'  -- REPLACE
   AND customer_id = '4522adf5-81bc-496b-b64a-23370a048c44'  -- REPLACE
   AND competitor_name IS NULL;
 
+

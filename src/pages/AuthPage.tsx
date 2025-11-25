@@ -5,7 +5,7 @@ import { RegisterForm } from '../components/Auth/RegisterForm';
 import { PasswordResetForm } from '../components/Auth/PasswordResetForm';
 import { featureFlags } from '../config/featureFlags';
 import { onboardingUtils } from '../utils/onboardingUtils';
-import { apiClient } from '../lib/apiClient';
+import { cachedRequest } from '../lib/apiCache';
 
 interface BrandsResponse {
   success: boolean;
@@ -47,7 +47,7 @@ export const AuthPage = () => {
     let hasExistingBrand = false;
 
     try {
-      const brandsResponse = await apiClient.request<BrandsResponse>('/brands');
+      const brandsResponse = await cachedRequest<BrandsResponse>('/brands', {}, { requiresAuth: true });
       hasExistingBrand = !!(brandsResponse.success && brandsResponse.data && brandsResponse.data.length > 0);
     } catch (error) {
       console.warn('Failed to check existing brands after login:', error);

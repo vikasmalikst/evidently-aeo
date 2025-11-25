@@ -10,7 +10,6 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import authRoutes from './routes/auth.routes';
 import brandRoutes from './routes/brand.routes';
 import queryGenerationRoutes from './routes/query-generation.routes';
-import googleAIORoutes from './routes/google-aio.routes';
 import trendingKeywordsRoutes from './routes/trending-keywords.routes';
 import dataCollectionRoutes from './routes/data-collection.routes';
 import keywordGenerationRoutes from './routes/keyword-generation.routes';
@@ -81,7 +80,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/brands', brandRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/query-generation', queryGenerationRoutes);
-app.use('/api/google-aio', googleAIORoutes);
 app.use('/api/trending-keywords', trendingKeywordsRoutes);
 app.use('/api/data-collection', dataCollectionRoutes);
 app.use('/api/keywords', keywordGenerationRoutes);
@@ -102,7 +100,6 @@ app.get('/', (_req, res) => {
         auth: '/api/auth',
         brands: '/api/brands',
         queryGeneration: '/api/query-generation',
-        googleAIO: '/api/google-aio',
         trendingKeywords: '/api/trending-keywords',
         dataCollection: '/api/data-collection',
         keywords: '/api/keywords',

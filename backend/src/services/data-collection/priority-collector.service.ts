@@ -150,15 +150,8 @@ export class PriorityCollectorService {
           timeout: 45000,
           retries: 1,
           fallback_on_failure: true
-        },
-        {
-          name: 'google_aio_direct',
-          priority: 4,
-          enabled: true,
-          timeout: 30000,
-          retries: 1,
-          fallback_on_failure: false
         }
+       
       ]
     });
 
@@ -189,14 +182,6 @@ export class PriorityCollectorService {
           timeout: 45000,
           retries: 1,
           fallback_on_failure: true
-        },
-        {
-          name: 'perplexity_direct',
-          priority: 4,
-          enabled: true,
-          timeout: 45000,
-          retries: 1,
-          fallback_on_failure: false
         }
       ]
     });
@@ -613,22 +598,7 @@ export class PriorityCollectorService {
     console.log(`🔄 Calling direct API ${provider.name} for ${collectorType}`);
     
     // Route to appropriate direct API based on provider
-    switch (provider.name) {
-      case 'google_gemini_direct':
-        return await this.callGoogleGeminiDirect(queryText, brandId, locale, country);
-      case 'openai_direct':
-        return await this.callOpenAIDirect(queryText, brandId, locale, country);
-      case 'google_aio_direct':
-        return await this.callGoogleAIODirect(queryText, brandId, locale, country);
-      case 'perplexity_direct':
-        return await this.callPerplexityDirect(queryText, brandId, locale, country);
-      case 'baidu_direct':
-        return await this.callBaiduDirect(queryText, brandId, locale, country);
-      case 'bing_direct':
-        return await this.callBingDirect(queryText, brandId, locale, country);
-      default:
-        throw new Error(`Direct provider ${provider.name} not implemented`);
-    }
+    
   }
 
   /**
@@ -800,24 +770,7 @@ export class PriorityCollectorService {
     }
   }
 
-  /**
-   * Placeholder methods for other direct APIs
-   */
-  private async callGoogleAIODirect(queryText: string, brandId: string, locale: string, country: string): Promise<any> {
-    throw new Error('Google AIO Direct API not yet implemented');
-  }
-
-  private async callPerplexityDirect(queryText: string, brandId: string, locale: string, country: string): Promise<any> {
-    throw new Error('Perplexity Direct API not yet implemented');
-  }
-
-  private async callBaiduDirect(queryText: string, brandId: string, locale: string, country: string): Promise<any> {
-    throw new Error('Baidu Direct API not yet implemented');
-  }
-
-  private async callBingDirect(queryText: string, brandId: string, locale: string, country: string): Promise<any> {
-    throw new Error('Bing Direct API not yet implemented');
-  }
+ 
 
   /**
    * Get system configuration

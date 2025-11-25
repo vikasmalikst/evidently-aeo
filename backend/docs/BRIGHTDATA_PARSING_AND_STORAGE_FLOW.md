@@ -259,3 +259,4 @@ The parsed data is stored in the `collector_results` table:
 - ✅ `snapshot_id` is stored for tracking async operations
 - ✅ All parsing handles multiple response formats and fallbacks
 
+

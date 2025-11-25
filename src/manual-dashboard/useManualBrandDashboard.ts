@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { apiClient } from '../lib/apiClient'
+import { cachedRequest } from '../lib/apiCache'
 
 interface ApiResponse<T> {
   success: boolean
@@ -85,7 +85,7 @@ export const useManualBrandDashboard = (
       setError(null)
 
       try {
-        const response = await apiClient.request<ApiResponse<ManualBrandSummary[]>>('/brands')
+        const response = await cachedRequest<ApiResponse<ManualBrandSummary[]>>('/brands', {}, { requiresAuth: true })
 
         if (!response.success || !response.data) {
           throw new Error(response.error || response.message || 'Failed to load brands')

@@ -1,7 +1,7 @@
 /**
  * Citation Categorization Service
  * Maps domains to citation categories using LLM-based categorization
- * All categorizations are done via AI (Cerebras or Gemini)
+ * All categorizations are done via AI (Cerebras as primary, Gemini as secondary)
  */
 
 export type CitationCategory = 
@@ -273,58 +273,59 @@ export class CitationCategorizationService {
   }
 
   /**
-   * Categorize an unknown domain using AI (Cerebras or Gemini)
+   * Categorize an unknown domain using AI (Cerebras as primary, Gemini as secondary)
    */
   private async categorizeWithAI(url: string, domain: string): Promise<CitationCategory> {
-    // Citation Categorization uses GOOGLE_GEMINI_API_KEY_3 (fallback: GOOGLE_GEMINI_API_KEY)
-    // This is part of scoring services, so uses numbered key
+    // Citation Categorization uses Cerebras as primary, Gemini as secondary
     const { getCitationCategorizationKey, getCerebrasKey, getGeminiModel, getCerebrasModel } = require('../../utils/api-key-resolver');
-    const geminiApiKey = getCitationCategorizationKey(); // Primary for citations (KEY_3)
-    const cerebrasApiKey = getCerebrasKey(); // Fallback
-    const geminiModel = getGeminiModel('gemini-2.5-flash');
+    const cerebrasApiKey = getCerebrasKey(); // Primary for citations
+    const geminiApiKey = getCitationCategorizationKey(); // Secondary fallback (KEY_3 or generic)
     const cerebrasModel = getCerebrasModel();
+    const geminiModel = getGeminiModel('gemini-2.5-flash');
     
 
-    // Try Gemini first (primary for citations), then Cerebras as fallback
-    if (geminiApiKey) {
+    // Try Cerebras first (primary for citations), then Gemini as fallback
+    if (cerebrasApiKey) {
       try {
         return await this.withRetryBackoff(
-          () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
+          () => this.categorizeWithCerebras(url, domain, cerebrasApiKey, cerebrasModel),
           2, // max retries
           1000, // base delay 1s
           10000 // max delay 10s
         );
       } catch (error) {
-        console.warn(`⚠️ Gemini categorization failed for ${domain}, trying Cerebras fallback...`);
+        console.warn(`⚠️ Cerebras categorization failed for ${domain}, trying Gemini fallback...`);
       }
     }
     
-    if (cerebrasApiKey) {
+    if (geminiApiKey) {
       try {
         return await this.withRetryBackoff(
-          () => this.categorizeWithCerebras(url, domain, cerebrasApiKey, cerebrasModel),
-          2, // max retries (reduced from 5)
-          1000, // base delay 1s
-          10000 // max delay 10s (reduced from 30s)
+          () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
+          2, // max retries
+          2000, // base delay 2s (Gemini has stricter rate limits)
+          20000 // max delay 20s
         );
       } catch (error) {
-        console.warn(`⚠️ Cerebras categorization failed, trying Gemini:`, error instanceof Error ? error.message : error);
-        if (geminiApiKey) {
+        console.warn(`⚠️ Gemini categorization failed:`, error instanceof Error ? error.message : error);
+        if (cerebrasApiKey) {
+          // Try Cerebras one more time if Gemini fails
           return await this.withRetryBackoff(
-            () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
-            2, // max retries (reduced from 5)
-            2000, // base delay 2s (Gemini has stricter rate limits)
-            20000 // max delay 20s (reduced from 60s)
+            () => this.categorizeWithCerebras(url, domain, cerebrasApiKey, cerebrasModel),
+            2, // max retries
+            1000, // base delay 1s
+            10000 // max delay 10s
           );
         }
         throw error;
       }
-    } else if (geminiApiKey) {
+    } else if (cerebrasApiKey) {
+      // If no Gemini key but Cerebras is available, try Cerebras again
       return await this.withRetryBackoff(
-        () => this.categorizeWithGemini(url, domain, geminiApiKey, geminiModel),
-        2, // max retries (reduced from 5)
-        2000,
-        20000 // max delay 20s (reduced from 60s)
+        () => this.categorizeWithCerebras(url, domain, cerebrasApiKey, cerebrasModel),
+        2, // max retries
+        1000,
+        10000 // max delay 10s
       );
     } else {
       throw new Error('No AI API key configured (CEREBRAS_API_KEY or GOOGLE_GEMINI_API_KEY)');

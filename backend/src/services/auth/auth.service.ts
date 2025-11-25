@@ -108,7 +108,8 @@ export class AuthService {
       return {
         id: customer.id,
         email: customer.email,
-        name: customer.name,
+        full_name: customer.name,
+        role: null,
         avatar_url: null,
         provider: 'email',
         customer_id: customer.id,
@@ -191,7 +192,8 @@ export class AuthService {
       const profile: UserProfile = {
         id: customer.id,
         email: customer.email,
-        name: customer.name,
+        full_name: customer.name,
+        role: null,
         avatar_url: null,
         provider: 'google',
         customer_id: customer.id
@@ -296,7 +298,7 @@ export class AuthService {
     try {
       // In a real implementation, you would validate the JWT token
       // For now, we'll get the user from the token payload
-      const { verifyToken } = await import('../utils/jwt');
+      const { verifyToken } = await import('../../utils/jwt');
       verifyToken(accessToken);
       
       return await this.getCurrentUser();

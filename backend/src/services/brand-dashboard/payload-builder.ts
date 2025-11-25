@@ -1074,7 +1074,7 @@ export async function buildDashboardPayload(
   )
 
   // Group by normalized domain to ensure no duplicates
-  const domainMap = new Map<string, typeof sourceAggregateEntries[0] & { urls?: string[] | Set<string>; collectorIds?: Set<number> }>()
+  const domainMap = new Map<string, Omit<typeof sourceAggregateEntries[0], 'urls' | 'collectorIds'> & { urls?: string[] | Set<string>; collectorIds?: Set<number> }>()
   
   sourceAggregateEntries.forEach((source) => {
     const normalizedDomain = source.domain?.toLowerCase().replace(/^www\./, '') || 'unknown'
@@ -1084,9 +1084,18 @@ export async function buildDashboardPayload(
       // Keep URLs as Set and preserve collectorIds from source aggregate
       const sourceAggregate = sourceAggregates.get(source.key)
       // Convert URLs array to Set if needed, or use existing Set
-      const urlsSet = source.urls 
-        ? (Array.isArray(source.urls) ? new Set(source.urls) : (source.urls instanceof Set ? source.urls : new Set<string>()))
-        : new Set<string>()
+      let urlsSet: Set<string>
+      if (source.urls) {
+        if (Array.isArray(source.urls)) {
+          urlsSet = new Set(source.urls)
+        } else if (source.urls && typeof source.urls === 'object' && 'has' in source.urls && 'add' in source.urls) {
+          urlsSet = source.urls as Set<string>
+        } else {
+          urlsSet = new Set<string>()
+        }
+      } else {
+        urlsSet = new Set<string>()
+      }
       domainMap.set(normalizedDomain, { 
         ...source,
         urls: urlsSet,
@@ -1116,8 +1125,10 @@ export async function buildDashboardPayload(
         if (!existing.urls) {
           existing.urls = new Set<string>()
         }
-        const existingUrlsSet = existing.urls instanceof Set ? existing.urls : new Set(existing.urls)
-        const sourceUrlsArray = Array.isArray(source.urls) ? source.urls : Array.from(source.urls)
+        const existingUrlsSet: Set<string> = existing.urls && typeof existing.urls === 'object' && 'has' in existing.urls && 'add' in existing.urls
+          ? existing.urls as Set<string>
+          : new Set(Array.isArray(existing.urls) ? existing.urls : [])
+        const sourceUrlsArray = Array.isArray(source.urls) ? source.urls : Array.from(source.urls as Set<string>)
         sourceUrlsArray.forEach(url => {
           if (url && typeof url === 'string' && url.trim().length > 0) {
             // Add URL as-is (only trimmed) - Set will deduplicate exact matches
@@ -1170,8 +1181,8 @@ export async function buildDashboardPayload(
       // URLs that differ only by trailing slash will be shown separately
       let allUrls: string[] = []
       if (source.urls) {
-        if (source.urls instanceof Set) {
-          allUrls = Array.from(source.urls).filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
+        if (source.urls && typeof source.urls === 'object' && 'has' in source.urls && 'add' in source.urls) {
+          allUrls = Array.from(source.urls as Set<string>).filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
         } else if (Array.isArray(source.urls)) {
           allUrls = source.urls.filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
         }

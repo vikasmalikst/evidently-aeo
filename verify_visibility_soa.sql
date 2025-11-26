@@ -252,3 +252,5 @@ WHERE brand_id = '1d3a41cc-e83f-45ff-887f-8eb66d4eaadc'  -- REPLACE
   AND competitor_name IS NULL;
 
 
+
+

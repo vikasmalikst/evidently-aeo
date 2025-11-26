@@ -1,9 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import path from 'path';
 
-// Environment variables
-const supabaseUrl = process.env['SUPABASE_URL']!;
-const supabaseServiceKey = process.env['SUPABASE_SERVICE_ROLE_KEY']!;
-const supabaseAnonKey = process.env['SUPABASE_ANON_KEY']!;
+// Ensure environment variables are loaded
+// This is important when this module is imported before environment.ts
+dotenv.config();
+// Also try loading from backend/.env specifically
+dotenv.config({ path: path.join(__dirname, '../../.env') });
+
+// Import from config to ensure validation and consistency
+import { config } from './environment';
+
+// Use environment variables from config (which validates them)
+const supabaseUrl = config.supabase.url;
+const supabaseServiceKey = config.supabase.serviceRoleKey;
+const supabaseAnonKey = config.supabase.anonKey;
 
 if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
   throw new Error('Missing required Supabase environment variables');

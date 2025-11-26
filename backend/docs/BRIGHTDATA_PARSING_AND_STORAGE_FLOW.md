@@ -260,3 +260,5 @@ The parsed data is stored in the `collector_results` table:
 - ✅ All parsing handles multiple response formats and fallbacks
 
 
+
+

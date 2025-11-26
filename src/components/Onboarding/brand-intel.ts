@@ -97,7 +97,10 @@ export async function generateBrandIntel(
       // Get access token from localStorage
       const accessToken = localStorage.getItem('access_token');
       
-      const searchResponse = await fetch(`http://localhost:3000/api/brands/search?${searchParams.toString()}`, {
+      // Use environment variable for API URL, fallback to localhost for development
+      const apiBaseUrl = (import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, '') || 'http://localhost:3000/api');
+      
+      const searchResponse = await fetch(`${apiBaseUrl}/brands/search?${searchParams.toString()}`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }

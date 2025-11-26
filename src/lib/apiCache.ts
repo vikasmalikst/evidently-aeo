@@ -270,7 +270,7 @@ export async function cachedRequest<T>(
   } catch (error) {
     const apiRequestTime = performance.now() - apiRequestStart;
     // Ignore AbortError - it's expected when requests are cancelled
-    if (error instanceof Error && error.name === 'AbortError') {
+    if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted'))) {
       // If we have stale data, return it even on abort
       if (cachedData && !isExpired) {
         console.log(`[apiCache] Request aborted, returning stale cache at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
@@ -283,8 +283,8 @@ export async function cachedRequest<T>(
       }
       // Log but don't error - this is expected cleanup behavior
       console.log(`[apiCache] Request aborted (no cache available) at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
-      // Re-throw AbortError if no stale data available
-      throw error;
+      // Return empty/default data instead of throwing to prevent unhandled promise rejections
+      return {} as T;
     }
     
     // Only log non-abort errors as errors

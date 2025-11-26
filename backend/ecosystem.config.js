@@ -1,3 +1,6 @@
+// Load environment variables from .env file
+require('dotenv').config({ path: '/home/dev/projects/evidently/backend/.env' });
+
 module.exports = {
   apps: [
     {
@@ -9,6 +12,24 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
+        // Load all environment variables from .env file
+        SUPABASE_URL: process.env.SUPABASE_URL,
+        SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        JWT_SECRET: process.env.JWT_SECRET,
+        JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN,
+        FRONTEND_URL: process.env.FRONTEND_URL,
+        SITE_URL: process.env.SITE_URL,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+        MODEL: process.env.MODEL,
+        USE_OPENAI_WEBSEARCH: process.env.USE_OPENAI_WEBSEARCH,
+        CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
+        CEREBRAS_MODEL: process.env.CEREBRAS_MODEL,
+        DATAFORSEO_USERNAME: process.env.DATAFORSEO_USERNAME,
+        DATAFORSEO_PASSWORD: process.env.DATAFORSEO_PASSWORD,
+        OXYLABS_USERNAME: process.env.OXYLABS_USERNAME,
+        OXYLABS_PASSWORD: process.env.OXYLABS_PASSWORD,
+        // Add any other environment variables your app needs
       },
       // Logging
       error_file: '/home/dev/logs/evidently-backend-error.log',

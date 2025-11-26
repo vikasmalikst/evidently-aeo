@@ -51,6 +51,9 @@ export const config = {
       'http://192.168.1.18:5174', // Admin portal
       'http://localhost:5174', // Admin portal local
       'http://192.168.1.18:5173', // Main portal network
+      'http://85.239.244.166', // VPS IP address (HTTP)
+      'http://85.239.244.166:80', // VPS IP address with port
+      'https://85.239.244.166', // VPS IP address (HTTPS)
     ],
     credentials: true,
   },

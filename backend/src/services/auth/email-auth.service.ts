@@ -138,6 +138,18 @@ export class EmailAuthService {
           errorHint: customerError?.hint
         });
         
+        // Check if this is an authentication error (invalid service role key)
+        if (customerError?.message?.includes('Invalid authentication credentials') || 
+            customerError?.message?.includes('JWT') ||
+            customerError?.code === 'PGRST301') {
+          console.error('❌ CRITICAL: Supabase authentication failed!');
+          console.error('   This usually means:');
+          console.error('   1. SUPABASE_SERVICE_ROLE_KEY is incorrect');
+          console.error('   2. SUPABASE_URL is incorrect');
+          console.error('   3. The service role key and URL are from different projects');
+          throw new DatabaseError('Supabase authentication failed. Please check your SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.');
+        }
+        
         // If customer doesn't exist but user authenticated, create customer record
         if (customerError?.code === 'PGRST116') {
           // PGRST116 = no rows returned

@@ -297,9 +297,14 @@ export function useCachedData<T>(
       return () => {
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
+          intervalRef.current = null;
         }
       };
     }
+    // Always return a cleanup function (even if no-op) to ensure consistent hook behavior
+    return () => {
+      // No-op cleanup when interval is not active
+    };
   }, [refetchInterval, endpoint, enabled, fetchData]);
 
   const refetch = useCallback(async () => {

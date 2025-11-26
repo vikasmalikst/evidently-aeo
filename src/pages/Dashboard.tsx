@@ -285,6 +285,16 @@ export const Dashboard = () => {
   // Check if data collection is still in progress - must be declared before any conditional returns
   const [isDataCollectionInProgress, setIsDataCollectionInProgress] = useState(false);
   
+  // ALL HOOKS MUST BE DECLARED BEFORE ANY CONDITIONAL RETURNS
+  const {
+    brands,
+    isLoading: brandsLoading,
+    error: brandsError,
+    selectedBrandId,
+    selectedBrand,
+    selectBrand
+  } = useManualBrandDashboard();
+  
   console.log('[DASHBOARD] Initial state set at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
 
   const getBrandData = () => {
@@ -299,15 +309,6 @@ export const Dashboard = () => {
     }
     return { name: 'Your Brand', industry: 'Technology' };
   };
-
-  const {
-    brands,
-    isLoading: brandsLoading,
-    error: brandsError,
-    selectedBrandId,
-    selectedBrand,
-    selectBrand
-  } = useManualBrandDashboard();
   
   useEffect(() => {
     if (!brandsLoading && brands.length > 0) {

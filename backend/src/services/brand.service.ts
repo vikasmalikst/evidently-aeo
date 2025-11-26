@@ -827,6 +827,10 @@ export class BrandService {
    */
   async getBrandsByCustomer(customerId: string): Promise<Brand[]> {
     try {
+      if (!customerId) {
+        throw new ValidationError('Customer ID is required');
+      }
+
       const { data: brands, error } = await supabaseAdmin
         .from('brands')
         .select('*')
@@ -840,7 +844,7 @@ export class BrandService {
       return brands || [];
     } catch (error) {
       console.error('Error fetching brands:', error);
-      if (error instanceof DatabaseError) {
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
         throw error;
       }
       throw new DatabaseError('Failed to fetch brands');

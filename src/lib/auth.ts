@@ -186,6 +186,9 @@ export const authService = {
     } catch (error) {
       console.warn('Failed to notify backend about logout:', error);
     } finally {
+      // Clear API cache to prevent cross-customer data leakage
+      const { clearApiCache } = await import('./apiCache');
+      clearApiCache();
       apiClient.clearAuthTokens();
       persistUser(null);
     }

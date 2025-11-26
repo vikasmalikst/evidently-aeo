@@ -130,6 +130,15 @@ router.get('/search', authenticateToken, async (req: Request, res: Response) => 
 router.get('/', authenticateToken, async (req: Request, res: Response) => {
   try {
     const customerId = req.user!.customer_id;
+    
+    if (!customerId) {
+      res.status(403).json({
+        success: false,
+        error: 'Customer ID is required. Please ensure you are properly authenticated.'
+      });
+      return;
+    }
+    
     const brands = await brandService.getBrandsByCustomer(customerId);
     
     res.json({

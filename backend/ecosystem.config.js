@@ -1,50 +1,89 @@
 // Load environment variables from .env file
+// This MUST happen before module.exports so PM2 can read the env vars
 const path = require('path');
 const fs = require('fs');
 
-// Try to load dotenv if available
+// Load dotenv - try multiple locations
 let dotenv;
-try {
-  dotenv = require('dotenv');
-} catch (e) {
-  console.warn('dotenv not found, trying to load from node_modules');
+const dotenvPaths = [
+  'dotenv',  // Try from node_modules (normal require)
+  path.join(__dirname, 'node_modules', 'dotenv'),  // Try relative path
+];
+
+for (const dotenvPath of dotenvPaths) {
   try {
-    dotenv = require(path.join(__dirname, 'node_modules', 'dotenv'));
-  } catch (e2) {
-    console.error('Could not load dotenv. Make sure it is installed: npm install dotenv');
+    dotenv = require(dotenvPath);
+    console.error('✅ dotenv loaded from:', dotenvPath);
+    break;
+  } catch (e) {
+    // Continue to next path
   }
+}
+
+if (!dotenv) {
+  console.error('❌ ERROR: dotenv package not found!');
+  console.error('   Tried paths:', dotenvPaths);
+  console.error('   Run: cd /home/dev/projects/evidently/backend && npm install dotenv');
+  // Don't exit - let PM2 show the error
 }
 
 // Try multiple paths for .env file
 const envPaths = [
-  path.join(__dirname, '.env'),  // Relative path
+  path.join(__dirname, '.env'),  // Relative to ecosystem.config.js location
   '/home/dev/projects/evidently/backend/.env',  // Absolute path
 ];
 
 let envLoaded = false;
-for (const envPath of envPaths) {
-  if (dotenv && fs.existsSync(envPath)) {
-    const result = dotenv.config({ path: envPath });
-    if (result.error) {
-      console.error('Error loading .env file:', result.error);
-    } else {
-      console.log('✅ Loaded .env file from:', envPath);
-      envLoaded = true;
-      break;
+let loadedPath = null;
+
+console.error('🔍 Looking for .env file...');
+console.error('   __dirname:', __dirname);
+console.error('   Checking paths:', envPaths);
+
+if (!dotenv) {
+  console.error('❌ Cannot load .env file - dotenv package not available');
+} else {
+  for (const envPath of envPaths) {
+    console.error('   Checking:', envPath, '-', fs.existsSync(envPath) ? 'EXISTS' : 'NOT FOUND');
+    if (fs.existsSync(envPath)) {
+      const result = dotenv.config({ path: envPath });
+      if (result.error) {
+        console.error('❌ Error loading .env file from', envPath, ':', result.error.message);
+      } else {
+        envLoaded = true;
+        loadedPath = envPath;
+        // Log to stderr so it shows in PM2 output
+        console.error('✅ Loaded .env file from:', envPath);
+        console.error('   Loaded', Object.keys(result.parsed || {}).length, 'variables');
+        break;
+      }
     }
+  }
+
+  if (!envLoaded) {
+    console.error('❌ ERROR: .env file not found!');
+    console.error('   Tried paths:', envPaths);
+    console.error('   Make sure the .env file exists in the backend directory');
   }
 }
 
-if (!envLoaded) {
-  console.warn('⚠️  .env file not found. Tried paths:', envPaths);
-  console.warn('   Make sure the .env file exists in the backend directory');
-}
+// Verify critical env vars are loaded
+const requiredVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET'];
+const missingVars = requiredVars.filter(v => !process.env[v]);
 
-// Debug: Log if Supabase vars are loaded (this will show when PM2 reads the config)
-if (process.env.SUPABASE_URL) {
-  console.log('✅ SUPABASE_URL is loaded in ecosystem config');
+console.error('🔍 Checking for required environment variables...');
+requiredVars.forEach(v => {
+  console.error('   ', v, ':', process.env[v] ? '✅ FOUND' : '❌ MISSING');
+});
+
+if (missingVars.length > 0) {
+  console.error('❌ ERROR: Missing required environment variables:', missingVars.join(', '));
+  if (loadedPath) {
+    console.error('   Check your .env file at:', loadedPath);
+  }
 } else {
-  console.warn('⚠️  SUPABASE_URL is NOT loaded in ecosystem config');
+  // Log success (to stderr so PM2 shows it)
+  console.error('✅ All required environment variables loaded successfully');
 }
 
 module.exports = {

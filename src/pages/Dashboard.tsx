@@ -540,6 +540,62 @@ export const Dashboard = () => {
     }
   }, [shouldShowLoading, dashboardData, brands.length, dashboardEndpoint, dashboardResponse]);
 
+  useEffect(() => {
+    if (!selectedBrandId) {
+      return;
+    }
+
+    const storageKey = `data_collection_in_progress_${selectedBrandId}`;
+    const inProgress = localStorage.getItem(storageKey) === 'true';
+    setIsDataCollectionInProgress(inProgress);
+
+    if (!inProgress) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const checkProgress = async () => {
+      try {
+        const response = await fetch(`/api/brands/${selectedBrandId}/onboarding-progress`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+          },
+        });
+
+        if (!isMounted || !response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        if (!data?.success || !data?.data || !isMounted) {
+          return;
+        }
+
+        const isComplete =
+          data.data.queries.completed >= data.data.queries.total &&
+          data.data.scoring.positions &&
+          data.data.scoring.sentiments &&
+          data.data.scoring.citations;
+
+        if (isComplete) {
+          localStorage.removeItem(storageKey);
+          setIsDataCollectionInProgress(false);
+        }
+      } catch (error) {
+        console.error('Error checking data collection progress:', error);
+      }
+    };
+
+    const interval = window.setInterval(checkProgress, 30000);
+    checkProgress();
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+    };
+  }, [selectedBrandId]);
+
   if (shouldShowLoading) {
     return (
       <Layout>
@@ -703,50 +759,6 @@ export const Dashboard = () => {
   const hasLlmData = llmSlices.length > 0;
   const hasSourceData = sourceSlices.length > 0;
   const collectorSummaries: CollectorSummary[] = dashboardData?.collectorSummaries ?? [];
-
-  useEffect(() => {
-    if (selectedBrandId) {
-      const inProgress = localStorage.getItem(`data_collection_in_progress_${selectedBrandId}`) === 'true';
-      setIsDataCollectionInProgress(inProgress);
-      
-      // Check if collection is complete by polling progress endpoint
-      if (inProgress) {
-        const checkProgress = async () => {
-          try {
-            const response = await fetch(`/api/brands/${selectedBrandId}/onboarding-progress`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-            
-            if (response.ok) {
-              const data = await response.json();
-              if (data.success && data.data) {
-                const isComplete = 
-                  data.data.queries.completed >= data.data.queries.total &&
-                  data.data.scoring.positions &&
-                  data.data.scoring.sentiments &&
-                  data.data.scoring.citations;
-                
-                if (isComplete) {
-                  localStorage.removeItem(`data_collection_in_progress_${selectedBrandId}`);
-                  setIsDataCollectionInProgress(false);
-                }
-              }
-            }
-          } catch (error) {
-            console.error('Error checking data collection progress:', error);
-          }
-        };
-        
-        // Check every 30 seconds
-        const interval = setInterval(checkProgress, 30000);
-        checkProgress(); // Check immediately
-        
-        return () => clearInterval(interval);
-      }
-    }
-  }, [selectedBrandId]);
 
   return (
     <Layout>

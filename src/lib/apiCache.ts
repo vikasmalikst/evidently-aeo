@@ -5,6 +5,7 @@
 
 import { apiClient } from './apiClient';
 import { cacheManager } from './cacheManager';
+import { authService } from './auth';
 
 interface CacheStrategy {
   ttl: number; // Time to live in milliseconds
@@ -68,9 +69,43 @@ const CACHE_STRATEGIES: Record<string, CacheStrategy> = {
 
 /**
  * Generate cache key from endpoint and params
+ * Includes customer_id for customer-specific endpoints to prevent cross-customer data leakage
  */
 function generateCacheKey(endpoint: string, params?: Record<string, any>): string {
   const baseKey = endpoint.split('?')[0]; // Remove query string from endpoint
+  
+  // Customer-specific endpoints that need customer_id in cache key
+  const customerSpecificEndpoints = [
+    '/brands',
+    '/dashboard',
+    '/sources',
+    '/topics',
+    '/prompts',
+    '/keywords',
+    '/visibility'
+  ];
+  
+  const isCustomerSpecific = customerSpecificEndpoints.some(pattern => 
+    baseKey === pattern || baseKey.startsWith(pattern + '/')
+  );
+  
+  // Get customer_id from auth service for customer-specific endpoints
+  let customerId: string | null = null;
+  if (isCustomerSpecific) {
+    try {
+      const user = authService.getStoredUser();
+      customerId = user?.customerId || null;
+    } catch (error) {
+      console.warn('[apiCache] Failed to get customer_id for cache key:', error);
+    }
+  }
+  
+  // Build cache key with customer_id if applicable
+  const keyParts: string[] = [baseKey];
+  
+  if (customerId) {
+    keyParts.push(`customer=${customerId}`);
+  }
   
   // Normalize params for consistent keys (skip when no params)
   if (params) {
@@ -79,11 +114,11 @@ function generateCacheKey(endpoint: string, params?: Record<string, any>): strin
       const normalizedParams = sortedKeys
         .map(key => `${key}=${String(params[key])}`)
         .join('&');
-      return `${baseKey}?${normalizedParams}`;
+      keyParts.push(normalizedParams);
     }
   }
   
-  return baseKey;
+  return keyParts.length > 1 ? keyParts.join('?') : baseKey;
 }
 
 /**

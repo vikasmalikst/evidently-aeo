@@ -282,6 +282,8 @@ export const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [showTopicModal, setShowTopicModal] = useState(false);
+  // Check if data collection is still in progress - must be declared before any conditional returns
+  const [isDataCollectionInProgress, setIsDataCollectionInProgress] = useState(false);
   
   console.log('[DASHBOARD] Initial state set at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
 
@@ -701,9 +703,6 @@ export const Dashboard = () => {
   const hasSourceData = sourceSlices.length > 0;
   const collectorSummaries: CollectorSummary[] = dashboardData?.collectorSummaries ?? [];
 
-  // Check if data collection is still in progress
-  const [isDataCollectionInProgress, setIsDataCollectionInProgress] = useState(false);
-  
   useEffect(() => {
     if (selectedBrandId) {
       const inProgress = localStorage.getItem(`data_collection_in_progress_${selectedBrandId}`) === 'true';

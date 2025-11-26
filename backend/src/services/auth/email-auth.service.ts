@@ -129,7 +129,85 @@ export class EmailAuthService {
         .single();
 
       if (customerError || !customer) {
-        throw new DatabaseError('Customer not found');
+        console.error('Customer lookup error:', {
+          email,
+          error: customerError,
+          errorCode: customerError?.code,
+          errorMessage: customerError?.message,
+          errorDetails: customerError?.details,
+          errorHint: customerError?.hint
+        });
+        
+        // If customer doesn't exist but user authenticated, create customer record
+        if (customerError?.code === 'PGRST116') {
+          // PGRST116 = no rows returned
+          console.log(`Customer record not found for ${email}, creating one...`);
+          
+          const customerId = uuidv4();
+          const customerSlug = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
+          const { data: newCustomer, error: createError } = await supabaseAdmin
+            .from('customers')
+            .insert({
+              id: customerId,
+              name: authData.user.user_metadata?.full_name || email.split('@')[0],
+              email: email,
+              slug: customerSlug
+            })
+            .select()
+            .single();
+
+          if (createError || !newCustomer) {
+            console.error('Failed to create customer record:', createError);
+            throw new DatabaseError(`Customer not found and could not be created: ${createError?.message || 'Unknown error'}`);
+          }
+          
+          // Use the newly created customer
+          const customer = newCustomer;
+          
+          // Continue with login using new customer
+          const accessToken = generateToken({
+            sub: customer.id,
+            email: customer.email,
+            customer_id: customer.id
+          });
+
+          const refreshToken = generateRefreshToken(customer.id);
+
+          const user: User = {
+            id: customer.id,
+            customer_id: customer.id,
+            email: customer.email,
+            name: customer.name,
+            avatar_url: null,
+            role: 'admin',
+            preferences: {},
+            last_login_at: null,
+            created_at: customer.created_at,
+            updated_at: customer.updated_at
+          };
+
+          const profile: UserProfile = {
+            id: customer.id,
+            email: customer.email,
+            full_name: customer.name,
+            role: null,
+            avatar_url: null,
+            provider: 'email',
+            customer_id: customer.id
+          };
+
+          return {
+            user,
+            profile,
+            session: {
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              expires_at: Date.now() + (7 * 24 * 60 * 60 * 1000)
+            }
+          };
+        }
+        
+        throw new DatabaseError(`Customer not found: ${customerError?.message || 'Unknown error'}`);
       }
 
       // Generate tokens using customer ID

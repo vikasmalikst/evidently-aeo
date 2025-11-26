@@ -6,6 +6,9 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config/environment';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 
+// Import database module early to ensure Supabase configuration is logged at startup
+import './config/database';
+
 // Import routes
 import authRoutes from './routes/auth.routes';
 import brandRoutes from './routes/brand.routes';

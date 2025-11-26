@@ -20,6 +20,12 @@ if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
   throw new Error('Missing required Supabase environment variables');
 }
 
+// Log Supabase configuration (without exposing full keys)
+console.log('🔧 Supabase Configuration:');
+console.log('   URL:', supabaseUrl);
+console.log('   Service Role Key:', supabaseServiceKey ? `${supabaseServiceKey.substring(0, 20)}...` : 'MISSING');
+console.log('   Anon Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : 'MISSING');
+
 // Create Supabase clients
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
@@ -27,6 +33,22 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     persistSession: false
   }
 });
+
+// Test the admin client connection
+supabaseAdmin.from('customers').select('count').limit(1)
+  .then(({ error }) => {
+    if (error) {
+      console.error('❌ Supabase Admin Client Connection Error:', error.message);
+      console.error('   Error Code:', error.code);
+      console.error('   Error Details:', error.details);
+      console.error('   Error Hint:', error.hint);
+    } else {
+      console.log('✅ Supabase Admin Client connected successfully');
+    }
+  })
+  .catch((err) => {
+    console.error('❌ Failed to test Supabase Admin Client:', err.message);
+  });
 
 export const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
 

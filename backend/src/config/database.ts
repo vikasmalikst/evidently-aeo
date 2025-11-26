@@ -35,8 +35,9 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 // Test the admin client connection
-supabaseAdmin.from('customers').select('count').limit(1)
-  .then(({ error }) => {
+(async () => {
+  try {
+    const { error } = await supabaseAdmin.from('customers').select('count').limit(1);
     if (error) {
       console.error('❌ Supabase Admin Client Connection Error:', error.message);
       console.error('   Error Code:', error.code);
@@ -45,10 +46,11 @@ supabaseAdmin.from('customers').select('count').limit(1)
     } else {
       console.log('✅ Supabase Admin Client connected successfully');
     }
-  })
-  .catch((err) => {
-    console.error('❌ Failed to test Supabase Admin Client:', err.message);
-  });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error('❌ Failed to test Supabase Admin Client:', error.message);
+  }
+})();
 
 export const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
 

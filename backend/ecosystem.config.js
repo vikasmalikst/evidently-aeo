@@ -1,5 +1,51 @@
 // Load environment variables from .env file
-require('dotenv').config({ path: '/home/dev/projects/evidently/backend/.env' });
+const path = require('path');
+const fs = require('fs');
+
+// Try to load dotenv if available
+let dotenv;
+try {
+  dotenv = require('dotenv');
+} catch (e) {
+  console.warn('dotenv not found, trying to load from node_modules');
+  try {
+    dotenv = require(path.join(__dirname, 'node_modules', 'dotenv'));
+  } catch (e2) {
+    console.error('Could not load dotenv. Make sure it is installed: npm install dotenv');
+  }
+}
+
+// Try multiple paths for .env file
+const envPaths = [
+  path.join(__dirname, '.env'),  // Relative path
+  '/home/dev/projects/evidently/backend/.env',  // Absolute path
+];
+
+let envLoaded = false;
+for (const envPath of envPaths) {
+  if (dotenv && fs.existsSync(envPath)) {
+    const result = dotenv.config({ path: envPath });
+    if (result.error) {
+      console.error('Error loading .env file:', result.error);
+    } else {
+      console.log('✅ Loaded .env file from:', envPath);
+      envLoaded = true;
+      break;
+    }
+  }
+}
+
+if (!envLoaded) {
+  console.warn('⚠️  .env file not found. Tried paths:', envPaths);
+  console.warn('   Make sure the .env file exists in the backend directory');
+}
+
+// Debug: Log if Supabase vars are loaded (this will show when PM2 reads the config)
+if (process.env.SUPABASE_URL) {
+  console.log('✅ SUPABASE_URL is loaded in ecosystem config');
+} else {
+  console.warn('⚠️  SUPABASE_URL is NOT loaded in ecosystem config');
+}
 
 module.exports = {
   apps: [

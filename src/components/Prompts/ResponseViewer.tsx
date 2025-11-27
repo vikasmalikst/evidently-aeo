@@ -4,9 +4,10 @@ import { KeywordHighlighter } from './KeywordHighlighter';
 
 interface ResponseViewerProps {
   prompt: PromptEntry | null;
+  selectedLLM: string | null;
 }
 
-export const ResponseViewer = ({ prompt }: ResponseViewerProps) => {
+export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
   const [highlightProducts, setHighlightProducts] = useState(true);
   const [highlightKeywords, setHighlightKeywords] = useState(true);
@@ -114,20 +115,37 @@ export const ResponseViewer = ({ prompt }: ResponseViewerProps) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 font-data" style={{ maxHeight: 'calc(100vh - 450px)' }}>
-        {prompt.response ? (
-          <KeywordHighlighter
-            text={prompt.response}
-            keywords={prompt.highlights}
-            highlightBrand={highlightBrand}
-            highlightProducts={highlightProducts}
-            highlightKeywords={highlightKeywords}
-            highlightCompetitors={highlightCompetitors}
-          />
-        ) : (
-          <p className="text-sm text-[var(--text-caption)]">
-            No response captured for this prompt within the selected filters.
-          </p>
-        )}
+        {(() => {
+          // Check if the response matches the selected LLM filter
+          const responseMatchesFilter = !selectedLLM || prompt.latestCollectorType === selectedLLM;
+          
+          if (!prompt.response) {
+            return (
+              <p className="text-sm text-[var(--text-caption)]">
+                No response captured for this prompt within the selected filters.
+              </p>
+            );
+          }
+          
+          if (!responseMatchesFilter) {
+            return (
+              <p className="text-sm text-[var(--text-caption)]">
+                No response available for {selectedLLM} for this prompt. The displayed response is from {prompt.latestCollectorType || 'another collector'}.
+              </p>
+            );
+          }
+          
+          return (
+            <KeywordHighlighter
+              text={prompt.response}
+              keywords={prompt.highlights}
+              highlightBrand={highlightBrand}
+              highlightProducts={highlightProducts}
+              highlightKeywords={highlightKeywords}
+              highlightCompetitors={highlightCompetitors}
+            />
+          );
+        })()}
       </div>
     </div>
   );

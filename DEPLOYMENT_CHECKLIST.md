@@ -153,3 +153,5 @@ sudo tail -n 50 /var/log/nginx/error.log
 
 **Note:** Update this checklist as you complete each step and save it for future deployments!
 
+
+

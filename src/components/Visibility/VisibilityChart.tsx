@@ -67,7 +67,7 @@ interface VisibilityChartProps {
   loading?: boolean;
   activeTab: string;
   models?: Model[];
-  stacked?: boolean;
+  metricType?: 'visibility' | 'share';
 }
 
 export const VisibilityChart = memo(({
@@ -77,7 +77,7 @@ export const VisibilityChart = memo(({
   loading = false,
   activeTab = 'brand',
   models = [],
-  stacked = false
+  metricType = 'visibility'
 }: VisibilityChartProps) => {
   const chartRef = useRef<any>(null);
 
@@ -106,8 +106,8 @@ export const VisibilityChart = memo(({
             backgroundColor: color,
             borderColor: color,
             borderWidth: 1,
-            borderRadius: stacked ? 0 : 4,
-            borderSkipped: stacked ? false : ('start' as const),
+            borderRadius: 4,
+            borderSkipped: 'start' as const,
           };
         } else {
           // Line chart configuration
@@ -130,7 +130,7 @@ export const VisibilityChart = memo(({
       labels: data.labels,
       datasets
     };
-  }, [data, selectedModels, models, chartType, stacked]);
+  }, [data, selectedModels, models, chartType]);
 
   const options = useMemo(() => {
     const isBarChart = chartType === 'bar';
@@ -147,7 +147,20 @@ export const VisibilityChart = memo(({
           beginAtZero: true,
           min: 0,
           max: 100,
-          stacked: stacked && isBarChart,
+          title: {
+            display: true,
+            text: metricType === 'visibility' ? 'Visibility Score' : 'Share of Answers (%)',
+            color: neutrals[700],
+            font: {
+              size: 11,
+              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              weight: 500,
+            },
+            padding: {
+              top: 0,
+              bottom: 8,
+            },
+          },
           ticks: {
             color: neutrals[700],
             font: {
@@ -169,7 +182,6 @@ export const VisibilityChart = memo(({
           },
         },
         x: {
-          stacked: stacked && isBarChart,
           ticks: {
             color: neutrals[700],
             font: {
@@ -249,7 +261,8 @@ export const VisibilityChart = memo(({
           label: (context: any) => {
             const label = context.dataset.label || '';
             const value = context.parsed.y;
-            return `  ${label}: ${value}`;
+            const suffix = metricType === 'share' ? '%' : '';
+            return `  ${label}: ${value}${suffix}`;
           },
         },
       },
@@ -270,7 +283,7 @@ export const VisibilityChart = memo(({
         easing: 'easeInOutQuart' as const,
       },
     };
-  }, [stacked, chartType]);
+  }, [chartType, metricType]);
 
   // Handle chart resize on window resize (e.g., when dev tools open/close)
   // Must be called after chartData is defined

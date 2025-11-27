@@ -309,6 +309,7 @@ export class PromptsAnalyticsService {
     const collectorFilter = Array.isArray(collectors)
       ? collectors.map((value) => normalizeCollectorType(value)).filter((value): value is string => Boolean(value))
       : []
+    const collectorFilterActive = collectorFilter.length > 0
 
     let collectorQuery = supabaseAdmin
       .from('collector_results')
@@ -493,7 +494,8 @@ export class PromptsAnalyticsService {
         typeof row.created_at === 'string' && row.created_at.trim().length > 0 ? row.created_at.trim() : null
 
       const shouldUpdate =
-        createdAt && (!aggregate.lastUpdated || new Date(createdAt).getTime() >= new Date(aggregate.lastUpdated).getTime())
+        createdAt &&
+        (!aggregate.lastUpdated || new Date(createdAt).getTime() >= new Date(aggregate.lastUpdated).getTime())
 
       if (shouldUpdate) {
         aggregate.collectorResultId = collectorResultId
@@ -521,6 +523,7 @@ export class PromptsAnalyticsService {
 
     const keywordMap = new Map<string, Set<string>>()
     const sentimentMap = new Map<string, number[]>() // key: query_id or collector:<id> -> sentiment values
+    const allowedCollectorResultIds = new Set<number>(allCollectorResultIds)
 
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       const keywordRows: Array<{ keyword: string; query_id: string | null; collector_result_id: number | null }> = []
@@ -563,11 +566,16 @@ export class PromptsAnalyticsService {
       } else {
         console.log(`📊 Fetched ${keywordRows.length} keywords for ${allQueryIds.length} queries and ${allCollectorResultIds.length} collector results`)
         keywordRows.forEach((row) => {
+          const collectorResultId =
+            typeof row.collector_result_id === 'number' ? row.collector_result_id : null
+          if (collectorFilterActive) {
+            if (collectorResultId === null || !allowedCollectorResultIds.has(collectorResultId)) {
+              return
+            }
+          }
           if (typeof row.keyword === 'string' && row.keyword.trim().length > 0) {
             const keyword = row.keyword.trim()
             const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
-            const collectorResultId =
-              typeof row.collector_result_id === 'number' ? row.collector_result_id : null
 
             // Map keywords by both query_id (primary) and collector_result_id (secondary)
             if (queryId) {
@@ -671,7 +679,7 @@ export class PromptsAnalyticsService {
     // Fetch visibility scores from extracted_positions (still stored there)
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
-      const { data: visibilityRows, error: visibilityError } = await supabaseAdmin
+      let visibilityQuery = supabaseAdmin
         .from('extracted_positions')
         .select('query_id, collector_result_id, visibility_index, competitor_name')
         .eq('brand_id', brandRow.id)
@@ -687,10 +695,28 @@ export class PromptsAnalyticsService {
             .join(',')
         )
 
+      if (collectorFilterActive) {
+        visibilityQuery = visibilityQuery.in('collector_type', collectorFilter)
+      }
+
+      const { data: visibilityRows, error: visibilityError } = await visibilityQuery
+
       if (visibilityError) {
         console.warn(`Failed to load visibility scores: ${visibilityError.message}`)
       } else {
-        ;(visibilityRows ?? []).forEach((row: any) => {
+        const filteredRows = (visibilityRows ?? []).filter((row: any) => {
+          if (!collectorFilterActive) {
+            return true
+          }
+          const collectorResultId =
+            typeof row?.collector_result_id === 'number' ? row.collector_result_id : null
+          if (collectorResultId === null) {
+            return false
+          }
+          return allowedCollectorResultIds.has(collectorResultId)
+        })
+
+        filteredRows.forEach((row: any) => {
           // Process visibility_index (sentiment is now from collector_results, handled separately above)
           const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
           

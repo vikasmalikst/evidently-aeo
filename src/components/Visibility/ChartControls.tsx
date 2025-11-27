@@ -14,11 +14,11 @@ interface ChartControlsProps {
   onChartTypeChange: (value: string) => void;
   region: string;
   onRegionChange: (value: string) => void;
-  stacked?: boolean;
-  onStackedChange?: (value: boolean) => void;
   brands?: BrandOption[];
   selectedBrandId?: string | null;
   onBrandChange?: (brandId: string) => void;
+  metricType?: 'visibility' | 'share';
+  onMetricTypeChange?: (value: 'visibility' | 'share') => void;
 }
 
 export const ChartControls = ({
@@ -28,11 +28,11 @@ export const ChartControls = ({
   onChartTypeChange,
   region,
   onRegionChange,
-  stacked = false,
-  onStackedChange,
   brands = [],
   selectedBrandId,
-  onBrandChange
+  onBrandChange,
+  metricType = 'visibility',
+  onMetricTypeChange
 }: ChartControlsProps) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -245,15 +245,31 @@ export const ChartControls = ({
           })}
         </div>
 
-        {onStackedChange && (
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={stacked}
-              onChange={(e) => onStackedChange(e.target.checked)}
-            />
-            <span className="text-sm font-medium text-[#212534]">Stacked</span>
-          </label>
+        {onMetricTypeChange && (
+          <div className="flex items-center gap-2 px-1">
+            <div className="relative inline-flex items-center bg-[#f4f4f6] rounded-lg p-1 border border-[#e8e9ed] shadow-sm">
+              <button
+                onClick={() => onMetricTypeChange('visibility')}
+                className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 whitespace-nowrap relative ${
+                  metricType === 'visibility'
+                    ? 'bg-white text-[#06b6d4] shadow-sm'
+                    : 'text-[#6c7289] hover:text-[#212534] hover:bg-white/50'
+                }`}
+              >
+                Visibility Score
+              </button>
+              <button
+                onClick={() => onMetricTypeChange('share')}
+                className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 whitespace-nowrap relative ${
+                  metricType === 'share'
+                    ? 'bg-white text-[#06b6d4] shadow-sm'
+                    : 'text-[#6c7289] hover:text-[#212534] hover:bg-white/50'
+                }`}
+              >
+                Share of Answers
+              </button>
+            </div>
+          </div>
         )}
       </div>
 

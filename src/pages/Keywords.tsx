@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { Scatter } from 'react-chartjs-2';
 import {
@@ -16,6 +16,7 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../lib/apiClient';
 import { ApiResponse } from '../types';
+import { useChartResize } from '../hooks/useChartResize';
 
 // Design tokens
 const COLORS = {
@@ -314,6 +315,10 @@ export const Keywords = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [llmFilter, setLlmFilter] = useState<string>('all');
   const [quadrantFilter, setQuadrantFilter] = useState<string>('all');
+  const chartRef = useRef<any>(null);
+  
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, !loading && filteredData.length > 0);
 
   // Fetch real keyword analytics
   useEffect(() => {
@@ -671,7 +676,7 @@ export const Keywords = () => {
                 Loading keywords…
               </div>
             ) : (
-              <Scatter data={chartData} options={options} />
+              <Scatter data={chartData} options={options} ref={chartRef} />
             )}
           </div>
         </div>

@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js';
+import { useChartResize } from '../../hooks/useChartResize';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -16,6 +18,11 @@ interface SourcesBarChartProps {
 }
 
 export const SourcesBarChart = ({ racingChartData }: SourcesBarChartProps) => {
+  const chartRef = useRef<any>(null);
+  
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, racingChartData.sources.length > 0);
+  
   const latestData = racingChartData.sources.map(source => ({
     domain: source.domain,
     value: source.data[source.data.length - 1],
@@ -98,7 +105,7 @@ export const SourcesBarChart = ({ racingChartData }: SourcesBarChartProps) => {
         Top 10 Sources - Bar Chart
       </h3>
       <div className="h-[400px]">
-        <Bar data={data} options={options} />
+        <Bar data={data} options={options} ref={chartRef} />
       </div>
     </div>
   );

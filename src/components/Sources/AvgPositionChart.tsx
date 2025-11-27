@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -10,6 +11,7 @@ import {
 } from 'chart.js';
 import { SourceData } from '../../data/mockSourcesData';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { useChartResize } from '../../hooks/useChartResize';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -18,6 +20,11 @@ interface AvgPositionChartProps {
 }
 
 export const AvgPositionChart = ({ sources }: AvgPositionChartProps) => {
+  const chartRef = useRef<any>(null);
+  
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, sources.length > 0);
+  
   const sortedSources = [...sources].sort((a, b) => a.avgPosition - b.avgPosition);
 
   const data = {
@@ -94,7 +101,7 @@ export const AvgPositionChart = ({ sources }: AvgPositionChartProps) => {
         </div>
       </div>
       <div className="h-[350px]">
-        <Bar data={data} options={options} />
+        <Bar data={data} options={options} ref={chartRef} />
       </div>
       <div className="mt-4 grid grid-cols-5 gap-2 text-center">
         {sortedSources.map(source => (

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SourceTabs } from '../components/Sources/SourceTabs';
 import { SourceCoverageHeatmap } from '../components/Sources/SourceCoverageHeatmap';
@@ -14,6 +14,7 @@ import { IconDownload, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, I
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
+import { useChartResize } from '../hooks/useChartResize';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
@@ -109,6 +110,7 @@ export const SearchSources = () => {
   const [modalTitle, setModalTitle] = useState('');
   const [sortField, setSortField] = useState<SortField>('mentionRate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const chartRef = useRef<any>(null);
 
   // CSV Export function
   const exportToCSV = () => {
@@ -305,6 +307,9 @@ export const SearchSources = () => {
       return 0;
     });
   }, [sourceData, topicFilter, sentimentFilter, typeFilter, sortField, sortDirection]);
+
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, !loading && filteredData.length > 0);
 
   const chartData = {
     datasets: filteredData.map(source => ({
@@ -875,7 +880,7 @@ export const SearchSources = () => {
           </p>
 
           <div style={{ height: '500px', position: 'relative' }}>
-            <Scatter data={chartData} options={chartOptions} />
+            <Scatter data={chartData} options={chartOptions} ref={chartRef} />
           </div>
 
           {/* Legend */}

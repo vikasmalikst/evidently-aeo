@@ -11,6 +11,7 @@ import {
   Legend,
   Filler
 } from 'chart.js';
+import { useChartResize } from '../../hooks/useChartResize';
 
 ChartJS.register(
   CategoryScale,
@@ -78,7 +79,7 @@ export const VisibilityChart = memo(({
   models = [],
   stacked = false
 }: VisibilityChartProps) => {
-  const chartRef = useRef(null);
+  const chartRef = useRef<any>(null);
 
   const chartData = useMemo(() => {
     if (!data || selectedModels.length === 0) {
@@ -270,6 +271,10 @@ export const VisibilityChart = memo(({
       },
     };
   }, [stacked, chartType]);
+
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  // Must be called after chartData is defined
+  useChartResize(chartRef, !loading && !!chartData && selectedModels.length > 0);
 
   if (loading) {
     return (

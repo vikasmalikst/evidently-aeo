@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import { useChartResize } from '../../../hooks/useChartResize';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -12,6 +14,11 @@ interface StackedRacingChartProps {
 }
 
 export const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
+  const chartRef = useRef<any>(null);
+  
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, data.length > 0);
+  
   const chartData = {
     labels: [''],
     datasets: data.map((item) => ({
@@ -63,7 +70,7 @@ export const StackedRacingChart = ({ data }: StackedRacingChartProps) => {
   return (
     <div>
       <div style={{ height: '40px' }}>
-        <Bar data={chartData} options={options} />
+        <Bar data={chartData} options={options} ref={chartRef} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
         {data.map((item) => (

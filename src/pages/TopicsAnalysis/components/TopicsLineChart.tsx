@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -12,6 +12,7 @@ import {
 } from 'chart.js';
 import type { Topic } from '../types';
 import { getChartColor } from '../utils/chartColors';
+import { useChartResize } from '../../../hooks/useChartResize';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -86,6 +87,11 @@ interface TopicsLineChartProps {
 }
 
 export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: TopicsLineChartProps) => {
+  const chartRef = useRef<any>(null);
+  
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, topics.length > 0);
+  
   // Helper function to resolve CSS variable at runtime
   const getCSSVariable = (variableName: string): string => {
     if (typeof window !== 'undefined') {
@@ -400,7 +406,7 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
   return (
     <div className="p-3 sm:p-4 lg:p-6">
       <div className="h-[400px] sm:h-[500px] lg:h-[600px]" style={{ cursor: 'pointer' }}>
-        <Line data={chartData} options={options} />
+        <Line data={chartData} options={options} ref={chartRef} />
       </div>
       
       {/* Color Key - Below Chart */}

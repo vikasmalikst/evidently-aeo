@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -10,6 +11,7 @@ import {
   Legend
 } from 'chart.js';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { useChartResize } from '../../hooks/useChartResize';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -27,6 +29,11 @@ interface SourceUsageTrendChartProps {
 }
 
 export const SourceUsageTrendChart = ({ trendData }: SourceUsageTrendChartProps) => {
+  const chartRef = useRef<any>(null);
+  
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, trendData.sources.length > 0);
+  
   const data = {
     labels: trendData.dates,
     datasets: trendData.sources.map(source => ({
@@ -112,7 +119,7 @@ export const SourceUsageTrendChart = ({ trendData }: SourceUsageTrendChartProps)
         Source Usage Trends
       </h3>
       <div className="h-[350px] mb-4">
-        <Line data={data} options={options} />
+        <Line data={data} options={options} ref={chartRef} />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {trendData.sources.map((source, idx) => (

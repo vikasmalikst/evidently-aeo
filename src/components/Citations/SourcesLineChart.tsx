@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler } from 'chart.js';
+import { useChartResize } from '../../hooks/useChartResize';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler);
 
@@ -16,6 +18,11 @@ interface SourcesLineChartProps {
 }
 
 export const SourcesLineChart = ({ racingChartData }: SourcesLineChartProps) => {
+  const chartRef = useRef<any>(null);
+  
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, racingChartData.sources.length > 0);
+  
   const data = {
     labels: racingChartData.timePoints,
     datasets: racingChartData.sources.slice(0, 10).map(source => ({
@@ -98,7 +105,7 @@ export const SourcesLineChart = ({ racingChartData }: SourcesLineChartProps) => 
         Top 10 Sources Over Time - Line Chart
       </h3>
       <div className="h-[400px]">
-        <Line data={data} options={options} />
+        <Line data={data} options={options} ref={chartRef} />
       </div>
     </div>
   );

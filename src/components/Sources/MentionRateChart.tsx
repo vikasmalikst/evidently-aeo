@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -9,6 +10,7 @@ import {
   Legend
 } from 'chart.js';
 import { SourceData } from '../../data/mockSourcesData';
+import { useChartResize } from '../../hooks/useChartResize';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -17,6 +19,11 @@ interface MentionRateChartProps {
 }
 
 export const MentionRateChart = ({ sources }: MentionRateChartProps) => {
+  const chartRef = useRef<any>(null);
+  
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, sources.length > 0);
+  
   const sortedSources = [...sources].sort((a, b) => b.mentionRate - a.mentionRate);
 
   const data = {
@@ -88,7 +95,7 @@ export const MentionRateChart = ({ sources }: MentionRateChartProps) => {
         Brand Mention Rate by Source
       </h3>
       <div className="h-[350px]">
-        <Bar data={data} options={options} />
+        <Bar data={data} options={options} ref={chartRef} />
       </div>
     </div>
   );

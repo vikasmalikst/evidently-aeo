@@ -526,16 +526,20 @@ export class DataCollectionService {
       }
     }
 
+    console.log(`📝 Creating query execution for ${collectorType} with status: ${status}`);
+    
     const { data, error } = await supabase
       .from('query_executions')
       .insert(insertData)
-      .select('id')
+      .select('id, status')
       .single();
 
     if (error) {
+      console.error(`❌ Failed to create query execution for ${collectorType}:`, error);
       throw new Error(`Failed to create query execution: ${error.message}`);
     }
 
+    console.log(`✅ Successfully created query execution ${data.id} for ${collectorType} with status: ${status}`);
     return data.id;
   }
 
@@ -549,6 +553,16 @@ export class DataCollectionService {
     collectorError?: CollectorError,
     snapshotId?: string
   ): Promise<void> {
+    // Validate status transition
+    const validStatuses = ['pending', 'running', 'completed', 'failed'];
+    if (!validStatuses.includes(status)) {
+      console.error(`❌ Invalid status '${status}' for execution ${executionId}`);
+      throw new Error(`Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`);
+    }
+
+    // Log status update for debugging
+    console.log(`🔄 Updating execution ${executionId} (${collectorType}) status to: ${status}`);
+
     const updateData: any = {
       status: status,
       updated_at: new Date().toISOString()
@@ -589,14 +603,22 @@ export class DataCollectionService {
       updateData.brightdata_snapshot_id = snapshotId;
     }
 
-    const { error } = await this.supabase
+    const { data, error } = await this.supabase
       .from('query_executions')
       .update(updateData)
-      .eq('id', executionId);
+      .eq('id', executionId)
+      .select('id, status');
 
     if (error) {
-      console.error(`Failed to update execution status for ${executionId}:`, error);
+      console.error(`❌ Failed to update execution status for ${executionId}:`, error);
       throw new Error(`Failed to update execution status: ${error.message}`);
+    }
+
+    // Verify the update was successful
+    if (!data || data.length === 0) {
+      console.warn(`⚠️ No rows updated for execution ${executionId} - execution may not exist`);
+    } else {
+      console.log(`✅ Successfully updated execution ${executionId} status to: ${status}`);
     }
   }
 
@@ -683,7 +705,75 @@ export class DataCollectionService {
       }
     });
 
+    // After all collectors finish, verify and fix any execution statuses that don't match their results
+    await this.verifyAndFixExecutionStatuses(results);
+
     return results;
+  }
+
+  /**
+   * Verify and fix execution statuses based on collector results
+   * This ensures executions are marked as 'completed' if results exist, or 'failed' if they don't
+   */
+  private async verifyAndFixExecutionStatuses(collectorResults: CollectorResult[]): Promise<void> {
+    if (collectorResults.length === 0) return;
+
+    console.log(`🔍 Verifying execution statuses for ${collectorResults.length} collector results...`);
+
+    for (const result of collectorResults) {
+      if (!result.executionId) continue; // Skip if no execution ID
+
+      try {
+        // Check current execution status
+        const { data: execution, error: fetchError } = await this.supabase
+          .from('query_executions')
+          .select('id, status, collector_type')
+          .eq('id', result.executionId)
+          .single();
+
+        if (fetchError || !execution) {
+          console.warn(`⚠️ Execution ${result.executionId} not found, skipping verification`);
+          continue;
+        }
+
+        // Check if result exists in collector_results
+        const { data: storedResult, error: resultError } = await this.supabase
+          .from('collector_results')
+          .select('id, execution_id, raw_answer')
+          .eq('execution_id', result.executionId)
+          .single();
+
+        // If execution is still 'running' but we have a result, update to 'completed'
+        if (execution.status === 'running' && storedResult && storedResult.raw_answer) {
+          console.log(`🔧 Fixing: Execution ${result.executionId} is 'running' but has result, updating to 'completed'`);
+          await this.updateExecutionStatus(result.executionId, result.collectorType, 'completed');
+        }
+        // If execution is 'running' but result status is 'failed', update to 'failed'
+        else if (execution.status === 'running' && result.status === 'failed') {
+          console.log(`🔧 Fixing: Execution ${result.executionId} is 'running' but result is 'failed', updating to 'failed'`);
+          const collectorError = result.error 
+            ? CollectorError.fromError(new Error(result.error), {
+                queryId: result.queryId,
+                queryText: '',
+                collectorType: result.collectorType,
+                brandId: result.brandId,
+                customerId: result.customerId
+              }, 0)
+            : undefined;
+          await this.updateExecutionStatus(result.executionId, result.collectorType, 'failed', collectorError);
+        }
+        // If execution is 'completed' but no result exists, this is a data inconsistency
+        else if (execution.status === 'completed' && (!storedResult || !storedResult.raw_answer)) {
+          console.warn(`⚠️ Data inconsistency: Execution ${result.executionId} is 'completed' but no result found`);
+        }
+
+      } catch (error: any) {
+        console.error(`❌ Error verifying execution ${result.executionId}:`, error.message);
+        // Don't throw - continue with other executions
+      }
+    }
+
+    console.log(`✅ Finished verifying execution statuses`);
   }
 
   /**
@@ -848,6 +938,9 @@ export class DataCollectionService {
         brandId: request.brandId,
         customerId: request.customerId
       });
+
+      // CRITICAL: Update execution status to 'completed' after successful result storage
+      await this.updateExecutionStatus(executionId, collectorType, 'completed');
 
       return {
         queryId: request.queryId,
@@ -1125,6 +1218,69 @@ export class DataCollectionService {
     } else {
       console.log('✅ Successfully stored collector result');
       console.log('📥 Inserted data returned from DB:', JSON.stringify(insertedData, null, 2));
+      
+      // CRITICAL: Verify execution status matches the stored result
+      // This ensures status is updated even if the earlier update failed
+      if (result.executionId) {
+        try {
+          const { data: execution } = await this.supabase
+            .from('query_executions')
+            .select('id, status')
+            .eq('id', result.executionId)
+            .single();
+
+          if (execution) {
+            // Check if a result actually exists in collector_results table
+            const { data: storedResult } = await this.supabase
+              .from('collector_results')
+              .select('id, raw_answer')
+              .eq('execution_id', result.executionId)
+              .single();
+
+            // If execution is still 'running' but we have a stored result, update status
+            if (execution.status === 'running' && storedResult) {
+              if (storedResult.raw_answer && result.status === 'completed') {
+                console.log(`🔧 Auto-fixing: Execution ${result.executionId} is 'running' but result exists in DB, updating to 'completed'`);
+                await this.updateExecutionStatus(result.executionId, result.collectorType, 'completed');
+              } else if (result.status === 'failed') {
+                console.log(`🔧 Auto-fixing: Execution ${result.executionId} is 'running' but result is 'failed', updating to 'failed'`);
+                const collectorError = result.error 
+                  ? CollectorError.fromError(new Error(result.error), {
+                      queryId: result.queryId,
+                      queryText: '',
+                      collectorType: result.collectorType,
+                      brandId: result.brandId,
+                      customerId: result.customerId
+                    }, 0)
+                  : undefined;
+                await this.updateExecutionStatus(result.executionId, result.collectorType, 'failed', collectorError);
+              }
+            }
+            // If we just stored a successful result but status wasn't updated, fix it
+            else if (execution.status === 'running' && result.status === 'completed' && storedResult?.raw_answer) {
+              console.log(`🔧 Auto-fixing: Execution ${result.executionId} is 'running' but result was stored successfully, updating to 'completed'`);
+              await this.updateExecutionStatus(result.executionId, result.collectorType, 'completed');
+            }
+            // If execution is still 'running' but result is 'failed', fix it
+            else if (execution.status === 'running' && result.status === 'failed') {
+              console.log(`🔧 Auto-fixing: Execution ${result.executionId} is 'running' but result is 'failed', updating to 'failed'`);
+              const collectorError = result.error 
+                ? CollectorError.fromError(new Error(result.error), {
+                    queryId: result.queryId,
+                    queryText: '',
+                    collectorType: result.collectorType,
+                    brandId: result.brandId,
+                    customerId: result.customerId
+                  }, 0)
+                : undefined;
+              await this.updateExecutionStatus(result.executionId, result.collectorType, 'failed', collectorError);
+            }
+          }
+        } catch (verifyError) {
+          console.warn(`⚠️ Failed to verify execution status for ${result.executionId}:`, verifyError);
+          // Don't throw - result is already stored
+        }
+      }
       
       // Generate keywords from the answer (async, non-blocking)
       if (insertedData && insertedData.length > 0 && result.response) {

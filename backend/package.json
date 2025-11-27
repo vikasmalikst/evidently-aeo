@@ -19,6 +19,7 @@
     "cron:scoring:scheduler": "ts-node --transpile-only src/cron/scoringScheduler.ts",
     "cron:scoring:worker": "ts-node --transpile-only src/cron/scoringWorker.ts",
     "cron:brightdata:background": "ts-node --transpile-only src/cron/brightdata-background.cron.ts",
+    "cron:query-execution:cleanup": "ts-node --transpile-only src/cron/queryExecutionCleanup.cron.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config jest.e2e.config.js",

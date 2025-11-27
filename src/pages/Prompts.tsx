@@ -129,7 +129,6 @@ export const Prompts = () => {
   }, [response, loading]);
 
   // Process response data with performance logging
-  const processStart = useRef(performance.now());
   const topics = useMemo(() => {
     const start = performance.now();
     if (!response?.success || !response.data) {
@@ -250,6 +249,7 @@ export const Prompts = () => {
               dateRangeOptions={dateRangeOptions}
               onDateRangeChange={setDateRangeKey}
               loading={loading}
+              selectedLLM={selectedLLM}
             />
           </div>
 

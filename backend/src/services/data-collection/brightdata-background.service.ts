@@ -138,16 +138,24 @@ export class BrightDataBackgroundService {
             const competitorsList = competitorsData?.map(c => c.competitor_name).filter(Boolean) || [];
 
             // Update execution status to completed
-            await supabase
+            const { error: updateError } = await supabase
               .from('query_executions')
               .update({
                 status: 'completed',
+                updated_at: new Date().toISOString(),
                 executed_at: new Date().toISOString()
               })
               .eq('id', execution.id);
 
+            if (updateError) {
+              console.error(`❌ Failed to update execution ${execution.id} to 'completed':`, updateError);
+              throw updateError;
+            } else {
+              console.log(`✅ Successfully updated execution ${execution.id} status to 'completed'`);
+            }
+
             // Store result in collector_results
-            await supabase
+            const { error: insertError } = await supabase
               .from('collector_results')
               .insert({
                 query_id: execution.query_id,
@@ -169,8 +177,41 @@ export class BrightDataBackgroundService {
                 }
               });
 
-            console.log(`✅ [BACKGROUND SERVICE] Successfully completed execution ${execution.id} and stored result`);
-            stats.completed++;
+            if (insertError) {
+              console.error(`❌ Failed to store result for execution ${execution.id}:`, insertError);
+              stats.errors++;
+            } else {
+              console.log(`✅ [BACKGROUND SERVICE] Successfully stored result for execution ${execution.id}`);
+              
+              // Double-check that status is 'completed' after storing result
+              // This ensures status is updated even if the earlier update didn't persist
+              const { data: verifyExecution } = await supabase
+                .from('query_executions')
+                .select('id, status')
+                .eq('id', execution.id)
+                .single();
+
+              if (verifyExecution && verifyExecution.status !== 'completed') {
+                console.log(`🔧 [BACKGROUND SERVICE] Status is ${verifyExecution.status}, re-updating to 'completed' for execution ${execution.id}`);
+                const { error: reUpdateError } = await supabase
+                  .from('query_executions')
+                  .update({
+                    status: 'completed',
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', execution.id);
+
+                if (reUpdateError) {
+                  console.error(`❌ Failed to re-update execution ${execution.id} to 'completed':`, reUpdateError);
+                  stats.errors++;
+                } else {
+                  console.log(`✅ [BACKGROUND SERVICE] Successfully re-updated execution ${execution.id} status to 'completed'`);
+                }
+              }
+              
+              console.log(`✅ [BACKGROUND SERVICE] Successfully completed execution ${execution.id} and stored result`);
+              stats.completed++;
+            }
           } else if (downloadResult?.status === 'running' || (downloadResult?.message && downloadResult.message.includes('not ready'))) {
             console.log(`⏳ Snapshot ${execution.brightdata_snapshot_id} still processing...`);
             stats.stillProcessing++;

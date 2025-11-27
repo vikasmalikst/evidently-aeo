@@ -149,7 +149,7 @@ export const PromptFilters = ({
       </div>
 
       <div className="relative min-w-[200px]">
-        <button
+        {/* <button
           className="flex items-center gap-2 w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--accent-primary)] hover:bg-[var(--bg-secondary)]"
           onClick={() => setOpenDropdown(openDropdown === 'region' ? null : 'region')}
         >
@@ -170,7 +170,7 @@ export const PromptFilters = ({
               openDropdown === 'region' ? 'rotate-180' : ''
             }`}
           />
-        </button>
+        </button> */}
 
         {openDropdown === 'region' && (
           <div className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[300px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]">
@@ -229,6 +229,8 @@ export const PromptFilters = ({
           </div>
         )}
       </div>
+
+      
     </div>
   );
 };

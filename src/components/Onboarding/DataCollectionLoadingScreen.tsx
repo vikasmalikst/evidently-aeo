@@ -38,9 +38,9 @@ const getEnvVar = (key: string, defaultValue: string): string => {
 };
 
 const INITIAL_UPDATE_DELAY = parseInt(
-  getEnvVar('VITE_LOADING_INITIAL_DELAY_MS', '20000'),
+  getEnvVar('VITE_LOADING_INITIAL_DELAY_MS', '25000'),
   10
-); // 20 seconds default (user requested 15-20 seconds)
+); // 25 seconds default (user requested 25 seconds)
 const SUBSEQUENT_UPDATE_INTERVAL = parseInt(
   getEnvVar('VITE_LOADING_UPDATE_INTERVAL_MS', '30000'),
   10
@@ -109,14 +109,17 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     
     console.log(`[LoadingScreen] Setting up navigation timer for ${INITIAL_UPDATE_DELAY}ms for brand: ${brandId}`);
     const navigateTimer = setTimeout(() => {
-      console.log(`[LoadingScreen] 20 seconds elapsed, navigating to dashboard for brand: ${brandId}`);
+      console.log(`[LoadingScreen] 25 seconds elapsed, navigating to dashboard for brand: ${brandId}`);
       // Store flag that we're showing partial data
       localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
       // Pass brandId in navigation state so dashboard can auto-select it
+      // Use the brandId from route params to ensure we always use the current brand
+      const currentBrandId = brandId; // Ensure we use the brand from the route
+      console.log(`[LoadingScreen] Redirecting to dashboard with brandId: ${currentBrandId}`);
       navigate('/dashboard', { 
         replace: true,
         state: { 
-          autoSelectBrandId: brandId,
+          autoSelectBrandId: currentBrandId,
           fromOnboarding: true 
         }
       });
@@ -139,15 +142,15 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
         if (currentStage !== 'collecting') {
           setCurrentStage('collecting');
         }
-      } else if (elapsedTime < 20) {
-        // Scoring stage: 50-90% over next 12 seconds
-        const scoringProgress = ((elapsedTime - 8) / 12) * 40;
+      } else if (elapsedTime < 25) {
+        // Scoring stage: 50-90% over next 17 seconds
+        const scoringProgress = ((elapsedTime - 8) / 17) * 40;
         setProgressBarValue(50 + scoringProgress);
         if (currentStage !== 'scoring') {
           setCurrentStage('scoring');
         }
       } else {
-        // After 20 seconds, show 100% briefly before navigation
+        // After 25 seconds, show 100% briefly before navigation
         setProgressBarValue(100);
       }
     };
@@ -214,11 +217,14 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
               await fetchDashboardData();
               
               // Redirect after brief delay to show completion
+              // Use the brandId from route params to ensure we always use the current brand
+              const currentBrandId = brandId; // Ensure we use the brand from the route
+              console.log(`[LoadingScreen] Collection complete, redirecting to dashboard with brandId: ${currentBrandId}`);
               setTimeout(() => {
                 navigate('/dashboard', { 
                   replace: true,
                   state: { 
-                    autoSelectBrandId: brandId,
+                    autoSelectBrandId: currentBrandId,
                     fromOnboarding: true 
                   }
                 });

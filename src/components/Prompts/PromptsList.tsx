@@ -15,6 +15,7 @@ interface PromptsListProps {
   dateRangeOptions: DateRangeOption[];
   onDateRangeChange: (range: string) => void;
   loading: boolean;
+  selectedLLM: string | null;
 }
 
 export const PromptsList = memo(({
@@ -24,7 +25,8 @@ export const PromptsList = memo(({
   dateRangeKey,
   dateRangeOptions,
   onDateRangeChange,
-  loading
+  loading,
+  selectedLLM
 }: PromptsListProps) => {
   const [expandedTopics, setExpandedTopics] = useState<string[]>([]);
 
@@ -164,18 +166,25 @@ export const PromptsList = memo(({
                             <p className="text-sm text-[var(--text-body)] font-data leading-snug">
                               {prompt.question}
                             </p>
-                            {prompt.collectorTypes.length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {prompt.collectorTypes.map((collector) => (
-                                  <span
-                                    key={collector}
-                                    className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[10px] font-semibold text-[var(--text-caption)]"
-                                  >
-                                    {collector}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
+                            {prompt.collectorTypes.length > 0 && (() => {
+                              // Filter collectors to show only the selected LLM if one is selected
+                              const collectorsToShow = selectedLLM 
+                                ? prompt.collectorTypes.filter(collector => collector === selectedLLM)
+                                : prompt.collectorTypes;
+                              
+                              return collectorsToShow.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {collectorsToShow.map((collector) => (
+                                    <span
+                                      key={collector}
+                                      className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[10px] font-semibold text-[var(--text-caption)]"
+                                    >
+                                      {collector}
+                                    </span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-2 py-3 w-24 text-center">
                             <span className="text-sm font-semibold font-data text-[var(--text-body)]">

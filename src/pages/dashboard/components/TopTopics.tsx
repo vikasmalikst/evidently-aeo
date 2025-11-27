@@ -24,7 +24,7 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
           <h2 className="text-[18px] font-semibold text-[#1a1d29]">
             Top Performing Topics
           </h2>
-          <InfoTooltip description="Shows topics where your brand performs best. Visibility Score measures how prominently your brand appears in AI answers. Brand Presence shows what percentage of queries include your brand. Sentiment indicates how positively your brand is discussed (0-5 scale, higher is better)." />
+          <InfoTooltip description="Shows topics where your brand performs best. Visibility Score measures how prominently your brand appears in AI answers. Brand Presence shows what percentage of collector responses include your brand. Sentiment indicates how positively your brand is discussed (0-5 scale, higher is better)." />
         </div>
         <Link
           to="/topics"
@@ -109,7 +109,7 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
                         <div className="text-[16px] font-bold text-[#1a1d29]">
                           {brandPresence.toFixed(0)}%
                         </div>
-                        <div className="text-[10px] text-[#64748b] mt-0.5">of queries</div>
+                        <div className="text-[10px] text-[#64748b] mt-0.5">of responses</div>
                       </>
                     ) : (
                       <div className="text-[13px] text-[#64748b]">—</div>

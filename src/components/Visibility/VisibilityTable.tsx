@@ -103,7 +103,7 @@ export const VisibilityTable = memo(({
                 onClick={() => handleSort('shareOfSearch')}
               >
                 <div className="flex items-center gap-2">
-                  Share of Search
+                  {activeTab === 'competitive' ? 'Share of Answers' : 'Share of Answers'}
                   <span className="text-xs text-[var(--text-caption)] min-w-[12px]">
                     {sortConfig.key === 'shareOfSearch' && (sortConfig.direction === 'desc' ? '↓' : '↑')}
                   </span>
@@ -260,7 +260,7 @@ export const VisibilityTable = memo(({
                               </span>
                             </p>
                             <p className="text-sm text-[var(--text-body)] mt-1">
-                              Share of search change:{' '}
+                              {activeTab === 'competitive' ? 'Share of Answers' : 'Share of Answers'} change:{' '}
                               <span
                                 className={`font-semibold ${
                                   model.shareOfSearchChange && model.shareOfSearchChange > 0

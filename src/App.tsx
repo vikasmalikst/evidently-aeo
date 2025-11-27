@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthPage } from './pages/AuthPage';
-import { Dashboard } from './pages/Dashboard';
+import { Dashboard } from './pages/dashboard/Dashboard';
 import { SearchVisibility } from './pages/SearchVisibility';
 import { AISources } from './pages/AISources';
 import { SearchSources } from './pages/SearchSources';

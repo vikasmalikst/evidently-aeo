@@ -208,7 +208,7 @@ export async function buildDashboardPayload(
       visibilityValues: number[]
       sentimentValues: number[]
       citationUsage: number
-      brandPresenceCount: number
+      queriesWithBrandPresence: Set<string>
       brandMentions: number
     }
   >()
@@ -504,7 +504,7 @@ export async function buildDashboardPayload(
             visibilityValues: [],
             sentimentValues: [],
             citationUsage: 0,
-            brandPresenceCount: 0,
+            queriesWithBrandPresence: new Set<string>(),
             brandMentions: 0
           })
         }
@@ -517,8 +517,10 @@ export async function buildDashboardPayload(
         if (hasBrandSentiment) {
           topicAggregate.sentimentValues.push(brandSentimentValue)
         }
-        if (hasBrandPresence) {
-          topicAggregate.brandPresenceCount += 1
+        // Only count unique queries with brand presence where competitor_name is null
+        // Explicitly check isBrandRow to ensure competitor_name is null/empty
+        if (isBrandRow && hasBrandPresence && row.query_id) {
+          topicAggregate.queriesWithBrandPresence.add(row.query_id)
         }
         const brandMentionsTopic = Math.max(0, toNumber(row.total_brand_mentions))
         if (brandMentionsTopic > 0) {
@@ -901,7 +903,7 @@ export async function buildDashboardPayload(
               visibilityValues: [],
               sentimentValues: [],
               citationUsage: 0,
-              brandPresenceCount: 0,
+              queriesWithBrandPresence: new Set<string>(),
               brandMentions: 0
             })
           }
@@ -1239,7 +1241,7 @@ export async function buildDashboardPayload(
         visibilityValues: [],
         sentimentValues: [],
         citationUsage: 0,
-        brandPresenceCount: 0,
+        queriesWithBrandPresence: new Set<string>(),
         brandMentions: 0
       })
     }
@@ -1265,7 +1267,7 @@ export async function buildDashboardPayload(
     0
   )
   const totalTopicPresence = topicAggregateEntries.reduce(
-    (sum, [, aggregate]) => sum + aggregate.brandPresenceCount,
+    (sum, [, aggregate]) => sum + aggregate.queriesWithBrandPresence.size,
     0
   )
 
@@ -1293,9 +1295,10 @@ export async function buildDashboardPayload(
         ? round(average(aggregate.shareValues), 1)
         : null
 
-      // Calculate brand presence percentage - no fallback
-      const brandPresencePercentage = promptsTracked > 0 && aggregate.brandPresenceCount > 0
-        ? Math.min(100, round((aggregate.brandPresenceCount / promptsTracked) * 100, 1))
+      // Calculate brand presence percentage - track unique queries with brand presence
+      // Only counts queries where competitor_name is null (brand rows)
+      const brandPresencePercentage = promptsTracked > 0 && aggregate.queriesWithBrandPresence.size > 0
+        ? round((aggregate.queriesWithBrandPresence.size / promptsTracked) * 100, 1)
         : null
 
       return {
@@ -1318,7 +1321,16 @@ export async function buildDashboardPayload(
         (topic.brandPresencePercentage !== null && topic.brandPresencePercentage !== undefined && topic.brandPresencePercentage > 0)
       )
     })
-    .sort((a, b) => b.averageVolume - a.averageVolume || b.promptsTracked - a.promptsTracked)
+    .sort((a, b) => {
+      // Primary sort: by avgVisibility (descending), handling nulls
+      const aVisibility = a.avgVisibility ?? 0;
+      const bVisibility = b.avgVisibility ?? 0;
+      if (bVisibility !== aVisibility) {
+        return bVisibility - aVisibility;
+      }
+      // Secondary sort: by promptsTracked (descending)
+      return b.promptsTracked - a.promptsTracked;
+    })
     .slice(0, 5)
 
   // Use visibility service for visibility calculations

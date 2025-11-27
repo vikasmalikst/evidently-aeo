@@ -323,7 +323,12 @@ router.get('/brands/:brandId/prompts/versions', async (req: Request, res: Respon
       })
     }
 
-    const history = await promptVersioningService.getVersionHistory(brandId, customerId)
+    let history = await promptVersioningService.getVersionHistory(brandId, customerId)
+
+    if (!history.versions.length) {
+      await promptVersioningService.createInitialVersion(brandId, customerId, req.user?.id)
+      history = await promptVersioningService.getVersionHistory(brandId, customerId)
+    }
 
     return res.json({
       success: true,

@@ -59,6 +59,15 @@ export function useRecalibrationLogic() {
     }
   }, []);
 
+  const setSubmissionError = useCallback((message: string) => {
+    setState(prev => ({
+      ...prev,
+      isSubmitting: false,
+      submitted: false,
+      error: message
+    }));
+  }, []);
+
   const resetState = useCallback(() => {
     setState({
       isPreviewModalOpen: false,
@@ -75,7 +84,8 @@ export function useRecalibrationLogic() {
     closePreviewModal,
     toggleExplanation,
     submitRecalibration,
-    resetState
+    resetState,
+    setSubmissionError
   };
 }
 

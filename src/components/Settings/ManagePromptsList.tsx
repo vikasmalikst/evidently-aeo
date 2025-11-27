@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronRight, CalendarDays, Plus, Edit2, Trash2, X, Check, RotateCcw } from 'lucide-react';
 import { Topic, Prompt } from '../../api/promptManagementApi';
 import { PendingChangesIndicator } from '../PromptConfiguration/PendingChangesIndicator';
@@ -34,7 +34,7 @@ interface ManagePromptsListProps {
   onPromptSelect: (prompt: Prompt, topicName: string) => void;
   onPromptEdit: (prompt: Prompt, newText: string) => void;
   onPromptDelete: (prompt: Prompt) => void;
-  onPromptAdd: (topicId: number, promptText: string) => void;
+  onPromptAdd: (topicId: number, prompt: Prompt) => void;
   onTopicsReplace?: (topics: Topic[]) => void;
   dateRange: string;
   onDateRangeChange: (range: string) => void;
@@ -79,6 +79,30 @@ const formatDate = (dateString: string) => {
   });
 };
 
+const uuidSegmentToNumber = (uuid: string): number => {
+  if (!uuid) {
+    return Date.now();
+  }
+  const [segment] = uuid.split('-');
+  const parsed = parseInt(segment || '0', 16);
+  return Number.isNaN(parsed) ? Date.now() : parsed % 1000000;
+};
+
+const resolveBackendId = (
+  entryId: number,
+  promptId: string | undefined,
+  fallbackMap: Map<number, string>
+): string => {
+  if (promptId) {
+    return promptId;
+  }
+  const fallback = fallbackMap.get(entryId);
+  if (fallback) {
+    return fallback;
+  }
+  return entryId.toString();
+};
+
 export const ManagePromptsList = ({ 
   brandId,
   topics, 
@@ -110,6 +134,19 @@ export const ManagePromptsList = ({
   });
   const [revertingToVersion, setRevertingToVersion] = useState<number | null>(null);
   const weeklyRanges = getWeeklyDateRanges();
+  const [isVersionMenuOpen, setIsVersionMenuOpen] = useState(false);
+  const versionMenuRef = useRef<HTMLDivElement | null>(null);
+  const promptIdMap = useMemo(() => {
+    const map = new Map<number, string>();
+    topics.forEach(topic => {
+      topic.prompts.forEach(prompt => {
+        if (typeof prompt.id === 'number' && prompt.queryId) {
+          map.set(prompt.id, prompt.queryId);
+        }
+      });
+    });
+    return map;
+  }, [topics]);
 
   // Initialize original prompts map on mount and when topics change
   useEffect(() => {
@@ -122,10 +159,31 @@ export const ManagePromptsList = ({
     setOriginalPrompts(originalMap);
   }, [topics]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (versionMenuRef.current && !versionMenuRef.current.contains(event.target as Node)) {
+        setIsVersionMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   // Convert topics to configuration format for impact calculation
   const currentConfig = useMemo(() => {
     return topicsToConfiguration(topics, 94, 72.4);
   }, [topics]);
+  const sortedConfigHistory = useMemo(
+    () => [...configHistory].sort((a, b) => b.version - a.version),
+    [configHistory]
+  );
+  const currentConfigEntry = useMemo(
+    () => configHistory.find(config => config.version === currentConfigVersion),
+    [configHistory, currentConfigVersion]
+  );
 
   // Calculate effective config with pending changes
   const effectiveConfig = useMemo(() => {
@@ -179,7 +237,8 @@ export const ManagePromptsList = ({
     openPreviewModal,
     closePreviewModal,
     submitRecalibration,
-    resetState
+    resetState,
+    setSubmissionError
   } = useRecalibrationLogic();
 
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
@@ -187,6 +246,32 @@ export const ManagePromptsList = ({
   const hasPendingChanges = pendingChanges.added.length > 0 || 
                            pendingChanges.removed.length > 0 || 
                            pendingChanges.edited.length > 0;
+  const backendChanges = useMemo(() => ({
+    added: pendingChanges.added.map(change => ({
+      text: change.text,
+      topic: change.topic
+    })),
+    removed: pendingChanges.removed.map(change => ({
+      id: resolveBackendId(change.id, change.promptId, promptIdMap),
+      text: change.text
+    })),
+    edited: pendingChanges.edited.map(change => ({
+      id: resolveBackendId(change.id, change.promptId, promptIdMap),
+      newText: change.newText,
+      oldText: change.oldText
+    }))
+  }), [pendingChanges, promptIdMap]);
+  const selectedConfigMeta =
+    selectedVersion !== null && selectedVersion !== undefined
+      ? configHistory.find(config => config.version === selectedVersion)
+      : configHistory.find(config => config.version === currentConfigVersion);
+  const versionButtonLabel =
+    selectedVersion === null || selectedVersion === undefined
+      ? `Current (v${currentConfigVersion ?? 0})`
+      : `Viewing v${selectedVersion}`;
+  const versionButtonCaption = selectedConfigMeta
+    ? `${formatDate(selectedConfigMeta.created_at)} • ${selectedConfigMeta.change_summary}`
+    : 'No configuration history yet';
 
   // Check if a prompt has pending changes
   const getPromptChangeType = (promptId: number): 'added' | 'edited' | 'removed' | null => {
@@ -224,6 +309,7 @@ export const ManagePromptsList = ({
     if (editingPrompt && editText.trim()) {
       const originalText = originalPrompts.get(editingPrompt.id)?.text || editingPrompt.text;
       const newText = editText.trim();
+      const backendId = resolveBackendId(editingPrompt.id, editingPrompt.queryId, promptIdMap);
       
       // Track as pending change if different from original
       if (newText !== originalText) {
@@ -233,7 +319,7 @@ export const ManagePromptsList = ({
             return {
               ...prev,
               edited: prev.edited.map(e => 
-                e.id === editingPrompt.id ? { ...e, newText } : e
+                e.id === editingPrompt.id ? { ...e, newText, promptId: backendId } : e
               )
             };
           }
@@ -242,7 +328,8 @@ export const ManagePromptsList = ({
             edited: [...prev.edited, { 
               id: editingPrompt.id, 
               oldText: originalText, 
-              newText 
+              newText,
+              promptId: backendId
             }]
           };
         });
@@ -268,14 +355,17 @@ export const ManagePromptsList = ({
 
   const handleDeleteClick = async (prompt: Prompt, e: React.MouseEvent) => {
     e.stopPropagation();
+    const backendId = resolveBackendId(prompt.id, prompt.queryId, promptIdMap);
     
     // If it was a newly added prompt, just remove it from added list
     if (newlyAddedPromptIds.has(prompt.id)) {
       setPendingChanges(prev => ({
         ...prev,
         added: prev.added.filter(a => {
-          const promptInTopics = topics.flatMap(t => t.prompts).find(p => p.id === prompt.id);
-          return promptInTopics?.text !== a.text;
+          if (a.promptId && backendId) {
+            return a.promptId !== backendId;
+          }
+          return a.text !== prompt.text;
         })
       }));
       setNewlyAddedPromptIds(prev => {
@@ -287,7 +377,7 @@ export const ManagePromptsList = ({
       // Track as pending change for existing prompts - this will trigger the warning section
       setPendingChanges(prev => ({
         ...prev,
-        removed: [...prev.removed, { id: prompt.id, text: prompt.text }],
+        removed: [...prev.removed, { id: prompt.id, text: prompt.text, promptId: backendId }],
         // Remove from edited if it was being edited
         edited: prev.edited.filter(e => e.id !== prompt.id)
       }));
@@ -312,20 +402,34 @@ export const ManagePromptsList = ({
       
       try {
         // Add prompt via API (but don't create version yet - that happens on batch apply)
-        await addPrompt(brandId, promptText, topic?.name || 'Uncategorized');
-        
-        // Get the max ID to predict the new prompt's ID
-        const maxId = Math.max(...topics.flatMap(t => t.prompts.map(p => p.id)), 0);
-        const newPromptId = maxId + 1;
+        const { promptId } = await addPrompt(brandId, promptText, topic?.name || 'Uncategorized');
+        const derivedId = uuidSegmentToNumber(promptId);
+        const now = new Date().toISOString();
+        const newPrompt: Prompt = {
+          id: derivedId,
+          text: promptText,
+          response: '',
+          lastUpdated: now,
+          sentiment: 0,
+          volume: 0,
+          keywords: {
+            brand: [],
+            target: [],
+            top: []
+          },
+          queryId: promptId,
+          createdAt: now,
+          source: 'custom'
+        };
         
         // Track as pending change and mark as newly added
         setPendingChanges(prev => ({
           ...prev,
-          added: [...prev.added, { text: promptText, topic: topic?.name || '' }]
+          added: [...prev.added, { text: promptText, topic: topic?.name || '', promptId }]
         }));
-        setNewlyAddedPromptIds(prev => new Set([...prev, newPromptId]));
+        setNewlyAddedPromptIds(prev => new Set([...prev, derivedId]));
         
-        onPromptAdd(topicId, promptText);
+        onPromptAdd(topicId, newPrompt);
         setShowAddModal(null);
         setNewPromptText('');
       } catch (err) {
@@ -344,16 +448,7 @@ export const ManagePromptsList = ({
   const handlePreviewClick = async () => {
     // Use real API for impact calculation (optional - falls back to local if fails)
     try {
-      await calculateImpactApi(brandId, {
-        added: pendingChanges.added,
-        removed: pendingChanges.removed.map(r => ({ 
-          id: typeof r.id === 'number' ? r.id.toString() : r.id 
-        })),
-        edited: pendingChanges.edited.map(e => ({ 
-          id: typeof e.id === 'number' ? e.id.toString() : e.id.toString(), 
-          newText: e.newText || '' 
-        })),
-      });
+      await calculateImpactApi(brandId, backendChanges);
     } catch (apiErr) {
       console.warn('API impact calculation failed, using local calculation:', apiErr);
     }
@@ -382,16 +477,7 @@ export const ManagePromptsList = ({
 
       // Apply batch changes via API
       const changeSummary = generateChangeSummary(pendingChanges);
-      await applyBatchChanges(brandId, {
-        added: pendingChanges.added,
-        removed: pendingChanges.removed.map(r => ({ 
-          id: typeof r.id === 'number' ? r.id.toString() : r.id 
-        })),
-        edited: pendingChanges.edited.map(e => ({ 
-          id: typeof e.id === 'number' ? e.id.toString() : e.id.toString(), 
-          newText: e.newText || '' 
-        })),
-      }, changeSummary);
+      await applyBatchChanges(brandId, backendChanges, changeSummary);
 
       await submitRecalibration(pendingChanges, impact);
       
@@ -412,8 +498,8 @@ export const ManagePromptsList = ({
       }
     } catch (err) {
       console.error('Error applying changes:', err);
-      // Still call submitRecalibration for UI state, but show error
-      await submitRecalibration(pendingChanges, impact);
+      setSubmissionError('Failed to apply changes. Please try again.');
+      return;
     }
   };
 
@@ -481,9 +567,9 @@ export const ManagePromptsList = ({
     });
 
     // Calculate differences - DON'T apply changes yet, just calculate
-    const added: Array<{ text: string; topic: string }> = [];
-    const removed: Array<{ id: number; text: string }> = [];
-    const edited: Array<{ id: number; oldText: string; newText: string }> = [];
+    const added: Array<{ text: string; topic: string; promptId?: string }> = [];
+    const removed: Array<{ id: number; text: string; promptId?: string }> = [];
+    const edited: Array<{ id: number; oldText: string; newText: string; promptId?: string }> = [];
 
     // Find prompts in selected version that don't exist in current (by text+topic)
     selectedConfig.topics.forEach(topic => {
@@ -498,11 +584,12 @@ export const ManagePromptsList = ({
             edited.push({
               id: selectedPrompt.id,
               oldText: currentPromptData.prompt.text,
-              newText: selectedPrompt.text
+              newText: selectedPrompt.text,
+              promptId: selectedPrompt.queryId
             });
           } else {
             // New prompt to add (topic may or may not exist)
-            added.push({ text: selectedPrompt.text, topic: topic.name });
+            added.push({ text: selectedPrompt.text, topic: topic.name, promptId: selectedPrompt.queryId });
           }
         }
       });
@@ -522,7 +609,7 @@ export const ManagePromptsList = ({
           
           if (!existsAsEdit) {
             // This prompt should be removed
-            removed.push({ id: currentPrompt.id, text: currentPrompt.text });
+            removed.push({ id: currentPrompt.id, text: currentPrompt.text, promptId: currentPrompt.queryId });
           }
         }
       });
@@ -583,32 +670,93 @@ export const ManagePromptsList = ({
           Prompts
         </h3>
         <div className="flex items-center gap-3">
-          {currentConfigVersion && configHistory.length > 0 && onVersionChange && (
-            <select
-              value={selectedVersion !== null && selectedVersion !== undefined ? selectedVersion.toString() : 'current'}
-              onChange={(e) => {
-                if (e.target.value === 'current') {
-                  onVersionChange(null);
-                } else {
-                  onVersionChange(parseInt(e.target.value));
-                }
-              }}
-              className="px-3 py-1.5 border border-[var(--border-default)] rounded-lg text-xs text-[var(--text-headings)] bg-white"
+        {currentConfigVersion && configHistory.length > 0 && onVersionChange && (
+          <div className="relative" ref={versionMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsVersionMenuOpen(prev => !prev)}
+              className="flex items-center gap-3 px-4 py-2 border border-[var(--border-default)] rounded-xl bg-white hover:shadow-sm transition-all"
             >
-              <option value="current">Current (v{currentConfigVersion})</option>
-              {configHistory
-                .filter(c => c.version !== currentConfigVersion)
-                .sort((a, b) => b.version - a.version)
-                .map((config) => {
-                  const totalPrompts = config.topics.reduce((sum, topic) => sum + topic.prompts.length, 0);
-                  return (
-                    <option key={config.id} value={config.version}>
-                      v{config.version} - {formatDate(config.created_at)} ({totalPrompts} prompts)
-                    </option>
-                  );
-                })}
-            </select>
-          )}
+              <div className="text-left">
+                <p className="text-[10px] uppercase tracking-wide text-[var(--text-caption)] mb-0.5">
+                  Configuration
+                </p>
+                <p className="text-sm font-semibold text-[var(--text-headings)]">
+                  {versionButtonLabel}
+                </p>
+                <p className="text-[11px] text-[var(--text-caption)] line-clamp-1 max-w-[200px]">
+                  {versionButtonCaption}
+                </p>
+              </div>
+              <ChevronDown
+                size={16}
+                className={`text-[var(--text-caption)] transition-transform ${isVersionMenuOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {isVersionMenuOpen && (
+              <div className="absolute right-0 mt-2 w-80 bg-white border border-[var(--border-default)] rounded-2xl shadow-xl z-20 overflow-hidden">
+                <div className="p-3 border-b border-[var(--border-default)] bg-[var(--bg-secondary)]">
+                  <p className="text-sm font-semibold text-[var(--text-headings)]">Select version</p>
+                  <p className="text-xs text-[var(--text-caption)]">Switch between saved configurations</p>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  <button
+                    className={`w-full text-left px-4 py-3 border-b border-[var(--border-default)] hover:bg-[var(--bg-secondary)] transition-colors ${
+                      selectedVersion === null ? 'bg-[var(--bg-secondary)]' : ''
+                    }`}
+                    onClick={() => {
+                      onVersionChange(null);
+                      setIsVersionMenuOpen(false);
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-semibold text-[var(--text-headings)]">
+                        Current (v{currentConfigVersion})
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--success500)]/15 text-[var(--success500)] font-semibold">
+                        Active
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--text-caption)]">
+                      {currentConfigEntry ? formatDate(currentConfigEntry.created_at) : 'Awaiting first version'}
+                    </p>
+                  </button>
+                  {sortedConfigHistory
+                    .filter(config => config.version !== currentConfigVersion)
+                    .map(config => (
+                    <button
+                      key={config.id}
+                      className={`w-full text-left px-4 py-3 border-b border-[var(--border-default)] hover:bg-[var(--bg-secondary)] transition-colors ${
+                        selectedVersion === config.version ? 'bg-[var(--bg-secondary)]' : 'bg-white'
+                      }`}
+                      onClick={() => {
+                        onVersionChange(config.version === currentConfigVersion ? null : config.version);
+                        setIsVersionMenuOpen(false);
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold text-[var(--text-headings)]">
+                          Version v{config.version}
+                        </span>
+                        {config.version === currentConfigVersion && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--success500)]/15 text-[var(--success500)] font-semibold">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[var(--text-caption)] mb-1">
+                        {formatDate(config.created_at)}
+                      </p>
+                      <p className="text-xs text-[var(--text-body)] line-clamp-2">
+                        {config.change_summary}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
           <div className="relative">
             <CalendarDays size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-caption)] pointer-events-none" />
             <select

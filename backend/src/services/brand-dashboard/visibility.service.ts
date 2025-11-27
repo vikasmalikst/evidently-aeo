@@ -183,6 +183,7 @@ export class VisibilityService {
           : 0
 
         // Extract top topics - only include topics where competitor has meaningful data
+        // Note: If all queries share the same topic, all competitors will show that topic as their top topic
         const topTopics = Array.from(aggregate.topics.entries())
           .map(([topicName, topicStats]) => ({
             topic: truncateLabel(topicName, 64),
@@ -199,8 +200,20 @@ export class VisibilityService {
             topic.topic.trim().length > 0 && 
             (topic.share > 0 || topic.visibility > 0 || topic.mentions > 0)
           )
-          .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share || b.visibility - a.visibility)
+          .sort((a, b) => {
+            // Primary: occurrences (how many times this topic appears for this competitor)
+            // Secondary: share (average share of answers)
+            // Tertiary: visibility (average visibility score)
+            return b.occurrences - a.occurrences || b.share - a.share || b.visibility - a.visibility
+          })
           .slice(0, 5)
+        
+        // Debug logging: Log if competitor has multiple topics or if all topics are the same
+        if (topTopics.length > 1) {
+          console.log(`[VisibilityService] Competitor "${competitorName}" has ${topTopics.length} topics:`, topTopics.map(t => t.topic).join(', '))
+        } else if (topTopics.length === 1) {
+          console.log(`[VisibilityService] Competitor "${competitorName}" has 1 topic: "${topTopics[0].topic}" (occurrences: ${topTopics[0].occurrences}, share: ${topTopics[0].share}, visibility: ${topTopics[0].visibility})`)
+        }
 
         return {
           competitor: competitorName,

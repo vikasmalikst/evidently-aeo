@@ -36,10 +36,12 @@ const convertPromptToEntry = (prompt: Prompt, topicName: string): PromptEntry =>
     volumePercentage: prompt.volume,
     volumeCount: 0,
     sentimentScore: prompt.sentiment,
+    visibilityScore: prompt.visibilityScore ?? null,
     highlights: {
       brand: prompt.keywords.brand || [],
       products: prompt.keywords.target || [], // Map target to products
-      keywords: prompt.keywords.top || [] // Map top to keywords
+      keywords: prompt.keywords.top || [], // Map top to keywords
+      competitors: [] // Competitors not available in Prompt type
     }
   };
 };

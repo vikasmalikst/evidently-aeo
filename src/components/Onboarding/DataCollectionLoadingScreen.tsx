@@ -103,6 +103,30 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     }
   };
 
+  // Navigation timer - only runs once on mount, after 20 seconds
+  useEffect(() => {
+    if (!brandId) return;
+    
+    console.log(`[LoadingScreen] Setting up navigation timer for ${INITIAL_UPDATE_DELAY}ms for brand: ${brandId}`);
+    const navigateTimer = setTimeout(() => {
+      console.log(`[LoadingScreen] 20 seconds elapsed, navigating to dashboard for brand: ${brandId}`);
+      // Store flag that we're showing partial data
+      localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
+      // Pass brandId in navigation state so dashboard can auto-select it
+      navigate('/dashboard', { 
+        replace: true,
+        state: { 
+          autoSelectBrandId: brandId,
+          fromOnboarding: true 
+        }
+      });
+    }, INITIAL_UPDATE_DELAY);
+
+    return () => {
+      clearTimeout(navigateTimer);
+    };
+  }, [brandId, navigate]); // Only depend on brandId and navigate, not elapsedTime
+
   // Progress bar animation - transition from collecting to scoring
   useEffect(() => {
     let progressInterval: NodeJS.Timeout;
@@ -134,26 +158,10 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     // Update progress every 100ms for smooth animation
     progressInterval = setInterval(updateProgress, 100);
 
-    // After 20 seconds: Navigate to dashboard with brandId in state
-    const navigateTimer = setTimeout(() => {
-      console.log(`[LoadingScreen] 20 seconds elapsed, navigating to dashboard for brand: ${brandId}`);
-      // Store flag that we're showing partial data
-      localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
-      // Pass brandId in navigation state so dashboard can auto-select it
-      navigate('/dashboard', { 
-        replace: true,
-        state: { 
-          autoSelectBrandId: brandId,
-          fromOnboarding: true 
-        }
-      });
-    }, INITIAL_UPDATE_DELAY);
-
     return () => {
-      clearTimeout(navigateTimer);
       clearInterval(progressInterval);
     };
-  }, [brandId, navigate, elapsedTime, currentStage]);
+  }, [elapsedTime, currentStage]); // This can depend on elapsedTime since it's just for animation
 
   // Initial data fetch after 15-20 seconds (configurable)
   useEffect(() => {

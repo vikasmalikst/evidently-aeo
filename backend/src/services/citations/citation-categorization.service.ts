@@ -29,7 +29,7 @@ const DOMAIN_CATEGORIES: DomainCategoryMapping[] = [
   // Social Platforms
   { domain: /reddit\.com/i, category: 'Social', pageName: 'Reddit' },
   { domain: /twitter\.com/i, category: 'Social', pageName: 'Twitter' },
-  // { domain: /x\.com/i, category: 'Social', pageName: 'X (Twitter)' },
+  // { domain: /x\.com/i, category: 'Social', pageName: 'X (Twitter)' }, <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
   { domain: /facebook\.com/i, category: 'Social', pageName: 'Facebook' },
   { domain: /linkedin\.com/i, category: 'Social', pageName: 'LinkedIn' },
   { domain: /instagram\.com/i, category: 'Social', pageName: 'Instagram' },

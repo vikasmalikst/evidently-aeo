@@ -40,3 +40,4 @@
   - Topic diversity (0-40 points)
 - Higher = better prompt coverage for visibility tracking
 
+

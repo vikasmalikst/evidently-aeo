@@ -459,35 +459,15 @@ export const ManagePrompts = () => {
     }
   }, [selectedPrompt]);
 
-  const handlePromptAdd = useCallback((topicId: number, promptText: string) => {
-    // Find the topic and create a new prompt
-    const topic = topics.find(t => t.id === topicId);
-    if (!topic) return;
-
-    // Generate a new ID (simple approach - use max ID + 1)
-    const maxId = Math.max(...topics.flatMap(t => t.prompts.map(p => p.id)), 0);
-    const newPrompt: Prompt = {
-      id: maxId + 1,
-      text: promptText,
-      response: '', // Empty response for new prompts
-      lastUpdated: new Date().toISOString().split('T')[0],
-      sentiment: 3, // Default neutral sentiment
-      volume: 0, // Default volume
-      keywords: {
-        brand: [],
-        target: [],
-        top: []
-      }
-    };
-
+  const handlePromptAdd = useCallback((topicId: number, prompt: Prompt) => {
     setTopics(prevTopics =>
       prevTopics.map(t =>
         t.id === topicId
-          ? { ...t, prompts: [...t.prompts, newPrompt] }
+          ? { ...t, prompts: [...t.prompts, prompt] }
           : t
       )
     );
-  }, [topics]);
+  }, []);
 
   const handleChangesApplied = useCallback(async () => {
     // Reload data after changes are applied

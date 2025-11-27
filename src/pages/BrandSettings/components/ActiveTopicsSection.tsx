@@ -5,7 +5,7 @@ import { apiClient } from '../../../lib/apiClient';
 import type { Topic } from '../../../types/topic';
 import type { TopicConfiguration } from '../types';
 
-type SortOption = 'relevance' | 'recency' | 'performance';
+type SortOption = 'alphabetical' | 'prompts';
 
 interface ActiveTopicsSectionProps {
   topics: Topic[];
@@ -67,7 +67,7 @@ export const ActiveTopicsSection = ({
   onVersionChange,
   onRestoreVersion,
 }: ActiveTopicsSectionProps) => {
-  const [sortBy, setSortBy] = useState<SortOption>('relevance');
+  const [sortBy, setSortBy] = useState<SortOption>('alphabetical');
   const [hoveredTopicId, setHoveredTopicId] = useState<string | null>(null);
   const [expandedTopicIds, setExpandedTopicIds] = useState<Set<string>>(new Set());
   const [promptsByTopic, setPromptsByTopic] = useState<Record<string, string[]>>({});
@@ -127,14 +127,11 @@ export const ActiveTopicsSection = ({
 
   const sortedTopics = [...topics].sort((a, b) => {
     switch (sortBy) {
-      case 'relevance':
-        return b.relevance - a.relevance;
-      case 'recency':
-        return 0; // Placeholder
-      case 'performance':
-        return 0; // Placeholder
+      case 'prompts':
+        return (promptCounts[b.id] || 0) - (promptCounts[a.id] || 0);
+      case 'alphabetical':
       default:
-        return 0;
+        return a.name.localeCompare(b.name);
     }
   });
 
@@ -207,9 +204,8 @@ export const ActiveTopicsSection = ({
             onChange={(e) => setSortBy(e.target.value as SortOption)}
             className="px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-headings)] bg-white"
           >
-            <option value="relevance">Relevance</option>
-            <option value="recency">Recency</option>
-            <option value="performance">Performance</option>
+            <option value="alphabetical">Topic Name</option>
+            <option value="prompts">Prompt Count</option>
           </select>
         </div>
       </div>
@@ -281,7 +277,12 @@ export const ActiveTopicsSection = ({
                         </div>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-[var(--text-caption)]">
-                        <span>Relevance: <span className="font-medium text-[var(--text-headings)]">{topic.relevance}%</span></span>
+                        <span>
+                          Category:{' '}
+                          <span className="font-medium text-[var(--text-headings)]">
+                            {topic.category ? topic.category.toString().replace(/_/g, ' ') : 'General'}
+                          </span>
+                        </span>
                         <span>Prompts: <span className="font-medium text-[var(--text-headings)]">{prompts.length || 0}</span></span>
                         {loadingPrompts && (
                           <span className="text-xs text-[var(--text-caption)]">(Loading...)</span>

@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { PromptConfig } from '../utils/impactCalculator';
-import type { PromptChange } from '../utils/promptValidator';
 
 export interface CurrentConfiguration {
   prompts: PromptConfig[];
@@ -10,9 +9,9 @@ export interface CurrentConfiguration {
 }
 
 export interface PendingChanges {
-  added: Array<{ text: string; topic: string }>;
-  removed: Array<{ id: number; text: string }>;
-  edited: Array<{ id: number; oldText: string; newText: string }>;
+  added: Array<{ text: string; topic: string; promptId?: string }>;
+  removed: Array<{ id: number; text: string; promptId?: string }>;
+  edited: Array<{ id: number; oldText: string; newText: string; promptId?: string }>;
 }
 
 export function usePromptConfiguration(initialConfig: CurrentConfiguration) {

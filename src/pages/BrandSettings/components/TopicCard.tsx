@@ -72,9 +72,9 @@ export const TopicCard = ({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-[var(--text-caption)]">Relevance</span>
+          <span className="text-[var(--text-caption)]">Category</span>
           <span className="font-medium text-[var(--text-headings)]">
-            {topic.relevance}%
+            {topic.category ? topic.category.replace(/_/g, ' ') : 'General'}
           </span>
         </div>
         <div className="flex items-center justify-between text-sm">

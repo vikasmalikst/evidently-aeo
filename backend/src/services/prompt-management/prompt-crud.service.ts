@@ -6,7 +6,8 @@
 import { supabaseAdmin } from '../../config/database'
 import { DatabaseError } from '../../types/auth'
 import { ManagedPrompt, PromptTopic, ManagePromptsResponse } from './types'
-import { parseMetadata, extractTopicName, slugify, roundToPrecision } from './utils'
+import { parseMetadata, extractTopicName, slugify, roundToPrecision, calculateCoverageScore } from './utils'
+import { promptVersioningService } from './prompt-versioning.service'
 
 export class PromptCrudService {
   /**
@@ -29,14 +30,12 @@ export class PromptCrudService {
       throw new DatabaseError('Brand not found for customer')
     }
 
-    // Get current active version
-    const { data: activeConfig, error: configError } = await supabaseAdmin
-      .from('prompt_configurations')
-      .select('id, version')
-      .eq('brand_id', brandId)
-      .eq('customer_id', customerId)
-      .eq('is_active', true)
-      .maybeSingle()
+    // Get or create active version configuration
+    let activeConfig = await promptVersioningService.getCurrentVersion(brandId, customerId)
+
+    if (!activeConfig) {
+      activeConfig = await promptVersioningService.createInitialVersion(brandId, customerId)
+    }
 
     // Fetch active queries
     const { data: queryRows, error: queryError} = await supabaseAdmin
@@ -239,8 +238,8 @@ export class PromptCrudService {
       ? roundToPrecision(sentimentScores.reduce((sum, v) => sum + v, 0) / sentimentScores.length, 1)
       : 0
 
-    // Simple coverage calculation
-    const coverage = Math.min(100, totalPrompts * 1.5) // Placeholder formula
+    // Calculate coverage using proper formula
+    const coverage = calculateCoverageScore(totalPrompts, totalTopics)
 
     return {
       brandId: brandRow.id,

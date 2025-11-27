@@ -246,21 +246,67 @@ export const ManagePromptsList = ({
   const hasPendingChanges = pendingChanges.added.length > 0 || 
                            pendingChanges.removed.length > 0 || 
                            pendingChanges.edited.length > 0;
-  const backendChanges = useMemo(() => ({
-    added: pendingChanges.added.map(change => ({
-      text: change.text,
-      topic: change.topic
-    })),
-    removed: pendingChanges.removed.map(change => ({
-      id: resolveBackendId(change.id, change.promptId, promptIdMap),
-      text: change.text
-    })),
-    edited: pendingChanges.edited.map(change => ({
-      id: resolveBackendId(change.id, change.promptId, promptIdMap),
-      newText: change.newText,
-      oldText: change.oldText
-    }))
-  }), [pendingChanges, promptIdMap]);
+  const backendChanges = useMemo(() => {
+    // Build resolved changes - use stored promptId directly since it's saved when the change was made
+    const resolvedChanges = {
+      added: pendingChanges.added.map(change => ({
+        text: change.text,
+        topic: change.topic
+      })),
+      removed: pendingChanges.removed.map(change => {
+        // The promptId was stored when the deletion was initiated
+        // This should be the UUID from generated_queries table
+        const backendId = change.promptId;
+        if (!backendId) {
+          // Fallback: try to resolve from map (prompt might still be in topics)
+          const resolved = resolveBackendId(change.id, undefined, promptIdMap);
+          if (!resolved || resolved === change.id.toString()) {
+            console.error('❌ Missing backend ID for removed prompt:', {
+              change,
+              resolved,
+              promptIdMapSize: promptIdMap.size,
+              promptIdMapHasId: promptIdMap.has(change.id)
+            });
+            throw new Error(`Missing query ID for prompt: "${change.text.substring(0, 50)}..."`);
+          }
+          return {
+            id: resolved,
+            text: change.text
+          };
+        }
+        return {
+          id: backendId,
+          text: change.text
+        };
+      }),
+      edited: pendingChanges.edited.map(change => {
+        const backendId = change.promptId;
+        if (!backendId) {
+          const resolved = resolveBackendId(change.id, undefined, promptIdMap);
+          if (!resolved || resolved === change.id.toString()) {
+            console.error('❌ Missing backend ID for edited prompt:', {
+              change,
+              resolved,
+              promptIdMapSize: promptIdMap.size
+            });
+            throw new Error(`Missing query ID for edited prompt: "${change.newText.substring(0, 50)}..."`);
+          }
+          return {
+            id: resolved,
+            newText: change.newText,
+            oldText: change.oldText
+          };
+        }
+        return {
+          id: backendId,
+          newText: change.newText,
+          oldText: change.oldText
+        };
+      })
+    };
+    console.log('✅ Computed backendChanges:', resolvedChanges);
+    return resolvedChanges;
+  }, [pendingChanges, promptIdMap]);
   const selectedConfigMeta =
     selectedVersion !== null && selectedVersion !== undefined
       ? configHistory.find(config => config.version === selectedVersion)
@@ -356,6 +402,18 @@ export const ManagePromptsList = ({
   const handleDeleteClick = async (prompt: Prompt, e: React.MouseEvent) => {
     e.stopPropagation();
     const backendId = resolveBackendId(prompt.id, prompt.queryId, promptIdMap);
+    
+    // Validate that we have a proper backend ID (UUID, not numeric string)
+    if (!backendId || backendId === prompt.id.toString()) {
+      console.error('Cannot delete prompt: missing or invalid queryId', {
+        prompt,
+        backendId,
+        queryId: prompt.queryId,
+        promptIdMapHasId: promptIdMap.has(prompt.id)
+      });
+      setSubmissionError('Cannot delete prompt: missing query ID. Please refresh and try again.');
+      return;
+    }
     
     // If it was a newly added prompt, just remove it from added list
     if (newlyAddedPromptIds.has(prompt.id)) {
@@ -477,9 +535,20 @@ export const ManagePromptsList = ({
 
       // Apply batch changes via API
       const changeSummary = generateChangeSummary(pendingChanges);
+      console.log('Applying batch changes:', { backendChanges, changeSummary });
       await applyBatchChanges(brandId, backendChanges, changeSummary);
 
-      await submitRecalibration(pendingChanges, impact);
+      // Submit recalibration (this is mostly for UI state, actual recalibration happens via batch changes)
+      try {
+        await submitRecalibration(pendingChanges, impact);
+      } catch (recalErr) {
+        // If submitRecalibration fails, log but don't fail the whole operation
+        // since the batch changes already succeeded
+        console.warn('Recalibration submission warning:', recalErr);
+      }
+      
+      // Close the modal before clearing state
+      closePreviewModal();
       
       // Clear pending changes and reset original prompts
       setPendingChanges({ added: [], removed: [], edited: [] });
@@ -493,13 +562,43 @@ export const ManagePromptsList = ({
       });
       setOriginalPrompts(newOriginalMap);
       
+      // Reload data from backend to ensure UI matches backend state
       if (onChangesApplied) {
-        onChangesApplied();
+        await onChangesApplied();
       }
     } catch (err) {
       console.error('Error applying changes:', err);
-      setSubmissionError('Failed to apply changes. Please try again.');
-      return;
+      console.error('Backend changes that failed:', backendChanges);
+      console.error('Pending changes:', pendingChanges);
+      
+      // Extract more detailed error message if available
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : typeof err === 'object' && err !== null && 'message' in err
+        ? String(err.message)
+        : 'Failed to apply changes. Please try again.';
+      
+      // Set error first
+      setSubmissionError(errorMessage || 'Failed to apply changes. Please try again.');
+      
+      // Close the modal
+      closePreviewModal();
+      
+      // Reload data from backend to revert optimistic UI updates
+      // This ensures the UI matches the backend state
+      try {
+        if (onChangesApplied) {
+          await onChangesApplied();
+        }
+        // Only clear pending changes if reload succeeded
+        // This ensures UI state matches backend state
+        setPendingChanges({ added: [], removed: [], edited: [] });
+        setNewlyAddedPromptIds(new Set());
+      } catch (reloadErr) {
+        console.error('Error reloading data after failed apply:', reloadErr);
+        // Keep pending changes if reload failed so user can see what they tried to change
+        // The error message is already set and will be displayed
+      }
     }
   };
 

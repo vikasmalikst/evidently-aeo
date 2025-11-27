@@ -196,6 +196,22 @@ export class PromptVersioningService {
       throw new DatabaseError(`Failed to fetch prompts for initial version: ${queriesError.message}`)
     }
 
+    // Validate created_by user exists if provided (to avoid foreign key violation)
+    let validCreatedBy: string | null = null
+    if (createdBy) {
+      const { data: userExists } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('id', createdBy)
+        .maybeSingle()
+      
+      if (userExists) {
+        validCreatedBy = createdBy
+      } else {
+        console.warn(`User ID ${createdBy} not found in users table, setting created_by to null`)
+      }
+    }
+
     // Create Version 1
     const { data: newVersion, error: versionError } = await supabaseAdmin
       .from('prompt_configurations')
@@ -206,7 +222,7 @@ export class PromptVersioningService {
         is_active: true,
         change_type: 'initial_setup',
         change_summary: 'Initial prompt configuration setup',
-        created_by: createdBy || null,
+        created_by: validCreatedBy,
         metadata: {}
       })
       .select()
@@ -284,6 +300,22 @@ export class PromptVersioningService {
     }
 
     // 2. Create new version
+    // Validate created_by user exists if provided (to avoid foreign key violation)
+    let validCreatedBy: string | null = null
+    if (createdBy) {
+      const { data: userExists } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('id', createdBy)
+        .maybeSingle()
+      
+      if (userExists) {
+        validCreatedBy = createdBy
+      } else {
+        console.warn(`User ID ${createdBy} not found in users table, setting created_by to null`)
+      }
+    }
+
     const { data: newVersion, error: versionError } = await supabaseAdmin
       .from('prompt_configurations')
       .insert({
@@ -293,7 +325,7 @@ export class PromptVersioningService {
         is_active: true,
         change_type: changeType,
         change_summary: summary,
-        created_by: createdBy || null,
+        created_by: validCreatedBy,
         metadata: {}
       })
       .select()
@@ -336,7 +368,7 @@ export class PromptVersioningService {
           .update({
             is_active: false,
             archived_at: new Date().toISOString(),
-            archived_by: createdBy || null
+            archived_by: validCreatedBy
           })
           .in('id', removedIds)
       }
@@ -391,7 +423,7 @@ export class PromptVersioningService {
     }
 
     // 5. Log detailed changes
-    await this.logChanges(newVersion.id, changes, createdBy)
+    await this.logChanges(newVersion.id, changes, validCreatedBy || undefined)
 
     // 6. Calculate and store metrics
     await promptMetricsService.calculateAndStoreMetrics(newVersion.id, brandId, customerId)

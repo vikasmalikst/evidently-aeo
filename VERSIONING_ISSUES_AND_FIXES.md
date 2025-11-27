@@ -62,3 +62,4 @@ A score (0-100) that combines:
 ### Fix Applied
 - ✅ Updated backend to use proper `calculateCoverageScore` function
 
+

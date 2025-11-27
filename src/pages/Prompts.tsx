@@ -63,12 +63,8 @@ export const Prompts = () => {
   const [selectedPrompt, setSelectedPrompt] = useState<PromptEntry | null>(null);
   const navigate = useNavigate();
   const [selectedLLM, setSelectedLLM] = useState<string | null>(null);
-  const [selectedRegion, setSelectedRegion] = useState('us');
   const [dateRangeKey, setDateRangeKey] = useState<string>(DATE_PRESETS[2]?.value ?? 'last30');
   const { brands, selectedBrandId, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
-  
-  // Track if LLM was set programmatically (from API) vs user action
-  const isLLMSetProgrammatically = useRef(false);
 
   const dateRangeOptions = useMemo(
     () =>
@@ -86,7 +82,7 @@ export const Prompts = () => {
     setSelectedPrompt(prompt);
   };
 
-  // Build endpoint - only include selectedLLM if it was set by user, not programmatically
+  // Build endpoint - include selected LLM filter when available
   const promptsEndpoint = useMemo(() => {
     const endpointStart = performance.now();
     if (!selectedBrandId || brandsLoading) return null;
@@ -97,8 +93,7 @@ export const Prompts = () => {
       endDate: bounds.endIso
     });
 
-    // Only add LLM filter if it was set by user action, not from API response
-    if (selectedLLM && !isLLMSetProgrammatically.current) {
+    if (selectedLLM) {
       params.set('collectors', selectedLLM);
     }
 
@@ -129,7 +124,6 @@ export const Prompts = () => {
   }, [response, loading]);
 
   // Process response data with performance logging
-  const processStart = useRef(performance.now());
   const topics = useMemo(() => {
     const start = performance.now();
     if (!response?.success || !response.data) {
@@ -148,24 +142,19 @@ export const Prompts = () => {
     return response.data.collectors ?? [];
   }, [response]);
 
-  // Set default LLM - mark as programmatic to prevent endpoint change
+  // Keep selected LLM in sync with available options
   useEffect(() => {
-    if (llmOptions.length > 0) {
-      isLLMSetProgrammatically.current = true;
-      setSelectedLLM((current) => {
-        if (current && llmOptions.includes(current)) {
-          isLLMSetProgrammatically.current = false;
-          return current;
-        }
-        const newLLM = llmOptions[0];
-        // Reset flag after state update
-        setTimeout(() => {
-          isLLMSetProgrammatically.current = false;
-        }, 0);
-        return newLLM;
-      });
+    if (llmOptions.length === 0) {
+      if (selectedLLM !== null) {
+        setSelectedLLM(null);
+      }
+      return;
     }
-  }, [llmOptions]);
+
+    if (!selectedLLM || !llmOptions.includes(selectedLLM)) {
+      setSelectedLLM(llmOptions[0]);
+    }
+  }, [llmOptions, selectedLLM]);
 
   // Set selected prompt
   useEffect(() => {
@@ -197,9 +186,7 @@ export const Prompts = () => {
     }
   }, [loading, topics.length]);
 
-  // Handle LLM change from user (not programmatic)
   const handleLLMChange = (llm: string | null) => {
-    isLLMSetProgrammatically.current = false;
     setSelectedLLM(llm);
   };
 
@@ -227,8 +214,6 @@ export const Prompts = () => {
           llmOptions={llmOptions}
           selectedLLM={selectedLLM}
           onLLMChange={handleLLMChange}
-          selectedRegion={selectedRegion}
-          onRegionChange={setSelectedRegion}
           brands={brands}
           selectedBrandId={selectedBrandId}
           onBrandChange={selectBrand}
@@ -250,11 +235,12 @@ export const Prompts = () => {
               dateRangeOptions={dateRangeOptions}
               onDateRangeChange={setDateRangeKey}
               loading={loading}
+              selectedLLM={selectedLLM}
             />
           </div>
 
           <div className="col-span-4">
-            <ResponseViewer prompt={selectedPrompt} />
+            <ResponseViewer prompt={selectedPrompt} selectedLLM={selectedLLM} />
           </div>
         </div>
       </div>

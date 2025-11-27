@@ -136,6 +136,35 @@ module.exports = {
       max_restarts: 10,
       autorestart: true,
     },
+    {
+      name: 'query-execution-cleanup',
+      script: 'node',
+      args: '-r ts-node/register src/cron/queryExecutionCleanup.cron.ts',
+      cwd: '/home/dev/projects/evidently/backend',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production',
+        // Load all environment variables from .env file
+        SUPABASE_URL: process.env.SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        QUERY_EXECUTION_CLEANUP_INTERVAL_MS: process.env.QUERY_EXECUTION_CLEANUP_INTERVAL_MS || '300000', // 5 minutes default
+      },
+      // Logging
+      error_file: '/home/dev/logs/query-execution-cleanup-error.log',
+      out_file: '/home/dev/logs/query-execution-cleanup-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      
+      // Auto-restart configuration
+      watch: false,
+      max_memory_restart: '500M',
+      
+      // Advanced settings
+      min_uptime: '10s',
+      max_restarts: 10,
+      autorestart: true,
+    },
   ],
 };
 

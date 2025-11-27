@@ -309,6 +309,7 @@ export class PromptsAnalyticsService {
     const collectorFilter = Array.isArray(collectors)
       ? collectors.map((value) => normalizeCollectorType(value)).filter((value): value is string => Boolean(value))
       : []
+    const collectorFilterActive = collectorFilter.length > 0
 
     let collectorQuery = supabaseAdmin
       .from('collector_results')
@@ -469,6 +470,20 @@ export class PromptsAnalyticsService {
       const brandHighlights = extractBrandAliases(brandRow.name ?? '', metadata, queryMetadata)
       brandHighlights.forEach((alias) => aggregate.highlights.brand.add(alias))
 
+      // If no brand highlights from metadata but we have a response, try to extract from response text
+      if (brandHighlights.length === 0 && response && brandRow.name) {
+        const brandName = brandRow.name.trim()
+        if (brandName.length > 0) {
+          // Escape special regex characters in brand name
+          const escapedBrandName = brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          // Check if brand name appears in response (case-insensitive word boundary match)
+          const brandRegex = new RegExp(`\\b${escapedBrandName}\\b`, 'i')
+          if (brandRegex.test(response)) {
+            aggregate.highlights.brand.add(brandName)
+          }
+        }
+      }
+
       const productHighlights = extractProductNames(metadata, queryMetadata)
       productHighlights.forEach((product) => aggregate.highlights.products.add(product))
 
@@ -479,7 +494,8 @@ export class PromptsAnalyticsService {
         typeof row.created_at === 'string' && row.created_at.trim().length > 0 ? row.created_at.trim() : null
 
       const shouldUpdate =
-        createdAt && (!aggregate.lastUpdated || new Date(createdAt).getTime() >= new Date(aggregate.lastUpdated).getTime())
+        createdAt &&
+        (!aggregate.lastUpdated || new Date(createdAt).getTime() >= new Date(aggregate.lastUpdated).getTime())
 
       if (shouldUpdate) {
         aggregate.collectorResultId = collectorResultId
@@ -507,6 +523,7 @@ export class PromptsAnalyticsService {
 
     const keywordMap = new Map<string, Set<string>>()
     const sentimentMap = new Map<string, number[]>() // key: query_id or collector:<id> -> sentiment values
+    const allowedCollectorResultIds = new Set<number>(allCollectorResultIds)
 
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       const keywordRows: Array<{ keyword: string; query_id: string | null; collector_result_id: number | null }> = []
@@ -549,11 +566,16 @@ export class PromptsAnalyticsService {
       } else {
         console.log(`📊 Fetched ${keywordRows.length} keywords for ${allQueryIds.length} queries and ${allCollectorResultIds.length} collector results`)
         keywordRows.forEach((row) => {
+          const collectorResultId =
+            typeof row.collector_result_id === 'number' ? row.collector_result_id : null
+          if (collectorFilterActive) {
+            if (collectorResultId === null || !allowedCollectorResultIds.has(collectorResultId)) {
+              return
+            }
+          }
           if (typeof row.keyword === 'string' && row.keyword.trim().length > 0) {
             const keyword = row.keyword.trim()
             const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
-            const collectorResultId =
-              typeof row.collector_result_id === 'number' ? row.collector_result_id : null
 
             // Map keywords by both query_id (primary) and collector_result_id (secondary)
             if (queryId) {
@@ -657,7 +679,7 @@ export class PromptsAnalyticsService {
     // Fetch visibility scores from extracted_positions (still stored there)
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
-      const { data: visibilityRows, error: visibilityError } = await supabaseAdmin
+      let visibilityQuery = supabaseAdmin
         .from('extracted_positions')
         .select('query_id, collector_result_id, visibility_index, competitor_name')
         .eq('brand_id', brandRow.id)
@@ -673,10 +695,28 @@ export class PromptsAnalyticsService {
             .join(',')
         )
 
+      if (collectorFilterActive) {
+        visibilityQuery = visibilityQuery.in('collector_type', collectorFilter)
+      }
+
+      const { data: visibilityRows, error: visibilityError } = await visibilityQuery
+
       if (visibilityError) {
         console.warn(`Failed to load visibility scores: ${visibilityError.message}`)
       } else {
-        ;(visibilityRows ?? []).forEach((row: any) => {
+        const filteredRows = (visibilityRows ?? []).filter((row: any) => {
+          if (!collectorFilterActive) {
+            return true
+          }
+          const collectorResultId =
+            typeof row?.collector_result_id === 'number' ? row.collector_result_id : null
+          if (collectorResultId === null) {
+            return false
+          }
+          return allowedCollectorResultIds.has(collectorResultId)
+        })
+
+        filteredRows.forEach((row: any) => {
           // Process visibility_index (sentiment is now from collector_results, handled separately above)
           const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
           
@@ -703,6 +743,8 @@ export class PromptsAnalyticsService {
           }
 
           // Extract visibility scores (only from brand rows)
+          // CRITICAL: If visibility_index exists, it means brand WAS mentioned during scoring
+          // Use visibility score as source of truth for brand mentions
           const visibilityValue =
             typeof row?.visibility_index === 'number'
               ? row.visibility_index
@@ -713,6 +755,22 @@ export class PromptsAnalyticsService {
             const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
             const keyByCollector =
               typeof row?.collector_result_id === 'number' ? `collector:${row.collector_result_id}` : null
+
+            // If visibility score exists, brand was mentioned - add to highlights
+            if (brandRow.name && brandRow.name.trim().length > 0) {
+              if (keyByQuery) {
+                const aggregate = promptAggregates.get(keyByQuery)
+                if (aggregate) {
+                  aggregate.highlights.brand.add(brandRow.name.trim())
+                }
+              }
+              if (keyByCollector) {
+                const aggregate = promptAggregates.get(keyByCollector)
+                if (aggregate) {
+                  aggregate.highlights.brand.add(brandRow.name.trim())
+                }
+              }
+            }
 
             const pushVisibility = (key: string) => {
               const arr = visibilityMap.get(key) ?? []
@@ -767,57 +825,129 @@ export class PromptsAnalyticsService {
 
     const totalResponses = Array.from(promptAggregates.values()).reduce((sum, aggregate) => sum + aggregate.count, 0)
 
-    const prompts = Array.from(promptAggregates.values()).map<PromptEntryPayload>((aggregate) => ({
-      id: aggregate.id,
-      queryId: aggregate.queryId,
-      collectorResultId: aggregate.collectorResultId,
-      question: aggregate.question,
-      topic: aggregate.topic,
-      collectorTypes: Array.from(aggregate.collectorTypes).sort((a, b) => a.localeCompare(b)),
-      latestCollectorType: aggregate.latestCollectorType,
-      lastUpdated: aggregate.lastUpdated,
-      response: aggregate.response,
-      volumeCount: aggregate.count,
-      volumePercentage:
-        totalResponses > 0 ? roundToPrecision((aggregate.count / totalResponses) * 100, 1) : 0,
-      sentimentScore: (() => {
-        // Prefer brand-only sentiment if available; otherwise use all rows
-        const byQueryBrand = aggregate.queryId ? sentimentMap.get(`${aggregate.queryId}:brand`) ?? [] : []
-        const byQueryAll = aggregate.queryId ? sentimentMap.get(`${aggregate.queryId}:all`) ?? [] : []
-        const byCollectorBrand =
-          aggregate.collectorResultId !== null ? sentimentMap.get(`collector:${aggregate.collectorResultId}:brand`) ?? [] : []
-        const byCollectorAll =
-          aggregate.collectorResultId !== null ? sentimentMap.get(`collector:${aggregate.collectorResultId}:all`) ?? [] : []
-
-        const preferred = [...byQueryBrand, ...byCollectorBrand]
-        const fallback = [...byQueryAll, ...byCollectorAll]
-        const values = preferred.length > 0 ? preferred : fallback
-        if (values.length === 0) {
-          return null
+    // Helper function to extract brand names from response text if not in highlights
+    // This ensures visibility scores are only non-zero when brand is actually mentioned
+    const extractBrandFromText = (text: string | null, brandName: string): string[] => {
+      if (!text || !brandName) return []
+      const found: string[] = []
+      const brandNameTrimmed = brandName.trim()
+      if (brandNameTrimmed.length === 0) return []
+      
+      // Escape special regex characters in brand name
+      const escapedBrandName = brandNameTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      
+      // Check if brand name appears in text (case-insensitive word boundary match)
+      // This ensures we match whole words, not substrings
+      try {
+        const brandRegex = new RegExp(`\\b${escapedBrandName}\\b`, 'i')
+        if (brandRegex.test(text)) {
+          found.push(brandNameTrimmed)
         }
-        // Return RAW average sentiment in [-1, 1], rounded to 1 decimal
-        const avg = values.reduce((sum, v) => sum + v, 0) / values.length
-        return roundToPrecision(avg, 1)
-      })(),
-      visibilityScore: (() => {
-        const byQuery = aggregate.queryId ? visibilityMap.get(aggregate.queryId) ?? [] : []
-        const byCollector =
-          aggregate.collectorResultId !== null ? visibilityMap.get(`collector:${aggregate.collectorResultId}`) ?? [] : []
-        const values = [...byQuery, ...byCollector]
-        if (values.length === 0) {
-          return null
+      } catch (error) {
+        // If regex fails, fall back to simple case-insensitive search
+        const textLower = text.toLowerCase()
+        const brandLower = brandNameTrimmed.toLowerCase()
+        if (textLower.includes(brandLower)) {
+          found.push(brandNameTrimmed)
         }
-        // Return average visibility (0-1 scale), rounded to 2 decimals, then convert to 0-100 scale
-        const avg = values.reduce((sum, v) => sum + v, 0) / values.length
-        return roundToPrecision(avg * 100, 1)
-      })(),
-      highlights: {
-        brand: Array.from(aggregate.highlights.brand),
-        products: Array.from(aggregate.highlights.products),
-        keywords: Array.from(aggregate.highlights.keywords),
-        competitors: Array.from(aggregate.highlights.competitors)
       }
-    }))
+      
+      return found
+    }
+
+    const prompts = Array.from(promptAggregates.values()).map<PromptEntryPayload>((aggregate) => {
+      // Check visibility scores first - if they exist, brand WAS mentioned (we already added highlights above)
+      const byQuery = aggregate.queryId ? visibilityMap.get(aggregate.queryId) ?? [] : []
+      const byCollector =
+        aggregate.collectorResultId !== null ? visibilityMap.get(`collector:${aggregate.collectorResultId}`) ?? [] : []
+      const visibilityValues = [...byQuery, ...byCollector]
+      
+      // If visibility score exists, brand was mentioned (highlights already added from extracted_positions)
+      // Otherwise, try to extract brand from response text as fallback
+      const hasBrandHighlights = aggregate.highlights.brand.size > 0
+      let finalBrandHighlights = Array.from(aggregate.highlights.brand)
+      
+      // If no brand highlights yet (no visibility score found), try to extract from response text
+      if (!hasBrandHighlights && aggregate.response && brandRow.name) {
+        const extractedBrands = extractBrandFromText(aggregate.response, brandRow.name)
+        extractedBrands.forEach((brand) => aggregate.highlights.brand.add(brand))
+        finalBrandHighlights = Array.from(aggregate.highlights.brand)
+      }
+      
+      const hasFinalBrandHighlights = finalBrandHighlights.length > 0
+      
+      // CRITICAL: Visibility scores in database mean brand WAS mentioned during scoring
+      // If we have visibility scores but no highlights, something is wrong - trust the visibility score
+      if (visibilityValues.length > 0 && !hasFinalBrandHighlights && brandRow.name) {
+        // Visibility exists but highlights missing - add brand based on visibility score
+        aggregate.highlights.brand.add(brandRow.name.trim())
+        finalBrandHighlights = [brandRow.name.trim()]
+      }
+      
+      return {
+        id: aggregate.id,
+        queryId: aggregate.queryId,
+        collectorResultId: aggregate.collectorResultId,
+        question: aggregate.question,
+        topic: aggregate.topic,
+        collectorTypes: Array.from(aggregate.collectorTypes).sort((a, b) => a.localeCompare(b)),
+        latestCollectorType: aggregate.latestCollectorType,
+        lastUpdated: aggregate.lastUpdated,
+        response: aggregate.response,
+        volumeCount: aggregate.count,
+        volumePercentage:
+          totalResponses > 0 ? roundToPrecision((aggregate.count / totalResponses) * 100, 1) : 0,
+        sentimentScore: (() => {
+          // CRITICAL: Sentiment should only exist when brand is mentioned (has visibility)
+          // Sentiment without a brand mention doesn't make logical sense
+          if (!hasFinalBrandHighlights) {
+            return null
+          }
+          
+          // Prefer brand-only sentiment if available; otherwise use all rows
+          const byQueryBrand = aggregate.queryId ? sentimentMap.get(`${aggregate.queryId}:brand`) ?? [] : []
+          const byQueryAll = aggregate.queryId ? sentimentMap.get(`${aggregate.queryId}:all`) ?? [] : []
+          const byCollectorBrand =
+            aggregate.collectorResultId !== null ? sentimentMap.get(`collector:${aggregate.collectorResultId}:brand`) ?? [] : []
+          const byCollectorAll =
+            aggregate.collectorResultId !== null ? sentimentMap.get(`collector:${aggregate.collectorResultId}:all`) ?? [] : []
+
+          const preferred = [...byQueryBrand, ...byCollectorBrand]
+          const fallback = [...byQueryAll, ...byCollectorAll]
+          const values = preferred.length > 0 ? preferred : fallback
+          if (values.length === 0) {
+            return null
+          }
+          // Return RAW average sentiment in [-1, 1], rounded to 1 decimal
+          const avg = values.reduce((sum, v) => sum + v, 0) / values.length
+          return roundToPrecision(avg, 1)
+        })(),
+        visibilityScore: (() => {
+          // Visibility scores in extracted_positions are the source of truth
+          // If a visibility score exists in the database, it means brand WAS mentioned during scoring
+          // We've already ensured brand highlights exist when visibility scores exist (see above)
+          
+          // If no visibility values from extracted_positions, return null
+          if (visibilityValues.length === 0) {
+            return null
+          }
+          
+          // Calculate average visibility (0-1 scale), rounded to 2 decimals, then convert to 0-100 scale
+          const avg = visibilityValues.reduce((sum, v) => sum + v, 0) / visibilityValues.length
+          const visibilityScore = roundToPrecision(avg * 100, 1)
+          
+          // Return the calculated visibility score
+          // Brand highlights should already exist (added when we found visibility scores)
+          return visibilityScore
+        })(),
+        highlights: {
+          brand: finalBrandHighlights,
+          products: Array.from(aggregate.highlights.products),
+          keywords: Array.from(aggregate.highlights.keywords),
+          competitors: Array.from(aggregate.highlights.competitors)
+        }
+      }
+    })
 
     const topicsMap = new Map<string, PromptTopicPayload>()
 
@@ -843,16 +973,20 @@ export class PromptsAnalyticsService {
     const topics = Array.from(topicsMap.values())
       .map((topic) => {
         // Calculate average visibility score for the topic
+        // Only include prompts with valid visibility scores (non-null)
         const visibilityScores = topic.prompts
           .map((p) => p.visibilityScore)
-          .filter((v): v is number => v !== null)
+          .filter((v): v is number => v !== null && v > 0) // Only count non-zero visibility scores
         const avgVisibility =
           visibilityScores.length > 0
             ? roundToPrecision(visibilityScores.reduce((sum, v) => sum + v, 0) / visibilityScores.length, 1)
             : null
 
         // Calculate average sentiment score for the topic
+        // CRITICAL: Only calculate sentiment from prompts that have visibility > 0
+        // Sentiment without visibility (no brand mention) doesn't make sense
         const sentimentScores = topic.prompts
+          .filter((p) => p.visibilityScore !== null && p.visibilityScore > 0) // Only prompts with actual mentions
           .map((p) => p.sentimentScore)
           .filter((v): v is number => v !== null)
         const avgSentiment =

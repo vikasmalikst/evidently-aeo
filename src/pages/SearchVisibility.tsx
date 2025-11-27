@@ -100,6 +100,7 @@ interface ModelData {
   referenceCount: number;
   brandPresencePercentage: number;
   data: number[];
+  shareData?: number[];
   topTopics?: LlmTopic[];
   color?: string;
   isBrand?: boolean;
@@ -142,8 +143,8 @@ export const SearchVisibility = () => {
   const [timeframe, setTimeframe] = useState('weekly');
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
-  const [stacked, setStacked] = useState(false);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [metricType, setMetricType] = useState<'visibility' | 'share'>('visibility');
   const [brandModels, setBrandModels] = useState<ModelData[]>([]);
   const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
@@ -210,11 +211,14 @@ export const SearchVisibility = () => {
         ? Math.min(100, Math.round((brandPresenceCount / totalQueries) * 100))
         : 0;
       
+      const visibilityValue = slice.visibility ?? 0;
+      const shareValue = slice.shareOfSearch ?? slice.share ?? 0;
+      
       return {
         id: normalizeId(slice.provider),
         name: slice.provider,
-        score: Math.round(slice.visibility ?? 0), // Use visibility, not share
-        shareOfSearch: Math.round(slice.shareOfSearch ?? slice.share ?? 0),
+        score: Math.round(visibilityValue), // Use visibility, not share
+        shareOfSearch: Math.round(shareValue),
         shareOfSearchChange: slice.delta ? Math.round(slice.delta) : 0,
         topTopic:
           slice.topTopic ??
@@ -223,7 +227,8 @@ export const SearchVisibility = () => {
         change: slice.delta ? Math.round(slice.delta) : 0,
         referenceCount: brandPresenceCount,
         brandPresencePercentage,
-        data: buildTimeseries(slice.visibility ?? 0),
+        data: buildTimeseries(visibilityValue),
+        shareData: buildTimeseries(shareValue),
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -310,16 +315,19 @@ export const SearchVisibility = () => {
     const queriesWithBrandPresence = (response.data as any)?.queriesWithBrandPresence ?? 0;
     
     // Always create brand row if we have a selected brand ID
+    const brandVisibilityValue = brandData.visibility ?? 0;
+    const brandShareValue = brandData.share ?? 0;
     const brandCompetitiveModel = selectedBrandId ? {
       id: 'brand',
       name: brandName,
-      score: Math.round(brandData.visibility ?? 0),
-      shareOfSearch: Math.round(brandData.share ?? 0),
+      score: Math.round(brandVisibilityValue),
+      shareOfSearch: Math.round(brandShareValue),
       topTopic: brandData.topTopics?.[0]?.topic ?? '—',
       change: 0,
       referenceCount: queriesWithBrandPresence,
       brandPresencePercentage: Math.round(brandData.brandPresencePercentage ?? 0),
-      data: buildTimeseries(brandData.visibility ?? 0),
+      data: buildTimeseries(brandVisibilityValue),
+      shareData: buildTimeseries(brandShareValue),
       topTopics: brandData.topTopics?.map(topic => ({
         topic: topic.topic,
         occurrences: topic.occurrences,
@@ -330,25 +338,31 @@ export const SearchVisibility = () => {
       isBrand: true
     } : null;
 
-    const competitorModelsData = competitorEntries.map((entry) => ({
-      id: normalizeId(entry.competitor),
-      name: entry.competitor,
-      score: Math.round(entry.visibility ?? 0),
-      shareOfSearch: Math.round(entry.share ?? 0),
-      topTopic: entry.topTopics?.[0]?.topic ?? '—',
-      change: 0,
-      referenceCount: entry.mentions ?? 0,
-      brandPresencePercentage: Math.round(entry.brandPresencePercentage ?? 0),
-      data: buildTimeseries(entry.visibility ?? 0),
-      topTopics: entry.topTopics?.map(topic => ({
-        topic: topic.topic,
-        occurrences: topic.occurrences,
-        share: Math.round(topic.share * 10) / 10, // Round to 1 decimal place
-        visibility: Math.round(topic.visibility * 10) / 10, // Round to 1 decimal place
-        mentions: topic.mentions
-      })) ?? [],
-      isBrand: false
-    }));
+    const competitorModelsData = competitorEntries.map((entry) => {
+      const competitorVisibilityValue = entry.visibility ?? 0;
+      const competitorShareValue = entry.share ?? 0;
+      
+      return {
+        id: normalizeId(entry.competitor),
+        name: entry.competitor,
+        score: Math.round(competitorVisibilityValue),
+        shareOfSearch: Math.round(competitorShareValue),
+        topTopic: entry.topTopics?.[0]?.topic ?? '—',
+        change: 0,
+        referenceCount: entry.mentions ?? 0,
+        brandPresencePercentage: Math.round(entry.brandPresencePercentage ?? 0),
+        data: buildTimeseries(competitorVisibilityValue),
+        shareData: buildTimeseries(competitorShareValue),
+        topTopics: entry.topTopics?.map(topic => ({
+          topic: topic.topic,
+          occurrences: topic.occurrences,
+          share: Math.round(topic.share * 10) / 10, // Round to 1 decimal place
+          visibility: Math.round(topic.visibility * 10) / 10, // Round to 1 decimal place
+          mentions: topic.mentions
+        })) ?? [],
+        isBrand: false
+      };
+    });
 
     // Prepend brand model to competitor models if available
     const allCompetitorModels = brandCompetitiveModel 
@@ -400,9 +414,9 @@ export const SearchVisibility = () => {
     datasets: currentModels.map((model) => ({
       id: model.id,
       label: model.name,
-      data: model.data
+      data: metricType === 'visibility' ? model.data : (model.shareData ?? model.data)
     }))
-  }), [currentModels]);
+  }), [currentModels, metricType]);
 
   const combinedLoading = authLoading || brandsLoading || loading;
 
@@ -484,11 +498,11 @@ export const SearchVisibility = () => {
               onChartTypeChange={setChartType}
               region={region}
               onRegionChange={setRegion}
-              stacked={stacked}
-              onStackedChange={setStacked}
               brands={brands}
               selectedBrandId={selectedBrandId}
               onBrandChange={selectBrand}
+              metricType={metricType}
+              onMetricTypeChange={setMetricType}
             />
 
             <VisibilityChart
@@ -499,7 +513,7 @@ export const SearchVisibility = () => {
               loading={combinedLoading}
               activeTab={activeTab}
               models={currentModels}
-              stacked={stacked}
+              metricType={metricType}
             />
           </div>
 

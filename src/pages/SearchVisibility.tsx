@@ -224,7 +224,13 @@ export const SearchVisibility = () => {
         referenceCount: brandPresenceCount,
         brandPresencePercentage,
         data: buildTimeseries(slice.visibility ?? 0),
-        topTopics: slice.topTopics ?? [],
+        topTopics: (slice.topTopics ?? []).map(topic => ({
+          topic: topic.topic,
+          occurrences: topic.occurrences,
+          share: Math.round(topic.share * 10) / 10, // Round to 1 decimal place
+          visibility: Math.round(topic.visibility * 10) / 10, // Round to 1 decimal place
+          mentions: topic.mentions
+        })),
         color: slice.color // Include color from backend
       };
     });
@@ -300,6 +306,9 @@ export const SearchVisibility = () => {
     // Get brand name from response or selectedBrand
     const brandName = (response.data as any)?.brandName ?? selectedBrand?.name ?? 'Your Brand';
     
+    // Get brand presence count from response data
+    const queriesWithBrandPresence = (response.data as any)?.queriesWithBrandPresence ?? 0;
+    
     // Always create brand row if we have a selected brand ID
     const brandCompetitiveModel = selectedBrandId ? {
       id: 'brand',
@@ -308,14 +317,14 @@ export const SearchVisibility = () => {
       shareOfSearch: Math.round(brandData.share ?? 0),
       topTopic: brandData.topTopics?.[0]?.topic ?? '—',
       change: 0,
-      referenceCount: 0,
+      referenceCount: queriesWithBrandPresence,
       brandPresencePercentage: Math.round(brandData.brandPresencePercentage ?? 0),
       data: buildTimeseries(brandData.visibility ?? 0),
       topTopics: brandData.topTopics?.map(topic => ({
         topic: topic.topic,
         occurrences: topic.occurrences,
-        share: topic.share,
-        visibility: topic.visibility,
+        share: Math.round(topic.share * 10) / 10, // Round to 1 decimal place
+        visibility: Math.round(topic.visibility * 10) / 10, // Round to 1 decimal place
         mentions: (topic as any).mentions ?? topic.occurrences
       })) ?? [],
       isBrand: true
@@ -334,8 +343,8 @@ export const SearchVisibility = () => {
       topTopics: entry.topTopics?.map(topic => ({
         topic: topic.topic,
         occurrences: topic.occurrences,
-        share: topic.share,
-        visibility: topic.visibility,
+        share: Math.round(topic.share * 10) / 10, // Round to 1 decimal place
+        visibility: Math.round(topic.visibility * 10) / 10, // Round to 1 decimal place
         mentions: topic.mentions
       })) ?? [],
       isBrand: false

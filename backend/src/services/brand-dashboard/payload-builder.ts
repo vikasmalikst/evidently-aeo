@@ -209,6 +209,8 @@ export async function buildDashboardPayload(
       sentimentValues: number[]
       citationUsage: number
       queriesWithBrandPresence: Set<string>
+      collectorResultIds: Set<number> // Track all collector results for this topic
+      collectorResultsWithBrandPresence: Set<number> // Track collector results with brand presence
       brandMentions: number
     }
   >()
@@ -505,12 +507,22 @@ export async function buildDashboardPayload(
             sentimentValues: [],
             citationUsage: 0,
             queriesWithBrandPresence: new Set<string>(),
+            collectorResultIds: new Set<number>(),
+            collectorResultsWithBrandPresence: new Set<number>(),
             brandMentions: 0
           })
         }
         const topicAggregate = topicAggregates.get(topicName)!
         if (row.query_id) {
           topicAggregate.queryIds.add(row.query_id)
+        }
+        // Track collector results for brand presence calculation
+        if (isBrandRow && row.collector_result_id && typeof row.collector_result_id === 'number' && Number.isFinite(row.collector_result_id)) {
+          topicAggregate.collectorResultIds.add(row.collector_result_id)
+          // Track collector results with brand presence
+          if (hasBrandPresence) {
+            topicAggregate.collectorResultsWithBrandPresence.add(row.collector_result_id)
+          }
         }
         topicAggregate.shareValues.push(brandShare)
         topicAggregate.visibilityValues.push(brandVisibility)
@@ -904,6 +916,8 @@ export async function buildDashboardPayload(
               sentimentValues: [],
               citationUsage: 0,
               queriesWithBrandPresence: new Set<string>(),
+              collectorResultIds: new Set<number>(),
+              collectorResultsWithBrandPresence: new Set<number>(),
               brandMentions: 0
             })
           }
@@ -1242,6 +1256,8 @@ export async function buildDashboardPayload(
         sentimentValues: [],
         citationUsage: 0,
         queriesWithBrandPresence: new Set<string>(),
+        collectorResultIds: new Set<number>(),
+        collectorResultsWithBrandPresence: new Set<number>(),
         brandMentions: 0
       })
     }
@@ -1295,10 +1311,13 @@ export async function buildDashboardPayload(
         ? round(average(aggregate.shareValues), 1)
         : null
 
-      // Calculate brand presence percentage - track unique queries with brand presence
-      // Only counts queries where competitor_name is null (brand rows)
-      const brandPresencePercentage = promptsTracked > 0 && aggregate.queriesWithBrandPresence.size > 0
-        ? round((aggregate.queriesWithBrandPresence.size / promptsTracked) * 100, 1)
+      // Calculate brand presence percentage - track collector results (not just queries)
+      // This ensures we count each collector result separately, so if a query has 4 collectors
+      // and only 2 have brand presence, we get 50% not 100%
+      const totalCollectorResults = aggregate.collectorResultIds.size
+      const collectorResultsWithPresence = aggregate.collectorResultsWithBrandPresence.size
+      const brandPresencePercentage = totalCollectorResults > 0
+        ? round((collectorResultsWithPresence / totalCollectorResults) * 100, 1)
         : null
 
       return {
@@ -1467,6 +1486,7 @@ export async function buildDashboardPayload(
       : 0
 
     // Extract top topics from existing topicAggregates
+    // Ranked by visibility score (matching dashboard display)
     const brandTopTopics = Array.from(topicAggregates.entries())
       .map(([topicName, aggregate]) => ({
         topic: truncateLabel(topicName, 64),
@@ -1479,7 +1499,12 @@ export async function buildDashboardPayload(
           : 0
       }))
       .filter((topic) => topic.topic.trim().length > 0 && topic.occurrences > 0)
-      .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share || b.visibility - a.visibility)
+      .sort((a, b) => {
+        // Primary: visibility score (descending) - matches dashboard ranking
+        // Secondary: share (average share of answers)
+        // Tertiary: occurrences (how many queries tracked)
+        return b.visibility - a.visibility || b.share - a.share || b.occurrences - a.occurrences
+      })
       .slice(0, 5)
 
     return {

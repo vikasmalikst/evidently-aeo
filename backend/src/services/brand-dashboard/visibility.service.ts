@@ -87,8 +87,10 @@ export class VisibilityService {
           const occurrences = stats.occurrences
           const share =
             occurrences > 0 ? round(stats.shareSum / occurrences) : 0
-          const visibility =
-            occurrences > 0 ? round(stats.visibilitySum / occurrences) : 0
+          // Visibility values are stored in 0-1 scale, convert to 0-100 for consistency
+          const avgVisibilityRaw =
+            occurrences > 0 ? stats.visibilitySum / occurrences : 0
+          const visibility = round(avgVisibilityRaw * 100, 1)
           return {
             topic: truncateLabel(topic, 64),
             occurrences,
@@ -101,11 +103,16 @@ export class VisibilityService {
         const sortedTopics = topicEntries
           .filter((entry) => entry.topic.trim().length > 0)
           .sort(
-            (a, b) =>
-              b.occurrences - a.occurrences ||
-              b.share - a.share ||
-              b.visibility - a.visibility ||
-              b.mentions - a.mentions
+            (a, b) => {
+              // Primary: visibility score (descending) - matches dashboard ranking
+              // Secondary: share (average share of answers)
+              // Tertiary: occurrences (how many times this topic appears)
+              // Quaternary: mentions
+              return b.visibility - a.visibility ||
+                b.share - a.share ||
+                b.occurrences - a.occurrences ||
+                b.mentions - a.mentions
+            }
           )
           .slice(0, 5)
 
@@ -171,49 +178,51 @@ export class VisibilityService {
           .sort((a, b) => b.mentions - a.mentions)
           .slice(0, 3)
 
-        // Calculate brand presence percentage
-        // Only count queries where competitor has meaningful data (visibility > 0 or share > 0)
+        // Calculate brand presence percentage - direct percentage calculation (no normalization)
+        // Count queries where competitor has meaningful data (visibility > 0 or share > 0)
         const queriesWithData = Array.from(aggregate.queries.values())
           .filter(query => query.visibilitySum > 0 || query.shareSum > 0 || query.mentionSum > 0)
           .length
         
-        // Use totalQueries (total queries in system) for denominator
-        const brandPresencePercentage = totalQueries > 0 && queriesWithData > 0
+        // Direct percentage: (queries with competitor data / total queries in system) * 100
+        // No normalization - this matches database values exactly
+        const brandPresencePercentage = totalQueries > 0
           ? round((queriesWithData / totalQueries) * 100, 1)
           : 0
 
         // Extract top topics - only include topics where competitor has meaningful data
-        // Note: If all queries share the same topic, all competitors will show that topic as their top topic
+        // Ranked by visibility score (matching dashboard ranking - using avg visibility per topic)
+        // Visibility values are stored in 0-1 scale, convert to 0-100 for consistency
         const topTopics = Array.from(aggregate.topics.entries())
-          .map(([topicName, topicStats]) => ({
-            topic: truncateLabel(topicName, 64),
-            occurrences: topicStats.occurrences,
-            share: topicStats.occurrences > 0
-              ? round(topicStats.shareSum / topicStats.occurrences, 1)
-              : 0,
-            visibility: topicStats.occurrences > 0
-              ? round(topicStats.visibilitySum / topicStats.occurrences, 1)
-              : 0,
-            mentions: topicStats.mentions
-          }))
+          .map(([topicName, topicStats]) => {
+            // Calculate average visibility per topic (0-1 scale from database)
+            const avgVisibilityRaw = topicStats.occurrences > 0
+              ? topicStats.visibilitySum / topicStats.occurrences
+              : 0
+            // Convert to 0-100 scale to match brand summary calculation
+            const avgVisibility = round(avgVisibilityRaw * 100, 1)
+            
+            return {
+              topic: truncateLabel(topicName, 64),
+              occurrences: topicStats.occurrences,
+              share: topicStats.occurrences > 0
+                ? round(topicStats.shareSum / topicStats.occurrences, 1)
+                : 0,
+              visibility: avgVisibility,
+              mentions: topicStats.mentions
+            }
+          })
           .filter((topic) => 
             topic.topic.trim().length > 0 && 
             (topic.share > 0 || topic.visibility > 0 || topic.mentions > 0)
           )
           .sort((a, b) => {
-            // Primary: occurrences (how many times this topic appears for this competitor)
+            // Primary: visibility score (descending) - matches dashboard ranking
             // Secondary: share (average share of answers)
-            // Tertiary: visibility (average visibility score)
-            return b.occurrences - a.occurrences || b.share - a.share || b.visibility - a.visibility
+            // Tertiary: occurrences (how many times this topic appears)
+            return b.visibility - a.visibility || b.share - a.share || b.occurrences - a.occurrences
           })
           .slice(0, 5)
-        
-        // Debug logging: Log if competitor has multiple topics or if all topics are the same
-        if (topTopics.length > 1) {
-          console.log(`[VisibilityService] Competitor "${competitorName}" has ${topTopics.length} topics:`, topTopics.map(t => t.topic).join(', '))
-        } else if (topTopics.length === 1) {
-          console.log(`[VisibilityService] Competitor "${competitorName}" has 1 topic: "${topTopics[0].topic}" (occurrences: ${topTopics[0].occurrences}, share: ${topTopics[0].share}, visibility: ${topTopics[0].visibility})`)
-        }
 
         return {
           competitor: competitorName,

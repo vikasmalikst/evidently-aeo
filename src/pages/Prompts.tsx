@@ -7,6 +7,7 @@ import { ResponseViewer } from '../components/Prompts/ResponseViewer';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { PromptAnalyticsPayload, PromptEntry } from '../types/prompts';
+import { getVersionHistory } from '../api/promptManagementApi';
 
 // Performance logging
 const perfLog = (label: string, startTime: number) => {
@@ -64,7 +65,29 @@ export const Prompts = () => {
   const navigate = useNavigate();
   const [selectedLLM, setSelectedLLM] = useState<string | null>(null);
   const [dateRangeKey, setDateRangeKey] = useState<string>(DATE_PRESETS[2]?.value ?? 'last30');
+  const [currentVersion, setCurrentVersion] = useState<number | null>(null);
   const { brands, selectedBrandId, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+
+  // Fetch current version to filter prompts by current version
+  useEffect(() => {
+    if (!selectedBrandId || brandsLoading) {
+      setCurrentVersion(null);
+      return;
+    }
+
+    const fetchCurrentVersion = async () => {
+      try {
+        const versionData = await getVersionHistory(selectedBrandId);
+        setCurrentVersion(versionData.currentVersion);
+      } catch (error) {
+        console.error('Error fetching current version:', error);
+        // If version fetch fails, continue without version filter
+        setCurrentVersion(null);
+      }
+    };
+
+    fetchCurrentVersion();
+  }, [selectedBrandId, brandsLoading]);
 
   const dateRangeOptions = useMemo(
     () =>
@@ -82,7 +105,7 @@ export const Prompts = () => {
     setSelectedPrompt(prompt);
   };
 
-  // Build endpoint - include selected LLM filter when available
+  // Build endpoint - include selected LLM filter and current version when available
   const promptsEndpoint = useMemo(() => {
     const endpointStart = performance.now();
     if (!selectedBrandId || brandsLoading) return null;
@@ -97,10 +120,16 @@ export const Prompts = () => {
       params.set('collectors', selectedLLM);
     }
 
+    // Add current version parameter to filter prompts by current version
+    // Backend should return only prompts from the current version
+    if (currentVersion !== null) {
+      params.set('version', currentVersion.toString());
+    }
+
     const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
     perfLog('Prompts: Endpoint computation', endpointStart);
     return endpoint;
-  }, [selectedBrandId, dateRangeKey, selectedLLM, brandsLoading]);
+  }, [selectedBrandId, dateRangeKey, selectedLLM, brandsLoading, currentVersion]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());

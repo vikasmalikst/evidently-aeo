@@ -197,15 +197,12 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
     // Show each topic as a separate line with 12-week historical data
     const datasets = sortedTopics.map((topic, index) => {
       const color = getChartColor(index);
-      // Use visibilityTrend if available, otherwise generate mock trend from currentSoA
-      const trendData = topic.visibilityTrend && topic.visibilityTrend.length === 12
-        ? topic.visibilityTrend
-        : Array.from({ length: 12 }, (_, i) => {
-            // Generate mock trend: start lower and trend toward currentSoA
-            const baseValue = (topic.currentSoA ?? 0) * 0.6;
-            const trend = ((topic.currentSoA ?? 0) - baseValue) / 11;
-            return Math.max(0, Math.min(100, baseValue + (trend * i)));
-          });
+      // Only use visibilityTrend if available - don't generate mock data
+      // If no trend data, skip this topic (don't show it in the chart)
+      if (!topic.visibilityTrend || topic.visibilityTrend.length !== 12) {
+        return null; // Skip topics without real trend data
+      }
+      const trendData = topic.visibilityTrend;
 
       // Convert hex color to rgba for background fill
       const hexToRgba = (hex: string, alpha: number) => {
@@ -235,7 +232,7 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
 
     return {
       labels: weekLabels,
-      datasets,
+      datasets: datasets.filter((d): d is NonNullable<typeof d> => d !== null), // Filter out null datasets
     };
   }, [sortedTopics, weekLabels]);
 

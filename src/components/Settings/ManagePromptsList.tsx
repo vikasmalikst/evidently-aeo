@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronRight, CalendarDays, Plus, Edit2, Trash2, X, Check, RotateCcw } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronRight, CalendarDays, Plus, Edit2, Trash2, X, Check } from 'lucide-react';
 import { Topic, Prompt } from '../../api/promptManagementApi';
 import { PendingChangesIndicator } from '../PromptConfiguration/PendingChangesIndicator';
 import { RecalibrationWarning } from '../PromptConfiguration/RecalibrationWarning';
@@ -35,7 +35,6 @@ interface ManagePromptsListProps {
   onPromptEdit: (prompt: Prompt, newText: string) => void;
   onPromptDelete: (prompt: Prompt) => void;
   onPromptAdd: (topicId: number, prompt: Prompt) => void;
-  onTopicsReplace?: (topics: Topic[]) => void;
   dateRange: string;
   onDateRangeChange: (range: string) => void;
   onChangesApplied?: () => void;
@@ -43,6 +42,9 @@ interface ManagePromptsListProps {
   configHistory?: PromptConfiguration[];
   selectedVersion?: number | null;
   onVersionChange?: (version: number | null) => void;
+  visibilityScore?: number;
+  coverage?: number;
+  isLoading?: boolean;
 }
 
 const getWeeklyDateRanges = () => {
@@ -111,19 +113,23 @@ export const ManagePromptsList = ({
   onPromptEdit,
   onPromptDelete,
   onPromptAdd,
-  onTopicsReplace,
   dateRange, 
   onDateRangeChange,
   onChangesApplied,
   currentConfigVersion,
   configHistory = [],
   selectedVersion,
-  onVersionChange
+  onVersionChange,
+  visibilityScore = 72.4,
+  coverage = 94,
+  isLoading = false
 }: ManagePromptsListProps) => {
-  const [expandedTopics, setExpandedTopics] = useState<number[]>([1]);
+  const [expandedTopics, setExpandedTopics] = useState<number[]>([]);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   const [editText, setEditText] = useState('');
   const [showAddModal, setShowAddModal] = useState<number | null>(null);
+  const [showGlobalAddModal, setShowGlobalAddModal] = useState(false);
+  const [selectedTopicForAdd, setSelectedTopicForAdd] = useState<number | null>(null);
   const [newPromptText, setNewPromptText] = useState('');
   const [originalPrompts, setOriginalPrompts] = useState<Map<number, Prompt>>(new Map());
   const [newlyAddedPromptIds, setNewlyAddedPromptIds] = useState<Set<number>>(new Set());
@@ -132,7 +138,6 @@ export const ManagePromptsList = ({
     removed: [],
     edited: []
   });
-  const [revertingToVersion, setRevertingToVersion] = useState<number | null>(null);
   const weeklyRanges = getWeeklyDateRanges();
   const [isVersionMenuOpen, setIsVersionMenuOpen] = useState(false);
   const versionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -157,6 +162,14 @@ export const ManagePromptsList = ({
       });
     });
     setOriginalPrompts(originalMap);
+    
+    // Reset expanded topics when topics change (e.g., when switching versions)
+    // Expand first topic by default if there are topics
+    if (topics.length > 0) {
+      setExpandedTopics([topics[0].id]);
+    } else {
+      setExpandedTopics([]);
+    }
   }, [topics]);
 
   useEffect(() => {
@@ -166,16 +179,18 @@ export const ManagePromptsList = ({
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
+    if (isVersionMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isVersionMenuOpen]);
 
   // Convert topics to configuration format for impact calculation
   const currentConfig = useMemo(() => {
-    return topicsToConfiguration(topics, 94, 72.4);
-  }, [topics]);
+    return topicsToConfiguration(topics, coverage, visibilityScore);
+  }, [topics, coverage, visibilityScore]);
   const sortedConfigHistory = useMemo(
     () => [...configHistory].sort((a, b) => b.version - a.version),
     [configHistory]
@@ -441,7 +456,7 @@ export const ManagePromptsList = ({
       }));
     }
     
-    // Delete the prompt immediately - user can preview impact and confirm/revert later
+    // Delete the prompt immediately - user can preview impact and confirm later
     // Note: We don't call API here - deletion happens on batch apply
     onPromptDelete(prompt);
   };
@@ -449,6 +464,47 @@ export const ManagePromptsList = ({
   const handleAddClick = (topicId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setShowAddModal(topicId);
+    setNewPromptText('');
+  };
+
+  const handleGlobalAddClick = () => {
+    if (topics.length === 0) {
+      // If no topics, can't add prompt
+      return;
+    }
+    // If only one topic, directly open add modal for that topic
+    if (topics.length === 1) {
+      const topicId = topics[0].id;
+      // Ensure topic is expanded so the form is visible
+      if (!expandedTopics.includes(topicId)) {
+        setExpandedTopics([...expandedTopics, topicId]);
+      }
+      setShowAddModal(topicId);
+      setNewPromptText('');
+    } else {
+      // Multiple topics - show modal to select topic
+      setShowGlobalAddModal(true);
+      setSelectedTopicForAdd(topics[0]?.id || null);
+      setNewPromptText('');
+    }
+  };
+
+  const handleGlobalAddConfirm = () => {
+    if (selectedTopicForAdd) {
+      // Expand the selected topic if not already expanded
+      if (!expandedTopics.includes(selectedTopicForAdd)) {
+        setExpandedTopics([...expandedTopics, selectedTopicForAdd]);
+      }
+      // Close global modal and open topic-specific modal
+      // Keep the prompt text if user already entered it
+      setShowGlobalAddModal(false);
+      setShowAddModal(selectedTopicForAdd);
+    }
+  };
+
+  const handleGlobalAddCancel = () => {
+    setShowGlobalAddModal(false);
+    setSelectedTopicForAdd(null);
     setNewPromptText('');
   };
 
@@ -492,7 +548,16 @@ export const ManagePromptsList = ({
         setNewPromptText('');
       } catch (err) {
         console.error('Error adding prompt:', err);
-        // Still add to UI for optimistic update, but mark as error
+        const errorMessage = err instanceof Error 
+          ? err.message 
+          : typeof err === 'object' && err !== null && 'message' in err
+          ? String(err.message)
+          : 'Failed to add prompt. Please try again.';
+        
+        // Show error to user
+        setSubmissionError(errorMessage);
+        
+        // Don't add to UI if there was an error - let user try again
       }
     }
   };
@@ -520,84 +585,50 @@ export const ManagePromptsList = ({
     if (!impact) return;
 
     try {
-      // If reverting to a version, replace entire topics structure to match selected version exactly
-      if (revertingToVersion !== null && onTopicsReplace) {
-        const selectedConfig = configHistory.find(c => c.version === revertingToVersion);
-        if (selectedConfig) {
-          // Deep clone the selected config's topics to avoid reference issues
-          const revertedTopics = selectedConfig.topics.map(topic => ({
-            ...topic,
-            prompts: topic.prompts.map(prompt => ({ ...prompt }))
-          }));
-          onTopicsReplace(revertedTopics);
-        }
-      }
-
-      // Apply batch changes via API
       const changeSummary = generateChangeSummary(pendingChanges);
       console.log('Applying batch changes:', { backendChanges, changeSummary });
       await applyBatchChanges(brandId, backendChanges, changeSummary);
 
-      // Submit recalibration (this is mostly for UI state, actual recalibration happens via batch changes)
       try {
         await submitRecalibration(pendingChanges, impact);
       } catch (recalErr) {
-        // If submitRecalibration fails, log but don't fail the whole operation
-        // since the batch changes already succeeded
         console.warn('Recalibration submission warning:', recalErr);
       }
       
-      // Close the modal before clearing state
       closePreviewModal();
       
-      // Clear pending changes and reset original prompts
-      setPendingChanges({ added: [], removed: [], edited: [] });
-      setNewlyAddedPromptIds(new Set());
-      setRevertingToVersion(null);
-      const newOriginalMap = new Map<number, Prompt>();
-      topics.forEach(topic => {
-        topic.prompts.forEach(prompt => {
-          newOriginalMap.set(prompt.id, { ...prompt });
-        });
-      });
-      setOriginalPrompts(newOriginalMap);
-      
-      // Reload data from backend to ensure UI matches backend state
       if (onChangesApplied) {
         await onChangesApplied();
       }
+      
+      if (onVersionChange && selectedVersion !== null && selectedVersion !== undefined) {
+        onVersionChange(null);
+      }
+      
+      setPendingChanges({ added: [], removed: [], edited: [] });
+      setNewlyAddedPromptIds(new Set());
     } catch (err) {
       console.error('Error applying changes:', err);
       console.error('Backend changes that failed:', backendChanges);
       console.error('Pending changes:', pendingChanges);
       
-      // Extract more detailed error message if available
       const errorMessage = err instanceof Error 
         ? err.message 
         : typeof err === 'object' && err !== null && 'message' in err
         ? String(err.message)
         : 'Failed to apply changes. Please try again.';
       
-      // Set error first
       setSubmissionError(errorMessage || 'Failed to apply changes. Please try again.');
-      
-      // Close the modal
       closePreviewModal();
       
-      // Reload data from backend to revert optimistic UI updates
-      // This ensures the UI matches the backend state
       try {
         if (onChangesApplied) {
           await onChangesApplied();
         }
-        // Only clear pending changes if reload succeeded
-        // This ensures UI state matches backend state
         setPendingChanges({ added: [], removed: [], edited: [] });
         setNewlyAddedPromptIds(new Set());
       } catch (reloadErr) {
         console.error('Error reloading data after failed apply:', reloadErr);
-        // Keep pending changes if reload failed so user can see what they tried to change
-        // The error message is already set and will be displayed
       }
     }
   };
@@ -621,118 +652,12 @@ export const ManagePromptsList = ({
     resetState();
     setPendingChanges({ added: [], removed: [], edited: [] });
     setNewlyAddedPromptIds(new Set());
-    setRevertingToVersion(null);
   };
 
   const handleModalClose = () => {
     closePreviewModal();
-    // If closing without confirming a revert, clear the revert state
-    if (revertingToVersion !== null) {
-      setPendingChanges({ added: [], removed: [], edited: [] });
-      setRevertingToVersion(null);
-    }
+    setPendingChanges({ added: [], removed: [], edited: [] });
   };
-
-  const handleRevertVersion = useCallback(async () => {
-    if (selectedVersion === null || selectedVersion === undefined || !currentConfigVersion) return;
-    
-    const selectedConfig = configHistory.find(c => c.version === selectedVersion);
-    if (!selectedConfig) return;
-
-    // Create a map of current prompts by ID for easy lookup
-    const currentPromptsById = new Map<number, { prompt: Prompt; topicName: string; topicId: number }>();
-    topics.forEach(topic => {
-      topic.prompts.forEach(prompt => {
-        currentPromptsById.set(prompt.id, { prompt, topicName: topic.name, topicId: topic.id });
-      });
-    });
-
-    // Create a map of current prompts by topic+text for comparison
-    const currentPromptsByKey = new Map<string, { prompt: Prompt; topicName: string; topicId: number }>();
-    topics.forEach(topic => {
-      topic.prompts.forEach(prompt => {
-        const key = `${topic.name}:${prompt.text}`;
-        currentPromptsByKey.set(key, { prompt, topicName: topic.name, topicId: topic.id });
-      });
-    });
-
-    // Create a map of selected version prompts by topic+text
-    const selectedPromptsByKey = new Map<string, { prompt: Prompt; topicName: string; topicId: number }>();
-    selectedConfig.topics.forEach(topic => {
-      topic.prompts.forEach(prompt => {
-        const key = `${topic.name}:${prompt.text}`;
-        selectedPromptsByKey.set(key, { prompt, topicName: topic.name, topicId: topic.id });
-      });
-    });
-
-    // Calculate differences - DON'T apply changes yet, just calculate
-    const added: Array<{ text: string; topic: string; promptId?: string }> = [];
-    const removed: Array<{ id: number; text: string; promptId?: string }> = [];
-    const edited: Array<{ id: number; oldText: string; newText: string; promptId?: string }> = [];
-
-    // Find prompts in selected version that don't exist in current (by text+topic)
-    selectedConfig.topics.forEach(topic => {
-      topic.prompts.forEach(selectedPrompt => {
-        const key = `${topic.name}:${selectedPrompt.text}`;
-        const existsInCurrent = currentPromptsByKey.has(key);
-        
-        if (!existsInCurrent) {
-          // Check if there's a prompt with same ID but different text (edit)
-          const currentPromptData = currentPromptsById.get(selectedPrompt.id);
-          if (currentPromptData && currentPromptData.prompt.text !== selectedPrompt.text) {
-            edited.push({
-              id: selectedPrompt.id,
-              oldText: currentPromptData.prompt.text,
-              newText: selectedPrompt.text,
-              promptId: selectedPrompt.queryId
-            });
-          } else {
-            // New prompt to add (topic may or may not exist)
-            added.push({ text: selectedPrompt.text, topic: topic.name, promptId: selectedPrompt.queryId });
-          }
-        }
-      });
-    });
-
-    // Find prompts in current that don't exist in selected version
-    topics.forEach(topic => {
-      topic.prompts.forEach(currentPrompt => {
-        const key = `${topic.name}:${currentPrompt.text}`;
-        const existsInSelected = selectedPromptsByKey.has(key);
-        
-        if (!existsInSelected) {
-          // Check if this prompt ID exists in selected version with different text (already handled as edit)
-          const existsAsEdit = selectedConfig.topics.some(t => 
-            t.prompts.some(p => p.id === currentPrompt.id && p.text !== currentPrompt.text)
-          );
-          
-          if (!existsAsEdit) {
-            // This prompt should be removed
-            removed.push({ id: currentPrompt.id, text: currentPrompt.text, promptId: currentPrompt.queryId });
-          }
-        }
-      });
-    });
-
-    // Set pending changes - this will trigger the recalibration warning
-    setPendingChanges({
-      added,
-      removed,
-      edited
-    });
-    
-    // Store which version we're reverting to
-    setRevertingToVersion(selectedVersion);
-    
-    // Switch back to viewing current version so user can see the proposed changes
-    if (onVersionChange) {
-      onVersionChange(null);
-    }
-
-    // Calculate impact and open preview modal
-    await calculateImpactEstimate();
-    openPreviewModal();
-  }, [selectedVersion, currentConfigVersion, configHistory, topics, onVersionChange, calculateImpactEstimate, openPreviewModal]);
 
   return (
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm overflow-hidden h-full">
@@ -800,10 +725,13 @@ export const ManagePromptsList = ({
                 </div>
                 <div className="max-h-80 overflow-y-auto">
                   <button
+                    type="button"
                     className={`w-full text-left px-4 py-3 border-b border-[var(--border-default)] hover:bg-[var(--bg-secondary)] transition-colors ${
                       selectedVersion === null ? 'bg-[var(--bg-secondary)]' : ''
                     }`}
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       onVersionChange(null);
                       setIsVersionMenuOpen(false);
                     }}
@@ -825,11 +753,15 @@ export const ManagePromptsList = ({
                     .map(config => (
                     <button
                       key={config.id}
+                      type="button"
                       className={`w-full text-left px-4 py-3 border-b border-[var(--border-default)] hover:bg-[var(--bg-secondary)] transition-colors ${
                         selectedVersion === config.version ? 'bg-[var(--bg-secondary)]' : 'bg-white'
                       }`}
-                      onClick={() => {
-                        onVersionChange(config.version === currentConfigVersion ? null : config.version);
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const newVersion = config.version === currentConfigVersion ? null : config.version;
+                        onVersionChange(newVersion);
                         setIsVersionMenuOpen(false);
                       }}
                     >
@@ -870,35 +802,66 @@ export const ManagePromptsList = ({
               ))}
             </select>
           </div>
+          {(selectedVersion === null || selectedVersion === undefined) && (
+            <button
+              onClick={handleGlobalAddClick}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+              title="Add prompt"
+            >
+              <Plus size={16} />
+              Add Prompt
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Version info and revert button */}
-      {currentConfigVersion && configHistory.length > 0 && onVersionChange && selectedVersion !== null && selectedVersion !== undefined && selectedVersion !== currentConfigVersion && (() => {
-        const selectedConfig = configHistory.find(c => c.version === selectedVersion);
-        return (
-          <div className="px-4 py-2 flex items-center justify-end">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium" style={{ color: '#ca8a04' }}>
-                Configuration Version v{selectedVersion} • {selectedConfig ? formatDate(selectedConfig.created_at) : ''}
-              </span>
+      {/* Version info banner */}
+      {currentConfigVersion &&
+        configHistory.length > 0 &&
+        onVersionChange &&
+        selectedVersion !== null &&
+        selectedVersion !== undefined &&
+        selectedVersion !== currentConfigVersion && (() => {
+          const selectedConfig = configHistory.find(c => c.version === selectedVersion);
+          return (
+            <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-[var(--accent-light)] border-b border-[var(--border-default)]">
+              <div className="text-xs font-medium text-[var(--text-headings)]">
+                Viewing configuration v{selectedVersion}{' '}
+                {selectedConfig ? `from ${formatDate(selectedConfig.created_at)}` : ''}
+                . This snapshot is read-only.
+              </div>
               <button
-                onClick={handleRevertVersion}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-[var(--border-default)] text-xs font-medium hover:bg-[var(--bg-secondary)] transition-colors"
-                title={`Revert to version ${selectedVersion}`}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onVersionChange(null);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--accent-primary)] text-[var(--accent-primary)] text-xs font-medium hover:bg-white transition-colors shadow-sm"
               >
-                <RotateCcw size={14} />
-                Revert to v{selectedVersion}
+                Return to current version
               </button>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
 
       <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(100vh - 450px)' }}>
-        {topics.map((topic) => {
-          const isExpanded = expandedTopics.includes(topic.id);
-          const isAdding = showAddModal === topic.id;
+        {isLoading ? (
+          <div className="text-center py-8">
+            <p className="text-sm text-[var(--text-caption)]">Loading prompts...</p>
+          </div>
+        ) : topics.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-sm text-[var(--text-caption)]">
+              {selectedVersion !== null && selectedVersion !== undefined
+                ? 'No prompts in this version'
+                : 'No prompts found. Add your first prompt to get started.'}
+            </p>
+          </div>
+        ) : (
+          topics.map((topic) => {
+            const isExpanded = expandedTopics.includes(topic.id);
+            const isAdding = showAddModal === topic.id;
 
           return (
             <div key={topic.id} className="mb-4">
@@ -1094,7 +1057,8 @@ export const ManagePromptsList = ({
               )}
             </div>
           );
-        })}
+          })
+        )}
       </div>
 
       {/* Impact Preview Modal */}
@@ -1114,6 +1078,68 @@ export const ManagePromptsList = ({
         isOpen={isInfoModalOpen}
         onClose={() => setIsInfoModalOpen(false)}
       />
+
+      {/* Global Add Prompt Modal */}
+      {showGlobalAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={handleGlobalAddCancel}>
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-[var(--text-headings)] mb-4">
+              Add Prompt
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-[var(--text-headings)] mb-2">
+                  Select Topic
+                </label>
+                <select
+                  value={selectedTopicForAdd || ''}
+                  onChange={(e) => setSelectedTopicForAdd(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-body)] bg-white focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-light)]"
+                >
+                  {topics.map((topic) => (
+                    <option key={topic.id} value={topic.id}>
+                      {topic.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-[var(--text-headings)] mb-2">
+                  Prompt Text
+                </label>
+                <textarea
+                  value={newPromptText}
+                  onChange={(e) => setNewPromptText(e.target.value)}
+                  placeholder="Enter your prompt..."
+                  className="w-full px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-body)] bg-white focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-light)] transition-all resize-none"
+                  rows={3}
+                  autoFocus
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={handleGlobalAddCancel}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--border-default)] text-[var(--text-body)] text-sm font-medium hover:bg-[var(--bg-secondary)] transition-colors"
+                >
+                  <X size={16} />
+                  Cancel
+                </button>
+                <button
+                  onClick={handleGlobalAddConfirm}
+                  disabled={!newPromptText.trim() || !selectedTopicForAdd}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Check size={16} />
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -7,7 +7,7 @@ import type { TopicChangeImpact } from '../types';
 
 interface TopicEditModalProps {
   currentTopics: Topic[];
-  onSave: (topics: Topic[]) => void;
+  onSave: (topics: Topic[]) => void | Promise<void>;
   onCancel: () => void;
   changeImpact: TopicChangeImpact | null;
   brandName: string;
@@ -387,7 +387,7 @@ export const TopicEditModal = ({
                     </div>
                   </div>
                   <p className="text-sm text-[var(--text-body)] leading-relaxed mt-3" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
-                    Once confirmed, these changes affect all future analyses. You can always revert to a previous configuration anytime.
+                    Once confirmed, these changes affect all future analyses. You can always review previous configurations from the history timeline if you need to reference an older setup.
                   </p>
                 </div>
               </div>

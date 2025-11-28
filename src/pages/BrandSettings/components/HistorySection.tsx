@@ -4,17 +4,13 @@ import type { TopicConfiguration } from '../types';
 interface HistorySectionProps {
   history: TopicConfiguration[];
   currentVersion: number;
-  onViewVersion: (config: TopicConfiguration) => void;
-  onRevertVersion: (versionId: string) => void;
-  onCompareVersion: (config: TopicConfiguration) => void;
+  onSelectVersion: (config: TopicConfiguration) => void;
 }
 
 export const HistorySection = ({
   history,
   currentVersion,
-  onViewVersion,
-  onRevertVersion,
-  onCompareVersion,
+  onSelectVersion,
 }: HistorySectionProps) => {
   return (
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm p-6">
@@ -40,9 +36,7 @@ export const HistorySection = ({
               config={config}
               isActive={config.version === currentVersion}
               isLast={index === history.length - 1}
-              onView={() => onViewVersion(config)}
-              onRevert={() => onRevertVersion(config.id)}
-              onCompare={() => onCompareVersion(config)}
+              onView={() => onSelectVersion(config)}
             />
           ))}
         </div>

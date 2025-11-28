@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import { PieChart, TrendingUp } from 'lucide-react';
-import { IconFolderSearch, IconBottle, IconSpace } from '@tabler/icons-react';
-import type { Portfolio, Performance } from '../types';
+import { IconFolderSearch, IconSpace } from '@tabler/icons-react';
+import type { Portfolio, Performance, Topic } from '../types';
 
-export type PodId = 'portfolio' | 'volume' | 'performance' | 'gaps' | 'momentum';
+export type PodId = 'portfolio' | 'performance' | 'gaps';
 
 interface CompactMetricsPodsProps {
   portfolio: {
@@ -22,17 +22,33 @@ interface CompactMetricsPodsProps {
       category: string;
     };
   };
+  topics?: Topic[]; // Topics array for gap calculation
   onPodClick?: (podId: PodId) => void;
 }
 
-// Calculate citation gap count from minSoA (topics with SoA < 1.0x)
-const getCitationGapCount = (minSoA: number, totalTopics: number): number => {
-  // Estimate: if minSoA is < 1.0, assume some topics are below threshold
-  // This is a simplified calculation - in real app, this would come from filtered data
-  if (minSoA < 1.0) {
-    return Math.max(1, Math.floor(totalTopics * 0.2)); // Estimate 20% are gaps
+// Calculate gap count: topics where Brand SOA < Competitor Avg SOA
+const getGapCount = (topics: Topic[]): number => {
+  if (!topics || topics.length === 0) {
+    return 0;
   }
-  return 0;
+  
+  // Count topics where brand's SOA is less than industry average SOA
+  // Even if the difference is very small, it's still a gap
+  return topics.filter(topic => {
+    const brandSoA = topic.currentSoA || (topic.soA * 20); // Brand SOA in percentage (0-100)
+    
+    // industryAvgSoA is stored as multiplier (0-5x), convert to percentage (0-100)
+    const industryAvgSoA = topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
+      ? (topic.industryAvgSoA * 20) // Convert multiplier to percentage
+      : null;
+    
+    // If industry average exists and brand SOA is less than it (even slightly), it's a gap
+    if (industryAvgSoA !== null && brandSoA < industryAvgSoA) {
+      return true;
+    }
+    
+    return false;
+  }).length;
 };
 
 const formatDate = (dateString: string): string => {
@@ -49,11 +65,6 @@ const formatDate = (dateString: string): string => {
   return 'This month';
 };
 
-const formatNumber = (num: number): string => {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return num.toString();
-};
 
 interface MetricPodProps {
   podId: PodId;
@@ -261,13 +272,13 @@ const MetricPod = ({
 export const CompactMetricsPods = ({
   portfolio,
   performance,
+  topics = [],
   onPodClick,
 }: CompactMetricsPodsProps) => {
   const lastAnalyzed = useMemo(() => formatDate(portfolio.lastUpdated), [portfolio.lastUpdated]);
-  const formattedVolume = useMemo(() => formatNumber(portfolio.searchVolume), [portfolio.searchVolume]);
-  const citationGapCount = useMemo(
-    () => getCitationGapCount(performance.minSoA, portfolio.totalTopics),
-    [performance.minSoA, portfolio.totalTopics]
+  const gapCount = useMemo(
+    () => getGapCount(topics),
+    [topics]
   );
   const soARange = useMemo(
     () => `${(performance.minSoA * 20).toFixed(1)}%–${(performance.maxSoA * 20).toFixed(1)}%`,
@@ -300,25 +311,7 @@ export const CompactMetricsPods = ({
         onPodClick={onPodClick}
       />
 
-      {/* POD 2: Volume */}
-      <MetricPod
-        podId="volume"
-        icon={<IconBottle size={20} />}
-        primaryValue={formattedVolume}
-        label="Volume"
-        secondary="Combined search"
-        changeIndicator={{
-          value: 'Market demand',
-          direction: 'neutral',
-        }}
-        tooltip={`${portfolio.searchVolume.toLocaleString()} combined monthly search volume. This is your total market opportunity across all tracked topics.`}
-        borderColor="#0096b0"
-        iconColor="#0096b0"
-        hoverBgColor="#e6f7f9"
-        onPodClick={onPodClick}
-      />
-
-      {/* POD 3: Avg SOA */}
+      {/* POD 2: Avg SOA */}
       <MetricPod
         podId="performance"
         icon={<PieChart size={20} />}
@@ -336,39 +329,21 @@ export const CompactMetricsPods = ({
         onPodClick={onPodClick}
       />
 
-      {/* POD 4: Gaps */}
+      {/* POD 3: Gaps */}
       <MetricPod
         podId="gaps"
         icon={<IconSpace size={20} />}
-        primaryValue={citationGapCount.toString()}
+        primaryValue={gapCount.toString()}
         label="Gaps"
-        secondary="Citation gaps"
+        secondary="Gaps"
         changeIndicator={{
           value: 'Strategic opportunity',
           direction: 'neutral',
         }}
-        tooltip={`${citationGapCount} topics where competitors are cited but you're not. These are high-value opportunities to gain share. [View gaps]`}
+        tooltip={`${gapCount} topics where your SOA is below competitor average. These are high-value opportunities to gain share. [View gaps]`}
         borderColor="#f94343"
         iconColor="#f94343"
         hoverBgColor="#fff5f5"
-        onPodClick={onPodClick}
-      />
-
-      {/* POD 5: Trending */}
-      <MetricPod
-        podId="momentum"
-        icon={<TrendingUp size={20} />}
-        primaryValue={`+${(performance.weeklyGainer.delta * 20).toFixed(1)}%`}
-        label="Trending"
-        secondary={performance.weeklyGainer.topic}
-        changeIndicator={{
-          value: '(This week)',
-          direction: 'up',
-        }}
-        tooltip={`${performance.weeklyGainer.topic} is trending fastest (+${(performance.weeklyGainer.delta * 20).toFixed(1)}% this week). Currently at ${(performance.maxSoA * 20).toFixed(1)}% SoA. Momentum is accelerating. [Scale investment]`}
-        borderColor="#06c686"
-        iconColor="#06c686"
-        hoverBgColor="#eefbf5"
         onPodClick={onPodClick}
       />
     </div>

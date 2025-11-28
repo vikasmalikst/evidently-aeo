@@ -6,18 +6,14 @@ interface HistoryModalProps {
   history: TopicConfiguration[];
   currentVersion: number;
   onClose: () => void;
-  onViewVersion: (config: TopicConfiguration) => void;
-  onRevertVersion: (versionId: string) => void;
-  onCompareVersion: (config: TopicConfiguration) => void;
+  onSelectVersion: (config: TopicConfiguration) => void;
 }
 
 export const HistoryModal = ({
   history,
   currentVersion,
   onClose,
-  onViewVersion,
-  onRevertVersion,
-  onCompareVersion,
+  onSelectVersion,
 }: HistoryModalProps) => {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -40,9 +36,7 @@ export const HistoryModal = ({
           <HistorySection
             history={history}
             currentVersion={currentVersion}
-            onViewVersion={onViewVersion}
-            onRevertVersion={onRevertVersion}
-            onCompareVersion={onCompareVersion}
+            onSelectVersion={onSelectVersion}
           />
         </div>
       </div>

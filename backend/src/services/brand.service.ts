@@ -1607,6 +1607,42 @@ export class BrandService {
         return (b.avgShareOfAnswer || 0) - (a.avgShareOfAnswer || 0);
       });
       
+      // Step 6: Fetch top citation sources per topic
+      const topicSourcesMap = await this.getTopSourcesPerTopic(
+        brandId,
+        customerId,
+        topicMap,
+        startIso,
+        endIso
+      );
+      
+      // Step 7: Calculate industry-wide average SOA per topic
+      const industryAvgSoAMap = await this.getIndustryAvgSoAPerTopic(
+        brandId,
+        customerId,
+        topicsWithAnalytics.map(t => t.topic_name),
+        startIso,
+        endIso
+      );
+      
+      // Add top sources and industry average SOA to each topic
+      topicsWithAnalytics.forEach(topic => {
+        const normalizedName = topic.topic_name.toLowerCase().trim();
+        topic.topSources = topicSourcesMap.get(normalizedName) || [];
+        
+        // Add industry average SOA
+        const industryAvg = industryAvgSoAMap.get(normalizedName);
+        if (industryAvg) {
+          topic.industryAvgSoA = industryAvg.avgSoA;
+          topic.industryAvgSoATrend = industryAvg.trend;
+          topic.industryBrandCount = industryAvg.brandCount;
+        } else {
+          topic.industryAvgSoA = null;
+          topic.industryAvgSoATrend = null;
+          topic.industryBrandCount = 0;
+        }
+      });
+      
       // Return topics with available models metadata
       const response = {
         topics: topicsWithAnalytics,
@@ -1621,6 +1657,343 @@ export class BrandService {
       console.error('❌ Error in getBrandTopicsWithAnalytics:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get industry-wide average SOA per topic (all brands except current brand)
+   */
+  private async getIndustryAvgSoAPerTopic(
+    currentBrandId: string,
+    customerId: string,
+    topicNames: string[],
+    startIso: string,
+    endIso: string
+  ): Promise<Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number }>> {
+    try {
+      if (topicNames.length === 0) {
+        return new Map();
+      }
+
+      // Normalize topic names for matching
+      const normalizedTopicNames = topicNames.map(name => name.toLowerCase().trim());
+      const topicNameSet = new Set(normalizedTopicNames);
+
+      // Get all extracted_positions for other brands (excluding current brand) in the date range
+      const { data: positions, error: positionsError } = await supabaseAdmin
+        .from('extracted_positions')
+        .select(`
+          topic,
+          metadata,
+          share_of_answers_brand,
+          processed_at,
+          brand_id
+        `)
+        .eq('customer_id', customerId)
+        .neq('brand_id', currentBrandId) // Exclude current brand
+        .gte('processed_at', startIso)
+        .lte('processed_at', endIso)
+        .not('share_of_answers_brand', 'is', null);
+
+      if (positionsError) {
+        console.error('⚠️ Error fetching industry positions:', positionsError);
+        return new Map();
+      }
+
+      if (!positions || positions.length === 0) {
+        console.log('ℹ️ No industry data found for comparison');
+        console.log(`   - Looking for topics: ${normalizedTopicNames.join(', ')}`);
+        console.log(`   - Date range: ${startIso} to ${endIso}`);
+        console.log(`   - Excluding brand: ${currentBrandId}`);
+        return new Map();
+      }
+
+      console.log(`📊 Found ${positions.length} industry positions for comparison`);
+
+      // Group by normalized topic name and calculate averages
+      const topicDataMap = new Map<string, { soaValues: number[]; brandIds: Set<string>; timestamps: Date[] }>();
+
+      positions.forEach(pos => {
+        // Extract topic name (same logic as in getBrandTopicsWithAnalytics)
+        let topicName: string | null = null;
+        
+        if (pos.topic && typeof pos.topic === 'string' && pos.topic.trim().length > 0) {
+          topicName = pos.topic.trim();
+        } else if (pos.metadata && typeof pos.metadata === 'object') {
+          const metadata = pos.metadata as any;
+          if (metadata.topic_name && typeof metadata.topic_name === 'string') {
+            topicName = metadata.topic_name.trim();
+          }
+        }
+
+        if (!topicName) return;
+
+        const normalizedTopicName = topicName.toLowerCase().trim();
+        
+        // Only process topics we care about
+        if (!topicNameSet.has(normalizedTopicName)) return;
+
+        const soa = pos.share_of_answers_brand;
+        if (typeof soa !== 'number' || !isFinite(soa) || soa === null) return;
+
+        if (!topicDataMap.has(normalizedTopicName)) {
+          topicDataMap.set(normalizedTopicName, {
+            soaValues: [],
+            brandIds: new Set(),
+            timestamps: []
+          });
+        }
+
+        const topicData = topicDataMap.get(normalizedTopicName)!;
+        topicData.soaValues.push(soa);
+        if (pos.brand_id) {
+          topicData.brandIds.add(pos.brand_id);
+        }
+        if (pos.processed_at) {
+          topicData.timestamps.push(new Date(pos.processed_at));
+        }
+      });
+
+      // Calculate averages and trends for each topic
+      const result = new Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number }>();
+
+      topicDataMap.forEach((data, normalizedTopicName) => {
+        if (data.soaValues.length === 0) return;
+
+        // Calculate average SOA
+        const avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
+        const brandCount = data.brandIds.size;
+
+        // Calculate trend (compare first half vs second half of time period)
+        let trend: { direction: 'up' | 'down' | 'neutral'; delta: number } = { direction: 'neutral', delta: 0 };
+        
+        if (data.timestamps.length >= 2) {
+          // Sort by timestamp
+          const sortedIndices = data.timestamps
+            .map((ts, idx) => ({ ts, idx }))
+            .sort((a, b) => a.ts.getTime() - b.ts.getTime())
+            .map(item => item.idx);
+
+          const midPoint = Math.floor(sortedIndices.length / 2);
+          const firstHalf = sortedIndices.slice(0, midPoint).map(idx => data.soaValues[idx]);
+          const secondHalf = sortedIndices.slice(midPoint).map(idx => data.soaValues[idx]);
+
+          if (firstHalf.length > 0 && secondHalf.length > 0) {
+            const firstHalfAvg = firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
+            const secondHalfAvg = secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
+            const delta = secondHalfAvg - firstHalfAvg;
+            const deltaPercent = avgSoA > 0 ? (delta / avgSoA) * 100 : 0;
+
+            if (Math.abs(deltaPercent) < 1) {
+              trend = { direction: 'neutral', delta: 0 };
+            } else if (delta > 0) {
+              trend = { direction: 'up', delta: Math.abs(deltaPercent) / 100 }; // Convert to multiplier
+            } else {
+              trend = { direction: 'down', delta: Math.abs(deltaPercent) / 100 };
+            }
+          }
+        }
+
+        result.set(normalizedTopicName, {
+          avgSoA: Number(avgSoA.toFixed(2)),
+          trend,
+          brandCount
+        });
+      });
+
+      console.log(`📊 Calculated industry averages for ${result.size} topics`);
+      if (result.size > 0) {
+        result.forEach((data, topic) => {
+          console.log(`   - ${topic}: ${data.avgSoA.toFixed(2)}% (${data.brandCount} brands)`);
+        });
+      } else {
+        console.log('   ⚠️ No matching topics found in industry data');
+        console.log(`   - Your topics: ${Array.from(topicNameSet).join(', ')}`);
+        console.log(`   - Found ${topicDataMap.size} topics in industry data (may not match)`);
+      }
+      return result;
+
+    } catch (error) {
+      console.error('⚠️ Error in getIndustryAvgSoAPerTopic:', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Get top citation sources per topic
+   */
+  private async getTopSourcesPerTopic(
+    brandId: string,
+    customerId: string,
+    topicMap: Map<string, any>,
+    startIso: string,
+    endIso: string
+  ): Promise<Map<string, Array<{ name: string; url: string; type: string; citations: number }>>> {
+    try {
+      // Get set of normalized topic names we care about
+      const validTopicNames = new Set(Array.from(topicMap.keys()));
+
+      // Fetch citations for this brand in the date range
+      const { data: citations, error: citationsError } = await supabaseAdmin
+        .from('citations')
+        .select(`
+          domain,
+          url,
+          category,
+          collector_result_id,
+          usage_count
+        `)
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .gte('created_at', startIso)
+        .lte('created_at', endIso);
+
+      if (citationsError) {
+        console.error('⚠️ Error fetching citations for topics:', citationsError);
+        return new Map(); // Return empty map on error
+      }
+
+      if (!citations || citations.length === 0) {
+        return new Map(); // No citations found
+      }
+
+      // Create map from collector_result_id to topic name
+      // We need to get this from extracted_positions (similar to how we do it in getBrandTopicsWithAnalytics)
+      const collectorResultIds = Array.from(new Set(
+        citations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
+      ));
+
+      if (collectorResultIds.length === 0) {
+        return new Map();
+      }
+
+      const { data: positions, error: positionsError } = await supabaseAdmin
+        .from('extracted_positions')
+        .select('collector_result_id, topic, metadata')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .in('collector_result_id', collectorResultIds);
+
+      if (positionsError) {
+        console.error('⚠️ Error fetching positions for topic mapping:', positionsError);
+        return new Map();
+      }
+
+      // Create collector_result_id to topic name map
+      const collectorResultToTopicMap = new Map<number, string>();
+      
+      (positions || []).forEach(pos => {
+        let topicName: string | null = null;
+        
+        // Priority: 1) extracted_positions.topic column, 2) metadata.topic_name
+        if (pos.topic && typeof pos.topic === 'string' && pos.topic.trim().length > 0) {
+          topicName = pos.topic.trim();
+        } else if (pos.metadata && typeof pos.metadata === 'object') {
+          const metadata = pos.metadata as any;
+          if (metadata.topic_name && typeof metadata.topic_name === 'string') {
+            topicName = metadata.topic_name.trim();
+          }
+        }
+        
+        if (topicName && pos.collector_result_id) {
+          const normalizedTopicName = topicName.toLowerCase().trim();
+          // Only map if this topic exists in our valid topics
+          if (validTopicNames.has(normalizedTopicName)) {
+            collectorResultToTopicMap.set(pos.collector_result_id, normalizedTopicName);
+          }
+        }
+      });
+
+      // Group citations by topic and domain
+      const topicSourcesMap = new Map<string, Map<string, { name: string; url: string; type: string; citations: number }>>();
+
+      citations.forEach(citation => {
+        const collectorResultId = citation.collector_result_id;
+        if (!collectorResultId) return;
+
+        const normalizedTopicName = collectorResultToTopicMap.get(collectorResultId);
+        if (!normalizedTopicName) return; // Skip if no topic mapping
+
+        const domain = citation.domain || 'unknown';
+        const url = citation.url || `https://${domain}`;
+        const category = citation.category || 'editorial';
+        const usageCount = citation.usage_count || 1;
+
+        // Get source type
+        const sourceType = this.getSourceTypeFromCategory(category, domain);
+
+        // Initialize topic map if needed
+        if (!topicSourcesMap.has(normalizedTopicName)) {
+          topicSourcesMap.set(normalizedTopicName, new Map());
+        }
+
+        const domainMap = topicSourcesMap.get(normalizedTopicName)!;
+        
+        if (domainMap.has(domain)) {
+          // Aggregate citations count
+          const existing = domainMap.get(domain)!;
+          existing.citations += usageCount;
+        } else {
+          // New domain for this topic
+          domainMap.set(domain, {
+            name: domain,
+            url: url,
+            type: sourceType,
+            citations: usageCount
+          });
+        }
+      });
+
+      // Convert to final format: top 3 sources per topic, sorted by citations
+      const result = new Map<string, Array<{ name: string; url: string; type: string; citations: number }>>();
+
+      topicSourcesMap.forEach((domainMap, topicName) => {
+        const sources = Array.from(domainMap.values())
+          .sort((a, b) => b.citations - a.citations)
+          .slice(0, 3); // Top 3 sources
+        result.set(topicName, sources);
+      });
+
+      return result;
+    } catch (error) {
+      console.error('⚠️ Error in getTopSourcesPerTopic:', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Get source type from category and domain
+   */
+  private getSourceTypeFromCategory(category: string | null, domain: string | null): string {
+    if (!category) {
+      // Infer from domain
+      if (domain) {
+        const lowerDomain = domain.toLowerCase();
+        if (lowerDomain.includes('wikipedia') || lowerDomain.includes('britannica') || lowerDomain.includes('dictionary')) {
+          return 'reference';
+        }
+        if (lowerDomain.includes('edu') || lowerDomain.includes('gov')) {
+          return 'institutional';
+        }
+        if (lowerDomain.includes('reddit') || lowerDomain.includes('twitter') || lowerDomain.includes('medium') || lowerDomain.includes('github')) {
+          return 'ugc';
+        }
+      }
+      return 'editorial';
+    }
+    
+    const normalizedCategory = category.toLowerCase().trim();
+    const mapping: Record<string, string> = {
+      'brand': 'brand',
+      'corporate': 'corporate',
+      'editorial': 'editorial',
+      'reference': 'reference',
+      'ugc': 'ugc',
+      'user-generated': 'ugc',
+      'institutional': 'institutional',
+      'other': 'editorial'
+    };
+    
+    return mapping[normalizedCategory] || 'editorial';
   }
 
   /**

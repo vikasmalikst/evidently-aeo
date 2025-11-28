@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, RotateCcw, GitCompare } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import type { TopicConfiguration } from '../types';
 
 interface TimelineItemProps {
@@ -7,8 +7,6 @@ interface TimelineItemProps {
   isActive: boolean;
   isLast: boolean;
   onView: () => void;
-  onRevert: () => void;
-  onCompare: () => void;
 }
 
 const formatDate = (dateString: string) => {
@@ -25,8 +23,6 @@ export const TimelineItem = ({
   isActive,
   isLast,
   onView,
-  onRevert,
-  onCompare,
 }: TimelineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -75,28 +71,10 @@ export const TimelineItem = ({
               <button
                 onClick={onView}
                 className="p-2 hover:bg-[var(--bg-secondary)] rounded-lg transition-colors"
-                title="View details"
+                title="View version details"
               >
                 <Eye size={16} className="text-[var(--text-caption)]" />
               </button>
-              {!isActive && (
-                <>
-                  <button
-                    onClick={onRevert}
-                    className="p-2 hover:bg-[var(--bg-secondary)] rounded-lg transition-colors"
-                    title="Revert to this version"
-                  >
-                    <RotateCcw size={16} className="text-[var(--text-caption)]" />
-                  </button>
-                  <button
-                    onClick={onCompare}
-                    className="p-2 hover:bg-[var(--bg-secondary)] rounded-lg transition-colors"
-                    title="Compare with current"
-                  >
-                    <GitCompare size={16} className="text-[var(--text-caption)]" />
-                  </button>
-                </>
-              )}
             </div>
           </div>
 

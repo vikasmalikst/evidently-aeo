@@ -99,7 +99,7 @@ export const CurrentConfigCard = ({
                 Configuration History
               </h3>
               <p className="text-xs text-[var(--text-caption)]">
-                {versionCount} {versionCount === 1 ? 'version' : 'versions'} • Can revert anytime
+                {versionCount} {versionCount === 1 ? 'version' : 'versions'} • Full history available
               </p>
             </div>
           </div>

@@ -78,12 +78,11 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
   const soAChange = currentSoA - previousSoA;
   const soAChangePercent = previousSoA > 0 ? ((soAChange / previousSoA) * 100) : 0;
   
-  // Calculate avg competitor SoA deterministically (using default of 5 competitors)
-  const numCompetitors = 5;
-  const competitorSeed = (topic.id.charCodeAt(0) + numCompetitors * 19) % 100;
-  const baseSoA = topic.currentSoA ?? (topic.soA * 20);
-  const avgCompetitorSoA = Math.max(0, Math.min(100, baseSoA * (0.65 + (competitorSeed / 100) * 0.7)));
-  const avgCompetitorSoAScale = avgCompetitorSoA / 20;
+  // Use real industry average SOA from backend (stored as multiplier 0-5x, convert to percentage 0-100)
+  const avgIndustrySoA = topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
+    ? (topic.industryAvgSoA * 20) // Convert multiplier (0-5x) to percentage (0-100)
+    : null;
+  const avgIndustrySoAScale = avgIndustrySoA !== null ? (avgIndustrySoA / 20) : null;
   
   const trendDisplay = getTrendDisplay(topic.trend.direction, topic.trend.delta);
   const TrendIcon = trendDisplay.icon;
@@ -263,16 +262,18 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
               </div>
             </div>
 
-            {/* Avg Competitive SoA */}
+            {/* Avg Industry SoA */}
             <div className="bg-[var(--bg-secondary)] rounded-lg p-4">
-              <div className="text-xs text-[var(--text-caption)] mb-1">Avg Competitive SoA</div>
+              <div className="text-xs text-[var(--text-caption)] mb-1">Avg Industry SoA</div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-[var(--text-body)]">
-                  {avgCompetitorSoA.toFixed(1)}%
+                  {avgIndustrySoA !== null ? `${avgIndustrySoA.toFixed(1)}%` : '—'}
                 </span>
+                {avgIndustrySoAScale !== null && (
                 <span className="text-sm text-[var(--text-caption)]">
-                  ({avgCompetitorSoAScale.toFixed(2)}×)
+                  ({avgIndustrySoAScale.toFixed(2)}×)
                 </span>
+                )}
               </div>
             </div>
           </div>

@@ -507,8 +507,12 @@ export const TopicsAnalysisPage = ({
     );
   }
 
-  // Check if we have real data or mock data
-  const hasRealData = data.topics.some(t => t.soA > 0 || t.sources.length > 0);
+  // Check if we have real data - only show if we have actual SOA or source data
+  // Don't show anything if all data is null/empty
+  const hasRealData = data.topics.length > 0 && data.topics.some(t => 
+    (t.soA > 0 || t.currentSoA !== undefined) || 
+    (t.sources && t.sources.length > 0)
+  );
   const brandName = selectedBrand?.name || 'Your Brand';
 
   return (
@@ -542,6 +546,7 @@ export const TopicsAnalysisPage = ({
           <CompactMetricsPods
             portfolio={data.portfolio}
             performance={data.performance}
+            topics={data.topics}
             onPodClick={(podId: PodId) => {
               // Handle pod clicks - could filter table or scroll to section
               if (podId === 'gaps') {

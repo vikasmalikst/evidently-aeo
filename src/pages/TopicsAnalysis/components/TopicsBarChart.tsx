@@ -450,21 +450,22 @@ export const TopicsBarChart = ({
             </span>
           </div>
           
-        
+          {/* Avg Industry SoA - Marker Line (average across all topics) */}
           {avgIndustrySoA > 0 && (
-          <div className="flex items-center gap-1.5">
-            <div
-              style={{
-                width: '20px',
-                height: '2px',
-                background: `repeating-linear-gradient(to right, ${AVG_INDUSTRY_COLOR} 0, ${AVG_INDUSTRY_COLOR} 4px, transparent 4px, transparent 8px)`,
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              Avg Industry SoA
-            </span>
-          </div>
+            <div className="flex items-center gap-1.5">
+              <div
+                style={{
+                  width: '20px',
+                  height: '2px',
+                  background: `repeating-linear-gradient(to right, ${AVG_INDUSTRY_COLOR} 0, ${AVG_INDUSTRY_COLOR} 4px, transparent 4px, transparent 8px)`,
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
+                Avg Industry SoA (avg)
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

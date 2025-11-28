@@ -280,10 +280,6 @@ export const CompactMetricsPods = ({
     () => getGapCount(topics),
     [topics]
   );
-  const soARange = useMemo(
-    () => `${(performance.minSoA * 20).toFixed(1)}%–${(performance.maxSoA * 20).toFixed(1)}%`,
-    [performance.minSoA, performance.maxSoA]
-  );
 
   return (
     <div
@@ -317,12 +313,12 @@ export const CompactMetricsPods = ({
         icon={<PieChart size={20} />}
         primaryValue={`${(performance.avgSoA * 20).toFixed(1)}%`}
         label="Avg SOA"
-        secondary={`Range: ${(performance.minSoA * 20).toFixed(1)}%–${(performance.maxSoA * 20).toFixed(1)}%`}
+        secondary=""
         changeIndicator={{
           value: 'vs 20% baseline',
           direction: performance.avgSoA >= 1.0 ? 'up' : 'down',
         }}
-        tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}% (${performance.avgSoA.toFixed(2)}x multiplier). Range: ${(performance.minSoA * 20).toFixed(1)}%–${(performance.maxSoA * 20).toFixed(1)}%.`}
+        tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}% (${performance.avgSoA.toFixed(2)}x multiplier).`}
         borderColor="#00bcdc"
         iconColor="#00bcdc"
         hoverBgColor="#e6f7f9"

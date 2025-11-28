@@ -1674,25 +1674,37 @@ export class BrandService {
         return new Map();
       }
 
+      // Get current brand name to exclude it when it appears as a competitor
+      const { data: currentBrand, error: brandError } = await supabaseAdmin
+        .from('brands')
+        .select('name')
+        .eq('id', currentBrandId)
+        .single();
+      
+      const currentBrandName = currentBrand?.name?.toLowerCase().trim() || null;
+
       // Normalize topic names for matching
       const normalizedTopicNames = topicNames.map(name => name.toLowerCase().trim());
       const topicNameSet = new Set(normalizedTopicNames);
 
-      // Get all extracted_positions for other brands (excluding current brand) in the date range
+      // Get all extracted_positions for all brands (including current brand) in the date range
+      // Note: Brand and competitor SOA are stored adjacently - we need both values
+      // Industry average should include both brand SOA and competitor SOA from all brands
       const { data: positions, error: positionsError } = await supabaseAdmin
         .from('extracted_positions')
         .select(`
           topic,
           metadata,
           share_of_answers_brand,
+          share_of_answers_competitor,
           processed_at,
-          brand_id
+          brand_id,
+          competitor_name
         `)
         .eq('customer_id', customerId)
-        .neq('brand_id', currentBrandId) // Exclude current brand
+        // Include all brands (including current brand) to calculate true industry average
         .gte('processed_at', startIso)
-        .lte('processed_at', endIso)
-        .not('share_of_answers_brand', 'is', null);
+        .lte('processed_at', endIso);
 
       if (positionsError) {
         console.error('⚠️ Error fetching industry positions:', positionsError);
@@ -1703,7 +1715,7 @@ export class BrandService {
         console.log('ℹ️ No industry data found for comparison');
         console.log(`   - Looking for topics: ${normalizedTopicNames.join(', ')}`);
         console.log(`   - Date range: ${startIso} to ${endIso}`);
-        console.log(`   - Excluding brand: ${currentBrandId}`);
+        console.log(`   - Including all brands (industry average includes brand + competitor SOA)`);
         return new Map();
       }
 
@@ -1732,9 +1744,6 @@ export class BrandService {
         // Only process topics we care about
         if (!topicNameSet.has(normalizedTopicName)) return;
 
-        const soa = pos.share_of_answers_brand;
-        if (typeof soa !== 'number' || !isFinite(soa) || soa === null) return;
-
         if (!topicDataMap.has(normalizedTopicName)) {
           topicDataMap.set(normalizedTopicName, {
             soaValues: [],
@@ -1744,10 +1753,25 @@ export class BrandService {
         }
 
         const topicData = topicDataMap.get(normalizedTopicName)!;
-        topicData.soaValues.push(soa);
-        if (pos.brand_id) {
-          topicData.brandIds.add(pos.brand_id);
+        
+        // Add brand's SOA (including current brand - industry average should include all brands)
+        const brandSoA = pos.share_of_answers_brand;
+        if (typeof brandSoA === 'number' && isFinite(brandSoA) && brandSoA !== null) {
+          topicData.soaValues.push(brandSoA);
+          if (pos.brand_id) {
+            topicData.brandIds.add(pos.brand_id);
+          }
         }
+        
+        // Add competitor's SOA (including all competitors - industry average should include all competitor SOA)
+        // This captures competitor brands' SOA values that are stored in the competitor column
+        const competitorSoA = pos.share_of_answers_competitor;
+        if (typeof competitorSoA === 'number' && isFinite(competitorSoA) && competitorSoA !== null) {
+          // Include all competitor SOA values (industry average includes both brand and competitor SOA)
+          topicData.soaValues.push(competitorSoA);
+        }
+        
+        // Track timestamp for trend calculation (use brand's timestamp)
         if (pos.processed_at) {
           topicData.timestamps.push(new Date(pos.processed_at));
         }
@@ -1803,7 +1827,9 @@ export class BrandService {
       console.log(`📊 Calculated industry averages for ${result.size} topics`);
       if (result.size > 0) {
         result.forEach((data, topic) => {
-          console.log(`   - ${topic}: ${data.avgSoA.toFixed(2)}% (${data.brandCount} brands)`);
+          const topicData = topicDataMap.get(topic);
+          const totalSoAValues = topicData?.soaValues.length || 0;
+          console.log(`   - ${topic}: ${data.avgSoA.toFixed(2)}% (${data.brandCount} brands, ${totalSoAValues} SOA values from brand+competitor columns)`);
         });
       } else {
         console.log('   ⚠️ No matching topics found in industry data');

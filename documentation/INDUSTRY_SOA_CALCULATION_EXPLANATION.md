@@ -20,12 +20,16 @@ This document explains how **Avg Industry SOA** and **Avg Competitor SOA** are c
    - `customer_id` = current customer
    - `brand_id` ≠ current brand (excludes your brand)
    - `processed_at` within selected date range
-   - `share_of_answers_brand` is not null
 3. **Grouping:** Groups by normalized topic name (lowercase, trimmed)
 4. **Calculation:**
-   - For each topic, collects all `share_of_answers_brand` values from other brands
-   - Calculates the **average** of these values
-   - `share_of_answers_brand` is stored as **percentage (0-100)** format
+   - **Important:** Brand and competitor SOA values are stored adjacently in the table
+   - For each row, collects BOTH:
+     - `share_of_answers_brand` (the main brand's SOA in that row)
+     - `share_of_answers_competitor` (the competitor brand's SOA in that row)
+   - Sums all these SOA values (from both columns) for each topic
+   - Calculates the **average** of all collected SOA values
+   - Both columns store values as **percentage (0-100)** format
+   - This captures all brand SOA values from the industry, not just the "main" brand in each row
 5. **Returns:**
    - `avgSoA`: Average SOA as percentage (0-100)
    - `trend`: Direction and delta (calculated from first half vs second half of time period)
@@ -101,12 +105,24 @@ if (brandSoA < industryAvgSoA) {
 
 To verify the calculation is using the correct metrics:
 
-1. **Database Column:** ✅ Using `share_of_answers_brand` from `extracted_positions`
+1. **Database Columns:** ✅ Using BOTH `share_of_answers_brand` AND `share_of_answers_competitor` from `extracted_positions`
 2. **Brand Filtering:** ✅ Excluding current brand (`brand_id != currentBrandId`)
 3. **Topic Matching:** ✅ Normalizing topic names (lowercase, trimmed)
 4. **Date Range:** ✅ Filtering by `processed_at` within selected range
-5. **Average Calculation:** ✅ Simple average of all `share_of_answers_brand` values
+5. **Average Calculation:** ✅ Simple average of ALL SOA values (from both brand and competitor columns)
 6. **Format Conversion:** ✅ Backend returns percentage, frontend converts to multiplier
+
+## Data Structure Understanding
+
+**Important:** In the `extracted_positions` table, brand and competitor data are stored adjacently:
+- Each collector result compares a brand with its competitor
+- Row 1: `brand_name = Nike`, `share_of_answers_brand = Nike's SOA`, `share_of_answers_competitor = Adidas's SOA`
+- Row 2: `brand_name = Adidas`, `share_of_answers_brand = Adidas's SOA`, `share_of_answers_competitor = Nike's SOA`
+
+To get the complete industry average, we must sum both columns because:
+- `share_of_answers_brand` contains the main brand's SOA
+- `share_of_answers_competitor` contains the competitor brand's SOA
+- Both represent real brand SOA values that should be included in the industry average
 
 ## Questions to Verify
 

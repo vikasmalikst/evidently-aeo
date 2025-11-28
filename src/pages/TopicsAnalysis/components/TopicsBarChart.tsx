@@ -69,23 +69,6 @@ export const TopicsBarChart = ({
     );
   }, [sortedTopics]);
 
-  // Calculate average industry SoA across all topics for the horizontal marker line
-  const avgIndustrySoA = useMemo(() => {
-    if (!hasIndustryData || sortedTopics.length === 0) return 0;
-    const topicsWithIndustryData = sortedTopics.filter(topic => 
-      topic.industryAvgSoA !== null && 
-      topic.industryAvgSoA !== undefined && 
-      topic.industryAvgSoA > 0
-    );
-    if (topicsWithIndustryData.length === 0) return 0;
-    
-    const sum = topicsWithIndustryData.reduce((acc, topic) => {
-      // Convert multiplier (0-5x) to percentage (0-100)
-      const industrySoAPercentage = (topic.industryAvgSoA || 0) * 20;
-      return acc + industrySoAPercentage;
-    }, 0);
-    return sum / topicsWithIndustryData.length;
-  }, [sortedTopics, hasIndustryData]);
 
   // Chart keys: brand, avgIndustry (only show comparison if industry data exists)
   const chartKeys = useMemo(() => {
@@ -161,24 +144,7 @@ export const TopicsBarChart = ({
               }
             : BRAND_COLOR // Data viz 02 for single brand view
           }
-          markers={showComparison && avgIndustrySoA > 0 ? [
-            {
-              axis: 'y',
-              value: avgIndustrySoA,
-              lineStyle: {
-                stroke: AVG_INDUSTRY_COLOR,
-                strokeWidth: 2,
-                strokeDasharray: '4 4',
-              },
-              legend: 'Avg Industry SoA',
-              legendPosition: 'top-left',
-              textStyle: {
-                fill: chartLabelColor || '#393e51',
-                fontSize: 11,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-              },
-            },
-          ] : []}
+          markers={[]}
           borderRadius={0} // Remove border radius on all bars
           borderWidth={showComparison ? 1 : 0}
           borderColor={showComparison ? '#ffffff' : 'transparent'}
@@ -329,7 +295,7 @@ export const TopicsBarChart = ({
                     marginTop: '6px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                   }}>
-                    SoA: {topic.soA.toFixed(2)}×
+                    SoA: {value.toFixed(1)}%
                   </div>
                 </div>
               );
@@ -389,7 +355,7 @@ export const TopicsBarChart = ({
                     marginTop: '6px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                   }}>
-                    SoA: {topic.soA.toFixed(2)}×
+                    SoA: {value.toFixed(1)}%
                   </div>
                   <div style={{ 
                     fontSize: '11px',
@@ -434,38 +400,6 @@ export const TopicsBarChart = ({
             </span>
           </div>
           
-          {/* Avg Industry SoA - Bar */}
-          <div className="flex items-center gap-1.5">
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                backgroundColor: AVG_INDUSTRY_COLOR,
-                borderRadius: '2px',
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              Avg Industry SoA
-            </span>
-          </div>
-          
-          {/* Avg Industry SoA - Marker Line (average across all topics) */}
-          {avgIndustrySoA > 0 && (
-            <div className="flex items-center gap-1.5">
-              <div
-                style={{
-                  width: '20px',
-                  height: '2px',
-                  background: `repeating-linear-gradient(to right, ${AVG_INDUSTRY_COLOR} 0, ${AVG_INDUSTRY_COLOR} 4px, transparent 4px, transparent 8px)`,
-                  flexShrink: 0,
-                }}
-              />
-              <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-                Avg Industry SoA (avg)
-              </span>
-            </div>
-          )}
         </div>
       )}
     </div>

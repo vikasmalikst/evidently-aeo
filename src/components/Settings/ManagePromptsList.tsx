@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import type { SyntheticEvent } from 'react';
 import { ChevronDown, ChevronRight, CalendarDays, Plus, Edit2, Trash2, X, Check } from 'lucide-react';
 import { Topic, Prompt } from '../../api/promptManagementApi';
 import { PendingChangesIndicator } from '../PromptConfiguration/PendingChangesIndicator';
@@ -365,8 +366,8 @@ export const ManagePromptsList = ({
     setEditText(prompt.text);
   };
 
-  const handleEditSave = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleEditSave = (event?: SyntheticEvent) => {
+    event?.stopPropagation();
     if (editingPrompt && editText.trim()) {
       const originalText = originalPrompts.get(editingPrompt.id)?.text || editingPrompt.text;
       const newText = editText.trim();
@@ -408,8 +409,8 @@ export const ManagePromptsList = ({
     }
   };
 
-  const handleEditCancel = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleEditCancel = (event?: SyntheticEvent) => {
+    event?.stopPropagation();
     setEditingPrompt(null);
     setEditText('');
   };
@@ -508,8 +509,8 @@ export const ManagePromptsList = ({
     setNewPromptText('');
   };
 
-  const handleAddSave = async (topicId: number, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleAddSave = async (topicId: number, event?: SyntheticEvent) => {
+    event?.stopPropagation();
     if (newPromptText.trim()) {
       const topic = topics.find(t => t.id === topicId);
       const promptText = newPromptText.trim();
@@ -562,8 +563,8 @@ export const ManagePromptsList = ({
     }
   };
 
-  const handleAddCancel = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleAddCancel = (event?: SyntheticEvent) => {
+    event?.stopPropagation();
     setShowAddModal(null);
     setNewPromptText('');
   };
@@ -656,7 +657,7 @@ export const ManagePromptsList = ({
 
   const handleModalClose = () => {
     closePreviewModal();
-    setPendingChanges({ added: [], removed: [], edited: [] });
+      setPendingChanges({ added: [], removed: [], edited: [] });
   };
 
   return (
@@ -822,8 +823,8 @@ export const ManagePromptsList = ({
         selectedVersion !== null &&
         selectedVersion !== undefined &&
         selectedVersion !== currentConfigVersion && (() => {
-          const selectedConfig = configHistory.find(c => c.version === selectedVersion);
-          return (
+        const selectedConfig = configHistory.find(c => c.version === selectedVersion);
+        return (
             <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-[var(--accent-light)] border-b border-[var(--border-default)]">
               <div className="text-xs font-medium text-[var(--text-headings)]">
                 Viewing configuration v{selectedVersion}{' '}
@@ -841,9 +842,9 @@ export const ManagePromptsList = ({
               >
                 Return to current version
               </button>
-            </div>
-          );
-        })()}
+          </div>
+        );
+      })()}
 
       <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(100vh - 450px)' }}>
         {isLoading ? (
@@ -910,9 +911,9 @@ export const ManagePromptsList = ({
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                                 e.preventDefault();
-                                handleAddSave(topic.id, e as any);
+                                handleAddSave(topic.id, e);
                               } else if (e.key === 'Escape') {
-                                handleAddCancel(e as any);
+                                handleAddCancel(e);
                               }
                             }}
                             placeholder="Enter your prompt..."
@@ -981,9 +982,9 @@ export const ManagePromptsList = ({
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                                     e.preventDefault();
-                                    handleEditSave(e as any);
+                                    handleEditSave(e);
                                   } else if (e.key === 'Escape') {
-                                    handleEditCancel(e as any);
+                                    handleEditCancel(e);
                                   }
                                 }}
                                 className="w-full px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-body)] bg-white focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-light)] transition-all resize-none"

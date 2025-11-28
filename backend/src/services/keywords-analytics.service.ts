@@ -21,8 +21,26 @@ export const keywordsAnalyticsService = {
     customerId: string;
     startDate?: string;
     endDate?: string;
+    collectorType?: string;
   }): Promise<KeywordAnalyticsPayload> {
-    const { brandId, customerId, startDate, endDate } = params;
+    const { brandId, customerId, startDate, endDate, collectorType } = params;
+
+    // Map collector type if provided (for filtering)
+    let mappedCollectorType: string | undefined = undefined;
+    if (collectorType && collectorType.trim() !== '') {
+      const collectorTypeMap: Record<string, string> = {
+        'chatgpt': 'chatgpt',
+        'claude': 'claude',
+        'gemini': 'gemini',
+        'perplexity': 'perplexity',
+        'copilot': 'copilot',
+        'deepseek': 'deepseek',
+        'mistral': 'mistral',
+        'grok': 'grok'
+      };
+      mappedCollectorType = collectorTypeMap[collectorType.toLowerCase()] || collectorType.toLowerCase();
+      console.log(`🔍 Filtering keywords by collector_type: ${mappedCollectorType}`);
+    }
 
     // 1) Pull keywords for this brand/customer in range
     let keywordQuery = supabaseAdmin
@@ -55,11 +73,66 @@ export const keywordsAnalyticsService = {
     const brandPresenceByCollector = new Map<number, { brand: number; total: number; type: string | null }>();
 
     if (collectorIdList.length > 0) {
-      // 2) Pull brand presence from extracted_positions for those collector_result_ids
+      // 2) First, get collector_results and filter by collector_type if provided
+      // This gives us the valid collector_result_ids to use for filtering positions
+      let collectorQuery = supabaseAdmin
+        .from('collector_results')
+        .select('id, collector_type')
+        .in('id', collectorIdList);
+      
+      if (mappedCollectorType) {
+        collectorQuery = collectorQuery.eq('collector_type', mappedCollectorType);
+      }
+
+      const { data: collectorRows, error: collectorError } = await collectorQuery;
+
+      if (collectorError) {
+        throw new Error(`Failed to fetch collector types for keywords: ${collectorError.message}`);
+      }
+      
+      // Get valid collector IDs (filtered by collector_type if provided)
+      const validCollectorIds = new Set<number>();
+      const collectorTypeMap = new Map<number, string>();
+      for (const row of collectorRows ?? []) {
+        const id = typeof row.id === 'number' ? row.id : null;
+        if (id === null) continue;
+        validCollectorIds.add(id);
+        const type = typeof row.collector_type === 'string' ? row.collector_type : null;
+        if (type) {
+          collectorTypeMap.set(id, type);
+        }
+      }
+
+      // Filter keywordToCollectorIds to only include valid collector IDs
+      if (mappedCollectorType && validCollectorIds.size > 0) {
+        keywordToCollectorIds.forEach((ids, kw) => {
+          const validIds = new Set<number>();
+          ids.forEach(id => {
+            if (validCollectorIds.has(id)) {
+              validIds.add(id);
+            }
+          });
+          if (validIds.size === 0) {
+            keywordToCollectorIds.delete(kw);
+          } else {
+            keywordToCollectorIds.set(kw, validIds);
+          }
+        });
+      }
+
+      const filteredCollectorIdList = validCollectorIds.size > 0 ? Array.from(validCollectorIds) : collectorIdList;
+
+      // 3) Pull brand presence from extracted_positions for valid collector_result_ids
+      // Filter by collector_type directly from extracted_positions if provided
       let positionsQuery = supabaseAdmin
         .from('extracted_positions')
-        .select('collector_result_id, has_brand_presence, created_at')
-        .in('collector_result_id', collectorIdList);
+        .select('collector_result_id, has_brand_presence, created_at, collector_type')
+        .in('collector_result_id', filteredCollectorIdList);
+
+      // Filter by collector_type from extracted_positions if provided
+      if (mappedCollectorType) {
+        positionsQuery = positionsQuery.eq('collector_type', mappedCollectorType);
+      }
 
       if (startDate) positionsQuery = positionsQuery.gte('created_at', startDate);
       if (endDate) positionsQuery = positionsQuery.lte('created_at', endDate);
@@ -72,29 +145,17 @@ export const keywordsAnalyticsService = {
       for (const row of positionRows ?? []) {
         const id = typeof row.collector_result_id === 'number' ? row.collector_result_id : null;
         if (id === null) continue;
-        if (!brandPresenceByCollector.has(id)) brandPresenceByCollector.set(id, { brand: 0, total: 0, type: null });
+        if (!brandPresenceByCollector.has(id)) {
+          brandPresenceByCollector.set(id, { 
+            brand: 0, 
+            total: 0, 
+            type: collectorTypeMap.get(id) || null 
+          });
+        }
         const agg = brandPresenceByCollector.get(id)!;
         agg.total += 1;
         if (row.has_brand_presence === true) {
           agg.brand += 1;
-        }
-      }
-
-      // 3) Pull collector types for those collector_result_ids
-      const { data: collectorRows, error: collectorError } = await supabaseAdmin
-        .from('collector_results')
-        .select('id, collector_type')
-        .in('id', collectorIdList);
-
-      if (collectorError) {
-        throw new Error(`Failed to fetch collector types for keywords: ${collectorError.message}`);
-      }
-      for (const row of collectorRows ?? []) {
-        const id = typeof row.id === 'number' ? row.id : null;
-        if (id === null) continue;
-        const agg = brandPresenceByCollector.get(id);
-        if (agg) {
-          agg.type = typeof row.collector_type === 'string' ? row.collector_type : null;
         }
       }
     }

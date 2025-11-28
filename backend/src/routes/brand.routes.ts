@@ -60,12 +60,14 @@ router.get('/:brandId/keywords', authenticateToken, async (req: Request, res: Re
 
     const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
     const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    const collectorType = typeof req.query.collectorType === 'string' ? req.query.collectorType : undefined;
 
     const payload = await keywordsAnalyticsService.getKeywordAnalytics({
       brandId,
       customerId,
       startDate,
-      endDate
+      endDate,
+      collectorType
     });
 
     res.json({ success: true, data: payload });

@@ -223,9 +223,6 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
                 >
                   {currentSoA.toFixed(1)}%
                 </span>
-                <span className="text-sm text-[var(--text-caption)]">
-                  ({currentSoAScale.toFixed(2)}×)
-                </span>
               </div>
             </div>
 
@@ -235,9 +232,6 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-[var(--text-body)]">
                   {previousSoA.toFixed(1)}%
-                </span>
-                <span className="text-sm text-[var(--text-caption)]">
-                  ({(previousSoA / 20).toFixed(2)}×)
                 </span>
               </div>
             </div>
@@ -269,11 +263,6 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
                 <span className="text-2xl font-bold text-[var(--text-body)]">
                   {avgIndustrySoA !== null ? `${avgIndustrySoA.toFixed(1)}%` : '—'}
                 </span>
-                {avgIndustrySoAScale !== null && (
-                <span className="text-sm text-[var(--text-caption)]">
-                  ({avgIndustrySoAScale.toFixed(2)}×)
-                </span>
-                )}
               </div>
             </div>
           </div>
@@ -318,7 +307,7 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
                   className="text-sm font-medium"
                   style={{ color: trendDisplay.color }}
                 >
-                  {trendDisplay.symbol} {Math.abs(topic.trend.delta).toFixed(2)}×
+                  {trendDisplay.symbol} {Math.abs(topic.trend.delta * 20).toFixed(1)}%
                 </span>
               </div>
             </div>

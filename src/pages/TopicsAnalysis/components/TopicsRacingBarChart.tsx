@@ -175,24 +175,7 @@ export const TopicsRacingBarChart = ({
               }
             : "#498cf9" // Data viz 01 - matches Chart.js color
           }
-          markers={showComparison ? [
-            {
-              axis: 'x',
-              value: avgIndustrySoA,
-              lineStyle: {
-                stroke: AVG_INDUSTRY_COLOR,
-                strokeWidth: 2,
-                strokeDasharray: '4 4',
-              },
-              legend: 'Avg Industry SoA',
-              legendPosition: 'top-left',
-              textStyle: {
-                fill: chartLabelColor || '#393e51',
-                fontSize: 11,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-              },
-            },
-          ] : []}
+          markers={[]}
           borderRadius={0} // Remove border radius on all bars
           borderWidth={showComparison ? (isGrouped ? 0 : 1) : 0}
           borderColor={showComparison && !isGrouped ? '#ffffff' : 'transparent'}
@@ -425,7 +408,7 @@ export const TopicsRacingBarChart = ({
                     paddingLeft: '16px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                   }}>
-                    SoA: {topic.soA.toFixed(2)}×
+                    SoA: {value.toFixed(1)}%
                   </div>
                   <div style={{ 
                     fontSize: '11px', 
@@ -527,22 +510,6 @@ export const TopicsRacingBarChart = ({
             </span>
           </div>
           
-          {/* Avg Industry SoA - Marker Line (average across all topics) */}
-          {avgIndustrySoA > 0 && (
-          <div className="flex items-center gap-1.5">
-            <div
-              style={{
-                width: '20px',
-                height: '2px',
-                background: `repeating-linear-gradient(to right, ${AVG_INDUSTRY_COLOR} 0, ${AVG_INDUSTRY_COLOR} 4px, transparent 4px, transparent 8px)`,
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              Avg Industry SoA (avg)
-            </span>
-          </div>
-          )}
         </div>
       )}
     </div>

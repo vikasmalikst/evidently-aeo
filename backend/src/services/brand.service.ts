@@ -1324,44 +1324,8 @@ export class BrandService {
       }
       
       // Step 2: Get collector_results (optional - we can query positions directly)
-      let collectorResults: any[] = [];
-      let crToQueryMap = new Map<string, string>();
-      
-      if (queries.length > 0) {
-        try {
-          const queryIds = queries.map(q => q.id);
-          const { data: crData, error: crError } = await supabaseAdmin
-            .from('collector_results')
-            .select('id, query_id')
-            .in('query_id', queryIds);
-          
-          if (crError) {
-            console.warn('⚠️ Warning: Could not fetch collector_results (will query positions directly):', crError.message);
-          } else if (crData) {
-            collectorResults = crData;
-            collectorResults.forEach(cr => {
-              crToQueryMap.set(cr.id, cr.query_id);
-            });
-            console.log(`📋 Found ${collectorResults.length} collector_results`);
-          }
-        } catch (error) {
-          console.warn('⚠️ Warning: Error fetching collector_results, continuing with direct position query:', error);
-        }
-      }
-      
-      // Step 3: Get extracted_positions for this brand
-      // Include topic column and metadata to extract topic_name from there, and collector_type for filtering
-      // If we have collector_result_ids, filter by them; otherwise get all positions for this brand
-      let positions: any[] = [];
-      let positionsQuery = supabaseAdmin
-        .from('extracted_positions')
-        .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
-        .eq('brand_id', brandId)
-        .eq('customer_id', customerId)
-        .gte('processed_at', startIso)
-        .lte('processed_at', endIso);
-      
-      // Filter by collector_type (model) if provided and not empty
+      // Map collector type if provided (do this early so we can use it for filtering collector_results)
+      let mappedCollectorType: string | undefined = undefined;
       if (collectorType && collectorType.trim() !== '') {
         // Map frontend model IDs to collector_type values
         const collectorTypeMap: Record<string, string> = {
@@ -1374,39 +1338,45 @@ export class BrandService {
           'mistral': 'mistral',
           'grok': 'grok'
         };
-        const mappedType = collectorTypeMap[collectorType.toLowerCase()] || collectorType;
-        positionsQuery = positionsQuery.eq('collector_type', mappedType);
-        console.log(`🔍 Filtering by collector_type: ${mappedType}`);
+        mappedCollectorType = collectorTypeMap[collectorType.toLowerCase()] || collectorType.toLowerCase();
+        console.log(`🔍 Filtering by collector_type: ${mappedCollectorType} (from input: ${collectorType})`);
       }
       
-      if (collectorResults.length > 0) {
-        const collectorResultIds = collectorResults.map(cr => cr.id);
-        const { data: posData, error: positionsError } = await positionsQuery
-          .in('collector_result_id', collectorResultIds);
-        
-        if (positionsError) {
-          console.error('❌ Error fetching extracted_positions:', positionsError);
-          throw new DatabaseError('Failed to fetch positions');
-        }
-        positions = posData || [];
-      } else {
-        // If no collector_results, get positions directly by brand_id
-        console.log('⚠️ No collector_results found, querying positions directly by brand_id');
-        const { data: posData, error: positionsError } = await positionsQuery;
-        
-        if (positionsError) {
-          console.error('❌ Error fetching extracted_positions:', positionsError);
-          throw new DatabaseError('Failed to fetch positions');
-        }
-        positions = posData || [];
-      }
+      let collectorResults: any[] = [];
+      let crToQueryMap = new Map<string, string>();
       
-      if (!positions || positions.length === 0) {
-        console.log('⚠️ No extracted_positions found for these collector_results in date range');
-        return { topics: [], availableModels: [] };
+      if (queries.length > 0) {
+        try {
+          const queryIds = queries.map(q => q.id);
+          let crQuery = supabaseAdmin
+            .from('collector_results')
+            .select('id, query_id, collector_type')
+            .in('query_id', queryIds);
+          
+          // Filter collector_results by collector_type if provided
+          if (mappedCollectorType) {
+            crQuery = crQuery.eq('collector_type', mappedCollectorType);
+            console.log(`🔍 Filtering collector_results by collector_type: ${mappedCollectorType}`);
+          }
+          
+          const { data: crData, error: crError } = await crQuery;
+          
+          if (crError) {
+            console.warn('⚠️ Warning: Could not fetch collector_results (will query positions directly):', crError.message);
+          } else if (crData) {
+            collectorResults = crData;
+            collectorResults.forEach(cr => {
+              crToQueryMap.set(cr.id, cr.query_id);
+            });
+            console.log(`📋 Found ${collectorResults.length} collector_results${mappedCollectorType ? ` for collector_type: ${mappedCollectorType}` : ''}`);
+          }
+        } catch (error) {
+          console.warn('⚠️ Warning: Error fetching collector_results, continuing with direct position query:', error);
+        }
       }
       
       // Get distinct collector_types (models) available for this brand in the date range
+      // Do this BEFORE filtering so we always return all available models, not just the filtered one
       const { data: distinctCollectors } = await supabaseAdmin
         .from('extracted_positions')
         .select('collector_type')
@@ -1423,6 +1393,64 @@ export class BrandService {
             availableModels.add(pos.collector_type.toLowerCase());
           }
         });
+      }
+      console.log(`📊 Available models (before filtering): ${Array.from(availableModels).join(', ')}`);
+      
+      // Step 3: Get extracted_positions for this brand
+      // Include topic column and metadata to extract topic_name from there, and collector_type for filtering
+      // If we have collector_result_ids, filter by them; otherwise get all positions for this brand
+      let positions: any[] = [];
+      let positionsQuery = supabaseAdmin
+        .from('extracted_positions')
+        .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .gte('processed_at', startIso)
+        .lte('processed_at', endIso);
+      
+      // Filter by collector_type (model) if provided and not empty
+      if (mappedCollectorType) {
+        positionsQuery = positionsQuery.eq('collector_type', mappedCollectorType);
+      }
+      
+      if (collectorResults.length > 0) {
+        const collectorResultIds = collectorResults.map(cr => cr.id);
+        // When we have collector_results filtered by collector_type, we don't need to filter positions by collector_type again
+        // because the collector_results are already filtered
+        let positionsQueryFiltered = supabaseAdmin
+          .from('extracted_positions')
+          .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
+          .eq('brand_id', brandId)
+          .eq('customer_id', customerId)
+          .gte('processed_at', startIso)
+          .lte('processed_at', endIso)
+          .in('collector_result_id', collectorResultIds);
+        
+        const { data: posData, error: positionsError } = await positionsQueryFiltered;
+        
+        if (positionsError) {
+          console.error('❌ Error fetching extracted_positions:', positionsError);
+          throw new DatabaseError('Failed to fetch positions');
+        }
+        positions = posData || [];
+        console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorType ? ` (for collector_type: ${mappedCollectorType})` : ''}`);
+      } else {
+        // If no collector_results, get positions directly by brand_id (with collector_type filter if provided)
+        console.log('⚠️ No collector_results found, querying positions directly by brand_id');
+        const { data: posData, error: positionsError } = await positionsQuery;
+        
+        if (positionsError) {
+          console.error('❌ Error fetching extracted_positions:', positionsError);
+          throw new DatabaseError('Failed to fetch positions');
+        }
+        positions = posData || [];
+        console.log(`📊 Found ${positions.length} positions after querying directly${mappedCollectorType ? ` (filtered by collector_type: ${mappedCollectorType})` : ''}`);
+      }
+      
+      if (!positions || positions.length === 0) {
+        console.log(`⚠️ No extracted_positions found${mappedCollectorType ? ` for collector_type: ${mappedCollectorType}` : ''} in date range`);
+        // Return empty topics but still return availableModels so the filter dropdown works
+        return { topics: [], availableModels: Array.from(availableModels) };
       }
       
       // Step 4: Group analytics by topic (distinct topics only, not by collector_type)

@@ -129,38 +129,38 @@ export const useTopicConfiguration = (brandId?: string | null): UseTopicConfigur
         return;
       }
 
-      try {
-        setIsUpdating(true);
+    try {
+      setIsUpdating(true);
         setUnsavedChanges(topicsToSave);
 
-        const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration }>(
-          `/brands/${brandId}/topic-configuration/update`,
-          {
-            method: 'POST',
+      const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration }>(
+        `/brands/${brandId}/topic-configuration/update`,
+        {
+          method: 'POST',
             body: JSON.stringify({ topics: topicsToSave }),
-          }
-        );
-        
-        if (response.success && response.data) {
-          const newConfig = response.data;
-          
-          // Update current config and history
-          setCurrentConfig(newConfig);
-          setHistory(prevHistory => {
-            // Mark old configs as inactive and add new one
-            const updatedHistory = prevHistory.map(c => ({ ...c, is_active: false }));
-            return [newConfig, ...updatedHistory];
-          });
-          setUnsavedChanges([]);
-        } else {
-          throw new Error('Failed to save changes: No data returned');
         }
-      } catch (error) {
-        console.error('Failed to save changes:', error);
-        throw error;
-      } finally {
-        setIsUpdating(false);
+      );
+      
+      if (response.success && response.data) {
+        const newConfig = response.data;
+        
+        // Update current config and history
+        setCurrentConfig(newConfig);
+        setHistory(prevHistory => {
+          // Mark old configs as inactive and add new one
+          const updatedHistory = prevHistory.map(c => ({ ...c, is_active: false }));
+          return [newConfig, ...updatedHistory];
+        });
+        setUnsavedChanges([]);
+      } else {
+        throw new Error('Failed to save changes: No data returned');
       }
+    } catch (error) {
+      console.error('Failed to save changes:', error);
+      throw error;
+    } finally {
+      setIsUpdating(false);
+    }
     },
     [brandId, currentConfig, unsavedChanges]
   );

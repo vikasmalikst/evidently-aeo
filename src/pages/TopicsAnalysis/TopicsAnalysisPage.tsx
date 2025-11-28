@@ -552,10 +552,6 @@ export const TopicsAnalysisPage = ({
           </p>
         </div>
 
-        {/* Status Banner */}
-        {data.topics.length > 0 && (
-          <TopicsDataStatusBanner hasRealData={hasRealData} topicCount={data.topics.length} />
-        )}
 
         {/* Section 1: Compact Metrics Pods */}
         <div style={{ marginBottom: '24px' }}>

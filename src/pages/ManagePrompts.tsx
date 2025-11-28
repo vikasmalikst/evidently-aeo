@@ -2,7 +2,6 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { ManagePromptsList } from '../components/Settings/ManagePromptsList';
-import { topicsToConfiguration } from '../utils/promptConfigAdapter';
 import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
 import {
   getActivePrompts,
@@ -24,11 +23,6 @@ import type { Topic as ConfigTopic } from '../types/topic';
 import type { TopicConfiguration as TopicConfigSnapshot } from './BrandSettings/types';
 
 // Configuration version type for prompts
-type PromptChangeType = 'initial_setup' | 'prompt_added' | 'prompt_removed' | 'prompt_edited';
-
-
-
-// Timeline Item Component for Prompts
 interface PromptTimelineItemProps {
   config: PromptConfiguration;
   isActive: boolean;
@@ -38,17 +32,6 @@ interface PromptTimelineItemProps {
   prompts: Topic[];
   isLoading: boolean;
 }
-
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
 
 const formatDateShort = (dateString: string) => {
   const date = new Date(dateString);
@@ -68,8 +51,6 @@ const PromptTimelineItem = ({
   prompts,
   isLoading,
 }: PromptTimelineItemProps) => {
-  const totalPrompts = prompts.reduce((sum, topic) => sum + topic.prompts.length, 0);
-
   return (
     <div className="relative flex gap-6">
       {/* Timeline connector line */}
@@ -474,11 +455,6 @@ export const ManagePrompts = () => {
   }, [topicConfig, topicHistory, topicSelectedVersion]);
 
   const displayedTopicList = displayedTopicConfig?.topics ?? [];
-
-  // Convert topics to configuration format for summary stats
-  const currentConfig = useMemo(() => {
-    return topicsToConfiguration(topics, summaryStats.coverage, summaryStats.avgVisibility);
-  }, [topics, summaryStats]);
 
   const getCoverageColor = (coverage: number) => {
     if (coverage >= 90) return 'text-[var(--success500)]';

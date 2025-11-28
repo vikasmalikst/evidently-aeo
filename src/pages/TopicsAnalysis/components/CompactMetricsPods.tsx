@@ -314,11 +314,7 @@ export const CompactMetricsPods = ({
         primaryValue={`${(performance.avgSoA * 20).toFixed(1)}%`}
         label="Avg SOA"
         secondary=""
-        changeIndicator={{
-          value: 'vs 20% baseline',
-          direction: performance.avgSoA >= 1.0 ? 'up' : 'down',
-        }}
-        tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}% (${performance.avgSoA.toFixed(2)}x multiplier).`}
+        tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}%`}
         borderColor="#00bcdc"
         iconColor="#00bcdc"
         hoverBgColor="#e6f7f9"
@@ -332,10 +328,6 @@ export const CompactMetricsPods = ({
         primaryValue={gapCount.toString()}
         label="Gaps"
         secondary="Gaps"
-        changeIndicator={{
-          value: 'Strategic opportunity',
-          direction: 'neutral',
-        }}
         tooltip={`${gapCount} topics where your SOA is below competitor average. These are high-value opportunities to gain share. [View gaps]`}
         borderColor="#f94343"
         iconColor="#f94343"

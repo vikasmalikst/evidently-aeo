@@ -1,18 +1,12 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { IconBrandOpenai } from '@tabler/icons-react';
-import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
-import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
-import geminiLogoSrc from '../../assets/Google-Gemini-Icon.svg';
-import googleAioLogoSrc from '../../assets/Google-AI-icon.svg';
-import grokLogoSrc from '../../assets/Grok-icon.svg';
-import perplexityLogoSrc from '../../assets/Perplexity-Simple-Icon.svg';
+import { ChevronDown } from 'lucide-react';
+import { getLLMIcon } from '../../components/Visibility/LLMIcons';
 import { Layout } from '../../components/Layout/Layout';
 import { CompactMetricsPods } from './components/CompactMetricsPods';
 import { TopicsRankedTable } from './components/TopicsRankedTable';
 import { TopicAnalysisMultiView } from './components/TopicAnalysisMultiView';
 import { TopicDetailModal } from './components/TopicDetailModal';
 import { ChartTitle } from './components/ChartTitle';
-import { CountryFlag } from '../../components/CountryFlag';
 import DatePickerMultiView from '../../components/DatePicker/DatePickerMultiView';
 import { TopicsDataStatusBanner } from './components/TopicsDataStatusBanner';
 import { useManualBrandDashboard } from '../../manual-dashboard';
@@ -112,45 +106,64 @@ export const TopicsAnalysisPage = ({
   // Show/hide date picker modal
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // Manage country/region state
-  const [selectedCountry, setSelectedCountry] = useState<string>('us');
 
-  // AI Models configuration (matching account configuration)
-  const AI_MODELS = [
-    { id: 'chatgpt', name: 'ChatGPT', icon: 'openai' },
-    { id: 'claude', name: 'Claude', icon: 'claude' },
-    { id: 'gemini', name: 'Google Gemini', icon: 'gemini' },
-    { id: 'perplexity', name: 'Perplexity', icon: 'perplexity' },
-    { id: 'copilot', name: 'Microsoft Copilot', icon: 'copilot' },
-    { id: 'google_aio', name: 'Google AIO', icon: 'google_aio' },
-    { id: 'grok', name: 'Grok', icon: 'grok' },
-  ];
-  
-  // Mock selected models (in real app, get from account/brand configuration)
-  const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'claude', 'perplexity']);
   // Default to empty string (All Models) - will show all models in data
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [openModelDropdown, setOpenModelDropdown] = useState(false);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
   
   // Use available models from backend (from collector_results.collector_type)
+  // These are the actual LLM models available in the data
   const availableModels = useMemo(() => {
     if (backendAvailableModels && backendAvailableModels.length > 0) {
-      return backendAvailableModels.map(m => m.toLowerCase());
+      // Backend returns collector types (e.g., "ChatGPT", "Claude", etc.)
+      return backendAvailableModels;
     }
     // Fallback: extract from topics' availableModels if backend doesn't provide
     const modelSet = new Set<string>();
     data.topics.forEach(topic => {
       if ((topic as any).availableModels && Array.isArray((topic as any).availableModels)) {
         (topic as any).availableModels.forEach((m: string) => {
-          modelSet.add(m.toLowerCase());
+          modelSet.add(m);
         });
       }
     });
-    // Final fallback to default selected models
-    if (modelSet.size === 0) {
-      return selectedModels;
-    }
     return Array.from(modelSet);
-  }, [backendAvailableModels, data.topics, selectedModels]);
+  }, [backendAvailableModels, data.topics]);
+  
+  // Keep selected model in sync with available options
+  useEffect(() => {
+    if (availableModels.length === 0) {
+      if (selectedModel !== '') {
+        setSelectedModel('');
+      }
+      return;
+    }
+    // If selected model is not in available models, reset to empty (All Models)
+    if (selectedModel && !availableModels.includes(selectedModel)) {
+      setSelectedModel('');
+    }
+  }, [availableModels, selectedModel]);
+  
+  // Handle click outside for model dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target as Node)) {
+        setOpenModelDropdown(false);
+      }
+    };
+
+    if (openModelDropdown) {
+      const timeoutId = setTimeout(() => {
+        document.addEventListener('click', handleClickOutside);
+      }, 0);
+
+      return () => {
+        clearTimeout(timeoutId);
+        document.removeEventListener('click', handleClickOutside);
+      };
+    }
+  }, [openModelDropdown]);
 
   // Mock competitors (in real app, get from brand configuration)
   const competitorsList = [
@@ -336,7 +349,6 @@ export const TopicsAnalysisPage = ({
   // Track initial values ONCE - only set on first render
   const initialValuesRef = useRef<{
     selectedModel: string;
-    selectedCountry: string;
     selectedDate: number;
     datePeriodType: 'daily' | 'weekly' | 'monthly';
   } | null>(null);
@@ -347,7 +359,6 @@ export const TopicsAnalysisPage = ({
   if (initialValuesRef.current === null) {
     initialValuesRef.current = {
       selectedModel: selectedModel,
-      selectedCountry: selectedCountry,
       selectedDate: selectedDate.getTime(),
       datePeriodType: datePeriodType
     };
@@ -369,7 +380,6 @@ export const TopicsAnalysisPage = ({
     const initial = initialValuesRef.current;
     const hasChanged = 
       initial.selectedModel !== selectedModel ||
-      initial.selectedCountry !== selectedCountry ||
       initial.selectedDate !== selectedDate.getTime() ||
       initial.datePeriodType !== datePeriodType;
     
@@ -403,8 +413,7 @@ export const TopicsAnalysisPage = ({
     const newFilters = {
       startDate: start.toISOString().split('T')[0],
       endDate: end.toISOString().split('T')[0],
-      collectorType: selectedModel && selectedModel !== '' ? selectedModel : undefined,
-      country: selectedCountry && selectedCountry !== '' ? selectedCountry : undefined
+      collectorType: selectedModel && selectedModel !== '' ? selectedModel : undefined
     };
     
     // Create a stable key to avoid sending duplicate filters
@@ -416,34 +425,13 @@ export const TopicsAnalysisPage = ({
     
     console.log('🔍 Sending filters (user changed):', newFilters);
     onFiltersChange(newFilters);
-  }, [selectedModel, selectedCountry, selectedDate, datePeriodType, onFiltersChange]);
+  }, [selectedModel, selectedDate, datePeriodType, onFiltersChange]);
 
   // Handle view change from DatePickerMultiView
   const handleViewChange = (view: 'daily' | 'weekly' | 'monthly') => {
     setDatePeriodType(view);
   };
 
-  // Country options (sorted alphabetically)
-  const countryOptions = [
-    { value: 'canada', label: 'Canada' },
-    { value: 'china', label: 'China' },
-    { value: 'india', label: 'India' },
-    { value: 'japan', label: 'Japan' },
-    { value: 'south-korea', label: 'South Korea' },
-    { value: 'uk', label: 'United Kingdom' },
-    { value: 'us', label: 'United States' }
-  ];
-
-  // Region options (sorted alphabetically)
-  const regionOptions = [
-    { value: 'emea', label: 'EMEA' },
-    { value: 'latam', label: 'LATAM' },
-    { value: 'south-america', label: 'South America' },
-    { value: 'southeast-asia', label: 'Southeast Asia' }
-  ];
-
-  // Combined options for the dropdown
-  const allCountryRegionOptions = [...countryOptions, ...regionOptions];
 
   // Update selected topics when topics data changes
   useEffect(() => {
@@ -497,7 +485,13 @@ export const TopicsAnalysisPage = ({
     );
   }
 
-  if (!data || data.topics.length === 0) {
+  // Check if we have real data - show empty state only if no data at all (not just filtered results)
+  // Allow showing the page even with empty topics so filters can still work
+  const hasAnyData = data && data.topics && data.topics.length > 0;
+  
+  // Only show true empty state if we've never loaded any data
+  // If topics array is empty but we have filters, show a filtered empty state message instead
+  if (!data) {
     return (
       <Layout>
         <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
@@ -506,9 +500,149 @@ export const TopicsAnalysisPage = ({
       </Layout>
     );
   }
+  
+  // If topics array is empty, show filtered empty state (allows users to change filters)
+  if (!hasAnyData) {
+    return (
+      <Layout>
+        <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+          <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm">
+            <div className="p-12 text-center">
+              <p className="text-lg font-medium text-[var(--text-headings)] mb-2">
+                No topics found for selected filters
+              </p>
+              <p className="text-sm text-[var(--text-caption)] mb-4">
+                Try adjusting your LLM model or date range filters to see more results.
+              </p>
+              {/* Still show filters so users can adjust them */}
+              <div className="mt-8 bg-white border border-[var(--border-default)] rounded-lg p-6">
+                <h2 className="text-lg font-semibold text-[var(--text-headings)] mb-4">Adjust Filters</h2>
+                <div className="flex items-center justify-center gap-4 flex-wrap">
+                  {/* Model Filter */}
+                  {availableModels.length > 0 && (
+                    <div ref={modelDropdownRef} style={{ position: 'relative', minWidth: '200px' }}>
+                      <label className="block text-sm font-medium text-[var(--text-body)] mb-2">
+                        LLM Model
+                      </label>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenModelDropdown(!openModelDropdown);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: '13px',
+                          fontFamily: 'IBM Plex Sans, sans-serif',
+                          color: '#212534',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #dcdfe5',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px'
+                        }}
+                      >
+                        <span>{selectedModel || 'All Models'}</span>
+                        <ChevronDown
+                          size={16}
+                          style={{
+                            color: '#6c7289',
+                            transition: 'transform 0.15s',
+                            transform: openModelDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                            flexShrink: 0
+                          }}
+                        />
+                      </button>
+                      {openModelDropdown && availableModels.length > 0 && (
+                        <div 
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 4px)',
+                            left: 0,
+                            right: 0,
+                            minWidth: '100%',
+                            maxHeight: '400px',
+                            overflowY: 'auto',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #dcdfe5',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                            zIndex: 1000
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setSelectedModel('');
+                              setOpenModelDropdown(false);
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '12px 16px',
+                              border: 'none',
+                              backgroundColor: selectedModel === '' ? '#f9f9fb' : 'transparent',
+                              cursor: 'pointer',
+                              fontSize: '14px',
+                              fontFamily: 'IBM Plex Sans, sans-serif',
+                              color: selectedModel === '' ? '#498cf9' : '#212534',
+                              fontWeight: selectedModel === '' ? 500 : 400,
+                              textAlign: 'left'
+                            }}
+                          >
+                            All Models
+                          </button>
+                          {availableModels.map((model) => (
+                            <button
+                              key={model}
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setSelectedModel(model);
+                                setOpenModelDropdown(false);
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                border: 'none',
+                                backgroundColor: selectedModel === model ? '#f9f9fb' : 'transparent',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontFamily: 'IBM Plex Sans, sans-serif',
+                                color: selectedModel === model ? '#498cf9' : '#212534',
+                                fontWeight: selectedModel === model ? 500 : 400,
+                                textAlign: 'left'
+                              }}
+                            >
+                              {model}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
-  // Check if we have real data or mock data
-  const hasRealData = data.topics.some(t => t.soA > 0 || t.sources.length > 0);
+  // Check if we have real data - only show if we have actual SOA or source data
+  // Don't show anything if all data is null/empty
+  const hasRealData = data.topics.length > 0 && data.topics.some(t => 
+    (t.soA > 0 || t.currentSoA !== undefined) || 
+    (t.sources && t.sources.length > 0)
+  );
   const brandName = selectedBrand?.name || 'Your Brand';
 
   return (
@@ -532,16 +666,13 @@ export const TopicsAnalysisPage = ({
           </p>
         </div>
 
-        {/* Status Banner */}
-        {data.topics.length > 0 && (
-          <TopicsDataStatusBanner hasRealData={hasRealData} topicCount={data.topics.length} />
-        )}
 
         {/* Section 1: Compact Metrics Pods */}
         <div style={{ marginBottom: '24px' }}>
           <CompactMetricsPods
             portfolio={data.portfolio}
             performance={data.performance}
+            topics={data.topics}
             onPodClick={(podId: PodId) => {
               // Handle pod clicks - could filter table or scroll to section
               if (podId === 'gaps') {
@@ -574,72 +705,14 @@ export const TopicsAnalysisPage = ({
             {/* Left: Heading and Subtitle */}
             <ChartTitle
               category={selectedCategory}
-              country={selectedCountry}
               dateRange={currentDateRangeLabel}
               baseTitle="Topics Share of Answer"
-              countryOptions={[...countryOptions, ...regionOptions]}
               selectedModel={selectedModel}
-              aiModels={AI_MODELS}
+              aiModels={[]}
             />
 
-            {/* Right: Dropdowns (Country/Region, Date, Models, Competitors) - left to right order */}
+            {/* Right: Dropdowns (Date, Models, Competitors) - left to right order */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              {/* Country Dropdown */}
-              <div style={{ position: 'relative', minWidth: '180px' }}>
-                <div style={{ 
-                  position: 'absolute', 
-                  left: '12px', 
-                  top: '50%', 
-                  transform: 'translateY(-50%)',
-                  pointerEvents: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  zIndex: 1
-                }}>
-                  <CountryFlag 
-                    countryCode={selectedCountry} 
-                    className="w-4 h-4"
-                    style={{ display: 'block' }}
-                  />
-                </div>
-                <select
-                  value={selectedCountry}
-                  onChange={(e) => {
-                    setSelectedCountry(e.target.value);
-                    // State change will trigger useEffect which sends filters
-                  }}
-                  style={{
-                    padding: '8px 12px 8px 36px',
-                    fontSize: '13px',
-                    fontFamily: 'IBM Plex Sans, sans-serif',
-                    color: '#212534',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #dcdfe5',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    width: '100%',
-                    appearance: 'none',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'none'
-                  }}
-                >
-                  <optgroup label="Countries">
-                    {countryOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Regions">
-                    {regionOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              </div>
-
               {/* Date Picker Button */}
               <div style={{ position: 'relative' }}>
                 <button
@@ -721,16 +794,16 @@ export const TopicsAnalysisPage = ({
                 )}
               </div>
 
-              {/* AI Model Selector */}
-              <div style={{ position: 'relative', minWidth: '160px' }}>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => {
-                    setSelectedModel(e.target.value);
-                    // State change will trigger useEffect which sends filters
+              {/* AI Model Selector - Similar to Prompts page */}
+              <div ref={modelDropdownRef} style={{ position: 'relative', minWidth: '200px' }}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenModelDropdown(!openModelDropdown);
                   }}
                   style={{
-                    padding: '8px 12px 8px 36px',
+                    padding: '8px 12px',
                     fontSize: '13px',
                     fontFamily: 'IBM Plex Sans, sans-serif',
                     color: '#212534',
@@ -739,48 +812,136 @@ export const TopicsAnalysisPage = ({
                     borderRadius: '6px',
                     cursor: 'pointer',
                     width: '100%',
-                    appearance: 'none',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'none'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px'
                   }}
                 >
-                  <option value="">All Models</option>
-                  {AI_MODELS.filter(model => availableModels.includes(model.id) || selectedModels.includes(model.id)).map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
-                <div style={{ 
-                  position: 'absolute', 
-                  left: '12px', 
-                  top: '50%', 
-                  transform: 'translateY(-50%)',
-                  pointerEvents: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  zIndex: 1
-                }}>
-                  {selectedModel === 'chatgpt' && <IconBrandOpenai size={16} />}
-                  {selectedModel === 'claude' && (
-                    <img src={claudeLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                  )}
-                  {selectedModel === 'gemini' && (
-                    <img src={geminiLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                  )}
-                  {selectedModel === 'perplexity' && (
-                    <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                  )}
-                  {selectedModel === 'copilot' && (
-                    <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                  )}
-                  {selectedModel === 'google_aio' && (
-                    <img src={googleAioLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                  )}
-                  {selectedModel === 'grok' && (
-                    <img src={grokLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />
-                  )}
-                </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                    {selectedModel && (
+                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                        {getLLMIcon(selectedModel)}
+                      </div>
+                    )}
+                    <span style={{ 
+                      overflow: 'hidden', 
+                      textOverflow: 'ellipsis', 
+                      whiteSpace: 'nowrap',
+                      fontWeight: selectedModel ? 500 : 400
+                    }}>
+                      {selectedModel || 'All Models'}
+                    </span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    style={{
+                      color: '#6c7289',
+                      transition: 'transform 0.15s',
+                      transform: openModelDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                      flexShrink: 0
+                    }}
+                  />
+                </button>
+                {openModelDropdown && availableModels.length > 0 && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      right: 0,
+                      minWidth: '100%',
+                      maxHeight: '400px',
+                      overflowY: 'auto',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #dcdfe5',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                      zIndex: 1000
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* All Models option */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedModel('');
+                        setOpenModelDropdown(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        border: 'none',
+                        backgroundColor: selectedModel === '' ? '#f9f9fb' : 'transparent',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontFamily: 'IBM Plex Sans, sans-serif',
+                        color: selectedModel === '' ? '#498cf9' : '#212534',
+                        fontWeight: selectedModel === '' ? 500 : 400,
+                        textAlign: 'left',
+                        transition: 'all 0.15s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedModel !== '') {
+                          e.currentTarget.style.backgroundColor = '#f9f9fb';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedModel !== '') {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }
+                      }}
+                    >
+                      <span>All Models</span>
+                    </button>
+                    {/* Individual model options */}
+                    {availableModels.map((model) => (
+                      <button
+                        key={model}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSelectedModel(model);
+                          setOpenModelDropdown(false);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          border: 'none',
+                          backgroundColor: selectedModel === model ? '#f9f9fb' : 'transparent',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontFamily: 'IBM Plex Sans, sans-serif',
+                          color: selectedModel === model ? '#498cf9' : '#212534',
+                          fontWeight: selectedModel === model ? 500 : 400,
+                          textAlign: 'left',
+                          transition: 'all 0.15s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (selectedModel !== model) {
+                            e.currentTarget.style.backgroundColor = '#f9f9fb';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (selectedModel !== model) {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }
+                        }}
+                      >
+                        {getLLMIcon(model)}
+                        <span>{model}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
             </div>
@@ -796,13 +957,12 @@ export const TopicsAnalysisPage = ({
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
             selectedDateRange={selectedDateRange}
-            selectedCountry={selectedCountry}
             competitors={competitors}
             selectedCompetitor="all"
             brandFavicon={brandFavicon}
             onExport={() => {
               // Export functionality - can be implemented later
-              console.log('Export chart data...', { chartType: 'racing-bar', selectedCategory, selectedDateRange, selectedCountry });
+              console.log('Export chart data...', { chartType: 'racing-bar', selectedCategory, selectedDateRange });
             }}
           />
         </div>
@@ -820,7 +980,7 @@ export const TopicsAnalysisPage = ({
             competitors={competitors}
             brandFavicon={brandFavicon}
             selectedModel={selectedModel}
-            aiModels={AI_MODELS}
+            aiModels={[]}
           />
         </div>
       </div>

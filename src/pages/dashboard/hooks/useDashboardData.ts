@@ -227,6 +227,31 @@ export const useDashboardData = () => {
   const locationState = location.state as { fromOnboarding?: boolean } | null;
   const fromOnboarding = locationState?.fromOnboarding || false;
   const shouldShowLoading = (authLoading || brandSelectionPending || (dashboardLoading && !dashboardData && !fromOnboarding));
+
+  useEffect(() => {
+    if (!selectedBrandId) {
+      return;
+    }
+
+    let refreshInterval: ReturnType<typeof setInterval> | undefined;
+
+    const refreshDashboardData = () => {
+      console.log('[DASHBOARD] Refreshing dashboard data (auto refresh enabled)');
+      setReloadKey((prev) => prev + 1);
+      refetchDashboard();
+    };
+
+    if (isDataCollectionInProgress) {
+      refreshDashboardData();
+      refreshInterval = window.setInterval(refreshDashboardData, 30000);
+    }
+
+    return () => {
+      if (refreshInterval) {
+        window.clearInterval(refreshInterval);
+      }
+    };
+  }, [isDataCollectionInProgress, selectedBrandId, refetchDashboard]);
   
   useEffect(() => {
     if (!shouldShowLoading && dashboardData) {

@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
+import { TopicsAreaChart } from './TopicsAreaChart';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -16,69 +17,7 @@ import { useChartResize } from '../../../hooks/useChartResize';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
-// Custom plugin to draw horizontal industry average line with label
-const industryAverageLinePlugin = {
-  id: 'industryAverageLine',
-  afterDraw: (chart: any) => {
-    const avgIndustrySoA = chart.config.options.plugins?.industryAverageLine?.value;
-    const lineColor = chart.config.options.plugins?.industryAverageLine?.color || '#8b90a7';
-    const labelColor = chart.config.options.plugins?.industryAverageLine?.labelColor || '#8b90a7';
-    const label = chart.config.options.plugins?.industryAverageLine?.label || 'Avg Industry SoA';
-    
-    if (!avgIndustrySoA) return;
-
-    const ctx = chart.ctx;
-    const chartArea = chart.chartArea;
-    const yScale = chart.scales.y;
-
-    if (!yScale || !chartArea) return;
-
-    const yPosition = yScale.getPixelForValue(avgIndustrySoA);
-
-    ctx.save();
-    
-    // Draw the dashed line
-    ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]); // Dashed line
-    ctx.beginPath();
-    ctx.moveTo(chartArea.left, yPosition);
-    ctx.lineTo(chartArea.right, yPosition);
-    ctx.stroke();
-    
-    // Draw the label on the top-left (matching racing bar chart style)
-    // Ensure label is within chart bounds
-    const labelX = chartArea.left + 8;
-    let labelY = yPosition - 8; // Position above the line
-    
-    // Ensure label doesn't go above the chart area
-    const minLabelY = chartArea.top + 10;
-    if (labelY < minLabelY) {
-      labelY = minLabelY;
-    }
-    
-    // Draw text with background for better visibility
-    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    
-    const textMetrics = ctx.measureText(label);
-    const textWidth = textMetrics.width;
-    const textHeight = 14;
-    
-    // Draw semi-transparent background
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillRect(labelX - 4, labelY - textHeight / 2, textWidth + 8, textHeight);
-    
-    // Draw the text
-    ctx.fillStyle = labelColor;
-    ctx.fillText(label, labelX, labelY);
-    
-    ctx.restore();
-  },
-};
-
-ChartJS.register(industryAverageLinePlugin);
+// Plugin removed - no longer drawing industry average line
 
 interface TopicsLineChartProps {
   topics: Topic[];
@@ -197,15 +136,12 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
     // Show each topic as a separate line with 12-week historical data
     const datasets = sortedTopics.map((topic, index) => {
       const color = getChartColor(index);
-      // Use visibilityTrend if available, otherwise generate mock trend from currentSoA
-      const trendData = topic.visibilityTrend && topic.visibilityTrend.length === 12
-        ? topic.visibilityTrend
-        : Array.from({ length: 12 }, (_, i) => {
-            // Generate mock trend: start lower and trend toward currentSoA
-            const baseValue = (topic.currentSoA ?? 0) * 0.6;
-            const trend = ((topic.currentSoA ?? 0) - baseValue) / 11;
-            return Math.max(0, Math.min(100, baseValue + (trend * i)));
-          });
+      // Only use visibilityTrend if available - don't generate mock data
+      // If no trend data, skip this topic (don't show it in the chart)
+      if (!topic.visibilityTrend || topic.visibilityTrend.length !== 12) {
+        return null; // Skip topics without real trend data
+      }
+      const trendData = topic.visibilityTrend;
 
       // Convert hex color to rgba for background fill
       const hexToRgba = (hex: string, alpha: number) => {
@@ -235,7 +171,7 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
 
     return {
       labels: weekLabels,
-      datasets,
+      datasets: datasets.filter((d): d is NonNullable<typeof d> => d !== null), // Filter out null datasets
     };
   }, [sortedTopics, weekLabels]);
 
@@ -312,7 +248,6 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
               const topic = sortedTopics.find(t => t.name === label);
               const lines = [`  ${label}: ${value.toFixed(1)}%`];
               if (topic) {
-                lines.push(`  SoA: ${topic.soA.toFixed(2)}×`);
                 lines.push(`  Rank: ${topic.rank}`);
               }
               return lines;
@@ -321,12 +256,6 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
         },
         filler: {
           propagate: false,
-        },
-        industryAverageLine: {
-          value: avgIndustrySoA,
-          color: AVG_INDUSTRY_COLOR,
-          labelColor: chartLabelColor,
-          label: 'Avg Industry SoA',
         },
       },
       scales: {

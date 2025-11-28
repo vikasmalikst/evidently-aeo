@@ -1,7 +1,7 @@
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { useNavigate } from 'react-router-dom';
-import { IconForms, IconChevronRight, IconTags } from '@tabler/icons-react';
+import { IconForms, IconChevronRight } from '@tabler/icons-react';
 
 export const Settings = () => {
   const navigate = useNavigate();
@@ -9,17 +9,10 @@ export const Settings = () => {
   const settingsOptions = [
     {
       id: 'manage-prompts',
-      title: 'Manage Prompts',
-      description: 'Configure and manage your tracked prompts across topics',
+      title: 'Prompts & Topics',
+      description: 'Edit tracked topics and the prompts that power your analyses from one place',
       icon: IconForms,
       path: '/settings/manage-prompts',
-    },
-    {
-      id: 'manage-topics',
-      title: 'Manage Topics',
-      description: 'Manage topics that determine which queries your brand is measured against',
-      icon: IconTags,
-      path: '/settings/manage-topics',
     },
   ];
 

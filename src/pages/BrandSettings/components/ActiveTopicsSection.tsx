@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Edit2, X, RotateCcw, ChevronRight, ChevronDown, Search } from 'lucide-react';
+import { Edit2, X, ChevronRight, ChevronDown, Search } from 'lucide-react';
 import { IconBulb } from '@tabler/icons-react';
 import { apiClient } from '../../../lib/apiClient';
 import type { Topic } from '../../../types/topic';
@@ -16,7 +16,6 @@ interface ActiveTopicsSectionProps {
   onEdit: () => void;
   onRemoveTopic: (topicId: string) => void;
   onVersionChange: (version: number | null) => void;
-  onRestoreVersion: () => void;
 }
 
 const getSourceBadgeColor = (source: string) => {
@@ -65,7 +64,6 @@ export const ActiveTopicsSection = ({
   onEdit,
   onRemoveTopic,
   onVersionChange,
-  onRestoreVersion,
 }: ActiveTopicsSectionProps) => {
   const [sortBy, setSortBy] = useState<SortOption>('alphabetical');
   const [hoveredTopicId, setHoveredTopicId] = useState<string | null>(null);
@@ -125,16 +123,6 @@ export const ActiveTopicsSection = ({
     fetchPrompts();
   }, [brandId, topics.length]); // Only depend on length to avoid re-fetching on every topic change
 
-  const sortedTopics = [...topics].sort((a, b) => {
-    switch (sortBy) {
-      case 'prompts':
-        return (promptCounts[b.id] || 0) - (promptCounts[a.id] || 0);
-      case 'alphabetical':
-      default:
-        return a.name.localeCompare(b.name);
-    }
-  });
-
   // Calculate prompt counts from fetched prompts
   const promptCounts = useMemo<Record<string, number>>(() => {
     const counts: Record<string, number> = {};
@@ -144,6 +132,16 @@ export const ActiveTopicsSection = ({
     });
     return counts;
   }, [topics, promptsByTopic]);
+
+  const sortedTopics = [...topics].sort((a, b) => {
+    switch (sortBy) {
+      case 'prompts':
+        return (promptCounts[b.id] || 0) - (promptCounts[a.id] || 0);
+      case 'alphabetical':
+      default:
+        return a.name.localeCompare(b.name);
+    }
+  });
   const isViewingOldVersion = selectedVersion !== null && selectedVersion !== currentVersion;
   const selectedConfig = selectedVersion !== null 
     ? history.find(c => c.version === selectedVersion) 
@@ -210,20 +208,12 @@ export const ActiveTopicsSection = ({
         </div>
       </div>
 
-      {isViewingOldVersion && (
+      {isViewingOldVersion && selectedConfig && (
         <div className="mb-4 p-3 bg-[var(--accent-light)] border border-[var(--accent-primary)]/30 rounded-lg">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-[var(--text-headings)]">
-              You are viewing a previous version. Restore this version to make it active.
-            </p>
-            <button
-              onClick={onRestoreVersion}
-              className="flex items-center gap-2 px-4 py-2 bg-[var(--accent-primary)] text-white rounded-lg hover:bg-[var(--accent-hover)] transition-colors text-sm font-medium"
-            >
-              <RotateCcw size={16} />
-              Restore This Version
-            </button>
-          </div>
+          <p className="text-sm text-[var(--text-headings)] leading-relaxed">
+            Viewing version v{selectedVersion} from {formatDate(selectedConfig.created_at)}. This snapshot is read-only —
+            switch back to the current configuration to make edits.
+          </p>
         </div>
       )}
 

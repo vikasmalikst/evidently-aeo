@@ -66,13 +66,12 @@ export const HeadlineMetrics = ({ portfolio, performance }: HeadlineMetricsProps
           <div>
             <p className="text-[var(--text-body)]">
               Average SoA:{' '}
-              <span className="font-semibold text-[var(--accent500)]">{performance.avgSoA.toFixed(2)}x</span>
+              <span className="font-semibold text-[var(--accent500)]">{(performance.avgSoA * 20).toFixed(1)}%</span>
             </p>
-            <p className="text-xs text-[var(--text-caption)] mt-1">(vs. 1.0x baseline)</p>
           </div>
           <div className="pt-2 border-t border-[var(--border-default)]">
             <p className="text-[var(--text-body)]">
-              Top performers: <span className="font-medium text-[var(--accent500)]">{performance.maxSoA.toFixed(1)}x</span> SoA
+              Top performers: <span className="font-medium text-[var(--accent500)]">{(performance.maxSoA * 20).toFixed(1)}%</span> SoA
             </p>
           </div>
           <div>

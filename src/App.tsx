@@ -13,7 +13,6 @@ import { PromptSelection } from './pages/PromptSelection';
 import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
 import { Settings } from './pages/Settings';
 import { ManagePrompts } from './pages/ManagePrompts';
-import { TopicManagementSettings } from './pages/BrandSettings/TopicManagementSettings';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
@@ -163,7 +162,7 @@ function App() {
           path="/settings/manage-topics"
           element={
             <ProtectedRoute>
-              <TopicManagementSettings />
+              <Navigate to="/settings/manage-prompts" replace />
             </ProtectedRoute>
           }
         />

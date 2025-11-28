@@ -1324,44 +1324,8 @@ export class BrandService {
       }
       
       // Step 2: Get collector_results (optional - we can query positions directly)
-      let collectorResults: any[] = [];
-      let crToQueryMap = new Map<string, string>();
-      
-      if (queries.length > 0) {
-        try {
-          const queryIds = queries.map(q => q.id);
-          const { data: crData, error: crError } = await supabaseAdmin
-            .from('collector_results')
-            .select('id, query_id')
-            .in('query_id', queryIds);
-          
-          if (crError) {
-            console.warn('⚠️ Warning: Could not fetch collector_results (will query positions directly):', crError.message);
-          } else if (crData) {
-            collectorResults = crData;
-            collectorResults.forEach(cr => {
-              crToQueryMap.set(cr.id, cr.query_id);
-            });
-            console.log(`📋 Found ${collectorResults.length} collector_results`);
-          }
-        } catch (error) {
-          console.warn('⚠️ Warning: Error fetching collector_results, continuing with direct position query:', error);
-        }
-      }
-      
-      // Step 3: Get extracted_positions for this brand
-      // Include topic column and metadata to extract topic_name from there, and collector_type for filtering
-      // If we have collector_result_ids, filter by them; otherwise get all positions for this brand
-      let positions: any[] = [];
-      let positionsQuery = supabaseAdmin
-        .from('extracted_positions')
-        .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
-        .eq('brand_id', brandId)
-        .eq('customer_id', customerId)
-        .gte('processed_at', startIso)
-        .lte('processed_at', endIso);
-      
-      // Filter by collector_type (model) if provided and not empty
+      // Map collector type if provided (do this early so we can use it for filtering collector_results)
+      let mappedCollectorType: string | undefined = undefined;
       if (collectorType && collectorType.trim() !== '') {
         // Map frontend model IDs to collector_type values
         const collectorTypeMap: Record<string, string> = {
@@ -1374,39 +1338,45 @@ export class BrandService {
           'mistral': 'mistral',
           'grok': 'grok'
         };
-        const mappedType = collectorTypeMap[collectorType.toLowerCase()] || collectorType;
-        positionsQuery = positionsQuery.eq('collector_type', mappedType);
-        console.log(`🔍 Filtering by collector_type: ${mappedType}`);
+        mappedCollectorType = collectorTypeMap[collectorType.toLowerCase()] || collectorType.toLowerCase();
+        console.log(`🔍 Filtering by collector_type: ${mappedCollectorType} (from input: ${collectorType})`);
       }
       
-      if (collectorResults.length > 0) {
-        const collectorResultIds = collectorResults.map(cr => cr.id);
-        const { data: posData, error: positionsError } = await positionsQuery
-          .in('collector_result_id', collectorResultIds);
-        
-        if (positionsError) {
-          console.error('❌ Error fetching extracted_positions:', positionsError);
-          throw new DatabaseError('Failed to fetch positions');
-        }
-        positions = posData || [];
-      } else {
-        // If no collector_results, get positions directly by brand_id
-        console.log('⚠️ No collector_results found, querying positions directly by brand_id');
-        const { data: posData, error: positionsError } = await positionsQuery;
-        
-        if (positionsError) {
-          console.error('❌ Error fetching extracted_positions:', positionsError);
-          throw new DatabaseError('Failed to fetch positions');
-        }
-        positions = posData || [];
-      }
+      let collectorResults: any[] = [];
+      let crToQueryMap = new Map<string, string>();
       
-      if (!positions || positions.length === 0) {
-        console.log('⚠️ No extracted_positions found for these collector_results in date range');
-        return { topics: [], availableModels: [] };
+      if (queries.length > 0) {
+        try {
+          const queryIds = queries.map(q => q.id);
+          let crQuery = supabaseAdmin
+            .from('collector_results')
+            .select('id, query_id, collector_type')
+            .in('query_id', queryIds);
+          
+          // Filter collector_results by collector_type if provided
+          if (mappedCollectorType) {
+            crQuery = crQuery.eq('collector_type', mappedCollectorType);
+            console.log(`🔍 Filtering collector_results by collector_type: ${mappedCollectorType}`);
+          }
+          
+          const { data: crData, error: crError } = await crQuery;
+          
+          if (crError) {
+            console.warn('⚠️ Warning: Could not fetch collector_results (will query positions directly):', crError.message);
+          } else if (crData) {
+            collectorResults = crData;
+            collectorResults.forEach(cr => {
+              crToQueryMap.set(cr.id, cr.query_id);
+            });
+            console.log(`📋 Found ${collectorResults.length} collector_results${mappedCollectorType ? ` for collector_type: ${mappedCollectorType}` : ''}`);
+          }
+        } catch (error) {
+          console.warn('⚠️ Warning: Error fetching collector_results, continuing with direct position query:', error);
+        }
       }
       
       // Get distinct collector_types (models) available for this brand in the date range
+      // Do this BEFORE filtering so we always return all available models, not just the filtered one
       const { data: distinctCollectors } = await supabaseAdmin
         .from('extracted_positions')
         .select('collector_type')
@@ -1423,6 +1393,64 @@ export class BrandService {
             availableModels.add(pos.collector_type.toLowerCase());
           }
         });
+      }
+      console.log(`📊 Available models (before filtering): ${Array.from(availableModels).join(', ')}`);
+      
+      // Step 3: Get extracted_positions for this brand
+      // Include topic column and metadata to extract topic_name from there, and collector_type for filtering
+      // If we have collector_result_ids, filter by them; otherwise get all positions for this brand
+      let positions: any[] = [];
+      let positionsQuery = supabaseAdmin
+        .from('extracted_positions')
+        .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .gte('processed_at', startIso)
+        .lte('processed_at', endIso);
+      
+      // Filter by collector_type (model) if provided and not empty
+      if (mappedCollectorType) {
+        positionsQuery = positionsQuery.eq('collector_type', mappedCollectorType);
+      }
+      
+      if (collectorResults.length > 0) {
+        const collectorResultIds = collectorResults.map(cr => cr.id);
+        // When we have collector_results filtered by collector_type, we don't need to filter positions by collector_type again
+        // because the collector_results are already filtered
+        let positionsQueryFiltered = supabaseAdmin
+          .from('extracted_positions')
+          .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
+          .eq('brand_id', brandId)
+          .eq('customer_id', customerId)
+          .gte('processed_at', startIso)
+          .lte('processed_at', endIso)
+          .in('collector_result_id', collectorResultIds);
+        
+        const { data: posData, error: positionsError } = await positionsQueryFiltered;
+        
+        if (positionsError) {
+          console.error('❌ Error fetching extracted_positions:', positionsError);
+          throw new DatabaseError('Failed to fetch positions');
+        }
+        positions = posData || [];
+        console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorType ? ` (for collector_type: ${mappedCollectorType})` : ''}`);
+      } else {
+        // If no collector_results, get positions directly by brand_id (with collector_type filter if provided)
+        console.log('⚠️ No collector_results found, querying positions directly by brand_id');
+        const { data: posData, error: positionsError } = await positionsQuery;
+        
+        if (positionsError) {
+          console.error('❌ Error fetching extracted_positions:', positionsError);
+          throw new DatabaseError('Failed to fetch positions');
+        }
+        positions = posData || [];
+        console.log(`📊 Found ${positions.length} positions after querying directly${mappedCollectorType ? ` (filtered by collector_type: ${mappedCollectorType})` : ''}`);
+      }
+      
+      if (!positions || positions.length === 0) {
+        console.log(`⚠️ No extracted_positions found${mappedCollectorType ? ` for collector_type: ${mappedCollectorType}` : ''} in date range`);
+        // Return empty topics but still return availableModels so the filter dropdown works
+        return { topics: [], availableModels: Array.from(availableModels) };
       }
       
       // Step 4: Group analytics by topic (distinct topics only, not by collector_type)
@@ -1607,6 +1635,42 @@ export class BrandService {
         return (b.avgShareOfAnswer || 0) - (a.avgShareOfAnswer || 0);
       });
       
+      // Step 6: Fetch top citation sources per topic
+      const topicSourcesMap = await this.getTopSourcesPerTopic(
+        brandId,
+        customerId,
+        topicMap,
+        startIso,
+        endIso
+      );
+      
+      // Step 7: Calculate industry-wide average SOA per topic
+      const industryAvgSoAMap = await this.getIndustryAvgSoAPerTopic(
+        brandId,
+        customerId,
+        topicsWithAnalytics.map(t => t.topic_name),
+        startIso,
+        endIso
+      );
+      
+      // Add top sources and industry average SOA to each topic
+      topicsWithAnalytics.forEach(topic => {
+        const normalizedName = topic.topic_name.toLowerCase().trim();
+        topic.topSources = topicSourcesMap.get(normalizedName) || [];
+        
+        // Add industry average SOA
+        const industryAvg = industryAvgSoAMap.get(normalizedName);
+        if (industryAvg) {
+          topic.industryAvgSoA = industryAvg.avgSoA;
+          topic.industryAvgSoATrend = industryAvg.trend;
+          topic.industryBrandCount = industryAvg.brandCount;
+        } else {
+          topic.industryAvgSoA = null;
+          topic.industryAvgSoATrend = null;
+          topic.industryBrandCount = 0;
+        }
+      });
+      
       // Return topics with available models metadata
       const response = {
         topics: topicsWithAnalytics,
@@ -1621,6 +1685,369 @@ export class BrandService {
       console.error('❌ Error in getBrandTopicsWithAnalytics:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get industry-wide average SOA per topic (all brands except current brand)
+   */
+  private async getIndustryAvgSoAPerTopic(
+    currentBrandId: string,
+    customerId: string,
+    topicNames: string[],
+    startIso: string,
+    endIso: string
+  ): Promise<Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number }>> {
+    try {
+      if (topicNames.length === 0) {
+        return new Map();
+      }
+
+      // Get current brand name to exclude it when it appears as a competitor
+      const { data: currentBrand, error: brandError } = await supabaseAdmin
+        .from('brands')
+        .select('name')
+        .eq('id', currentBrandId)
+        .single();
+      
+      const currentBrandName = currentBrand?.name?.toLowerCase().trim() || null;
+
+      // Normalize topic names for matching
+      const normalizedTopicNames = topicNames.map(name => name.toLowerCase().trim());
+      const topicNameSet = new Set(normalizedTopicNames);
+
+      // Get all extracted_positions for all brands (including current brand) in the date range
+      // Note: Brand and competitor SOA are stored adjacently - we need both values
+      // Industry average should include both brand SOA and competitor SOA from all brands
+      const { data: positions, error: positionsError } = await supabaseAdmin
+        .from('extracted_positions')
+        .select(`
+          topic,
+          metadata,
+          share_of_answers_brand,
+          share_of_answers_competitor,
+          processed_at,
+          brand_id,
+          competitor_name
+        `)
+        .eq('customer_id', customerId)
+        // Include all brands (including current brand) to calculate true industry average
+        .gte('processed_at', startIso)
+        .lte('processed_at', endIso);
+
+      if (positionsError) {
+        console.error('⚠️ Error fetching industry positions:', positionsError);
+        return new Map();
+      }
+
+      if (!positions || positions.length === 0) {
+        console.log('ℹ️ No industry data found for comparison');
+        console.log(`   - Looking for topics: ${normalizedTopicNames.join(', ')}`);
+        console.log(`   - Date range: ${startIso} to ${endIso}`);
+        console.log(`   - Including all brands (industry average includes brand + competitor SOA)`);
+        return new Map();
+      }
+
+      console.log(`📊 Found ${positions.length} industry positions for comparison`);
+
+      // Group by normalized topic name and calculate averages
+      const topicDataMap = new Map<string, { soaValues: number[]; brandIds: Set<string>; timestamps: Date[] }>();
+
+      positions.forEach(pos => {
+        // Extract topic name (same logic as in getBrandTopicsWithAnalytics)
+        let topicName: string | null = null;
+        
+        if (pos.topic && typeof pos.topic === 'string' && pos.topic.trim().length > 0) {
+          topicName = pos.topic.trim();
+        } else if (pos.metadata && typeof pos.metadata === 'object') {
+          const metadata = pos.metadata as any;
+          if (metadata.topic_name && typeof metadata.topic_name === 'string') {
+            topicName = metadata.topic_name.trim();
+          }
+        }
+
+        if (!topicName) return;
+
+        const normalizedTopicName = topicName.toLowerCase().trim();
+        
+        // Only process topics we care about
+        if (!topicNameSet.has(normalizedTopicName)) return;
+
+        if (!topicDataMap.has(normalizedTopicName)) {
+          topicDataMap.set(normalizedTopicName, {
+            soaValues: [],
+            brandIds: new Set(),
+            timestamps: []
+          });
+        }
+
+        const topicData = topicDataMap.get(normalizedTopicName)!;
+        
+        // Add brand's SOA (including current brand - industry average should include all brands)
+        const brandSoA = pos.share_of_answers_brand;
+        if (typeof brandSoA === 'number' && isFinite(brandSoA) && brandSoA !== null) {
+          topicData.soaValues.push(brandSoA);
+          if (pos.brand_id) {
+            topicData.brandIds.add(pos.brand_id);
+          }
+        }
+        
+        // Add competitor's SOA (including all competitors - industry average should include all competitor SOA)
+        // This captures competitor brands' SOA values that are stored in the competitor column
+        const competitorSoA = pos.share_of_answers_competitor;
+        if (typeof competitorSoA === 'number' && isFinite(competitorSoA) && competitorSoA !== null) {
+          // Include all competitor SOA values (industry average includes both brand and competitor SOA)
+          topicData.soaValues.push(competitorSoA);
+        }
+        
+        // Track timestamp for trend calculation (use brand's timestamp)
+        if (pos.processed_at) {
+          topicData.timestamps.push(new Date(pos.processed_at));
+        }
+      });
+
+      // Calculate averages and trends for each topic
+      const result = new Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number }>();
+
+      topicDataMap.forEach((data, normalizedTopicName) => {
+        if (data.soaValues.length === 0) return;
+
+        // Calculate average SOA
+        const avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
+        const brandCount = data.brandIds.size;
+
+        // Calculate trend (compare first half vs second half of time period)
+        let trend: { direction: 'up' | 'down' | 'neutral'; delta: number } = { direction: 'neutral', delta: 0 };
+        
+        if (data.timestamps.length >= 2) {
+          // Sort by timestamp
+          const sortedIndices = data.timestamps
+            .map((ts, idx) => ({ ts, idx }))
+            .sort((a, b) => a.ts.getTime() - b.ts.getTime())
+            .map(item => item.idx);
+
+          const midPoint = Math.floor(sortedIndices.length / 2);
+          const firstHalf = sortedIndices.slice(0, midPoint).map(idx => data.soaValues[idx]);
+          const secondHalf = sortedIndices.slice(midPoint).map(idx => data.soaValues[idx]);
+
+          if (firstHalf.length > 0 && secondHalf.length > 0) {
+            const firstHalfAvg = firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
+            const secondHalfAvg = secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
+            const delta = secondHalfAvg - firstHalfAvg;
+            const deltaPercent = avgSoA > 0 ? (delta / avgSoA) * 100 : 0;
+
+            if (Math.abs(deltaPercent) < 1) {
+              trend = { direction: 'neutral', delta: 0 };
+            } else if (delta > 0) {
+              trend = { direction: 'up', delta: Math.abs(deltaPercent) / 100 }; // Convert to multiplier
+            } else {
+              trend = { direction: 'down', delta: Math.abs(deltaPercent) / 100 };
+            }
+          }
+        }
+
+        result.set(normalizedTopicName, {
+          avgSoA: Number(avgSoA.toFixed(2)),
+          trend,
+          brandCount
+        });
+      });
+
+      console.log(`📊 Calculated industry averages for ${result.size} topics`);
+      if (result.size > 0) {
+        result.forEach((data, topic) => {
+          const topicData = topicDataMap.get(topic);
+          const totalSoAValues = topicData?.soaValues.length || 0;
+          console.log(`   - ${topic}: ${data.avgSoA.toFixed(2)}% (${data.brandCount} brands, ${totalSoAValues} SOA values from brand+competitor columns)`);
+        });
+      } else {
+        console.log('   ⚠️ No matching topics found in industry data');
+        console.log(`   - Your topics: ${Array.from(topicNameSet).join(', ')}`);
+        console.log(`   - Found ${topicDataMap.size} topics in industry data (may not match)`);
+      }
+      return result;
+
+    } catch (error) {
+      console.error('⚠️ Error in getIndustryAvgSoAPerTopic:', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Get top citation sources per topic
+   */
+  private async getTopSourcesPerTopic(
+    brandId: string,
+    customerId: string,
+    topicMap: Map<string, any>,
+    startIso: string,
+    endIso: string
+  ): Promise<Map<string, Array<{ name: string; url: string; type: string; citations: number }>>> {
+    try {
+      // Get set of normalized topic names we care about
+      const validTopicNames = new Set(Array.from(topicMap.keys()));
+
+      // Fetch citations for this brand in the date range
+      const { data: citations, error: citationsError } = await supabaseAdmin
+        .from('citations')
+        .select(`
+          domain,
+          url,
+          category,
+          collector_result_id,
+          usage_count
+        `)
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .gte('created_at', startIso)
+        .lte('created_at', endIso);
+
+      if (citationsError) {
+        console.error('⚠️ Error fetching citations for topics:', citationsError);
+        return new Map(); // Return empty map on error
+      }
+
+      if (!citations || citations.length === 0) {
+        return new Map(); // No citations found
+      }
+
+      // Create map from collector_result_id to topic name
+      // We need to get this from extracted_positions (similar to how we do it in getBrandTopicsWithAnalytics)
+      const collectorResultIds = Array.from(new Set(
+        citations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
+      ));
+
+      if (collectorResultIds.length === 0) {
+        return new Map();
+      }
+
+      const { data: positions, error: positionsError } = await supabaseAdmin
+        .from('extracted_positions')
+        .select('collector_result_id, topic, metadata')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .in('collector_result_id', collectorResultIds);
+
+      if (positionsError) {
+        console.error('⚠️ Error fetching positions for topic mapping:', positionsError);
+        return new Map();
+      }
+
+      // Create collector_result_id to topic name map
+      const collectorResultToTopicMap = new Map<number, string>();
+      
+      (positions || []).forEach(pos => {
+        let topicName: string | null = null;
+        
+        // Priority: 1) extracted_positions.topic column, 2) metadata.topic_name
+        if (pos.topic && typeof pos.topic === 'string' && pos.topic.trim().length > 0) {
+          topicName = pos.topic.trim();
+        } else if (pos.metadata && typeof pos.metadata === 'object') {
+          const metadata = pos.metadata as any;
+          if (metadata.topic_name && typeof metadata.topic_name === 'string') {
+            topicName = metadata.topic_name.trim();
+          }
+        }
+        
+        if (topicName && pos.collector_result_id) {
+          const normalizedTopicName = topicName.toLowerCase().trim();
+          // Only map if this topic exists in our valid topics
+          if (validTopicNames.has(normalizedTopicName)) {
+            collectorResultToTopicMap.set(pos.collector_result_id, normalizedTopicName);
+          }
+        }
+      });
+
+      // Group citations by topic and domain
+      const topicSourcesMap = new Map<string, Map<string, { name: string; url: string; type: string; citations: number }>>();
+
+      citations.forEach(citation => {
+        const collectorResultId = citation.collector_result_id;
+        if (!collectorResultId) return;
+
+        const normalizedTopicName = collectorResultToTopicMap.get(collectorResultId);
+        if (!normalizedTopicName) return; // Skip if no topic mapping
+
+        const domain = citation.domain || 'unknown';
+        const url = citation.url || `https://${domain}`;
+        const category = citation.category || 'editorial';
+        const usageCount = citation.usage_count || 1;
+
+        // Get source type
+        const sourceType = this.getSourceTypeFromCategory(category, domain);
+
+        // Initialize topic map if needed
+        if (!topicSourcesMap.has(normalizedTopicName)) {
+          topicSourcesMap.set(normalizedTopicName, new Map());
+        }
+
+        const domainMap = topicSourcesMap.get(normalizedTopicName)!;
+        
+        if (domainMap.has(domain)) {
+          // Aggregate citations count
+          const existing = domainMap.get(domain)!;
+          existing.citations += usageCount;
+        } else {
+          // New domain for this topic
+          domainMap.set(domain, {
+            name: domain,
+            url: url,
+            type: sourceType,
+            citations: usageCount
+          });
+        }
+      });
+
+      // Convert to final format: top 3 sources per topic, sorted by citations
+      const result = new Map<string, Array<{ name: string; url: string; type: string; citations: number }>>();
+
+      topicSourcesMap.forEach((domainMap, topicName) => {
+        const sources = Array.from(domainMap.values())
+          .sort((a, b) => b.citations - a.citations)
+          .slice(0, 3); // Top 3 sources
+        result.set(topicName, sources);
+      });
+
+      return result;
+    } catch (error) {
+      console.error('⚠️ Error in getTopSourcesPerTopic:', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Get source type from category and domain
+   */
+  private getSourceTypeFromCategory(category: string | null, domain: string | null): string {
+    if (!category) {
+      // Infer from domain
+      if (domain) {
+        const lowerDomain = domain.toLowerCase();
+        if (lowerDomain.includes('wikipedia') || lowerDomain.includes('britannica') || lowerDomain.includes('dictionary')) {
+          return 'reference';
+        }
+        if (lowerDomain.includes('edu') || lowerDomain.includes('gov')) {
+          return 'institutional';
+        }
+        if (lowerDomain.includes('reddit') || lowerDomain.includes('twitter') || lowerDomain.includes('medium') || lowerDomain.includes('github')) {
+          return 'ugc';
+        }
+      }
+      return 'editorial';
+    }
+    
+    const normalizedCategory = category.toLowerCase().trim();
+    const mapping: Record<string, string> = {
+      'brand': 'brand',
+      'corporate': 'corporate',
+      'editorial': 'editorial',
+      'reference': 'reference',
+      'ugc': 'ugc',
+      'user-generated': 'ugc',
+      'institutional': 'institutional',
+      'other': 'editorial'
+    };
+    
+    return mapping[normalizedCategory] || 'editorial';
   }
 
   /**

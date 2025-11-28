@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { Download } from 'lucide-react';
 import { TopicsRacingBarChart } from './TopicsRacingBarChart';
 import { TopicsBarChart } from './TopicsBarChart';
-import { TopicsLineChart } from './TopicsLineChart';
+import { TopicsAreaChart } from './TopicsAreaChart';
 import { TopicsChartTypeSelector } from './TopicsChartTypeSelector';
 import { TopicDetailModal } from './TopicDetailModal';
 import type { Topic } from '../types';
@@ -192,10 +192,9 @@ export const TopicAnalysisMultiView = ({
             />
           )}
           {chartType === 'line' && (
-            <TopicsLineChart
+            <TopicsAreaChart
               topics={preparedTopics}
               onBarClick={handleTopicClick}
-              selectedDateRange={selectedDateRange}
             />
           )}
         </div>

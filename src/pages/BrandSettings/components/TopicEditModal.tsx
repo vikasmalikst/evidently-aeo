@@ -9,7 +9,6 @@ interface TopicEditModalProps {
   currentTopics: Topic[];
   onSave: (topics: Topic[]) => void | Promise<void>;
   onCancel: () => void;
-  changeImpact: TopicChangeImpact | null;
   brandName: string;
   industry: string;
   currentVersion?: number;
@@ -39,7 +38,6 @@ export const TopicEditModal = ({
   currentTopics,
   onSave,
   onCancel,
-  changeImpact,
   brandName,
   industry,
   currentVersion,

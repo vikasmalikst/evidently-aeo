@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ResponsiveBar } from '@nivo/bar';
 import type { Topic } from '../types';
 import type { Competitor } from '../utils/competitorColors';
+import { wrapLabelText } from '../utils/text';
 
 interface TopicsRacingBarChartProps {
   topics: Topic[];
@@ -197,24 +198,34 @@ export const TopicsRacingBarChart = ({
             tickPadding: 8,
             tickRotation: 0,
             format: (value: string) => value,
-            renderTick: (tick: any) => (
-              <g transform={`translate(${tick.x},${tick.y})`}>
-                <text
-                  x={-8}
-                  y={tick.textY}
-                  textAnchor="end"
-                  dominantBaseline="middle"
-                  style={{
-                    fill: textCaptionColor,
-                    fontSize: 11,
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-                    fontWeight: 400,
-                  }}
-                >
-                  {tick.value}
-                </text>
-              </g>
-            ),
+            renderTick: (tick: any) => {
+              const topicName = String(tick.value);
+              const lines = wrapLabelText(topicName, 18);
+              const lineHeight = 13;
+              const offsetY = -(lines.length - 1) * lineHeight / 2;
+
+              return (
+                <g transform={`translate(${tick.x},${tick.y})`}>
+                  {lines.map((line, index) => (
+                    <text
+                      key={`${topicName}-${index}`}
+                      x={-8}
+                      y={offsetY + index * lineHeight}
+                      textAnchor="end"
+                      dominantBaseline="middle"
+                      style={{
+                        fill: textCaptionColor || '#6e7387',
+                        fontSize: 11,
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                        fontWeight: 400,
+                      }}
+                    >
+                      {line}
+                    </text>
+                  ))}
+                </g>
+              );
+            },
           }}
           enableGridX={true}
           enableGridY={false}

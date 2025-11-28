@@ -19,7 +19,8 @@ import { ActiveTopicsSection } from './BrandSettings/components/ActiveTopicsSect
 import { TopicEditModal } from './BrandSettings/components/TopicEditModal';
 import { HistoryModal as TopicHistoryModal } from './BrandSettings/components/HistoryModal';
 import { HowItWorksModal } from './BrandSettings/components/HowItWorksModal';
-import type { Topic as ConfigTopic } from '../types/topic';
+import { InlineTopicManager } from '../components/Settings/InlineTopicManager';
+import type { Topic as ConfigTopic, TopicCategory } from '../types/topic';
 import type { TopicConfiguration as TopicConfigSnapshot } from './BrandSettings/types';
 
 // Configuration version type for prompts
@@ -322,7 +323,6 @@ export const ManagePrompts = () => {
   const {
     currentConfig: topicConfig,
     history: topicHistory,
-    changeImpact: topicChangeImpact,
     isLoading: topicConfigLoading,
     saveChanges: persistTopicChanges,
     discardChanges: discardTopicChanges,
@@ -463,6 +463,7 @@ export const ManagePrompts = () => {
   };
 
   const handlePromptSelect = (prompt: Prompt, topicName: string) => {
+    void topicName;
     setSelectedPrompt(prompt);
   };
 
@@ -780,7 +781,7 @@ export const ManagePrompts = () => {
 
           {/* Topics management */}
           <section className="mb-8">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between mb-4">
               <div>
                 <h2 className="text-2xl font-semibold text-[var(--text-headings)] mb-1">
                   Topics &amp; Queries
@@ -803,57 +804,39 @@ export const ManagePrompts = () => {
             </div>
 
             {topicError && (
-              <div className="mt-4 mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-sm text-red-800">{topicError}</p>
               </div>
             )}
 
-            <div className="space-y-6 mt-4">
-              {brandsLoading || topicConfigLoading ? (
-                <div className="bg-white border border-[var(--border-default)] rounded-lg p-6 text-sm text-[var(--text-caption)]">
-                  Loading topic configuration...
-                </div>
-              ) : topicConfig ? (
-                <>
-                  <CurrentConfigCard
-                    config={topicConfig}
-                    history={topicHistory}
-                    onEdit={handleTopicEditClick}
-                    onViewTimeline={handleTopicTimelineView}
-                  />
-                  <ActiveTopicsSection
-                    topics={displayedTopicList}
-                    history={topicHistory}
-                    currentVersion={topicConfig.version}
-                    selectedVersion={topicSelectedVersion}
-                    brandId={selectedBrandId || ''}
-                    onEdit={handleTopicEditClick}
-                    onRemoveTopic={handleTopicQuickRemove}
-                    onVersionChange={handleTopicVersionChange}
-                  />
-                </>
-              ) : (
-                <div className="bg-white border border-[var(--border-default)] rounded-lg p-6 flex flex-col gap-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-[var(--text-headings)] mb-1">
-                      No topics configured yet
-                    </h3>
-                    <p className="text-sm text-[var(--text-caption)]">
-                      Create a curated list of topics to organize prompts and drive consistent analyses.
-                    </p>
-                  </div>
-                  <div>
-                    <button
-                      onClick={handleTopicEditClick}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
-                    >
-                      <Plus size={16} />
-                      Add Topics
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <InlineTopicManager
+              topics={displayedTopicList.map((topic) => ({
+                id: topic.id,
+                name: topic.name,
+                source: topic.source || 'custom',
+                category: topic.category as TopicCategory | undefined,
+                relevance: topic.relevance || 70,
+              }))}
+              brandId={selectedBrandId}
+              isLoading={brandsLoading || topicConfigLoading}
+              onTopicsChange={async (updatedTopics) => {
+                try {
+                  // Convert back to ConfigTopic format for persistence
+                  const topicsToSave: ConfigTopic[] = updatedTopics.map((topic) => ({
+                    id: topic.id,
+                    name: topic.name,
+                    source: topic.source as 'trending' | 'ai_generated' | 'preset' | 'custom',
+                    category: topic.category,
+                    relevance: topic.relevance,
+                  }));
+                  await persistTopicChanges(topicsToSave);
+                  setTopicError(null);
+                } catch (err) {
+                  console.error('Failed to save topics:', err);
+                  setTopicError(err instanceof Error ? err.message : 'Failed to save topics');
+                }
+              }}
+            />
           </section>
 
           <div>
@@ -895,7 +878,6 @@ export const ManagePrompts = () => {
               currentTopics={topicModalInitialTopics}
               onSave={handleTopicModalSave}
               onCancel={handleTopicModalCancel}
-              changeImpact={topicChangeImpact}
               brandName="Your Brand"
               industry="Your Industry"
               currentVersion={topicConfig?.version}

@@ -50,9 +50,50 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
       .slice(0, 10); // Show first 10 selected topics
   }, [topics]);
 
+  // Helper function to wrap topic names into multiple lines
+  const wrapTopicName = (name: string, maxLineLength: number = 18): string => {
+    if (name.length <= maxLineLength) {
+      return name;
+    }
+    
+    const words = name.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+    
+    words.forEach((word, index) => {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      if (testLine.length <= maxLineLength) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        // Handle very long words
+        if (word.length > maxLineLength) {
+          // Break long word into chunks
+          for (let i = 0; i < word.length; i += maxLineLength) {
+            lines.push(word.substring(i, i + maxLineLength));
+          }
+          currentLine = '';
+        } else {
+          currentLine = word;
+        }
+      }
+      
+      if (index === words.length - 1 && currentLine) {
+        lines.push(currentLine);
+      }
+    });
+    
+    return lines.length > 0 ? lines.join('\n') : name;
+  };
+
   const chartData = useMemo(() => {
     return {
-      labels: sortedTopics.map((t) => t.name),
+      labels: sortedTopics.map((t) => {
+        // Wrap topic names to multiple lines for better visibility
+        return wrapTopicName(t.name, 18);
+      }),
       datasets: [
         {
           label: 'Share of Answer (SoA)',
@@ -79,6 +120,11 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
       indexAxis: 'x' as const,
       responsive: true,
       maintainAspectRatio: false,
+      layout: {
+        padding: {
+          bottom: 40, // Extra space for multi-line labels
+        },
+      },
       interaction: {
         intersect: false,
         mode: 'index' as const,
@@ -129,13 +175,21 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
           ticks: {
             color: 'var(--chart-label)',
             font: {
-              size: isMobile ? 10 : 13,
+              size: isMobile ? 10 : 11,
               weight: 500,
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
             },
             maxRotation: 45,
             minRotation: 45,
-            padding: 8,
+            padding: 20,
+            maxWidth: 100, // Limit width to force wrapping
+            autoSkip: false, // Show all labels
+            callback: function(value: any, index: number) {
+              // Labels are already wrapped with '\n' in chartData
+              const label = this.getLabelForValue(value);
+              // Return wrapped label - Chart.js will handle '\n' as line break
+              return label;
+            },
           },
         },
         y: {
@@ -180,7 +234,7 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
 
   return (
     <div className="p-3 sm:p-4 lg:p-6">
-      <div className="h-[400px] sm:h-[500px] lg:h-[600px] relative">
+      <div className="h-[400px] sm:h-[500px] lg:h-[600px] relative" style={{ overflow: 'visible' }}>
         <Line ref={chartRef} data={chartData} options={options} />
       </div>
     </div>

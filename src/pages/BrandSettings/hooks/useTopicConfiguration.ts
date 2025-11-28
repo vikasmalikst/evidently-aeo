@@ -118,7 +118,7 @@ export const useTopicConfiguration = (brandId?: string | null): UseTopicConfigur
 
   const saveChanges = useCallback(
     async (topicsOverride?: Topic[]) => {
-      if (!brandId || !currentConfig) return;
+      if (!brandId) return;
 
       const topicsToSave =
         topicsOverride && topicsOverride.length > 0
@@ -162,7 +162,7 @@ export const useTopicConfiguration = (brandId?: string | null): UseTopicConfigur
       setIsUpdating(false);
     }
     },
-    [brandId, currentConfig, unsavedChanges]
+    [brandId, unsavedChanges]
   );
 
   const discardChanges = useCallback(() => {
@@ -189,7 +189,7 @@ export const useTopicConfiguration = (brandId?: string | null): UseTopicConfigur
     } finally {
       setIsUpdating(false);
     }
-  }, [fetchCurrentConfig, fetchHistory]);
+  }, [brandId, fetchCurrentConfig, fetchHistory]);
 
   return {
     currentConfig,

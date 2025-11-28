@@ -297,8 +297,32 @@ export const Topics = () => {
     );
   }
 
-  // Use real data only - no mock fallback
+  // Use real data - allow empty topics array (filtering might return empty results)
   if (!topicsData) {
+    // Only show empty state if we don't have a response at all
+    // If we have a response with empty topics, still show the page so filters work
+    if (!response || !response.success) {
+      return (
+        <TopicsAnalysisPage
+          data={{
+            portfolio: { totalTopics: 0, searchVolume: 0, categories: 0, lastUpdated: new Date().toISOString() },
+            performance: { avgSoA: 0, maxSoA: 0, minSoA: 0, weeklyGainer: { topic: '', delta: 0, category: '' } },
+            topics: [],
+            categories: []
+          }}
+          isLoading={false}
+          onTopicClick={(topic) => {
+            console.log('Topic clicked:', topic);
+          }}
+          onCategoryFilter={(categoryId) => {
+            console.log('Category filtered:', categoryId);
+          }}
+          onFiltersChange={setFilters}
+          availableModels={availableModels}
+        />
+      );
+    }
+    // If response is successful but transformation failed, show error
     return (
       <TopicsAnalysisPage
         data={{
@@ -314,6 +338,8 @@ export const Topics = () => {
         onCategoryFilter={(categoryId) => {
           console.log('Category filtered:', categoryId);
         }}
+        onFiltersChange={setFilters}
+        availableModels={availableModels}
       />
     );
   }

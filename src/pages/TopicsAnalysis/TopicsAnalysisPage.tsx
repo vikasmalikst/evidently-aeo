@@ -7,7 +7,6 @@ import { TopicsRankedTable } from './components/TopicsRankedTable';
 import { TopicAnalysisMultiView } from './components/TopicAnalysisMultiView';
 import { TopicDetailModal } from './components/TopicDetailModal';
 import { ChartTitle } from './components/ChartTitle';
-import { CountryFlag } from '../../components/CountryFlag';
 import DatePickerMultiView from '../../components/DatePicker/DatePickerMultiView';
 import { TopicsDataStatusBanner } from './components/TopicsDataStatusBanner';
 import { useManualBrandDashboard } from '../../manual-dashboard';
@@ -107,8 +106,6 @@ export const TopicsAnalysisPage = ({
   // Show/hide date picker modal
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // Manage country/region state
-  const [selectedCountry, setSelectedCountry] = useState<string>('us');
 
   // Default to empty string (All Models) - will show all models in data
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -352,7 +349,6 @@ export const TopicsAnalysisPage = ({
   // Track initial values ONCE - only set on first render
   const initialValuesRef = useRef<{
     selectedModel: string;
-    selectedCountry: string;
     selectedDate: number;
     datePeriodType: 'daily' | 'weekly' | 'monthly';
   } | null>(null);
@@ -363,7 +359,6 @@ export const TopicsAnalysisPage = ({
   if (initialValuesRef.current === null) {
     initialValuesRef.current = {
       selectedModel: selectedModel,
-      selectedCountry: selectedCountry,
       selectedDate: selectedDate.getTime(),
       datePeriodType: datePeriodType
     };
@@ -385,7 +380,6 @@ export const TopicsAnalysisPage = ({
     const initial = initialValuesRef.current;
     const hasChanged = 
       initial.selectedModel !== selectedModel ||
-      initial.selectedCountry !== selectedCountry ||
       initial.selectedDate !== selectedDate.getTime() ||
       initial.datePeriodType !== datePeriodType;
     
@@ -419,8 +413,7 @@ export const TopicsAnalysisPage = ({
     const newFilters = {
       startDate: start.toISOString().split('T')[0],
       endDate: end.toISOString().split('T')[0],
-      collectorType: selectedModel && selectedModel !== '' ? selectedModel : undefined,
-      country: selectedCountry && selectedCountry !== '' ? selectedCountry : undefined
+      collectorType: selectedModel && selectedModel !== '' ? selectedModel : undefined
     };
     
     // Create a stable key to avoid sending duplicate filters
@@ -432,34 +425,13 @@ export const TopicsAnalysisPage = ({
     
     console.log('🔍 Sending filters (user changed):', newFilters);
     onFiltersChange(newFilters);
-  }, [selectedModel, selectedCountry, selectedDate, datePeriodType, onFiltersChange]);
+  }, [selectedModel, selectedDate, datePeriodType, onFiltersChange]);
 
   // Handle view change from DatePickerMultiView
   const handleViewChange = (view: 'daily' | 'weekly' | 'monthly') => {
     setDatePeriodType(view);
   };
 
-  // Country options (sorted alphabetically)
-  const countryOptions = [
-    { value: 'canada', label: 'Canada' },
-    { value: 'china', label: 'China' },
-    { value: 'india', label: 'India' },
-    { value: 'japan', label: 'Japan' },
-    { value: 'south-korea', label: 'South Korea' },
-    { value: 'uk', label: 'United Kingdom' },
-    { value: 'us', label: 'United States' }
-  ];
-
-  // Region options (sorted alphabetically)
-  const regionOptions = [
-    { value: 'emea', label: 'EMEA' },
-    { value: 'latam', label: 'LATAM' },
-    { value: 'south-america', label: 'South America' },
-    { value: 'southeast-asia', label: 'Southeast Asia' }
-  ];
-
-  // Combined options for the dropdown
-  const allCountryRegionOptions = [...countryOptions, ...regionOptions];
 
   // Update selected topics when topics data changes
   useEffect(() => {
@@ -513,11 +485,153 @@ export const TopicsAnalysisPage = ({
     );
   }
 
-  if (!data || data.topics.length === 0) {
+  // Check if we have real data - show empty state only if no data at all (not just filtered results)
+  // Allow showing the page even with empty topics so filters can still work
+  const hasAnyData = data && data.topics && data.topics.length > 0;
+  
+  // Only show true empty state if we've never loaded any data
+  // If topics array is empty but we have filters, show a filtered empty state message instead
+  if (!data) {
     return (
       <Layout>
         <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
           <EmptyState />
+        </div>
+      </Layout>
+    );
+  }
+  
+  // If topics array is empty, show filtered empty state (allows users to change filters)
+  if (!hasAnyData) {
+    return (
+      <Layout>
+        <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+          <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm">
+            <div className="p-12 text-center">
+              <p className="text-lg font-medium text-[var(--text-headings)] mb-2">
+                No topics found for selected filters
+              </p>
+              <p className="text-sm text-[var(--text-caption)] mb-4">
+                Try adjusting your LLM model or date range filters to see more results.
+              </p>
+              {/* Still show filters so users can adjust them */}
+              <div className="mt-8 bg-white border border-[var(--border-default)] rounded-lg p-6">
+                <h2 className="text-lg font-semibold text-[var(--text-headings)] mb-4">Adjust Filters</h2>
+                <div className="flex items-center justify-center gap-4 flex-wrap">
+                  {/* Model Filter */}
+                  {availableModels.length > 0 && (
+                    <div ref={modelDropdownRef} style={{ position: 'relative', minWidth: '200px' }}>
+                      <label className="block text-sm font-medium text-[var(--text-body)] mb-2">
+                        LLM Model
+                      </label>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenModelDropdown(!openModelDropdown);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: '13px',
+                          fontFamily: 'IBM Plex Sans, sans-serif',
+                          color: '#212534',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #dcdfe5',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px'
+                        }}
+                      >
+                        <span>{selectedModel || 'All Models'}</span>
+                        <ChevronDown
+                          size={16}
+                          style={{
+                            color: '#6c7289',
+                            transition: 'transform 0.15s',
+                            transform: openModelDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                            flexShrink: 0
+                          }}
+                        />
+                      </button>
+                      {openModelDropdown && availableModels.length > 0 && (
+                        <div 
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 4px)',
+                            left: 0,
+                            right: 0,
+                            minWidth: '100%',
+                            maxHeight: '400px',
+                            overflowY: 'auto',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #dcdfe5',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                            zIndex: 1000
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setSelectedModel('');
+                              setOpenModelDropdown(false);
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '12px 16px',
+                              border: 'none',
+                              backgroundColor: selectedModel === '' ? '#f9f9fb' : 'transparent',
+                              cursor: 'pointer',
+                              fontSize: '14px',
+                              fontFamily: 'IBM Plex Sans, sans-serif',
+                              color: selectedModel === '' ? '#498cf9' : '#212534',
+                              fontWeight: selectedModel === '' ? 500 : 400,
+                              textAlign: 'left'
+                            }}
+                          >
+                            All Models
+                          </button>
+                          {availableModels.map((model) => (
+                            <button
+                              key={model}
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setSelectedModel(model);
+                                setOpenModelDropdown(false);
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                border: 'none',
+                                backgroundColor: selectedModel === model ? '#f9f9fb' : 'transparent',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontFamily: 'IBM Plex Sans, sans-serif',
+                                color: selectedModel === model ? '#498cf9' : '#212534',
+                                fontWeight: selectedModel === model ? 500 : 400,
+                                textAlign: 'left'
+                              }}
+                            >
+                              {model}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </Layout>
     );
@@ -591,72 +705,14 @@ export const TopicsAnalysisPage = ({
             {/* Left: Heading and Subtitle */}
             <ChartTitle
               category={selectedCategory}
-              country={selectedCountry}
               dateRange={currentDateRangeLabel}
               baseTitle="Topics Share of Answer"
-              countryOptions={[...countryOptions, ...regionOptions]}
               selectedModel={selectedModel}
               aiModels={[]}
             />
 
-            {/* Right: Dropdowns (Country/Region, Date, Models, Competitors) - left to right order */}
+            {/* Right: Dropdowns (Date, Models, Competitors) - left to right order */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              {/* Country Dropdown */}
-              <div style={{ position: 'relative', minWidth: '180px' }}>
-                <div style={{ 
-                  position: 'absolute', 
-                  left: '12px', 
-                  top: '50%', 
-                  transform: 'translateY(-50%)',
-                  pointerEvents: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  zIndex: 1
-                }}>
-                  <CountryFlag 
-                    countryCode={selectedCountry} 
-                    className="w-4 h-4"
-                    style={{ display: 'block' }}
-                  />
-                </div>
-                <select
-                  value={selectedCountry}
-                  onChange={(e) => {
-                    setSelectedCountry(e.target.value);
-                    // State change will trigger useEffect which sends filters
-                  }}
-                  style={{
-                    padding: '8px 12px 8px 36px',
-                    fontSize: '13px',
-                    fontFamily: 'IBM Plex Sans, sans-serif',
-                    color: '#212534',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #dcdfe5',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    width: '100%',
-                    appearance: 'none',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'none'
-                  }}
-                >
-                  <optgroup label="Countries">
-                    {countryOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Regions">
-                    {regionOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              </div>
-
               {/* Date Picker Button */}
               <div style={{ position: 'relative' }}>
                 <button
@@ -901,13 +957,12 @@ export const TopicsAnalysisPage = ({
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
             selectedDateRange={selectedDateRange}
-            selectedCountry={selectedCountry}
             competitors={competitors}
             selectedCompetitor="all"
             brandFavicon={brandFavicon}
             onExport={() => {
               // Export functionality - can be implemented later
-              console.log('Export chart data...', { chartType: 'racing-bar', selectedCategory, selectedDateRange, selectedCountry });
+              console.log('Export chart data...', { chartType: 'racing-bar', selectedCategory, selectedDateRange });
             }}
           />
         </div>

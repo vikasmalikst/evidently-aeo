@@ -2,12 +2,18 @@ import { useMemo } from 'react';
 import { ResponsiveBar } from '@nivo/bar';
 import type { Topic } from '../types';
 import type { Competitor } from '../utils/competitorColors';
+import { wrapLabelText } from '../utils/text';
 
 interface TopicsBarChartProps {
   topics: Topic[];
   onBarClick?: (topic: Topic) => void;
   competitors?: Competitor[];
 }
+
+const LEFT_AXIS_CHAR_LIMIT = 25;
+const LEFT_AXIS_LINE_HEIGHT = 14;
+const BOTTOM_AXIS_CHAR_LIMIT = 18;
+const BOTTOM_AXIS_LINE_HEIGHT = 13;
 
 export const TopicsBarChart = ({ 
   topics, 
@@ -31,7 +37,6 @@ export const TopicsBarChart = ({
   const chartGridColor = useMemo(() => getCSSVariable('--chart-grid'), []);
   const chartLabelColor = useMemo(() => getCSSVariable('--chart-label'), []);
   const chartAxisColor = useMemo(() => getCSSVariable('--chart-axis'), []);
-  const textCaptionColor = useMemo(() => getCSSVariable('--text-caption'), []);
   
   // Brand color (data viz 02) - resolved from CSS variable
   const BRAND_COLOR = useMemo(() => getCSSVariable('--dataviz-2') || '#498cf9', []); // data-viz-02 (blue)
@@ -110,6 +115,23 @@ export const TopicsBarChart = ({
     }
   }, [sortedTopics, showComparison, hasIndustryData]);
 
+  const maxBottomLabelLines = useMemo(() => {
+    if (!sortedTopics.length) return 1;
+    return sortedTopics.reduce((max, topic) => {
+      const lines = wrapLabelText(topic.name, BOTTOM_AXIS_CHAR_LIMIT);
+      return Math.max(max, lines.length);
+    }, 1);
+  }, [sortedTopics]);
+
+  const axisBottomMargin = useMemo(() => {
+    const base = showComparison ? 110 : 70;
+    return base + Math.max(0, (maxBottomLabelLines - 1) * BOTTOM_AXIS_LINE_HEIGHT);
+  }, [showComparison, maxBottomLabelLines]);
+
+  const axisBottomLegendOffset = useMemo(() => {
+    return 40 + (maxBottomLabelLines - 1) * BOTTOM_AXIS_LINE_HEIGHT;
+  }, [maxBottomLabelLines]);
+
   // Calculate dynamic height based on number of topics
   // Balance between expanding height and reducing bar size
   const chartHeight = useMemo(() => {
@@ -126,7 +148,7 @@ export const TopicsBarChart = ({
           keys={chartKeys}
           indexBy="topic"
           layout="vertical"
-          margin={{ top: 16, right: 16, bottom: showComparison ? 100 : 60, left: 120 }}
+          margin={{ top: 16, right: 16, bottom: axisBottomMargin, left: 250 }}
           padding={showComparison ? 0.4 : 0.6}
           innerPadding={showComparison ? 4 : 0} // Spacing between bars in grouped mode
           groupMode={showComparison ? 'grouped' : undefined}
@@ -154,22 +176,73 @@ export const TopicsBarChart = ({
           axisBottom={{
             tickSize: 5,
             tickPadding: 8,
-            tickRotation: 45,
-            format: (value: string) => value,
-            legend: 'Topics',
+            tickRotation: 0,
+            legend: 'Share of Answer (SoA)',
             legendPosition: 'middle',
-            legendOffset: 50,
-            tickValues: undefined, // Show all topics
+            legendOffset: axisBottomLegendOffset,
+            renderTick: (tick: any) => {
+              const topicName = String(tick.value);
+              const lines = wrapLabelText(topicName, BOTTOM_AXIS_CHAR_LIMIT);
+              const textY = (tick.textY ?? 0) + 2;
+              
+              return (
+                <g transform={`translate(${tick.x},${tick.y})`}>
+                  {lines.map((line, index) => (
+                    <text
+                      key={`${topicName}-${index}`}
+                      x={0}
+                      y={textY + index * BOTTOM_AXIS_LINE_HEIGHT}
+                      textAnchor="middle"
+                      dominantBaseline="hanging"
+                      style={{
+                        fill: chartLabelColor || '#393e51',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                      }}
+                    >
+                      {line}
+                    </text>
+                  ))}
+                </g>
+              );
+            },
           }}
           axisLeft={{
             tickSize: 5,
-            tickPadding: 8,
+            tickPadding: 12,
             tickRotation: 0,
-            format: (value: number) => `${value}%`,
-            tickValues: 5, // Show 5 ticks
+            format: (value: any) => value, // Keep original value for renderTick
             legend: 'Share of Answer (SoA)',
             legendPosition: 'middle',
-            legendOffset: -80,
+            legendOffset: -100,
+            renderTick: (tick: any) => {
+              const topicName = String(tick.value);
+              const lines = wrapLabelText(topicName, LEFT_AXIS_CHAR_LIMIT);
+              const offsetY = -(lines.length - 1) * LEFT_AXIS_LINE_HEIGHT / 2;
+              
+              return (
+                <g transform={`translate(${tick.x},${tick.y})`}>
+                  {lines.map((line, index) => (
+                    <text
+                      key={index}
+                      x={0}
+                      y={offsetY + index * LEFT_AXIS_LINE_HEIGHT}
+                      textAnchor="end"
+                      dominantBaseline="middle"
+                      style={{
+                        fill: chartLabelColor || '#393e51',
+                        fontSize: 12,
+                        fontWeight: 500,
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                      }}
+                    >
+                      {line}
+                    </text>
+                  ))}
+                </g>
+              );
+            },
           }}
           gridYValues={[0, 20, 40, 60, 80, 100]}
           theme={{
@@ -186,8 +259,9 @@ export const TopicsBarChart = ({
                   strokeWidth: 1,
                 },
                 text: {
-                  fill: textCaptionColor || '#6b7280',
-                  fontSize: 9,
+                  fill: chartLabelColor || '#393e51',
+                  fontSize: 12,
+                  fontWeight: 500,
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                 },
               },
@@ -397,6 +471,22 @@ export const TopicsBarChart = ({
             />
             <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
               Brand
+            </span>
+          </div>
+          
+          {/* Avg Industry SoA - Bar */}
+          <div className="flex items-center gap-1.5">
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: AVG_INDUSTRY_COLOR,
+                borderRadius: '2px',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
+              Avg Industry SoA
             </span>
           </div>
           

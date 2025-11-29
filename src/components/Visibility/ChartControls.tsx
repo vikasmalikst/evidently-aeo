@@ -221,7 +221,7 @@ export const ChartControls = ({
   return (
     <div
       ref={dropdownRef}
-      className="flex gap-4 items-center justify-between flex-wrap p-4 bg-white border-b border-[var(--border-default)] rounded-b-lg relative z-10"
+      className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b border-[var(--border-default)] bg-transparent relative z-10"
     >
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 pl-2">

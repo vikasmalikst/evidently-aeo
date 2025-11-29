@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Layout } from '../components/Layout/Layout';
-import { SettingsLayout } from '../components/Settings/SettingsLayout';
-import { ManagePromptsList } from '../components/Settings/ManagePromptsList';
-import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
+import { Layout } from '../../components/Layout/Layout';
+import { SettingsLayout } from '../../components/Settings/SettingsLayout';
+import { ManagePromptsList } from '../../components/Settings/ManagePromptsList';
+import { useManualBrandDashboard } from '../../manual-dashboard/useManualBrandDashboard';
 import {
   getActivePrompts,
   getVersionHistory,
@@ -10,18 +10,20 @@ import {
   type Prompt,
   type Topic,
   type PromptConfiguration,
-} from '../api/promptManagementApi';
+} from '../../api/promptManagementApi';
 import { IconForms, IconTags, IconUmbrella, IconEye, IconHistory, IconInfoCircle, IconHandClick } from '@tabler/icons-react';
 import { X, ChevronRight, Plus } from 'lucide-react';
-import { useTopicConfiguration } from './BrandSettings/hooks/useTopicConfiguration';
-import { CurrentConfigCard } from './BrandSettings/components/CurrentConfigCard';
-import { ActiveTopicsSection } from './BrandSettings/components/ActiveTopicsSection';
-import { TopicEditModal } from './BrandSettings/components/TopicEditModal';
-import { HistoryModal as TopicHistoryModal } from './BrandSettings/components/HistoryModal';
-import { HowItWorksModal } from './BrandSettings/components/HowItWorksModal';
-import { InlineTopicManager } from '../components/Settings/InlineTopicManager';
-import type { Topic as ConfigTopic, TopicCategory } from '../types/topic';
-import type { TopicConfiguration as TopicConfigSnapshot } from './BrandSettings/types';
+import { useTopicConfiguration } from '../BrandSettings/hooks/useTopicConfiguration';
+import { CurrentConfigCard } from '../BrandSettings/components/CurrentConfigCard';
+import { ActiveTopicsSection } from '../BrandSettings/components/ActiveTopicsSection';
+import { TopicEditModal } from '../BrandSettings/components/TopicEditModal';
+import { HistoryModal as TopicHistoryModal } from '../BrandSettings/components/HistoryModal';
+import { HowItWorksModal } from '../BrandSettings/components/HowItWorksModal';
+import { InlineTopicManager } from '../../components/Settings/InlineTopicManager';
+import type { Topic as ConfigTopic, TopicCategory } from '../../types/topic';
+import type { TopicConfiguration as TopicConfigSnapshot } from '../BrandSettings/types';
+import { usePromptsManagement } from './hooks/usePromptsManagement';
+import { useTopicsManagement } from './hooks/useTopicsManagement';
 
 // Configuration version type for prompts
 interface PromptTimelineItemProps {
@@ -300,25 +302,30 @@ const CompactHistoryCard = ({
 
 export const ManagePrompts = () => {
   const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [dateRange, setDateRange] = useState('30d');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
-  const [configHistory, setConfigHistory] = useState<PromptConfiguration[]>([]);
-  const [currentConfigVersion, setCurrentConfigVersion] = useState<number>(0);
   const [modalSelectedVersion, setModalSelectedVersion] = useState<number | null>(null);
   const [versionPrompts, setVersionPrompts] = useState<Map<number, Topic[]>>(new Map());
   const [loadingVersions, setLoadingVersions] = useState<Set<number>>(new Set());
-  const [summaryStats, setSummaryStats] = useState({
-    totalPrompts: 0,
-    totalTopics: 0,
-    coverage: 0,
-    avgVisibility: 0,
-    avgSentiment: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  
+  // Use prompts management hook
+  const promptsManagement = usePromptsManagement(selectedBrandId, brandsLoading);
+  
+  const {
+    topics,
+    selectedPrompt,
+    configHistory,
+    currentConfigVersion,
+    summaryStats,
+    isLoading,
+    error,
+    handlePromptEdit,
+    handlePromptDelete,
+    handlePromptAdd,
+    handlePromptSelect,
+    refreshPrompts,
+  } = promptsManagement;
 
   const {
     currentConfig: topicConfig,
@@ -334,55 +341,16 @@ export const ManagePrompts = () => {
   const [topicModalInitialTopics, setTopicModalInitialTopics] = useState<ConfigTopic[]>([]);
   const [topicError, setTopicError] = useState<string | null>(null);
 
-  // Fetch active prompts and version history
-  useEffect(() => {
-    if (!selectedBrandId || brandsLoading) return;
-
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        console.log('🔄 Fetching prompts data for brand:', selectedBrandId);
-        // Fetch active prompts
-        const promptsData = await getActivePrompts(selectedBrandId);
-        console.log('✅ Received prompts data:', {
-          topicsCount: promptsData.topics?.length || 0,
-          topics: promptsData.topics,
-          currentVersion: promptsData.currentVersion,
-          summary: promptsData.summary
-        });
-        
-        setTopics(promptsData.topics || []);
-        setCurrentConfigVersion(promptsData.currentVersion);
-        setSummaryStats({
-          totalPrompts: promptsData.summary.totalPrompts,
-          totalTopics: promptsData.summary.totalTopics,
-          coverage: promptsData.summary.coverage,
-          avgVisibility: promptsData.summary.avgVisibility || 0,
-          avgSentiment: promptsData.summary.avgSentiment || 0,
-        });
-
-        // Fetch version history
-        const historyData = await getVersionHistory(selectedBrandId);
-        console.log('✅ Received version history:', {
-          versionsCount: historyData.versions?.length || 0,
-          currentVersion: historyData.currentVersion
-        });
-        setConfigHistory(historyData.versions || []);
-        setCurrentConfigVersion(historyData.currentVersion);
-      } catch (err) {
-        console.error('❌ Error fetching prompts data:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load prompts');
-        // Set empty arrays on error to prevent showing stale data
-        setTopics([]);
-        setConfigHistory([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [selectedBrandId, brandsLoading]);
+  // Topics management hook
+  const topicsManagement = useTopicsManagement({
+    promptsTopics: topics,
+    onTopicsUpdate: (updatedTopics: Topic[]) => {
+      promptsManagement.setState(prev => ({
+        ...prev,
+        topics: updatedTopics,
+      }));
+    },
+  });
 
   useEffect(() => {
     if (topicConfig?.topics) {
@@ -404,14 +372,14 @@ export const ManagePrompts = () => {
 
     const loadVersionDetails = async () => {
       setLoadingVersion(true);
-      setError(null);
+      promptsManagement.setState(prev => ({ ...prev, error: null }));
       try {
         const versionDetails = await getVersionDetails(selectedBrandId, selectedVersion);
         setVersionTopics(versionDetails.topics);
       } catch (err) {
         console.error('Error loading version details:', err);
         const errorMessage = err instanceof Error ? err.message : 'Failed to load version details';
-        setError(errorMessage);
+        promptsManagement.setState(prev => ({ ...prev, error: errorMessage }));
         setVersionTopics([]);
       } finally {
         setLoadingVersion(false);
@@ -462,50 +430,10 @@ export const ManagePrompts = () => {
     return 'text-[var(--dataviz-4)]';
   };
 
-  const handlePromptSelect = (prompt: Prompt, topicName: string) => {
+  const handlePromptSelectWithTopic = useCallback((prompt: Prompt, topicName: string) => {
     void topicName;
-    setSelectedPrompt(prompt);
-  };
-
-  const handlePromptEdit = useCallback((prompt: Prompt, newText: string) => {
-    setTopics(prevTopics => 
-      prevTopics.map(topic => ({
-        ...topic,
-        prompts: topic.prompts.map(p => 
-          p.id === prompt.id ? { ...p, text: newText } : p
-        )
-      }))
-    );
-    
-    // Update selected prompt if it's the one being edited
-    if (selectedPrompt?.id === prompt.id) {
-      setSelectedPrompt({ ...selectedPrompt, text: newText });
-    }
-  }, [selectedPrompt]);
-
-  const handlePromptDelete = useCallback((prompt: Prompt) => {
-    setTopics(prevTopics => 
-      prevTopics.map(topic => ({
-        ...topic,
-        prompts: topic.prompts.filter(p => p.id !== prompt.id)
-      })).filter(topic => topic.prompts.length > 0) // Remove topics with no prompts
-    );
-    
-    // Clear selection if deleted prompt was selected
-    if (selectedPrompt?.id === prompt.id) {
-      setSelectedPrompt(null);
-    }
-  }, [selectedPrompt]);
-
-  const handlePromptAdd = useCallback((topicId: number, prompt: Prompt) => {
-    setTopics(prevTopics =>
-      prevTopics.map(t =>
-        t.id === topicId
-          ? { ...t, prompts: [...t.prompts, prompt] }
-          : t
-      )
-    );
-  }, []);
+    handlePromptSelect(prompt);
+  }, [handlePromptSelect]);
 
   const handleTopicEditClick = useCallback(() => {
     if (topicConfig?.topics) {
@@ -561,42 +489,13 @@ export const ManagePrompts = () => {
 
   const handleChangesApplied = useCallback(async () => {
     // Reload data after changes are applied
-    if (!selectedBrandId) return;
+    await refreshPrompts();
     
-    try {
-      const promptsData = await getActivePrompts(selectedBrandId);
-      setTopics(promptsData.topics);
-      setCurrentConfigVersion(promptsData.currentVersion);
-      setSummaryStats({
-        totalPrompts: promptsData.summary.totalPrompts,
-        totalTopics: promptsData.summary.totalTopics,
-        coverage: promptsData.summary.coverage,
-        avgVisibility: promptsData.summary.avgVisibility || 0,
-        avgSentiment: promptsData.summary.avgSentiment || 0,
-      });
-      
-      const historyData = await getVersionHistory(selectedBrandId);
-      setConfigHistory(historyData.versions);
-      
-      // Clear selected prompt if it no longer exists in the updated topics
-      if (selectedPrompt) {
-        const promptStillExists = promptsData.topics.some(topic =>
-          topic.prompts.some(p => p.id === selectedPrompt.id)
-        );
-        if (!promptStillExists) {
-          setSelectedPrompt(null);
-        }
-      }
-      
-      // Reset version view to current after changes
-      if (selectedVersion !== null && selectedVersion !== undefined) {
-        setSelectedVersion(null);
-      }
-    } catch (err) {
-      console.error('Error reloading data after changes:', err);
-      setError(err instanceof Error ? err.message : 'Failed to reload data');
+    // Reset version view to current after changes
+    if (selectedVersion !== null && selectedVersion !== undefined) {
+      setSelectedVersion(null);
     }
-  }, [selectedBrandId, selectedPrompt, selectedVersion]);
+  }, [refreshPrompts, selectedVersion]);
 
   const handleViewTimeline = useCallback(() => {
     setShowHistoryModal(true);
@@ -803,56 +702,17 @@ export const ManagePrompts = () => {
               </button>
             </div>
 
-            {topicError && (
+            {topicsManagement.error && (
               <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">{topicError}</p>
+                <p className="text-sm text-red-800">{topicsManagement.error}</p>
               </div>
             )}
 
             <InlineTopicManager
-              topics={displayedTopics.map((topic) => ({
-                id: topic.id.toString(),
-                name: topic.name,
-                source: 'custom' as const,
-                category: undefined as TopicCategory | undefined,
-                relevance: 70,
-              }))}
+              topics={topicsManagement.displayTopics}
               brandId={selectedBrandId}
               isLoading={brandsLoading || isLoading || loadingVersion}
-              onTopicsChange={async (updatedTopics) => {
-                try {
-                  // Update topic names in local state
-                  setTopics(prevTopics => {
-                    return prevTopics.map(topic => {
-                      const updatedTopic = updatedTopics.find(ut => ut.id === topic.id.toString());
-                      if (updatedTopic) {
-                        // Topic was renamed - update the name
-                        if (updatedTopic.name !== topic.name) {
-                          return {
-                            ...topic,
-                            name: updatedTopic.name,
-                          };
-                        }
-                        return topic;
-                      }
-                      // Topic was deleted - only allow if no prompts
-                      if (topic.prompts.length === 0) {
-                        return null;
-                      }
-                      // Don't allow deletion of topics with prompts - keep the topic
-                      return topic;
-                    }).filter((topic): topic is NonNullable<typeof topic> => topic !== null);
-                  });
-                  
-                  setTopicError(null);
-                  
-                  // Note: Topic name changes will be persisted when prompts are saved through batch changes
-                  // The backend will update topic names for all prompts in that topic
-                } catch (err) {
-                  console.error('Failed to update topics:', err);
-                  setTopicError(err instanceof Error ? err.message : 'Failed to update topics');
-                }
-              }}
+              onTopicsChange={topicsManagement.handleTopicsChange}
             />
           </section>
 
@@ -861,7 +721,7 @@ export const ManagePrompts = () => {
               brandId={selectedBrandId || ''}
               topics={displayedTopics}
               selectedPromptId={selectedPrompt?.id || null}
-              onPromptSelect={handlePromptSelect}
+              onPromptSelect={handlePromptSelectWithTopic}
               onPromptEdit={handlePromptEdit}
               onPromptDelete={handlePromptDelete}
               onPromptAdd={handlePromptAdd}

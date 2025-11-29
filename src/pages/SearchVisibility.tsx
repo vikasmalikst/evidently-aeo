@@ -4,6 +4,7 @@ import { VisibilityTabs } from '../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../components/Visibility/ChartControls';
 import { VisibilityChart } from '../components/Visibility/VisibilityChart';
 import { VisibilityTable } from '../components/Visibility/VisibilityTable';
+import { KpiToggle } from '../components/Visibility/KpiToggle';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useCachedData } from '../hooks/useCachedData';
@@ -474,7 +475,6 @@ export const SearchVisibility = () => {
               </p>
             )}
           </div>
-          <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
 
         <div className="flex flex-col flex-1 gap-4 overflow-hidden p-4">
@@ -490,7 +490,26 @@ export const SearchVisibility = () => {
             </div>
           )}
 
-          <div className="flex flex-col flex-[0_0_60%] bg-white rounded-lg overflow-hidden shadow-sm">
+          <div className="flex flex-col flex-[0_0_60%] rounded-3xl border border-[#e4e7ec] bg-white shadow-[0_20px_45px_rgb(15_23_42_/_0.08)] overflow-hidden">
+            <div className="border-b border-[#e7ecff] bg-gradient-to-br from-white via-white to-[#f6fbff] p-6">
+              <div className="flex flex-col gap-6">
+                <KpiToggle metricType={metricType} onChange={setMetricType} />
+                <div className="flex flex-col gap-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
+                    View Mode
+                  </div>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                    <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm pt-1">
+                      {activeTab === 'brand'
+                        ? 'Focus on how each collector sees your brand.'
+                        : 'Benchmark the selected KPI against competitors.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <ChartControls
               timeframe={timeframe}
               onTimeframeChange={setTimeframe}
@@ -501,8 +520,6 @@ export const SearchVisibility = () => {
               brands={brands}
               selectedBrandId={selectedBrandId}
               onBrandChange={selectBrand}
-              metricType={metricType}
-              onMetricTypeChange={setMetricType}
             />
 
             <VisibilityChart

@@ -127,14 +127,6 @@ export class PositionExtractionService {
     }
   }
 
-  // ============================================================================
-  // MAIN PUBLIC METHOD
-  // ============================================================================
-
-  /**
-   * Extract positions for all new collector results
-   * Skips results that already have positions extracted
-   */
   public async extractPositionsForNewResults(
     options: ExtractPositionsOptions = {}
   ): Promise<number> {
@@ -490,20 +482,46 @@ export class PositionExtractionService {
     rawAnswer: string
   ): Promise<string[]> {
     const metadataStr = metadata ? JSON.stringify(metadata, null, 2).substring(0, 600) : 'No metadata provided';
-    const trimmedAnswer = rawAnswer.length > 2000 ? `${rawAnswer.slice(0, 2000)}...` : rawAnswer;
 
-    const prompt = `You are helping map brand mentions to product names.
+    const prompt = `You are identifying *only* commercially branded products that belong to the brand below. A “product” means an officially marketed, trademarked, or SKU-level item sold by the brand — the kind that appears on the brand’s website, packaging, or retail catalogs.
 
 Brand: "${brandName}"
+
 Context (metadata, may be empty):
 ${metadataStr}
-Collector answer snippet (may contain product names):
-${trimmedAnswer}
 
-Task: List popular or relevant products that belong to "${brandName}". Use BOTH your knowledge and the provided context. Include specific models or collections if present in the snippet. Only return a JSON array of product names (max 12 items). If absolutely nothing is known, return [].
+Collector answer snippet (may contain noise, ingredients, competitors, etc.):
+${rawAnswer}
 
-Example response:
-["Product 1", "Product 2"]`;
+STRICT RULES — DO NOT BREAK THESE:
+
+1. **Include ONLY real, commercially branded products made by "${brandName}".**
+   - These must be official product names, SKUs, model names, series names, or variants.
+   - They must be products a consumer can buy.
+
+2. **EXCLUDE all of the following (even if they appear in the text):**
+   - Generic ingredients (e.g., ibuprofen, caffeine, acetaminophen, cotton, rubber)
+   - Generic drug classes or product categories (e.g., pain reliever, migraine medicine, sneakers, laptops)
+   - Competitor product names or competitor brands
+   - Side effects, conditions, treatments, or medical terms (e.g., headache relief, migraine symptoms)
+   - Misspellings or fabricated products that the brand does not sell
+   - Search queries, article titles, or phrases that are not product names (e.g., "Excedrin side effects")
+
+3. **Pharma & medical brand caution:**
+   - Many pharma brands use combinations of generic ingredients.
+   - DO NOT return ingredient names or formulations unless they are part of an official branded product name.
+
+4. **Use BOTH:**
+   - The provided text, AND
+   - Your own knowledge of real products from this brand.
+
+5. **If no valid branded products exist or are mentioned, return an empty array: []**
+
+OUTPUT FORMAT:
+Return ONLY a clean JSON array of strings, with no explanation:
+["Product Name 1", "Product Name 2"]
+(Max 12 items)
+`;
 
     try {
       const response = await this.callLLM(prompt, 'product-extraction');
@@ -525,7 +543,14 @@ Example response:
       console.log(`   📦 Extracted ${sanitizedProducts.length} products: ${sanitizedProducts.join(', ')}`);
       return sanitizedProducts;
     } catch (error) {
-      console.warn(`   ⚠️  Product extraction failed, continuing without products:`, error instanceof Error ? error.message : error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      
+      // Check for token limit errors
+      if (errorMsg.includes('token') || errorMsg.includes('context') || errorMsg.includes('length') || errorMsg.includes('400')) {
+        console.warn(`   ⚠️  Product extraction failed due to input length/token limit (raw_answer length: ${rawAnswer.length} chars). Consider truncating very long responses.`);
+      } else {
+        console.warn(`   ⚠️  Product extraction failed, continuing without products:`, errorMsg);
+      }
       return [];
     }
   }
@@ -795,7 +820,7 @@ Example response:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama3.1-8b',
+        model: 'qwen-3-235b-a22b-instruct-2507',
         messages: [
           {
             role: 'system',

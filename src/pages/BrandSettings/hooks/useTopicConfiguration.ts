@@ -121,13 +121,12 @@ export const useTopicConfiguration = (brandId?: string | null): UseTopicConfigur
       if (!brandId) return;
 
       const topicsToSave =
-        topicsOverride && topicsOverride.length > 0
+        topicsOverride !== undefined
           ? topicsOverride
           : unsavedChanges;
 
-      if (!topicsToSave || topicsToSave.length === 0) {
-        return;
-      }
+      // Allow saving empty arrays (e.g., when deleting all topics)
+      // Do NOT return early if topicsToSave is empty
 
     try {
       setIsUpdating(true);

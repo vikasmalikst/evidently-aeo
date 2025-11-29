@@ -483,44 +483,24 @@ export class PositionExtractionService {
   ): Promise<string[]> {
     const metadataStr = metadata ? JSON.stringify(metadata, null, 2).substring(0, 600) : 'No metadata provided';
 
-    const prompt = `You are identifying *only* commercially branded products that belong to the brand below. A “product” means an officially marketed, trademarked, or SKU-level item sold by the brand — the kind that appears on the brand’s website, packaging, or retail catalogs.
+    const prompt = `Your task is to extract only real, commercially branded products made by the brand below.
 
 Brand: "${brandName}"
-
-Context (metadata, may be empty):
+Context:
 ${metadataStr}
-
-Collector answer snippet (may contain noise, ingredients, competitors, etc.):
+Snippet:
 ${rawAnswer}
 
-STRICT RULES — DO NOT BREAK THESE:
+Rules:
+1. Include only official products sold by "${brandName}" — specific product names, SKUs, models, or variants that consumers can buy and that appear in the brand’s catalog or marketing.
+2. Exclude all generics: ingredients, materials, components, drug names, categories (e.g., “pain reliever”, “running shoes”, “smartphone”), and any descriptive phrases.
+3. Exclude competitors and their products entirely.
+4. Exclude side effects, conditions, benefits, use-cases, and features (e.g., “noise cancellation”, “headache relief”, “extra strength formula”).
+5. If a name is not clearly an official product of "${brandName}", leave it out.
+6. Use both the snippet and your general knowledge, but never invent products.
 
-1. **Include ONLY real, commercially branded products made by "${brandName}".**
-   - These must be official product names, SKUs, model names, series names, or variants.
-   - They must be products a consumer can buy.
+Output: A JSON array of up to 12 valid product names. If none exist, return [].
 
-2. **EXCLUDE all of the following (even if they appear in the text):**
-   - Generic ingredients (e.g., ibuprofen, caffeine, acetaminophen, cotton, rubber)
-   - Generic drug classes or product categories (e.g., pain reliever, migraine medicine, sneakers, laptops)
-   - Competitor product names or competitor brands
-   - Side effects, conditions, treatments, or medical terms (e.g., headache relief, migraine symptoms)
-   - Misspellings or fabricated products that the brand does not sell
-   - Search queries, article titles, or phrases that are not product names (e.g., "Excedrin side effects")
-
-3. **Pharma & medical brand caution:**
-   - Many pharma brands use combinations of generic ingredients.
-   - DO NOT return ingredient names or formulations unless they are part of an official branded product name.
-
-4. **Use BOTH:**
-   - The provided text, AND
-   - Your own knowledge of real products from this brand.
-
-5. **If no valid branded products exist or are mentioned, return an empty array: []**
-
-OUTPUT FORMAT:
-Return ONLY a clean JSON array of strings, with no explanation:
-["Product Name 1", "Product Name 2"]
-(Max 12 items)
 `;
 
     try {

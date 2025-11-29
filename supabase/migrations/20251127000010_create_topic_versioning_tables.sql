@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.topic_configurations (
   )),
   change_summary TEXT,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-  created_by UUID REFERENCES public.users(id),
+  created_by UUID, -- No foreign key constraint since users table doesn't exist in this schema
   metadata JSONB DEFAULT '{}'::jsonb,
 
   CONSTRAINT unique_topic_version_per_brand UNIQUE (brand_id, customer_id, version)
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS public.topic_change_log (
   change_type TEXT NOT NULL CHECK (change_type IN ('added', 'removed', 'edited')),
   old_value JSONB,
   new_value JSONB,
-  changed_by UUID REFERENCES public.users(id),
+  changed_by UUID, -- No foreign key constraint since users table doesn't exist in this schema
   changed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 

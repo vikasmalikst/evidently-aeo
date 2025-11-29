@@ -8,6 +8,8 @@ interface InlineTopicManagerProps {
   brandId: string | null;
   onTopicsChange: (topics: Topic[]) => void;
   isLoading?: boolean;
+  isReadOnly?: boolean;
+  onTopicDeleteRequest?: (topic: Topic) => void;
 }
 
 const CATEGORIES: { value: TopicCategory | 'post_purchase_support'; label: string }[] = [
@@ -44,6 +46,8 @@ export const InlineTopicManager = ({
   brandId,
   onTopicsChange,
   isLoading = false,
+  isReadOnly = false,
+  onTopicDeleteRequest,
 }: InlineTopicManagerProps) => {
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [showAddForm, setShowAddForm] = useState(false);
@@ -150,7 +154,7 @@ export const InlineTopicManager = ({
             {topics.length} {topics.length === 1 ? 'topic' : 'topics'} configured
           </p>
         </div>
-        {!showAddForm && (
+        {!isReadOnly && !showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
@@ -161,7 +165,7 @@ export const InlineTopicManager = ({
         )}
       </div>
 
-      {showAddForm && (
+      {showAddForm && !isReadOnly && (
         <div className="mb-6 p-4 bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg">
           <div className="space-y-4">
             <div>
@@ -313,6 +317,7 @@ export const InlineTopicManager = ({
                             {topic.source === 'custom' ? 'Custom topic' : topic.source.replace('_', ' ')}
                           </p>
                         </div>
+                        {!isReadOnly && (
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button
                             onClick={() => handleStartEdit(topic)}
@@ -322,13 +327,20 @@ export const InlineTopicManager = ({
                             <Edit2 size={16} className="text-[var(--text-body)]" />
                           </button>
                           <button
-                            onClick={() => handleDeleteTopic(topic.id)}
+                              onClick={() => {
+                                if (onTopicDeleteRequest) {
+                                  onTopicDeleteRequest(topic);
+                                } else {
+                                  handleDeleteTopic(topic.id);
+                                }
+                              }}
                             className="p-2 rounded hover:bg-white transition-colors"
                             aria-label="Delete topic"
                           >
                             <Trash2 size={16} className="text-[var(--text-error)]" />
                           </button>
                         </div>
+                        )}
                       </div>
                     )}
                   </div>

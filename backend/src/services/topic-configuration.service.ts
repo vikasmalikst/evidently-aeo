@@ -217,9 +217,9 @@ class TopicConfigurationService {
     const topics: TopicDTO[] = (topicsRows || []).map(row => ({
       id: row.id,
       name: row.topic_name || row.topic || '',
-      source: (row.metadata?.source as TopicSource) || 'custom',
+      source: 'custom' as TopicSource, // brand_topics doesn't store source, default to 'custom'
       category: row.category || null,
-      relevance: row.metadata?.relevance || null
+      relevance: null // brand_topics doesn't store relevance
     }))
 
     return this.createConfigurationRecord(
@@ -355,6 +355,7 @@ class TopicConfigurationService {
   }
 
   private async syncBrandTopics(brandId: string, topics: TopicDTO[]) {
+    // Deactivate all existing topics for this brand
     await supabaseAdmin
       .from('brand_topics')
       .update({ is_active: false })
@@ -364,25 +365,27 @@ class TopicConfigurationService {
       return
     }
 
+    // Delete all existing topics for this brand (clean slate)
+    await supabaseAdmin
+      .from('brand_topics')
+      .delete()
+      .eq('brand_id', brandId)
+
+    // Insert new active topics
     const topicRecords = topics.map((topic, index) => ({
       brand_id: brandId,
       topic_name: topic.name,
       category: topic.category || null,
       description: null,
       priority: index + 1,
-      is_active: true,
-      metadata: {
-        source: topic.source || 'custom',
-        relevance: topic.relevance ?? null
-      }
+      is_active: true
+      // Note: source and relevance are stored in topic_configuration_topics, not brand_topics
+      // brand_topics is just for keeping the active topic list in sync
     }))
 
     const { error } = await supabaseAdmin
       .from('brand_topics')
-      .upsert(topicRecords, {
-        onConflict: 'brand_id,topic_name',
-        ignoreDuplicates: false
-      })
+      .insert(topicRecords)
 
     if (error) {
       throw new DatabaseError(`Failed to sync brand topics: ${error.message}`)

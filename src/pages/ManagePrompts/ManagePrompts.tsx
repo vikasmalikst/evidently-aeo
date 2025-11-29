@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Layout } from '../../components/Layout/Layout';
 import { SettingsLayout } from '../../components/Settings/SettingsLayout';
 import { ManagePromptsList } from '../../components/Settings/ManagePromptsList';
@@ -12,7 +12,7 @@ import {
   type PromptConfiguration,
 } from '../../api/promptManagementApi';
 import { IconForms, IconTags, IconUmbrella, IconEye, IconHistory, IconInfoCircle, IconHandClick } from '@tabler/icons-react';
-import { X, ChevronRight, Plus } from 'lucide-react';
+import { X, ChevronRight, Plus, ChevronDown } from 'lucide-react';
 import { useTopicConfiguration } from '../BrandSettings/hooks/useTopicConfiguration';
 import { CurrentConfigCard } from '../BrandSettings/components/CurrentConfigCard';
 import { ActiveTopicsSection } from '../BrandSettings/components/ActiveTopicsSection';
@@ -20,10 +20,9 @@ import { TopicEditModal } from '../BrandSettings/components/TopicEditModal';
 import { HistoryModal as TopicHistoryModal } from '../BrandSettings/components/HistoryModal';
 import { HowItWorksModal } from '../BrandSettings/components/HowItWorksModal';
 import { InlineTopicManager } from '../../components/Settings/InlineTopicManager';
-import type { Topic as ConfigTopic, TopicCategory } from '../../types/topic';
+import type { Topic as ConfigTopic, TopicCategory, TopicSource } from '../../types/topic';
 import type { TopicConfiguration as TopicConfigSnapshot } from '../BrandSettings/types';
 import { usePromptsManagement } from './hooks/usePromptsManagement';
-import { useTopicsManagement } from './hooks/useTopicsManagement';
 
 // Configuration version type for prompts
 interface PromptTimelineItemProps {
@@ -43,6 +42,14 @@ const formatDateShort = (dateString: string) => {
     day: 'numeric',
     year: 'numeric',
   });
+};
+
+const normalizeTopicName = (name: string) => name.trim().toLowerCase();
+const generateTemporaryTopicId = () => Date.now() + Math.floor(Math.random() * 1000);
+
+type InlineTopicMeta = {
+  promptTopicId?: number;
+  prompts: Prompt[];
 };
 
 const PromptTimelineItem = ({
@@ -337,20 +344,32 @@ export const ManagePrompts = () => {
   const [showTopicEditModal, setShowTopicEditModal] = useState(false);
   const [showTopicHistoryModal, setShowTopicHistoryModal] = useState(false);
   const [showTopicHowItWorks, setShowTopicHowItWorks] = useState(false);
-  const [topicSelectedVersion, setTopicSelectedVersion] = useState<number | null>(null);
   const [topicModalInitialTopics, setTopicModalInitialTopics] = useState<ConfigTopic[]>([]);
   const [topicError, setTopicError] = useState<string | null>(null);
+  const [topicDeleteModal, setTopicDeleteModal] = useState<{
+    topicId: string;
+    name: string;
+    promptCount: number;
+    prompts: Prompt[];
+  } | null>(null);
+  const [isDeletingTopic, setIsDeletingTopic] = useState(false);
+  const [externalPromptDeletions, setExternalPromptDeletions] = useState<{ prompts: Prompt[]; token: number } | null>(null);
+  const [isUnifiedVersionMenuOpen, setIsUnifiedVersionMenuOpen] = useState(false);
+  const versionMenuRef = useRef<HTMLDivElement | null>(null);
 
-  // Topics management hook
-  const topicsManagement = useTopicsManagement({
-    promptsTopics: topics,
-    onTopicsUpdate: (updatedTopics: Topic[]) => {
-      promptsManagement.setState(prev => ({
-        ...prev,
-        topics: updatedTopics,
-      }));
-    },
-  });
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (versionMenuRef.current && !versionMenuRef.current.contains(event.target as Node)) {
+        setIsUnifiedVersionMenuOpen(false);
+      }
+    };
+    if (isUnifiedVersionMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isUnifiedVersionMenuOpen]);
 
   useEffect(() => {
     if (topicConfig?.topics) {
@@ -359,6 +378,39 @@ export const ManagePrompts = () => {
       setTopicModalInitialTopics([]);
     }
   }, [topicConfig]);
+
+  const activeTopicConfig = useMemo(() => {
+    if (selectedVersion !== null && selectedVersion !== undefined) {
+      return topicHistory.find(config => config.version === selectedVersion) || topicConfig;
+    }
+    return topicConfig;
+  }, [selectedVersion, topicHistory, topicConfig]);
+
+  const isTopicsReadOnly = selectedVersion !== null && selectedVersion !== undefined;
+
+  const sortedConfigHistory = useMemo(
+    () => [...configHistory].sort((a, b) => b.version - a.version),
+    [configHistory]
+  );
+
+  const currentConfigEntry = useMemo(
+    () => configHistory.find(config => config.version === currentConfigVersion),
+    [configHistory, currentConfigVersion]
+  );
+
+  const selectedConfigMeta =
+    selectedVersion !== null && selectedVersion !== undefined
+      ? configHistory.find(config => config.version === selectedVersion)
+      : currentConfigEntry;
+
+  const versionButtonLabel =
+    selectedVersion !== null && selectedVersion !== undefined
+      ? `Viewing v${selectedVersion}`
+      : `Current (v${currentConfigVersion ?? 0})`;
+
+  const versionButtonCaption = selectedConfigMeta
+    ? `${formatDateShort(selectedConfigMeta.created_at)} • ${selectedConfigMeta.change_summary}`
+    : 'No configuration history yet';
   
   // Load version details when a version is selected
   const [versionTopics, setVersionTopics] = useState<Topic[]>([]);
@@ -412,17 +464,6 @@ export const ManagePrompts = () => {
     return result;
   }, [selectedVersion, versionTopics, topics, loadingVersion]);
 
-  const displayedTopicConfig = useMemo(() => {
-    if (!topicConfig) {
-      return null;
-    }
-    if (topicSelectedVersion === null) {
-      return topicConfig;
-    }
-    return topicHistory.find(config => config.version === topicSelectedVersion) || topicConfig;
-  }, [topicConfig, topicHistory, topicSelectedVersion]);
-
-  const displayedTopicList = displayedTopicConfig?.topics ?? [];
 
   const getCoverageColor = (coverage: number) => {
     if (coverage >= 90) return 'text-[var(--success500)]';
@@ -434,6 +475,206 @@ export const ManagePrompts = () => {
     void topicName;
     handlePromptSelect(prompt);
   }, [handlePromptSelect]);
+
+  // Compute inline topics and metadata BEFORE callbacks that depend on them
+  const { inlineTopics, inlineTopicMeta } = useMemo(() => {
+    const meta = new Map<string, InlineTopicMeta>();
+    const inlineList: ConfigTopic[] = [];
+
+    if (isTopicsReadOnly && activeTopicConfig) {
+      activeTopicConfig.topics.forEach(topic => {
+        inlineList.push({
+          ...topic,
+          relevance: topic.relevance ?? 70,
+        });
+        const promptMatch = topics.find(p => normalizeTopicName(p.name) === normalizeTopicName(topic.name));
+        meta.set(topic.id, {
+          promptTopicId: promptMatch?.id,
+          prompts: promptMatch?.prompts ?? [],
+        });
+      });
+      return { inlineTopics: inlineList, inlineTopicMeta: meta };
+    }
+
+    const configTopics = activeTopicConfig?.topics ?? [];
+    const seenKeys = new Set<string>();
+
+    configTopics.forEach(topic => {
+      const key = normalizeTopicName(topic.name);
+      seenKeys.add(key);
+      inlineList.push({
+        ...topic,
+        category: topic.category, // Explicitly preserve category
+        relevance: topic.relevance ?? 70,
+      });
+      const promptMatch = topics.find(p => normalizeTopicName(p.name) === key);
+      meta.set(topic.id, {
+        promptTopicId: promptMatch?.id,
+        prompts: promptMatch?.prompts ?? [],
+      });
+    });
+
+    topics.forEach(topic => {
+      const key = normalizeTopicName(topic.name);
+      if (seenKeys.has(key)) {
+        return;
+      }
+      // Try to find matching topic in config by name to preserve category
+      const matchingConfigTopic = configTopics.find(
+        ct => normalizeTopicName(ct.name) === key
+      );
+      const inlineId = `prompt-${topic.id}`;
+      inlineList.push({
+        id: inlineId,
+        name: topic.name,
+        source: 'custom',
+        category: matchingConfigTopic?.category || undefined,
+        relevance: matchingConfigTopic?.relevance ?? 70,
+      });
+      meta.set(inlineId, {
+        promptTopicId: topic.id,
+        prompts: topic.prompts,
+      });
+    });
+
+    inlineList.sort((a, b) => a.name.localeCompare(b.name));
+    return { inlineTopics: inlineList, inlineTopicMeta: meta };
+  }, [activeTopicConfig, isTopicsReadOnly, topics]);
+
+  const syncPromptTopicsWithInline = useCallback((updatedInlineTopics: ConfigTopic[], metaMap: Map<string, InlineTopicMeta>) => {
+    promptsManagement.setState(prev => {
+      const renameMap = new Map<number, string>();
+      updatedInlineTopics.forEach(topic => {
+        const meta = metaMap.get(topic.id);
+        if (meta?.promptTopicId) {
+          renameMap.set(meta.promptTopicId, topic.name);
+        }
+      });
+      let updatedPromptTopics = prev.topics.map(promptTopic => {
+        const newName = renameMap.get(promptTopic.id);
+        if (newName && newName !== promptTopic.name) {
+          return { ...promptTopic, name: newName };
+        }
+        return promptTopic;
+      });
+      const existingNames = new Set(updatedPromptTopics.map(topic => normalizeTopicName(topic.name)));
+      updatedInlineTopics.forEach(topic => {
+        const meta = metaMap.get(topic.id);
+        if (!meta?.promptTopicId && !existingNames.has(normalizeTopicName(topic.name))) {
+          updatedPromptTopics = [
+            ...updatedPromptTopics,
+            {
+              id: generateTemporaryTopicId(),
+              name: topic.name,
+              prompts: [],
+            },
+          ];
+          existingNames.add(normalizeTopicName(topic.name));
+        }
+      });
+      return { ...prev, topics: updatedPromptTopics };
+    });
+  }, [promptsManagement]);
+
+  const handleInlineTopicsChange = useCallback(
+    async (updatedTopics: ConfigTopic[]) => {
+      if (isTopicsReadOnly) {
+        return;
+      }
+      try {
+        const topicsToSave: ConfigTopic[] = updatedTopics.map(topic => ({
+          id: topic.id,
+          name: topic.name,
+          source: (topic.source as TopicSource) || 'custom',
+          category: topic.category,
+          relevance: topic.relevance ?? 70,
+        }));
+        await persistTopicChanges(topicsToSave);
+        syncPromptTopicsWithInline(updatedTopics, inlineTopicMeta);
+        setTopicError(null);
+      } catch (err) {
+        console.error('Failed to save topics:', err);
+        setTopicError(err instanceof Error ? err.message : 'Failed to save topics');
+        throw err;
+      }
+    },
+    [isTopicsReadOnly, persistTopicChanges, syncPromptTopicsWithInline, inlineTopicMeta]
+  );
+
+  const handleTopicDeleteRequest = useCallback((topic: ConfigTopic) => {
+    if (isTopicsReadOnly) {
+      return;
+    }
+    const meta = inlineTopicMeta.get(topic.id) || inlineTopicMeta.get(`prompt-${topic.id}`);
+    const promptsForTopic = meta?.prompts ?? [];
+    setTopicDeleteModal({
+      topicId: topic.id,
+      name: topic.name,
+      promptCount: promptsForTopic.length,
+      prompts: promptsForTopic,
+    });
+  }, [inlineTopicMeta, isTopicsReadOnly]);
+
+  const handleCancelTopicDeletion = useCallback(() => {
+    setTopicDeleteModal(null);
+  }, []);
+
+  const handleConfirmTopicDeletion = useCallback(async () => {
+    if (!topicDeleteModal || isDeletingTopic) {
+      return;
+    }
+    
+    const topicIdToDelete = topicDeleteModal.topicId;
+    const topicNameToDelete = topicDeleteModal.name;
+    const remainingTopics = inlineTopics.filter(topic => topic.id !== topicIdToDelete);
+    const promptsToDelete = topicDeleteModal.prompts;
+    
+    setIsDeletingTopic(true);
+    setTopicError(null);
+    
+    try {
+      console.log(`🗑️ Deleting topic "${topicNameToDelete}" with ${promptsToDelete.length} prompts`);
+      
+      // Step 1: Save the new topic configuration (without the deleted topic)
+      await handleInlineTopicsChange(remainingTopics);
+      console.log('✅ Topic configuration updated');
+      
+      // Step 2: Delete prompts from the prompts state immediately
+      if (promptsToDelete.length > 0) {
+        const promptTopicId = inlineTopicMeta.get(topicIdToDelete)?.promptTopicId;
+        
+        if (promptTopicId) {
+          // Remove the entire topic from prompts state
+          promptsManagement.setState(prev => ({
+            ...prev,
+            topics: prev.topics.filter(t => t.id !== promptTopicId)
+          }));
+          console.log(`✅ Deleted ${promptsToDelete.length} prompts from topic ${promptTopicId}`);
+        }
+        
+        // Also signal external deletions for any remaining UI updates
+        setExternalPromptDeletions({
+          prompts: promptsToDelete,
+          token: Date.now(),
+        });
+      }
+      
+      // Step 3: Close modal and refresh
+      setTopicDeleteModal(null);
+      setTopicError(null);
+      
+      // Refresh prompts to ensure sync
+      await refreshPrompts();
+      console.log('✅ Topic deletion complete');
+    } catch (err) {
+      console.error('Failed to delete topic:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete topic';
+      setTopicError(errorMessage);
+      // Keep modal open on error so user can see the error and try again
+    } finally {
+      setIsDeletingTopic(false);
+    }
+  }, [topicDeleteModal, inlineTopics, inlineTopicMeta, handleInlineTopicsChange, isDeletingTopic, promptsManagement, refreshPrompts]);
 
   const handleTopicEditClick = useCallback(() => {
     if (topicConfig?.topics) {
@@ -457,7 +698,6 @@ export const ManagePrompts = () => {
         await persistTopicChanges(updatedTopics);
         setTopicError(null);
         setShowTopicEditModal(false);
-        setTopicSelectedVersion(null);
       } catch (err) {
         console.error('Failed to save topics:', err);
         const message =
@@ -478,14 +718,10 @@ export const ManagePrompts = () => {
     setShowTopicEditModal(false);
   }, [discardTopicChanges, topicConfig]);
 
-  const handleTopicVersionChange = useCallback((version: number | null) => {
-    setTopicSelectedVersion(version);
-  }, []);
-
   const handleTopicTimelineSelect = useCallback((config: TopicConfigSnapshot) => {
-    setTopicSelectedVersion(config.version);
+    setSelectedVersion(config.version);
     setShowTopicHistoryModal(false);
-  }, []);
+  }, [setSelectedVersion]);
 
   const handleChangesApplied = useCallback(async () => {
     // Reload data after changes are applied
@@ -539,7 +775,7 @@ export const ManagePrompts = () => {
       });
     } catch (err) {
       console.error('Error loading version details:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load version details');
+                    setTopicError(err instanceof Error ? err.message : 'Failed to load version details');
     } finally {
       setLoadingVersions(prev => {
         const newSet = new Set(prev);
@@ -565,6 +801,115 @@ export const ManagePrompts = () => {
             <p className="text-[var(--text-caption)]">
               Review topics, update their prompts, and keep configuration history aligned from one place.
             </p>
+          </div>
+
+          <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-caption)]">
+                Configuration Versions
+              </p>
+              <p className="text-base font-semibold text-[var(--text-headings)]">
+                Prompts v{currentConfigVersion ?? 0} • Topics v{topicConfig?.version ?? 0}
+              </p>
+              <p className="text-xs text-[var(--text-caption)]">
+                {selectedVersion !== null && selectedVersion !== undefined
+                  ? `Viewing combined configuration snapshot v${selectedVersion}`
+                  : 'Viewing current configuration'}
+              </p>
+            </div>
+            {currentConfigVersion && configHistory.length > 0 && (
+              <div className="relative" ref={versionMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsUnifiedVersionMenuOpen(prev => !prev)}
+                  className="flex items-center gap-3 px-4 py-2 border border-[var(--border-default)] rounded-xl bg-white hover:shadow-sm transition-all"
+                >
+                  <div className="text-left">
+                    <p className="text-[10px] uppercase tracking-wide text-[var(--text-caption)] mb-0.5">
+                      Configuration
+                    </p>
+                    <p className="text-sm font-semibold text-[var(--text-headings)]">
+                      {versionButtonLabel}
+                    </p>
+                    <p className="text-[11px] text-[var(--text-caption)] line-clamp-1 max-w-[200px]">
+                      {versionButtonCaption}
+                    </p>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-[var(--text-caption)] transition-transform ${isUnifiedVersionMenuOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {isUnifiedVersionMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white border border-[var(--border-default)] rounded-2xl shadow-xl z-20 overflow-hidden">
+                    <div className="p-3 border-b border-[var(--border-default)] bg-[var(--bg-secondary)]">
+                      <p className="text-sm font-semibold text-[var(--text-headings)]">Select version</p>
+                      <p className="text-xs text-[var(--text-caption)]">Switch between saved configurations</p>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                      <button
+                        type="button"
+                        className={`w-full text-left px-4 py-3 border-b border-[var(--border-default)] hover:bg-[var(--bg-secondary)] transition-colors ${
+                          selectedVersion === null ? 'bg-[var(--bg-secondary)]' : ''
+                        }`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleVersionChange(null);
+                          setIsUnifiedVersionMenuOpen(false);
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-semibold text-[var(--text-headings)]">
+                            Current (v{currentConfigVersion})
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--success500)]/15 text-[var(--success500)] font-semibold">
+                            Active
+                          </span>
+                        </div>
+                        <p className="text-xs text-[var(--text-caption)]">
+                          {currentConfigEntry ? formatDateShort(currentConfigEntry.created_at) : 'Awaiting first version'}
+                        </p>
+                      </button>
+                      {sortedConfigHistory
+                        .filter(config => config.version !== currentConfigVersion)
+                        .map(config => (
+                          <button
+                            key={config.id}
+                            type="button"
+                            className={`w-full text-left px-4 py-3 border-b border-[var(--border-default)] hover:bg-[var(--bg-secondary)] transition-colors ${
+                              selectedVersion === config.version ? 'bg-[var(--bg-secondary)]' : 'bg-white'
+                            }`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleVersionChange(config.version === currentConfigVersion ? null : config.version);
+                              setIsUnifiedVersionMenuOpen(false);
+                            }}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-semibold text-[var(--text-headings)]">
+                                Version v{config.version}
+                              </span>
+                              {config.version === currentConfigVersion && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--success500)]/15 text-[var(--success500)] font-semibold">
+                                  Active
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-[var(--text-caption)] mb-1">
+                              {formatDateShort(config.created_at)}
+                            </p>
+                            <p className="text-xs text-[var(--text-body)] line-clamp-2">
+                              {config.change_summary}
+                            </p>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Prompt Coverage Summary */}
@@ -702,17 +1047,19 @@ export const ManagePrompts = () => {
               </button>
             </div>
 
-            {topicsManagement.error && (
+            {topicError && (
               <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">{topicsManagement.error}</p>
+                <p className="text-sm text-red-800">{topicError}</p>
               </div>
             )}
 
             <InlineTopicManager
-              topics={topicsManagement.displayTopics}
+              topics={inlineTopics}
               brandId={selectedBrandId}
-              isLoading={brandsLoading || isLoading || loadingVersion}
-              onTopicsChange={topicsManagement.handleTopicsChange}
+              isLoading={brandsLoading || topicConfigLoading || isLoading}
+              onTopicsChange={handleInlineTopicsChange}
+              isReadOnly={isTopicsReadOnly}
+              onTopicDeleteRequest={handleTopicDeleteRequest}
             />
           </section>
 
@@ -735,8 +1082,42 @@ export const ManagePrompts = () => {
               visibilityScore={summaryStats.avgVisibility || 0}
               coverage={summaryStats.coverage}
               isLoading={isLoading || loadingVersion}
+              externalPromptDeletions={externalPromptDeletions}
+              onExternalDeletionsApplied={() => setExternalPromptDeletions(null)}
+              showVersionSelector={false}
             />
           </div>
+
+          {topicDeleteModal && (
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={handleCancelTopicDeletion}>
+              <div
+                className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-lg font-semibold text-[var(--text-headings)] mb-2">
+                  Delete "{topicDeleteModal.name}"?
+                </h3>
+                <p className="text-sm text-[var(--text-body)] mb-4">
+                  Warning: {topicDeleteModal.promptCount > 0 ? `${topicDeleteModal.promptCount} prompt${topicDeleteModal.promptCount === 1 ? '' : 's'} associated with this topic will also be deleted.` : 'This topic does not have any prompts yet.'}
+                </p>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={handleCancelTopicDeletion}
+                    className="px-4 py-2 rounded-lg border border-[var(--border-default)] text-sm font-medium text-[var(--text-body)] hover:bg-[var(--bg-secondary)] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmTopicDeletion}
+                    disabled={isDeletingTopic}
+                    className="px-4 py-2 rounded-lg bg-[var(--text-error)] text-white text-sm font-medium hover:bg-[var(--text-error)]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isDeletingTopic ? 'Deleting...' : 'Delete topic'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* History Modal */}
           <PromptHistoryModal

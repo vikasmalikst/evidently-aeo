@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { SyntheticEvent } from 'react';
 import { ChevronDown, ChevronRight, CalendarDays, Plus, Edit2, Trash2, X, Check } from 'lucide-react';
 import { Topic, Prompt } from '../../api/promptManagementApi';
@@ -46,6 +46,9 @@ interface ManagePromptsListProps {
   visibilityScore?: number;
   coverage?: number;
   isLoading?: boolean;
+  externalPromptDeletions?: { prompts: Prompt[]; token: number } | null;
+  onExternalDeletionsApplied?: () => void;
+  showVersionSelector?: boolean;
 }
 
 const getWeeklyDateRanges = () => {
@@ -123,7 +126,10 @@ export const ManagePromptsList = ({
   onVersionChange,
   visibilityScore = 72.4,
   coverage = 94,
-  isLoading = false
+  isLoading = false,
+  externalPromptDeletions = null,
+  onExternalDeletionsApplied,
+  showVersionSelector = true
 }: ManagePromptsListProps) => {
   const [expandedTopics, setExpandedTopics] = useState<number[]>([]);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
@@ -415,8 +421,7 @@ export const ManagePromptsList = ({
     setEditText('');
   };
 
-  const handleDeleteClick = async (prompt: Prompt, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const deletePrompt = useCallback((prompt: Prompt) => {
     const backendId = resolveBackendId(prompt.id, prompt.queryId, promptIdMap);
     
     // Validate that we have a proper backend ID (UUID, not numeric string)
@@ -460,7 +465,20 @@ export const ManagePromptsList = ({
     // Delete the prompt immediately - user can preview impact and confirm later
     // Note: We don't call API here - deletion happens on batch apply
     onPromptDelete(prompt);
+  }, [newlyAddedPromptIds, onPromptDelete, promptIdMap, resolveBackendId, setSubmissionError]);
+
+  const handleDeleteClick = async (prompt: Prompt, e: React.MouseEvent) => {
+    e.stopPropagation();
+    deletePrompt(prompt);
   };
+
+  useEffect(() => {
+    if (!externalPromptDeletions || externalPromptDeletions.prompts.length === 0) {
+      return;
+    }
+    externalPromptDeletions.prompts.forEach(deletePrompt);
+    onExternalDeletionsApplied?.();
+  }, [externalPromptDeletions, deletePrompt, onExternalDeletionsApplied]);
 
   const handleAddClick = (topicId: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -695,7 +713,7 @@ export const ManagePromptsList = ({
           Prompts
         </h3>
         <div className="flex items-center gap-3">
-        {currentConfigVersion && configHistory.length > 0 && onVersionChange && (
+        {showVersionSelector && currentConfigVersion && configHistory.length > 0 && onVersionChange && (
           <div className="relative" ref={versionMenuRef}>
             <button
               type="button"

@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../config/database';
 export interface KeywordAnalyticsItem {
   keyword: string;
   mentions: number; // number of responses where the keyword appeared
-  volume: number; // total extracted_positions rows across those responses
+  volume: number; // total extracted_positions rows where competitor_name is null (brand positions only)
   brandPositions: number; // total extracted_positions rows with has_brand_presence = true
   competitorPositions: number; // total extracted_positions rows with has_brand_presence = false
   sources: string[]; // collector types where the keyword appeared
@@ -124,10 +124,12 @@ export const keywordsAnalyticsService = {
 
       // 3) Pull brand presence from extracted_positions for valid collector_result_ids
       // Filter by collector_type directly from extracted_positions if provided
+      // Volume should only count positions where competitor_name is null (brand positions only)
       let positionsQuery = supabaseAdmin
         .from('extracted_positions')
-        .select('collector_result_id, has_brand_presence, created_at, collector_type')
-        .in('collector_result_id', filteredCollectorIdList);
+        .select('collector_result_id, has_brand_presence, created_at, collector_type, competitor_name')
+        .in('collector_result_id', filteredCollectorIdList)
+        .is('competitor_name', null); // Only count brand positions for volume
 
       // Filter by collector_type from extracted_positions if provided
       if (mappedCollectorType) {

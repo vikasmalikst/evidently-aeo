@@ -316,9 +316,6 @@ export const Keywords = () => {
   const [llmFilter, setLlmFilter] = useState<string>('all');
   const [quadrantFilter, setQuadrantFilter] = useState<string>('all');
   const chartRef = useRef<any>(null);
-  
-  // Handle chart resize on window resize (e.g., when dev tools open/close)
-  useChartResize(chartRef, !loading && filteredData.length > 0);
 
   // Fetch real keyword analytics
   useEffect(() => {
@@ -335,9 +332,9 @@ export const Keywords = () => {
           // Map to visualization model
           const maxVolume = items.reduce((m, x) => Math.max(m, x.volume), 1);
           const mapped: KeywordData[] = items.map((it) => {
-            // Ownership is average brand share across all positions where the keyword appeared
+            // Ownership is average brand share across all brand positions (where competitor_name is null)
             const ownership = it.volume > 0 ? Math.round((it.brandPositions / it.volume) * 100) : 0;
-            const searchVolume = it.volume; // use real volume (positions count)
+            const searchVolume = it.volume; // volume = positions where competitor_name is null (brand positions only)
             const categories: ('brand' | 'competitor' | 'trending')[] = [];
             if (ownership > 60) categories.push('brand');
             if (ownership > 30 && ownership < 70) categories.push('contested');
@@ -380,6 +377,9 @@ export const Keywords = () => {
       return true;
     });
   }, [keywordData, categoryFilter, llmFilter, quadrantFilter]);
+
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, !loading && filteredData.length > 0);
 
   const chartData = {
     datasets: filteredData.map((kw) => {
@@ -707,9 +707,6 @@ export const Keywords = () => {
                     Ownership
                   </th>
                   <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>
-                    Category
-                  </th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>
                     LLM Sources
                   </th>
                 </tr>
@@ -739,25 +736,6 @@ export const Keywords = () => {
                     </td>
                     <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right', fontWeight: '600' }}>
                       {kw.ownership}%
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                        {kw.categories.slice(0, 2).map((cat) => (
-                          <span
-                            key={cat}
-                            style={{
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              fontSize: '11px',
-                              fontWeight: '500',
-                              backgroundColor: `${cat === 'brand' ? COLORS.brand : cat === 'competitor' ? COLORS.competitor : COLORS.trending}20`,
-                              color: cat === 'brand' ? COLORS.brand : cat === 'competitor' ? COLORS.competitor : COLORS.trending,
-                            }}
-                          >
-                            {cat}
-                          </span>
-                        ))}
-                      </div>
                     </td>
                     <td style={{ padding: '12px', fontSize: '12px', color: '#64748b' }}>
                       {kw.llmProviders.length > 0 ? kw.llmProviders.join(', ') : '—'}

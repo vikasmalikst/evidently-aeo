@@ -492,20 +492,20 @@ export const SearchVisibility = () => {
 
           <div className="flex flex-col flex-[0_0_60%] rounded-3xl border border-[#e4e7ec] bg-white shadow-[0_20px_45px_rgb(15_23_42_/_0.08)] overflow-hidden">
             <div className="border-b border-[#e7ecff] bg-gradient-to-br from-white via-white to-[#f6fbff] p-6">
-              <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-6">
                 <KpiToggle metricType={metricType} onChange={setMetricType} />
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
-                      View Mode
-                    </div>
-                    <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                <div className="flex flex-col gap-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
+                    View Mode
                   </div>
-                  <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm">
-                    {activeTab === 'brand'
-                      ? 'Focus on how each collector sees your brand.'
-                      : 'Benchmark the selected KPI against competitors.'}
-                  </p>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                    <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm pt-1">
+                      {activeTab === 'brand'
+                        ? 'Focus on how each collector sees your brand.'
+                        : 'Benchmark the selected KPI against competitors.'}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

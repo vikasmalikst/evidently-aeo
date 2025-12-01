@@ -235,201 +235,17 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       }
     }
 
-    // Use new topics-query-generation service (generates topics and queries together)
-    let topicsAndQueriesResult: any = null;
-    try {
-      console.log('🤖 Using new topics-query-generation service...');
-      topicsAndQueriesResult = await topicsQueryGenerationService.generateTopicsAndQueries({
-        brandName: brand_name,
-        industry: brandIndustry || industry || 'General',
-        competitors: brandCompetitors,
-        maxTopics: 20
-      });
-      console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics with queries`);
-    } catch (topicsError) {
-      console.error('❌ New topics-query-generation service failed:', topicsError);
-      // Fall back to old approach if new service fails
-      topicsAndQueriesResult = null;
-    }
-
-    // If new service succeeded, use its results
-    if (topicsAndQueriesResult && topicsAndQueriesResult.topics && topicsAndQueriesResult.topics.length > 0) {
-      // Organize topics by category using intent archetype mapping
-      const aiGenerated: Record<string, any[]> = {
-        awareness: [],
-        comparison: [],
-        purchase: [],
-        'post-purchase support': []
-      };
-
-      topicsAndQueriesResult.topics.forEach((topicWithQuery: any, index: number) => {
-        const category = topicsQueryGenerationService.mapIntentToCategory(topicWithQuery.intentArchetype);
-        const categoryKey = category === 'post-purchase support' ? 'post-purchase support' : category;
-        
-        if (aiGenerated[categoryKey]) {
-          aiGenerated[categoryKey].push({
-            id: `ai-${index}`,
-            name: topicWithQuery.topic,
-            description: topicWithQuery.description,
-            query: topicWithQuery.query, // Store the query for later use
-            source: 'ai_generated' as const,
-            category: category,
-            relevance: topicWithQuery.priority * 20, // Convert 1-5 priority to 20-100 relevance
-            priority: topicWithQuery.priority
-          });
-        }
-      });
-
-      // Include existing topics from database
-      const existingTopicsFormatted = existingTopics.map((topic: any, index: number) => {
-        const topicName = topic.topic_name || topic.topic || topic;
-        const category = topic.category || 'awareness';
-        const categoryKey = category === 'support' || category === 'post-purchase support' ? 'post-purchase support' : category;
-        
-        return {
-          id: `existing-${index}`,
-          name: topicName,
-          source: 'existing' as const,
-          category: category,
-          relevance: 90
-        };
-      });
-
-      // Merge existing topics into appropriate categories
-      existingTopicsFormatted.forEach((topic) => {
-        const categoryKey = topic.category === 'support' || topic.category === 'post-purchase support' ? 'post-purchase support' : topic.category;
-        if (aiGenerated[categoryKey]) {
-          const exists = aiGenerated[categoryKey].some(t => t.name.toLowerCase() === topic.name.toLowerCase());
-          if (!exists) {
-            aiGenerated[categoryKey].push(topic);
-          }
-        }
-      });
-
-      // Get trending topics as fallback (optional, for variety)
-      let trendingTopics: any[] = [];
-      try {
-        const trendingResult = await trendingKeywordsService.getTrendingKeywords({
-          brand: brand_name,
-          industry: brandIndustry || 'General',
-          competitors: brandCompetitors,
-          locale,
-          country,
-          max_keywords: 6
-        });
-        
-        if (trendingResult.success && trendingResult.data) {
-          trendingTopics = trendingResult.data.keywords.slice(0, 6).map((kw: any, index: number) => ({
-            id: `trend-${index}`,
-            name: kw.keyword,
-            source: 'trending' as const,
-            relevance: Math.round(kw.trend_score * 100),
-            trendingIndicator: kw.trend_score > 0.85 ? 'rising' : 'stable'
-          }));
-        }
-      } catch (trendingError) {
-        console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
-      }
-
-      // Add minimal preset topics (keep a small set for fallback)
-      const preset = [
-        { id: 'preset-1', name: 'Product features', source: 'preset' as const, relevance: 85 },
-        { id: 'preset-2', name: 'Customer testimonials', source: 'preset' as const, relevance: 82 },
-        { id: 'preset-3', name: 'Integration capabilities', source: 'preset' as const, relevance: 80 },
-        { id: 'preset-4', name: 'Security and compliance', source: 'preset' as const, relevance: 78 }
-      ];
-
-      // Map 'post-purchase support' back to 'support' for frontend compatibility
-      const aiGeneratedForFrontend = {
-        awareness: Array.isArray(aiGenerated.awareness) ? aiGenerated.awareness : [],
-        comparison: Array.isArray(aiGenerated.comparison) ? aiGenerated.comparison : [],
-        purchase: Array.isArray(aiGenerated.purchase) ? aiGenerated.purchase : [],
-        support: Array.isArray(aiGenerated['post-purchase support']) ? aiGenerated['post-purchase support'] : []
-      };
-
-      const response = {
-        trending: trendingTopics,
-        aiGenerated: aiGeneratedForFrontend,
-        preset,
-        existing_count: existingTopics.length,
-        primaryDomain: topicsAndQueriesResult.primaryDomain
-      };
-
-      console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics using new service, ${Object.values(aiGenerated).flat().length} total AI topics, and found ${existingTopics.length} existing topics`);
-
-      res.json({
-        success: true,
-        data: response
-      });
-      return;
-    }
-
-    // Fallback to old approach if new service failed
-    console.log('⚠️ Falling back to old topic generation approach...');
-    
-    // 1. Get trending keywords/topics from Gemini (with error handling - don't fail entire endpoint)
-    let trendingResult: any = { success: false, data: null };
-    try {
-      trendingResult = await trendingKeywordsService.getTrendingKeywords({
-        brand: brand_name,
-        industry: brandIndustry || 'General',
-        competitors: brandCompetitors,
-        locale,
-        country,
-        max_keywords: 12
-      });
-    } catch (trendingError) {
-      console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
-    }
-
-    // 2. Get trending keywords which will serve as topics
-    const trendingTopics: any[] = [];
-    
-    if (trendingResult.success && trendingResult.data) {
-      trendingResult.data.keywords.forEach((kw: any, index: number) => {
-        trendingTopics.push({
-          id: `trend-${index}`,
-          name: kw.keyword,
-          source: 'trending' as const,
-          relevance: Math.round(kw.trend_score * 100),
-          trendingIndicator: kw.trend_score > 0.85 ? 'rising' : 'stable'
-        });
-      });
-    }
-
-    // 3. Include existing topics from database (if any)
-    const existingTopicsFormatted = existingTopics.map((topic: any, index: number) => {
-      const topicName = topic.topic_name || topic.topic || topic;
-      return {
-        id: `existing-${index}`,
-        name: topicName,
-        source: 'existing' as const,
-        category: topic.category || 'awareness',
-        relevance: 90
-      };
+    // Use new topics-query-generation service (always use new approach)
+    const topicsAndQueriesResult = await topicsQueryGenerationService.generateTopicsAndQueries({
+      brandName: brand_name,
+      industry: brandIndustry || industry || 'General',
+      competitors: brandCompetitors,
+      maxTopics: 20
     });
 
-    // 4. Generate categorized topics using AEO categorization
-    const allTopicNames = [
-      ...trendingTopics.map((t: any) => t.name),
-      ...existingTopicsFormatted.map((t: any) => t.name)
-    ];
+    console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics with queries using new service`);
 
-    let categorizedResult: any = { categorized_topics: [] };
-    if (allTopicNames.length > 0) {
-      try {
-        categorizedResult = await aeoCategorizationService.categorizeTopics({
-          topics: allTopicNames,
-          brand_name,
-          industry: brandIndustry || 'General',
-          competitors: brandCompetitors
-        });
-      } catch (categorizeError) {
-        console.warn('⚠️ AI categorization failed (continuing without AI-recommended topics):', categorizeError);
-      }
-    }
-
-    // 5. Organize topics by category
+    // Organize topics by category using intent archetype mapping
     const aiGenerated: Record<string, any[]> = {
       awareness: [],
       comparison: [],
@@ -437,53 +253,76 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       'post-purchase support': []
     };
 
-    const normalizeCategoryForLookup = (cat: string): string => {
-      const normalized = cat.toLowerCase().trim();
-      if (normalized === 'support' || normalized === 'post-purchase' || normalized === 'postpurchase') {
-        return 'post-purchase support';
+    topicsAndQueriesResult.topics.forEach((topicWithQuery: any, index: number) => {
+      const category = topicsQueryGenerationService.mapIntentToCategory(topicWithQuery.intentArchetype);
+      const categoryKey = category === 'post-purchase support' ? 'post-purchase support' : category;
+
+      if (aiGenerated[categoryKey]) {
+        aiGenerated[categoryKey].push({
+          id: `ai-${index}`,
+          name: topicWithQuery.topic,
+          description: topicWithQuery.description,
+          query: topicWithQuery.query, // Store the query for later use
+          source: 'ai_generated' as const,
+          category: category,
+          relevance: topicWithQuery.priority * 20, // Convert 1-5 priority to 20-100 relevance
+          priority: topicWithQuery.priority
+        });
       }
-      return normalized;
-    };
+    });
 
-    if (categorizedResult.categorized_topics) {
-      categorizedResult.categorized_topics.forEach((ct: any, index: number) => {
-        const category = normalizeCategoryForLookup(ct.category || 'awareness');
-        
-        const matchingTopic = trendingTopics.find((t: any) => t.name === ct.topic_name) ||
-                             existingTopicsFormatted.find((t: any) => t.name === ct.topic_name);
-        
-        if (matchingTopic && aiGenerated[category]) {
-          aiGenerated[category].push({
-            id: matchingTopic.id || `ai-${index}`,
-            name: ct.topic_name,
-            source: matchingTopic.source || 'ai_generated' as const,
-            category: category,
-            relevance: Math.round((ct.confidence || 0.8) * 100)
-          });
-        } else if (aiGenerated[category]) {
-          aiGenerated[category].push({
-            id: `ai-${index}`,
-            name: ct.topic_name,
-            source: 'ai_generated' as const,
-            category: category,
-            relevance: Math.round((ct.confidence || 0.8) * 100)
-          });
-        }
-      });
-    }
+    // Include existing topics from database
+    const existingTopicsFormatted = existingTopics.map((topic: any, index: number) => {
+      const topicName = topic.topic_name || topic.topic || topic;
+      const category = topic.category || 'awareness';
+      const categoryKey = category === 'support' || category === 'post-purchase support' ? 'post-purchase support' : category;
 
-    // 6. Merge existing topics
+      return {
+        id: `existing-${index}`,
+        name: topicName,
+        source: 'existing' as const,
+        category: category,
+        relevance: 90
+      };
+    });
+
+    // Merge existing topics into appropriate categories
     existingTopicsFormatted.forEach((topic) => {
-      const category = normalizeCategoryForLookup(topic.category || 'awareness');
-      if (aiGenerated[category]) {
-        const exists = aiGenerated[category].some(t => t.name.toLowerCase() === topic.name.toLowerCase());
+      const categoryKey = topic.category === 'support' || topic.category === 'post-purchase support' ? 'post-purchase support' : topic.category;
+      if (aiGenerated[categoryKey]) {
+        const exists = aiGenerated[categoryKey].some(t => t.name.toLowerCase() === topic.name.toLowerCase());
         if (!exists) {
-          aiGenerated[category].push(topic);
+          aiGenerated[categoryKey].push(topic);
         }
       }
     });
 
-    // 7. Add preset topics
+    // Get trending topics as additional variety (optional)
+    let trendingTopics: any[] = [];
+    try {
+      const trendingResult = await trendingKeywordsService.getTrendingKeywords({
+        brand: brand_name,
+        industry: brandIndustry || 'General',
+        competitors: brandCompetitors,
+        locale,
+        country,
+        max_keywords: 6
+      });
+
+      if (trendingResult.success && trendingResult.data) {
+        trendingTopics = trendingResult.data.keywords.slice(0, 6).map((kw: any, index: number) => ({
+          id: `trend-${index}`,
+          name: kw.keyword,
+          source: 'trending' as const,
+          relevance: Math.round(kw.trend_score * 100),
+          trendingIndicator: kw.trend_score > 0.85 ? 'rising' : 'stable'
+        }));
+      }
+    } catch (trendingError) {
+      console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
+    }
+
+    // Add minimal preset topics (keep a small set for fallback)
     const preset = [
       { id: 'preset-1', name: 'Product features', source: 'preset' as const, relevance: 85 },
       { id: 'preset-2', name: 'Customer testimonials', source: 'preset' as const, relevance: 82 },
@@ -491,6 +330,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       { id: 'preset-4', name: 'Security and compliance', source: 'preset' as const, relevance: 78 }
     ];
 
+    // Map 'post-purchase support' back to 'support' for frontend compatibility
     const aiGeneratedForFrontend = {
       awareness: Array.isArray(aiGenerated.awareness) ? aiGenerated.awareness : [],
       comparison: Array.isArray(aiGenerated.comparison) ? aiGenerated.comparison : [],
@@ -499,13 +339,14 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
     };
 
     const response = {
-      trending: trendingTopics.slice(0, 6),
+      trending: trendingTopics,
       aiGenerated: aiGeneratedForFrontend,
       preset,
-      existing_count: existingTopics.length
+      existing_count: existingTopics.length,
+      primaryDomain: topicsAndQueriesResult.primaryDomain
     };
 
-    console.log(`✅ Generated ${trendingTopics.length} trending topics, ${Object.values(aiGenerated).flat().length} AI topics, and found ${existingTopics.length} existing topics (fallback mode)`);
+    console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics using new service, ${Object.values(aiGenerated).flat().length} total AI topics, and found ${existingTopics.length} existing topics`);
 
     res.json({
       success: true,

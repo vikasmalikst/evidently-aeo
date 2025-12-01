@@ -5,7 +5,6 @@ import type {
   CompetitorGenerationParams,
 } from './types';
 import { clearbitService } from './services/clearbit.service';
-import { wikipediaService } from './services/wikipedia.service';
 import { llmBrandIntelService } from './services/llm-brand-intel.service';
 import { competitorService } from './services/competitor.service';
 import { stripProtocol, ensureHttps } from './utils/string-utils';
@@ -48,14 +47,12 @@ export class OnboardingIntelService {
       matchedSuggestion?.logo ?? (domain ? `https://logo.clearbit.com/${domain}` : '');
 
     // Step 2: Generate brand intelligence using LLM
-    const skipTopics = process.env.USE_NEW_TOPICS_QUERY_GENERATION === 'true';
     let llmBrandIntel = null;
     try {
       llmBrandIntel = await llmBrandIntelService.generateBrandIntel(
         trimmedInput,
         companyName,
-        domain,
-        skipTopics
+        domain
       );
       console.log('✅ LLM brand intelligence generated:', {
         hasSummary: !!llmBrandIntel?.summary,
@@ -67,10 +64,8 @@ export class OnboardingIntelService {
       console.error('❌ LLM generation failed:', llmError);
     }
 
-    // Step 3: Fetch Wikipedia summary as fallback/enhancement
-    const wikipediaSummary = await wikipediaService.fetchSummary(companyName);
-    let description =
-      llmBrandIntel?.summary || wikipediaSummary?.extract?.trim() || '';
+    // Step 3: Set description from LLM or fallback
+    let description = llmBrandIntel?.summary || '';
 
     if (!description) {
       description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
@@ -80,19 +75,16 @@ export class OnboardingIntelService {
     let derivedIndustry =
       llmBrandIntel?.industry ||
       extractIndustry(description) ||
-      extractIndustry(wikipediaSummary?.description ?? '') ||
       'General';
 
     let headquarters =
       llmBrandIntel?.headquarters ||
       extractHeadquarters(description) ||
-      extractHeadquarters(wikipediaSummary?.description ?? '') ||
       '';
 
     let foundedYear =
       llmBrandIntel?.foundedYear ||
       extractFoundedYear(description) ||
-      extractFoundedYear(wikipediaSummary?.description ?? '') ||
       null;
 
     // Use LLM-generated homepage URL if available
@@ -117,7 +109,6 @@ export class OnboardingIntelService {
       description,
       metadata: {
         source: {
-          wikipedia: wikipediaSummary?.url ?? null,
           clearbit: matchedSuggestion?.domain ?? null,
         },
         lookupInput: trimmedInput,
@@ -175,18 +166,6 @@ export class OnboardingIntelService {
       }
     }
 
-    // Store topics in metadata if available
-    if (
-      llmBrandIntel?.topics &&
-      Array.isArray(llmBrandIntel.topics) &&
-      llmBrandIntel.topics.length > 0
-    ) {
-      brand.metadata = {
-        ...brand.metadata,
-        llmGeneratedTopics: llmBrandIntel.topics,
-      };
-      console.log(`✅ Stored ${llmBrandIntel.topics.length} topics from LLM in metadata`);
-    }
 
     return {
       brand,

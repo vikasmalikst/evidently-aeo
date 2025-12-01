@@ -8,6 +8,7 @@ import { authenticateToken } from '../middleware/auth.middleware';
 import { BrandOnboardingRequest, ApiResponse, DatabaseError } from '../types/auth';
 import { supabaseAdmin } from '../config/database';
 import { topicConfigurationService } from '../services/topic-configuration.service';
+import { competitorCrudService, competitorVersioningService } from '../services/competitor-management';
 
 const router = Router();
 
@@ -896,6 +897,243 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to fetch progress',
+    });
+  }
+});
+
+/**
+ * GET /brands/:brandId/competitors
+ * Get all competitors for a brand (with versioning)
+ */
+router.get('/:brandId/competitors', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    const result = await competitorCrudService.getActiveCompetitors(brandId, customerId);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error fetching competitors:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch competitors'
+    });
+  }
+});
+
+/**
+ * POST /brands/:brandId/competitors
+ * Add a new competitor
+ */
+router.post('/:brandId/competitors', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const userId = req.user!.id;
+    const competitor = req.body;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    if (!competitor.name) {
+      res.status(400).json({
+        success: false,
+        error: 'Competitor name is required'
+      });
+      return;
+    }
+
+    const result = await competitorCrudService.addCompetitor(
+      brandId,
+      customerId,
+      competitor,
+      userId
+    );
+
+    res.status(201).json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error adding competitor:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to add competitor'
+    });
+  }
+});
+
+/**
+ * DELETE /brands/:brandId/competitors/:competitorName
+ * Remove a competitor
+ */
+router.delete('/:brandId/competitors/:competitorName', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId, competitorName } = req.params;
+    const customerId = req.user!.customer_id;
+    const userId = req.user!.id;
+
+    if (!brandId || !customerId || !competitorName) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID, Customer ID, and Competitor Name are required'
+      });
+      return;
+    }
+
+    await competitorCrudService.removeCompetitor(
+      brandId,
+      customerId,
+      decodeURIComponent(competitorName),
+      userId
+    );
+
+    res.json({
+      success: true,
+      message: 'Competitor removed successfully'
+    });
+  } catch (error) {
+    console.error('Error removing competitor:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to remove competitor'
+    });
+  }
+});
+
+/**
+ * PUT /brands/:brandId/competitors/:competitorName
+ * Update a competitor
+ */
+router.put('/:brandId/competitors/:competitorName', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId, competitorName } = req.params;
+    const customerId = req.user!.customer_id;
+    const userId = req.user!.id;
+    const updates = req.body;
+
+    if (!brandId || !customerId || !competitorName) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID, Customer ID, and Competitor Name are required'
+      });
+      return;
+    }
+
+    const result = await competitorCrudService.updateCompetitor(
+      brandId,
+      customerId,
+      decodeURIComponent(competitorName),
+      updates,
+      userId
+    );
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error updating competitor:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update competitor'
+    });
+  }
+});
+
+/**
+ * PUT /brands/:brandId/competitors
+ * Bulk update competitors (for reordering, bulk operations)
+ */
+router.put('/:brandId/competitors', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const userId = req.user!.id;
+    const { competitors, changeSummary } = req.body;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    if (!Array.isArray(competitors)) {
+      res.status(400).json({
+        success: false,
+        error: 'Competitors must be an array'
+      });
+      return;
+    }
+
+    const result = await competitorCrudService.bulkUpdateCompetitors(
+      brandId,
+      customerId,
+      competitors,
+      changeSummary,
+      userId
+    );
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error bulk updating competitors:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update competitors'
+    });
+  }
+});
+
+/**
+ * GET /brands/:brandId/competitors/versions
+ * Get version history for competitors
+ */
+router.get('/:brandId/competitors/versions', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    const result = await competitorVersioningService.getVersionHistory(brandId, customerId);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error fetching competitor version history:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch version history'
     });
   }
 });

@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryGenerationService } from './query-generation.service';
 import { topicsQueryGenerationService, TopicsAndQueriesResponse } from './topics-query-generation.service';
 import { dataCollectionService, QueryExecutionRequest } from './data-collection/data-collection.service';
+import { competitorVersioningService } from './competitor-management';
 
 type NormalizedCompetitor = {
   name: string;
@@ -360,6 +361,34 @@ export class BrandService {
           }
         } else if (existingBrand) {
           console.log(`ℹ️ All ${verifiedCompetitors.length} competitors already exist for brand ${newBrand.name}`);
+        }
+      }
+
+      // Create initial competitor configuration version if competitors exist
+      if (verifiedCompetitors.length > 0) {
+        try {
+          // Check if version already exists
+          const existingConfig = await competitorVersioningService.getCurrentVersion(newBrand.id, customerId);
+          if (!existingConfig) {
+            await competitorVersioningService.createInitialVersion(
+              newBrand.id,
+              customerId,
+              verifiedCompetitors.map((comp, index) => ({
+                name: comp.name,
+                url: comp.url,
+                domain: comp.domain,
+                relevance: comp.relevance,
+                industry: comp.industry,
+                logo: comp.logo,
+                source: comp.source,
+                priority: index + 1
+              }))
+            );
+            console.log(`✅ Created initial competitor configuration version for brand ${newBrand.name}`);
+          }
+        } catch (versionError) {
+          console.warn('⚠️ Failed to create competitor configuration version:', versionError);
+          // Don't fail brand creation if versioning fails
         }
       }
 

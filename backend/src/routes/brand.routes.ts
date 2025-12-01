@@ -691,6 +691,10 @@ router.get('/:brandId/topic-configuration/current', authenticateToken, async (re
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
     const config = await topicConfigurationService.getCurrentConfiguration(brandId, customerId, req.user?.id);
+    
+    // Log the topic IDs being returned
+    console.log('📤 Returning topic configuration with topics:', config.topics?.map(t => ({ id: t.id, name: t.name })));
+    
     res.json({ success: true, data: config });
   } catch (error) {
     console.error('Error fetching current topic configuration:', error);

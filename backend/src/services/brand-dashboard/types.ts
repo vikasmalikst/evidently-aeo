@@ -48,6 +48,7 @@ export interface CollectorAggregateTopicStats {
 export interface CollectorAggregate {
   shareValues: number[]
   visibilityValues: number[]
+  sentimentValues: number[]
   mentions: number
   brandPresenceCount: number
   uniqueQueryIds: Set<string>
@@ -59,6 +60,7 @@ export interface LlmVisibilitySlice {
   share: number
   shareOfSearch: number
   visibility: number
+  sentiment: number | null
   delta: number
   brandPresenceCount: number
   totalQueries: number
@@ -95,6 +97,7 @@ export interface CompetitorVisibility {
   mentions: number
   share: number
   visibility: number
+  sentiment: number | null
   brandPresencePercentage: number
   topTopics: Array<{
     topic: string

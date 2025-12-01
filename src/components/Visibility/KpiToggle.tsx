@@ -1,6 +1,6 @@
-import { PieChart, TrendingUp } from 'lucide-react';
+import { PieChart, TrendingUp, Heart } from 'lucide-react';
 
-type MetricType = 'visibility' | 'share';
+type MetricType = 'visibility' | 'share' | 'sentiment';
 
 interface KpiToggleProps {
   metricType: MetricType;
@@ -24,6 +24,12 @@ const KPI_OPTIONS: Array<{
     label: 'Share of Answers',
     description: 'Percent of answers where your brand is mentioned',
     Icon: PieChart
+  },
+  {
+    id: 'sentiment',
+    label: 'Sentiment Score',
+    description: 'How positively your brand and competitors are discussed',
+    Icon: Heart
   }
 ];
 
@@ -33,7 +39,7 @@ export const KpiToggle = ({ metricType, onChange }: KpiToggleProps) => {
       <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
         Select KPI
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         {KPI_OPTIONS.map(({ id, label, description, Icon }) => {
           const isActive = metricType === id;
           return (

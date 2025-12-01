@@ -176,7 +176,7 @@ Users encounter two different interfaces for the same task:
 ### Files to Review/Modify
 - `src/components/Settings/ManagePromptsList.tsx` - Table-based view
 - `src/components/PromptConfiguration/PromptEditor.tsx` - Card-based view
-- `src/pages/ManagePrompts.tsx` - Main page using ManagePromptsList
+- `src/pages/ManagePrompts/ManagePrompts.tsx` - Main page using ManagePromptsList
 - `src/components/PromptConfiguration/PromptConfigurationWorkflow.tsx` - Uses PromptEditor
 
 ### Related Components

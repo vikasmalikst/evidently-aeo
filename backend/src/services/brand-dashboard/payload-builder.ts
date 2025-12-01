@@ -545,6 +545,7 @@ export async function buildDashboardPayload(
         collectorAggregates.set(collectorType, {
           shareValues: [],
           visibilityValues: [],
+          sentimentValues: [],
           mentions: 0,
           brandPresenceCount: 0,
           uniqueQueryIds: new Set<string>(),

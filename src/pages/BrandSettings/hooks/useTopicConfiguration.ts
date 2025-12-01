@@ -67,8 +67,44 @@ export const useTopicConfiguration = (brandId?: string | null): UseTopicConfigur
         `/brands/${brandId}/topic-configuration/current`
       );
       
+      console.log('🔧 Topic configuration API response:', response);
+      console.log('🔧 Topics in response:', response.data?.topics);
+      console.log('🔧 Topic IDs:', response.data?.topics?.map(t => ({ id: t.id, name: t.name })));
+      
       if (response.success && response.data) {
-        setCurrentConfig(response.data);
+        // Fix NaN IDs before setting config
+        const fixedConfig = {
+          ...response.data,
+          topics: response.data.topics.map((topic, index) => {
+            // Check for invalid IDs: null, undefined, 'NaN' string, or actual NaN
+            const idValue = topic.id;
+            const idStr = String(idValue);
+            const isInvalidId = 
+              idValue == null || 
+              idValue === undefined || 
+              idStr === 'NaN' || 
+              idStr === 'undefined' || 
+              idStr === 'null' ||
+              (typeof idValue === 'number' && isNaN(idValue)) ||
+              (idStr.trim() === '');
+            
+            const fixedId = isInvalidId
+              ? `topic-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`
+              : String(idValue); // Ensure it's always a string
+            
+            if (isInvalidId) {
+              console.warn(`⚠️ Fixed invalid topic ID: "${topic.id}" (type: ${typeof topic.id}) -> "${fixedId}" for topic: "${topic.name}"`);
+            }
+            
+            return {
+              ...topic,
+              id: fixedId
+            };
+          })
+        };
+        
+        console.log('🔧 Fixed config topics:', fixedConfig.topics.map(t => ({ id: t.id, name: t.name })));
+        setCurrentConfig(fixedConfig);
       } else {
         console.error('Failed to fetch current configuration: No data returned');
         // Fallback to empty config if no data

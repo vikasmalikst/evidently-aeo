@@ -39,6 +39,7 @@ export interface PromptTopic {
   name: string
   promptCount: number
   prompts: ManagedPrompt[]
+  category?: string | null
 }
 
 export interface PromptConfiguration {

@@ -131,6 +131,7 @@ async function processSingleRun(run: ScoringJobRun): Promise<void> {
       extractionOptions,
     );
     const sentimentsProcessed = await sentimentScoringService.scorePending(sentimentOptions);
+    const competitorSentimentsProcessed = await sentimentScoringService.scoreExtractedPositions(sentimentOptions);
 
     const finishedAt = new Date();
 
@@ -153,12 +154,13 @@ async function processSingleRun(run: ScoringJobRun): Promise<void> {
           brandCount: brandIds.length,
           extractionOptions,
           sentimentOptions,
+          competitorSentimentsProcessed,
         },
       })
       .eq('id', run.id);
 
     console.log(
-      `[Worker] Completed scoring run ${run.id}: positions=${positionsProcessed}, sentiments=${sentimentsProcessed}`,
+      `[Worker] Completed scoring run ${run.id}: positions=${positionsProcessed}, sentiments=${sentimentsProcessed}, competitorSentiments=${competitorSentimentsProcessed}`,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

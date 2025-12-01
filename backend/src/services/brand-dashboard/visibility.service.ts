@@ -116,11 +116,18 @@ export class VisibilityService {
           )
           .slice(0, 5)
 
+        // Calculate average sentiment for this collector
+        const sentimentValues = aggregate.sentimentValues || []
+        const sentiment = sentimentValues.length > 0
+          ? round(average(sentimentValues), 2)
+          : null
+
         return {
           provider: collectorType,
           share: shareOfSearch,
           shareOfSearch,
           visibility: visibilityPercentage,
+          sentiment,
           delta: 0,
           brandPresenceCount: aggregate.brandPresenceCount,
           totalQueries: aggregate.uniqueQueryIds.size,
@@ -224,11 +231,18 @@ export class VisibilityService {
           })
           .slice(0, 5)
 
+        // Calculate average sentiment for this competitor
+        const sentimentValues = aggregate.sentimentValues || []
+        const sentiment = sentimentValues.length > 0
+          ? round(average(sentimentValues), 2)
+          : null
+
         return {
           competitor: competitorName,
           mentions: aggregate.mentions || aggregate.shareValues.length,
           share,
           visibility,
+          sentiment,
           brandPresencePercentage,
           topTopics,
           collectors: topSignals
@@ -245,6 +259,7 @@ export class VisibilityService {
           mentions: 0,
           share: 0,
           visibility: 0,
+          sentiment: null,
           brandPresencePercentage: 0,
           topTopics: [],
           collectors: []

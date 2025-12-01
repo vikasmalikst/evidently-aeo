@@ -41,6 +41,18 @@ interface SentimentAnalysis extends SentimentResult {
   negativeSentences: string[];
 }
 
+interface EntitySentimentAnalysis {
+  entityName: string;
+  label: string;
+  score: number;
+  positiveSentences: string[];
+  negativeSentences: string[];
+}
+
+interface MultiEntitySentimentResult {
+  entities: EntitySentimentAnalysis[];
+}
+
 export interface SentimentScoreOptions {
   customerId?: string;
   brandIds?: string[];
@@ -241,6 +253,393 @@ export class SentimentScoringService {
 
     console.log(`\n✅ Sentiment scoring complete! Updated ${processed}/${rows.length} rows (${failed} failed)`);
     return processed;
+  }
+
+  /**
+   * Score sentiment for extracted_positions rows (both brand and competitors).
+   * Groups by collector_result_id to analyze once per answer, then updates all related rows.
+   * Returns the number of rows updated.
+   */
+  public async scoreExtractedPositions(options: SentimentScoreOptions = {}): Promise<number> {
+    const limit = Math.max(options.limit ?? DEFAULT_SENTIMENT_LIMIT, 1);
+
+    console.log('\n🎯 Starting sentiment scoring for extracted_positions (brand + competitors)...');
+    
+    // Force Cerebras for competitor sentiment analysis
+    if (!cerebrasApiKey) {
+      throw new Error('Cerebras API key required for competitor sentiment scoring. Please set CEREBRAS_API_KEY or CEREBRAS_API_KEY_2');
+    }
+    console.log(`   ▶ Provider: Cerebras (required for multi-entity analysis)`);
+    
+    if (options.customerId) {
+      console.log(`   ▶ customer: ${options.customerId}`);
+    }
+    if (options.brandIds?.length) {
+      console.log(`   ▶ brands: ${options.brandIds.join(', ')}`);
+    }
+    if (options.since) {
+      console.log(`   ▶ since: ${options.since}`);
+    }
+    console.log('   ▶ limit:', limit, '\n');
+
+    // Query extracted_positions that need sentiment scoring
+    let query = this.supabase
+      .from('extracted_positions')
+      .select(
+        'id, collector_result_id, brand_name, competitor_name, sentiment_score, sentiment_label, brand_id, customer_id, processed_at'
+      )
+      .is('sentiment_score', null)
+      .not('collector_result_id', 'is', null)
+      .order('processed_at', { ascending: false })
+      .limit(limit * 10); // Get more rows since we'll group by collector_result_id
+
+    if (options.customerId) {
+      query = query.eq('customer_id', options.customerId);
+    }
+    if (options.brandIds && options.brandIds.length > 0) {
+      query = query.in('brand_id', options.brandIds);
+    }
+    if (options.since) {
+      query = query.gte('processed_at', options.since);
+    }
+
+    const { data: positionRows, error } = await query;
+
+    if (error) {
+      throw error;
+    }
+
+    if (!positionRows || positionRows.length === 0) {
+      console.log('✅ No pending sentiment rows found in extracted_positions');
+      return 0;
+    }
+
+    // Group by collector_result_id
+    const groupedByCollectorResult = new Map<number, Array<typeof positionRows[0]>>();
+    for (const row of positionRows) {
+      const collectorResultId = row.collector_result_id;
+      if (!collectorResultId) continue;
+      
+      if (!groupedByCollectorResult.has(collectorResultId)) {
+        groupedByCollectorResult.set(collectorResultId, []);
+      }
+      groupedByCollectorResult.get(collectorResultId)!.push(row);
+    }
+
+    console.log(`📊 Found ${positionRows.length} position rows grouped into ${groupedByCollectorResult.size} unique collector results\n`);
+
+    let processed = 0;
+    let failed = 0;
+    let processedGroups = 0;
+
+    // Process each group (one API call per collector_result_id)
+    for (const [collectorResultId, rows] of Array.from(groupedByCollectorResult.entries()).slice(0, limit)) {
+      try {
+        processedGroups++;
+        console.log(`\n📊 Processing group ${processedGroups}/${Math.min(groupedByCollectorResult.size, limit)}: collector_result_id=${collectorResultId} (${rows.length} position rows)`);
+
+        // Get raw_answer from collector_results
+        const { data: collectorResult, error: crError } = await this.supabase
+          .from('collector_results')
+          .select('id, raw_answer, brand_id, customer_id')
+          .eq('id', collectorResultId)
+          .single();
+
+        if (crError || !collectorResult || !collectorResult.raw_answer) {
+          console.warn(`⚠️ Skipping group ${collectorResultId}: no raw_answer found`);
+          // Set neutral sentiment for all rows in this group
+          await this.updatePositionRowsSentiment(
+            rows.map(r => r.id),
+            { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+            null
+          );
+          processed += rows.length;
+          continue;
+        }
+
+        const rawAnswer = collectorResult.raw_answer.trim();
+        if (rawAnswer.length === 0) {
+          console.warn(`⚠️ Skipping group ${collectorResultId}: empty raw_answer`);
+          await this.updatePositionRowsSentiment(
+            rows.map(r => r.id),
+            { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+            null
+          );
+          processed += rows.length;
+          continue;
+        }
+
+        // Extract entities (brand + competitors) from position rows
+        const brandRow = rows.find(r => !r.competitor_name || r.competitor_name.trim().length === 0);
+        const competitorRows = rows.filter(r => r.competitor_name && r.competitor_name.trim().length > 0);
+        
+        const brandName = brandRow?.brand_name || rows[0]?.brand_name || 'Brand';
+        const competitorNames = [...new Set(competitorRows.map(r => r.competitor_name!).filter(Boolean))];
+
+        if (competitorNames.length === 0 && !brandRow) {
+          console.warn(`⚠️ Skipping group ${collectorResultId}: no brand or competitor rows found`);
+          continue;
+        }
+
+        // Analyze sentiment for all entities in one API call
+        const entitySentiments = await this.analyzeMultiEntitySentiment(
+          rawAnswer,
+          brandName,
+          competitorNames
+        );
+
+        // Update brand row if exists
+        if (brandRow) {
+          const brandSentiment = entitySentiments.find(e => 
+            e.entityName.toLowerCase() === brandName.toLowerCase()
+          ) || entitySentiments.find(e => e.entityName.toLowerCase() === 'brand');
+          
+          if (brandSentiment) {
+            await this.updatePositionRowsSentiment(
+              [brandRow.id],
+              brandSentiment,
+              brandName
+            );
+            processed++;
+            console.log(`   ✅ Brand sentiment: ${brandSentiment.label} (${brandSentiment.score.toFixed(2)})`);
+          }
+        }
+
+        // Update competitor rows
+        for (const competitorRow of competitorRows) {
+          const competitorName = competitorRow.competitor_name!;
+          const competitorSentiment = entitySentiments.find(e => 
+            e.entityName.toLowerCase() === competitorName.toLowerCase()
+          );
+
+          if (competitorSentiment) {
+            await this.updatePositionRowsSentiment(
+              [competitorRow.id],
+              competitorSentiment,
+              competitorName
+            );
+            processed++;
+            console.log(`   ✅ ${competitorName} sentiment: ${competitorSentiment.label} (${competitorSentiment.score.toFixed(2)})`);
+          } else {
+            // Set neutral if not found
+            await this.updatePositionRowsSentiment(
+              [competitorRow.id],
+              { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+              competitorName
+            );
+            processed++;
+            console.log(`   ⚠️ ${competitorName}: sentiment not found, set to NEUTRAL`);
+          }
+        }
+
+        // Add delay between API calls to avoid rate limits (except for last item)
+        if (processedGroups < Math.min(groupedByCollectorResult.size, limit)) {
+          await this.sleep(2000); // 2 second delay between requests
+        }
+      } catch (scoringError) {
+        const message = scoringError instanceof Error ? scoringError.message : String(scoringError);
+        
+        // Check if it's a rate limit error (429)
+        const isRateLimit = message.includes('429') || 
+                           message.includes('rate limit') || 
+                           message.includes('too many requests') ||
+                           message.includes('request_quota_exceeded');
+        
+        if (isRateLimit) {
+          console.warn(`⚠️ Rate limit hit for collector_result_id ${collectorResultId}. Skipping this group.`);
+          console.warn(`   Waiting 60 seconds before continuing...`);
+          await this.sleep(60000); // Wait 60 seconds on rate limit
+          continue;
+        }
+        
+        failed += rows.length;
+        console.error(`❌ Failed sentiment scoring for collector_result_id=${collectorResultId}: ${message}`);
+      }
+    }
+
+    console.log(`\n✅ Extracted positions sentiment scoring complete! Updated ${processed} rows from ${processedGroups} groups (${failed} failed)`);
+    return processed;
+  }
+
+  /**
+   * Update extracted_positions rows with sentiment data
+   */
+  private async updatePositionRowsSentiment(
+    positionIds: number[],
+    sentiment: EntitySentimentAnalysis,
+    entityName: string | null
+  ): Promise<void> {
+    if (positionIds.length === 0) return;
+
+    const updateData: any = {
+      sentiment_label: sentiment.label,
+      sentiment_score: sentiment.score,
+      sentiment_positive_sentences: sentiment.positiveSentences,
+      sentiment_negative_sentences: sentiment.negativeSentences,
+    };
+
+    const { error } = await this.supabase
+      .from('extracted_positions')
+      .update(updateData)
+      .in('id', positionIds);
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Analyze sentiment for multiple entities (brand + competitors) in one API call using Cerebras
+   */
+  private async analyzeMultiEntitySentiment(
+    text: string,
+    brandName: string,
+    competitorNames: string[]
+  ): Promise<EntitySentimentAnalysis[]> {
+    if (!cerebrasApiKey) {
+      throw new Error('Cerebras API key not configured');
+    }
+
+    // Truncate to 20k words max
+    const maxWords = 20000;
+    const truncated = this.truncateToWordLimit(text, maxWords);
+
+    const entities = [brandName, ...competitorNames];
+    const entitiesList = entities.map((name, idx) => `${idx + 1}. ${name}`).join('\n');
+
+    const prompt = `Analyze the sentiment for each of the following entities mentioned in the text below.
+
+Entities to analyze:
+${entitiesList}
+
+For each entity, provide:
+1. Sentiment label: POSITIVE, NEGATIVE, or NEUTRAL
+2. Sentiment score: A precise decimal number from -1.0 (very negative) to 1.0 (very positive)
+   - Use granular scores like 0.23, -0.45, 0.67, -0.12, 0.89, etc.
+   - Avoid rounding to common values like 0.80, 0.70, 0.00
+   - Calculate based on how the entity is discussed in the text
+3. List of positive sentences mentioning this entity
+4. List of negative sentences mentioning this entity
+
+Text to analyze:
+${truncated}
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "entities": [
+    {
+      "entityName": "${brandName}",
+      "label": "POSITIVE|NEGATIVE|NEUTRAL",
+      "score": -1.0 to 1.0 (precise decimal),
+      "positiveSentences": ["sentence 1", "sentence 2"],
+      "negativeSentences": ["sentence 1", "sentence 2"]
+    },
+    {
+      "entityName": "CompetitorName",
+      "label": "POSITIVE|NEGATIVE|NEUTRAL",
+      "score": -1.0 to 1.0 (precise decimal),
+      "positiveSentences": ["sentence 1"],
+      "negativeSentences": ["sentence 1"]
+    }
+  ]
+}`;
+
+    try {
+      const fullPrompt = `You are a sentiment analysis expert. Always respond with valid JSON only, no explanations.
+
+${prompt}`;
+
+      const response = await fetch('https://api.cerebras.ai/v1/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cerebrasApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: cerebrasModel,
+          prompt: fullPrompt,
+          temperature: 0.3,
+          max_tokens: 3000, // Increased for multiple entities
+          stop: ['---END---']
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const error = new Error(`Cerebras API error: ${response.status} ${errorText}`);
+        (error as any).statusCode = response.status;
+        throw error;
+      }
+
+      const data = await response.json() as any;
+      const content = data.choices?.[0]?.text || data.choices?.[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error('No content in Cerebras response');
+      }
+
+      // Extract JSON from response
+      let jsonStr = '';
+      let cleanContent = content.trim();
+      if (cleanContent.includes('```json')) {
+        cleanContent = cleanContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+      } else if (cleanContent.includes('```')) {
+        cleanContent = cleanContent.replace(/```\s*/g, '');
+      }
+      
+      // Find JSON object by counting braces
+      let braceCount = 0;
+      let startIdx = -1;
+      for (let i = 0; i < cleanContent.length; i++) {
+        if (cleanContent[i] === '{') {
+          if (startIdx === -1) startIdx = i;
+          braceCount++;
+        } else if (cleanContent[i] === '}') {
+          braceCount--;
+          if (braceCount === 0 && startIdx !== -1) {
+            jsonStr = cleanContent.substring(startIdx, i + 1);
+            break;
+          }
+        }
+      }
+      
+      if (!jsonStr) {
+        const jsonMatch = cleanContent.match(/\{[\s\S]*?\}/);
+        if (jsonMatch) {
+          jsonStr = jsonMatch[0];
+        }
+      }
+      
+      if (!jsonStr) {
+        console.warn('⚠️ No valid JSON found in Cerebras response. Content preview:', content.substring(0, 500));
+        throw new Error('No JSON found in Cerebras response');
+      }
+
+      const result = JSON.parse(jsonStr) as MultiEntitySentimentResult;
+      
+      if (!result.entities || !Array.isArray(result.entities)) {
+        throw new Error('Invalid response format: entities array not found');
+      }
+
+      // Normalize and validate results
+      return result.entities.map(entity => ({
+        entityName: entity.entityName || '',
+        label: (entity.label || 'NEUTRAL').toUpperCase(),
+        score: Math.max(-1, Math.min(1, parseFloat(String(entity.score)) || 0)),
+        positiveSentences: Array.isArray(entity.positiveSentences) ? entity.positiveSentences : [],
+        negativeSentences: Array.isArray(entity.negativeSentences) ? entity.negativeSentences : [],
+      }));
+    } catch (error) {
+      console.error('Cerebras multi-entity sentiment analysis failed:', error);
+      // Return neutral sentiment for all entities on error
+      return entities.map(name => ({
+        entityName: name,
+        label: 'NEUTRAL',
+        score: 0,
+        positiveSentences: [],
+        negativeSentences: [],
+      }));
+    }
   }
 
   private async analyzeSentiment(text: string): Promise<SentimentAnalysis> {

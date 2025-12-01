@@ -49,6 +49,12 @@ export const InlineTopicManager = ({
   isReadOnly = false,
   onTopicDeleteRequest,
 }: InlineTopicManagerProps) => {
+  // Debug: Log topics when component receives them
+  console.log('🔍 InlineTopicManager received topics:', topics);
+  console.log('🔍 Topics details:', topics.map(t => ({ id: t.id, name: t.name, category: t.category })));
+  console.log('🔍 onTopicDeleteRequest prop:', onTopicDeleteRequest);
+  console.log('🔍 Type of onTopicDeleteRequest:', typeof onTopicDeleteRequest);
+  
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTopicName, setNewTopicName] = useState('');
@@ -328,9 +334,13 @@ export const InlineTopicManager = ({
                           </button>
                           <button
                               onClick={() => {
+                                console.log('🗑️ Delete button clicked for topic:', topic);
+                                console.log('🗑️ onTopicDeleteRequest exists:', !!onTopicDeleteRequest);
                                 if (onTopicDeleteRequest) {
+                                  console.log('🗑️ Calling onTopicDeleteRequest');
                                   onTopicDeleteRequest(topic);
                                 } else {
+                                  console.log('🗑️ Calling handleDeleteTopic');
                                   handleDeleteTopic(topic.id);
                                 }
                               }}

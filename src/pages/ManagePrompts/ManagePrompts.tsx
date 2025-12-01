@@ -7,6 +7,7 @@ import {
   getActivePrompts,
   getVersionHistory,
   getVersionDetails,
+  applyBatchChanges,
   type Prompt,
   type Topic,
   type PromptConfiguration,
@@ -353,7 +354,6 @@ export const ManagePrompts = () => {
     prompts: Prompt[];
   } | null>(null);
   const [isDeletingTopic, setIsDeletingTopic] = useState(false);
-  const [externalPromptDeletions, setExternalPromptDeletions] = useState<{ prompts: Prompt[]; token: number } | null>(null);
   const [isUnifiedVersionMenuOpen, setIsUnifiedVersionMenuOpen] = useState(false);
   const versionMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -372,7 +372,10 @@ export const ManagePrompts = () => {
   }, [isUnifiedVersionMenuOpen]);
 
   useEffect(() => {
+    console.log('🔄 topicConfig changed:', topicConfig);
+    console.log('🔄 topicConfig.topics:', topicConfig?.topics);
     if (topicConfig?.topics) {
+      console.log('🔄 Setting topicModalInitialTopics:', topicConfig.topics.map(t => ({ id: t.id, name: t.name })));
       setTopicModalInitialTopics(topicConfig.topics);
     } else {
       setTopicModalInitialTopics([]);
@@ -478,44 +481,94 @@ export const ManagePrompts = () => {
 
   // Compute inline topics and metadata BEFORE callbacks that depend on them
   const { inlineTopics, inlineTopicMeta } = useMemo(() => {
+    console.log('📊 Computing inlineTopics...');
+    console.log('📊 activeTopicConfig:', activeTopicConfig);
+    console.log('📊 topics:', topics);
+    console.log('📊 isTopicsReadOnly:', isTopicsReadOnly);
+    
     const meta = new Map<string, InlineTopicMeta>();
     const inlineList: ConfigTopic[] = [];
 
     if (isTopicsReadOnly && activeTopicConfig) {
+      console.log('📊 Using read-only mode with activeTopicConfig');
       activeTopicConfig.topics.forEach(topic => {
+        // Ensure topic has a valid ID - check for 'NaN' string, undefined, null, or actual NaN
+        const idValue = topic.id;
+        const idStr = String(idValue);
+        const isInvalidId = 
+          idValue == null || 
+          idValue === undefined || 
+          idStr === 'NaN' || 
+          idStr === 'undefined' || 
+          idStr === 'null' ||
+          (typeof idValue === 'number' && isNaN(idValue)) ||
+          (idStr.trim() === '');
+        const topicId = isInvalidId
+          ? `topic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          : String(idValue);
+        
+        console.log(`📊 Read-only topic: "${topic.name}", original ID: "${topic.id}", isInvalid: ${isInvalidId}, using: "${topicId}"`);
+          
         inlineList.push({
           ...topic,
+          id: topicId, // Ensure valid ID
           relevance: topic.relevance ?? 70,
         });
         const promptMatch = topics.find(p => normalizeTopicName(p.name) === normalizeTopicName(topic.name));
-        meta.set(topic.id, {
+        meta.set(topicId, {
           promptTopicId: promptMatch?.id,
           prompts: promptMatch?.prompts ?? [],
         });
       });
+      console.log('📊 Read-only inlineList:', inlineList);
       return { inlineTopics: inlineList, inlineTopicMeta: meta };
     }
 
     const configTopics = activeTopicConfig?.topics ?? [];
+    console.log('📊 configTopics:', configTopics);
     const seenKeys = new Set<string>();
 
     configTopics.forEach(topic => {
       const key = normalizeTopicName(topic.name);
+      console.log(`📊 Processing configTopic: "${topic.name}" (key: "${key}", id: "${topic.id}")`);
+      
+      // Ensure topic has a valid ID - check for 'NaN' string, undefined, null, or actual NaN
+      const idValue = topic.id;
+      const idStr = String(idValue);
+      const isInvalidId = 
+        idValue == null || 
+        idValue === undefined || 
+        idStr === 'NaN' || 
+        idStr === 'undefined' || 
+        idStr === 'null' ||
+        (typeof idValue === 'number' && isNaN(idValue)) ||
+        (idStr.trim() === '');
+      const topicId = isInvalidId
+        ? `topic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        : String(idValue);
+      
+      console.log(`📊 Topic: "${topic.name}", original ID: "${topic.id}", isInvalid: ${isInvalidId}, using: "${topicId}"`);
+      
       seenKeys.add(key);
       inlineList.push({
         ...topic,
+        id: topicId, // Ensure valid ID
         category: topic.category, // Explicitly preserve category
         relevance: topic.relevance ?? 70,
       });
       const promptMatch = topics.find(p => normalizeTopicName(p.name) === key);
-      meta.set(topic.id, {
+      meta.set(topicId, {
         promptTopicId: promptMatch?.id,
         prompts: promptMatch?.prompts ?? [],
       });
     });
 
+    console.log('📊 After configTopics, inlineList:', inlineList);
+    console.log('📊 seenKeys:', Array.from(seenKeys));
+
     topics.forEach(topic => {
       const key = normalizeTopicName(topic.name);
+      console.log(`📊 Processing topic from prompts: "${topic.name}" (key: "${key}", already seen: ${seenKeys.has(key)})`);
       if (seenKeys.has(key)) {
         return;
       }
@@ -538,7 +591,29 @@ export const ManagePrompts = () => {
     });
 
     inlineList.sort((a, b) => a.name.localeCompare(b.name));
-    return { inlineTopics: inlineList, inlineTopicMeta: meta };
+    
+    // Final validation pass - ensure no NaN IDs
+    const validatedList = inlineList.map((topic, index) => {
+      const idValue = topic.id;
+      const idStr = String(idValue);
+      const isInvalidId = 
+        idValue == null || 
+        idValue === undefined || 
+        idStr === 'NaN' || 
+        idStr === 'undefined' || 
+        idStr === 'null' ||
+        (typeof idValue === 'number' && isNaN(idValue)) ||
+        (idStr.trim() === '');
+      if (isInvalidId) {
+        const fixedId = `topic-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`;
+        console.warn(`⚠️ Final validation: Fixed invalid ID "${topic.id}" (type: ${typeof topic.id}) -> "${fixedId}" for topic: "${topic.name}"`);
+        return { ...topic, id: fixedId };
+      }
+      return { ...topic, id: String(idValue) }; // Ensure it's always a string
+    });
+    
+    console.log('📊 Final inlineList (after sorting and validation):', validatedList);
+    return { inlineTopics: validatedList, inlineTopicMeta: meta };
   }, [activeTopicConfig, isTopicsReadOnly, topics]);
 
   const syncPromptTopicsWithInline = useCallback((updatedInlineTopics: ConfigTopic[], metaMap: Map<string, InlineTopicMeta>) => {
@@ -602,18 +677,42 @@ export const ManagePrompts = () => {
   );
 
   const handleTopicDeleteRequest = useCallback((topic: ConfigTopic) => {
+    console.log('🗑️ handleTopicDeleteRequest called with topic:', topic);
+    console.log('🗑️ isTopicsReadOnly:', isTopicsReadOnly);
+    
     if (isTopicsReadOnly) {
+      console.log('🗑️ Topics are read-only, exiting');
       return;
     }
+    
+    const normalizedName = normalizeTopicName(topic.name);
+    console.log('🗑️ normalizedName:', normalizedName);
+    
     const meta = inlineTopicMeta.get(topic.id) || inlineTopicMeta.get(`prompt-${topic.id}`);
-    const promptsForTopic = meta?.prompts ?? [];
-    setTopicDeleteModal({
+    console.log('🗑️ meta:', meta);
+    
+    const fallbackPrompts =
+      topics.find(promptTopic => normalizeTopicName(promptTopic.name) === normalizedName)?.prompts ?? [];
+    console.log('🗑️ fallbackPrompts:', fallbackPrompts);
+    
+    const promptsForTopic = meta?.prompts?.length ? meta.prompts : fallbackPrompts;
+    console.log('🗑️ promptsForTopic:', promptsForTopic);
+    
+    const modalData = {
       topicId: topic.id,
       name: topic.name,
       promptCount: promptsForTopic.length,
       prompts: promptsForTopic,
-    });
-  }, [inlineTopicMeta, isTopicsReadOnly]);
+    };
+    console.log('🗑️ Setting topicDeleteModal:', modalData);
+    setTopicDeleteModal(modalData);
+  }, [inlineTopicMeta, isTopicsReadOnly, topics]);
+  
+  // Debug: Log when this function is created - ensure it's always defined
+  useEffect(() => {
+    console.log('✅ handleTopicDeleteRequest defined:', !!handleTopicDeleteRequest);
+    console.log('✅ handleTopicDeleteRequest type:', typeof handleTopicDeleteRequest);
+  }, [handleTopicDeleteRequest]);
 
   const handleCancelTopicDeletion = useCallback(() => {
     setTopicDeleteModal(null);
@@ -623,58 +722,60 @@ export const ManagePrompts = () => {
     if (!topicDeleteModal || isDeletingTopic) {
       return;
     }
+    if (!selectedBrandId) {
+      setTopicError('Please select a brand before deleting topics.');
+      return;
+    }
     
     const topicIdToDelete = topicDeleteModal.topicId;
     const topicNameToDelete = topicDeleteModal.name;
     const remainingTopics = inlineTopics.filter(topic => topic.id !== topicIdToDelete);
-    const promptsToDelete = topicDeleteModal.prompts;
+    const promptsToDelete = topicDeleteModal.prompts ?? [];
+    const missingIds = promptsToDelete.filter(prompt => !prompt.queryId);
+    const deletablePrompts = promptsToDelete.filter(prompt => !!prompt.queryId);
+    
+    if (missingIds.length > 0) {
+      setTopicError('Some prompts are missing identifiers. Please refresh the page and try again.');
+      return;
+    }
     
     setIsDeletingTopic(true);
     setTopicError(null);
     
     try {
-      console.log(`🗑️ Deleting topic "${topicNameToDelete}" with ${promptsToDelete.length} prompts`);
-      
-      // Step 1: Save the new topic configuration (without the deleted topic)
-      await handleInlineTopicsChange(remainingTopics);
-      console.log('✅ Topic configuration updated');
-      
-      // Step 2: Delete prompts from the prompts state immediately
-      if (promptsToDelete.length > 0) {
-        const promptTopicId = inlineTopicMeta.get(topicIdToDelete)?.promptTopicId;
-        
-        if (promptTopicId) {
-          // Remove the entire topic from prompts state
-          promptsManagement.setState(prev => ({
-            ...prev,
-            topics: prev.topics.filter(t => t.id !== promptTopicId)
-          }));
-          console.log(`✅ Deleted ${promptsToDelete.length} prompts from topic ${promptTopicId}`);
-        }
-        
-        // Also signal external deletions for any remaining UI updates
-        setExternalPromptDeletions({
-          prompts: promptsToDelete,
-          token: Date.now(),
-        });
+      if (deletablePrompts.length > 0) {
+        const removalChanges = deletablePrompts.map(prompt => ({
+          id: prompt.queryId as string,
+          text: prompt.text,
+        }));
+        const changeSummary = `Removed ${removalChanges.length} prompt${removalChanges.length === 1 ? '' : 's'} after deleting topic "${topicNameToDelete}"`;
+        await applyBatchChanges(selectedBrandId, {
+          added: [],
+          removed: removalChanges,
+          edited: [],
+        }, changeSummary);
       }
       
-      // Step 3: Close modal and refresh
-      setTopicDeleteModal(null);
-      setTopicError(null);
+      await handleInlineTopicsChange(remainingTopics);
       
-      // Refresh prompts to ensure sync
+      promptsManagement.setState(prev => ({
+        ...prev,
+        topics: prev.topics.filter(
+          promptTopic => normalizeTopicName(promptTopic.name) !== normalizeTopicName(topicNameToDelete)
+        ),
+      }));
+      
+      setTopicDeleteModal(null);
+      
       await refreshPrompts();
-      console.log('✅ Topic deletion complete');
     } catch (err) {
       console.error('Failed to delete topic:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete topic';
       setTopicError(errorMessage);
-      // Keep modal open on error so user can see the error and try again
     } finally {
       setIsDeletingTopic(false);
     }
-  }, [topicDeleteModal, inlineTopics, inlineTopicMeta, handleInlineTopicsChange, isDeletingTopic, promptsManagement, refreshPrompts]);
+  }, [topicDeleteModal, isDeletingTopic, selectedBrandId, inlineTopics, handleInlineTopicsChange, promptsManagement, refreshPrompts]);
 
   const handleTopicEditClick = useCallback(() => {
     if (topicConfig?.topics) {
@@ -1053,6 +1154,14 @@ export const ManagePrompts = () => {
               </div>
             )}
 
+            {(() => {
+              console.log('🔧 About to render InlineTopicManager');
+              console.log('🔧 handleTopicDeleteRequest:', handleTopicDeleteRequest);
+              console.log('🔧 typeof handleTopicDeleteRequest:', typeof handleTopicDeleteRequest);
+              console.log('🔧 inlineTopics:', inlineTopics);
+              return null;
+            })()}
+
             <InlineTopicManager
               topics={inlineTopics}
               brandId={selectedBrandId}
@@ -1082,8 +1191,6 @@ export const ManagePrompts = () => {
               visibilityScore={summaryStats.avgVisibility || 0}
               coverage={summaryStats.coverage}
               isLoading={isLoading || loadingVersion}
-              externalPromptDeletions={externalPromptDeletions}
-              onExternalDeletionsApplied={() => setExternalPromptDeletions(null)}
               showVersionSelector={false}
             />
           </div>
@@ -1098,7 +1205,8 @@ export const ManagePrompts = () => {
                   Delete "{topicDeleteModal.name}"?
                 </h3>
                 <p className="text-sm text-[var(--text-body)] mb-4">
-                  Warning: {topicDeleteModal.promptCount > 0 ? `${topicDeleteModal.promptCount} prompt${topicDeleteModal.promptCount === 1 ? '' : 's'} associated with this topic will also be deleted.` : 'This topic does not have any prompts yet.'}
+                  Warning: {topicDeleteModal.promptCount > 0 ? `${topicDeleteModal.promptCount} prompt${topicDeleteModal.promptCount === 1 ? '' : 's'} associated with this topic will also be deleted.` : 'This topic does not have any prompts yet.'}{' '}
+                  A fresh prompts and topics version will be created immediately after you confirm.
                 </p>
                 <div className="flex items-center justify-end gap-2">
                   <button

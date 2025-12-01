@@ -95,6 +95,7 @@ interface ModelData {
   name: string;
   score: number;
   shareOfSearch: number;
+  sentiment?: number | null;
   shareOfSearchChange?: number;
   topTopic: string;
   change?: number;
@@ -102,6 +103,7 @@ interface ModelData {
   brandPresencePercentage: number;
   data: number[];
   shareData?: number[];
+  sentimentData?: number[];
   topTopics?: LlmTopic[];
   color?: string;
   isBrand?: boolean;
@@ -145,7 +147,7 @@ export const SearchVisibility = () => {
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [metricType, setMetricType] = useState<'visibility' | 'share'>('visibility');
+  const [metricType, setMetricType] = useState<'visibility' | 'share' | 'sentiment'>('visibility');
   const [brandModels, setBrandModels] = useState<ModelData[]>([]);
   const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
@@ -214,12 +216,16 @@ export const SearchVisibility = () => {
       
       const visibilityValue = slice.visibility ?? 0;
       const shareValue = slice.shareOfSearch ?? slice.share ?? 0;
+      const sentimentValue = slice.sentiment ?? null;
+      // Convert sentiment from -1 to 1 scale to 0-100 scale for display
+      const sentimentDisplayValue = sentimentValue !== null ? ((sentimentValue + 1) / 2) * 100 : null;
       
       return {
         id: normalizeId(slice.provider),
         name: slice.provider,
         score: Math.round(visibilityValue), // Use visibility, not share
         shareOfSearch: Math.round(shareValue),
+        sentiment: sentimentDisplayValue,
         shareOfSearchChange: slice.delta ? Math.round(slice.delta) : 0,
         topTopic:
           slice.topTopic ??
@@ -230,6 +236,7 @@ export const SearchVisibility = () => {
         brandPresencePercentage,
         data: buildTimeseries(visibilityValue),
         shareData: buildTimeseries(shareValue),
+        sentimentData: sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined,
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -318,17 +325,22 @@ export const SearchVisibility = () => {
     // Always create brand row if we have a selected brand ID
     const brandVisibilityValue = brandData.visibility ?? 0;
     const brandShareValue = brandData.share ?? 0;
+    // Get brand sentiment from response (if available)
+    const brandSentimentRaw = (response.data as any)?.sentimentScore ?? null;
+    const brandSentimentDisplay = brandSentimentRaw !== null ? ((brandSentimentRaw + 1) / 2) * 100 : null;
     const brandCompetitiveModel = selectedBrandId ? {
       id: 'brand',
       name: brandName,
       score: Math.round(brandVisibilityValue),
       shareOfSearch: Math.round(brandShareValue),
+      sentiment: brandSentimentDisplay,
       topTopic: brandData.topTopics?.[0]?.topic ?? '—',
       change: 0,
       referenceCount: queriesWithBrandPresence,
       brandPresencePercentage: Math.round(brandData.brandPresencePercentage ?? 0),
       data: buildTimeseries(brandVisibilityValue),
       shareData: buildTimeseries(brandShareValue),
+      sentimentData: brandSentimentDisplay !== null ? buildTimeseries(brandSentimentDisplay) : undefined,
       topTopics: brandData.topTopics?.map(topic => ({
         topic: topic.topic,
         occurrences: topic.occurrences,
@@ -342,18 +354,22 @@ export const SearchVisibility = () => {
     const competitorModelsData = competitorEntries.map((entry) => {
       const competitorVisibilityValue = entry.visibility ?? 0;
       const competitorShareValue = entry.share ?? 0;
+      const competitorSentimentRaw = entry.sentiment ?? null;
+      const competitorSentimentDisplay = competitorSentimentRaw !== null ? ((competitorSentimentRaw + 1) / 2) * 100 : null;
       
       return {
         id: normalizeId(entry.competitor),
         name: entry.competitor,
         score: Math.round(competitorVisibilityValue),
         shareOfSearch: Math.round(competitorShareValue),
+        sentiment: competitorSentimentDisplay,
         topTopic: entry.topTopics?.[0]?.topic ?? '—',
         change: 0,
         referenceCount: entry.mentions ?? 0,
         brandPresencePercentage: Math.round(entry.brandPresencePercentage ?? 0),
         data: buildTimeseries(competitorVisibilityValue),
         shareData: buildTimeseries(competitorShareValue),
+        sentimentData: competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined,
         topTopics: entry.topTopics?.map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -415,7 +431,11 @@ export const SearchVisibility = () => {
     datasets: currentModels.map((model) => ({
       id: model.id,
       label: model.name,
-      data: metricType === 'visibility' ? model.data : (model.shareData ?? model.data)
+      data: metricType === 'visibility' 
+        ? model.data 
+        : metricType === 'share' 
+          ? (model.shareData ?? model.data)
+          : (model.sentimentData ?? model.data)
     }))
   }), [currentModels, metricType]);
 

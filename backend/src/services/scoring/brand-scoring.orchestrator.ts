@@ -35,6 +35,7 @@ interface BrandScoringOptions {
 interface BrandScoringResult {
   positionsProcessed: number;
   sentimentsProcessed: number;
+  competitorSentimentsProcessed: number;
   citationsProcessed: number;
   errors: Array<{ operation: string; error: string }>;
 }
@@ -58,6 +59,7 @@ export class BrandScoringService {
     const result: BrandScoringResult = {
       positionsProcessed: 0,
       sentimentsProcessed: 0,
+      competitorSentimentsProcessed: 0,
       citationsProcessed: 0,
       errors: []
     };
@@ -81,9 +83,10 @@ export class BrandScoringService {
         // Run all scoring operations in parallel
         console.log('⚡ Running scoring operations in parallel...');
         
-        const [positionsResult, sentimentsResult, citationsResult] = await Promise.allSettled([
+        const [positionsResult, sentimentsResult, competitorSentimentsResult, citationsResult] = await Promise.allSettled([
           positionExtractionService.extractPositionsForNewResults(positionOptions),
           sentimentScoringService.scorePending(sentimentOptions),
+          sentimentScoringService.scoreExtractedPositions(sentimentOptions),
           citationExtractionService.extractAndStoreCitations(brandId)
         ]);
 
@@ -111,6 +114,18 @@ export class BrandScoringService {
           console.error(`❌ Sentiment scoring failed:`, errorMsg);
         }
 
+        // Process competitor sentiments result
+        if (competitorSentimentsResult.status === 'fulfilled') {
+          result.competitorSentimentsProcessed = competitorSentimentsResult.value;
+          console.log(`✅ Competitor sentiment scoring completed: ${result.competitorSentimentsProcessed} positions processed`);
+        } else {
+          const errorMsg = competitorSentimentsResult.reason instanceof Error 
+            ? competitorSentimentsResult.reason.message 
+            : String(competitorSentimentsResult.reason);
+          result.errors.push({ operation: 'competitor_sentiment_scoring', error: errorMsg });
+          console.error(`❌ Competitor sentiment scoring failed:`, errorMsg);
+        }
+
         // Process citations result
         if (citationsResult.status === 'fulfilled') {
           result.citationsProcessed = citationsResult.value.processed || citationsResult.value.inserted || 0;
@@ -136,7 +151,7 @@ export class BrandScoringService {
           console.error(`❌ Position extraction failed:`, errorMsg);
         }
 
-        // 2. Sentiment scoring
+        // 2. Sentiment scoring (for collector_results - brand only)
         try {
           result.sentimentsProcessed = await sentimentScoringService.scorePending(sentimentOptions);
           console.log(`✅ Sentiment scoring completed: ${result.sentimentsProcessed} sentiments processed`);
@@ -146,7 +161,17 @@ export class BrandScoringService {
           console.error(`❌ Sentiment scoring failed:`, errorMsg);
         }
 
-        // 3. Citation extraction
+        // 3. Competitor sentiment scoring (for extracted_positions - brand + competitors)
+        try {
+          result.competitorSentimentsProcessed = await sentimentScoringService.scoreExtractedPositions(sentimentOptions);
+          console.log(`✅ Competitor sentiment scoring completed: ${result.competitorSentimentsProcessed} positions processed`);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          result.errors.push({ operation: 'competitor_sentiment_scoring', error: errorMsg });
+          console.error(`❌ Competitor sentiment scoring failed:`, errorMsg);
+        }
+
+        // 4. Citation extraction
         try {
           const citationStats = await citationExtractionService.extractAndStoreCitations(brandId);
           result.citationsProcessed = citationStats.processed || citationStats.inserted || 0;
@@ -161,6 +186,7 @@ export class BrandScoringService {
       console.log(`\n✅ Brand scoring complete for brand ${brandId}:`);
       console.log(`   ▶ Positions: ${result.positionsProcessed}`);
       console.log(`   ▶ Sentiments: ${result.sentimentsProcessed}`);
+      console.log(`   ▶ Competitor Sentiments: ${result.competitorSentimentsProcessed}`);
       console.log(`   ▶ Citations: ${result.citationsProcessed}`);
       if (result.errors.length > 0) {
         console.log(`   ⚠️  Errors: ${result.errors.length}`);

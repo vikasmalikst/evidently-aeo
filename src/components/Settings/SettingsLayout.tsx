@@ -17,6 +17,11 @@ const settingsNavItems: SettingsNavItem[] = [
     label: 'Prompts & Topics',
     path: '/settings/manage-prompts',
   },
+  {
+    id: 'manage-competitors',
+    label: 'Competitors',
+    path: '/settings/manage-competitors',
+  },
 ];
 
 interface SettingsLayoutProps {

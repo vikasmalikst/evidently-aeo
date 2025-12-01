@@ -30,6 +30,20 @@ export class PromptCrudService {
       throw new DatabaseError('Brand not found for customer')
     }
 
+    // Preload topic categories from brand_topics so we can enrich grouped topics
+    const categoryMap = new Map<string, string | null>()
+    const { data: brandTopicsRows } = await supabaseAdmin
+      .from('brand_topics')
+      .select('topic_name, category, is_active')
+      .eq('brand_id', brandId)
+
+    brandTopicsRows?.forEach(row => {
+      if (!row.topic_name || row.is_active === false) {
+        return
+      }
+      categoryMap.set(row.topic_name.trim().toLowerCase(), row.category || null)
+    })
+
     // Get or create active version configuration
     let activeConfig = await promptVersioningService.getCurrentVersion(brandId, customerId)
 
@@ -213,12 +227,18 @@ export class PromptCrudService {
       topicMap.get(topicId)!.push(prompt)
     })
 
-    const topics: PromptTopic[] = Array.from(topicMap.entries()).map(([topicId, topicPrompts]) => ({
-      id: topicId,
-      name: topicPrompts[0]?.topic || 'Uncategorized',
-      promptCount: topicPrompts.length,
-      prompts: topicPrompts
-    }))
+    const topics: PromptTopic[] = Array.from(topicMap.entries()).map(([topicId, topicPrompts]) => {
+      const topicName = topicPrompts[0]?.topic || 'Uncategorized'
+      const normalizedName = topicName.trim().toLowerCase()
+      const category = categoryMap.get(normalizedName) || null
+      return {
+        id: topicId,
+        name: topicName,
+        promptCount: topicPrompts.length,
+        prompts: topicPrompts,
+        category
+      }
+    })
 
     // Calculate summary statistics
     const totalPrompts = prompts.length

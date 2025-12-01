@@ -46,8 +46,6 @@ interface ManagePromptsListProps {
   visibilityScore?: number;
   coverage?: number;
   isLoading?: boolean;
-  externalPromptDeletions?: { prompts: Prompt[]; token: number } | null;
-  onExternalDeletionsApplied?: () => void;
   showVersionSelector?: boolean;
 }
 
@@ -127,8 +125,6 @@ export const ManagePromptsList = ({
   visibilityScore = 72.4,
   coverage = 94,
   isLoading = false,
-  externalPromptDeletions = null,
-  onExternalDeletionsApplied,
   showVersionSelector = true
 }: ManagePromptsListProps) => {
   const [expandedTopics, setExpandedTopics] = useState<number[]>([]);
@@ -471,14 +467,6 @@ export const ManagePromptsList = ({
     e.stopPropagation();
     deletePrompt(prompt);
   };
-
-  useEffect(() => {
-    if (!externalPromptDeletions || externalPromptDeletions.prompts.length === 0) {
-      return;
-    }
-    externalPromptDeletions.prompts.forEach(deletePrompt);
-    onExternalDeletionsApplied?.();
-  }, [externalPromptDeletions, deletePrompt, onExternalDeletionsApplied]);
 
   const handleAddClick = (topicId: number, e: React.MouseEvent) => {
     e.stopPropagation();

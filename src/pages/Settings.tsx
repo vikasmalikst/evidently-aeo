@@ -1,7 +1,7 @@
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { useNavigate } from 'react-router-dom';
-import { IconForms, IconChevronRight } from '@tabler/icons-react';
+import { IconForms, IconChevronRight, IconUsers } from '@tabler/icons-react';
 
 export const Settings = () => {
   const navigate = useNavigate();
@@ -13,6 +13,13 @@ export const Settings = () => {
       description: 'Edit tracked topics and the prompts that power your analyses from one place',
       icon: IconForms,
       path: '/settings/manage-prompts',
+    },
+    {
+      id: 'manage-competitors',
+      title: 'Competitors',
+      description: 'Add, remove, or update competitors to track their performance alongside your brand',
+      icon: IconUsers,
+      path: '/settings/manage-competitors',
     },
   ];
 

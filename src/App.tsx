@@ -13,6 +13,7 @@ import { PromptSelection } from './pages/PromptSelection';
 import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
 import { Settings } from './pages/Settings';
 import { ManagePrompts } from './pages/ManagePrompts';
+import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
@@ -155,6 +156,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ManagePrompts />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/manage-competitors"
+          element={
+            <ProtectedRoute>
+              <ManageCompetitors />
             </ProtectedRoute>
           }
         />

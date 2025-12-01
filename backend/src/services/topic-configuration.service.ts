@@ -37,13 +37,22 @@ const slugifyTopic = (value: string): string =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'topic'
 
-const mapTopicRow = (row: any): TopicDTO => ({
-  id: row.metadata?.topic_id || row.id || row.topic_slug || row.topic_name,
-  name: row.topic_name,
-  source: (row.source as TopicSource) || 'custom',
-  category: row.category || null,
-  relevance: typeof row.relevance === 'number' ? row.relevance : null
-})
+const mapTopicRow = (row: any): TopicDTO => {
+  const id = row.metadata?.topic_id || row.id || row.topic_slug || row.topic_name || `topic-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  
+  // Log if we had to generate an ID (indicates data issue)
+  if (!row.metadata?.topic_id && !row.id && !row.topic_slug) {
+    console.warn('⚠️ Topic row missing proper ID, using fallback:', { row, generatedId: id });
+  }
+  
+  return {
+    id,
+    name: row.topic_name,
+    source: (row.source as TopicSource) || 'custom',
+    category: row.category || null,
+    relevance: typeof row.relevance === 'number' ? row.relevance : null
+  };
+}
 
 const buildSummary = (diff: TopicDiff): string => {
   const parts: string[] = []
@@ -259,12 +268,21 @@ class TopicConfigurationService {
       throw new DatabaseError(`Failed to fetch topic snapshots: ${error.message}`)
     }
 
+    console.log('📊 Fetched topic rows from DB:', topicRows?.map(r => ({ 
+      id: r.id, 
+      metadata: r.metadata, 
+      topic_slug: r.topic_slug, 
+      topic_name: r.topic_name 
+    })));
+
     const topicMap = new Map<string, TopicDTO[]>()
     topicRows?.forEach(row => {
       if (!topicMap.has(row.configuration_id)) {
         topicMap.set(row.configuration_id, [])
       }
-      topicMap.get(row.configuration_id)!.push(mapTopicRow(row))
+      const mappedTopic = mapTopicRow(row);
+      console.log('📊 Mapped topic:', { original: row.topic_name, mapped: mappedTopic });
+      topicMap.get(row.configuration_id)!.push(mappedTopic)
     })
 
     return { topics: topicMap }

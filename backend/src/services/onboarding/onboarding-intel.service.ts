@@ -5,6 +5,7 @@ import type {
   CompetitorGenerationParams,
 } from './types';
 import { clearbitService } from './services/clearbit.service';
+import { wikipediaService } from './services/wikipedia.service';
 import { llmBrandIntelService } from './services/llm-brand-intel.service';
 import { competitorService } from './services/competitor.service';
 import { stripProtocol, ensureHttps } from './utils/string-utils';
@@ -58,14 +59,15 @@ export class OnboardingIntelService {
         hasSummary: !!llmBrandIntel?.summary,
         hasIndustry: !!llmBrandIntel?.industry,
         competitorsCount: llmBrandIntel?.competitors?.length || 0,
-        topicsCount: llmBrandIntel?.topics?.length || 0,
       });
     } catch (llmError) {
       console.error('❌ LLM generation failed:', llmError);
     }
 
-    // Step 3: Set description from LLM or fallback
-    let description = llmBrandIntel?.summary || '';
+    // Step 3: Fetch Wikipedia summary as fallback/enhancement
+    const wikipediaSummary = await wikipediaService.fetchSummary(companyName);
+    let description =
+      llmBrandIntel?.summary || wikipediaSummary?.extract?.trim() || '';
 
     if (!description) {
       description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
@@ -75,16 +77,20 @@ export class OnboardingIntelService {
     let derivedIndustry =
       llmBrandIntel?.industry ||
       extractIndustry(description) ||
+      extractIndustry(wikipediaSummary?.description ?? '') ||
+      (matchedSuggestion?.name ? extractIndustry(matchedSuggestion.name) : null) ||
       'General';
 
     let headquarters =
       llmBrandIntel?.headquarters ||
       extractHeadquarters(description) ||
+      extractHeadquarters(wikipediaSummary?.description ?? '') ||
       '';
 
     let foundedYear =
       llmBrandIntel?.foundedYear ||
       extractFoundedYear(description) ||
+      extractFoundedYear(wikipediaSummary?.description ?? '') ||
       null;
 
     // Use LLM-generated homepage URL if available
@@ -109,6 +115,7 @@ export class OnboardingIntelService {
       description,
       metadata: {
         source: {
+          wikipedia: wikipediaSummary?.url ?? null,
           clearbit: matchedSuggestion?.domain ?? null,
         },
         lookupInput: trimmedInput,

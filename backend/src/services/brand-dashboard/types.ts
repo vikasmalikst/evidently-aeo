@@ -16,6 +16,8 @@ export interface PositionRow {
   share_of_answers_competitor: string | number | null
   sentiment_score: string | number | null
   sentiment_label: string | null
+  sentiment_score_competitor: string | number | null
+  sentiment_label_competitor: string | null
   total_brand_mentions: number | null
   competitor_mentions: number | null
   processed_at: string | null

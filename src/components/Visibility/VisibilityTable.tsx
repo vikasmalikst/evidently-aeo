@@ -9,6 +9,7 @@ interface Model {
   score: number;
   shareOfSearch: number;
   shareOfSearchChange?: number;
+  sentiment?: number | null;
   topTopic: string;
   change?: number;
   referenceCount: number;
@@ -112,6 +113,17 @@ export const VisibilityTable = memo(({
               <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] min-w-[150px]">
                 Brand Presence
               </th>
+              <th
+                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px]"
+                onClick={() => handleSort('sentiment')}
+              >
+                <div className="flex items-center gap-2">
+                  Sentiment Score
+                  <span className="text-xs text-[var(--text-caption)] min-w-[12px]">
+                    {sortConfig.key === 'sentiment' && (sortConfig.direction === 'desc' ? '↓' : '↑')}
+                  </span>
+                </div>
+              </th>
               <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)]">
                 Top Topic
               </th>
@@ -197,6 +209,15 @@ export const VisibilityTable = memo(({
                       </span>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">
+                      {model.sentiment !== null && model.sentiment !== undefined ? (
+                        <span className="text-sm font-semibold text-[var(--text-body)]">
+                          {Math.round(model.sentiment)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-[var(--text-caption)]">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 border-b border-[var(--border-default)]">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -210,7 +231,7 @@ export const VisibilityTable = memo(({
                   </tr>
                   {expanded && (
                     <tr className="bg-[var(--bg-secondary)]">
-                      <td colSpan={6} className="px-4 py-4 border-b border-[var(--border-default)]">
+                      <td colSpan={7} className="px-4 py-4 border-b border-[var(--border-default)]">
                         <div className="grid grid-cols-3 gap-4 ml-12">
                           <div>
                             <h4 className="text-xs font-semibold text-[var(--text-caption)] uppercase mb-2">
@@ -275,6 +296,14 @@ export const VisibilityTable = memo(({
                                   : 'Stable'}
                               </span>
                             </p>
+                            {model.sentiment !== null && model.sentiment !== undefined && (
+                              <p className="text-sm text-[var(--text-body)] mt-1">
+                                Sentiment Score:{' '}
+                                <span className="font-semibold">
+                                  {Math.round(model.sentiment)}
+                                </span>
+                              </p>
+                            )}
                           </div>
                         </div>
                       </td>

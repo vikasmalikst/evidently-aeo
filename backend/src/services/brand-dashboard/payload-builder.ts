@@ -63,7 +63,7 @@ export async function buildDashboardPayload(
     const result = await supabaseAdmin
       .from('extracted_positions')
       .select(
-        'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions, has_brand_presence, topic, metadata'
+        'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, sentiment_score_competitor, sentiment_label_competitor, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions, has_brand_presence, topic, metadata'
       )
       .eq('brand_id', brand.id)
       .eq('customer_id', customerId)
@@ -251,11 +251,9 @@ export async function buildDashboardPayload(
   const brandSentimentByQuery = new Map<string, number[]>()
   const queryTextMap = new Map<string, string>()
   const collectorVisibilityMap = new Map<number, number[]>()
-  
-  // Map collector_result_id to sentiment_score from collector_results (defined outside if block for scope)
-  const collectorResultSentimentMap = new Map<number, number | null>()
 
   if (positionRows.length > 0) {
+    // Get unique collector_result_ids to fetch question text
     const uniqueCollectorResultIds = Array.from(
       new Set(
         positionRows
@@ -272,7 +270,7 @@ export async function buildDashboardPayload(
         const start = Date.now()
         const result = await supabaseAdmin
           .from('collector_results')
-          .select('id, question, sentiment_score')
+          .select('id, question')
           .in('id', uniqueCollectorResultIds)
         console.log(`[Dashboard] ⏱ collector results query: ${Date.now() - start}ms`)
         return result
@@ -291,13 +289,6 @@ export async function buildDashboardPayload(
             ? collectorRow.question.trim()
             : 'Unlabeled query'
         queryTextMap.set(`collector-${collectorRow.id}`, label)
-        
-        // Store sentiment_score from collector_results
-        if (collectorRow.sentiment_score !== null && collectorRow.sentiment_score !== undefined) {
-          collectorResultSentimentMap.set(collectorRow.id, toNumber(collectorRow.sentiment_score))
-        } else {
-          collectorResultSentimentMap.set(collectorRow.id, null)
-        }
       })
     }
 
@@ -378,11 +369,9 @@ export async function buildDashboardPayload(
     const brandShare = Math.max(0, toNumber(row.share_of_answers_brand))
     const brandVisibility = Math.max(0, toNumber(row.visibility_index))
     
-    // Priority: 1) sentiment_score from collector_results (via collector_result_id), 2) sentiment_score from extracted_positions
+    // Use sentiment_score from extracted_positions table only (no fallback to collector_results)
     let brandSentiment: number | null = null
-    if (row.collector_result_id && collectorResultSentimentMap.has(row.collector_result_id)) {
-      brandSentiment = collectorResultSentimentMap.get(row.collector_result_id) ?? null
-    } else if (row.sentiment_score !== null && row.sentiment_score !== undefined) {
+    if (row.sentiment_score !== null && row.sentiment_score !== undefined) {
       brandSentiment = toNumber(row.sentiment_score)
     }
     const hasBrandSentiment = brandSentiment !== null && brandSentiment !== undefined
@@ -422,6 +411,10 @@ export async function buildDashboardPayload(
     const topicName = topicNameRaw ? topicNameRaw.trim() : null
 
     const isBrandRow = !row.competitor_name || row.competitor_name.trim().length === 0
+
+    if (processedRowCount <= 3 && isBrandRow) {
+      console.log(`[Dashboard] Brand row ${processedRowCount}: collector_type=${collectorType}, sentiment_score=${row.sentiment_score}, processed=${brandSentimentValue}, hasBrandSentiment=${hasBrandSentiment}`)
+    }
 
     // Count total brand rows (where competitor_name is null)
     if (isBrandRow) {
@@ -555,6 +548,13 @@ export async function buildDashboardPayload(
       const collectorAggregate = collectorAggregates.get(collectorType)!
       collectorAggregate.shareValues.push(brandShare)
       collectorAggregate.visibilityValues.push(brandVisibility)
+      // Only add sentiment for brand rows (competitor_name IS NULL)
+      if (hasBrandSentiment && isBrandRow) {
+        collectorAggregate.sentimentValues.push(brandSentimentValue)
+        if (processedRowCount <= 5) {
+          console.log(`[Dashboard] Adding sentiment ${brandSentimentValue} to collector ${collectorType} (row ${processedRowCount}, total sentiment values: ${collectorAggregate.sentimentValues.length})`)
+        }
+      }
 
       collectorAggregate.mentions += brandMentions > 0 ? brandMentions : 1
 
@@ -601,15 +601,18 @@ export async function buildDashboardPayload(
     const competitorShare = Math.max(0, toNumber(row.share_of_answers_competitor))
     const competitorVisibility = Math.max(0, toNumber(row.visibility_index_competitor))
     
-    // Priority: 1) sentiment_score from collector_results (via collector_result_id), 2) sentiment_score from extracted_positions
+    // Priority: 1) sentiment_score_competitor from extracted_positions (competitor-specific column)
+    // Note: We don't use collector_results sentiment for competitors since that's brand-level sentiment
     let competitorSentiment: number | null = null
-    if (row.collector_result_id && collectorResultSentimentMap.has(row.collector_result_id)) {
-      competitorSentiment = collectorResultSentimentMap.get(row.collector_result_id) ?? null
-    } else if (row.sentiment_score !== null && row.sentiment_score !== undefined) {
-      competitorSentiment = toNumber(row.sentiment_score)
+    if ((row as any).sentiment_score_competitor !== null && (row as any).sentiment_score_competitor !== undefined) {
+      competitorSentiment = toNumber((row as any).sentiment_score_competitor)
     }
     const hasCompetitorSentiment = competitorSentiment !== null && competitorSentiment !== undefined
     const competitorSentimentValue = hasCompetitorSentiment ? competitorSentiment : 0
+    
+    if (processedRowCount <= 3 && competitorName) {
+      console.log(`[Dashboard] Competitor ${competitorName} - sentiment_score_competitor=${(row as any).sentiment_score_competitor}, processed=${competitorSentimentValue}`)
+    }
     
     const competitorMentions = Math.max(0, toNumber(row.competitor_mentions))
 

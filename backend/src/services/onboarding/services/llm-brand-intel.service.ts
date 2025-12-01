@@ -71,14 +71,73 @@ Return JSON strictly matching the BrandIntel schema. Include 3–6 public source
         return {};
       }
 
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.warn('⚠️ No JSON found in LLM response');
+      // Log the raw content for debugging (truncated if too long)
+      const contentPreview = content.length > 500 ? content.substring(0, 500) + '...' : content;
+      console.log('🔍 LLM response content preview:', contentPreview);
+
+      // Try to extract JSON more robustly
+      let jsonString = '';
+      
+      // Method 1: Try to find JSON object with balanced braces
+      const firstBrace = content.indexOf('{');
+      if (firstBrace === -1) {
+        console.warn('⚠️ No JSON object found in LLM response (no opening brace)');
         return {};
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      console.log('✅ Parsed brand intel JSON:', parsed);
+      // Find the matching closing brace by counting braces
+      let braceCount = 0;
+      let jsonEnd = -1;
+      for (let i = firstBrace; i < content.length; i++) {
+        if (content[i] === '{') {
+          braceCount++;
+        } else if (content[i] === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            jsonEnd = i + 1;
+            break;
+          }
+        }
+      }
+
+      if (jsonEnd === -1) {
+        console.warn('⚠️ No valid JSON object found in LLM response (unbalanced braces)');
+        // Fallback: try the old regex method
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonString = jsonMatch[0];
+        }
+      } else {
+        jsonString = content.substring(firstBrace, jsonEnd);
+      }
+
+      if (!jsonString) {
+        console.warn('⚠️ Could not extract JSON from LLM response');
+        console.log('Full response:', content);
+        return {};
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonString);
+        console.log('✅ Parsed brand intel JSON:', parsed);
+      } catch (parseError) {
+        console.error('❌ JSON parse error:', parseError);
+        console.error('Attempted to parse:', jsonString.substring(0, 200) + '...');
+        // Try to clean up common issues
+        try {
+          // Remove trailing commas and other common issues
+          const cleaned = jsonString
+            .replace(/,\s*}/g, '}')
+            .replace(/,\s*]/g, ']')
+            .replace(/([{,]\s*)(\w+):/g, '$1"$2":'); // Quote unquoted keys
+          parsed = JSON.parse(cleaned);
+          console.log('✅ Parsed brand intel JSON after cleanup:', parsed);
+        } catch (cleanupError) {
+          console.error('❌ JSON parse failed even after cleanup:', cleanupError);
+          return {};
+        }
+      }
 
       return {
         summary: parsed.summary || parsed.description || undefined,

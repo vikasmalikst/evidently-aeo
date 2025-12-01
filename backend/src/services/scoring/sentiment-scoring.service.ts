@@ -283,12 +283,14 @@ export class SentimentScoringService {
     console.log('   ▶ limit:', limit, '\n');
 
     // Query extracted_positions that need sentiment scoring
+    // Get rows where either brand sentiment or competitor sentiment is missing
+    // We'll filter and process appropriately in the logic below
     let query = this.supabase
       .from('extracted_positions')
       .select(
-        'id, collector_result_id, brand_name, competitor_name, sentiment_score, sentiment_label, brand_id, customer_id, processed_at'
+        'id, collector_result_id, brand_name, competitor_name, sentiment_score, sentiment_label, sentiment_score_competitor, sentiment_label_competitor, brand_id, customer_id, processed_at'
       )
-      .is('sentiment_score', null)
+      .or('sentiment_score.is.null,sentiment_score_competitor.is.null')
       .not('collector_result_id', 'is', null)
       .order('processed_at', { ascending: false })
       .limit(limit * 10); // Get more rows since we'll group by collector_result_id
@@ -348,11 +350,27 @@ export class SentimentScoringService {
         if (crError || !collectorResult || !collectorResult.raw_answer) {
           console.warn(`⚠️ Skipping group ${collectorResultId}: no raw_answer found`);
           // Set neutral sentiment for all rows in this group
-          await this.updatePositionRowsSentiment(
-            rows.map(r => r.id),
-            { entityName: '', label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
-            null
-          );
+          const brandRow = rows.find(r => !r.competitor_name || r.competitor_name.trim().length === 0);
+          const competitorRows = rows.filter(r => r.competitor_name && r.competitor_name.trim().length > 0);
+          
+          if (brandRow) {
+            await this.updatePositionRowsSentiment(
+              [brandRow.id],
+              { entityName: '', label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+              null,
+              false // brand
+            );
+          }
+          
+          for (const compRow of competitorRows) {
+            await this.updatePositionRowsSentiment(
+              [compRow.id],
+              { entityName: '', label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+              compRow.competitor_name,
+              true // competitor
+            );
+          }
+          
           processed += rows.length;
           continue;
         }
@@ -360,11 +378,27 @@ export class SentimentScoringService {
         const rawAnswer = collectorResult.raw_answer.trim();
         if (rawAnswer.length === 0) {
           console.warn(`⚠️ Skipping group ${collectorResultId}: empty raw_answer`);
-          await this.updatePositionRowsSentiment(
-            rows.map(r => r.id),
-            { entityName: '', label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
-            null
-          );
+          const brandRow = rows.find(r => !r.competitor_name || r.competitor_name.trim().length === 0);
+          const competitorRows = rows.filter(r => r.competitor_name && r.competitor_name.trim().length > 0);
+          
+          if (brandRow) {
+            await this.updatePositionRowsSentiment(
+              [brandRow.id],
+              { entityName: '', label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+              null,
+              false // brand
+            );
+          }
+          
+          for (const compRow of competitorRows) {
+            await this.updatePositionRowsSentiment(
+              [compRow.id],
+              { entityName: '', label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+              compRow.competitor_name,
+              true // competitor
+            );
+          }
+          
           processed += rows.length;
           continue;
         }
@@ -388,8 +422,8 @@ export class SentimentScoringService {
           competitorNames
         );
 
-        // Update brand row if exists
-        if (brandRow) {
+        // Update brand row if exists - store in brand columns (only if sentiment_score is null)
+        if (brandRow && (!brandRow.sentiment_score || brandRow.sentiment_score === null)) {
           const brandSentiment = entitySentiments.find(e => 
             e.entityName.toLowerCase() === brandName.toLowerCase()
           ) || entitySentiments.find(e => e.entityName.toLowerCase() === 'brand');
@@ -398,15 +432,21 @@ export class SentimentScoringService {
             await this.updatePositionRowsSentiment(
               [brandRow.id],
               brandSentiment,
-              brandName
+              brandName,
+              false // brand - use brand columns
             );
             processed++;
             console.log(`   ✅ Brand sentiment: ${brandSentiment.label} (${brandSentiment.score.toFixed(2)})`);
           }
         }
 
-        // Update competitor rows
+        // Update competitor rows - store in competitor columns (only if sentiment_score_competitor is null)
         for (const competitorRow of competitorRows) {
+          // Only update if competitor sentiment is missing
+          if (competitorRow.sentiment_score_competitor !== null && competitorRow.sentiment_score_competitor !== undefined) {
+            continue; // Skip if already has competitor sentiment
+          }
+          
           const competitorName = competitorRow.competitor_name!;
           const competitorSentiment = entitySentiments.find(e => 
             e.entityName.toLowerCase() === competitorName.toLowerCase()
@@ -416,7 +456,8 @@ export class SentimentScoringService {
             await this.updatePositionRowsSentiment(
               [competitorRow.id],
               competitorSentiment,
-              competitorName
+              competitorName,
+              true // competitor - use competitor columns
             );
             processed++;
             console.log(`   ✅ ${competitorName} sentiment: ${competitorSentiment.label} (${competitorSentiment.score.toFixed(2)})`);
@@ -425,7 +466,8 @@ export class SentimentScoringService {
             await this.updatePositionRowsSentiment(
               [competitorRow.id],
               { entityName: competitorName, label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
-              competitorName
+              competitorName,
+              true // competitor - use competitor columns
             );
             processed++;
             console.log(`   ⚠️ ${competitorName}: sentiment not found, set to NEUTRAL`);
@@ -463,20 +505,31 @@ export class SentimentScoringService {
 
   /**
    * Update extracted_positions rows with sentiment data
+   * Uses separate columns for brand vs competitor sentiment (following the pattern of other columns)
    */
   private async updatePositionRowsSentiment(
     positionIds: number[],
     sentiment: EntitySentimentAnalysis,
-    entityName: string | null
+    entityName: string | null,
+    isCompetitor: boolean = false
   ): Promise<void> {
     if (positionIds.length === 0) return;
 
-    const updateData: any = {
-      sentiment_label: sentiment.label,
-      sentiment_score: sentiment.score,
-      sentiment_positive_sentences: sentiment.positiveSentences,
-      sentiment_negative_sentences: sentiment.negativeSentences,
-    };
+    const updateData: any = {};
+    
+    if (isCompetitor) {
+      // Store in competitor columns
+      updateData.sentiment_label_competitor = sentiment.label;
+      updateData.sentiment_score_competitor = sentiment.score;
+      updateData.sentiment_positive_sentences_competitor = sentiment.positiveSentences;
+      updateData.sentiment_negative_sentences_competitor = sentiment.negativeSentences;
+    } else {
+      // Store in brand columns
+      updateData.sentiment_label = sentiment.label;
+      updateData.sentiment_score = sentiment.score;
+      updateData.sentiment_positive_sentences = sentiment.positiveSentences;
+      updateData.sentiment_negative_sentences = sentiment.negativeSentences;
+    }
 
     const { error } = await this.supabase
       .from('extracted_positions')

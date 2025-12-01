@@ -1327,18 +1327,26 @@ export class BrandService {
       // Map collector type if provided (do this early so we can use it for filtering collector_results)
       let mappedCollectorType: string | undefined = undefined;
       if (collectorType && collectorType.trim() !== '') {
-        // Map frontend model IDs to collector_type values
+        // Map frontend model IDs to collector_type values as stored in database
+        // Database stores capitalized versions like "Google AIO", "ChatGPT", etc.
         const collectorTypeMap: Record<string, string> = {
-          'chatgpt': 'chatgpt',
-          'claude': 'claude',
-          'gemini': 'gemini',
-          'perplexity': 'perplexity',
-          'copilot': 'copilot',
-          'deepseek': 'deepseek',
-          'mistral': 'mistral',
-          'grok': 'grok'
+          'chatgpt': 'ChatGPT',
+          'claude': 'Claude',
+          'gemini': 'Gemini',
+          'perplexity': 'Perplexity',
+          'copilot': 'Bing Copilot',
+          'deepseek': 'DeepSeek',
+          'mistral': 'Mistral',
+          'grok': 'Grok',
+          'google aio': 'Google AIO',  // Map lowercase with space to proper case
+          'google_aio': 'Google AIO',  // Handle underscore input
+          'google-ai': 'Google AIO',   // Handle dash input
+          'google': 'Google AIO',      // Handle short form
+          'bing_copilot': 'Bing Copilot',
+          'bing copilot': 'Bing Copilot'
         };
-        mappedCollectorType = collectorTypeMap[collectorType.toLowerCase()] || collectorType.toLowerCase();
+        const normalizedInput = collectorType.toLowerCase().trim();
+        mappedCollectorType = collectorTypeMap[normalizedInput] || normalizedInput;
         console.log(`🔍 Filtering by collector_type: ${mappedCollectorType} (from input: ${collectorType})`);
       }
       
@@ -1390,7 +1398,7 @@ export class BrandService {
       if (distinctCollectors) {
         distinctCollectors.forEach((pos: any) => {
           if (pos.collector_type) {
-            availableModels.add(pos.collector_type.toLowerCase());
+            availableModels.add(pos.collector_type);
           }
         });
       }
@@ -1415,8 +1423,7 @@ export class BrandService {
       
       if (collectorResults.length > 0) {
         const collectorResultIds = collectorResults.map(cr => cr.id);
-        // When we have collector_results filtered by collector_type, we don't need to filter positions by collector_type again
-        // because the collector_results are already filtered
+        // Filter positions by collector_result_ids AND collector_type to ensure data consistency
         let positionsQueryFiltered = supabaseAdmin
           .from('extracted_positions')
           .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
@@ -1425,6 +1432,13 @@ export class BrandService {
           .gte('processed_at', startIso)
           .lte('processed_at', endIso)
           .in('collector_result_id', collectorResultIds);
+        
+        // IMPORTANT: Also filter by collector_type if provided
+        // Both collector_results AND extracted_positions tables have collector_type column
+        // We need to filter both to ensure all data is properly filtered by LLM model
+        if (mappedCollectorType) {
+          positionsQueryFiltered = positionsQueryFiltered.eq('collector_type', mappedCollectorType);
+        }
         
         const { data: posData, error: positionsError } = await positionsQueryFiltered;
         
@@ -1542,6 +1556,22 @@ export class BrandService {
       console.log(`   - Topics from generated_queries: ${queryTopicsCount}`);
       console.log(`   - Positions without topic: ${noTopicCount}`);
       console.log(`   - Distinct topics found: ${topicMap.size}`);
+
+      // Debug: Check collector types in the filtered data
+      if (mappedCollectorType) {
+        const collectorTypeCounts = new Map<string, number>();
+        positions.forEach(pos => {
+          const ct = pos.collector_type || 'null';
+          collectorTypeCounts.set(ct, (collectorTypeCounts.get(ct) || 0) + 1);
+        });
+        console.log(`🔍 Collector types in filtered positions:`, Object.fromEntries(collectorTypeCounts));
+
+        // Check analytics collector types per topic
+        topicMap.forEach((data, topicName) => {
+          const analyticsCollectorTypes = new Set(data.analytics.map(a => a.collector_type));
+          console.log(`📊 Topic "${topicName}": analytics from collector types: ${Array.from(analyticsCollectorTypes).join(', ')} (${data.analytics.length} data points)`);
+        });
+      }
       
       if (topicMap.size === 0) {
         console.log('⚠️ No topics found with analytics data. Checking metadata format...');
@@ -1565,9 +1595,17 @@ export class BrandService {
         });
       }
       
-      // Step 5: Calculate metrics for each distinct topic (aggregate across all collector_types)
+      // Step 5: Calculate metrics for each distinct topic (aggregate only from filtered collector_types)
       const topicsWithAnalytics = Array.from(topicMap.entries()).map(([normalizedTopicName, data]) => {
         const analytics = data.analytics;
+
+        // Debug: Log analytics summary for this topic
+        if (mappedCollectorType) {
+          const avgSoA = analytics.length > 0
+            ? analytics.reduce((sum, a) => sum + (a.share_of_answers_brand || 0), 0) / analytics.length
+            : 0;
+          console.log(`📊 Topic "${data.topicName}": ${analytics.length} data points, avg SOA: ${avgSoA.toFixed(2)}`);
+        }
         
         if (analytics.length === 0) {
           return null; // Skip topics with no analytics in date range
@@ -1636,12 +1674,14 @@ export class BrandService {
       });
       
       // Step 6: Fetch top citation sources per topic
+      // Pass the filtered positions so citations are also filtered by collector_type
       const topicSourcesMap = await this.getTopSourcesPerTopic(
         brandId,
         customerId,
         topicMap,
         startIso,
-        endIso
+        endIso,
+        positions // Pass filtered positions to ensure citations are also filtered by collector_type
       );
       
       // Step 7: Calculate industry-wide average SOA per topic
@@ -1874,19 +1914,31 @@ export class BrandService {
 
   /**
    * Get top citation sources per topic
+   * @param positions - Pre-filtered positions (already filtered by collector_type if specified)
    */
   private async getTopSourcesPerTopic(
     brandId: string,
     customerId: string,
     topicMap: Map<string, any>,
     startIso: string,
-    endIso: string
+    endIso: string,
+    positions: any[] // Pass already-filtered positions to ensure citations are also filtered by collector_type
   ): Promise<Map<string, Array<{ name: string; url: string; type: string; citations: number }>>> {
     try {
       // Get set of normalized topic names we care about
       const validTopicNames = new Set(Array.from(topicMap.keys()));
 
-      // Fetch citations for this brand in the date range
+      // Get collector_result_ids from filtered positions (already filtered by collector_type)
+      const collectorResultIds = Array.from(new Set(
+        positions.map(p => p.collector_result_id).filter((id): id is number => typeof id === 'number')
+      ));
+
+      if (collectorResultIds.length === 0) {
+        return new Map(); // No collector results to fetch citations for
+      }
+
+      // Fetch citations ONLY for the filtered collector_result_ids
+      // This ensures citations are also filtered by collector_type
       const { data: citations, error: citationsError } = await supabaseAdmin
         .from('citations')
         .select(`
@@ -1899,7 +1951,8 @@ export class BrandService {
         .eq('brand_id', brandId)
         .eq('customer_id', customerId)
         .gte('created_at', startIso)
-        .lte('created_at', endIso);
+        .lte('created_at', endIso)
+        .in('collector_result_id', collectorResultIds); // Filter by collector_result_ids (already filtered by collector_type)
 
       if (citationsError) {
         console.error('⚠️ Error fetching citations for topics:', citationsError);
@@ -1908,28 +1961,6 @@ export class BrandService {
 
       if (!citations || citations.length === 0) {
         return new Map(); // No citations found
-      }
-
-      // Create map from collector_result_id to topic name
-      // We need to get this from extracted_positions (similar to how we do it in getBrandTopicsWithAnalytics)
-      const collectorResultIds = Array.from(new Set(
-        citations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
-      ));
-
-      if (collectorResultIds.length === 0) {
-        return new Map();
-      }
-
-      const { data: positions, error: positionsError } = await supabaseAdmin
-        .from('extracted_positions')
-        .select('collector_result_id, topic, metadata')
-        .eq('brand_id', brandId)
-        .eq('customer_id', customerId)
-        .in('collector_result_id', collectorResultIds);
-
-      if (positionsError) {
-        console.error('⚠️ Error fetching positions for topic mapping:', positionsError);
-        return new Map();
       }
 
       // Create collector_result_id to topic name map

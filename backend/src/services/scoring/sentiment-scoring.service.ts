@@ -350,7 +350,7 @@ export class SentimentScoringService {
           // Set neutral sentiment for all rows in this group
           await this.updatePositionRowsSentiment(
             rows.map(r => r.id),
-            { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+            { entityName: '', label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
             null
           );
           processed += rows.length;
@@ -362,7 +362,7 @@ export class SentimentScoringService {
           console.warn(`⚠️ Skipping group ${collectorResultId}: empty raw_answer`);
           await this.updatePositionRowsSentiment(
             rows.map(r => r.id),
-            { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+            { entityName: '', label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
             null
           );
           processed += rows.length;
@@ -424,7 +424,7 @@ export class SentimentScoringService {
             // Set neutral if not found
             await this.updatePositionRowsSentiment(
               [competitorRow.id],
-              { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+              { entityName: competitorName, label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
               competitorName
             );
             processed++;

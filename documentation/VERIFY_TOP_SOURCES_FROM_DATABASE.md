@@ -215,3 +215,4 @@ ORDER BY c.created_at DESC;
 - The `usage_count` field represents how many times a citation was used in AI responses
 - Source type affects the visual styling (brand sources get a colored background)
 
+

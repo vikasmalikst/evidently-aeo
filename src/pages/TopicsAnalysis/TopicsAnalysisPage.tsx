@@ -20,6 +20,7 @@ interface TopicsAnalysisPageProps {
   onCategoryFilter?: (categoryId: string) => void;
   onFiltersChange?: (filters: { startDate?: string; endDate?: string; collectorType?: string; country?: string }) => void;
   availableModels?: string[]; // Available models from backend
+  currentCollectorType?: string; // Current collector type from parent (to sync UI with API request)
 }
 
 // Loading skeleton component
@@ -74,6 +75,7 @@ export const TopicsAnalysisPage = ({
   onCategoryFilter,
   onFiltersChange,
   availableModels: backendAvailableModels = [],
+  currentCollectorType,
 }: TopicsAnalysisPageProps) => {
   const { selectedBrand, brands } = useManualBrandDashboard();
   
@@ -117,6 +119,7 @@ export const TopicsAnalysisPage = ({
   const availableModels = useMemo(() => {
     if (backendAvailableModels && backendAvailableModels.length > 0) {
       // Backend returns collector types (e.g., "ChatGPT", "Claude", etc.)
+      console.log('🔍 TopicsAnalysisPage received backendAvailableModels:', backendAvailableModels);
       return backendAvailableModels;
     }
     // Fallback: extract from topics' availableModels if backend doesn't provide
@@ -128,22 +131,79 @@ export const TopicsAnalysisPage = ({
         });
       }
     });
-    return Array.from(modelSet);
+    const fallbackModels = Array.from(modelSet);
+    console.log('🔍 TopicsAnalysisPage using fallback models:', fallbackModels);
+    return fallbackModels;
   }, [backendAvailableModels, data.topics]);
   
-  // Keep selected model in sync with available options
+  // Sync selectedModel with currentCollectorType from parent (reflects actual API request)
+  // This effect should NOT depend on selectedModel to avoid circular updates
   useEffect(() => {
+    if (currentCollectorType === undefined) {
+      return; // No sync needed if parent hasn't provided a value
+    }
+    
+    // Determine the model to sync to
+    const newModel = (currentCollectorType === '' || currentCollectorType === null) 
+      ? '' 
+      : (availableModels.includes(currentCollectorType) ? currentCollectorType : '');
+    
+    // Only update if different from current state
+    // Use a functional update to avoid dependency on selectedModel
+    setSelectedModel(prevModel => {
+      if (prevModel === newModel) {
+        return prevModel; // No change needed
+      }
+      
+      // Mark that we're syncing from parent to prevent filter change effect from triggering
+      isSyncingFromParentRef.current = true;
+      
+      // Update initialModelRef so filter change effect doesn't treat this as a user change
+      initialModelRef.current = newModel;
+      
+      console.log('🔄 Syncing selectedModel from parent:', { 
+        from: prevModel, 
+        to: newModel, 
+        currentCollectorType 
+      });
+      
+      // Reset the flag after a brief delay to allow filter change effect to see it
+      setTimeout(() => {
+        isSyncingFromParentRef.current = false;
+      }, 0);
+      
+      return newModel;
+    });
+    
+    // Log warning if collector type from parent is not in available models
+    if (currentCollectorType && currentCollectorType !== '' && !availableModels.includes(currentCollectorType)) {
+      console.warn('⚠️ Current collector type from parent not in available models:', {
+        currentCollectorType,
+        availableModels
+      });
+    }
+  }, [currentCollectorType, availableModels]); // Removed selectedModel from dependencies to prevent loops
+
+  // Keep selected model in sync with available options - SAME AS PROMPTS PAGE
+  // Only auto-select if we don't have a currentCollectorType from parent
+  useEffect(() => {
+    // Skip if we have a currentCollectorType from parent (let that effect handle it)
+    if (currentCollectorType !== undefined) {
+      return;
+    }
+
     if (availableModels.length === 0) {
-      if (selectedModel !== '') {
+      if (selectedModel !== null && selectedModel !== '') {
         setSelectedModel('');
       }
       return;
     }
-    // If selected model is not in available models, reset to empty (All Models)
-    if (selectedModel && !availableModels.includes(selectedModel)) {
-      setSelectedModel('');
+
+    // Auto-select first model if none selected or selected model is not available
+    if (!selectedModel || !availableModels.includes(selectedModel)) {
+      setSelectedModel(availableModels[0]);
     }
-  }, [availableModels, selectedModel]);
+  }, [availableModels, selectedModel, currentCollectorType]);
   
   // Handle click outside for model dropdown
   useEffect(() => {
@@ -346,22 +406,15 @@ export const TopicsAnalysisPage = ({
     };
   }, [selectedDate, datePeriodType]);
   
-  // Track initial values ONCE - only set on first render
-  const initialValuesRef = useRef<{
-    selectedModel: string;
-    selectedDate: number;
-    datePeriodType: 'daily' | 'weekly' | 'monthly';
-  } | null>(null);
+  // Track initial LLM model selection
+  const initialModelRef = useRef<string | null>(null);
   const hasMounted = useRef(false);
   const lastSentFilters = useRef<string>('');
+  const isSyncingFromParentRef = useRef(false); // Track if we're syncing from parent to prevent loops
   
-  // Set initial values only once on first render
-  if (initialValuesRef.current === null) {
-    initialValuesRef.current = {
-      selectedModel: selectedModel,
-      selectedDate: selectedDate.getTime(),
-      datePeriodType: datePeriodType
-    };
+  // Set initial model value only once on first render
+  if (initialModelRef.current === null) {
+    initialModelRef.current = selectedModel;
   }
   
   // Mark component as mounted after first render
@@ -370,49 +423,28 @@ export const TopicsAnalysisPage = ({
     console.log('🚀 Initial mount complete - no filters sent (backend will use default: last 30 days)');
   }, []); // Only run once on mount
   
-  // Only send filters when user explicitly changes them, NOT on initial mount
+  // Only send LLM filter when user changes it, NOT on initial mount or when syncing from parent
+  // Date filter is NOT synced - user can select dates in UI but it won't refetch data
   useEffect(() => {
-    if (!onFiltersChange || !hasMounted.current || !initialValuesRef.current) {
-      return; // Skip until component has fully mounted and initial values are set
+    if (!onFiltersChange || !hasMounted.current || initialModelRef.current === null) {
+      return; // Skip until component has fully mounted and initial value is set
     }
     
-    // Check if any filter value has actually changed from initial values
-    const initial = initialValuesRef.current;
-    const hasChanged = 
-      initial.selectedModel !== selectedModel ||
-      initial.selectedDate !== selectedDate.getTime() ||
-      initial.datePeriodType !== datePeriodType;
+    // Skip if we're currently syncing from parent (prevents loops)
+    if (isSyncingFromParentRef.current) {
+      console.log('⏭️ Skipping filter change - syncing from parent');
+      return;
+    }
+    
+    // Check if LLM model has actually changed from initial value
+    const hasChanged = initialModelRef.current !== selectedModel;
     
     if (!hasChanged) {
       return; // No changes detected, skip sending filters
     }
     
-    // After mount and changes detected, send filters
-    // Calculate date range inside effect
-    const today = new Date();
-    let start: Date;
-    let end: Date = today;
-    
-    if (datePeriodType === 'daily') {
-      const daysDiff = Math.floor((today.getTime() - selectedDate.getTime()) / (1000 * 60 * 60 * 24));
-      start = new Date(today);
-      start.setDate(today.getDate() - daysDiff);
-    } else if (datePeriodType === 'weekly') {
-      const weekStart = new Date(selectedDate);
-      weekStart.setDate(selectedDate.getDate() - selectedDate.getDay());
-      start = weekStart;
-      end = new Date(weekStart);
-      end.setDate(weekStart.getDate() + 6);
-    } else {
-      // Monthly
-      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-      end = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
-    }
-    
-    // Send filters when user changes them
+    // Send only the LLM filter (collectorType) when it changes
     const newFilters = {
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0],
       collectorType: selectedModel && selectedModel !== '' ? selectedModel : undefined
     };
     
@@ -423,9 +455,9 @@ export const TopicsAnalysisPage = ({
     }
     lastSentFilters.current = filterKey;
     
-    console.log('🔍 Sending filters (user changed):', newFilters);
+    console.log('🔍 Sending LLM filter (user changed):', newFilters);
     onFiltersChange(newFilters);
-  }, [selectedModel, selectedDate, datePeriodType, onFiltersChange]);
+  }, [selectedModel, onFiltersChange]);
 
   // Handle view change from DatePickerMultiView
   const handleViewChange = (view: 'daily' | 'weekly' | 'monthly') => {

@@ -344,3 +344,4 @@ try {
 - **Pattern**: Create controller → Pass signal to fetch → Cancel when needed → Handle AbortError
 
 Your codebase uses AbortSignal well! The patterns in your code are solid examples of when and how to use it.
+

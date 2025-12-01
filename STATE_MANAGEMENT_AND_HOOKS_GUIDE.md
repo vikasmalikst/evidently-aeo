@@ -383,3 +383,4 @@ useEffect(() => {
 - ✅ **useMemo** for expensive calculations and data transformations
 - ✅ **useEffect** for side effects (API calls, subscriptions)
 
+

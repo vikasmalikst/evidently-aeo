@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { TopicsAnalysisPage } from './TopicsAnalysis/TopicsAnalysisPage';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useCachedData } from '../hooks/useCachedData';
@@ -185,20 +185,37 @@ export const Topics = () => {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<TopicsFilters>({});
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const lastEndpointRef = useRef<string | null>(null);
 
-  // Build endpoint with filters
+  // Build endpoint with filters - SAME AS PROMPTS PAGE
+  // Memoize filters to prevent unnecessary endpoint recalculations
+  const filtersKey = useMemo(() => {
+    return JSON.stringify({
+      startDate: filters.startDate || '',
+      endDate: filters.endDate || '',
+      collectorType: filters.collectorType || '',
+      country: filters.country || ''
+    });
+  }, [filters.startDate, filters.endDate, filters.collectorType, filters.country]);
+
   const topicsEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
     const params = new URLSearchParams();
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
-    if (filters.collectorType) params.append('collectorType', filters.collectorType);
+    // Use 'collectors' parameter (same as Prompts page) instead of 'collectorType'
+    if (filters.collectorType) params.append('collectors', filters.collectorType);
     if (filters.country) params.append('country', filters.country);
     const queryString = params.toString();
     const endpoint = `/brands/${selectedBrandId}/topics${queryString ? `?${queryString}` : ''}`;
-    console.log('🔗 Topics endpoint built:', { endpoint, filters, queryString });
+    
+    // Only log if endpoint actually changed
+    if (endpoint !== lastEndpointRef.current) {
+      console.log('🔗 Topics endpoint built:', { endpoint, filters, queryString, previous: lastEndpointRef.current });
+      lastEndpointRef.current = endpoint;
+    }
     return endpoint;
-  }, [selectedBrandId, filters]);
+  }, [selectedBrandId, filtersKey]);
 
   // Use cached data hook - refetch when filters change
   // Response can be either BackendTopic[] (old format) or { topics: BackendTopic[], availableModels: string[] } (new format)
@@ -221,6 +238,12 @@ export const Topics = () => {
     if (response?.success && response.availableModels) {
       setAvailableModels(response.availableModels);
       console.log('📊 Available models from backend:', response.availableModels);
+    } else {
+      console.log('⚠️ No available models in response:', {
+        success: response?.success,
+        hasAvailableModels: !!response?.availableModels,
+        availableModels: response?.availableModels
+      });
     }
   }, [response]);
   
@@ -293,6 +316,7 @@ export const Topics = () => {
         onCategoryFilter={(categoryId) => {
           console.log('Category filtered:', categoryId);
         }}
+        currentCollectorType={filters.collectorType}
       />
     );
   }
@@ -319,6 +343,7 @@ export const Topics = () => {
           }}
           onFiltersChange={setFilters}
           availableModels={availableModels}
+          currentCollectorType={filters.collectorType}
         />
       );
     }
@@ -340,6 +365,7 @@ export const Topics = () => {
         }}
         onFiltersChange={setFilters}
         availableModels={availableModels}
+        currentCollectorType={filters.collectorType}
       />
     );
   }
@@ -387,6 +413,7 @@ export const Topics = () => {
         }}
         onFiltersChange={setFilters}
         availableModels={availableModels}
+        currentCollectorType={filters.collectorType}
       />
     </>
   );

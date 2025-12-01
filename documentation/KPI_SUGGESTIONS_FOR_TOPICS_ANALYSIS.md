@@ -163,3 +163,4 @@ Or for a 4-card layout:
 - **Industry Comparison** is most valuable but requires sufficient data from other brands
 - Consider making KPIs clickable to filter/scroll to relevant topics
 
+

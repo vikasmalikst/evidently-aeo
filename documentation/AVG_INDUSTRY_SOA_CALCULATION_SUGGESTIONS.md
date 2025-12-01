@@ -334,3 +334,4 @@ GROUP BY LOWER(TRIM(t.topic_name)), t.category;
 REFRESH MATERIALIZED VIEW CONCURRENTLY industry_soa_benchmarks;
 ```
 
+

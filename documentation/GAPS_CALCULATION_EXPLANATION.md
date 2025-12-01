@@ -204,3 +204,4 @@ To improve gap calculation:
 - **Citation Gap**: Difference between your SOA and competitor/industry SOA
 - **Strategic Opportunity**: Topics where improving content can gain significant share
 
+

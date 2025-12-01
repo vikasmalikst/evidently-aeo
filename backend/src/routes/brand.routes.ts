@@ -458,17 +458,21 @@ router.get('/:id/topics', authenticateToken, async (req: Request, res: Response)
   try {
     const { id } = req.params;
     const customerId = req.user!.customer_id;
-    const { startDate, endDate, collectorType, country } = req.query;
+    // Accept both 'collectors' (same as Prompts API) and 'collectorType' for backward compatibility
+    const { startDate, endDate, collectorType, collectors, country } = req.query;
+    
+    // Use collectors param if provided, otherwise fall back to collectorType
+    const modelFilter = collectors || collectorType;
     
     console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
-    console.log(`🔍 Filters: collectorType=${collectorType}, country=${country}, dateRange=${startDate} to ${endDate}`);
+    console.log(`🔍 Filters: model=${modelFilter}, country=${country}, dateRange=${startDate} to ${endDate}`);
     
     const result = await brandService.getBrandTopicsWithAnalytics(
       id, 
       customerId,
       startDate as string | undefined,
       endDate as string | undefined,
-      collectorType as string | undefined,
+      modelFilter as string | undefined,
       country as string | undefined
     );
     

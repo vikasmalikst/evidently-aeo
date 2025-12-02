@@ -64,7 +64,7 @@ export class OpenRouterCollectorService {
     this.appName = getEnvVar('OPENROUTER_APP_NAME', 'AnswerIntel Collector');
     this.collectorConfigs = {
       claude: {
-        model: 'anthropic/claude-haiku-4.5',
+        model: 'anthropic/claude-haiku-4.5:online',
         systemPrompt: 'You are Claude, a precise research assistant. Provide factual, well-structured answers with bullet points where useful. When you receive a question, first gather fresh evidence using web search, cite the sources you rely on, and then deliver a concise, well-structured answer.',
         enableWebSearch: true,
         maxTokens: 1024,

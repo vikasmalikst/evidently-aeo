@@ -1,26 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ChevronUp, ChevronDown, Minus, TrendingUp, TrendingDown } from 'lucide-react';
-import { IconBrandOpenai } from '@tabler/icons-react';
-import claudeLogoSrc from '../../../assets/Claude-AI-icon.svg';
-import copilotLogoSrc from '../../../assets/Microsoft-Copilot-icon.svg';
-import geminiLogoSrc from '../../../assets/Google-Gemini-Icon.svg';
-import googleAioLogoSrc from '../../../assets/Google-AI-icon.svg';
-import grokLogoSrc from '../../../assets/Grok-icon.svg';
-import perplexityLogoSrc from '../../../assets/Perplexity-Simple-Icon.svg';
-import type { Topic, SortColumn, SortState, TopicSource } from '../types';
-import type { Competitor } from '../utils/competitorColors';
-import { createCompetitorColorMap } from '../utils/competitorColors';
-import { SourceDetailModal } from './SourceDetailModal';
-
-// Source type colors matching the sources page
-const sourceTypeColors: Record<string, string> = {
-  'brand': '#00bcdc',
-  'editorial': '#498cf9',
-  'corporate': '#fa8a40',
-  'reference': '#ac59fb',
-  'ugc': '#f155a2',
-  'institutional': '#0d7c96'
-};
+import { ChevronUp, ChevronDown } from 'lucide-react';
+import type { Topic, SortColumn, SortState } from '../types';
 
 interface TopicsRankedTableProps {
   topics: Topic[];
@@ -29,39 +9,18 @@ interface TopicsRankedTableProps {
   selectedTopics?: Set<string>;
   onSelectedTopicsChange?: (selectedTopics: Set<string>) => void;
   selectedCategory?: string;
-  onCategoryChange?: (category: string) => void;
-  competitors?: Competitor[];
   brandFavicon?: string;
-  selectedModel?: string;
-  aiModels?: Array<{ id: string; name: string; icon: string }>;
 }
 
-// Generate mock average industry SoA data for a topic (deterministic)
-const getAvgIndustrySoA = (topic: Topic): { soA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number } } => {
-  // Use deterministic seed based on topic
-  const seed = (topic.id.charCodeAt(0) * 13) % 100;
-  const baseSoA = topic.soA * (0.7 + (seed / 100) * 0.6); // Industry SoA between 70% and 130% of brand SoA
-  
-  // Generate trend delta deterministically
-  const trendSeed = (seed * 11) % 100;
-  const delta = (trendSeed - 50) / 10; // Delta between -5.0 and 5.0
-  
-  let direction: 'up' | 'down' | 'neutral';
-  if (delta > 0.1) {
-    direction = 'up';
-  } else if (delta < -0.1) {
-    direction = 'down';
-  } else {
-    direction = 'neutral';
+// Get industry average SOA for a topic (from backend data)
+const getAvgIndustrySoA = (topic: Topic): number => {
+  // Use real industry data if available
+  if (topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0) {
+    return topic.industryAvgSoA;
   }
   
-  return {
-    soA: Math.max(0, Math.min(5, baseSoA)),
-    trend: {
-      direction,
-      delta: Math.abs(delta)
-    }
-  };
+  // Fallback: return 0 if no industry data
+  return 0;
 };
 
 // Get SoA color based on scale
@@ -80,58 +39,6 @@ const getSoATooltip = (soA: number): string => {
   return 'Citation Gap (<1.0x)';
 };
 
-// Get trend icon and color
-const getTrendDisplay = (direction: string) => {
-  switch (direction) {
-    case 'up':
-      return {
-        icon: TrendingUp,
-        color: 'var(--success500)',
-        symbol: '↑',
-      };
-    case 'down':
-      return {
-        icon: TrendingDown,
-        color: 'var(--dataviz-4)',
-        symbol: '↓',
-      };
-    default:
-      return {
-        icon: Minus,
-        color: 'var(--primary300)',
-        symbol: '→',
-      };
-  }
-};
-
-// Generate mock average competitor SoA data for a topic (deterministic)
-const getAvgCompetitorSoA = (topic: Topic, numCompetitors: number): { soA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number } } => {
-  // Use deterministic seed based on topic and number of competitors
-  const seed = (topic.id.charCodeAt(0) + numCompetitors * 19) % 100;
-  const baseSoA = topic.soA * (0.65 + (seed / 100) * 0.7); // Competitor SoA between 65% and 135% of brand SoA
-  
-  // Generate trend delta deterministically
-  const trendSeed = (seed * 13) % 100;
-  const delta = (trendSeed - 50) / 10; // Delta between -5.0 and 5.0
-  
-  let direction: 'up' | 'down' | 'neutral';
-  if (delta > 0.1) {
-    direction = 'up';
-  } else if (delta < -0.1) {
-    direction = 'down';
-  } else {
-    direction = 'neutral';
-  }
-  
-  return {
-    soA: Math.max(0, Math.min(5, baseSoA)),
-    trend: {
-      direction,
-      delta: Math.abs(delta)
-    }
-  };
-};
-
 
 export const TopicsRankedTable = ({ 
   topics, 
@@ -139,16 +46,13 @@ export const TopicsRankedTable = ({
   selectedTopics: externalSelectedTopics,
   onSelectedTopicsChange,
   selectedCategory: externalSelectedCategory,
-  onCategoryChange,
-  brandFavicon,
-  selectedModel,
-  aiModels = []
+  brandFavicon
 }: TopicsRankedTableProps) => {
 
   // Model functions removed - topics are now distinct, not grouped by model
   // Model filtering happens via the filter dropdown, not per-row
   const [sortState, setSortState] = useState<SortState>({ column: 'soA', direction: 'desc' });
-  const [internalSelectedCategory, setInternalSelectedCategory] = useState<string>('all');
+  const [internalSelectedCategory] = useState<string>('all');
   
   const selectedCategory = externalSelectedCategory ?? internalSelectedCategory;
   
@@ -182,8 +86,6 @@ export const TopicsRankedTable = ({
       });
     }
   };
-  const [selectedSource, setSelectedSource] = useState<TopicSource | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Handle sort
   const handleSort = useCallback((column: SortColumn) => {
@@ -270,13 +172,13 @@ export const TopicsRankedTable = ({
   };
 
   return (
-    <div className="bg-white border border-[var(--primary200)] rounded-lg overflow-hidden">
+    <div className="bg-white border border-[var(--primary200)] rounded-lg overflow-hidden shadow-sm">
       {/* Table View */}
       <div className="overflow-x-auto">
         <table className="w-full">
             <thead>
-              <tr className="border-b border-[var(--border-default)]">
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative w-12">
+              <tr className="border-b-2 border-[var(--border-default)] bg-[var(--bg-secondary)]">
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left w-12">
                   <input
                     type="checkbox"
                     checked={filteredAndSortedTopics.length > 0 && filteredAndSortedTopics.every(t => selectedTopics.has(t.id))}
@@ -298,16 +200,16 @@ export const TopicsRankedTable = ({
                         }
                       }
                     }}
-                    className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-[var(--accent-primary)]"
+                    className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)] cursor-pointer"
                   />
                 </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[60px]">
                   <SortButton column="rank">Rank</SortButton>
                 </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[200px]">
                   <SortButton column="name">Topic</SortButton>
                 </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[100px]">
                   <div className="flex items-center gap-1.5">
                     {brandFavicon && (
                       <img 
@@ -323,23 +225,23 @@ export const TopicsRankedTable = ({
                     <SortButton column="soA">SoA</SortButton>
                   </div>
                 </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[140px]">
                   <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
                     Avg Industry SoA
                   </span>
                 </th>
-                <th className="px-2 sm:px-3 lg:px-4 py-2 sm:py-3 text-left relative">
-                  <SortButton column="sources">Sources</SortButton>
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[150px]">
+                  <SortButton column="sources">Top Sources</SortButton>
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-[var(--border-default)]">
               {filteredAndSortedTopics.map((topic) => {
                 return (
                   <tr
                     key={topic.id}
                     onClick={() => onRowClick?.(topic)}
-                    className="border-b border-[var(--border-default)] transition-colors cursor-pointer hover:bg-[var(--bg-secondary)]"
+                    className="transition-colors cursor-pointer hover:bg-[var(--bg-secondary)]/50"
                     role="button"
                     tabIndex={0}
                     aria-label={`Topic: ${topic.name}, SoA: ${(topic.currentSoA || topic.soA * 20).toFixed(1)}%, Rank: ${topic.rank}`}
@@ -350,172 +252,111 @@ export const TopicsRankedTable = ({
                       }
                     }}
                   >
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4" onClick={handleTopicToggle.bind(null, topic.id)}>
+                    <td className="px-3 sm:px-4 lg:px-5 py-4" onClick={handleTopicToggle.bind(null, topic.id)}>
                       <input
                         type="checkbox"
                         checked={selectedTopics.has(topic.id)}
                         onChange={() => {}}
                         onClick={handleTopicToggle.bind(null, topic.id)}
-                        className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-[var(--accent-primary)]"
+                        className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)] cursor-pointer"
                       />
                     </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-xs sm:text-sm text-[var(--text-body)] text-center font-medium">
-                      {topic.rank}
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
+                      <span className="text-sm font-semibold text-[var(--text-body)]">
+                        {topic.rank}
+                      </span>
                     </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                        <span className="text-xs sm:text-sm font-medium text-[var(--text-headings)] break-words">{topic.name}</span>
-                        <span className="px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-medium rounded bg-[var(--bg-secondary)] text-[var(--text-caption)] whitespace-nowrap">
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-[var(--text-headings)] break-words">{topic.name}</span>
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-md bg-[var(--bg-secondary)] text-[var(--text-caption)] whitespace-nowrap">
                           {topic.category}
                         </span>
                       </div>
                     </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
                       {(() => {
                         const soAColor = getSoAColor(topic.soA);
                         return topic.soA > 0 ? (
-                          <div className="flex items-center gap-1.5 sm:gap-2">
+                          <div className="flex items-center gap-2">
                             <span
-                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                               style={{ backgroundColor: soAColor }}
                               title={getSoATooltip(topic.soA)}
                             ></span>
-                            <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
+                            <span className="text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
                               {(topic.currentSoA || topic.soA * 20).toFixed(1)}%
                             </span>
                           </div>
                         ) : (
-                          <span className="text-xs sm:text-sm text-[var(--text-caption)]" title="Share of Answer data not yet available">
+                          <span className="text-sm text-[var(--text-caption)]" title="Share of Answer data not yet available">
                             —
                           </span>
                         );
                       })()}
                     </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 hidden sm:table-cell">
-                      {(() => {
-                        const trendDisplay = getTrendDisplay(topic.trend.direction);
-                        const TrendIcon = trendDisplay.icon;
-                        return (
-                          <div className="flex items-center gap-1.5 sm:gap-2">
-                            <TrendIcon size={14} className="sm:w-4 sm:h-4" style={{ color: trendDisplay.color }} />
-                            <span className="text-xs sm:text-sm font-medium whitespace-nowrap" style={{ color: trendDisplay.color }}>
-                              {trendDisplay.symbol}
-                              {Math.abs(topic.trend.delta).toFixed(1)}x
-                            </span>
-                            <div className="flex items-center gap-0.5">
-                              {topic.trend.direction === 'up' && (
-                                <ChevronUp size={14} className="text-[var(--success500)]" />
-                              )}
-                              {topic.trend.direction === 'down' && (
-                                <ChevronDown size={14} className="text-[var(--dataviz-4)]" />
-                              )}
-                              {topic.trend.direction === 'neutral' && (
-                                <Minus size={14} className="text-[var(--primary300)]" />
-                              )}
-                              <span 
-                                className="text-[10px] sm:text-xs font-medium whitespace-nowrap"
-                                style={{
-                                  color: topic.trend.direction === 'up' 
-                                    ? 'var(--success500)' 
-                                    : topic.trend.direction === 'down' 
-                                    ? 'var(--dataviz-4)' 
-                                    : '#64748b' // neutral-700 equivalent
-                                }}
-                              >
-                                {topic.trend.direction === 'up' ? '+' : topic.trend.direction === 'down' ? '-' : ''}{(topic.trend.delta * 20).toFixed(1)}%
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
                       {(() => {
                         const avgIndustrySoA = getAvgIndustrySoA(topic);
-                        const avgSoAColor = getSoAColor(avgIndustrySoA.soA);
+                        
+                        // Show industry average as a single percentage value if available
+                        if (avgIndustrySoA > 0) {
+                          const industrySoAColor = getSoAColor(avgIndustrySoA);
+                          return (
+                            <span 
+                              className="text-sm font-semibold whitespace-nowrap" 
+                              style={{ color: industrySoAColor }}
+                              title={`Industry average: ${(avgIndustrySoA * 20).toFixed(1)}%`}
+                            >
+                              {(avgIndustrySoA * 20).toFixed(1)}%
+                            </span>
+                          );
+                        } else {
+                          // No industry data available
+                          return (
+                            <span className="text-sm text-[var(--text-caption)]" title="Industry average data not available (no other brands tracking same topics)">
+                              —
+                            </span>
+                          );
+                        }
+                      })()}
+                    </td>
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
+                      {topic.sources.length > 0 ? (() => {
+                        // Get only the first (top) source
+                        const topSource = topic.sources[0];
+                        // Extract domain from URL or use name if it's already a domain
+                        let domain = topSource.name;
+                        if (topSource.url) {
+                          try {
+                            const url = new URL(topSource.url);
+                            domain = url.hostname.replace(/^www\./, '');
+                          } catch {
+                            domain = topSource.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+                          }
+                        }
+                        
+                        // Generate favicon URL for the domain
+                        const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
+                        
                         return (
-                          <div className="flex items-center gap-1.5 sm:gap-2">
-                            <span
-                              className="w-2 h-2 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: avgSoAColor }}
-                              title={getSoATooltip(avgIndustrySoA.soA)}
-                            ></span>
-                            <span className="text-xs sm:text-sm font-semibold whitespace-nowrap" style={{ color: avgSoAColor }}>
-                              {(avgIndustrySoA.soA * 20).toFixed(1)}%
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={faviconUrl}
+                              alt=""
+                              className="w-4 h-4 flex-shrink-0"
+                              onError={(e) => {
+                                // Hide favicon if it fails to load
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                            <span className="text-sm text-[var(--text-body)] font-medium">
+                              {domain}
                             </span>
                           </div>
                         );
-                      })()}
-                    </td>
-                    <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                      {topic.sources.length > 0 ? (
-                        <div className="flex flex-wrap items-center gap-1">
-                          {topic.sources.slice(0, 2).map((source, idx) => {
-                          // Extract domain from URL for favicon
-                          const domain = source.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-                          const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
-                          const isBrand = source.type === 'brand';
-                          
-                          return (
-                            <button
-                              key={idx}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedSource(source);
-                                setIsModalOpen(true);
-                              }}
-                              className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded transition-colors"
-                              style={{
-                                padding: '3px 6px',
-                                borderRadius: '4px',
-                                fontSize: '10px',
-                                backgroundColor: isBrand ? sourceTypeColors[source.type] : '#f4f4f6',
-                                color: isBrand ? '#ffffff' : '#393e51',
-                                cursor: 'pointer',
-                                border: 'none',
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isBrand) {
-                                  e.currentTarget.style.backgroundColor = '#e8e9ed';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isBrand) {
-                                  e.currentTarget.style.backgroundColor = '#f4f4f6';
-                                }
-                              }}
-                              title={`${source.name} (${source.type})`}
-                            >
-                              <img
-                                src={faviconUrl}
-                                alt=""
-                                className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0"
-                                style={{ flexShrink: 0 }}
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                              <span className="truncate max-w-[60px] sm:max-w-[100px] text-[10px] sm:text-[11px]">{source.name}</span>
-                            </button>
-                          );
-                        })}
-                        {topic.sources.length > 2 && (
-                          <span
-                            className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded cursor-default"
-                            style={{
-                              padding: '3px 6px',
-                              borderRadius: '4px',
-                              fontSize: '10px',
-                              backgroundColor: '#e8e9ed',
-                              color: '#393e51',
-                            }}
-                          >
-                            +{topic.sources.length - 2}
-                          </span>
-                        )}
-                        </div>
-                      ) : (
-                        <span className="text-xs sm:text-sm text-[var(--text-caption)]" title="Source citation data not yet available">
+                      })() : (
+                        <span className="text-sm text-[var(--text-caption)]" title="Source citation data not yet available">
                           —
                         </span>
                       )}
@@ -527,16 +368,6 @@ export const TopicsRankedTable = ({
           </table>
       </div>
 
-      {/* Source Detail Modal */}
-      <SourceDetailModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedSource(null);
-        }}
-        source={selectedSource}
-        pages={selectedSource?.pages}
-      />
     </div>
   );
 };

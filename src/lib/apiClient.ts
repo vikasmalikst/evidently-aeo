@@ -191,6 +191,48 @@ class ApiClient {
 
     return new Error(message);
   }
+
+  // Convenience methods
+  async get<T>(endpoint: string, config: RequestConfig = {}): Promise<T> {
+    return this.request<T>(endpoint, { method: 'GET' }, config);
+  }
+
+  async post<T>(endpoint: string, data?: any, config: RequestConfig = {}): Promise<T> {
+    return this.request<T>(
+      endpoint,
+      {
+        method: 'POST',
+        body: data ? JSON.stringify(data) : undefined,
+      },
+      config
+    );
+  }
+
+  async put<T>(endpoint: string, data?: any, config: RequestConfig = {}): Promise<T> {
+    return this.request<T>(
+      endpoint,
+      {
+        method: 'PUT',
+        body: data ? JSON.stringify(data) : undefined,
+      },
+      config
+    );
+  }
+
+  async delete<T>(endpoint: string, config: RequestConfig = {}): Promise<T> {
+    return this.request<T>(endpoint, { method: 'DELETE' }, config);
+  }
+
+  async patch<T>(endpoint: string, data?: any, config: RequestConfig = {}): Promise<T> {
+    return this.request<T>(
+      endpoint,
+      {
+        method: 'PATCH',
+        body: data ? JSON.stringify(data) : undefined,
+      },
+      config
+    );
+  }
 }
 
 export const apiClient = new ApiClient();

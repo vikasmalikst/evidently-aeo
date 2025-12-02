@@ -127,14 +127,6 @@ export class PositionExtractionService {
     }
   }
 
-  // ============================================================================
-  // MAIN PUBLIC METHOD
-  // ============================================================================
-
-  /**
-   * Extract positions for all new collector results
-   * Skips results that already have positions extracted
-   */
   public async extractPositionsForNewResults(
     options: ExtractPositionsOptions = {}
   ): Promise<number> {
@@ -490,20 +482,26 @@ export class PositionExtractionService {
     rawAnswer: string
   ): Promise<string[]> {
     const metadataStr = metadata ? JSON.stringify(metadata, null, 2).substring(0, 600) : 'No metadata provided';
-    const trimmedAnswer = rawAnswer.length > 2000 ? `${rawAnswer.slice(0, 2000)}...` : rawAnswer;
 
-    const prompt = `You are helping map brand mentions to product names.
+    const prompt = `Your task is to extract only real, commercially branded products made by the brand below.
 
 Brand: "${brandName}"
-Context (metadata, may be empty):
+Context:
 ${metadataStr}
-Collector answer snippet (may contain product names):
-${trimmedAnswer}
+Snippet:
+${rawAnswer}
 
-Task: List popular or relevant products that belong to "${brandName}". Use BOTH your knowledge and the provided context. Include specific models or collections if present in the snippet. Only return a JSON array of product names (max 12 items). If absolutely nothing is known, return [].
+Rules:
+1. Include only official products sold by "${brandName}" — specific product names, SKUs, models, or variants that consumers can buy and that appear in the brand’s catalog or marketing.
+2. Exclude all generics: ingredients, materials, components, drug names, categories (e.g., “pain reliever”, “running shoes”, “smartphone”), and any descriptive phrases.
+3. Exclude competitors and their products entirely.
+4. Exclude side effects, conditions, benefits, use-cases, and features (e.g., “noise cancellation”, “headache relief”, “extra strength formula”).
+5. If a name is not clearly an official product of "${brandName}", leave it out.
+6. Use both the snippet and your general knowledge, but never invent products.
 
-Example response:
-["Product 1", "Product 2"]`;
+Output: A JSON array of up to 12 valid product names. If none exist, return [].
+
+`;
 
     try {
       const response = await this.callLLM(prompt, 'product-extraction');
@@ -525,7 +523,14 @@ Example response:
       console.log(`   📦 Extracted ${sanitizedProducts.length} products: ${sanitizedProducts.join(', ')}`);
       return sanitizedProducts;
     } catch (error) {
-      console.warn(`   ⚠️  Product extraction failed, continuing without products:`, error instanceof Error ? error.message : error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      
+      // Check for token limit errors
+      if (errorMsg.includes('token') || errorMsg.includes('context') || errorMsg.includes('length') || errorMsg.includes('400')) {
+        console.warn(`   ⚠️  Product extraction failed due to input length/token limit (raw_answer length: ${rawAnswer.length} chars). Consider truncating very long responses.`);
+      } else {
+        console.warn(`   ⚠️  Product extraction failed, continuing without products:`, errorMsg);
+      }
       return [];
     }
   }
@@ -795,7 +800,7 @@ Example response:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama3.1-8b',
+        model: 'qwen-3-235b-a22b-instruct-2507',
         messages: [
           {
             role: 'system',

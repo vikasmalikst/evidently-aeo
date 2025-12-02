@@ -12,36 +12,13 @@ export class LLMBrandIntelService {
   async generateBrandIntel(
     rawInput: string,
     companyName: string,
-    domain?: string,
-    skipTopics: boolean = false
+    domain?: string
   ): Promise<LLMBrandIntelResult> {
     if (!this.cerebrasApiKey) {
       console.warn('⚠️ Cerebras API key not configured, skipping LLM generation');
       return {};
     }
 
-    const topicsSection = skipTopics ? '' : `
-You are an Answer Engine Optimization (AEO) researcher.  
-Your task is to generate 5–8 high-level **Topics** that represent the main categories of user queries for a specific brand or entity.  
-
-Requirements:
-1. Topics are broad "buckets" of user intent, not individual questions.  
-2. Topics must be **brand-specific** and **industry-specific**.  
-3. Avoid generic labels like "FAQs" or "General Information." Each Topic should reflect real areas of likely user curiosity.  
-4. Cover a balanced spread of user concerns, typically including:
-   - Brand identity & trust
-   - Products & features
-   - Concerns, risks, or complaints
-   - Informational / how-to usage
-   - Pricing, value, or cost
-   - Comparisons vs. competitors
-   - Sustainability, ethics, or quality signals
-   - Ingredients, nutrition, or safety (if relevant to category)
-   - Local/transactional considerations (if relevant)
-5. Keep Topics **short (2–5 words)** and **query-shaped** (e.g., "Nutritional Facts," "Durability & Quality," "Pricing & Value").  
-6. Do not include the brand name inside the Topics.`;
-
-    const topicsField = skipTopics ? '' : ',\n  "topics": ["string1", "string2", "string3", "string4", "string5", "string6", "string7", "string8"]';
 
     const systemPrompt = `You are a brand intelligence researcher. Given a brand name OR a URL:
 
@@ -52,7 +29,6 @@ Extract CEO, headquarters city+country, founded year (if public).
 List top 5 competitors (global first, dedupe subsidiaries).
 
 Assign an industry/vertical (1–3 words).
-${skipTopics ? '\n\nNOTE: Topics will be generated separately. Do not include topics in your response.' : ''}
 
 IMPORTANT: You must respond with a valid JSON object containing these exact fields:
 {
@@ -63,9 +39,8 @@ IMPORTANT: You must respond with a valid JSON object containing these exact fiel
   "headquarters": "string (city, country)",
   "foundedYear": number or null,
   "industry": "string (1-3 words)",
-  "competitors": ["string1", "string2", "string3", "string4", "string5"]${topicsField}
+  "competitors": ["string1", "string2", "string3", "string4", "string5"]
 }
-${topicsSection}
 
 Return JSON strictly matching the BrandIntel schema. Include 3–6 public sources with titles+URLs used for the above. Input was: ${rawInput}.`;
 
@@ -96,14 +71,73 @@ Return JSON strictly matching the BrandIntel schema. Include 3–6 public source
         return {};
       }
 
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.warn('⚠️ No JSON found in LLM response');
+      // Log the raw content for debugging (truncated if too long)
+      const contentPreview = content.length > 500 ? content.substring(0, 500) + '...' : content;
+      console.log('🔍 LLM response content preview:', contentPreview);
+
+      // Try to extract JSON more robustly
+      let jsonString = '';
+      
+      // Method 1: Try to find JSON object with balanced braces
+      const firstBrace = content.indexOf('{');
+      if (firstBrace === -1) {
+        console.warn('⚠️ No JSON object found in LLM response (no opening brace)');
         return {};
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      console.log('✅ Parsed brand intel JSON:', parsed);
+      // Find the matching closing brace by counting braces
+      let braceCount = 0;
+      let jsonEnd = -1;
+      for (let i = firstBrace; i < content.length; i++) {
+        if (content[i] === '{') {
+          braceCount++;
+        } else if (content[i] === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            jsonEnd = i + 1;
+            break;
+          }
+        }
+      }
+
+      if (jsonEnd === -1) {
+        console.warn('⚠️ No valid JSON object found in LLM response (unbalanced braces)');
+        // Fallback: try the old regex method
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonString = jsonMatch[0];
+        }
+      } else {
+        jsonString = content.substring(firstBrace, jsonEnd);
+      }
+
+      if (!jsonString) {
+        console.warn('⚠️ Could not extract JSON from LLM response');
+        console.log('Full response:', content);
+        return {};
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonString);
+        console.log('✅ Parsed brand intel JSON:', parsed);
+      } catch (parseError) {
+        console.error('❌ JSON parse error:', parseError);
+        console.error('Attempted to parse:', jsonString.substring(0, 200) + '...');
+        // Try to clean up common issues
+        try {
+          // Remove trailing commas and other common issues
+          const cleaned = jsonString
+            .replace(/,\s*}/g, '}')
+            .replace(/,\s*]/g, ']')
+            .replace(/([{,]\s*)(\w+):/g, '$1"$2":'); // Quote unquoted keys
+          parsed = JSON.parse(cleaned);
+          console.log('✅ Parsed brand intel JSON after cleanup:', parsed);
+        } catch (cleanupError) {
+          console.error('❌ JSON parse failed even after cleanup:', cleanupError);
+          return {};
+        }
+      }
 
       return {
         summary: parsed.summary || parsed.description || undefined,
@@ -112,7 +146,6 @@ Return JSON strictly matching the BrandIntel schema. Include 3–6 public source
         foundedYear: parsed.foundedYear || parsed.founded || parsed.year_founded || null,
         ceo: parsed.ceo || parsed.ceo_name || undefined,
         competitors: Array.isArray(parsed.competitors) ? parsed.competitors : [],
-        topics: Array.isArray(parsed.topics) ? parsed.topics : (Array.isArray(parsed.aeo_topics) ? parsed.aeo_topics : []),
         homepageUrl: parsed.homepageUrl || parsed.homepage || parsed.url || undefined,
       };
     } catch (error) {

@@ -13,6 +13,7 @@ interface SetupModalProps {
   industry: string;
   onComplete: (data: SetupData) => void;
   onClose: () => void;
+  isSubmitting?: boolean;
 }
 
 export interface SetupData {
@@ -31,6 +32,7 @@ export const SetupModal = ({
   industry,
   onComplete,
   onClose,
+  isSubmitting = false,
 }: SetupModalProps) => {
   // Support direct step access via feature flag (for testing)
   const initialStep: Step = featureFlags.setupStep || featureFlags.onboardingStep || 'welcome';
@@ -46,12 +48,18 @@ export const SetupModal = ({
   };
 
   const handleNext = () => {
+    if (isSubmitting) {
+      return;
+    }
     if (currentStep === 'welcome') setCurrentStep('models');
     else if (currentStep === 'models') setCurrentStep('topics');
     else if (currentStep === 'topics') setCurrentStep('prompts');
   };
 
   const handleComplete = () => {
+    if (isSubmitting) {
+      return;
+    }
     onComplete({
       models: selectedModels,
       topics: selectedTopics,
@@ -114,6 +122,7 @@ export const SetupModal = ({
             className="onboarding-back-button"
             onClick={handleBack}
             aria-label="Go back"
+            disabled={isSubmitting}
           >
             <ChevronLeft size={20} />
             <span>Back</span>
@@ -152,16 +161,20 @@ export const SetupModal = ({
             <button
               className="onboarding-button-primary"
               onClick={currentStep === 'prompts' ? handleComplete : handleNext}
-              disabled={!canProceed()}
+              disabled={!canProceed() || isSubmitting}
             >
-              {currentStep === 'prompts' ? 'Complete Setup' : 'Next'}
+              {isSubmitting
+                ? 'Submitting...'
+                : currentStep === 'prompts'
+                  ? 'Complete Setup'
+                  : 'Next'}
             </button>
-            {!canProceed() && currentStep === 'models' && (
+            {!isSubmitting && !canProceed() && currentStep === 'models' && (
               <div className="onboarding-button-tooltip">
                 Select at least 1 model
               </div>
             )}
-            {!canProceed() && currentStep === 'prompts' && (
+            {!isSubmitting && !canProceed() && currentStep === 'prompts' && (
               <div className="onboarding-button-tooltip">
                 Select at least 1 prompt
               </div>

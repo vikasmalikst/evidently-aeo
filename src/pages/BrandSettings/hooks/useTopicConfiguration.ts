@@ -12,15 +12,14 @@ interface UseTopicConfigurationReturn {
   isLoading: boolean;
   isUpdating: boolean;
   handleTopicChange: (topics: Topic[]) => void;
-  saveChanges: () => Promise<void>;
+  saveChanges: (topicsOverride?: Topic[]) => Promise<void>;
   discardChanges: () => void;
   resetTopics: () => Promise<void>;
-  revertToVersion: (versionId: string) => Promise<void>;
 }
 
 // Mock data generator removed - now using real API
 
-export const useTopicConfiguration = (brandId: string): UseTopicConfigurationReturn => {
+export const useTopicConfiguration = (brandId?: string | null): UseTopicConfigurationReturn => {
   const [currentConfig, setCurrentConfig] = useState<TopicConfiguration | null>(null);
   const [history, setHistory] = useState<TopicConfiguration[]>([]);
   const [unsavedChanges, setUnsavedChanges] = useState<Topic[]>([]);
@@ -56,14 +55,56 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
 
   // Fetch current configuration
   const fetchCurrentConfig = useCallback(async () => {
+    if (!brandId) {
+      setCurrentConfig(null);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration }>(
         `/brands/${brandId}/topic-configuration/current`
       );
       
+      console.log('🔧 Topic configuration API response:', response);
+      console.log('🔧 Topics in response:', response.data?.topics);
+      console.log('🔧 Topic IDs:', response.data?.topics?.map(t => ({ id: t.id, name: t.name })));
+      
       if (response.success && response.data) {
-        setCurrentConfig(response.data);
+        // Fix NaN IDs before setting config
+        const fixedConfig = {
+          ...response.data,
+          topics: response.data.topics.map((topic, index) => {
+            // Check for invalid IDs: null, undefined, 'NaN' string, or actual NaN
+            const idValue = topic.id;
+            const idStr = String(idValue);
+            const isInvalidId = 
+              idValue == null || 
+              idValue === undefined || 
+              idStr === 'NaN' || 
+              idStr === 'undefined' || 
+              idStr === 'null' ||
+              (typeof idValue === 'number' && isNaN(idValue)) ||
+              (idStr.trim() === '');
+            
+            const fixedId = isInvalidId
+              ? `topic-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`
+              : String(idValue); // Ensure it's always a string
+            
+            if (isInvalidId) {
+              console.warn(`⚠️ Fixed invalid topic ID: "${topic.id}" (type: ${typeof topic.id}) -> "${fixedId}" for topic: "${topic.name}"`);
+            }
+            
+            return {
+              ...topic,
+              id: fixedId
+            };
+          })
+        };
+        
+        console.log('🔧 Fixed config topics:', fixedConfig.topics.map(t => ({ id: t.id, name: t.name })));
+        setCurrentConfig(fixedConfig);
       } else {
         console.error('Failed to fetch current configuration: No data returned');
         // Fallback to empty config if no data
@@ -80,6 +121,11 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
 
   // Fetch history
   const fetchHistory = useCallback(async () => {
+    if (!brandId) {
+      setHistory([]);
+      return;
+    }
+
     try {
       const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration[] }>(
         `/brands/${brandId}/topic-configuration/history`
@@ -106,16 +152,27 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
     setUnsavedChanges(topics);
   }, []);
 
-  const saveChanges = useCallback(async () => {
-    if (!currentConfig || unsavedChanges.length === 0) return;
+  const saveChanges = useCallback(
+    async (topicsOverride?: Topic[]) => {
+      if (!brandId) return;
+
+      const topicsToSave =
+        topicsOverride !== undefined
+          ? topicsOverride
+          : unsavedChanges;
+
+      // Allow saving empty arrays (e.g., when deleting all topics)
+      // Do NOT return early if topicsToSave is empty
 
     try {
       setIsUpdating(true);
+        setUnsavedChanges(topicsToSave);
+
       const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration }>(
         `/brands/${brandId}/topic-configuration/update`,
         {
           method: 'POST',
-          body: JSON.stringify({ topics: unsavedChanges }),
+            body: JSON.stringify({ topics: topicsToSave }),
         }
       );
       
@@ -139,13 +196,22 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
     } finally {
       setIsUpdating(false);
     }
-  }, [brandId, currentConfig, unsavedChanges]);
+    },
+    [brandId, unsavedChanges]
+  );
 
   const discardChanges = useCallback(() => {
     setUnsavedChanges([]);
   }, []);
 
   const resetTopics = useCallback(async () => {
+    if (!brandId) {
+      setCurrentConfig(null);
+      setHistory([]);
+      setUnsavedChanges([]);
+      return;
+    }
+
     try {
       setIsUpdating(true);
       // Refetch current config and history
@@ -158,35 +224,7 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
     } finally {
       setIsUpdating(false);
     }
-  }, [fetchCurrentConfig, fetchHistory]);
-
-  const revertToVersion = useCallback(async (versionId: string) => {
-    try {
-      setIsUpdating(true);
-      const response = await apiClient.request<{ success: boolean; data?: TopicConfiguration }>(
-        `/brands/${brandId}/topic-configuration/${versionId}/revert`,
-        { method: 'POST' }
-      );
-      
-      if (response.success && response.data) {
-        const newConfig = response.data;
-        setCurrentConfig(newConfig);
-        setHistory(prev => {
-          // Mark old configs as inactive and add new one
-          const updatedHistory = prev.map(c => ({ ...c, is_active: false }));
-          return [newConfig, ...updatedHistory];
-        });
-        setUnsavedChanges([]);
-      } else {
-        throw new Error('Failed to revert version: No data returned');
-      }
-    } catch (error) {
-      console.error('Failed to revert version:', error);
-      throw error;
-    } finally {
-      setIsUpdating(false);
-    }
-  }, [brandId]);
+  }, [brandId, fetchCurrentConfig, fetchHistory]);
 
   return {
     currentConfig,
@@ -200,7 +238,6 @@ export const useTopicConfiguration = (brandId: string): UseTopicConfigurationRet
     saveChanges,
     discardChanges,
     resetTopics,
-    revertToVersion,
   };
 };
 

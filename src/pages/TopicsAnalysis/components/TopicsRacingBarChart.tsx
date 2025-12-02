@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ResponsiveBar } from '@nivo/bar';
 import type { Topic } from '../types';
 import type { Competitor } from '../utils/competitorColors';
+import { wrapLabelText } from '../utils/text';
 
 interface TopicsRacingBarChartProps {
   topics: Topic[];
@@ -45,8 +46,6 @@ export const TopicsRacingBarChart = ({
   
   // Brand color (data viz 02) - resolved from CSS variable
   const BRAND_COLOR = useMemo(() => getCSSVariable('--dataviz-2') || '#498cf9', []); // data-viz-02 (blue)
-  // Avg Competitor color (data viz 04 at 48% opacity - orange)
-  const AVG_COMPETITOR_COLOR = 'rgba(250, 138, 64, 0.48)'; // --dataviz-4 at 48% opacity
   // Avg Industry color (neutral 400)
   const AVG_INDUSTRY_COLOR = '#8b90a7'; // neutral-400
 
@@ -71,35 +70,44 @@ export const TopicsRacingBarChart = ({
     return map;
   }, [sortedTopics]);
 
-  // Generate mock average competitor and industry SoA data for each topic (deterministic)
-  const getAvgCompetitorSoA = (topic: Topic, numCompetitors: number): number => {
-    const seed = (topic.id.charCodeAt(0) + numCompetitors * 19) % 100;
-    const baseSoA = topic.currentSoA ?? (topic.soA * 20);
-    return Math.max(0, Math.min(100, baseSoA * (0.65 + (seed / 100) * 0.7)));
-  };
+  // Use real industry average SOA from backend (stored as multiplier 0-5x, convert to percentage 0-100)
+  // Only show comparison if at least one topic has industry data
+  const hasIndustryData = useMemo(() => {
+    return sortedTopics.some(topic => 
+      topic.industryAvgSoA !== null && 
+      topic.industryAvgSoA !== undefined && 
+      topic.industryAvgSoA > 0
+    );
+  }, [sortedTopics]);
 
-  // Calculate average industry SoA across all topics for the marker line
+  // Calculate average industry SoA across all topics for the horizontal marker line
   const avgIndustrySoA = useMemo(() => {
-    if (!showComparison || sortedTopics.length === 0) return 0;
-    const sum = sortedTopics.reduce((acc, topic) => {
-    const seed = (topic.id.charCodeAt(0) * 13) % 100;
-    const baseSoA = topic.currentSoA ?? (topic.soA * 20);
-      const industrySoA = Math.max(0, Math.min(100, baseSoA * (0.7 + (seed / 100) * 0.6)));
-      return acc + industrySoA;
+    if (!hasIndustryData || sortedTopics.length === 0) return 0;
+    const topicsWithIndustryData = sortedTopics.filter(topic => 
+      topic.industryAvgSoA !== null && 
+      topic.industryAvgSoA !== undefined && 
+      topic.industryAvgSoA > 0
+    );
+    if (topicsWithIndustryData.length === 0) return 0;
+    
+    const sum = topicsWithIndustryData.reduce((acc, topic) => {
+      // Convert multiplier (0-5x) to percentage (0-100)
+      const industrySoAPercentage = (topic.industryAvgSoA || 0) * 20;
+      return acc + industrySoAPercentage;
     }, 0);
-    return sum / sortedTopics.length;
-  }, [sortedTopics, showComparison]);
+    return sum / topicsWithIndustryData.length;
+  }, [sortedTopics, hasIndustryData]);
   
-  // Chart keys: brand, avgCompetitor (removed avgIndustry - now shown as marker line)
+  // Chart keys: brand, avgIndustry (only show comparison if industry data exists)
   const chartKeys = useMemo(() => {
-    if (showComparison) {
-      return ['brand', 'avgCompetitor'];
+    if (showComparison && hasIndustryData) {
+      return ['brand', 'avgIndustry'];
     }
     return ['value'];
-  }, [showComparison]);
+  }, [showComparison, hasIndustryData]);
 
   const chartData = useMemo(() => {
-    if (!showComparison) {
+    if (!showComparison || !hasIndustryData) {
       // Single value per topic (no comparison)
       return [...sortedTopics].reverse().map((topic) => ({
         topic: topic.name,
@@ -107,7 +115,7 @@ export const TopicsRacingBarChart = ({
         soA: topic.soA, // Include SoA metric (0-5x scale)
       }));
     } else {
-      // Brand and avg competitor SoA per topic (industry avg shown as marker line)
+      // Brand and avg industry SoA per topic (industry avg also shown as marker line)
       return [...sortedTopics].reverse().map((topic) => {
         const data: Record<string, string | number> = { 
           topic: topic.name,
@@ -117,13 +125,18 @@ export const TopicsRacingBarChart = ({
         // Add brand performance
         data['brand'] = topic.currentSoA ?? 0;
         
-        // Add avg competitor SoA (muted color)
-        data['avgCompetitor'] = getAvgCompetitorSoA(topic, competitors.length);
+        // Add avg industry SoA from backend (convert multiplier to percentage)
+        // Only show if industry data exists for this topic
+        if (topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0) {
+          data['avgIndustry'] = (topic.industryAvgSoA * 20); // Convert multiplier (0-5x) to percentage (0-100)
+        } else {
+          data['avgIndustry'] = 0; // No data for this topic
+        }
         
         return data;
       });
     }
-  }, [sortedTopics, showComparison, competitors.length]);
+  }, [sortedTopics, showComparison, hasIndustryData]);
 
   // Calculate dynamic height based on number of topics
   // Balance between expanding height and reducing bar size
@@ -156,31 +169,14 @@ export const TopicsRacingBarChart = ({
                 const key = bar.id as string;
                 if (key === 'brand') {
                   return BRAND_COLOR; // Data viz 02 (blue) for brand
-                } else if (key === 'avgCompetitor') {
-                  return AVG_COMPETITOR_COLOR; // Data viz 04 (orange) at 48% opacity for avg competitor
+                } else if (key === 'avgIndustry') {
+                  return AVG_INDUSTRY_COLOR; // neutral-400 for avg industry
                 }
                 return '#498cf9';
               }
             : "#498cf9" // Data viz 01 - matches Chart.js color
           }
-          markers={showComparison ? [
-            {
-              axis: 'x',
-              value: avgIndustrySoA,
-              lineStyle: {
-                stroke: AVG_INDUSTRY_COLOR,
-                strokeWidth: 2,
-                strokeDasharray: '4 4',
-              },
-              legend: 'Avg Industry SoA',
-              legendPosition: 'top-left',
-              textStyle: {
-                fill: chartLabelColor || '#393e51',
-                fontSize: 11,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-              },
-            },
-          ] : []}
+          markers={[]}
           borderRadius={0} // Remove border radius on all bars
           borderWidth={showComparison ? (isGrouped ? 0 : 1) : 0}
           borderColor={showComparison && !isGrouped ? '#ffffff' : 'transparent'}
@@ -202,24 +198,34 @@ export const TopicsRacingBarChart = ({
             tickPadding: 8,
             tickRotation: 0,
             format: (value: string) => value,
-            renderTick: (tick: any) => (
-              <g transform={`translate(${tick.x},${tick.y})`}>
-                <text
-                  x={-8}
-                  y={tick.textY}
-                  textAnchor="end"
-                  dominantBaseline="middle"
-                  style={{
-                    fill: textCaptionColor,
-                    fontSize: 11,
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-                    fontWeight: 400,
-                  }}
-                >
-                  {tick.value}
-                </text>
-              </g>
-            ),
+            renderTick: (tick: any) => {
+              const topicName = String(tick.value);
+              const lines = wrapLabelText(topicName, 18);
+              const lineHeight = 13;
+              const offsetY = -(lines.length - 1) * lineHeight / 2;
+
+              return (
+                <g transform={`translate(${tick.x},${tick.y})`}>
+                  {lines.map((line, index) => (
+                    <text
+                      key={`${topicName}-${index}`}
+                      x={-8}
+                      y={offsetY + index * lineHeight}
+                      textAnchor="end"
+                      dominantBaseline="middle"
+                      style={{
+                        fill: textCaptionColor || '#6e7387',
+                        fontSize: 11,
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                        fontWeight: 400,
+                      }}
+                    >
+                      {line}
+                    </text>
+                  ))}
+                </g>
+              );
+            },
           }}
           enableGridX={true}
           enableGridY={false}
@@ -298,9 +304,9 @@ export const TopicsRacingBarChart = ({
               if (key === 'brand') {
                 label = `${brandName} SoA`;
                 barColor = BRAND_COLOR; // Data viz 02 (blue) for brand
-              } else if (key === 'avgCompetitor') {
-                label = 'Avg Competitor SoA';
-                barColor = AVG_COMPETITOR_COLOR;
+              } else if (key === 'avgIndustry') {
+                label = 'Avg Industry SoA';
+                barColor = AVG_INDUSTRY_COLOR;
               }
             }
             
@@ -413,7 +419,7 @@ export const TopicsRacingBarChart = ({
                     paddingLeft: '16px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                   }}>
-                    SoA: {topic.soA.toFixed(2)}×
+                    SoA: {value.toFixed(1)}%
                   </div>
                   <div style={{ 
                     fontSize: '11px', 
@@ -480,8 +486,8 @@ export const TopicsRacingBarChart = ({
         />
       </div>
       
-      {/* Custom Legend with Brand, Avg Competitor SoA, and Avg Industry SoA Marker */}
-      {showComparison && (
+      {/* Custom Legend with Brand, Avg Industry SoA Bar, and Avg Industry SoA Marker */}
+      {showComparison && hasIndustryData && (
         <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pb-2">
           {/* Brand */}
           <div className="flex items-center gap-1.5">
@@ -499,29 +505,14 @@ export const TopicsRacingBarChart = ({
             </span>
           </div>
           
-          {/* Avg Competitor SoA */}
+          {/* Avg Industry SoA - Bar */}
           <div className="flex items-center gap-1.5">
             <div
               style={{
                 width: '12px',
                 height: '12px',
-                backgroundColor: AVG_COMPETITOR_COLOR,
+                backgroundColor: AVG_INDUSTRY_COLOR,
                 borderRadius: '2px',
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              Avg Competitor SoA
-            </span>
-          </div>
-          
-          {/* Avg Industry SoA - Marker Line */}
-          <div className="flex items-center gap-1.5">
-            <div
-              style={{
-                width: '20px',
-                height: '2px',
-                background: `repeating-linear-gradient(to right, ${AVG_INDUSTRY_COLOR} 0, ${AVG_INDUSTRY_COLOR} 4px, transparent 4px, transparent 8px)`,
                 flexShrink: 0,
               }}
             />
@@ -529,6 +520,7 @@ export const TopicsRacingBarChart = ({
               Avg Industry SoA
             </span>
           </div>
+          
         </div>
       )}
     </div>

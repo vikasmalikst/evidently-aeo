@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -28,6 +28,7 @@ const getSoAColor = (soA: number): string => {
 
 export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) => {
   const [isMobile, setIsMobile] = useState(false);
+  const chartRef = useRef<any>(null);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -40,23 +41,75 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
 
   // Sort topics by SoA descending (largest to smallest)
   const sortedTopics = useMemo(() => {
-    return [...topics].sort((a, b) => b.soA - a.soA).slice(0, 10); // Show first 10 selected topics
+    return [...topics]
+      .map(topic => ({
+        ...topic,
+        currentSoA: topic.currentSoA ?? (topic.soA * 20) // Convert 0-5x to 0-100%
+      }))
+      .sort((a, b) => (b.currentSoA ?? 0) - (a.currentSoA ?? 0))
+      .slice(0, 10); // Show first 10 selected topics
   }, [topics]);
+
+  // Helper function to wrap topic names into multiple lines
+  const wrapTopicName = (name: string, maxLineLength: number = 18): string => {
+    if (name.length <= maxLineLength) {
+      return name;
+    }
+    
+    const words = name.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+    
+    words.forEach((word, index) => {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      if (testLine.length <= maxLineLength) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        // Handle very long words
+        if (word.length > maxLineLength) {
+          // Break long word into chunks
+          for (let i = 0; i < word.length; i += maxLineLength) {
+            lines.push(word.substring(i, i + maxLineLength));
+          }
+          currentLine = '';
+        } else {
+          currentLine = word;
+        }
+      }
+      
+      if (index === words.length - 1 && currentLine) {
+        lines.push(currentLine);
+      }
+    });
+    
+    return lines.length > 0 ? lines.join('\n') : name;
+  };
 
   const chartData = useMemo(() => {
     return {
-      labels: sortedTopics.map((t) => t.name),
+      labels: sortedTopics.map((t) => {
+        // Wrap topic names to multiple lines for better visibility
+        return wrapTopicName(t.name, 18);
+      }),
       datasets: [
         {
           label: 'Share of Answer (SoA)',
-          data: sortedTopics.map((t) => t.soA),
+          data: sortedTopics.map((t) => t.currentSoA ?? 0),
           borderColor: '#00bcdc',
-          backgroundColor: 'rgba(0, 188, 220, 0.2)',
+          backgroundColor: 'rgba(0, 188, 220, 0.15)',
           fill: true,
-          tension: 0.4,
+          tension: 0.5,
           pointRadius: 0,
-          pointHoverRadius: 5,
-          borderWidth: 2,
+          pointHoverRadius: 7,
+          pointHoverBackgroundColor: '#00bcdc',
+          pointHoverBorderColor: '#ffffff',
+          pointHoverBorderWidth: 3,
+          borderWidth: 2.5,
+          pointBackgroundColor: '#00bcdc',
+          pointBorderColor: '#ffffff',
         },
       ],
     };
@@ -67,6 +120,11 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
       indexAxis: 'x' as const,
       responsive: true,
       maintainAspectRatio: false,
+      layout: {
+        padding: {
+          bottom: 40, // Extra space for multi-line labels
+        },
+      },
       interaction: {
         intersect: false,
         mode: 'index' as const,
@@ -83,13 +141,30 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
         },
         tooltip: {
           enabled: true,
-          backgroundColor: 'rgba(26, 29, 41, 0.96)',
+          backgroundColor: 'rgba(26, 29, 41, 0.98)',
           titleColor: '#ffffff',
+          titleFont: {
+            size: 13,
+            weight: '600',
+            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+          },
           bodyColor: '#ffffff',
-          borderColor: '#c6c9d2',
-          borderWidth: 1,
-          padding: 10,
-          caretSize: 0,
+          bodyFont: {
+            size: 12,
+            weight: '500',
+            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+          },
+          borderColor: '#00bcdc',
+          borderWidth: 1.5,
+          padding: 12,
+          caretSize: 6,
+          cornerRadius: 8,
+          displayColors: false,
+          callbacks: {
+            label: function(context: any) {
+              return `Share of Answer (SoA): ${context.parsed.y.toFixed(2)}%`;
+            }
+          },
         },
       },
       scales: {
@@ -100,12 +175,21 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
           ticks: {
             color: 'var(--chart-label)',
             font: {
-              size: isMobile ? 9 : 12,
-              weight: 400,
+              size: isMobile ? 10 : 11,
+              weight: 500,
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
             },
             maxRotation: 45,
             minRotation: 45,
+            padding: 20,
+            maxWidth: 100, // Limit width to force wrapping
+            autoSkip: false, // Show all labels
+            callback: function(value: any, index: number) {
+              // Labels are already wrapped with '\n' in chartData
+              const label = this.getLabelForValue(value);
+              // Return wrapped label - Chart.js will handle '\n' as line break
+              return label;
+            },
           },
         },
         y: {
@@ -115,9 +199,13 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
             text: 'Share of Answer (SoA)',
             color: 'var(--chart-label)',
             font: {
-              size: isMobile ? 10 : 12,
+              size: isMobile ? 11 : 13,
               weight: '600',
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            },
+            padding: {
+              top: 0,
+              bottom: 12,
             },
           },
           grid: {
@@ -133,44 +221,22 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
               weight: 400,
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
             },
+            padding: 8,
+            callback: function(value: any) {
+              return value + '%';
+            },
           },
+          max: 100,
         },
       },
     };
   }, [sortedTopics, onBarClick, isMobile]);
 
-  // Color key for topics
-  const colorKeyItems = sortedTopics.slice(0, 10).map((topic, index) => ({
-    color: getSoAColor(topic.soA),
-    label: topic.name,
-    value: topic.soA.toFixed(2) + '×',
-  }));
-
   return (
     <div className="p-3 sm:p-4 lg:p-6">
-      <div className="h-[400px] sm:h-[500px] lg:h-[600px]">
-        <Line data={chartData} options={options} />
+      <div className="h-[400px] sm:h-[500px] lg:h-[600px] relative" style={{ overflow: 'visible' }}>
+        <Line ref={chartRef} data={chartData} options={options} />
       </div>
-      
-      {/* Color Key - Below Chart */}
-      {colorKeyItems.length > 0 && (
-        <div className="mt-3 sm:mt-4 flex items-center justify-center gap-3 sm:gap-4 lg:gap-6 flex-wrap">
-          <span className="text-[10px] sm:text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide whitespace-nowrap">
-            Topics:
-          </span>
-          {colorKeyItems.map((item, idx) => (
-            <div key={idx} className="flex items-center gap-1.5 sm:gap-2">
-              <div
-                className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: item.color }}
-              />
-              <span className="text-[10px] sm:text-xs text-[var(--text-body)] whitespace-nowrap">
-                <span className="hidden sm:inline">{item.label} </span>({item.value})
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 };

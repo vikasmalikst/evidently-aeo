@@ -41,7 +41,7 @@ export const CategoryHighlights = ({ categories, totalTopics, onCategoryClick }:
           className="bg-white border border-[var(--primary200)] rounded-lg p-4 sm:p-5 cursor-pointer transition-all hover:shadow-md hover:border-[var(--accent500)]"
           role="button"
           tabIndex={0}
-          aria-label={`Category: ${category.name}, ${category.topicCount} topics, Average SoA: ${category.avgSoA.toFixed(2)}x`}
+          aria-label={`Category: ${category.name}, ${category.topicCount} topics, Average SoA: ${(category.avgSoA * 20).toFixed(1)}%`}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
@@ -63,7 +63,7 @@ export const CategoryHighlights = ({ categories, totalTopics, onCategoryClick }:
           <div className="space-y-2 text-sm text-[var(--text-body)]">
             <div>
               <span>Avg SoA: </span>
-              <span className="font-semibold text-[var(--accent500)]">{category.avgSoA.toFixed(2)}x</span>
+              <span className="font-semibold text-[var(--accent500)]">{(category.avgSoA * 20).toFixed(1)}%</span>
             </div>
             <div>
               <span>Portfolio %: </span>

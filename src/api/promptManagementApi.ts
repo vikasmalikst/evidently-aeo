@@ -37,6 +37,7 @@ interface BackendPromptTopic {
   name: string;
   promptCount: number;
   prompts: BackendManagedPrompt[];
+  category?: string | null;
 }
 
 interface BackendManagePromptsResponse {
@@ -150,6 +151,7 @@ export interface Topic {
   id: number;
   name: string;
   prompts: Prompt[];
+  category?: string | null;
 }
 
 export interface PromptConfiguration {
@@ -197,6 +199,7 @@ function transformTopic(backend: BackendPromptTopic): Topic {
     id: topicId,
     name: backend.name,
     prompts: backend.prompts.map(p => transformPrompt(p, backend.name)),
+    category: backend.category ?? null,
   };
 }
 

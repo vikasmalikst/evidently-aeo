@@ -14,13 +14,13 @@ const settingsNavItems: SettingsNavItem[] = [
   },
   {
     id: 'manage-prompts',
-    label: 'Manage Prompts',
+    label: 'Prompts & Topics',
     path: '/settings/manage-prompts',
   },
   {
-    id: 'manage-topics',
-    label: 'Manage Topics',
-    path: '/settings/manage-topics',
+    id: 'manage-competitors',
+    label: 'Competitors',
+    path: '/settings/manage-competitors',
   },
 ];
 

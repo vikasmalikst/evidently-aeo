@@ -8,6 +8,7 @@ import { authenticateToken } from '../middleware/auth.middleware';
 import { BrandOnboardingRequest, ApiResponse, DatabaseError } from '../types/auth';
 import { supabaseAdmin } from '../config/database';
 import { topicConfigurationService } from '../services/topic-configuration.service';
+import { competitorCrudService, competitorVersioningService } from '../services/competitor-management';
 
 const router = Router();
 
@@ -60,12 +61,14 @@ router.get('/:brandId/keywords', authenticateToken, async (req: Request, res: Re
 
     const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
     const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    const collectorType = typeof req.query.collectorType === 'string' ? req.query.collectorType : undefined;
 
     const payload = await keywordsAnalyticsService.getKeywordAnalytics({
       brandId,
       customerId,
       startDate,
-      endDate
+      endDate,
+      collectorType
     });
 
     res.json({ success: true, data: payload });
@@ -311,6 +314,10 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
     const customerId = req.user!.customer_id;
     const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
     const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    const skipCacheQuery = Array.isArray(req.query.skipCache) ? req.query.skipCache[0] : req.query.skipCache;
+    const skipCache =
+      typeof skipCacheQuery === 'string' &&
+      ['true', '1', 'yes'].includes(skipCacheQuery.toLowerCase());
     let dateRange: DashboardDateRange | undefined;
 
     if (startQuery || endQuery) {
@@ -364,7 +371,9 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
       return;
     }
 
-    const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange);
+    const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange, {
+      skipCache
+    });
 
     res.json({
       success: true,
@@ -456,17 +465,21 @@ router.get('/:id/topics', authenticateToken, async (req: Request, res: Response)
   try {
     const { id } = req.params;
     const customerId = req.user!.customer_id;
-    const { startDate, endDate, collectorType, country } = req.query;
+    // Accept both 'collectors' (same as Prompts API) and 'collectorType' for backward compatibility
+    const { startDate, endDate, collectorType, collectors, country } = req.query;
+    
+    // Use collectors param if provided, otherwise fall back to collectorType
+    const modelFilter = collectors || collectorType;
     
     console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
-    console.log(`🔍 Filters: collectorType=${collectorType}, country=${country}, dateRange=${startDate} to ${endDate}`);
+    console.log(`🔍 Filters: model=${modelFilter}, country=${country}, dateRange=${startDate} to ${endDate}`);
     
     const result = await brandService.getBrandTopicsWithAnalytics(
       id, 
       customerId,
       startDate as string | undefined,
       endDate as string | undefined,
-      collectorType as string | undefined,
+      modelFilter as string | undefined,
       country as string | undefined
     );
     
@@ -684,6 +697,10 @@ router.get('/:brandId/topic-configuration/current', authenticateToken, async (re
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
     const config = await topicConfigurationService.getCurrentConfiguration(brandId, customerId, req.user?.id);
+    
+    // Log the topic IDs being returned
+    console.log('📤 Returning topic configuration with topics:', config.topics?.map(t => ({ id: t.id, name: t.name })));
+    
     res.json({ success: true, data: config });
   } catch (error) {
     console.error('Error fetching current topic configuration:', error);
@@ -890,6 +907,243 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to fetch progress',
+    });
+  }
+});
+
+/**
+ * GET /brands/:brandId/competitors
+ * Get all competitors for a brand (with versioning)
+ */
+router.get('/:brandId/competitors', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    const result = await competitorCrudService.getActiveCompetitors(brandId, customerId);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error fetching competitors:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch competitors'
+    });
+  }
+});
+
+/**
+ * POST /brands/:brandId/competitors
+ * Add a new competitor
+ */
+router.post('/:brandId/competitors', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const userId = req.user!.id;
+    const competitor = req.body;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    if (!competitor.name) {
+      res.status(400).json({
+        success: false,
+        error: 'Competitor name is required'
+      });
+      return;
+    }
+
+    const result = await competitorCrudService.addCompetitor(
+      brandId,
+      customerId,
+      competitor,
+      userId
+    );
+
+    res.status(201).json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error adding competitor:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to add competitor'
+    });
+  }
+});
+
+/**
+ * DELETE /brands/:brandId/competitors/:competitorName
+ * Remove a competitor
+ */
+router.delete('/:brandId/competitors/:competitorName', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId, competitorName } = req.params;
+    const customerId = req.user!.customer_id;
+    const userId = req.user!.id;
+
+    if (!brandId || !customerId || !competitorName) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID, Customer ID, and Competitor Name are required'
+      });
+      return;
+    }
+
+    await competitorCrudService.removeCompetitor(
+      brandId,
+      customerId,
+      decodeURIComponent(competitorName),
+      userId
+    );
+
+    res.json({
+      success: true,
+      message: 'Competitor removed successfully'
+    });
+  } catch (error) {
+    console.error('Error removing competitor:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to remove competitor'
+    });
+  }
+});
+
+/**
+ * PUT /brands/:brandId/competitors/:competitorName
+ * Update a competitor
+ */
+router.put('/:brandId/competitors/:competitorName', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId, competitorName } = req.params;
+    const customerId = req.user!.customer_id;
+    const userId = req.user!.id;
+    const updates = req.body;
+
+    if (!brandId || !customerId || !competitorName) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID, Customer ID, and Competitor Name are required'
+      });
+      return;
+    }
+
+    const result = await competitorCrudService.updateCompetitor(
+      brandId,
+      customerId,
+      decodeURIComponent(competitorName),
+      updates,
+      userId
+    );
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error updating competitor:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update competitor'
+    });
+  }
+});
+
+/**
+ * PUT /brands/:brandId/competitors
+ * Bulk update competitors (for reordering, bulk operations)
+ */
+router.put('/:brandId/competitors', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const userId = req.user!.id;
+    const { competitors, changeSummary } = req.body;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    if (!Array.isArray(competitors)) {
+      res.status(400).json({
+        success: false,
+        error: 'Competitors must be an array'
+      });
+      return;
+    }
+
+    const result = await competitorCrudService.bulkUpdateCompetitors(
+      brandId,
+      customerId,
+      competitors,
+      changeSummary,
+      userId
+    );
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error bulk updating competitors:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update competitors'
+    });
+  }
+});
+
+/**
+ * GET /brands/:brandId/competitors/versions
+ * Get version history for competitors
+ */
+router.get('/:brandId/competitors/versions', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    if (!brandId || !customerId) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID and Customer ID are required'
+      });
+      return;
+    }
+
+    const result = await competitorVersioningService.getVersionHistory(brandId, customerId);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error fetching competitor version history:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch version history'
     });
   }
 });

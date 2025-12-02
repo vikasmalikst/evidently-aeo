@@ -1,7 +1,6 @@
 import axios from 'axios';
 import type { CompetitorSuggestion, CompetitorGenerationParams } from '../types';
 import { stripProtocol, ensureHttps } from '../utils/string-utils';
-import { clearbitService } from './clearbit.service';
 
 /**
  * Service for generating and managing competitor suggestions
@@ -55,34 +54,6 @@ export class CompetitorService {
 
       let finalCompetitors = Array.from(uniqueCompetitors.values()).slice(0, 12);
       finalCompetitors = this.verifyCompetitors(finalCompetitors, companyName);
-
-      // Fallback to Clearbit if no competitors found
-      if (finalCompetitors.length === 0) {
-        console.warn('⚠️ No competitors found from AI, trying Clearbit fallback...');
-        try {
-          const clearbitSuggestions = await clearbitService.fetchSuggestions(`${industry} companies`);
-          const fallbackCompetitors = clearbitSuggestions
-            .slice(0, 5)
-            .filter(s => s.name.toLowerCase() !== companyName.toLowerCase())
-            .map(s => ({
-              name: s.name,
-              domain: s.domain,
-              logo: s.logo || `https://logo.clearbit.com/${s.domain}`,
-              industry: industry,
-              relevance: 'Indirect Competitor' as const,
-              url: `https://${s.domain}`,
-              description: '',
-              source: 'clearbit-fallback',
-            }));
-
-          if (fallbackCompetitors.length > 0) {
-            console.log(`✅ Using ${fallbackCompetitors.length} Clearbit fallback competitors`);
-            finalCompetitors = fallbackCompetitors;
-          }
-        } catch (fallbackError) {
-          console.warn('⚠️ Clearbit fallback also failed:', fallbackError);
-        }
-      }
 
       console.log(`✅ Returning ${finalCompetitors.length} verified unique competitors`);
       return finalCompetitors;

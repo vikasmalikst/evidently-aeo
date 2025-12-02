@@ -64,12 +64,16 @@ export const TopicsDonutChart = ({ topics, onBarClick }: TopicsDonutChartProps) 
             padding: 15,
             generateLabels: (chart: any) => {
               const datasets = chart.data.datasets;
-              return chart.data.labels.map((label: string, i: number) => ({
-                text: `${label} (${sortedTopics[i].soA.toFixed(2)}×)`,
-                fillStyle: datasets[0].backgroundColor[i],
-                hidden: false,
-                index: i
-              }));
+              return chart.data.labels.map((label: string, i: number) => {
+                const topic = sortedTopics[i];
+                const soAPercentage = (topic.currentSoA ?? topic.soA * 20).toFixed(1);
+                return {
+                  text: `${label} (${soAPercentage}%)`,
+                  fillStyle: datasets[0].backgroundColor[i],
+                  hidden: false,
+                  index: i
+                };
+              });
             }
           }
         },
@@ -78,8 +82,9 @@ export const TopicsDonutChart = ({ topics, onBarClick }: TopicsDonutChartProps) 
           callbacks: {
             label: (context: any) => {
               const topic = sortedTopics[context.dataIndex];
+              const soAPercentage = (topic.currentSoA ?? topic.soA * 20).toFixed(1);
               return [
-                `SoA: ${topic.soA.toFixed(2)}×`,
+                `SoA: ${soAPercentage}%`,
                 `Rank: ${topic.rank}`,
                 `Category: ${topic.category}`,
               ];

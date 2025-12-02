@@ -48,20 +48,17 @@ export class OnboardingIntelService {
       matchedSuggestion?.logo ?? (domain ? `https://logo.clearbit.com/${domain}` : '');
 
     // Step 2: Generate brand intelligence using LLM
-    const skipTopics = process.env.USE_NEW_TOPICS_QUERY_GENERATION === 'true';
     let llmBrandIntel = null;
     try {
       llmBrandIntel = await llmBrandIntelService.generateBrandIntel(
         trimmedInput,
         companyName,
-        domain,
-        skipTopics
+        domain
       );
       console.log('✅ LLM brand intelligence generated:', {
         hasSummary: !!llmBrandIntel?.summary,
         hasIndustry: !!llmBrandIntel?.industry,
         competitorsCount: llmBrandIntel?.competitors?.length || 0,
-        topicsCount: llmBrandIntel?.topics?.length || 0,
       });
     } catch (llmError) {
       console.error('❌ LLM generation failed:', llmError);
@@ -81,6 +78,7 @@ export class OnboardingIntelService {
       llmBrandIntel?.industry ||
       extractIndustry(description) ||
       extractIndustry(wikipediaSummary?.description ?? '') ||
+      (matchedSuggestion?.name ? extractIndustry(matchedSuggestion.name) : null) ||
       'General';
 
     let headquarters =
@@ -175,18 +173,6 @@ export class OnboardingIntelService {
       }
     }
 
-    // Store topics in metadata if available
-    if (
-      llmBrandIntel?.topics &&
-      Array.isArray(llmBrandIntel.topics) &&
-      llmBrandIntel.topics.length > 0
-    ) {
-      brand.metadata = {
-        ...brand.metadata,
-        llmGeneratedTopics: llmBrandIntel.topics,
-      };
-      console.log(`✅ Stored ${llmBrandIntel.topics.length} topics from LLM in metadata`);
-    }
 
     return {
       brand,

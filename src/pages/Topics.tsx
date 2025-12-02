@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { TopicsAnalysisPage } from './TopicsAnalysis/TopicsAnalysisPage';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useCachedData } from '../hooks/useCachedData';
-import type { TopicsAnalysisData } from './TopicsAnalysis/types';
+import type { TopicsAnalysisData, TopicSource } from './TopicsAnalysis/types';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -29,6 +29,10 @@ interface BackendTopic {
   brandPresencePercentage?: number | null;
   totalQueries?: number;
   availableModels?: string[]; // Available models for this topic (from collector_type)
+  topSources?: Array<{ name: string; url: string; type: string; citations: number }>;
+  industryAvgSoA?: number | null; // Industry average SOA (0-100 percentage)
+  industryAvgSoATrend?: { direction: 'up' | 'down' | 'neutral'; delta: number } | null;
+  industryBrandCount?: number; // Number of brands in industry average calculation
 }
 
 function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData {
@@ -50,6 +54,30 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
         else if (sentimentScore <= -0.1) sentiment = 'negative';
       }
       
+      // Transform topSources from backend format to TopicSource format
+      const sources: TopicSource[] = (t.topSources || []).map(source => ({
+        name: source.name,
+        url: source.url,
+        type: source.type as 'brand' | 'editorial' | 'corporate' | 'reference' | 'ugc' | 'institutional',
+        citations: source.citations
+      }));
+
+      // Calculate industry average SOA (backend returns as percentage 0-100, convert to multiplier 0-5x)
+      // Backend returns avgSoA as percentage (0-100) - confirmed in source-attribution.service.ts:666
+      const industryAvgSoA = t.industryAvgSoA !== null && t.industryAvgSoA !== undefined
+        ? (t.industryAvgSoA / 20) // Convert percentage (0-100) to multiplier (0-5x)
+        : null;
+      
+      // Debug logging for industry SOA
+      if (industryAvgSoA !== null) {
+        console.log(`📊 Topic "${t.topic_name}": Industry Avg SOA = ${t.industryAvgSoA}% (${industryAvgSoA.toFixed(2)}x multiplier), Brand SOA = ${soAPercentage}%`);
+      } else if (t.industryAvgSoA === null || t.industryAvgSoA === undefined) {
+        console.log(`⚠️ Topic "${t.topic_name}": No industry Avg SOA data (null/undefined)`);
+      }
+      
+      // Use industry trend if available, otherwise default to neutral
+      const industryTrend = t.industryAvgSoATrend || { direction: 'neutral' as const, delta: 0 };
+
       return {
         id: t.id || `topic-${index}`,
         rank: 0, // Will be assigned after sorting
@@ -61,9 +89,13 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
         trend: { direction: 'neutral' as const, delta: 0 },
         searchVolume: null,
         sentiment,
-        sources: [],
+        sources: sources, // Map topSources from backend
         // Store original priority for fallback sorting (will be removed before returning)
-        priority: t.priority || 999
+        priority: t.priority || 999,
+        // Industry average data
+        industryAvgSoA: industryAvgSoA,
+        industryTrend: industryTrend,
+        industryBrandCount: t.industryBrandCount || 0
       };
     })
     // Sort by SoA (descending), then by priority, then alphabetically
@@ -153,20 +185,37 @@ export const Topics = () => {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<TopicsFilters>({});
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const lastEndpointRef = useRef<string | null>(null);
 
-  // Build endpoint with filters
+  // Build endpoint with filters - SAME AS PROMPTS PAGE
+  // Memoize filters to prevent unnecessary endpoint recalculations
+  const filtersKey = useMemo(() => {
+    return JSON.stringify({
+      startDate: filters.startDate || '',
+      endDate: filters.endDate || '',
+      collectorType: filters.collectorType || '',
+      country: filters.country || ''
+    });
+  }, [filters.startDate, filters.endDate, filters.collectorType, filters.country]);
+
   const topicsEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
     const params = new URLSearchParams();
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
-    if (filters.collectorType) params.append('collectorType', filters.collectorType);
+    // Use 'collectors' parameter (same as Prompts page) instead of 'collectorType'
+    if (filters.collectorType) params.append('collectors', filters.collectorType);
     if (filters.country) params.append('country', filters.country);
     const queryString = params.toString();
     const endpoint = `/brands/${selectedBrandId}/topics${queryString ? `?${queryString}` : ''}`;
-    console.log('🔗 Topics endpoint built:', { endpoint, filters, queryString });
+    
+    // Only log if endpoint actually changed
+    if (endpoint !== lastEndpointRef.current) {
+      console.log('🔗 Topics endpoint built:', { endpoint, filters, queryString, previous: lastEndpointRef.current });
+      lastEndpointRef.current = endpoint;
+    }
     return endpoint;
-  }, [selectedBrandId, filters]);
+  }, [selectedBrandId, filtersKey]);
 
   // Use cached data hook - refetch when filters change
   // Response can be either BackendTopic[] (old format) or { topics: BackendTopic[], availableModels: string[] } (new format)
@@ -189,6 +238,12 @@ export const Topics = () => {
     if (response?.success && response.availableModels) {
       setAvailableModels(response.availableModels);
       console.log('📊 Available models from backend:', response.availableModels);
+    } else {
+      console.log('⚠️ No available models in response:', {
+        success: response?.success,
+        hasAvailableModels: !!response?.availableModels,
+        availableModels: response?.availableModels
+      });
     }
   }, [response]);
   
@@ -261,12 +316,38 @@ export const Topics = () => {
         onCategoryFilter={(categoryId) => {
           console.log('Category filtered:', categoryId);
         }}
+        currentCollectorType={filters.collectorType}
       />
     );
   }
 
-  // Use real data only - no mock fallback
+  // Use real data - allow empty topics array (filtering might return empty results)
   if (!topicsData) {
+    // Only show empty state if we don't have a response at all
+    // If we have a response with empty topics, still show the page so filters work
+    if (!response || !response.success) {
+      return (
+        <TopicsAnalysisPage
+          data={{
+            portfolio: { totalTopics: 0, searchVolume: 0, categories: 0, lastUpdated: new Date().toISOString() },
+            performance: { avgSoA: 0, maxSoA: 0, minSoA: 0, weeklyGainer: { topic: '', delta: 0, category: '' } },
+            topics: [],
+            categories: []
+          }}
+          isLoading={false}
+          onTopicClick={(topic) => {
+            console.log('Topic clicked:', topic);
+          }}
+          onCategoryFilter={(categoryId) => {
+            console.log('Category filtered:', categoryId);
+          }}
+          onFiltersChange={setFilters}
+          availableModels={availableModels}
+          currentCollectorType={filters.collectorType}
+        />
+      );
+    }
+    // If response is successful but transformation failed, show error
     return (
       <TopicsAnalysisPage
         data={{
@@ -282,6 +363,9 @@ export const Topics = () => {
         onCategoryFilter={(categoryId) => {
           console.log('Category filtered:', categoryId);
         }}
+        onFiltersChange={setFilters}
+        availableModels={availableModels}
+        currentCollectorType={filters.collectorType}
       />
     );
   }
@@ -329,6 +413,7 @@ export const Topics = () => {
         }}
         onFiltersChange={setFilters}
         availableModels={availableModels}
+        currentCollectorType={filters.collectorType}
       />
     </>
   );

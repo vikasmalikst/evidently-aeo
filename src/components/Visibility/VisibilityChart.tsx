@@ -100,7 +100,7 @@ interface VisibilityChartProps {
   loading?: boolean;
   activeTab: string;
   models?: Model[];
-  metricType?: 'visibility' | 'share';
+  metricType?: 'visibility' | 'share' | 'sentiment';
 }
 
 export const VisibilityChart = memo(({
@@ -241,7 +241,11 @@ export const VisibilityChart = memo(({
           max: 100,
           title: {
             display: true,
-            text: metricType === 'visibility' ? 'Visibility Score' : 'Share of Answers (%)',
+            text: metricType === 'visibility' 
+              ? 'Visibility Score' 
+              : metricType === 'share' 
+                ? 'Share of Answers (%)'
+                : 'Sentiment Score',
             color: neutrals[700],
             font: {
               size: 11,

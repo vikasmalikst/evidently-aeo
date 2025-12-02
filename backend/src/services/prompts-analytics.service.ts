@@ -364,6 +364,42 @@ export class PromptsAnalyticsService {
       )
     )
 
+    // Get current active version's query IDs to filter by current version
+    let currentVersionQueryIds: Set<string> | null = null
+    try {
+      const { data: activeConfig } = await supabaseAdmin
+        .from('prompt_configurations')
+        .select('id')
+        .eq('brand_id', brandRow.id)
+        .eq('customer_id', customerId)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (activeConfig?.id) {
+        const { data: snapshots } = await supabaseAdmin
+          .from('prompt_configuration_snapshots')
+          .select('query_id')
+          .eq('configuration_id', activeConfig.id)
+          .eq('is_included', true)
+
+        if (snapshots && snapshots.length > 0) {
+          currentVersionQueryIds = new Set(
+            snapshots
+              .map(s => s.query_id)
+              .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+          )
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to fetch current version query IDs, showing all queries:', error)
+      // Continue without filtering if version fetch fails
+    }
+
+    // Filter queryIds to only include those in the current version
+    const filteredQueryIds = currentVersionQueryIds
+      ? queryIds.filter(id => currentVersionQueryIds!.has(id))
+      : queryIds
+
     const queryMetadataMap = new Map<
       string,
       {
@@ -372,11 +408,11 @@ export class PromptsAnalyticsService {
       }
     >()
 
-    if (queryIds.length > 0) {
+    if (filteredQueryIds.length > 0) {
       const { data: queryRows, error: queryError } = await supabaseAdmin
         .from('generated_queries')
         .select('id, query_text, metadata')
-        .in('id', queryIds)
+        .in('id', filteredQueryIds)
 
       if (queryError) {
         throw new DatabaseError(`Failed to load query metadata: ${queryError.message}`)
@@ -414,7 +450,15 @@ export class PromptsAnalyticsService {
     const promptAggregates = new Map<string, PromptAggregate>()
     let missingKeyCounter = 0
 
-    for (const row of rows) {
+    // Filter rows to only include those with queries in the current version
+    const filteredRows = currentVersionQueryIds
+      ? rows.filter(row => {
+          const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+          return queryId && currentVersionQueryIds.has(queryId)
+        })
+      : rows
+
+    for (const row of filteredRows) {
       const collectorResultId = typeof row.id === 'number' ? row.id : null
       const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
       const collectorType = normalizeCollectorType(row.collector_type)

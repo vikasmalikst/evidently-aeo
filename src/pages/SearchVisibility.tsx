@@ -95,6 +95,7 @@ interface ModelData {
   name: string;
   score: number;
   shareOfSearch: number;
+  sentiment?: number | null;
   shareOfSearchChange?: number;
   topTopic: string;
   change?: number;
@@ -102,6 +103,7 @@ interface ModelData {
   brandPresencePercentage: number;
   data: number[];
   shareData?: number[];
+  sentimentData?: number[];
   topTopics?: LlmTopic[];
   color?: string;
   isBrand?: boolean;
@@ -109,59 +111,36 @@ interface ModelData {
 
 const normalizeId = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
 
-// Generate date labels based on date range and period type
-const generateDateLabels = (startDate: Date, endDate: Date, periodType: 'daily' | 'weekly' | 'monthly'): string[] => {
-  const labels: string[] = [];
-  const current = new Date(startDate);
-  const end = new Date(endDate);
-  
-  // Safety check
-  if (isNaN(current.getTime()) || isNaN(end.getTime()) || current > end) {
-    console.warn('[generateDateLabels] Invalid date range:', { startDate, endDate });
-    return [];
+const buildTimeseries = (value: number) => Array(chartLabels.length).fill(Math.max(0, Math.round(value)));
+
+// Helper to format date for chart labels (e.g., "Jan 15" or "Mon 15")
+const formatDateLabel = (dateStr: string): string => {
+  try {
+    const date = new Date(dateStr + 'T00:00:00Z')
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' })
+    const dayNum = date.getDate()
+    return `${dayName} ${dayNum}`
+  } catch {
+    return dateStr
   }
-  
-  if (periodType === 'daily') {
-    while (current <= end) {
-      labels.push(current.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-      current.setDate(current.getDate() + 1);
-      // Safety limit to prevent infinite loops
-      if (labels.length > 365) break;
-    }
-  } else if (periodType === 'weekly') {
-    // Start from the beginning of the week containing startDate
-    const weekStart = new Date(current);
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    
-    while (weekStart <= end) {
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekEnd.getDate() + 6);
-      if (weekEnd > end) weekEnd.setTime(end.getTime());
-      
-      // Only include weeks that overlap with the date range
-      if (weekStart <= end && weekEnd >= current) {
-        labels.push(`${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
-      }
-      weekStart.setDate(weekStart.getDate() + 7);
-      // Safety limit
-      if (labels.length > 104) break; // Max 2 years of weeks
-    }
-  } else if (periodType === 'monthly') {
-    // Start from the beginning of the month containing startDate
-    const monthStart = new Date(current.getFullYear(), current.getMonth(), 1);
-    
-    while (monthStart <= end) {
-      const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
-      if (monthEnd > end) monthEnd.setTime(end.getTime());
-      
-      // Only include months that overlap with the date range
-      if (monthStart <= end && monthEnd >= current) {
-        labels.push(monthStart.toLocaleDateString('en-US', { month: 'short' }));
-      }
-      monthStart.setMonth(monthStart.getMonth() + 1);
-      // Safety limit
-      if (labels.length > 24) break; // Max 2 years of months
-    }
+}
+
+const getDateRangeForTimeframe = (timeframe: string) => {
+  const end = new Date();
+  end.setUTCHours(23, 59, 59, 999);
+
+  const start = new Date(end);
+  switch (timeframe) {
+    case 'monthly':
+      start.setUTCDate(start.getUTCDate() - 29);
+      break;
+    case 'ytd':
+      start.setUTCMonth(0, 1);
+      break;
+    case 'weekly':
+    default:
+      start.setUTCDate(start.getUTCDate() - 6);
+      break;
   }
   
   return labels;
@@ -197,7 +176,7 @@ export const SearchVisibility = () => {
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [metricType, setMetricType] = useState<'visibility' | 'share'>('visibility');
+  const [metricType, setMetricType] = useState<'visibility' | 'share' | 'sentiment'>('visibility');
   const [brandModels, setBrandModels] = useState<ModelData[]>([]);
   const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
@@ -347,8 +326,7 @@ export const SearchVisibility = () => {
   const processedData = useMemo(() => {
     const processStart = performance.now();
     if (!response?.success || !response.data) {
-      console.log('[SearchVisibility] No response data available');
-      return { brandModels: [], competitorModels: [] };
+      return { brandModels: [], competitorModels: [], chartDateLabels: chartLabels };
     }
 
     // Don't block processing if chartLabels is empty - use a default length
@@ -358,11 +336,16 @@ export const SearchVisibility = () => {
       : ['Period 1']; // Fallback to single period if labels not ready yet
 
     const llmSlices = response.data.llmVisibility ?? [];
-    console.log('[SearchVisibility] Processing data:', {
-      llmSlicesCount: llmSlices.length,
-      chartLabelsCount: labelsToUse.length,
-      dateRange: { start: dateRange.startDate, end: dateRange.endDate }
-    });
+    
+    // Extract date labels from time-series data (if available)
+    // Try brand visibility first, then competitor visibility
+    let chartDateLabels: string[] = chartLabels
+    if (llmSlices.length > 0 && llmSlices[0].timeSeries?.dates && llmSlices[0].timeSeries.dates.length > 0) {
+      chartDateLabels = llmSlices[0].timeSeries.dates.map(formatDateLabel)
+    } else if (competitorEntries.length > 0 && competitorEntries[0].timeSeries?.dates && competitorEntries[0].timeSeries.dates.length > 0) {
+      chartDateLabels = competitorEntries[0].timeSeries.dates.map(formatDateLabel)
+    }
+    
     const llmModels = llmSlices.map((slice) => {
       const totalQueries = slice.totalQueries ?? 0;
       const brandPresenceCount = slice.brandPresenceCount ?? 0;
@@ -373,12 +356,16 @@ export const SearchVisibility = () => {
       
       const visibilityValue = slice.visibility ?? 0;
       const shareValue = slice.shareOfSearch ?? slice.share ?? 0;
+      const sentimentValue = slice.sentiment ?? null;
+      // Convert sentiment from -1 to 1 scale to 0-100 scale for display
+      const sentimentDisplayValue = sentimentValue !== null ? ((sentimentValue + 1) / 2) * 100 : null;
       
       return {
         id: normalizeId(slice.provider),
         name: slice.provider,
         score: Math.round(visibilityValue), // Use visibility, not share
         shareOfSearch: Math.round(shareValue),
+        sentiment: sentimentDisplayValue,
         shareOfSearchChange: slice.delta ? Math.round(slice.delta) : 0,
         topTopic:
           slice.topTopic ??
@@ -477,11 +464,56 @@ export const SearchVisibility = () => {
     // Always create brand row if we have a selected brand ID
     const brandVisibilityValue = brandData.visibility ?? 0;
     const brandShareValue = brandData.share ?? 0;
+    // Get brand sentiment from response (if available)
+    const brandSentimentRaw = (response.data as any)?.sentimentScore ?? null;
+    const brandSentimentDisplay = brandSentimentRaw !== null ? ((brandSentimentRaw + 1) / 2) * 100 : null;
+    
+    // Aggregate time-series from all LLM models for brand summary
+    let brandTimeSeries: { dates: string[], visibility: number[], share: number[], sentiment: (number | null)[] } | undefined
+    if (llmModels.length > 0 && llmModels[0].data && llmModels[0].data.length > 0) {
+      // Use the dates from first model (all should have same dates)
+      const dates = llmSlices[0]?.timeSeries?.dates || []
+      if (dates.length > 0) {
+        const visibility: number[] = []
+        const share: number[] = []
+        const sentiment: (number | null)[] = []
+        
+        // For each day, average across all collectors
+        dates.forEach((_, dayIndex) => {
+          const dayVisibilities = llmModels
+            .map(model => model.data[dayIndex])
+            .filter(v => v !== undefined && v !== null) as number[]
+          const dayShares = llmModels
+            .map(model => model.shareData?.[dayIndex])
+            .filter(v => v !== undefined && v !== null) as number[]
+          const daySentiments = llmModels
+            .map(model => {
+              const s = model.sentimentData?.[dayIndex]
+              return s !== undefined && s !== null ? s : null
+            })
+            .filter(s => s !== null) as number[]
+          
+          visibility.push(dayVisibilities.length > 0 
+            ? Math.round(dayVisibilities.reduce((sum, v) => sum + v, 0) / dayVisibilities.length)
+            : 0)
+          share.push(dayShares.length > 0
+            ? Math.round(dayShares.reduce((sum, v) => sum + v, 0) / dayShares.length)
+            : 0)
+          sentiment.push(daySentiments.length > 0
+            ? Math.round(daySentiments.reduce((sum, v) => sum + v, 0) / daySentiments.length)
+            : null)
+        })
+        
+        brandTimeSeries = { dates, visibility, share, sentiment }
+      }
+    }
+    
     const brandCompetitiveModel = selectedBrandId ? {
       id: 'brand',
       name: brandName,
       score: Math.round(brandVisibilityValue),
       shareOfSearch: Math.round(brandShareValue),
+      sentiment: brandSentimentDisplay,
       topTopic: brandData.topTopics?.[0]?.topic ?? '—',
       change: 0,
       referenceCount: queriesWithBrandPresence,
@@ -501,12 +533,15 @@ export const SearchVisibility = () => {
     const competitorModelsData = competitorEntries.map((entry) => {
       const competitorVisibilityValue = entry.visibility ?? 0;
       const competitorShareValue = entry.share ?? 0;
+      const competitorSentimentRaw = entry.sentiment ?? null;
+      const competitorSentimentDisplay = competitorSentimentRaw !== null ? ((competitorSentimentRaw + 1) / 2) * 100 : null;
       
       return {
         id: normalizeId(entry.competitor),
         name: entry.competitor,
         score: Math.round(competitorVisibilityValue),
         shareOfSearch: Math.round(competitorShareValue),
+        sentiment: competitorSentimentDisplay,
         topTopic: entry.topTopics?.[0]?.topic ?? '—',
         change: 0,
         referenceCount: entry.mentions ?? 0,
@@ -533,14 +568,18 @@ export const SearchVisibility = () => {
     
     return {
       brandModels: llmModels,
-      competitorModels: allCompetitorModels
+      competitorModels: allCompetitorModels,
+      chartDateLabels
     };
   }, [response, selectedBrandId, selectedBrand, chartLabels]);
 
   // Update state from processed data (batched update)
+  const [chartDateLabels, setChartDateLabels] = useState<string[]>(chartLabels);
+  
   useEffect(() => {
     setBrandModels(processedData.brandModels);
     setCompetitorModels(processedData.competitorModels);
+    setChartDateLabels(processedData.chartDateLabels || chartLabels);
   }, [processedData]);
 
   // Log page render completion
@@ -577,60 +616,18 @@ export const SearchVisibility = () => {
     );
   }, []);
 
-  const chartData = useMemo(() => {
-    // Use chartLabels if available, otherwise use labels from first model's data length
-    const labels = chartLabels && chartLabels.length > 0 
-      ? chartLabels 
-      : (currentModels.length > 0 && currentModels[0]?.data?.length > 0
-          ? currentModels[0].data.map((_, i) => `Period ${i + 1}`)
-          : []);
-    
-    return {
-      labels,
-      datasets: currentModels.map((model) => ({
-        id: model.id,
-        label: model.name,
-        data: metricType === 'visibility' ? model.data : (model.shareData ?? model.data)
-      }))
-    };
-  }, [currentModels, metricType, chartLabels]);
-  
-  // Handle date picker callbacks
-  const handleDateSelect = useCallback((date: Date) => {
-    // This is called when a single date is selected, but we need a range
-    // For now, just update the end date to the selected date
-    if (selectedDateRange) {
-      setSelectedDateRange({
-        startDate: selectedDateRange.startDate,
-        endDate: date
-      });
-    }
-  }, [selectedDateRange]);
-  
-  const handleDateRangeApply = useCallback((startDate: Date, endDate: Date | null) => {
-    // Normalize dates to start/end of day
-    const normalizedStart = new Date(startDate);
-    normalizedStart.setHours(0, 0, 0, 0);
-    
-    const normalizedEnd = endDate ? new Date(endDate) : new Date(startDate);
-    normalizedEnd.setHours(23, 59, 59, 999);
-    
-    console.log('[SearchVisibility] Applying date range:', {
-      startDate: normalizedStart.toISOString(),
-      endDate: normalizedEnd.toISOString(),
-      periodType: datePeriodType
-    });
-    
-    setSelectedDateRange({
-      startDate: normalizedStart,
-      endDate: normalizedEnd
-    });
-    setShowDatePicker(false);
-  }, [datePeriodType]);
-  
-  const handleViewChange = useCallback((view: 'daily' | 'weekly' | 'monthly') => {
-    setDatePeriodType(view);
-  }, []);
+  const chartData = useMemo(() => ({
+    labels: chartDateLabels,
+    datasets: currentModels.map((model) => ({
+      id: model.id,
+      label: model.name,
+      data: metricType === 'visibility' 
+        ? model.data 
+        : metricType === 'share' 
+          ? (model.shareData ?? model.data)
+          : (model.sentimentData ?? model.data)
+    }))
+  }), [currentModels, metricType]);
 
   const combinedLoading = authLoading || brandsLoading || loading;
 
@@ -688,7 +685,6 @@ export const SearchVisibility = () => {
               </p>
             )}
           </div>
-          <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
 
         <div className="flex flex-col flex-1 gap-4 overflow-hidden p-4">
@@ -704,7 +700,26 @@ export const SearchVisibility = () => {
             </div>
           )}
 
-          <div className="flex flex-col flex-[0_0_60%] bg-white rounded-lg overflow-hidden shadow-sm">
+          <div className="flex flex-col flex-[0_0_60%] rounded-3xl border border-[#e4e7ec] bg-white shadow-[0_20px_45px_rgb(15_23_42_/_0.08)] overflow-hidden">
+            <div className="border-b border-[#e7ecff] bg-gradient-to-br from-white via-white to-[#f6fbff] p-6">
+              <div className="flex flex-col gap-6">
+                <KpiToggle metricType={metricType} onChange={setMetricType} />
+                <div className="flex flex-col gap-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
+                    View Mode
+                  </div>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                    <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm pt-1">
+                      {activeTab === 'brand'
+                        ? 'Focus on how each collector sees your brand.'
+                        : 'Benchmark the selected KPI against competitors.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <ChartControls
               chartType={chartType}
               onChartTypeChange={setChartType}
@@ -713,10 +728,6 @@ export const SearchVisibility = () => {
               brands={brands}
               selectedBrandId={selectedBrandId}
               onBrandChange={selectBrand}
-              metricType={metricType}
-              onMetricTypeChange={setMetricType}
-              dateRangeLabel={dateRangeLabel}
-              onDatePickerClick={() => setShowDatePicker(true)}
             />
 
             {/* Date Picker Modal */}

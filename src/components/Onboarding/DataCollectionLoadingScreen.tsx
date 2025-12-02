@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { apiClient } from '../../lib/apiClient';
+import type { ApiResponse, DashboardPayload } from '../../pages/dashboard/types';
 
 // Fix for useParams
 export const DataCollectionLoadingScreenRoute = () => {
@@ -7,7 +9,7 @@ export const DataCollectionLoadingScreenRoute = () => {
   if (!brandId) return <div>Invalid brand ID</div>;
   return <DataCollectionLoadingScreen brandId={brandId} />;
 };
-import { CheckCircle2, Sparkles, TrendingUp, Globe } from 'lucide-react';
+import { CheckCircle2, TrendingUp, Globe } from 'lucide-react';
 
 interface ProgressData {
   queries: {
@@ -41,10 +43,6 @@ const INITIAL_UPDATE_DELAY = parseInt(
   getEnvVar('VITE_LOADING_INITIAL_DELAY_MS', '25000'),
   10
 ); // 25 seconds default (user requested 25 seconds)
-const SUBSEQUENT_UPDATE_INTERVAL = parseInt(
-  getEnvVar('VITE_LOADING_UPDATE_INTERVAL_MS', '30000'),
-  10
-); // 30 seconds default
 
 export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingScreenProps) => {
   const navigate = useNavigate();
@@ -60,12 +58,12 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [hasShownInitialData, setHasShownInitialData] = useState(false);
-  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
   const [currentStage, setCurrentStage] = useState<'collecting' | 'scoring'>('collecting');
   const [progressBarValue, setProgressBarValue] = useState(0);
 
   // Fetch dashboard data to show after initial delay
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       // Ensure we're fetching data for the correct brand
       if (!brandId) {
@@ -74,47 +72,45 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
       }
       
       console.log(`[LoadingScreen] Fetching dashboard data for brand: ${brandId}`);
-      const response = await fetch(`/api/brands/${brandId}/dashboard`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      });
+      const endpoint = `/brands/${brandId}/dashboard?skipCache=true&cacheBust=${Date.now()}`;
+      const data = await apiClient.request<ApiResponse<DashboardPayload>>(endpoint, {}, { requiresAuth: true });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.data) {
-          // Verify the data is for the correct brand
-          if (data.data.brandId && data.data.brandId !== brandId) {
-            console.warn(`[LoadingScreen] Brand ID mismatch! Expected ${brandId}, got ${data.data.brandId}`);
-            return;
-          }
-          
-          console.log('[LoadingScreen] Dashboard data received for brand:', brandId, data.data);
-          setDashboardData(data.data);
-          setHasShownInitialData(true);
-        } else {
-          console.warn('[LoadingScreen] Dashboard response not successful:', data);
+      if (data.success && data.data) {
+        if (data.data.brandId && data.data.brandId !== brandId) {
+          console.warn(`[LoadingScreen] Brand ID mismatch! Expected ${brandId}, got ${data.data.brandId}`);
+          return;
         }
+
+        console.log('[LoadingScreen] Dashboard data received for brand:', brandId, data.data);
+        setDashboardData(data.data);
+        setHasShownInitialData(true);
       } else {
-        console.error('[LoadingScreen] Dashboard fetch failed:', response.status, response.statusText);
+        console.warn('[LoadingScreen] Dashboard response not successful:', data);
       }
     } catch (error) {
       console.error('[LoadingScreen] Error fetching dashboard data:', error);
     }
-  };
+  }, [brandId]);
 
-  // Navigation timer - only runs once on mount, after 20 seconds
+  // Fetch dashboard data first (at ~20 seconds), then redirect at 25 seconds
   useEffect(() => {
     if (!brandId) return;
     
+    console.log(`[LoadingScreen] Setting up pre-fetch timer for brand: ${brandId}`);
+    // Fetch dashboard data at 20 seconds (5 seconds before redirect)
+    const preFetchTimer = setTimeout(() => {
+      console.log(`[LoadingScreen] Pre-fetching dashboard data at 20 seconds for brand: ${brandId}`);
+      fetchDashboardData();
+    }, INITIAL_UPDATE_DELAY - 5000); // 5 seconds before redirect
+
+    // Navigate to dashboard at 25 seconds
     console.log(`[LoadingScreen] Setting up navigation timer for ${INITIAL_UPDATE_DELAY}ms for brand: ${brandId}`);
     const navigateTimer = setTimeout(() => {
       console.log(`[LoadingScreen] 25 seconds elapsed, navigating to dashboard for brand: ${brandId}`);
       // Store flag that we're showing partial data
       localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
       // Pass brandId in navigation state so dashboard can auto-select it
-      // Use the brandId from route params to ensure we always use the current brand
-      const currentBrandId = brandId; // Ensure we use the brand from the route
+      const currentBrandId = brandId;
       console.log(`[LoadingScreen] Redirecting to dashboard with brandId: ${currentBrandId}`);
       navigate('/dashboard', { 
         replace: true,
@@ -126,9 +122,10 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     }, INITIAL_UPDATE_DELAY);
 
     return () => {
+      clearTimeout(preFetchTimer);
       clearTimeout(navigateTimer);
     };
-  }, [brandId, navigate]); // Only depend on brandId and navigate, not elapsedTime
+  }, [brandId, navigate, fetchDashboardData]);
 
   // Progress bar animation - transition from collecting to scoring
   useEffect(() => {
@@ -166,90 +163,51 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     };
   }, [elapsedTime, currentStage]); // This can depend on elapsedTime since it's just for animation
 
-  // Initial data fetch after 15-20 seconds (configurable)
-  useEffect(() => {
-    if (!brandId) return;
-    
-    console.log(`[LoadingScreen] Will fetch dashboard data after ${INITIAL_UPDATE_DELAY}ms for brand: ${brandId}`);
-    const initialTimer = setTimeout(() => {
-      console.log(`[LoadingScreen] Initial delay elapsed, fetching dashboard data for brand: ${brandId}`);
-      fetchDashboardData();
-    }, INITIAL_UPDATE_DELAY);
-
-    return () => clearTimeout(initialTimer);
-  }, [brandId]);
+  // Removed - now handled in the navigation timer above to ensure data is fetched before redirect
 
   // Don't redirect automatically - let user see the data on loading screen
   // Only redirect when data collection is complete
   // The loading screen will show available data after the initial delay
 
-  // Poll for progress updates and subsequent dashboard updates
+  // Poll for progress updates only (no auto-redirect on completion - let dashboard handle that)
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    let updateInterval: NodeJS.Timeout;
 
-    // Poll for progress updates (faster polling for progress)
+    // Poll for progress updates to update the UI
     interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/brands/${brandId}/onboarding-progress`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-          },
-        });
+        const data = await apiClient.request<ApiResponse<ProgressData>>(
+          `/brands/${brandId}/onboarding-progress`,
+          {},
+          { requiresAuth: true }
+        );
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.data) {
-            setProgress(data.data);
+        if (data.success && data.data) {
+          setProgress(data.data);
 
-            // Check if complete
-            if (
-              data.data.queries.completed >= data.data.queries.total &&
-              data.data.scoring.positions &&
-              data.data.scoring.sentiments &&
-              data.data.scoring.citations
-            ) {
-              setIsComplete(true);
-              clearInterval(interval);
-              if (updateInterval) clearInterval(updateInterval);
-              
-              // Fetch final dashboard data before redirect
-              await fetchDashboardData();
-              
-              // Redirect after brief delay to show completion
-              // Use the brandId from route params to ensure we always use the current brand
-              const currentBrandId = brandId; // Ensure we use the brand from the route
-              console.log(`[LoadingScreen] Collection complete, redirecting to dashboard with brandId: ${currentBrandId}`);
-              setTimeout(() => {
-                navigate('/dashboard', { 
-                  replace: true,
-                  state: { 
-                    autoSelectBrandId: currentBrandId,
-                    fromOnboarding: true 
-                  }
-                });
-              }, 1500);
-            }
+          // Check if complete - but don't redirect from here
+          // The 25-second timer will handle redirect regardless
+          if (
+            data.data.queries.completed >= data.data.queries.total &&
+            data.data.scoring.positions &&
+            data.data.scoring.sentiments &&
+            data.data.scoring.citations
+          ) {
+            setIsComplete(true);
           }
         }
       } catch (error) {
-        console.error('Error fetching progress:', error);
-        // Continue polling even on error
+        // Only log non-critical errors
+        if (error instanceof Error && !error.message.includes('fetch')) {
+          console.error('Error fetching progress:', error);
+        }
       }
-    }, 2000); // Poll every 2 seconds for progress
-
-    // Subsequent dashboard updates every 30 seconds (only after initial data shown)
-    if (hasShownInitialData) {
-      updateInterval = setInterval(() => {
-        fetchDashboardData();
-      }, SUBSEQUENT_UPDATE_INTERVAL);
-    }
+    }, 5000); // Poll every 5 seconds for progress
 
     return () => {
       clearInterval(interval);
-      if (updateInterval) clearInterval(updateInterval);
     };
-  }, [brandId, navigate, hasShownInitialData]);
+  }, [brandId]);
 
   // Track elapsed time
   useEffect(() => {
@@ -267,82 +225,68 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
-      {/* Animated background particles */}
-      <div className="absolute inset-0 overflow-hidden">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-2 h-2 bg-purple-400 rounded-full opacity-20 animate-pulse"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${3 + Math.random() * 2}s`,
-            }}
-          />
-        ))}
-      </div>
-
-      <div className="relative z-10 max-w-2xl w-full">
-        {/* Main card */}
-        <div className="bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-8 md:p-12">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl mb-4 shadow-lg">
-              {isComplete ? (
-                <CheckCircle2 className="w-10 h-10 text-white animate-scale-in" />
-              ) : (
-                <Sparkles className="w-10 h-10 text-white animate-spin-slow" />
-              )}
-            </div>
-            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">
-              {isComplete ? 'Almost There!' : 'Setting Up Your Brand'}
-            </h1>
-            <p className="text-purple-200 text-lg mb-6">
-              {currentStage === 'collecting' 
-                ? 'Collecting your results...'
-                : 'Scoring the results...'
-              }
-            </p>
-
-            {/* Animated Progress Bar */}
-            <div className="mb-8">
-              <div className="flex justify-between items-center mb-3">
-                <span className="text-sm font-medium text-purple-200">
-                  {currentStage === 'collecting' ? 'Collecting Results' : 'Scoring Results'}
-                </span>
-                <span className="text-sm font-bold text-white">{Math.round(progressBarValue)}%</span>
+    <div className="min-h-screen" style={{ backgroundColor: '#f9f9fb' }}>
+      <div className="flex items-center justify-center min-h-screen p-6">
+        <div className="max-w-2xl w-full">
+          {/* Main card */}
+          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-8 md:p-12">
+            {/* Header */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4" style={{ backgroundColor: '#00bcdc' }}>
+                {isComplete ? (
+                  <CheckCircle2 className="w-8 h-8 text-white" />
+                ) : (
+                  <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                )}
               </div>
-              <div className="h-4 bg-white/10 rounded-full overflow-hidden shadow-inner">
-                <div
-                  className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 rounded-full transition-all duration-300 ease-out relative overflow-hidden"
-                  style={{ width: `${progressBarValue}%` }}
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer" />
+              <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: '#1a1d29' }}>
+                {isComplete ? 'Almost There!' : 'Setting Up Your Brand'}
+              </h1>
+              <p className="text-[15px] mb-6" style={{ color: '#64748b' }}>
+                {currentStage === 'collecting' 
+                  ? 'Collecting your results...'
+                  : 'Scoring the results...'
+                }
+              </p>
+
+              {/* Progress Bar */}
+              <div className="mb-8">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-[13px] font-medium" style={{ color: '#393e51' }}>
+                    {currentStage === 'collecting' ? 'Collecting Results' : 'Scoring Results'}
+                  </span>
+                  <span className="text-[13px] font-semibold" style={{ color: '#1a1d29' }}>{Math.round(progressBarValue)}%</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: '#e8e9ed' }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-300 ease-out"
+                    style={{ 
+                      width: `${progressBarValue}%`,
+                      backgroundColor: '#00bcdc'
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between mt-2 text-[12px]" style={{ color: '#64748b' }}>
+                  <span className={currentStage === 'collecting' ? 'font-medium' : ''} style={currentStage === 'collecting' ? { color: '#00bcdc' } : {}}>
+                    {currentStage === 'collecting' ? '● Collecting' : '✓ Collecting'}
+                  </span>
+                  <span className={currentStage === 'scoring' ? 'font-medium' : ''} style={currentStage === 'scoring' ? { color: '#00bcdc' } : {}}>
+                    {currentStage === 'scoring' ? '● Scoring' : 'Scoring'}
+                  </span>
                 </div>
               </div>
-              <div className="flex justify-between mt-2 text-xs text-purple-300/60">
-                <span className={currentStage === 'collecting' ? 'text-purple-300 font-medium' : ''}>
-                  {currentStage === 'collecting' ? '● Collecting' : '✓ Collecting'}
-                </span>
-                <span className={currentStage === 'scoring' ? 'text-purple-300 font-medium' : ''}>
-                  {currentStage === 'scoring' ? '● Scoring' : 'Scoring'}
-                </span>
-              </div>
             </div>
-          </div>
 
 
           {/* Show available dashboard data after initial delay */}
           {hasShownInitialData && dashboardData && (
-            <div className="mt-6 bg-white/5 rounded-xl p-4 border border-white/10">
-              <p className="text-white font-semibold mb-3 text-sm">Available Data</p>
+            <div className="mt-6 rounded-lg p-4" style={{ backgroundColor: '#f9f9fb', border: '1px solid #e8e9ed' }}>
+              <p className="font-semibold mb-3 text-[13px]" style={{ color: '#1a1d29' }}>Available Data</p>
               <div className="grid grid-cols-3 gap-3 text-center mb-3">
                 {/* Share of Answer */}
-                <div className="bg-white/5 rounded-lg p-2">
-                  <p className="text-purple-200 text-xs mb-1">Share of Answer</p>
-                  <p className="text-white font-bold text-lg">
+                <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
+                  <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Share of Answer</p>
+                  <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
                     {(() => {
                       const metric = dashboardData.scores?.find((m: any) => 
                         m.label?.toLowerCase().includes('share of answer') || 
@@ -353,9 +297,9 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
                   </p>
                 </div>
                 {/* Visibility */}
-                <div className="bg-white/5 rounded-lg p-2">
-                  <p className="text-purple-200 text-xs mb-1">Visibility</p>
-                  <p className="text-white font-bold text-lg">
+                <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
+                  <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Visibility</p>
+                  <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
                     {(() => {
                       const metric = dashboardData.scores?.find((m: any) => 
                         m.label?.toLowerCase().includes('visibility index')
@@ -365,9 +309,9 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
                   </p>
                 </div>
                 {/* Sentiment */}
-                <div className="bg-white/5 rounded-lg p-2">
-                  <p className="text-purple-200 text-xs mb-1">Sentiment</p>
-                  <p className="text-white font-bold text-lg">
+                <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
+                  <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Sentiment</p>
+                  <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
                     {(() => {
                       const metric = dashboardData.scores?.find((m: any) => 
                         m.label?.toLowerCase().includes('sentiment score')
@@ -377,49 +321,20 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
                   </p>
                 </div>
               </div>
-              {/* Additional stats row */}
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="bg-white/5 rounded-lg p-2">
-                  <p className="text-purple-200 text-xs mb-1">Total Queries</p>
-                  <p className="text-white font-bold text-lg">
-                    {dashboardData.totalQueries || 0}
-                  </p>
-                </div>
-                <div className="bg-white/5 rounded-lg p-2">
-                  <p className="text-purple-200 text-xs mb-1">Queries with Brand Presence</p>
-                  <p className="text-white font-bold text-lg">
-                    {dashboardData.queriesWithBrandPresence || 0}
-                  </p>
-                </div>
-                <div className="bg-white/5 rounded-lg p-2">
-                  <p className="text-purple-200 text-xs mb-1">Average Collection Time</p>
-                  <p className="text-white font-bold text-lg">
-                    {(() => {
-                      // Show average collection time if available in dashboard data
-                      // This would need to be added to the dashboard payload if not already there
-                      if (dashboardData.averageCollectionTimeMs) {
-                        const ms = dashboardData.averageCollectionTimeMs;
-                        return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
-                      }
-                      return 'N/A';
-                    })()}
-                  </p>
-                </div>
-              </div>
-              <p className="text-purple-300/60 text-xs mt-3 text-center">
-                Data will update automatically every {SUBSEQUENT_UPDATE_INTERVAL / 1000} seconds
+              <p className="text-[12px] mt-3 text-center" style={{ color: '#64748b' }}>
+                Redirecting to dashboard in a few seconds...
               </p>
             </div>
           )}
 
           {/* Stats */}
-          <div className="flex items-center justify-between text-sm text-purple-200 border-t border-white/10 pt-6">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between text-[13px] border-t pt-6" style={{ borderColor: '#e8e9ed' }}>
+            <div className="flex items-center gap-2" style={{ color: '#64748b' }}>
               <TrendingUp className="w-4 h-4" />
               <span>Elapsed: {formatTime(elapsedTime)}</span>
             </div>
             {progress.estimatedTimeRemaining && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" style={{ color: '#64748b' }}>
                 <Globe className="w-4 h-4" />
                 <span>Est. remaining: ~{Math.ceil(progress.estimatedTimeRemaining / 60)} min</span>
               </div>
@@ -429,38 +344,14 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
           {/* Loading animation hint */}
           {!isComplete && !hasShownInitialData && (
             <div className="mt-6 text-center">
-              <p className="text-purple-300/60 text-sm">
+              <p className="text-[13px]" style={{ color: '#64748b' }}>
                 This may take a few minutes. We're collecting and analyzing data from multiple AI sources...
               </p>
             </div>
           )}
+          </div>
         </div>
       </div>
-
-      {/* Custom animations */}
-      <style>{`
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-        .animate-shimmer {
-          animation: shimmer 2s infinite;
-        }
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin-slow {
-          animation: spin-slow 3s linear infinite;
-        }
-        @keyframes scale-in {
-          from { transform: scale(0); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
-        }
-        .animate-scale-in {
-          animation: scale-in 0.5s ease-out;
-        }
-      `}</style>
     </div>
   );
 };

@@ -29,6 +29,9 @@ export interface Topic {
   sentiment: 'positive' | 'neutral' | 'negative';
   sources: TopicSource[];
   collectorType?: string; // AI model/collector type (chatgpt, claude, etc.)
+  industryAvgSoA?: number | null; // Industry average SOA (0-5x scale)
+  industryTrend?: Trend; // Industry trend
+  industryBrandCount?: number; // Number of brands in industry average
 }
 
 export interface Category {

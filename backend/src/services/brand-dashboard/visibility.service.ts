@@ -56,7 +56,13 @@ export class VisibilityService {
   calculateLlmVisibility(
     collectorAggregates: Map<string, CollectorAggregate>,
     totalCollectorMentions: number,
-    totalCollectorShareSum: number
+    totalCollectorShareSum: number,
+    timeSeriesData?: Map<string, {
+      dates: string[]
+      visibility: number[]
+      share: number[]
+      sentiment: (number | null)[]
+    }>
   ): LlmVisibilitySlice[] {
     const llmVisibility: LlmVisibilitySlice[] = Array.from(collectorAggregates.entries())
       .map(([collectorType, aggregate]) => {
@@ -116,17 +122,40 @@ export class VisibilityService {
           )
           .slice(0, 5)
 
+        // Calculate average sentiment for this collector
+        const sentimentValues = aggregate.sentimentValues || []
+        const sentiment = sentimentValues.length > 0
+          ? round(average(sentimentValues), 2)
+          : null
+        
+        // Debug logging
+        if (sentimentValues.length > 0) {
+          console.log(`[VisibilityService] Collector ${collectorType}: ${sentimentValues.length} sentiment values, average=${sentiment}, values=[${sentimentValues.slice(0, 5).join(', ')}${sentimentValues.length > 5 ? '...' : ''}]`)
+        } else {
+          console.log(`[VisibilityService] Collector ${collectorType}: No sentiment values found`)
+        }
+
+        // Get time-series data for this collector
+        const timeSeries = timeSeriesData?.get(collectorType)
+
         return {
           provider: collectorType,
           share: shareOfSearch,
           shareOfSearch,
           visibility: visibilityPercentage,
+          sentiment,
           delta: 0,
           brandPresenceCount: aggregate.brandPresenceCount,
           totalQueries: aggregate.uniqueQueryIds.size,
           color,
           topTopic: sortedTopics[0]?.topic ?? null,
-          topTopics: sortedTopics
+          topTopics: sortedTopics,
+          timeSeries: timeSeries ? {
+            dates: timeSeries.dates,
+            visibility: timeSeries.visibility,
+            share: timeSeries.share,
+            sentiment: timeSeries.sentiment
+          } : undefined
         }
       })
       .sort((a, b) => b.share - a.share)
@@ -159,7 +188,13 @@ export class VisibilityService {
     }>,
     totalShareUniverse: number,
     totalQueries: number,
-    knownCompetitors: string[]
+    knownCompetitors: string[],
+    competitorTimeSeriesData?: Map<string, {
+      dates: string[]
+      visibility: number[]
+      share: number[]
+      sentiment: (number | null)[]
+    }>
   ): CompetitorVisibility[] {
     let competitorVisibility: CompetitorVisibility[] = Array.from(competitorAggregates.entries())
       .map(([competitorName, aggregate]) => {
@@ -224,14 +259,30 @@ export class VisibilityService {
           })
           .slice(0, 5)
 
+        // Calculate average sentiment for this competitor
+        const sentimentValues = aggregate.sentimentValues || []
+        const sentiment = sentimentValues.length > 0
+          ? round(average(sentimentValues), 2)
+          : null
+
+        // Get time-series data for this competitor
+        const timeSeries = competitorTimeSeriesData?.get(competitorName)
+
         return {
           competitor: competitorName,
           mentions: aggregate.mentions || aggregate.shareValues.length,
           share,
           visibility,
+          sentiment,
           brandPresencePercentage,
           topTopics,
-          collectors: topSignals
+          collectors: topSignals,
+          timeSeries: timeSeries ? {
+            dates: timeSeries.dates,
+            visibility: timeSeries.visibility,
+            share: timeSeries.share,
+            sentiment: timeSeries.sentiment
+          } : undefined
         }
       })
       .sort((a, b) => b.share - a.share)
@@ -245,6 +296,7 @@ export class VisibilityService {
           mentions: 0,
           share: 0,
           visibility: 0,
+          sentiment: null,
           brandPresencePercentage: 0,
           topTopics: [],
           collectors: []

@@ -15,10 +15,8 @@ interface ChartControlsProps {
   brands?: BrandOption[];
   selectedBrandId?: string | null;
   onBrandChange?: (brandId: string) => void;
-  metricType?: 'visibility' | 'share';
-  onMetricTypeChange?: (value: 'visibility' | 'share') => void;
-  dateRangeLabel?: string;
-  onDatePickerClick?: () => void;
+  metricType?: 'visibility' | 'share' | 'sentiment';
+  onMetricTypeChange?: (value: 'visibility' | 'share' | 'sentiment') => void;
 }
 
 export const ChartControls = ({
@@ -214,7 +212,7 @@ export const ChartControls = ({
   return (
     <div
       ref={dropdownRef}
-      className="flex gap-4 items-center justify-between flex-wrap p-4 bg-white border-b border-[var(--border-default)] rounded-b-lg relative z-10"
+      className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b border-[var(--border-default)] bg-transparent relative z-10"
     >
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 pl-2">
@@ -260,6 +258,16 @@ export const ChartControls = ({
                 }`}
               >
                 Share of Answers
+              </button>
+              <button
+                onClick={() => onMetricTypeChange('sentiment')}
+                className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 whitespace-nowrap relative ${
+                  metricType === 'sentiment'
+                    ? 'bg-white text-[#06b6d4] shadow-sm'
+                    : 'text-[#6c7289] hover:text-[#212534] hover:bg-white/50'
+                }`}
+              >
+                Sentiment Score
               </button>
             </div>
           </div>

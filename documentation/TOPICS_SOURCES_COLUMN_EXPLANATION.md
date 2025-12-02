@@ -61,3 +61,6 @@ Brand Presence Percentage = (Queries with Brand Presence / Total Queries) × 100
 - Both metrics complement each other to give a complete picture of brand visibility
 
 
+
+
+

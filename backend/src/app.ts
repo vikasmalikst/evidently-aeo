@@ -25,8 +25,42 @@ import promptManagementRoutes from './routes/prompt-management.routes';
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// CORS configuration - MUST be before other middleware
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    const allowedOrigins = Array.isArray(config.cors.origin) 
+      ? config.cors.origin 
+      : [config.cors.origin];
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      // In development, log the origin for debugging
+      if (config.nodeEnv === 'development') {
+        console.warn(`⚠️  CORS: Blocked origin: ${origin}`);
+        console.log(`   Allowed origins:`, allowedOrigins);
+      }
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: config.cors.credentials,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
+  preflightContinue: false,
+}));
+
+// Security middleware - Configure Helmet to work with CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false,
+}));
 
 // Rate limiting - More lenient for development
 const limiter = rateLimit({
@@ -38,14 +72,6 @@ const limiter = rateLimit({
   }
 });
 app.use(limiter);
-
-// CORS configuration
-app.use(cors({
-  origin: config.cors.origin,
-  credentials: config.cors.credentials,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));

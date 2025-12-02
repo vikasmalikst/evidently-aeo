@@ -928,7 +928,7 @@ const DatePickerMultiView = ({
                   <h3 className="text-base font-bold text-[#333333] mb-3 col-span-2">
                     {month} {year}
                   </h3>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {monthWeeks.map((week, index) => {
                       const formatDate = (date: Date) => {
                         return monthNamesFull[date.getMonth()].substring(0, 3) + ' ' + date.getDate();
@@ -995,7 +995,7 @@ const DatePickerMultiView = ({
                 <div key={year}>
                   <h3 className="text-base font-bold text-[#333333] mb-4">{year}</h3>
 
-                  <div className="grid grid-cols-7 gap-3">
+                  <div className="grid grid-cols-6 gap-3">
                     {yearMonths.map((monthItem) => {
                       return (
                         <button

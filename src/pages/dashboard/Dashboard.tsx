@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useDashboardData } from './hooks/useDashboardData';
 import { getBrandData, formatMetricValue, computeTrend } from './utils';
-import { DataCollectionBanner } from './components/DataCollectionBanner';
+import { DataCollectionProgressBar } from './components/DataCollectionProgressBar';
 import { KeyInsights } from './components/KeyInsights';
 import { MetricCard } from './components/MetricCard';
 import { TopBrandSources } from './components/TopBrandSources';
@@ -27,6 +27,7 @@ export const Dashboard = () => {
     showTopicModal,
     isDataCollectionInProgress,
     setIsDataCollectionInProgress,
+    progressData,
     brands,
     brandsError,
     selectedBrandId,
@@ -152,10 +153,11 @@ export const Dashboard = () => {
   return (
     <Layout>
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-        {isDataCollectionInProgress && (
-          <DataCollectionBanner
+        {(isDataCollectionInProgress || progressData) && selectedBrandId && (
+          <DataCollectionProgressBar
             selectedBrandId={selectedBrandId}
-            onDismiss={() => setIsDataCollectionInProgress(false)}
+            progress={progressData}
+            isLoading={false}
           />
         )}
 

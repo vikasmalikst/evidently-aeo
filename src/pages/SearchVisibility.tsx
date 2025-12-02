@@ -115,6 +115,18 @@ const normalizeId = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
 
 const buildTimeseries = (value: number) => Array(chartLabels.length).fill(Math.max(0, Math.round(value)));
 
+// Helper to format date for chart labels (e.g., "Jan 15" or "Mon 15")
+const formatDateLabel = (dateStr: string): string => {
+  try {
+    const date = new Date(dateStr + 'T00:00:00Z')
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' })
+    const dayNum = date.getDate()
+    return `${dayName} ${dayNum}`
+  } catch {
+    return dateStr
+  }
+}
+
 const getDateRangeForTimeframe = (timeframe: string) => {
   const end = new Date();
   end.setUTCHours(23, 59, 59, 999);
@@ -202,10 +214,20 @@ export const SearchVisibility = () => {
   const processedData = useMemo(() => {
     const processStart = performance.now();
     if (!response?.success || !response.data) {
-      return { brandModels: [], competitorModels: [] };
+      return { brandModels: [], competitorModels: [], chartDateLabels: chartLabels };
     }
 
     const llmSlices = response.data.llmVisibility ?? [];
+    
+    // Extract date labels from time-series data (if available)
+    // Try brand visibility first, then competitor visibility
+    let chartDateLabels: string[] = chartLabels
+    if (llmSlices.length > 0 && llmSlices[0].timeSeries?.dates && llmSlices[0].timeSeries.dates.length > 0) {
+      chartDateLabels = llmSlices[0].timeSeries.dates.map(formatDateLabel)
+    } else if (competitorEntries.length > 0 && competitorEntries[0].timeSeries?.dates && competitorEntries[0].timeSeries.dates.length > 0) {
+      chartDateLabels = competitorEntries[0].timeSeries.dates.map(formatDateLabel)
+    }
+    
     const llmModels = llmSlices.map((slice) => {
       const totalQueries = slice.totalQueries ?? 0;
       const brandPresenceCount = slice.brandPresenceCount ?? 0;
@@ -234,9 +256,16 @@ export const SearchVisibility = () => {
         change: slice.delta ? Math.round(slice.delta) : 0,
         referenceCount: brandPresenceCount,
         brandPresencePercentage,
-        data: buildTimeseries(visibilityValue),
-        shareData: buildTimeseries(shareValue),
-        sentimentData: sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined,
+        // Use time-series data from backend if available, otherwise fallback to flat line
+        data: slice.timeSeries?.visibility && slice.timeSeries.visibility.length > 0
+          ? slice.timeSeries.visibility
+          : buildTimeseries(visibilityValue),
+        shareData: slice.timeSeries?.share && slice.timeSeries.share.length > 0
+          ? slice.timeSeries.share
+          : buildTimeseries(shareValue),
+        sentimentData: slice.timeSeries?.sentiment && slice.timeSeries.sentiment.length > 0
+          ? slice.timeSeries.sentiment.map(s => s !== null ? ((s + 1) / 2) * 100 : null)
+          : (sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined),
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -328,6 +357,47 @@ export const SearchVisibility = () => {
     // Get brand sentiment from response (if available)
     const brandSentimentRaw = (response.data as any)?.sentimentScore ?? null;
     const brandSentimentDisplay = brandSentimentRaw !== null ? ((brandSentimentRaw + 1) / 2) * 100 : null;
+    
+    // Aggregate time-series from all LLM models for brand summary
+    let brandTimeSeries: { dates: string[], visibility: number[], share: number[], sentiment: (number | null)[] } | undefined
+    if (llmModels.length > 0 && llmModels[0].data && llmModels[0].data.length > 0) {
+      // Use the dates from first model (all should have same dates)
+      const dates = llmSlices[0]?.timeSeries?.dates || []
+      if (dates.length > 0) {
+        const visibility: number[] = []
+        const share: number[] = []
+        const sentiment: (number | null)[] = []
+        
+        // For each day, average across all collectors
+        dates.forEach((_, dayIndex) => {
+          const dayVisibilities = llmModels
+            .map(model => model.data[dayIndex])
+            .filter(v => v !== undefined && v !== null) as number[]
+          const dayShares = llmModels
+            .map(model => model.shareData?.[dayIndex])
+            .filter(v => v !== undefined && v !== null) as number[]
+          const daySentiments = llmModels
+            .map(model => {
+              const s = model.sentimentData?.[dayIndex]
+              return s !== undefined && s !== null ? s : null
+            })
+            .filter(s => s !== null) as number[]
+          
+          visibility.push(dayVisibilities.length > 0 
+            ? Math.round(dayVisibilities.reduce((sum, v) => sum + v, 0) / dayVisibilities.length)
+            : 0)
+          share.push(dayShares.length > 0
+            ? Math.round(dayShares.reduce((sum, v) => sum + v, 0) / dayShares.length)
+            : 0)
+          sentiment.push(daySentiments.length > 0
+            ? Math.round(daySentiments.reduce((sum, v) => sum + v, 0) / daySentiments.length)
+            : null)
+        })
+        
+        brandTimeSeries = { dates, visibility, share, sentiment }
+      }
+    }
+    
     const brandCompetitiveModel = selectedBrandId ? {
       id: 'brand',
       name: brandName,
@@ -338,9 +408,16 @@ export const SearchVisibility = () => {
       change: 0,
       referenceCount: queriesWithBrandPresence,
       brandPresencePercentage: Math.round(brandData.brandPresencePercentage ?? 0),
-      data: buildTimeseries(brandVisibilityValue),
-      shareData: buildTimeseries(brandShareValue),
-      sentimentData: brandSentimentDisplay !== null ? buildTimeseries(brandSentimentDisplay) : undefined,
+      // Use aggregated brand time-series if available, otherwise fallback to flat line
+      data: brandTimeSeries?.visibility && brandTimeSeries.visibility.length > 0
+        ? brandTimeSeries.visibility
+        : buildTimeseries(brandVisibilityValue),
+      shareData: brandTimeSeries?.share && brandTimeSeries.share.length > 0
+        ? brandTimeSeries.share
+        : buildTimeseries(brandShareValue),
+      sentimentData: brandTimeSeries?.sentiment && brandTimeSeries.sentiment.length > 0
+        ? brandTimeSeries.sentiment
+        : (brandSentimentDisplay !== null ? buildTimeseries(brandSentimentDisplay) : undefined),
       topTopics: brandData.topTopics?.map(topic => ({
         topic: topic.topic,
         occurrences: topic.occurrences,
@@ -367,9 +444,16 @@ export const SearchVisibility = () => {
         change: 0,
         referenceCount: entry.mentions ?? 0,
         brandPresencePercentage: Math.round(entry.brandPresencePercentage ?? 0),
-        data: buildTimeseries(competitorVisibilityValue),
-        shareData: buildTimeseries(competitorShareValue),
-        sentimentData: competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined,
+        // Use time-series data from backend if available, otherwise fallback to flat line
+        data: entry.timeSeries?.visibility && entry.timeSeries.visibility.length > 0
+          ? entry.timeSeries.visibility
+          : buildTimeseries(competitorVisibilityValue),
+        shareData: entry.timeSeries?.share && entry.timeSeries.share.length > 0
+          ? entry.timeSeries.share
+          : buildTimeseries(competitorShareValue),
+        sentimentData: entry.timeSeries?.sentiment && entry.timeSeries.sentiment.length > 0
+          ? entry.timeSeries.sentiment.map(s => s !== null ? ((s + 1) / 2) * 100 : null)
+          : (competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined),
         topTopics: entry.topTopics?.map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -390,14 +474,18 @@ export const SearchVisibility = () => {
     
     return {
       brandModels: llmModels,
-      competitorModels: allCompetitorModels
+      competitorModels: allCompetitorModels,
+      chartDateLabels
     };
   }, [response, selectedBrandId, selectedBrand]);
 
   // Update state from processed data (batched update)
+  const [chartDateLabels, setChartDateLabels] = useState<string[]>(chartLabels);
+  
   useEffect(() => {
     setBrandModels(processedData.brandModels);
     setCompetitorModels(processedData.competitorModels);
+    setChartDateLabels(processedData.chartDateLabels || chartLabels);
   }, [processedData]);
 
   // Log page render completion
@@ -427,7 +515,7 @@ export const SearchVisibility = () => {
   }, []);
 
   const chartData = useMemo(() => ({
-    labels: chartLabels,
+    labels: chartDateLabels,
     datasets: currentModels.map((model) => ({
       id: model.id,
       label: model.name,

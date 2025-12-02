@@ -63,14 +63,14 @@ export async function buildDashboardPayload(
     const result = await supabaseAdmin
       .from('extracted_positions')
       .select(
-        'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, sentiment_score_competitor, sentiment_label_competitor, total_brand_mentions, competitor_mentions, processed_at, brand_positions, competitor_positions, has_brand_presence, topic, metadata'
+        'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, sentiment_score_competitor, sentiment_label_competitor, total_brand_mentions, competitor_mentions, processed_at, created_at, brand_positions, competitor_positions, has_brand_presence, topic, metadata'
       )
       .eq('brand_id', brand.id)
       .eq('customer_id', customerId)
-      .gte('processed_at', startIsoBound)
-      .lte('processed_at', endIsoBound)
-      .order('processed_at', { ascending: true })
-    console.log(`[Dashboard] ⏱ extracted positions query: ${Date.now() - start}ms`)
+      .gte('created_at', startIsoBound)
+      .lte('created_at', endIsoBound)
+      .order('created_at', { ascending: true })
+    console.log(`[Dashboard] ⏱ extracted positions query: ${Date.now() - start}ms (filtered by created_at: ${startIsoBound} to ${endIsoBound})`)
     return result
   })()
 
@@ -133,6 +133,34 @@ export async function buildDashboardPayload(
   if (positionRows.length > 0) {
     console.log('[Dashboard] Sample row:', JSON.stringify(positionRows[0], null, 2))
   }
+
+  // Helper function to extract date from timestamp (YYYY-MM-DD format)
+  const extractDate = (timestamp: string | null): string | null => {
+    if (!timestamp) return null
+    try {
+      const date = new Date(timestamp)
+      if (isNaN(date.getTime())) return null
+      return date.toISOString().split('T')[0] // Returns YYYY-MM-DD
+    } catch {
+      return null
+    }
+  }
+
+  // Generate all dates in the range for time-series
+  const generateDateRange = (start: string, end: string): string[] => {
+    const dates: string[] = []
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+    const current = new Date(startDate)
+    
+    while (current <= endDate) {
+      dates.push(current.toISOString().split('T')[0])
+      current.setDate(current.getDate() + 1)
+    }
+    return dates
+  }
+
+  const allDates = generateDateRange(startIsoBound.split('T')[0], endIsoBound.split('T')[0])
   
   const trendPercentage = 0
   const knownCompetitors =
@@ -1371,17 +1399,201 @@ export async function buildDashboardPayload(
   console.log(`[Dashboard] Computing visibility: ${collectorAggregates.size} collectors, ${competitorAggregates.size} competitors`)
   console.log(`[Dashboard] Collector types:`, Array.from(collectorAggregates.keys()))
   
+  // Calculate time-series data: group by day and collector type (for brand visibility)
+  const timeSeriesByCollector = new Map<string, Map<string, {
+    visibilityValues: number[]
+    shareValues: number[]
+    sentimentValues: number[]
+  }>>()
+
+  // Calculate time-series data: group by day and competitor name (for competitive visibility)
+  const timeSeriesByCompetitor = new Map<string, Map<string, {
+    visibilityValues: number[]
+    shareValues: number[]
+    sentimentValues: number[]
+  }>>()
+
+  // Initialize time-series structure for all collectors and dates
+  collectorAggregates.forEach((_, collectorType) => {
+    const dailyData = new Map<string, {
+      visibilityValues: number[]
+      shareValues: number[]
+      sentimentValues: number[]
+    }>()
+    allDates.forEach(date => {
+      dailyData.set(date, {
+        visibilityValues: [],
+        shareValues: [],
+        sentimentValues: []
+      })
+    })
+    timeSeriesByCollector.set(collectorType, dailyData)
+  })
+
+  // Initialize time-series structure for all competitors and dates
+  knownCompetitors.forEach((competitorName) => {
+    const dailyData = new Map<string, {
+      visibilityValues: number[]
+      shareValues: number[]
+      sentimentValues: number[]
+    }>()
+    allDates.forEach(date => {
+      dailyData.set(date, {
+        visibilityValues: [],
+        shareValues: [],
+        sentimentValues: []
+      })
+    })
+    timeSeriesByCompetitor.set(competitorName, dailyData)
+  })
+
+  // Group positionRows by date, collector type, and competitor
+  positionRows.forEach(row => {
+    const date = extractDate(row.created_at)
+    if (!date || !allDates.includes(date)) return
+
+    const collectorType = row.collector_type
+    if (!collectorType) return
+
+    const isBrandRow = !row.competitor_name || row.competitor_name.trim().length === 0
+    const competitorName = row.competitor_name?.trim()
+
+    // Process brand rows for collector time-series
+    if (isBrandRow) {
+      const dailyData = timeSeriesByCollector.get(collectorType)
+      if (dailyData) {
+        const dayData = dailyData.get(date)
+        if (dayData) {
+          const brandVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index) ?? 0))
+          const brandShare = Math.min(1, Math.max(0, toNumber(row.share_of_answers_brand) ?? 0))
+          const brandSentimentRaw = row.sentiment_score !== null && row.sentiment_score !== undefined
+            ? toNumber(row.sentiment_score)
+            : null
+          const brandSentiment = brandSentimentRaw !== null && Number.isFinite(brandSentimentRaw) ? brandSentimentRaw : null
+
+          dayData.visibilityValues.push(brandVisibility)
+          dayData.shareValues.push(brandShare)
+          if (brandSentiment !== null) {
+            dayData.sentimentValues.push(brandSentiment)
+          }
+        }
+      }
+    }
+
+    // Process competitor rows for competitor time-series
+    if (competitorName && timeSeriesByCompetitor.has(competitorName)) {
+      const dailyData = timeSeriesByCompetitor.get(competitorName)
+      if (dailyData) {
+        const dayData = dailyData.get(date)
+        if (dayData) {
+          const competitorVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index_competitor) ?? 0))
+          const competitorShare = Math.min(1, Math.max(0, toNumber(row.share_of_answers_competitor) ?? 0))
+          const competitorSentimentRaw = row.sentiment_score_competitor !== null && row.sentiment_score_competitor !== undefined
+            ? toNumber(row.sentiment_score_competitor)
+            : null
+          const competitorSentiment = competitorSentimentRaw !== null && Number.isFinite(competitorSentimentRaw) ? competitorSentimentRaw : null
+
+          dayData.visibilityValues.push(competitorVisibility)
+          dayData.shareValues.push(competitorShare)
+          if (competitorSentiment !== null) {
+            dayData.sentimentValues.push(competitorSentiment)
+          }
+        }
+      }
+    }
+  })
+
+  // Calculate daily averages for each collector
+  const timeSeriesData = new Map<string, {
+    dates: string[]
+    visibility: number[]
+    share: number[]
+    sentiment: (number | null)[]
+  }>()
+
+  timeSeriesByCollector.forEach((dailyData, collectorType) => {
+    const dates: string[] = []
+    const visibility: number[] = []
+    const share: number[] = []
+    const sentiment: (number | null)[] = []
+
+    allDates.forEach(date => {
+      const dayData = dailyData.get(date)
+      if (dayData) {
+        dates.push(date)
+        const avgVisibility = dayData.visibilityValues.length > 0
+          ? round(average(dayData.visibilityValues) * 100)
+          : 0
+        const avgShare = dayData.shareValues.length > 0
+          ? round(average(dayData.shareValues) * 100)
+          : 0
+        const avgSentiment = dayData.sentimentValues.length > 0
+          ? round(average(dayData.sentimentValues), 2)
+          : null
+
+        visibility.push(avgVisibility)
+        share.push(avgShare)
+        sentiment.push(avgSentiment)
+      }
+    })
+
+    timeSeriesData.set(collectorType, { dates, visibility, share, sentiment })
+  })
+
+  console.log(`[Dashboard] Time-series data calculated for ${timeSeriesData.size} collectors`)
+
+  // Calculate daily averages for each competitor
+  const competitorTimeSeriesData = new Map<string, {
+    dates: string[]
+    visibility: number[]
+    share: number[]
+    sentiment: (number | null)[]
+  }>()
+
+  timeSeriesByCompetitor.forEach((dailyData, competitorName) => {
+    const dates: string[] = []
+    const visibility: number[] = []
+    const share: number[] = []
+    const sentiment: (number | null)[] = []
+
+    allDates.forEach(date => {
+      const dayData = dailyData.get(date)
+      if (dayData) {
+        dates.push(date)
+        const avgVisibility = dayData.visibilityValues.length > 0
+          ? round(average(dayData.visibilityValues) * 100)
+          : 0
+        const avgShare = dayData.shareValues.length > 0
+          ? round(average(dayData.shareValues) * 100)
+          : 0
+        const avgSentiment = dayData.sentimentValues.length > 0
+          ? round(average(dayData.sentimentValues), 2)
+          : null
+
+        visibility.push(avgVisibility)
+        share.push(avgShare)
+        sentiment.push(avgSentiment)
+      }
+    })
+
+    competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment })
+  })
+
+  console.log(`[Dashboard] Competitor time-series data calculated for ${competitorTimeSeriesData.size} competitors`)
+  
   const llmVisibility = visibilityService.calculateLlmVisibility(
     collectorAggregates,
     totalCollectorMentions,
-    totalCollectorShareSum
+    totalCollectorShareSum,
+    timeSeriesData
   )
 
   const competitorVisibility = visibilityService.calculateCompetitorVisibility(
     competitorAggregates,
     totalShareUniverse,
     totalQueries,
-    knownCompetitors
+    knownCompetitors,
+    competitorTimeSeriesData
   )
   
   console.log(`[Dashboard] Visibility computed: ${llmVisibility.length} LLM models, ${competitorVisibility.length} competitors`)

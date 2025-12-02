@@ -18,6 +18,8 @@
     "sentiments:score": "ts-node --transpile-only src/scripts/score-sentiment.ts",
     "cron:scoring:scheduler": "ts-node --transpile-only src/cron/scoringScheduler.ts",
     "cron:scoring:worker": "ts-node --transpile-only src/cron/scoringWorker.ts",
+    "cron:job:scheduler": "ts-node --transpile-only src/cron/unified-job-scheduler.ts",
+    "cron:job:worker": "ts-node --transpile-only src/cron/unified-job-worker.ts",
     "cron:brightdata:background": "ts-node --transpile-only src/cron/brightdata-background.cron.ts",
     "cron:query-execution:cleanup": "ts-node --transpile-only src/cron/queryExecutionCleanup.cron.ts",
     "test": "jest",

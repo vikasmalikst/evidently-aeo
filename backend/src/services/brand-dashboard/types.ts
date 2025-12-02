@@ -21,9 +21,11 @@ export interface PositionRow {
   total_brand_mentions: number | null
   competitor_mentions: number | null
   processed_at: string | null
+  created_at: string | null // Added for time-series grouping
   brand_positions: number[] | null
   competitor_positions: number[] | null
   has_brand_presence: boolean | null
+  topic: string | null
   metadata?: Record<string, any> | null
 }
 
@@ -75,6 +77,13 @@ export interface LlmVisibilitySlice {
     visibility: number
     mentions: number
   }>
+  // Time-series data: arrays of daily values
+  timeSeries?: {
+    dates: string[] // ISO date strings (YYYY-MM-DD)
+    visibility: number[] // Daily visibility scores
+    share: number[] // Daily share of search
+    sentiment: number[] | null[] // Daily sentiment scores
+  }
 }
 
 export interface ActionItem {
@@ -112,6 +121,13 @@ export interface CompetitorVisibility {
     collectorType: string
     mentions: number
   }>
+  // Time-series data: arrays of daily values
+  timeSeries?: {
+    dates: string[] // ISO date strings (YYYY-MM-DD)
+    visibility: number[] // Daily visibility scores
+    share: number[] // Daily share of search
+    sentiment: number[] | null[] // Daily sentiment scores
+  }
 }
 
 export interface QueryVisibilityRow {

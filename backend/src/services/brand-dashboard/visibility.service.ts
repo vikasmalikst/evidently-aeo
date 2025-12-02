@@ -56,7 +56,13 @@ export class VisibilityService {
   calculateLlmVisibility(
     collectorAggregates: Map<string, CollectorAggregate>,
     totalCollectorMentions: number,
-    totalCollectorShareSum: number
+    totalCollectorShareSum: number,
+    timeSeriesData?: Map<string, {
+      dates: string[]
+      visibility: number[]
+      share: number[]
+      sentiment: (number | null)[]
+    }>
   ): LlmVisibilitySlice[] {
     const llmVisibility: LlmVisibilitySlice[] = Array.from(collectorAggregates.entries())
       .map(([collectorType, aggregate]) => {
@@ -129,6 +135,9 @@ export class VisibilityService {
           console.log(`[VisibilityService] Collector ${collectorType}: No sentiment values found`)
         }
 
+        // Get time-series data for this collector
+        const timeSeries = timeSeriesData?.get(collectorType)
+
         return {
           provider: collectorType,
           share: shareOfSearch,
@@ -140,7 +149,13 @@ export class VisibilityService {
           totalQueries: aggregate.uniqueQueryIds.size,
           color,
           topTopic: sortedTopics[0]?.topic ?? null,
-          topTopics: sortedTopics
+          topTopics: sortedTopics,
+          timeSeries: timeSeries ? {
+            dates: timeSeries.dates,
+            visibility: timeSeries.visibility,
+            share: timeSeries.share,
+            sentiment: timeSeries.sentiment
+          } : undefined
         }
       })
       .sort((a, b) => b.share - a.share)
@@ -173,7 +188,13 @@ export class VisibilityService {
     }>,
     totalShareUniverse: number,
     totalQueries: number,
-    knownCompetitors: string[]
+    knownCompetitors: string[],
+    competitorTimeSeriesData?: Map<string, {
+      dates: string[]
+      visibility: number[]
+      share: number[]
+      sentiment: (number | null)[]
+    }>
   ): CompetitorVisibility[] {
     let competitorVisibility: CompetitorVisibility[] = Array.from(competitorAggregates.entries())
       .map(([competitorName, aggregate]) => {
@@ -244,6 +265,9 @@ export class VisibilityService {
           ? round(average(sentimentValues), 2)
           : null
 
+        // Get time-series data for this competitor
+        const timeSeries = competitorTimeSeriesData?.get(competitorName)
+
         return {
           competitor: competitorName,
           mentions: aggregate.mentions || aggregate.shareValues.length,
@@ -252,7 +276,13 @@ export class VisibilityService {
           sentiment,
           brandPresencePercentage,
           topTopics,
-          collectors: topSignals
+          collectors: topSignals,
+          timeSeries: timeSeries ? {
+            dates: timeSeries.dates,
+            visibility: timeSeries.visibility,
+            share: timeSeries.share,
+            sentiment: timeSeries.sentiment
+          } : undefined
         }
       })
       .sort((a, b) => b.share - a.share)

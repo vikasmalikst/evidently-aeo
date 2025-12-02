@@ -23,6 +23,11 @@ export const useDashboardData = () => {
   const location = useLocation();
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [isDataCollectionInProgress, setIsDataCollectionInProgress] = useState(false);
+  const [progressData, setProgressData] = useState<{
+    queries: { total: number; completed: number };
+    scoring: { positions: boolean; sentiments: boolean; citations: boolean };
+    currentOperation: 'collecting' | 'scoring' | 'finalizing';
+  } | null>(null);
   
   const {
     brands,
@@ -189,7 +194,11 @@ export const useDashboardData = () => {
     dashboardEndpoint,
     {},
     { requiresAuth: true },
-    { enabled: !!dashboardEndpoint, refetchOnMount: false }
+    { 
+      enabled: !!dashboardEndpoint, 
+      refetchOnMount: false,
+      refetchInterval: 60000 // Refresh dashboard data every 60 seconds
+    }
   );
   
   useEffect(() => {
@@ -249,6 +258,8 @@ export const useDashboardData = () => {
 
   useEffect(() => {
     if (!selectedBrandId) {
+      setIsDataCollectionInProgress(false);
+      setProgressData(null);
       return;
     }
 
@@ -257,6 +268,7 @@ export const useDashboardData = () => {
     setIsDataCollectionInProgress(inProgress);
 
     if (!inProgress) {
+      setProgressData(null);
       return;
     }
 
@@ -264,19 +276,47 @@ export const useDashboardData = () => {
 
     const checkProgress = async () => {
       try {
+        console.log(`[DASHBOARD] Checking progress for brand: ${selectedBrandId}`);
         const data = await apiClient.request<ApiResponse<{
           queries: { total: number; completed: number };
           scoring: { positions: boolean; sentiments: boolean; citations: boolean };
+          currentOperation: 'collecting' | 'scoring' | 'finalizing';
         }>>(
           `/brands/${selectedBrandId}/onboarding-progress`,
           {},
           { requiresAuth: true }
         );
 
-        if (!isMounted || !data?.success || !data?.data) {
+        if (!isMounted) {
+          console.log('[DASHBOARD] Component unmounted, skipping progress update');
           return;
         }
 
+        if (!data?.success || !data?.data) {
+          console.warn('[DASHBOARD] Progress check failed or no data:', data);
+          return;
+        }
+
+        const progressUpdate = {
+          queries: data.data.queries,
+          scoring: data.data.scoring,
+          currentOperation: data.data.currentOperation || 'collecting'
+        };
+
+        console.log('[DASHBOARD] Progress update received:', {
+          queries: `${progressUpdate.queries.completed}/${progressUpdate.queries.total}`,
+          scoring: {
+            positions: progressUpdate.scoring.positions,
+            sentiments: progressUpdate.scoring.sentiments,
+            citations: progressUpdate.scoring.citations
+          },
+          operation: progressUpdate.currentOperation
+        });
+
+        // Update progress data
+        setProgressData(progressUpdate);
+
+        // Check if complete
         const isComplete =
           data.data.queries.completed >= data.data.queries.total &&
           data.data.scoring.positions &&
@@ -284,20 +324,71 @@ export const useDashboardData = () => {
           data.data.scoring.citations;
 
         if (isComplete) {
+          console.log('[DASHBOARD] ✅ Data collection complete!');
           localStorage.removeItem(storageKey);
           setIsDataCollectionInProgress(false);
+          // Trigger immediate dashboard data refresh when collection completes
+          console.log('[DASHBOARD] Refreshing dashboard data after completion...');
+          refetchDashboard().catch((err) => {
+            console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
+          });
+          // Keep progress data for a moment to show completion, then clear
+          setTimeout(() => {
+            if (isMounted) {
+              console.log('[DASHBOARD] Clearing progress data after completion display');
+              setProgressData(null);
+            }
+          }, 3000);
         }
       } catch (error) {
-        console.error('Error checking data collection progress:', error);
+        // Only log non-critical errors
+        if (error instanceof Error) {
+          const errorMsg = error.message.toLowerCase();
+          if (!errorMsg.includes('fetch') && 
+              !errorMsg.includes('json') && 
+              !errorMsg.includes('unexpected token') &&
+              !errorMsg.includes('doctype')) {
+            console.error('[DASHBOARD] Error checking data collection progress:', error);
+          }
+        }
       }
     };
 
-    const interval = window.setInterval(checkProgress, 30000);
-    checkProgress();
+    // Poll every 20 seconds for progress updates
+    const interval = window.setInterval(() => {
+      checkProgress().catch((err) => {
+        // Only log non-critical errors
+        if (err instanceof Error) {
+          const errorMsg = err.message.toLowerCase();
+          if (!errorMsg.includes('fetch') && 
+              !errorMsg.includes('json') && 
+              !errorMsg.includes('unexpected token') &&
+              !errorMsg.includes('doctype')) {
+            console.error('[DASHBOARD] Error in progress polling interval:', err);
+          }
+        }
+      });
+    }, 20000);
+    // Initial check after 2 seconds
+    const initialTimeout = setTimeout(() => {
+      checkProgress().catch((err) => {
+        // Only log non-critical errors
+        if (err instanceof Error) {
+          const errorMsg = err.message.toLowerCase();
+          if (!errorMsg.includes('fetch') && 
+              !errorMsg.includes('json') && 
+              !errorMsg.includes('unexpected token') &&
+              !errorMsg.includes('doctype')) {
+            console.error('[DASHBOARD] Error in initial progress check:', err);
+          }
+        }
+      });
+    }, 2000);
 
     return () => {
       isMounted = false;
       window.clearInterval(interval);
+      clearTimeout(initialTimeout);
     };
   }, [selectedBrandId]);
 
@@ -315,6 +406,7 @@ export const useDashboardData = () => {
     setShowTopicModal,
     isDataCollectionInProgress,
     setIsDataCollectionInProgress,
+    progressData,
     brands,
     brandsLoading,
     brandsError,

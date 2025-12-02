@@ -4,7 +4,7 @@ import { VisibilityTabs } from '../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../components/Visibility/ChartControls';
 import { VisibilityChart } from '../components/Visibility/VisibilityChart';
 import { VisibilityTable } from '../components/Visibility/VisibilityTable';
-import DatePickerMultiView from '../components/DatePicker/DatePickerMultiView';
+import { KpiToggle } from '../components/Visibility/KpiToggle';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useCachedData } from '../hooks/useCachedData';
@@ -109,6 +109,8 @@ interface ModelData {
   isBrand?: boolean;
 }
 
+const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
 const normalizeId = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
 
 const buildTimeseries = (value: number) => Array(chartLabels.length).fill(Math.max(0, Math.round(value)));
@@ -142,37 +144,18 @@ const getDateRangeForTimeframe = (timeframe: string) => {
       start.setUTCDate(start.getUTCDate() - 6);
       break;
   }
-  
-  return labels;
-};
+  start.setUTCHours(0, 0, 0, 0);
 
-// Generate date range label for display
-const generateDateRangeLabel = (startDate: Date, endDate: Date, periodType: 'daily' | 'weekly' | 'monthly'): string => {
-  const start = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const end = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  
-  if (periodType === 'daily') {
-    const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    return `Last ${days} days`;
-  } else if (periodType === 'weekly') {
-    const weeks = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 7));
-    return `Last ${weeks} weeks`;
-  } else if (periodType === 'monthly') {
-    const months = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30));
-    return `Last ${months} months`;
-  }
-  
-  return `${start} - ${end}`;
-};
-
-// Build timeseries data for a value across date range
-const buildTimeseries = (value: number, dateLabels: string[]) => {
-  return Array(dateLabels.length).fill(Math.max(0, Math.round(value)));
+  return {
+    startDate: start.toISOString(),
+    endDate: end.toISOString()
+  };
 };
 
 export const SearchVisibility = () => {
   const pageLoadStart = useRef(performance.now());
   const [activeTab, setActiveTab] = useState<'brand' | 'competitive'>('brand');
+  const [timeframe, setTimeframe] = useState('weekly');
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -180,19 +163,6 @@ export const SearchVisibility = () => {
   const [brandModels, setBrandModels] = useState<ModelData[]>([]);
   const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
-  
-  // Date range state - using DatePickerMultiView
-  const [datePeriodType, setDatePeriodType] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
-  const [selectedDateRange, setSelectedDateRange] = useState<{ startDate: Date; endDate: Date } | null>(() => {
-    // Default to last 8 weeks
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 56); // 8 weeks ago
-    // Start of week
-    start.setDate(start.getDate() - start.getDay());
-    return { startDate: start, endDate: end };
-  });
-  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const authLoading = useAuthStore((state) => state.isLoading);
   const {
@@ -203,100 +173,18 @@ export const SearchVisibility = () => {
     selectBrand
   } = useManualBrandDashboard();
 
-  // Calculate date range from selected date range
-  const dateRange = useMemo(() => {
-    if (!selectedDateRange) {
-      // Fallback to default range (last 8 weeks)
-      const end = new Date();
-      end.setUTCHours(23, 59, 59, 999);
-      const start = new Date();
-      start.setDate(start.getDate() - 56); // 8 weeks ago
-      start.setDate(start.getDate() - start.getDay()); // Start of week
-      start.setUTCHours(0, 0, 0, 0);
-      return {
-        startDate: start.toISOString(),
-        endDate: end.toISOString()
-      };
-    }
-    
-    // Use the selected date range directly
-    const start = new Date(selectedDateRange.startDate);
-    start.setUTCHours(0, 0, 0, 0);
-    
-    const end = new Date(selectedDateRange.endDate);
-    end.setUTCHours(23, 59, 59, 999);
-    
-    // Validate date range
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      console.error('[SearchVisibility] Invalid date range:', { start, end });
-      // Fallback to default
-      const defaultEnd = new Date();
-      defaultEnd.setUTCHours(23, 59, 59, 999);
-      const defaultStart = new Date();
-      defaultStart.setDate(defaultStart.getDate() - 56);
-      defaultStart.setDate(defaultStart.getDate() - defaultStart.getDay());
-      defaultStart.setUTCHours(0, 0, 0, 0);
-      return {
-        startDate: defaultStart.toISOString(),
-        endDate: defaultEnd.toISOString()
-      };
-    }
-    
-    // Ensure start is before end
-    if (start.getTime() > end.getTime()) {
-      console.warn('[SearchVisibility] Start date after end date, swapping');
-      const temp = start;
-      start.setTime(end.getTime());
-      end.setTime(temp.getTime());
-    }
-    
-    return {
-      startDate: start.toISOString(),
-      endDate: end.toISOString()
-    };
-  }, [selectedDateRange]);
-  
-  // Generate date labels for chart
-  const chartLabels = useMemo(() => {
-    if (!dateRange.startDate || !dateRange.endDate) return [];
-    
-    const start = new Date(dateRange.startDate);
-    const end = new Date(dateRange.endDate);
-    
-    // Ensure dates are valid
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      console.warn('[SearchVisibility] Invalid date range:', { start: dateRange.startDate, end: dateRange.endDate });
-      return [];
-    }
-    
-    return generateDateLabels(start, end, datePeriodType);
-  }, [dateRange, datePeriodType]);
-  
-  // Generate date range label for display
-  const dateRangeLabel = useMemo(() => {
-    return generateDateRangeLabel(
-      new Date(dateRange.startDate),
-      new Date(dateRange.endDate),
-      datePeriodType
-    );
-  }, [dateRange, datePeriodType]);
+  const dateRange = useMemo(() => getDateRangeForTimeframe(timeframe), [timeframe]);
 
   // Build endpoint
   const visibilityEndpoint = useMemo(() => {
     const endpointStart = performance.now();
-    if (!selectedBrandId || !dateRange.startDate || !dateRange.endDate) return null;
-    
-    // Extract just the date part (YYYY-MM-DD) from ISO string for API
-    const startDateStr = dateRange.startDate.split('T')[0];
-    const endDateStr = dateRange.endDate.split('T')[0];
-    
+    if (!selectedBrandId) return null;
     const params = new URLSearchParams({
-      startDate: startDateStr,
-      endDate: endDateStr
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate
     });
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     perfLog('SearchVisibility: Endpoint computation', endpointStart);
-    console.log('[SearchVisibility] API endpoint:', endpoint, 'Date range:', { startDateStr, endDateStr });
     return endpoint;
   }, [selectedBrandId, dateRange.startDate, dateRange.endDate, reloadToken]);
 
@@ -328,12 +216,6 @@ export const SearchVisibility = () => {
     if (!response?.success || !response.data) {
       return { brandModels: [], competitorModels: [], chartDateLabels: chartLabels };
     }
-
-    // Don't block processing if chartLabels is empty - use a default length
-    // This prevents blank screens during date range transitions
-    const labelsToUse = chartLabels && chartLabels.length > 0 
-      ? chartLabels 
-      : ['Period 1']; // Fallback to single period if labels not ready yet
 
     const llmSlices = response.data.llmVisibility ?? [];
     
@@ -374,8 +256,16 @@ export const SearchVisibility = () => {
         change: slice.delta ? Math.round(slice.delta) : 0,
         referenceCount: brandPresenceCount,
         brandPresencePercentage,
-        data: buildTimeseries(visibilityValue, labelsToUse),
-        shareData: buildTimeseries(shareValue, labelsToUse),
+        // Use time-series data from backend if available, otherwise fallback to flat line
+        data: slice.timeSeries?.visibility && slice.timeSeries.visibility.length > 0
+          ? slice.timeSeries.visibility
+          : buildTimeseries(visibilityValue),
+        shareData: slice.timeSeries?.share && slice.timeSeries.share.length > 0
+          ? slice.timeSeries.share
+          : buildTimeseries(shareValue),
+        sentimentData: slice.timeSeries?.sentiment && slice.timeSeries.sentiment.length > 0
+          ? slice.timeSeries.sentiment.map(s => s !== null ? ((s + 1) / 2) * 100 : null)
+          : (sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined),
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -518,8 +408,16 @@ export const SearchVisibility = () => {
       change: 0,
       referenceCount: queriesWithBrandPresence,
       brandPresencePercentage: Math.round(brandData.brandPresencePercentage ?? 0),
-      data: buildTimeseries(brandVisibilityValue, labelsToUse),
-      shareData: buildTimeseries(brandShareValue, labelsToUse),
+      // Use aggregated brand time-series if available, otherwise fallback to flat line
+      data: brandTimeSeries?.visibility && brandTimeSeries.visibility.length > 0
+        ? brandTimeSeries.visibility
+        : buildTimeseries(brandVisibilityValue),
+      shareData: brandTimeSeries?.share && brandTimeSeries.share.length > 0
+        ? brandTimeSeries.share
+        : buildTimeseries(brandShareValue),
+      sentimentData: brandTimeSeries?.sentiment && brandTimeSeries.sentiment.length > 0
+        ? brandTimeSeries.sentiment
+        : (brandSentimentDisplay !== null ? buildTimeseries(brandSentimentDisplay) : undefined),
       topTopics: brandData.topTopics?.map(topic => ({
         topic: topic.topic,
         occurrences: topic.occurrences,
@@ -546,8 +444,16 @@ export const SearchVisibility = () => {
         change: 0,
         referenceCount: entry.mentions ?? 0,
         brandPresencePercentage: Math.round(entry.brandPresencePercentage ?? 0),
-        data: buildTimeseries(competitorVisibilityValue, labelsToUse),
-        shareData: buildTimeseries(competitorShareValue, labelsToUse),
+        // Use time-series data from backend if available, otherwise fallback to flat line
+        data: entry.timeSeries?.visibility && entry.timeSeries.visibility.length > 0
+          ? entry.timeSeries.visibility
+          : buildTimeseries(competitorVisibilityValue),
+        shareData: entry.timeSeries?.share && entry.timeSeries.share.length > 0
+          ? entry.timeSeries.share
+          : buildTimeseries(competitorShareValue),
+        sentimentData: entry.timeSeries?.sentiment && entry.timeSeries.sentiment.length > 0
+          ? entry.timeSeries.sentiment.map(s => s !== null ? ((s + 1) / 2) * 100 : null)
+          : (competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined),
         topTopics: entry.topTopics?.map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -571,7 +477,7 @@ export const SearchVisibility = () => {
       competitorModels: allCompetitorModels,
       chartDateLabels
     };
-  }, [response, selectedBrandId, selectedBrand, chartLabels]);
+  }, [response, selectedBrandId, selectedBrand]);
 
   // Update state from processed data (batched update)
   const [chartDateLabels, setChartDateLabels] = useState<string[]>(chartLabels);
@@ -593,19 +499,11 @@ export const SearchVisibility = () => {
 
   useEffect(() => {
     const availableModels = currentModels;
-    // Only update selectedModels if we have models available
-    // Don't clear selections if models are temporarily empty during data fetch
-    if (availableModels.length === 0) {
-      // Keep existing selections if models are empty (might be loading)
-      return;
-    }
-    
     setSelectedModels((previous) => {
       const stillValid = previous.filter((id) => availableModels.some((model) => model.id === id));
       if (stillValid.length > 0) {
         return stillValid;
       }
-      // Default to first 5 models if no previous selections
       return availableModels.slice(0, 5).map((model) => model.id);
     });
   }, [activeTab, currentModels]);
@@ -721,6 +619,8 @@ export const SearchVisibility = () => {
             </div>
 
             <ChartControls
+              timeframe={timeframe}
+              onTimeframeChange={setTimeframe}
               chartType={chartType}
               onChartTypeChange={setChartType}
               region={region}
@@ -730,66 +630,10 @@ export const SearchVisibility = () => {
               onBrandChange={selectBrand}
             />
 
-            {/* Date Picker Modal */}
-            {showDatePicker && (
-              <>
-                <div
-                  style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                    zIndex: 9998,
-                  }}
-                  onClick={() => setShowDatePicker(false)}
-                />
-                <div
-                  style={{
-                    position: 'fixed',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    zIndex: 9999,
-                    backgroundColor: '#ffffff',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                    width: '900px',
-                    maxWidth: '95vw',
-                    maxHeight: '90vh',
-                    minHeight: '500px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: '20px 24px 24px 24px',
-                      flex: 1,
-                      overflowY: 'auto',
-                      overflowX: 'hidden',
-                    }}
-                  >
-                    <DatePickerMultiView
-                      onDateRangeSelect={handleDateSelect}
-                      onViewChange={handleViewChange}
-                      onApply={handleDateRangeApply}
-                      onClose={() => setShowDatePicker(false)}
-                      initialDate={selectedDateRange?.endDate || new Date()}
-                      initialView={datePeriodType}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
             <VisibilityChart
               data={chartData}
               chartType={chartType}
-              datePeriodType={datePeriodType}
-              dateRangeLabel={dateRangeLabel}
+              timeframe={timeframe}
               selectedModels={selectedModels}
               loading={combinedLoading}
               activeTab={activeTab}

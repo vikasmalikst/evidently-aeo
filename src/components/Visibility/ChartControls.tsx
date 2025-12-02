@@ -8,8 +8,6 @@ interface BrandOption {
 }
 
 interface ChartControlsProps {
-  timeframe: string;
-  onTimeframeChange: (value: string) => void;
   chartType: string;
   onChartTypeChange: (value: string) => void;
   region: string;
@@ -22,8 +20,6 @@ interface ChartControlsProps {
 }
 
 export const ChartControls = ({
-  timeframe,
-  onTimeframeChange,
   chartType,
   onChartTypeChange,
   region,
@@ -32,7 +28,9 @@ export const ChartControls = ({
   selectedBrandId,
   onBrandChange,
   metricType = 'visibility',
-  onMetricTypeChange
+  onMetricTypeChange,
+  dateRangeLabel = 'Select date range',
+  onDatePickerClick
 }: ChartControlsProps) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -52,12 +50,6 @@ export const ChartControls = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [openDropdown]);
-
-  const timeframeOptions = [
-    { value: 'weekly', label: 'Weekly (Last 7 days)' },
-    { value: 'monthly', label: 'Monthly (Last 30 days)' },
-    { value: 'ytd', label: 'Year to Date' }
-  ];
 
   const chartTypeOptions = [
     { value: 'line', label: 'Line Chart', icon: LineChart },
@@ -83,7 +75,6 @@ export const ChartControls = ({
     { value: 'southeast-asia', label: 'Southeast Asia' }
   ];
 
-  const currentTimeframe = timeframeOptions.find(o => o.value === timeframe);
   const currentChartType = chartTypeOptions.find(o => o.value === chartType);
   const allRegionOptions = [...countryOptions, ...regionOptions];
   const currentRegion = allRegionOptions.find(o => o.value === region);
@@ -293,12 +284,21 @@ export const ChartControls = ({
             onBrandChange
           )
         }
-        {renderDropdown(
-          'timeframe',
-          'Timeframe',
-          currentTimeframe?.label,
-          timeframeOptions,
-          onTimeframeChange
+        {onDatePickerClick && (
+          <div className="relative min-w-[200px]">
+            <button
+              className="flex items-center gap-2 w-full px-3 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--text-action)] hover:bg-[var(--bg-secondary)]"
+              onClick={onDatePickerClick}
+            >
+              <span className="text-[var(--text-body)] whitespace-nowrap overflow-hidden text-ellipsis text-left">
+                {dateRangeLabel}
+              </span>
+              <ChevronDown
+                size={16}
+                className="text-[var(--text-caption)] transition-transform duration-150 flex-shrink-0"
+              />
+            </button>
+          </div>
         )}
         {renderDropdown(
           'region',

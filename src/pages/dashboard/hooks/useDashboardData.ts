@@ -8,6 +8,7 @@ import { onboardingUtils } from '../../../utils/onboardingUtils';
 import type { Topic } from '../../../types/topic';
 import type { ApiResponse, DashboardPayload } from '../types';
 import { getDefaultDateRange } from '../utils';
+import { apiClient } from '../../../lib/apiClient';
 
 export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
@@ -170,6 +171,9 @@ export const useDashboardData = () => {
       startDate,
       endDate
     });
+    if (reloadKey > 0) {
+      params.set('cacheBust', String(reloadKey));
+    }
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     console.log('[DASHBOARD] Endpoint computed at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Endpoint:', endpoint);
     return endpoint;
@@ -228,30 +232,6 @@ export const useDashboardData = () => {
   const fromOnboarding = locationState?.fromOnboarding || false;
   const shouldShowLoading = (authLoading || brandSelectionPending || (dashboardLoading && !dashboardData && !fromOnboarding));
 
-  useEffect(() => {
-    if (!selectedBrandId) {
-      return;
-    }
-
-    let refreshInterval: ReturnType<typeof setInterval> | undefined;
-
-    const refreshDashboardData = () => {
-      console.log('[DASHBOARD] Refreshing dashboard data (auto refresh enabled)');
-      setReloadKey((prev) => prev + 1);
-      refetchDashboard();
-    };
-
-    if (isDataCollectionInProgress) {
-      refreshDashboardData();
-      refreshInterval = window.setInterval(refreshDashboardData, 30000);
-    }
-
-    return () => {
-      if (refreshInterval) {
-        window.clearInterval(refreshInterval);
-      }
-    };
-  }, [isDataCollectionInProgress, selectedBrandId, refetchDashboard]);
   
   useEffect(() => {
     if (!shouldShowLoading && dashboardData) {
@@ -284,18 +264,16 @@ export const useDashboardData = () => {
 
     const checkProgress = async () => {
       try {
-        const response = await fetch(`/api/brands/${selectedBrandId}/onboarding-progress`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('access_token')}`,
-          },
-        });
+        const data = await apiClient.request<ApiResponse<{
+          queries: { total: number; completed: number };
+          scoring: { positions: boolean; sentiments: boolean; citations: boolean };
+        }>>(
+          `/brands/${selectedBrandId}/onboarding-progress`,
+          {},
+          { requiresAuth: true }
+        );
 
-        if (!isMounted || !response.ok) {
-          return;
-        }
-
-        const data = await response.json();
-        if (!data?.success || !data?.data || !isMounted) {
+        if (!isMounted || !data?.success || !data?.data) {
           return;
         }
 

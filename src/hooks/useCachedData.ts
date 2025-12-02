@@ -125,9 +125,15 @@ export function useCachedData<T>(
       return;
     }
 
-    // Cancel previous request
+    // Cancel previous request gracefully
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+      try {
+        // Mark as cleanup abort to prevent error logging
+        (abortControllerRef.current as any)._isCleanupAbort = true;
+        abortControllerRef.current.abort();
+      } catch (e) {
+        // Ignore any errors during abort - this is expected
+      }
     }
 
     abortControllerRef.current = new AbortController();
@@ -168,15 +174,15 @@ export function useCachedData<T>(
     } catch (err) {
       const errorDuration = performance.now() - fetchStart;
       // Ignore AbortError - it's expected when requests are cancelled
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
         // Check if this was a cleanup abort (expected) or an unexpected abort
         const isCleanupAbort = (abortControllerRef.current as any)?._isCleanupAbort;
         if (isCleanupAbort) {
           // Silent - this is expected cleanup behavior
           return;
         }
-        // Log but don't treat as error - component might have unmounted
-        console.log(`[useCachedData] Request aborted (expected) at`, performance.now(), `- Duration: ${errorDuration.toFixed(2)}ms`);
+        // Silent - abort errors are always expected when switching endpoints or unmounting
+        // Don't log as they clutter the console
         return;
       }
       
@@ -259,10 +265,14 @@ export function useCachedData<T>(
     // Don't show loading if we have fresh cache
     const showLoading = !hasCache || refetchOnMount;
     fetchData(showLoading).catch((err) => {
-      if (err instanceof Error && err.name === 'AbortError') {
+      // Silently ignore abort errors - they're expected during cleanup
+      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
         return;
       }
-      console.error('[useCachedData] Unhandled fetch error:', err);
+      // Only log non-abort errors
+      if (err instanceof Error) {
+        console.error('[useCachedData] Unhandled fetch error:', err);
+      }
     });
 
     return () => {
@@ -287,10 +297,14 @@ export function useCachedData<T>(
     if (refetchInterval && endpoint && enabled) {
       intervalRef.current = window.setInterval(() => {
         fetchData(false).catch((err) => {
-          if (err instanceof Error && err.name === 'AbortError') {
+          // Silently ignore abort errors - they're expected during cleanup
+          if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
             return;
           }
-          console.error('[useCachedData] Unhandled interval fetch error:', err);
+          // Only log non-abort errors
+          if (err instanceof Error) {
+            console.error('[useCachedData] Unhandled interval fetch error:', err);
+          }
         }); // Don't show loading on interval refetch
       }, refetchInterval);
 

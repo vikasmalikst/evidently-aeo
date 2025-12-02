@@ -314,6 +314,10 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
     const customerId = req.user!.customer_id;
     const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
     const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    const skipCacheQuery = Array.isArray(req.query.skipCache) ? req.query.skipCache[0] : req.query.skipCache;
+    const skipCache =
+      typeof skipCacheQuery === 'string' &&
+      ['true', '1', 'yes'].includes(skipCacheQuery.toLowerCase());
     let dateRange: DashboardDateRange | undefined;
 
     if (startQuery || endQuery) {
@@ -367,7 +371,9 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
       return;
     }
 
-    const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange);
+    const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange, {
+      skipCache
+    });
 
     res.json({
       success: true,

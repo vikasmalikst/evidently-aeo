@@ -534,55 +534,57 @@ export async function buildDashboardPayload(
         topicAggregates.set(topicName, topicAggregate)
       }
 
-      if (!collectorAggregates.has(collectorType)) {
-        collectorAggregates.set(collectorType, {
-          shareValues: [],
-          visibilityValues: [],
-          sentimentValues: [],
-          mentions: 0,
-          brandPresenceCount: 0,
-          uniqueQueryIds: new Set<string>(),
-          topics: new Map()
-        })
-      }
-      const collectorAggregate = collectorAggregates.get(collectorType)!
-      collectorAggregate.shareValues.push(brandShare)
-      collectorAggregate.visibilityValues.push(brandVisibility)
-      // Only add sentiment for brand rows (competitor_name IS NULL)
-      if (hasBrandSentiment && isBrandRow) {
-        collectorAggregate.sentimentValues.push(brandSentimentValue)
-        if (processedRowCount <= 5) {
-          console.log(`[Dashboard] Adding sentiment ${brandSentimentValue} to collector ${collectorType} (row ${processedRowCount}, total sentiment values: ${collectorAggregate.sentimentValues.length})`)
+      // Only aggregate collector-level metrics for brand rows
+      if (isBrandRow) {
+        if (!collectorAggregates.has(collectorType)) {
+          collectorAggregates.set(collectorType, {
+            shareValues: [],
+            visibilityValues: [],
+            sentimentValues: [],
+            mentions: 0,
+            brandPresenceCount: 0,
+            uniqueQueryIds: new Set<string>(),
+            topics: new Map()
+          })
+        }
+        const collectorAggregate = collectorAggregates.get(collectorType)!
+        collectorAggregate.shareValues.push(brandShare)
+        collectorAggregate.visibilityValues.push(brandVisibility)
+        
+        // Add sentiment for brand rows only
+        if (hasBrandSentiment) {
+          collectorAggregate.sentimentValues.push(brandSentimentValue)
+          if (processedRowCount <= 5) {
+            console.log(`[Dashboard] Adding sentiment ${brandSentimentValue} to collector ${collectorType} (row ${processedRowCount}, total sentiment values: ${collectorAggregate.sentimentValues.length})`)
+          }
+        }
+
+        collectorAggregate.mentions += brandMentions > 0 ? brandMentions : 1
+
+        if (hasBrandPresence) {
+          collectorAggregate.brandPresenceCount += 1
+        }
+        
+        // Track unique queries per collector
+        if (queryId) {
+          collectorAggregate.uniqueQueryIds.add(queryId)
+        }
+
+        if (topicName) {
+          const topicStats =
+            collectorAggregate.topics.get(topicName) ?? {
+              occurrences: 0,
+              shareSum: 0,
+              visibilitySum: 0,
+              mentions: 0
+            }
+          topicStats.occurrences += 1
+          topicStats.shareSum += brandShare
+          topicStats.visibilitySum += brandVisibility
+          topicStats.mentions += brandMentions > 0 ? brandMentions : 1
+          collectorAggregate.topics.set(topicName, topicStats)
         }
       }
-
-      collectorAggregate.mentions += brandMentions > 0 ? brandMentions : 1
-
-      if (hasBrandPresence) {
-        collectorAggregate.brandPresenceCount += 1
-      }
-      
-      // Track unique queries per collector
-      if (queryId) {
-        collectorAggregate.uniqueQueryIds.add(queryId)
-      }
-
-      if (topicName) {
-        const topicStats =
-          collectorAggregate.topics.get(topicName) ?? {
-            occurrences: 0,
-            shareSum: 0,
-            visibilitySum: 0,
-            mentions: 0
-          }
-        topicStats.occurrences += 1
-        topicStats.shareSum += brandShare
-        topicStats.visibilitySum += brandVisibility
-        topicStats.mentions += brandMentions > 0 ? brandMentions : 1
-        collectorAggregate.topics.set(topicName, topicStats)
-      }
-
-      collectorAggregates.set(collectorType, collectorAggregate)
     }
 
     if (processedRowCount <= 3) {

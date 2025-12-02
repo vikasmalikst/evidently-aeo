@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { apiClient } from '../../lib/apiClient';
+import type { ApiResponse, DashboardPayload } from '../../pages/dashboard/types';
 
 // Fix for useParams
 export const DataCollectionLoadingScreenRoute = () => {
@@ -60,12 +62,12 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [hasShownInitialData, setHasShownInitialData] = useState(false);
-  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
   const [currentStage, setCurrentStage] = useState<'collecting' | 'scoring'>('collecting');
   const [progressBarValue, setProgressBarValue] = useState(0);
 
   // Fetch dashboard data to show after initial delay
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       // Ensure we're fetching data for the correct brand
       if (!brandId) {
@@ -74,47 +76,45 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
       }
       
       console.log(`[LoadingScreen] Fetching dashboard data for brand: ${brandId}`);
-      const response = await fetch(`/api/brands/${brandId}/dashboard`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      });
+      const endpoint = `/brands/${brandId}/dashboard?skipCache=true&cacheBust=${Date.now()}`;
+      const data = await apiClient.request<ApiResponse<DashboardPayload>>(endpoint, {}, { requiresAuth: true });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.data) {
-          // Verify the data is for the correct brand
-          if (data.data.brandId && data.data.brandId !== brandId) {
-            console.warn(`[LoadingScreen] Brand ID mismatch! Expected ${brandId}, got ${data.data.brandId}`);
-            return;
-          }
-          
-          console.log('[LoadingScreen] Dashboard data received for brand:', brandId, data.data);
-          setDashboardData(data.data);
-          setHasShownInitialData(true);
-        } else {
-          console.warn('[LoadingScreen] Dashboard response not successful:', data);
+      if (data.success && data.data) {
+        if (data.data.brandId && data.data.brandId !== brandId) {
+          console.warn(`[LoadingScreen] Brand ID mismatch! Expected ${brandId}, got ${data.data.brandId}`);
+          return;
         }
+
+        console.log('[LoadingScreen] Dashboard data received for brand:', brandId, data.data);
+        setDashboardData(data.data);
+        setHasShownInitialData(true);
       } else {
-        console.error('[LoadingScreen] Dashboard fetch failed:', response.status, response.statusText);
+        console.warn('[LoadingScreen] Dashboard response not successful:', data);
       }
     } catch (error) {
       console.error('[LoadingScreen] Error fetching dashboard data:', error);
     }
-  };
+  }, [brandId]);
 
-  // Navigation timer - only runs once on mount, after 20 seconds
+  // Fetch dashboard data first (at ~20 seconds), then redirect at 25 seconds
   useEffect(() => {
     if (!brandId) return;
     
+    console.log(`[LoadingScreen] Setting up pre-fetch timer for brand: ${brandId}`);
+    // Fetch dashboard data at 20 seconds (5 seconds before redirect)
+    const preFetchTimer = setTimeout(() => {
+      console.log(`[LoadingScreen] Pre-fetching dashboard data at 20 seconds for brand: ${brandId}`);
+      fetchDashboardData();
+    }, INITIAL_UPDATE_DELAY - 5000); // 5 seconds before redirect
+
+    // Navigate to dashboard at 25 seconds
     console.log(`[LoadingScreen] Setting up navigation timer for ${INITIAL_UPDATE_DELAY}ms for brand: ${brandId}`);
     const navigateTimer = setTimeout(() => {
       console.log(`[LoadingScreen] 25 seconds elapsed, navigating to dashboard for brand: ${brandId}`);
       // Store flag that we're showing partial data
       localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
       // Pass brandId in navigation state so dashboard can auto-select it
-      // Use the brandId from route params to ensure we always use the current brand
-      const currentBrandId = brandId; // Ensure we use the brand from the route
+      const currentBrandId = brandId;
       console.log(`[LoadingScreen] Redirecting to dashboard with brandId: ${currentBrandId}`);
       navigate('/dashboard', { 
         replace: true,
@@ -126,9 +126,10 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     }, INITIAL_UPDATE_DELAY);
 
     return () => {
+      clearTimeout(preFetchTimer);
       clearTimeout(navigateTimer);
     };
-  }, [brandId, navigate]); // Only depend on brandId and navigate, not elapsedTime
+  }, [brandId, navigate, fetchDashboardData]);
 
   // Progress bar animation - transition from collecting to scoring
   useEffect(() => {
@@ -166,18 +167,7 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     };
   }, [elapsedTime, currentStage]); // This can depend on elapsedTime since it's just for animation
 
-  // Initial data fetch after 15-20 seconds (configurable)
-  useEffect(() => {
-    if (!brandId) return;
-    
-    console.log(`[LoadingScreen] Will fetch dashboard data after ${INITIAL_UPDATE_DELAY}ms for brand: ${brandId}`);
-    const initialTimer = setTimeout(() => {
-      console.log(`[LoadingScreen] Initial delay elapsed, fetching dashboard data for brand: ${brandId}`);
-      fetchDashboardData();
-    }, INITIAL_UPDATE_DELAY);
-
-    return () => clearTimeout(initialTimer);
-  }, [brandId]);
+  // Removed - now handled in the navigation timer above to ensure data is fetched before redirect
 
   // Don't redirect automatically - let user see the data on loading screen
   // Only redirect when data collection is complete
@@ -191,49 +181,46 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     // Poll for progress updates (faster polling for progress)
     interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/brands/${brandId}/onboarding-progress`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-          },
-        });
+        const data = await apiClient.request<ApiResponse<ProgressData>>(
+          `/brands/${brandId}/onboarding-progress`,
+          {},
+          { requiresAuth: true }
+        );
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.data) {
-            setProgress(data.data);
+        if (data.success && data.data) {
+          setProgress(data.data);
 
-            // Check if complete
-            if (
-              data.data.queries.completed >= data.data.queries.total &&
-              data.data.scoring.positions &&
-              data.data.scoring.sentiments &&
-              data.data.scoring.citations
-            ) {
-              setIsComplete(true);
-              clearInterval(interval);
-              if (updateInterval) clearInterval(updateInterval);
-              
-              // Fetch final dashboard data before redirect
-              await fetchDashboardData();
-              
-              // Redirect after brief delay to show completion
-              // Use the brandId from route params to ensure we always use the current brand
-              const currentBrandId = brandId; // Ensure we use the brand from the route
-              console.log(`[LoadingScreen] Collection complete, redirecting to dashboard with brandId: ${currentBrandId}`);
-              setTimeout(() => {
-                navigate('/dashboard', { 
-                  replace: true,
-                  state: { 
-                    autoSelectBrandId: currentBrandId,
-                    fromOnboarding: true 
-                  }
-                });
-              }, 1500);
-            }
+          if (
+            data.data.queries.completed >= data.data.queries.total &&
+            data.data.scoring.positions &&
+            data.data.scoring.sentiments &&
+            data.data.scoring.citations
+          ) {
+            setIsComplete(true);
+            clearInterval(interval);
+            if (updateInterval) clearInterval(updateInterval);
+
+            await fetchDashboardData();
+
+            const currentBrandId = brandId;
+            console.log(`[LoadingScreen] Collection complete, redirecting to dashboard with brandId: ${currentBrandId}`);
+            setTimeout(() => {
+              navigate('/dashboard', { 
+                replace: true,
+                state: { 
+                  autoSelectBrandId: currentBrandId,
+                  fromOnboarding: true 
+                }
+              });
+            }, 1500);
           }
         }
       } catch (error) {
-        console.error('Error fetching progress:', error);
+        // Only log non-critical errors (network issues, 404s, etc.)
+        // Don't spam console if endpoint is temporarily unavailable
+        if (error instanceof Error && !error.message.includes('fetch')) {
+          console.error('Error fetching progress:', error);
+        }
         // Continue polling even on error
       }
     }, 2000); // Poll every 2 seconds for progress
@@ -249,7 +236,7 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
       clearInterval(interval);
       if (updateInterval) clearInterval(updateInterval);
     };
-  }, [brandId, navigate, hasShownInitialData]);
+  }, [brandId, navigate, hasShownInitialData, fetchDashboardData]);
 
   // Track elapsed time
   useEffect(() => {

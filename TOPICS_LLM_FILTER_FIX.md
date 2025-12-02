@@ -104,3 +104,6 @@ const { data: citations } = await supabaseAdmin
 Both `collector_results` and `extracted_positions` tables have independent `collector_type` columns. When filtering by LLM model, **both tables must be filtered** to ensure data consistency. The previous code incorrectly assumed that filtering one table would automatically filter the other.
 
 
+
+
+

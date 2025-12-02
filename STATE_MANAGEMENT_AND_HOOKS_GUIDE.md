@@ -384,3 +384,6 @@ useEffect(() => {
 - ✅ **useEffect** for side effects (API calls, subscriptions)
 
 
+
+
+

@@ -11,6 +11,13 @@ import {
   Legend,
   Filler
 } from 'chart.js';
+import { IconBrandOpenai } from '@tabler/icons-react';
+import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
+import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
+import geminiLogoSrc from '../../assets/Google-Gemini-Icon.svg';
+import googleAioLogoSrc from '../../assets/Google-AI-icon.svg';
+import grokLogoSrc from '../../assets/Grok-icon.svg';
+import perplexityLogoSrc from '../../assets/Perplexity-Simple-Icon.svg';
 import { useChartResize } from '../../hooks/useChartResize';
 
 ChartJS.register(
@@ -50,7 +57,32 @@ interface Model {
   id: string;
   name: string;
   color?: string;
+  icon?: string;
 }
+
+// Helper function to get favicon for a model
+const getModelFavicon = (modelId: string, modelName: string): string | null => {
+  const id = modelId.toLowerCase();
+  const name = modelName.toLowerCase();
+  
+  if (id.includes('chatgpt') || id.includes('gpt') || name.includes('chatgpt') || name.includes('gpt')) {
+    return null; // Will use IconBrandOpenai component
+  } else if (id.includes('claude') || name.includes('claude')) {
+    return claudeLogoSrc;
+  } else if (id.includes('gemini') || name.includes('gemini')) {
+    return geminiLogoSrc;
+  } else if (id.includes('perplexity') || name.includes('perplexity')) {
+    return perplexityLogoSrc;
+  } else if (id.includes('copilot') || name.includes('copilot')) {
+    return copilotLogoSrc;
+  } else if (id.includes('google_aio') || id.includes('googleaio') || name.includes('google aio')) {
+    return googleAioLogoSrc;
+  } else if (id.includes('grok') || name.includes('grok')) {
+    return grokLogoSrc;
+  }
+  
+  return null;
+};
 
 interface VisibilityChartProps {
   data: {
@@ -62,7 +94,8 @@ interface VisibilityChartProps {
     }>;
   };
   chartType: string;
-  timeframe: string;
+  datePeriodType?: 'daily' | 'weekly' | 'monthly';
+  dateRangeLabel?: string;
   selectedModels: string[];
   loading?: boolean;
   activeTab: string;
@@ -73,6 +106,8 @@ interface VisibilityChartProps {
 export const VisibilityChart = memo(({
   data,
   chartType = 'line',
+  datePeriodType = 'weekly',
+  dateRangeLabel,
   selectedModels = [],
   loading = false,
   activeTab = 'brand',
@@ -88,7 +123,57 @@ export const VisibilityChart = memo(({
 
     const colorKeys = Object.keys(chartColors);
     const isBarChart = chartType === 'bar';
+    const isBrandMode = activeTab === 'brand';
 
+    // For bar charts in brand mode, sort LLMs by average value (largest to smallest)
+    // Chart.js doesn't support per-group sorting, so we sort by overall average
+    if (isBarChart && isBrandMode) {
+      // Get all model data with their average values
+      const modelDataList = selectedModels
+        .map((modelId) => {
+          const modelData = data.datasets.find(d => d.id === modelId);
+          if (!modelData) return null;
+          const model = models.find(m => m.id === modelId);
+          const color = model?.color || chartColors[colorKeys[selectedModels.indexOf(modelId) % colorKeys.length] as keyof typeof chartColors];
+          
+          // Calculate average value across all periods
+          const avgValue = modelData.data.reduce((sum, val) => sum + val, 0) / modelData.data.length;
+          
+          return {
+            id: modelId,
+            label: modelData.label,
+            data: modelData.data,
+            color,
+            model,
+            avgValue
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      // Sort by average value descending (largest to smallest)
+      modelDataList.sort((a, b) => b.avgValue - a.avgValue);
+
+      // Create datasets in sorted order
+      const datasets = modelDataList.map((modelData) => {
+        return {
+          id: modelData.id,
+          label: modelData.label,
+          data: modelData.data,
+          backgroundColor: modelData.color,
+          borderColor: modelData.color,
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: 'start' as const,
+        };
+      });
+
+      return {
+        labels: data.labels,
+        datasets
+      };
+    }
+
+    // For line charts or competitive mode bar charts, use standard grouping
     const datasets = selectedModels
       .map((modelId, index) => {
         const modelData = data.datasets.find(d => d.id === modelId);
@@ -99,8 +184,10 @@ export const VisibilityChart = memo(({
         const color = model?.color || chartColors[colorKeys[index % colorKeys.length] as keyof typeof chartColors];
 
         if (isBarChart) {
-          // Bar chart configuration
+          // Bar chart configuration - grouped bars by time period
+          // Each dataset represents one LLM, and bars will be grouped by time period (labels)
           return {
+            id: modelId, // Store model ID for legend lookup
             label: modelData.label,
             data: modelData.data,
             backgroundColor: color,
@@ -110,15 +197,19 @@ export const VisibilityChart = memo(({
             borderSkipped: 'start' as const,
           };
         } else {
-          // Line chart configuration
+          // Line chart configuration - time series with one line per model
           return {
+            id: modelId, // Store model ID for legend lookup
             label: modelData.label,
             data: modelData.data,
             borderColor: color,
             backgroundColor: 'transparent',
             borderWidth: 2,
             pointRadius: 0,
-            pointHoverRadius: 0,
+            pointHoverRadius: 5,
+            pointHoverBorderWidth: 2,
+            pointHoverBackgroundColor: color,
+            pointHoverBorderColor: '#ffffff',
             tension: 0.4,
             fill: false,
           };
@@ -127,13 +218,14 @@ export const VisibilityChart = memo(({
       .filter((item): item is NonNullable<typeof item> => item !== null);
 
     return {
-      labels: data.labels,
+      labels: data.labels, // Date periods
       datasets
     };
-  }, [data, selectedModels, models, chartType]);
+  }, [data, selectedModels, models, chartType, activeTab]);
 
   const options = useMemo(() => {
     const isBarChart = chartType === 'bar';
+    const isBrandMode = activeTab === 'brand';
     return {
       responsive: true,
       maintainAspectRatio: true,
@@ -182,16 +274,19 @@ export const VisibilityChart = memo(({
           },
         },
         x: {
+          // For bar charts, group bars by time period (labels)
+          // For line charts, show time periods on x-axis
+          stacked: false, // Ensure bars are grouped, not stacked
           ticks: {
             color: neutrals[700],
             font: {
-              size: 9,
+              size: datePeriodType === 'monthly' ? 9 : 9,
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
               weight: 400,
             },
-            padding: 8,
-            maxRotation: 0,
-            minRotation: 0,
+            padding: isBarChart && isBrandMode ? 12 : 8, // More spacing for bar charts in brand mode
+            maxRotation: datePeriodType === 'monthly' ? 45 : 0,
+            minRotation: datePeriodType === 'monthly' ? 45 : 0,
           },
           grid: {
             display: false,
@@ -202,33 +297,7 @@ export const VisibilityChart = memo(({
       },
       plugins: {
         legend: {
-          display: true,
-          position: 'bottom' as const,
-          align: 'start' as const,
-          labels: {
-            usePointStyle: true,
-            pointStyle: isBarChart ? 'rect' : 'line',
-            padding: 15,
-            font: {
-              size: 11,
-              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-              weight: 400,
-            },
-            color: neutrals[700],
-            generateLabels: (chart: any) => {
-              const datasets = chart.data.datasets || [];
-              return datasets.map((dataset: any, index: number) => {
-                return {
-                  text: dataset.label || `Dataset ${index + 1}`,
-                  fillStyle: dataset.backgroundColor || dataset.borderColor,
-                  strokeStyle: dataset.borderColor || dataset.backgroundColor,
-                  lineWidth: isBarChart ? 0 : 2,
-                  hidden: !chart.isDatasetVisible(index),
-                  index: index,
-                };
-              });
-            },
-          },
+          display: false, // Hide default legend, we'll use custom one
         },
       tooltip: {
         enabled: true,
@@ -283,12 +352,36 @@ export const VisibilityChart = memo(({
         easing: 'easeInOutQuart' as const,
       },
     };
-  }, [chartType, metricType]);
+  }, [chartType, metricType, datePeriodType, activeTab]);
+
+  // Generate custom legend items with favicons - must be called before any early returns
+  const legendItems = useMemo(() => {
+    if (!chartData) return [];
+    
+    return chartData.datasets.map((dataset, index) => {
+      const model = models.find(m => m.id === dataset.id || m.name === dataset.label);
+      const modelId = model?.id || dataset.id || '';
+      const modelName = model?.name || dataset.label || '';
+      const faviconSrc = getModelFavicon(modelId, modelName);
+      const isChatGPT = modelId.toLowerCase().includes('chatgpt') || modelId.toLowerCase().includes('gpt') || 
+                       modelName.toLowerCase().includes('chatgpt') || modelName.toLowerCase().includes('gpt');
+      const color = model?.color || dataset.backgroundColor || dataset.borderColor;
+      
+      return {
+        label: modelName,
+        color,
+        faviconSrc,
+        isChatGPT,
+        index,
+      };
+    });
+  }, [chartData, models]);
 
   // Handle chart resize on window resize (e.g., when dev tools open/close)
   // Must be called after chartData is defined
   useChartResize(chartRef, !loading && !!chartData && selectedModels.length > 0);
 
+  // Early returns must come AFTER all hooks
   if (loading) {
     return (
       <div className="w-full h-full flex items-center justify-center p-6 bg-white">
@@ -311,9 +404,53 @@ export const VisibilityChart = memo(({
 
   return (
     <div className="w-full h-auto bg-white rounded-lg p-6">
+      {/* Date Range Label */}
+      {dateRangeLabel && (
+        <div className="mb-4 text-center">
+          <span className="text-sm text-[var(--text-caption)]">
+            {dateRangeLabel}
+          </span>
+        </div>
+      )}
       <div className="relative w-full">
         <ChartComponent data={chartData} options={options} ref={chartRef} />
       </div>
+      {/* Custom Legend with Favicons */}
+      {legendItems.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pt-4 border-t border-[var(--border-default)]">
+          {legendItems.map((item) => (
+            <div
+              key={item.index}
+              className="flex items-center gap-2"
+            >
+              {item.isChatGPT ? (
+                <IconBrandOpenai size={16} className="flex-shrink-0" />
+              ) : item.faviconSrc ? (
+                <img
+                  src={item.faviconSrc}
+                  alt=""
+                  className="w-4 h-4 flex-shrink-0"
+                  style={{ width: '16px', height: '16px' }}
+                />
+              ) : (
+                <div
+                  className="w-4 h-4 rounded flex-shrink-0"
+                  style={{
+                    backgroundColor: item.color,
+                    border: chartType === 'bar' ? 'none' : `2px solid ${item.color}`,
+                  }}
+                />
+              )}
+              <span
+                className="text-xs font-medium text-[var(--text-body)]"
+                style={{ fontSize: '11px' }}
+              >
+                {item.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });

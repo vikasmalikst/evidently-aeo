@@ -186,6 +186,7 @@ export const TopicsAnalysisPage = ({
 
   // Keep selected model in sync with available options - SAME AS PROMPTS PAGE
   // Only auto-select if we don't have a currentCollectorType from parent
+  // IMPORTANT: Don't auto-select if user explicitly chose "All Models" (empty string)
   useEffect(() => {
     // Skip if we have a currentCollectorType from parent (let that effect handle it)
     if (currentCollectorType !== undefined) {
@@ -199,10 +200,19 @@ export const TopicsAnalysisPage = ({
       return;
     }
 
-    // Auto-select first model if none selected or selected model is not available
-    if (!selectedModel || !availableModels.includes(selectedModel)) {
+    // Only auto-select if:
+    // 1. No model is selected (null/undefined) OR
+    // 2. Selected model is not in available models
+    // BUT: Don't auto-select if user explicitly set it to '' (All Models)
+    // We check if selectedModel is explicitly set to '' by checking if it's not null/undefined
+    if (selectedModel === null || selectedModel === undefined) {
+      // No selection at all - auto-select first model
+      setSelectedModel(availableModels[0]);
+    } else if (selectedModel !== '' && !availableModels.includes(selectedModel)) {
+      // Selected model is not available - auto-select first model
       setSelectedModel(availableModels[0]);
     }
+    // If selectedModel === '', user wants "All Models" - don't change it
   }, [availableModels, selectedModel, currentCollectorType]);
   
   // Handle click outside for model dropdown
@@ -712,6 +722,10 @@ export const TopicsAnalysisPage = ({
                 console.log('Filter to gaps');
               } else if (podId === 'momentum') {
                 // Scroll to or highlight trending topic
+                const trendingTopic = data.topics.find(t => t.name === data.performance.weeklyGainer.topic);
+                if (trendingTopic) {
+                  handleTopicClick(trendingTopic);
+                }
                 console.log('Highlight trending topic:', data.performance.weeklyGainer.topic);
               }
             }}

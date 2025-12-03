@@ -105,7 +105,7 @@ export const Prompts = () => {
     setSelectedPrompt(prompt);
   };
 
-  // Build endpoint - include selected LLM filter and current version when available
+  // Build endpoint - always fetch all prompts with all responses (filtering happens client-side)
   const promptsEndpoint = useMemo(() => {
     const endpointStart = performance.now();
     if (!selectedBrandId || brandsLoading) return null;
@@ -116,9 +116,10 @@ export const Prompts = () => {
       endDate: bounds.endIso
     });
 
-    if (selectedLLM) {
-      params.set('collectors', selectedLLM);
-    }
+    // Don't filter by collector on backend - we want all responses for client-side filtering
+    // if (selectedLLM) {
+    //   params.set('collectors', selectedLLM);
+    // }
 
     // Add current version parameter to filter prompts by current version
     // Backend should return only prompts from the current version
@@ -129,7 +130,7 @@ export const Prompts = () => {
     const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
     perfLog('Prompts: Endpoint computation', endpointStart);
     return endpoint;
-  }, [selectedBrandId, dateRangeKey, selectedLLM, brandsLoading, currentVersion]);
+  }, [selectedBrandId, dateRangeKey, brandsLoading, currentVersion]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());
@@ -172,6 +173,7 @@ export const Prompts = () => {
   }, [response]);
 
   // Keep selected LLM in sync with available options
+  // Default to "All Models" (null) instead of first option
   useEffect(() => {
     if (llmOptions.length === 0) {
       if (selectedLLM !== null) {
@@ -180,8 +182,9 @@ export const Prompts = () => {
       return;
     }
 
-    if (!selectedLLM || !llmOptions.includes(selectedLLM)) {
-      setSelectedLLM(llmOptions[0]);
+    // Only auto-select if selectedLLM is set and not in options, otherwise keep current selection (including null for "All Models")
+    if (selectedLLM && !llmOptions.includes(selectedLLM)) {
+      setSelectedLLM(null); // Default to "All Models" if selected option is no longer available
     }
   }, [llmOptions, selectedLLM]);
 

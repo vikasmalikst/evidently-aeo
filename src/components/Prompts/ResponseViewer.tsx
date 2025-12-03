@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { PromptEntry } from '../../types/prompts';
 import { KeywordHighlighter } from './KeywordHighlighter';
+import { getLLMIcon } from '../Visibility/LLMIcons';
 
 interface ResponseViewerProps {
   prompt: PromptEntry | null;
@@ -12,6 +13,46 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
   const [highlightProducts, setHighlightProducts] = useState(true);
   const [highlightKeywords, setHighlightKeywords] = useState(true);
   const [highlightCompetitors, setHighlightCompetitors] = useState(true);
+
+  // Get all responses, filtered by selectedLLM if specified
+  const filteredResponses = useMemo(() => {
+    if (!prompt) return [];
+    
+    // Debug logging
+    if (prompt.responses && prompt.responses.length > 0) {
+      console.log(`[ResponseViewer] Prompt "${prompt.question}" has ${prompt.responses.length} responses:`, 
+        prompt.responses.map(r => r.collectorType).join(', '))
+    } else if (prompt.response) {
+      console.log(`[ResponseViewer] Prompt "${prompt.question}" has single response (fallback mode)`)
+    }
+    
+    // If responses array exists, use it; otherwise fall back to single response
+    if (prompt.responses && prompt.responses.length > 0) {
+      // If selectedLLM is null (All Models), show all responses
+      if (!selectedLLM) {
+        return prompt.responses;
+      }
+      // Otherwise filter by selected collector
+      return prompt.responses.filter(r => r.collectorType === selectedLLM);
+    }
+    
+    // Fallback: if no responses array but we have a single response, create a response object
+    if (prompt.response && prompt.latestCollectorType && prompt.collectorResultId) {
+      const singleResponse = {
+        collectorResultId: prompt.collectorResultId,
+        collectorType: prompt.latestCollectorType,
+        response: prompt.response,
+        lastUpdated: prompt.lastUpdated || new Date().toISOString()
+      };
+      
+      // Apply filter if needed (null means show all)
+      if (!selectedLLM || singleResponse.collectorType === selectedLLM) {
+        return [singleResponse];
+      }
+    }
+    
+    return [];
+  }, [prompt, selectedLLM]);
 
   const formattedTimestamp = useMemo(() => {
     if (!prompt?.lastUpdated) {
@@ -63,7 +104,7 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
       <div className="px-4 py-3 border-b border-[var(--border-default)]">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-[var(--text-headings)]">
-            Response
+            Responses {filteredResponses.length > 0 && `(${filteredResponses.length})`}
           </h3>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -104,48 +145,61 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
             </label>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-caption)] font-medium">
-          {prompt.latestCollectorType && (
+        {prompt.latestCollectorType && filteredResponses.length === 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-caption)] font-medium">
             <span className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
               {prompt.latestCollectorType}
             </span>
-          )}
-          {formattedTimestamp && <span>Updated {formattedTimestamp}</span>}
-        </div>
+            {formattedTimestamp && <span>Updated {formattedTimestamp}</span>}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 font-data" style={{ maxHeight: 'calc(100vh - 450px)' }}>
-        {(() => {
-          // Check if the response matches the selected LLM filter
-          const responseMatchesFilter = !selectedLLM || prompt.latestCollectorType === selectedLLM;
-          
-          if (!prompt.response) {
-            return (
-              <p className="text-sm text-[var(--text-caption)]">
-                No response captured for this prompt within the selected filters.
-              </p>
-            );
-          }
-          
-          if (!responseMatchesFilter) {
-            return (
-              <p className="text-sm text-[var(--text-caption)]">
-                No response available for {selectedLLM} for this prompt. The displayed response is from {prompt.latestCollectorType || 'another collector'}.
-              </p>
-            );
-          }
-          
-          return (
-            <KeywordHighlighter
-              text={prompt.response}
-              keywords={prompt.highlights}
-              highlightBrand={highlightBrand}
-              highlightProducts={highlightProducts}
-              highlightKeywords={highlightKeywords}
-              highlightCompetitors={highlightCompetitors}
-            />
-          );
-        })()}
+        {filteredResponses.length === 0 ? (
+          <p className="text-sm text-[var(--text-caption)]">
+            {selectedLLM
+              ? `No response available for ${selectedLLM} for this prompt.`
+              : 'No response captured for this prompt within the selected filters.'}
+          </p>
+        ) : (
+          <div className="space-y-6">
+            {filteredResponses.map((responseItem, index) => {
+              const responseDate = new Date(responseItem.lastUpdated);
+              const formattedDate = !Number.isNaN(responseDate.getTime())
+                ? responseDate.toLocaleString()
+                : null;
+
+              return (
+                <div key={`${responseItem.collectorResultId}-${index}`} className="border-b border-[var(--border-default)] pb-6 last:border-b-0 last:pb-0">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      {getLLMIcon(responseItem.collectorType)}
+                      <span className="text-sm font-semibold text-[var(--text-headings)]">
+                        {responseItem.collectorType}
+                      </span>
+                    </div>
+                    {formattedDate && (
+                      <span className="text-xs text-[var(--text-caption)]">
+                        • {formattedDate}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-[var(--text-body)]">
+                    <KeywordHighlighter
+                      text={responseItem.response}
+                      keywords={prompt.highlights}
+                      highlightBrand={highlightBrand}
+                      highlightProducts={highlightProducts}
+                      highlightKeywords={highlightKeywords}
+                      highlightCompetitors={highlightCompetitors}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

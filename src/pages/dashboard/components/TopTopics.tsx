@@ -84,7 +84,7 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
                   )}
                 </div>
                 
-                <div className="grid grid-cols-4 gap-3 pt-3 border-t border-[#f4f4f6]">
+                <div className="grid grid-cols-3 gap-3 pt-3 border-t border-[#f4f4f6]">
                   <div className="text-center">
                     <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1.5">
                       Visibility
@@ -125,21 +125,6 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
                           {shareOfAnswers.toFixed(1)}%
                         </div>
                         <div className="text-[10px] text-[#64748b] mt-0.5">share</div>
-                      </>
-                    ) : (
-                      <div className="text-[13px] text-[#64748b]">—</div>
-                    )}
-                  </div>
-                  <div className="text-center">
-                    <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1.5">
-                      Sentiment Score
-                    </div>
-                    {sentimentScore !== null ? (
-                      <>
-                        <div className="text-[16px] font-bold text-[#1a1d29]">
-                          {Math.round(sentimentScore * 100)}
-                        </div>
-                        <div className="text-[10px] text-[#64748b] mt-0.5">score</div>
                       </>
                     ) : (
                       <div className="text-[13px] text-[#64748b]">—</div>

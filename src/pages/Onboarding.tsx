@@ -23,6 +23,7 @@ export const Onboarding = () => {
 
   const [brandInput, setBrandInput] = useState('');
   const [isAnalyzingBrand, setIsAnalyzingBrand] = useState(false);
+  const [brandInputResetKey, setBrandInputResetKey] = useState(0);
 
   // Redirect if skip onboarding check is enabled
   useEffect(() => {
@@ -93,6 +94,15 @@ export const Onboarding = () => {
 
   const handleBack = () => {
     if (currentStep === 'competitors') {
+      // Clear all brand-related state when going back to brand step
+      setBrand(null);
+      setAllCompetitors([]);
+      setSelectedCompetitorDomains(new Set());
+      setCompetitors([]);
+      setBrandInput('');
+      setIsAnalyzingBrand(false);
+      // Increment reset key to force BrandInput to remount and reset its internal state
+      setBrandInputResetKey(prev => prev + 1);
       setCurrentStep('brand');
     } else if (currentStep === 'summary') {
       setCurrentStep('competitors');
@@ -108,7 +118,7 @@ export const Onboarding = () => {
 
   const canProceed = () => {
     if (currentStep === 'brand') return brand !== null;
-    if (currentStep === 'competitors') return selectedCompetitorDomains.size >= 3;
+    if (currentStep === 'competitors') return allCompetitors.length >= 3;
     if (currentStep === 'summary') return true;
     return false;
   };
@@ -142,6 +152,7 @@ export const Onboarding = () => {
         <div className={`onboarding-modal-body ${currentStep === 'competitors' ? 'step-competitors' : ''}`}>
           {currentStep === 'brand' && (
             <BrandInput
+              key={`brand-input-${brandInputResetKey}`}
               onSuccess={handleBrandSuccess}
               onAnalysisComplete={() => setIsAnalyzingBrand(false)}
               input={brandInput}
@@ -151,6 +162,7 @@ export const Onboarding = () => {
           )}
           {currentStep === 'competitors' && brand && (
             <CompetitorGrid
+              key={`competitors-${brand.companyName}-${brand.domain || ''}`}
               brand={brand}
               initialCompetitors={allCompetitors}
               onContinue={handleCompetitorsContinue}
@@ -193,10 +205,7 @@ export const Onboarding = () => {
               <button
                 className="onboarding-button-primary"
                 onClick={() => {
-                  const selectedCompetitors = allCompetitors.filter((c) =>
-                    selectedCompetitorDomains.has(getCompetitorKey(c))
-                  );
-                  handleCompetitorsContinue(selectedCompetitors);
+                  handleCompetitorsContinue(allCompetitors);
                 }}
                 disabled={!canProceed()}
               >
@@ -205,7 +214,7 @@ export const Onboarding = () => {
             )}
             {!canProceed() && currentStep === 'competitors' && (
               <div className="onboarding-button-tooltip">
-                Select at least 3 competitors
+                Keep at least 3 competitors
               </div>
             )}
           </div>

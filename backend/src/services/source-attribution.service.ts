@@ -530,20 +530,34 @@ export class SourceAttributionService {
       }
 
       // Step 10: Calculate previous period for change metrics
+      // Compare the most recent day in the current period to the previous day
+      // Example: If viewing Dec 1-2, compare Dec 2 (most recent) to Dec 1 (previous day)
       const previousPeriodStartTime = Date.now();
-      const periodDays = Math.ceil((normalizedRange.endDate.getTime() - normalizedRange.startDate.getTime()) / (1000 * 60 * 60 * 24))
-      const previousStart = new Date(normalizedRange.startDate)
-      previousStart.setUTCDate(previousStart.getUTCDate() - periodDays)
-      const previousEnd = normalizedRange.startDate
+      
+      // Use the end date of the current period as the "current day" to compare
+      const currentDay = new Date(normalizedRange.endDate)
+      currentDay.setUTCHours(0, 0, 0, 0) // Start of the most recent day
+      
+      // Previous day is one day before the current day
+      const previousDay = new Date(currentDay)
+      previousDay.setUTCDate(previousDay.getUTCDate() - 1)
+      
+      // Previous period is just the previous day (00:00:00 to 23:59:59)
+      const previousStart = new Date(previousDay)
+      previousStart.setUTCHours(0, 0, 0, 0)
+      const previousEnd = new Date(previousDay)
+      previousEnd.setUTCHours(23, 59, 59, 999)
 
-      console.log(`[SourceAttribution] 📊 Fetching previous period data (${periodDays} days before)...`)
+      console.log(`[SourceAttribution] 📊 Calculating day-over-day change...`)
+      console.log(`[SourceAttribution] Current period: ${normalizedRange.startDate.toISOString()} to ${normalizedRange.endDate.toISOString()}`)
+      console.log(`[SourceAttribution] Comparing: Most recent day (${currentDay.toISOString()}) vs Previous day (${previousStart.toISOString()} to ${previousEnd.toISOString()})`)
       const { data: previousCitations } = await supabaseAdmin
         .from('citations')
         .select('domain, usage_count, collector_result_id')
         .eq('brand_id', brandId)
         .eq('customer_id', customerId)
         .gte('created_at', previousStart.toISOString())
-        .lt('created_at', previousEnd.toISOString())
+        .lte('created_at', previousEnd.toISOString())
 
       // Calculate previous period aggregates
       const previousSourceAggregates = new Map<string, { citations: number; mentionRate: number; soa: number; soaArray?: number[]; sentiment: number }>()
@@ -556,12 +570,12 @@ export class SourceAttributionService {
         // Fetch previous period sentiment from collector_results (new location)
         const previousSentimentByCollectorResult = new Map<number, number>()
         const { data: previousCollectorResults } = await supabaseAdmin
-          .from('collector_results')
-          .select('id, sentiment_score')
-          .in('id', previousCollectorIds)
-          .not('sentiment_score', 'is', null)
-          .gte('created_at', previousStart.toISOString())
-          .lt('created_at', previousEnd.toISOString())
+        .from('collector_results')
+        .select('id, sentiment_score')
+        .in('id', previousCollectorIds)
+        .not('sentiment_score', 'is', null)
+        .gte('created_at', previousStart.toISOString())
+        .lte('created_at', previousEnd.toISOString())
 
         if (previousCollectorResults) {
           for (const cr of previousCollectorResults) {
@@ -573,12 +587,12 @@ export class SourceAttributionService {
 
         // Fetch previous period share of answer from extracted_positions
         const { data: previousPositions } = await supabaseAdmin
-          .from('extracted_positions')
-          .select('collector_result_id, share_of_answers_brand')
-          .in('collector_result_id', previousCollectorIds)
-          .eq('brand_id', brandId)
-          .gte('processed_at', previousStart.toISOString())
-          .lt('processed_at', previousEnd.toISOString())
+        .from('extracted_positions')
+        .select('collector_result_id, share_of_answers_brand')
+        .in('collector_result_id', previousCollectorIds)
+        .eq('brand_id', brandId)
+        .gte('processed_at', previousStart.toISOString())
+        .lte('processed_at', previousEnd.toISOString())
 
         // Calculate average share of answer per collector result for previous period
         const previousShareByCollectorResult = new Map<number, number[]>()

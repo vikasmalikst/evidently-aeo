@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Check } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { Card } from './common/Card';
 import { Input } from './common/Input';
 import { Spinner } from './common/Spinner';
@@ -72,22 +72,30 @@ export const CompetitorGrid = ({
   }, [brand, initialCompetitors]);
 
 
-  const toggleCompetitor = (competitor: OnboardingCompetitor) => {
+  const handleRemoveCompetitor = (competitor: OnboardingCompetitor, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click event
     const key = getCompetitorKey(competitor);
     if (!key) {
       return;
     }
 
+    // Remove competitor from the list
+    const updatedCompetitors = competitors.filter((c) => getCompetitorKey(c) !== key);
+    setCompetitors(updatedCompetitors);
+    
+    // Notify parent of updated competitors list
+    if (onCompetitorsLoaded) {
+      onCompetitorsLoaded(updatedCompetitors);
+    }
+
+    // Remove from selection if it was selected
     const newSelected = new Set(selected);
     if (newSelected.has(key)) {
       newSelected.delete(key);
-    } else {
-      if (newSelected.size >= 10) return;
-      newSelected.add(key);
-    }
-    setSelected(newSelected);
-    if (onSelectionChange) {
-      onSelectionChange(newSelected);
+      setSelected(newSelected);
+      if (onSelectionChange) {
+        onSelectionChange(newSelected);
+      }
     }
   };
 
@@ -112,22 +120,13 @@ export const CompetitorGrid = ({
     if (onCompetitorsLoaded) {
       onCompetitorsLoaded(updatedCompetitors);
     }
-    const key = getCompetitorKey(customCompetitor);
-    const newSelected = new Set(selected);
-    newSelected.add(key);
-    setSelected(newSelected);
-    if (onSelectionChange) {
-      onSelectionChange(newSelected);
-    }
     setCustomName('');
     setShowCustomForm(false);
   };
 
   const handleContinue = () => {
-    const selectedCompetitors = competitors.filter((competitor) =>
-      selected.has(getCompetitorKey(competitor))
-    );
-    onContinue(selectedCompetitors);
+    // All remaining competitors are considered selected
+    onContinue(competitors);
   };
 
   if (isLoading) {
@@ -161,14 +160,14 @@ export const CompetitorGrid = ({
           </div>
         </div>
         <div className="onboarding-selection-count">
-          <span className="onboarding-selection-count__number">{selected.size}</span>
-          <span className="onboarding-selection-count__text">of 10 selected</span>
+          <span className="onboarding-selection-count__number">{competitors.length}</span>
+          <span className="onboarding-selection-count__text">competitors</span>
         </div>
       </div>
 
       <div className="onboarding-section-header">
         <p className="onboarding-section-header__subtitle">
-          Choose up to 10 competitors to track (recommended: 5-7)
+          Remove competitors you don't want to track (recommended: 5-7)
         </p>
         <button
           type="button"
@@ -206,13 +205,10 @@ export const CompetitorGrid = ({
       <div className="onboarding-competitor-grid">
         {competitors.map((competitor) => {
           const key = getCompetitorKey(competitor);
-          const isSelected = key ? selected.has(key) : false;
           return (
             <Card
               key={key || competitor.name}
-              selected={isSelected}
               hoverable
-              onClick={() => toggleCompetitor(competitor)}
               className={
                 competitor.relevance === 'Direct Competitor' 
                   ? 'onboarding-card--direct' 
@@ -222,9 +218,14 @@ export const CompetitorGrid = ({
               }
             >
               <div className="onboarding-competitor-card">
-                <div className="onboarding-competitor-card__checkbox">
-                  {isSelected && <Check size={16} />}
-                </div>
+                <button
+                  onClick={(e) => handleRemoveCompetitor(competitor, e)}
+                  className="onboarding-competitor-card__remove"
+                  aria-label={`Remove ${competitor.name}`}
+                  type="button"
+                >
+                  <X size={16} />
+                </button>
                 {competitor.logo && (
                   <img
                     src={competitor.logo}

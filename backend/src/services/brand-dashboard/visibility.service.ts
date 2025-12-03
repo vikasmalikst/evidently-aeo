@@ -138,6 +138,15 @@ export class VisibilityService {
         // Get time-series data for this collector
         const timeSeries = timeSeriesData?.get(collectorType)
 
+        // Calculate brand presence count correctly: count unique collector results with brand presence
+        // NOT row count (which can be multiple rows per collector result)
+        const totalCollectorResults = aggregate.uniqueCollectorResults?.size ?? 0
+        const collectorResultsWithPresence = aggregate.collectorResultsWithBrandPresence?.size ?? 0
+        // Use unique collector results count for brand presence, fallback to old row count for backward compatibility
+        const brandPresenceCount = totalCollectorResults > 0 
+          ? collectorResultsWithPresence 
+          : aggregate.brandPresenceCount
+
         return {
           provider: collectorType,
           share: shareOfSearch,
@@ -145,8 +154,10 @@ export class VisibilityService {
           visibility: visibilityPercentage,
           sentiment,
           delta: 0,
-          brandPresenceCount: aggregate.brandPresenceCount,
+          brandPresenceCount,
           totalQueries: aggregate.uniqueQueryIds.size,
+          // Also send total collector results for accurate percentage calculation in frontend
+          totalCollectorResults: totalCollectorResults > 0 ? totalCollectorResults : undefined,
           color,
           topTopic: sortedTopics[0]?.topic ?? null,
           topTopics: sortedTopics,

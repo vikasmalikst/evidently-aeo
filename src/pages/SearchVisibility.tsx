@@ -231,9 +231,11 @@ export const SearchVisibility = () => {
     const llmModels = llmSlices.map((slice) => {
       const totalQueries = slice.totalQueries ?? 0;
       const brandPresenceCount = slice.brandPresenceCount ?? 0;
-      // Brand Presence % = (queries with brand presence / total queries) * 100, capped at 100%
-      const brandPresencePercentage = totalQueries > 0 
-        ? Math.min(100, Math.round((brandPresenceCount / totalQueries) * 100))
+      // Brand Presence % = (collector results with brand presence / total collector results) * 100
+      // Use totalCollectorResults if available (more accurate), otherwise fall back to totalQueries
+      const totalCollectorResults = slice.totalCollectorResults ?? totalQueries;
+      const brandPresencePercentage = totalCollectorResults > 0 
+        ? Math.min(100, Math.round((brandPresenceCount / totalCollectorResults) * 100))
         : 0;
       
       const visibilityValue = slice.visibility ?? 0;

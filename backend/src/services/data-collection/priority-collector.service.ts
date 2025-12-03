@@ -10,6 +10,7 @@ import { dataForSeoCollectorService } from './dataforseo-collector.service';
 import { brightDataCollectorService } from './brightdata-collector.service';
 import { openRouterCollectorService } from './openrouter-collector.service';
 import { serpApiCollectorService } from './serpapi-collector.service';
+import { groqCollectorService } from './groq-collector.service';
 
 // Load environment variables
 loadEnvironment();
@@ -98,7 +99,7 @@ export class PriorityCollectorService {
       collector_type: 'chatgpt',
       providers: [
         {
-          name: 'oxylabs_chatgpt',
+          name: 'groq_chatgpt',
           priority: 1,
           enabled: true,
           timeout: 30000,
@@ -106,8 +107,16 @@ export class PriorityCollectorService {
           fallback_on_failure: true
         },
         {
-          name: 'openai_direct',
+          name: 'oxylabs_chatgpt',
           priority: 2,
+          enabled: true,
+          timeout: 30000,
+          retries: 1,
+          fallback_on_failure: true
+        },
+        {
+          name: 'openai_direct',
+          priority: 3,
           enabled: true,
           timeout: 30000,
           retries: 1,
@@ -115,7 +124,7 @@ export class PriorityCollectorService {
         },
         // {
         //   name: 'brightdata_chatgpt',
-        //   priority: 3,
+        //   priority: 4,
         //   enabled: false, // Disabled - skip BrightData for now
         //   timeout: 30000,
         //   retries: 1,
@@ -467,7 +476,9 @@ export class PriorityCollectorService {
     console.log(`🔄 Calling ${provider.name} for ${collectorType}`);
 
     // Route to appropriate service based on provider name
-    if (provider.name.includes('serpapi')) {
+    if (provider.name.includes('groq')) {
+      return await this.callGroqProvider(provider, queryText, brandId, locale, country, collectorType);
+    } else if (provider.name.includes('serpapi')) {
       return await this.callSerpApiProvider(provider, queryText, brandId, locale, country, collectorType);
     } else if (provider.name.includes('openrouter')) {
       return await this.callOpenRouterProvider(provider, queryText, brandId, locale, country, collectorType);
@@ -482,6 +493,25 @@ export class PriorityCollectorService {
     } else {
       throw new Error(`Unknown provider type: ${provider.name}`);
     }
+  }
+
+  /**
+   * Call Groq provider
+   */
+  private async callGroqProvider(
+    provider: CollectorProvider,
+    queryText: string,
+    brandId: string,
+    locale: string,
+    country: string,
+    collectorType: string
+  ): Promise<any> {
+    console.log(`🔄 Calling Groq ${provider.name} for ${collectorType}`);
+    
+    return await groqCollectorService.executeQuery({
+      prompt: queryText,
+      collectorType
+    });
   }
 
   /**

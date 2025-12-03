@@ -1,0 +1,214 @@
+{
+  "timestamp": "2025-11-14T05:25:54.197Z",
+  "testRunId": "test-1763097954198",
+  "failures": [
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Sportswear)",
+      "failureReason": "Expected: Sportswear, Got: General",
+      "expected": "Sportswear",
+      "actual": "General",
+      "context": {
+        "testBrand": "Nike",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:25:55.578Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Technology)",
+      "failureReason": "Expected: Technology, Got: General",
+      "expected": "Technology",
+      "actual": "General",
+      "context": {
+        "testBrand": "Apple",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:25:56.757Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Automotive)",
+      "failureReason": "Expected: Automotive, Got: General",
+      "expected": "Automotive",
+      "actual": "General",
+      "context": {
+        "testBrand": "Tesla",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:25:57.780Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Food & Beverage)",
+      "failureReason": "Expected: Food & Beverage, Got: General",
+      "expected": "Food & Beverage",
+      "actual": "General",
+      "context": {
+        "testBrand": "Starbucks",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:25:58.834Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "competitors",
+      "testMessage": "At least 3 competitors in same/related industry: 0",
+      "failureReason": "Expected: At least 3 industry-relevant competitors, Got: 0 industry-relevant competitors",
+      "expected": "At least 3 industry-relevant competitors",
+      "actual": "0 industry-relevant competitors",
+      "context": {
+        "testBrand": "Nike",
+        "expectedIndustry": "Sportswear",
+        "industryRelevantCount": 0,
+        "industryRelevantCompetitors": [],
+        "allCompetitorIndustries": [
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear"
+        ]
+      },
+      "timestamp": "2025-11-14T05:26:00.758Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "competitors",
+      "testMessage": "At least 3 competitors in same/related industry: 0",
+      "failureReason": "Expected: At least 3 industry-relevant competitors, Got: 0 industry-relevant competitors",
+      "expected": "At least 3 industry-relevant competitors",
+      "actual": "0 industry-relevant competitors",
+      "context": {
+        "testBrand": "Starbucks",
+        "expectedIndustry": "Food & Beverage",
+        "industryRelevantCount": 0,
+        "industryRelevantCompetitors": [],
+        "allCompetitorIndustries": [
+          "Coffee & Quick Service Restaurant",
+          "Coffee & Tea Retail",
+          "Coffee & Quick Service Restaurant",
+          "Coffee & Tea Retail",
+          "Casual Dining & Bakery Café",
+          "Quick Service Restaurant",
+          "Convenience Retail",
+          "Specialty Coffee Retail",
+          "Specialty Coffee Retail"
+        ]
+      },
+      "timestamp": "2025-11-14T05:26:08.136Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "topics",
+      "testMessage": "Error testing topics for Nike",
+      "failureReason": "trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "expected": "Successful topic generation",
+      "actual": "Error: trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "context": {
+        "testBrand": "Nike",
+        "errorType": "TypeError"
+      },
+      "timestamp": "2025-11-14T05:26:18.163Z",
+      "stackTrace": "TypeError: trendingKeywordsService.normalizeTopicsToKeywords is not a function\n    at testTopicGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:525:66)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1359:5)"
+    },
+    {
+      "testCategory": "topics",
+      "testMessage": "Error testing topics for Apple",
+      "failureReason": "trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "expected": "Successful topic generation",
+      "actual": "Error: trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "context": {
+        "testBrand": "Apple",
+        "errorType": "TypeError"
+      },
+      "timestamp": "2025-11-14T05:26:30.970Z",
+      "stackTrace": "TypeError: trendingKeywordsService.normalizeTopicsToKeywords is not a function\n    at testTopicGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:525:66)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1359:5)"
+    },
+    {
+      "testCategory": "prompts",
+      "testMessage": "Error testing prompts for Nike",
+      "failureReason": "trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "expected": "Successful prompt generation",
+      "actual": "Error: trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "context": {
+        "testBrand": "Nike",
+        "errorType": "TypeError"
+      },
+      "timestamp": "2025-11-14T05:26:42.938Z",
+      "stackTrace": "TypeError: trendingKeywordsService.normalizeTopicsToKeywords is not a function\n    at testPromptGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:823:66)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1360:5)"
+    },
+    {
+      "testCategory": "prompts",
+      "testMessage": "Error testing prompts for Apple",
+      "failureReason": "trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "expected": "Successful prompt generation",
+      "actual": "Error: trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "context": {
+        "testBrand": "Apple",
+        "errorType": "TypeError"
+      },
+      "timestamp": "2025-11-14T05:26:54.514Z",
+      "stackTrace": "TypeError: trendingKeywordsService.normalizeTopicsToKeywords is not a function\n    at testPromptGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:823:66)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1360:5)"
+    },
+    {
+      "testCategory": "integration",
+      "testMessage": "Error in end-to-end test for Nike",
+      "failureReason": "trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "expected": "Successful end-to-end flow",
+      "actual": "Error: trendingKeywordsService.normalizeTopicsToKeywords is not a function",
+      "context": {
+        "testBrand": "Nike",
+        "errorType": "TypeError"
+      },
+      "timestamp": "2025-11-14T05:27:06.600Z",
+      "stackTrace": "TypeError: trendingKeywordsService.normalizeTopicsToKeywords is not a function\n    at testEndToEndIntegration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1105:64)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1361:5)"
+    }
+  ],
+  "summary": {
+    "totalTests": 209,
+    "totalPassed": 198,
+    "totalFailed": 11,
+    "categories": {
+      "brandIntel": {
+        "passed": 32,
+        "failed": 4,
+        "total": 36,
+        "passRate": 89
+      },
+      "competitors": {
+        "passed": 164,
+        "failed": 2,
+        "total": 166,
+        "passRate": 99
+      },
+      "topics": {
+        "passed": 0,
+        "failed": 2,
+        "total": 2,
+        "passRate": 0
+      },
+      "prompts": {
+        "passed": 0,
+        "failed": 2,
+        "total": 2,
+        "passRate": 0
+      },
+      "integration": {
+        "passed": 2,
+        "failed": 1,
+        "total": 3,
+        "passRate": 67
+      }
+    },
+    "overallPassRate": 95
+  }
+}

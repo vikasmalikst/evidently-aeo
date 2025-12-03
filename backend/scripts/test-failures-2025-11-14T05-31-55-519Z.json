@@ -1,0 +1,261 @@
+{
+  "timestamp": "2025-11-14T05:30:31.282Z",
+  "testRunId": "test-1763098231282",
+  "failures": [
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Sportswear)",
+      "failureReason": "Expected: Sportswear, Got: General",
+      "expected": "Sportswear",
+      "actual": "General",
+      "context": {
+        "testBrand": "Nike",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:30:34.571Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Technology)",
+      "failureReason": "Expected: Technology, Got: General",
+      "expected": "Technology",
+      "actual": "General",
+      "context": {
+        "testBrand": "Apple",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:30:35.801Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Automotive)",
+      "failureReason": "Expected: Automotive, Got: General",
+      "expected": "Automotive",
+      "actual": "General",
+      "context": {
+        "testBrand": "Tesla",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:30:36.855Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "brandIntel",
+      "testMessage": "Industry is relevant: General (expected: Food & Beverage)",
+      "failureReason": "Expected: Food & Beverage, Got: General",
+      "expected": "Food & Beverage",
+      "actual": "General",
+      "context": {
+        "testBrand": "Starbucks",
+        "industryMatch": false,
+        "isGeneral": true
+      },
+      "timestamp": "2025-11-14T05:30:37.979Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "competitors",
+      "testMessage": "At least 3 competitors in same/related industry: 0",
+      "failureReason": "Expected: At least 3 industry-relevant competitors, Got: 0 industry-relevant competitors",
+      "expected": "At least 3 industry-relevant competitors",
+      "actual": "0 industry-relevant competitors",
+      "context": {
+        "testBrand": "Nike",
+        "expectedIndustry": "Sportswear",
+        "industryRelevantCount": 0,
+        "industryRelevantCompetitors": [],
+        "allCompetitorIndustries": [
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear",
+          "Apparel & Footwear"
+        ]
+      },
+      "timestamp": "2025-11-14T05:30:39.898Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "competitors",
+      "testMessage": "At least 3 competitors in same/related industry: 1",
+      "failureReason": "Expected: At least 3 industry-relevant competitors, Got: 1 industry-relevant competitors",
+      "expected": "At least 3 industry-relevant competitors",
+      "actual": "1 industry-relevant competitors",
+      "context": {
+        "testBrand": "Apple",
+        "expectedIndustry": "Technology",
+        "industryRelevantCount": 1,
+        "industryRelevantCompetitors": [
+          {
+            "name": "Google",
+            "industry": "Technology, Internet Services, Consumer Electronics"
+          }
+        ],
+        "allCompetitorIndustries": [
+          "Consumer Electronics, Semiconductors, Mobile Devices",
+          "Technology, Internet Services, Consumer Electronics",
+          "Software, Cloud Computing, Consumer Electronics",
+          "E-commerce, Cloud Computing, Consumer Electronics",
+          "Consumer Electronics, Entertainment, Gaming",
+          "Automotive, Energy, Smart Devices",
+          "Social Media, Virtual Reality, Consumer Hardware"
+        ]
+      },
+      "timestamp": "2025-11-14T05:30:42.050Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "competitors",
+      "testMessage": "At least 5 competitors returned: 3",
+      "failureReason": "Expected: At least 5 competitors, Got: 3 competitors",
+      "expected": "At least 5 competitors",
+      "actual": "3 competitors",
+      "context": {
+        "testBrand": "Tesla",
+        "competitorCount": 3,
+        "competitors": [
+          "Ford Motor Company",
+          "General Motors",
+          "Rivian"
+        ]
+      },
+      "timestamp": "2025-11-14T05:30:43.891Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "competitors",
+      "testMessage": "At least 3 competitors in same/related industry: 0",
+      "failureReason": "Expected: At least 3 industry-relevant competitors, Got: 0 industry-relevant competitors",
+      "expected": "At least 3 industry-relevant competitors",
+      "actual": "0 industry-relevant competitors",
+      "context": {
+        "testBrand": "Starbucks",
+        "expectedIndustry": "Food & Beverage",
+        "industryRelevantCount": 0,
+        "industryRelevantCompetitors": [],
+        "allCompetitorIndustries": [
+          "Coffee & Quick Service Restaurant",
+          "Coffee & Tea Retail",
+          "Coffee & Quick Service Restaurant",
+          "Café & Bakery",
+          "Coffee & Café Chain",
+          "Quick Service Restaurant",
+          "Drive-Thru Coffee Chain",
+          "Specialty Coffee",
+          "Lifestyle Coffee Brand"
+        ]
+      },
+      "timestamp": "2025-11-14T05:30:46.965Z",
+      "stackTrace": null
+    },
+    {
+      "testCategory": "topics",
+      "testMessage": "Error testing topics for Nike",
+      "failureReason": "normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "expected": "Successful topic generation",
+      "actual": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "context": {
+        "testBrand": "Nike",
+        "errorType": "Error"
+      },
+      "timestamp": "2025-11-14T05:31:06.030Z",
+      "stackTrace": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build\n    at testTopicGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:526:15)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1368:5)"
+    },
+    {
+      "testCategory": "topics",
+      "testMessage": "Error testing topics for Apple",
+      "failureReason": "normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "expected": "Successful topic generation",
+      "actual": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "context": {
+        "testBrand": "Apple",
+        "errorType": "Error"
+      },
+      "timestamp": "2025-11-14T05:31:17.169Z",
+      "stackTrace": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build\n    at testTopicGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:526:15)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1368:5)"
+    },
+    {
+      "testCategory": "prompts",
+      "testMessage": "Error testing prompts for Nike",
+      "failureReason": "normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "expected": "Successful prompt generation",
+      "actual": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "context": {
+        "testBrand": "Nike",
+        "errorType": "Error"
+      },
+      "timestamp": "2025-11-14T05:31:29.068Z",
+      "stackTrace": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build\n    at testPromptGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:827:15)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1369:5)"
+    },
+    {
+      "testCategory": "prompts",
+      "testMessage": "Error testing prompts for Apple",
+      "failureReason": "normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "expected": "Successful prompt generation",
+      "actual": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "context": {
+        "testBrand": "Apple",
+        "errorType": "Error"
+      },
+      "timestamp": "2025-11-14T05:31:44.918Z",
+      "stackTrace": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build\n    at testPromptGeneration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:827:15)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1369:5)"
+    },
+    {
+      "testCategory": "integration",
+      "testMessage": "Error in end-to-end test for Nike",
+      "failureReason": "normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "expected": "Successful end-to-end flow",
+      "actual": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build",
+      "context": {
+        "testBrand": "Nike",
+        "errorType": "Error"
+      },
+      "timestamp": "2025-11-14T05:31:55.517Z",
+      "stackTrace": "Error: normalizeTopicsToKeywords method not found. Please rebuild TypeScript: cd backend && npm run build\n    at testEndToEndIntegration (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1112:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runAllTests (C:\\Users\\rakit\\OneDrive\\Documents\\GitHub\\evidently\\backend\\scripts\\test-onboarding-setup-complete.js:1370:5)"
+    }
+  ],
+  "summary": {
+    "totalTests": 180,
+    "totalPassed": 167,
+    "totalFailed": 13,
+    "categories": {
+      "brandIntel": {
+        "passed": 32,
+        "failed": 4,
+        "total": 36,
+        "passRate": 89
+      },
+      "competitors": {
+        "passed": 133,
+        "failed": 4,
+        "total": 137,
+        "passRate": 97
+      },
+      "topics": {
+        "passed": 0,
+        "failed": 2,
+        "total": 2,
+        "passRate": 0
+      },
+      "prompts": {
+        "passed": 0,
+        "failed": 2,
+        "total": 2,
+        "passRate": 0
+      },
+      "integration": {
+        "passed": 2,
+        "failed": 1,
+        "total": 3,
+        "passRate": 67
+      }
+    },
+    "overallPassRate": 93
+  }
+}

@@ -54,8 +54,10 @@ export interface CollectorAggregate {
   visibilityValues: number[]
   sentimentValues: number[]
   mentions: number
-  brandPresenceCount: number
+  brandPresenceCount: number // Deprecated: use collectorResultsWithBrandPresence.size instead
   uniqueQueryIds: Set<string>
+  uniqueCollectorResults?: Set<number> // Track unique collector results
+  collectorResultsWithBrandPresence?: Set<number> // Track unique collector results with brand presence
   topics: Map<string, CollectorAggregateTopicStats>
 }
 
@@ -68,6 +70,7 @@ export interface LlmVisibilitySlice {
   delta: number
   brandPresenceCount: number
   totalQueries: number
+  totalCollectorResults?: number // Total unique collector results (for accurate brand presence %)
   color: string
   topTopic: string | null
   topTopics: Array<{

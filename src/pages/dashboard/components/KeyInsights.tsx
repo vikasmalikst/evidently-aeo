@@ -28,8 +28,12 @@ export const KeyInsights = ({ dashboardData, startDate, endDate, onStartDateChan
     .map((slice): LLMVisibilitySliceUI => {
       const totalQueries = slice.totalQueries ?? 0;
       const brandPresenceCount = slice.brandPresenceCount ?? 0;
-      const brandPresencePercentage = totalQueries > 0 
-        ? Math.min(100, Math.round((brandPresenceCount / totalQueries) * 100))
+      // Use totalCollectorResults if available (more accurate), otherwise fall back to totalQueries
+      // This matches the calculation in SearchVisibility.tsx
+      // Brand presence should be calculated as: (collector results with brand presence / total collector results) * 100
+      const totalCollectorResults = slice.totalCollectorResults ?? totalQueries;
+      const brandPresencePercentage = totalCollectorResults > 0 
+        ? Math.min(100, Math.round((brandPresenceCount / totalCollectorResults) * 100))
         : 0;
       
       return {

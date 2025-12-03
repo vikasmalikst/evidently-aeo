@@ -15,6 +15,7 @@ import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useChartResize } from '../hooks/useChartResize';
+import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
@@ -72,21 +73,6 @@ interface SourceAttributionResponse {
 type SortField = 'name' | 'type' | 'mentionRate' | 'soa' | 'sentiment' | 'topics' | 'pages' | 'prompts';
 type SortDirection = 'asc' | 'desc';
 
-const getDateRangeForTimeRange = (timeRange: string) => {
-  const end = new Date();
-  end.setUTCHours(23, 59, 59, 999);
-
-  const start = new Date(end);
-  const days = parseInt(timeRange) || 30;
-  start.setUTCDate(start.getUTCDate() - days);
-  start.setUTCHours(0, 0, 0, 0);
-
-  return {
-    start: start.toISOString(),
-    end: end.toISOString()
-  };
-};
-
 export const SearchSources = () => {
   const [activeTab, setActiveTab] = useState<'top-sources' | 'source-coverage'>('top-sources');
   const [topicFilter, setTopicFilter] = useState('all');
@@ -102,7 +88,23 @@ export const SearchSources = () => {
 
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [timeRange, setTimeRange] = useState('30');
+  
+  // Date range state - default to last 30 days
+  const getDefaultDateRange = () => {
+    const end = new Date();
+    end.setUTCHours(23, 59, 59, 999);
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - 29); // 30 days including today
+    start.setUTCHours(0, 0, 0, 0);
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0]
+    };
+  };
+  
+  const defaultRange = getDefaultDateRange();
+  const [startDate, setStartDate] = useState<string>(defaultRange.start);
+  const [endDate, setEndDate] = useState<string>(defaultRange.end);
   const [hoveredTopics, setHoveredTopics] = useState<string[] | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [modalType, setModalType] = useState<'prompts' | 'pages' | null>(null);
@@ -153,13 +155,12 @@ export const SearchSources = () => {
   // Build endpoint
   const sourcesEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
-    const dateRange = getDateRangeForTimeRange(timeRange);
     const params = new URLSearchParams({
-      startDate: dateRange.start,
-      endDate: dateRange.end
+      startDate: startDate,
+      endDate: endDate
     });
     return `/brands/${selectedBrandId}/sources?${params.toString()}`;
-  }, [selectedBrandId, timeRange]);
+  }, [selectedBrandId, startDate, endDate]);
 
   // Use cached data hook
   const {
@@ -825,25 +826,15 @@ export const SearchSources = () => {
             ))}
           </select>
 
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            style={{
-              border: '1px solid #dcdfe5',
-              borderRadius: '4px',
-              padding: '8px 12px',
-              fontSize: '13px',
-              fontFamily: 'IBM Plex Sans, sans-serif',
-              color: '#212534',
-              backgroundColor: '#ffffff',
-              cursor: 'pointer',
-              marginLeft: 'auto'
-            }}
-          >
-            <option value="7">Last 7 Days</option>
-            <option value="30">Last 30 Days</option>
-            <option value="90">Last 90 Days</option>
-          </select>
+          <div style={{ marginLeft: 'auto' }}>
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+              showComparisonInfo={true}
+            />
+          </div>
         </div>
 
         {/* Bubble Chart */}

@@ -572,6 +572,8 @@ export async function buildDashboardPayload(
             mentions: 0,
             brandPresenceCount: 0,
             uniqueQueryIds: new Set<string>(),
+            uniqueCollectorResults: new Set<number>(), // Track unique collector results
+            collectorResultsWithBrandPresence: new Set<number>(), // Track unique collector results with brand presence
             topics: new Map()
           })
         }
@@ -589,8 +591,12 @@ export async function buildDashboardPayload(
 
         collectorAggregate.mentions += brandMentions > 0 ? brandMentions : 1
 
-        if (hasBrandPresence) {
-          collectorAggregate.brandPresenceCount += 1
+        // Track unique collector results (not rows) for brand presence calculation
+        if (row.collector_result_id && typeof row.collector_result_id === 'number' && Number.isFinite(row.collector_result_id)) {
+          collectorAggregate.uniqueCollectorResults.add(row.collector_result_id)
+          if (hasBrandPresence) {
+            collectorAggregate.collectorResultsWithBrandPresence.add(row.collector_result_id)
+          }
         }
         
         // Track unique queries per collector

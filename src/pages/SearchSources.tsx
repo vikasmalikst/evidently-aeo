@@ -15,18 +15,12 @@ import {
   LineElement,
 } from 'chart.js';
 import { IconDownload, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, IconChartBar, IconArrowUpRight } from '@tabler/icons-react';
-// TODO: Uncomment when these modules are available
-// import { useCachedData } from '../hooks/useCachedData';
-// import { useAuthStore } from '../store/authStore';
-// import { getActiveCompetitors, type ManagedCompetitor } from '../api/competitorManagementApi';
-import { ApiResponse } from '../types/api';
-
-// Temporary type definition until competitorManagementApi is available
-type ManagedCompetitor = {
-  name: string;
-  website?: string;
-  [key: string]: any;
-};
+import { useCachedData } from '../hooks/useCachedData';
+import { useManualBrandDashboard } from '../manual-dashboard';
+import { useAuthStore } from '../store/authStore';
+import { useChartResize } from '../hooks/useChartResize';
+import { getActiveCompetitors, type ManagedCompetitor } from '../api/competitorManagementApi';
+import type { ApiResponse } from './dashboard/types';
 
 // Type definitions
 interface SourceAttributionResponse {
@@ -38,16 +32,18 @@ interface SourceAttributionResponse {
 }
 
 // Helper function for date range
-const getDateRangeForTimeRange = (timeRange: string): { start: string; end: string } => {
+const getDateRangeForTimeRange = (timeRange: string) => {
   const end = new Date();
-  const start = new Date();
-  
-  const days = parseInt(timeRange, 10);
-  start.setDate(start.getDate() - days);
-  
+  end.setUTCHours(23, 59, 59, 999);
+
+  const start = new Date(end);
+  const days = parseInt(timeRange) || 30;
+  start.setUTCDate(start.getUTCDate() - days);
+  start.setUTCHours(0, 0, 0, 0);
+
   return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0]
+    start: start.toISOString(),
+    end: end.toISOString()
   };
 };
 
@@ -107,11 +103,15 @@ export const SearchSources = () => {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const chartRef = useRef<any>(null);
   
-  // Get brand selection from localStorage or use fallback
-  const selectedBrandId = localStorage.getItem('current_brand_id') || null;
-  const selectedBrand = selectedBrandId ? { id: selectedBrandId, name: 'Your Brand' } : null;
-  const authLoading = false; // TODO: Get from auth store if available
-  const brandsLoading = false; // TODO: Get from brands store if available
+  // Get auth state
+  const authLoading = useAuthStore((state) => state.isLoading);
+  
+  // Use brand dashboard hook
+  const {
+    selectedBrandId,
+    selectedBrand,
+    isLoading: brandsLoading,
+  } = useManualBrandDashboard();
   
   // Competitor comparison state
   const [competitorComparisonEnabled, setCompetitorComparisonEnabled] = useState(false);
@@ -171,12 +171,7 @@ export const SearchSources = () => {
     return `/brands/${selectedBrandId}/sources?${params.toString()}`;
   }, [selectedBrandId, timeRange]);
 
-  // TODO: Uncomment when useCachedData is available
   // Use cached data hook
-  const response = null as ApiResponse<SourceAttributionResponse> | null;
-  const loading = false;
-  const fetchError = null as Error | null;
-  /*
   const {
     data: response,
     loading,
@@ -187,7 +182,6 @@ export const SearchSources = () => {
     { requiresAuth: true },
     { enabled: !authLoading && !brandsLoading && !!sourcesEndpoint, refetchOnMount: false }
   );
-  */
 
   // Process response data - only use API data
   const sourceData: SourceData[] = response?.success && response.data ? response.data.sources : [];
@@ -203,13 +197,29 @@ export const SearchSources = () => {
 
   // Generate heatmap data from API data only
   const heatmapData = useMemo(() => {
-    const data: Record<string, number[]> = {};
+    const data: Record<string, {
+      mentionRate: number[];
+      soa: number[];
+      sentiment: number[];
+      citations: number[];
+    }> = {};
     
     sourceData.forEach(source => {
-      // Map mention rates to topics from API data
-      data[source.name] = allTopics.map((topic) => {
-        return source.topics.includes(topic) ? source.mentionRate : 0;
-      });
+      // Map metrics to topics from API data
+      data[source.name] = {
+        mentionRate: allTopics.map((topic) => {
+          return source.topics.includes(topic) ? source.mentionRate : 0;
+        }),
+        soa: allTopics.map((topic) => {
+          return source.topics.includes(topic) ? source.soa : 0;
+        }),
+        sentiment: allTopics.map((topic) => {
+          return source.topics.includes(topic) ? source.sentiment : 0;
+        }),
+        citations: allTopics.map((topic) => {
+          return source.topics.includes(topic) ? source.citations : 0;
+        }),
+      };
     });
     return data;
   }, [sourceData, allTopics]);
@@ -248,13 +258,11 @@ export const SearchSources = () => {
       
       setCompetitorsLoading(true);
       try {
-        // TODO: Uncomment when getActiveCompetitors is available
-        // const data = await getActiveCompetitors(selectedBrandId);
-        // setCompetitors(data.competitors);
-        // if (data.competitors.length > 0 && !selectedCompetitorId) {
-        //   setSelectedCompetitorId(data.competitors[0].name);
-        // }
-        setCompetitors([]); // Placeholder
+        const data = await getActiveCompetitors(selectedBrandId);
+        setCompetitors(data.competitors);
+        if (data.competitors.length > 0 && !selectedCompetitorId) {
+          setSelectedCompetitorId(data.competitors[0].name);
+        }
       } catch (error) {
         console.error('Error loading competitors:', error);
         setCompetitors([]);
@@ -353,6 +361,9 @@ export const SearchSources = () => {
     if (filteredData.length === 0) return null;
     return filteredData.reduce((max, s) => s.mentionRate > max.mentionRate ? s : max, filteredData[0]);
   }, [filteredData, topSource]);
+
+  // Handle chart resize on window resize (e.g., when dev tools open/close)
+  useChartResize(chartRef, !loading && filteredData.length > 0);
 
   // Calculate distributions and top lists for new charts
   const { tierDistribution, topSoaSources, topSentimentSources, typeDistribution, thresholds } = useMemo(() => {
@@ -713,6 +724,8 @@ export const SearchSources = () => {
                   <button
                     id="competitor-toggle"
                     onClick={() => setCompetitorComparisonEnabled(!competitorComparisonEnabled)}
+                    aria-label={`Toggle competitor comparison ${competitorComparisonEnabled ? 'on' : 'off'}`}
+                    type="button"
                     style={{
                       position: 'relative',
                       width: '48px',
@@ -1018,6 +1031,7 @@ export const SearchSources = () => {
           <select
             value={topicFilter}
             onChange={(e) => setTopicFilter(e.target.value)}
+            aria-label="Filter by topic"
             style={{
               border: '1px solid #dcdfe5',
               borderRadius: '4px',
@@ -1038,6 +1052,7 @@ export const SearchSources = () => {
           <select
             value={sentimentFilter}
             onChange={(e) => setSentimentFilter(e.target.value)}
+            aria-label="Filter by sentiment"
             style={{
               border: '1px solid #dcdfe5',
               borderRadius: '4px',
@@ -1058,6 +1073,7 @@ export const SearchSources = () => {
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
+            aria-label="Filter by source type"
             style={{
               border: '1px solid #dcdfe5',
               borderRadius: '4px',
@@ -1078,6 +1094,7 @@ export const SearchSources = () => {
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
+            aria-label="Select time range"
             style={{
               border: '1px solid #dcdfe5',
               borderRadius: '4px',
@@ -1425,8 +1442,8 @@ export const SearchSources = () => {
                         borderColor: '#fa8a40',
                         backgroundColor: '#fa8a40',
                         borderWidth: 2,
-                        pointRadius: 4 as any,
                         yAxisID: 'y1',
+                        // pointRadius configured via chart options
                       },
                       {
                         type: 'bar' as any,
@@ -1628,42 +1645,71 @@ export const SearchSources = () => {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
-              Source Attribution Details
-            </h2>
-            <a
-              href="#"
+            <div>
+              <h2 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 4px 0' }}>
+                Source Attribution Details
+              </h2>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                {filteredData.length} source{filteredData.length !== 1 ? 's' : ''} found
+              </p>
+            </div>
+            <button
+              onClick={exportToCSV}
               style={{
                 fontSize: '13px',
-                color: '#00bcdc',
-                textDecoration: 'none',
+                fontWeight: '600',
+                color: '#ffffff',
+                backgroundColor: '#00bcdc',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '10px 16px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px'
+                gap: '6px',
+                cursor: 'pointer',
+                fontFamily: 'IBM Plex Sans, sans-serif',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 1px 3px rgba(0, 188, 220, 0.2)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#00a8c5';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 188, 220, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#00bcdc';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 188, 220, 0.2)';
               }}
             >
-              Export CSV <IconDownload size={14} />
-            </a>
+              <IconDownload size={16} />
+              Export CSV
+            </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e8e9ed' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#ffffff' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f4f4f6', borderBottom: '2px solid #e8e9ed' }}>
+                <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e8e9ed' }}>
                   <th
                     onClick={() => handleSort('name')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px',
+                      position: 'sticky',
+                      left: 0,
+                      backgroundColor: '#f8f9fa',
+                      zIndex: 1
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Source
                       {sortField === 'name' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1674,16 +1720,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('type')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Type
                       {sortField === 'type' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1694,16 +1741,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('mentionRate')}
                     style={{
                       textAlign: 'right',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                       Mention Rate
                       {sortField === 'mentionRate' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1714,16 +1762,18 @@ export const SearchSources = () => {
                     onClick={() => handleSort('soa')}
                     style={{
                       textAlign: 'right',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
+                    title="Average Brand Share of Answer when this source is cited (0-100%)"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                       Share of Answer
                       {sortField === 'soa' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1734,16 +1784,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('sentiment')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Sentiment
                       {sortField === 'sentiment' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1754,16 +1805,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('topics')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Top Topics
                       {sortField === 'topics' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1774,16 +1826,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('pages')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Pages
                       {sortField === 'pages' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1794,16 +1847,17 @@ export const SearchSources = () => {
                     onClick={() => handleSort('prompts')}
                     style={{
                       textAlign: 'left',
-                      padding: '12px',
+                      padding: '14px 12px',
                       fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#393e51',
+                      fontWeight: '700',
+                      color: '#1a1d29',
                       textTransform: 'uppercase',
                       cursor: 'pointer',
-                      userSelect: 'none'
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Prompts
                       {sortField === 'prompts' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
@@ -1814,19 +1868,19 @@ export const SearchSources = () => {
               </thead>
               <tbody>
                 {filteredData.map((source, idx) => {
-                  const sentimentEmoji = source.sentiment > 0.5 ? '😊' : source.sentiment < 0 ? '😟' : '😐';
                   return (
                     <tr
                       key={source.name}
                       style={{
                         borderBottom: '1px solid #e8e9ed',
-                        backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f9f9fb'
+                        backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafbfc',
+                        transition: 'background-color 0.15s ease'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f4f4f6';
+                        e.currentTarget.style.backgroundColor = '#f0f4f8';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#f9f9fb';
+                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#fafbfc';
                       }}
                     >
                       <td style={{ padding: '16px 12px' }}>
@@ -1835,17 +1889,26 @@ export const SearchSources = () => {
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
-                            color: '#00bcdc',
+                            color: '#1a1d29',
                             textDecoration: 'none',
-                            fontSize: '13px',
-                            fontFamily: 'IBM Plex Sans, sans-serif'
+                            fontSize: '14px',
+                            fontFamily: 'IBM Plex Sans, sans-serif',
+                            fontWeight: '500',
+                            display: 'inline-block',
+                            maxWidth: '300px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
                           }}
                           onMouseEnter={(e) => {
+                            e.currentTarget.style.color = '#00bcdc';
                             e.currentTarget.style.textDecoration = 'underline';
                           }}
                           onMouseLeave={(e) => {
+                            e.currentTarget.style.color = '#1a1d29';
                             e.currentTarget.style.textDecoration = 'none';
                           }}
+                          title={source.name}
                         >
                           {source.name}
                         </a>
@@ -1853,131 +1916,209 @@ export const SearchSources = () => {
                       <td style={{ padding: '16px 12px' }}>
                         <span
                           style={{
-                            padding: '4px 8px',
-                            borderRadius: '12px',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
                             fontSize: '11px',
                             fontWeight: '600',
                             textTransform: 'uppercase',
                             backgroundColor: sourceTypeColors[source.type],
-                            color: '#ffffff'
+                            color: '#ffffff',
+                            letterSpacing: '0.3px',
+                            display: 'inline-block'
                           }}
                         >
-                          {source.type}
+                          {sourceTypeLabels[source.type] || source.type}
                         </span>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                          <span style={{ fontSize: '13px', fontFamily: 'IBM Plex Mono, monospace', color: '#212534' }}>
-                            {source.mentionRate}%
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          <span style={{ fontSize: '14px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '600', color: '#1a1d29' }}>
+                            {source.mentionRate.toFixed(1)}%
                           </span>
-                          <span style={{ fontSize: '10px', color: source.mentionChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(source.mentionChange)}%
-                          </span>
+                          {source.mentionChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.mentionChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.mentionChange >= 0 ? '↑' : '↓'} {Math.abs(source.mentionChange).toFixed(1)}%
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                          <span style={{ fontSize: '13px', fontFamily: 'IBM Plex Mono, monospace', color: '#212534' }}>
-                            {source.soa}×
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          <span style={{ fontSize: '14px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '600', color: '#1a1d29' }}>
+                            {source.soa.toFixed(1)}%
                           </span>
-                          <span style={{ fontSize: '10px', color: source.soaChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.soaChange >= 0 ? '↑' : '↓'} {Math.abs(source.soaChange)}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '16px 12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '16px' }}>{sentimentEmoji}</span>
-                          <span
-                            style={{
-                              fontSize: '13px',
-                              fontFamily: 'IBM Plex Mono, monospace',
-                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < 0 ? '#f94343' : '#393e51'
-                            }}
-                          >
-                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
-                          </span>
-                          <span style={{ fontSize: '10px', color: source.sentimentChange >= 0 ? '#06c686' : '#f94343' }}>
-                            {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '16px 12px' }}>
-                        <div
-                          style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', position: 'relative' }}
-                          onMouseEnter={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setTooltipPosition({ x: rect.left, y: rect.top });
-                            setHoveredTopics(source.topics);
-                          }}
-                          onMouseLeave={() => setHoveredTopics(null)}
-                        >
-                          {source.topics.slice(0, 2).map(topic => (
-                            <span
-                              key={topic}
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                backgroundColor: '#f4f4f6',
-                                color: '#393e51',
-                                cursor: 'default'
-                              }}
-                            >
-                              {topic}
-                            </span>
-                          ))}
-                          {source.topics.length > 2 && (
-                            <span
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                backgroundColor: '#e8e9ed',
-                                color: '#393e51',
-                                cursor: 'default'
-                              }}
-                            >
-                              +{source.topics.length - 2}
+                          {source.soaChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.soaChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.soaChange >= 0 ? '↑' : '↓'} {Math.abs(source.soaChange).toFixed(1)}%
                             </span>
                           )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            color: '#00bcdc',
-                            cursor: 'pointer',
-                            textDecoration: 'underline'
-                          }}
-                          onClick={() => {
-                            setModalType('pages');
-                            setModalData(source.pages);
-                            setModalTitle(`Pages citing ${source.name}`);
-                          }}
-                        >
-                          {source.pages.slice(0, 1).join(', ')}
-                          {source.pages.length > 1 && ` +${source.pages.length - 1} more`}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span
+                            style={{
+                              fontSize: '14px',
+                              fontFamily: 'IBM Plex Mono, monospace',
+                              fontWeight: '600',
+                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < -0.1 ? '#f94343' : '#64748b'
+                            }}
+                          >
+                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
+                          </span>
+                          {source.sentimentChange !== 0 && (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '500',
+                              color: source.sentimentChange >= 0 ? '#06c686' : '#f94343',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            color: '#00bcdc',
-                            cursor: 'pointer',
-                            textDecoration: 'underline'
-                          }}
-                          onClick={() => {
-                            setModalType('prompts');
-                            setModalData(source.prompts);
-                            setModalTitle(`Prompts citing ${source.name}`);
-                          }}
-                        >
-                          {source.prompts.slice(0, 1).join(', ')}
-                          {source.prompts.length > 1 && ` +${source.prompts.length - 1} more`}
-                        </div>
+                        {source.topics.length > 0 ? (
+                          <div
+                            style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', position: 'relative', maxWidth: '250px' }}
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setTooltipPosition({ x: rect.left, y: rect.top });
+                              setHoveredTopics(source.topics);
+                            }}
+                            onMouseLeave={() => setHoveredTopics(null)}
+                          >
+                            {source.topics.slice(0, 2).map(topic => (
+                              <span
+                                key={topic}
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  fontWeight: '500',
+                                  backgroundColor: '#e0f2fe',
+                                  color: '#0369a1',
+                                  cursor: 'default',
+                                  border: '1px solid #bae6fd'
+                                }}
+                              >
+                                {topic}
+                              </span>
+                            ))}
+                            {source.topics.length > 2 && (
+                              <span
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  fontWeight: '500',
+                                  backgroundColor: '#f1f5f9',
+                                  color: '#64748b',
+                                  cursor: 'default',
+                                  border: '1px solid #e2e8f0'
+                                }}
+                                title={source.topics.slice(2).join(', ')}
+                              >
+                                +{source.topics.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '16px 12px', maxWidth: '250px' }}>
+                        {source.pages.length > 0 ? (
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              color: '#00bcdc',
+                              cursor: 'pointer',
+                              fontWeight: '500',
+                              display: 'inline-block',
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            onClick={() => {
+                              setModalType('pages');
+                              setModalData(source.pages);
+                              setModalTitle(`Pages citing ${source.name}`);
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.textDecoration = 'underline';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.textDecoration = 'none';
+                            }}
+                            title={source.pages[0]}
+                          >
+                            {source.pages[0]}
+                            {source.pages.length > 1 && (
+                              <span style={{ color: '#64748b', marginLeft: '4px' }}>
+                                +{source.pages.length - 1} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '16px 12px', maxWidth: '300px' }}>
+                        {source.prompts.length > 0 ? (
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              color: '#00bcdc',
+                              cursor: 'pointer',
+                              fontWeight: '500',
+                              display: 'inline-block',
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            onClick={() => {
+                              setModalType('prompts');
+                              setModalData(source.prompts);
+                              setModalTitle(`Prompts citing ${source.name}`);
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.textDecoration = 'underline';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.textDecoration = 'none';
+                            }}
+                            title={source.prompts[0]}
+                          >
+                            {source.prompts[0]}
+                            {source.prompts.length > 1 && (
+                              <span style={{ color: '#64748b', marginLeft: '4px' }}>
+                                +{source.prompts.length - 1} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '13px', color: '#cbd5e1' }}>—</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -2026,6 +2167,8 @@ export const SearchSources = () => {
             </div>
           </div>
         )}
+          </>
+            )}
 
         {/* Modal for Prompts/Pages */}
         {modalType && (
@@ -2073,6 +2216,7 @@ export const SearchSources = () => {
                 </h3>
                 <button
                   onClick={() => setModalType(null)}
+                  aria-label="Close modal"
                   style={{
                     background: 'none',
                     border: 'none',
@@ -2159,7 +2303,7 @@ export const SearchSources = () => {
           </div>
         )}
           </>
-            )}
+        )}
 
         {activeTab === 'source-coverage' && (
           <SourceCoverageHeatmap

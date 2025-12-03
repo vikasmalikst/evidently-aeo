@@ -3,7 +3,7 @@ import { PieChart, TrendingUp } from 'lucide-react';
 import { IconFolderSearch, IconSpace } from '@tabler/icons-react';
 import type { Portfolio, Performance, Topic } from '../types';
 
-export type PodId = 'portfolio' | 'performance' | 'gaps';
+export type PodId = 'portfolio' | 'performance' | 'gaps' | 'momentum';
 
 interface CompactMetricsPodsProps {
   portfolio: {
@@ -16,6 +16,7 @@ interface CompactMetricsPodsProps {
     avgSoA: number;
     maxSoA: number;
     minSoA: number;
+    avgSoADelta?: number; // Change from previous period (percentage points)
     weeklyGainer: {
       topic: string;
       delta: number;
@@ -81,6 +82,7 @@ interface MetricPodProps {
   iconColor: string;
   hoverBgColor: string;
   onPodClick?: (podId: PodId) => void;
+  isLongText?: boolean; // For pods with long text values (like Trending topic names)
 }
 
 const MetricPod = ({
@@ -95,6 +97,7 @@ const MetricPod = ({
   iconColor,
   hoverBgColor,
   onPodClick,
+  isLongText = false,
 }: MetricPodProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -182,11 +185,12 @@ const MetricPod = ({
         <div className="flex flex-col flex-1 justify-between">
           {/* Primary Value */}
           <div
-            className="font-bold leading-none mb-2"
+            className={`font-bold leading-none mb-2 ${isLongText ? 'line-clamp-2' : ''}`}
             style={{
-              fontSize: '28px',
+              fontSize: isLongText ? '14px' : '28px',
               color: '#1a1d29',
-              lineHeight: 1.2,
+              lineHeight: isLongText ? 1.4 : 1.2,
+              wordBreak: isLongText ? 'break-word' : 'normal',
             }}
             title={primaryValue}
           >
@@ -314,14 +318,37 @@ export const CompactMetricsPods = ({
         primaryValue={`${(performance.avgSoA * 20).toFixed(1)}%`}
         label="Avg SOA"
         secondary=""
-        tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}%`}
+        changeIndicator={performance.avgSoADelta !== undefined && performance.avgSoADelta !== null ? {
+          value: `${Math.abs(performance.avgSoADelta).toFixed(1)}%`,
+          direction: performance.avgSoADelta > 0 ? 'up' : performance.avgSoADelta < 0 ? 'down' : 'neutral',
+        } : undefined}
+        tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}%${performance.avgSoADelta !== undefined && performance.avgSoADelta !== null ? ` (${performance.avgSoADelta > 0 ? '+' : ''}${performance.avgSoADelta.toFixed(1)}% from previous period)` : ''}`}
         borderColor="#00bcdc"
         iconColor="#00bcdc"
         hoverBgColor="#e6f7f9"
         onPodClick={onPodClick}
       />
 
-      {/* POD 3: Gaps */}
+      {/* POD 3: Trending */}
+      <MetricPod
+        podId="momentum"
+        icon={<TrendingUp size={20} />}
+        primaryValue={performance.weeklyGainer.topic}
+        label="Trending"
+        secondary={performance.weeklyGainer.category}
+        isLongText={true}
+        changeIndicator={performance.weeklyGainer.delta !== undefined && performance.weeklyGainer.delta !== null && performance.weeklyGainer.delta !== 0 ? {
+          value: `${Math.abs(performance.weeklyGainer.delta).toFixed(1)}%`,
+          direction: performance.weeklyGainer.delta > 0 ? 'up' : 'down',
+        } : undefined}
+        tooltip={`${performance.weeklyGainer.topic} is the top trending topic${performance.weeklyGainer.delta !== undefined && performance.weeklyGainer.delta !== null && performance.weeklyGainer.delta !== 0 ? ` with ${performance.weeklyGainer.delta > 0 ? '+' : ''}${performance.weeklyGainer.delta.toFixed(1)}% change` : ''}. [View topic]`}
+        borderColor="#06c686"
+        iconColor="#06c686"
+        hoverBgColor="#f0fdf4"
+        onPodClick={onPodClick}
+      />
+
+      {/* POD 4: Gaps */}
       <MetricPod
         podId="gaps"
         icon={<IconSpace size={20} />}

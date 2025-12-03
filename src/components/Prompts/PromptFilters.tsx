@@ -95,7 +95,7 @@ export const PromptFilters = ({
           }}
         >
           <span className="text-[var(--text-body)] whitespace-nowrap overflow-hidden text-ellipsis flex-1 text-left font-medium">
-            {selectedLLM || 'Select LLM'}
+            {selectedLLM || 'All Models'}
           </span>
           <ChevronDown
             size={16}
@@ -104,33 +104,61 @@ export const PromptFilters = ({
             }`}
           />
         </button>
-        {openDropdown === 'llm' && llmOptions.length > 0 && (
+        {openDropdown === 'llm' && (
           <div 
             className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[400px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]"
             onClick={(e) => e.stopPropagation()}
           >
-            {llmOptions.map((llm) => (
-              <button
-                key={llm}
-                type="button"
-                className={`w-full px-4 py-3 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] flex items-center gap-2 ${
-                  selectedLLM === llm
-                    ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
-                    : ''
-                }`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (selectedLLM !== llm) {
-                    onLLMChange(llm);
-                  }
-                  setOpenDropdown(null);
-                }}
-              >
-                {getLLMIcon(llm)}
-                <span>{llm}</span>
-              </button>
-            ))}
+            {/* All Models option */}
+            <button
+              type="button"
+              className={`w-full px-4 py-3 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] flex items-center gap-2 ${
+                selectedLLM === null || selectedLLM === 'All Models'
+                  ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
+                  : ''
+              }`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onLLMChange(null);
+                setOpenDropdown(null);
+              }}
+            >
+              <div className="w-6 h-6 flex items-center justify-center">
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+                  <circle cx="12" cy="12" r="4"/>
+                </svg>
+              </div>
+              <span>All Models</span>
+            </button>
+            {llmOptions.length > 0 && (
+              <>
+                <div className="border-t border-[var(--border-default)] my-1"></div>
+                {llmOptions.map((llm) => (
+                  <button
+                    key={llm}
+                    type="button"
+                    className={`w-full px-4 py-3 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] flex items-center gap-2 ${
+                      selectedLLM === llm
+                        ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
+                        : ''
+                    }`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (selectedLLM !== llm) {
+                        onLLMChange(llm);
+                      }
+                      setOpenDropdown(null);
+                    }}
+                  >
+                    {getLLMIcon(llm)}
+                    <span>{llm}</span>
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>

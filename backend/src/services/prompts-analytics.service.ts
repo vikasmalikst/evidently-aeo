@@ -24,6 +24,13 @@ interface PromptHighlights {
   competitors: string[]
 }
 
+interface CollectorResponse {
+  collectorResultId: number
+  collectorType: string
+  response: string
+  lastUpdated: string
+}
+
 interface PromptEntryPayload {
   id: string
   queryId: string | null
@@ -34,6 +41,7 @@ interface PromptEntryPayload {
   latestCollectorType: string | null
   lastUpdated: string | null
   response: string | null
+  responses: CollectorResponse[] // All responses from all collectors
   volumePercentage: number
   volumeCount: number
   sentimentScore: number | null
@@ -67,7 +75,7 @@ export interface PromptAnalyticsPayload {
 type MetadataRecord = Record<string, unknown>
 
 const DEFAULT_LOOKBACK_DAYS = 30
-const DEFAULT_LIMIT = 1000
+const DEFAULT_LIMIT = 10000 // Increased to ensure we get all responses for all queries
 
 const parseMetadata = (metadata: unknown): MetadataRecord | null => {
   if (metadata === null || metadata === undefined) {
@@ -439,6 +447,7 @@ export class PromptsAnalyticsService {
       latestCollectorType: string | null
       lastUpdated: string | null
       response: string | null
+      responses: CollectorResponse[] // Store all responses
       highlights: {
         brand: Set<string>
         products: Set<string>
@@ -496,6 +505,7 @@ export class PromptsAnalyticsService {
           latestCollectorType: null,
           lastUpdated: null,
           response: null,
+          responses: [],
           highlights: {
             brand: new Set<string>(),
             products: new Set<string>(),
@@ -536,6 +546,20 @@ export class PromptsAnalyticsService {
 
       const createdAt =
         typeof row.created_at === 'string' && row.created_at.trim().length > 0 ? row.created_at.trim() : null
+
+      // Store all responses (avoid duplicates by collectorResultId)
+      if (collectorResultId !== null && response && collectorType && createdAt) {
+        // Check if this response already exists (by collectorResultId)
+        const existingIndex = aggregate.responses.findIndex(r => r.collectorResultId === collectorResultId)
+        if (existingIndex === -1) {
+          aggregate.responses.push({
+            collectorResultId,
+            collectorType,
+            response,
+            lastUpdated: createdAt
+          })
+        }
+      }
 
       const shouldUpdate =
         createdAt &&
@@ -928,6 +952,17 @@ export class PromptsAnalyticsService {
         finalBrandHighlights = [brandRow.name.trim()]
       }
       
+      // Sort responses by lastUpdated (newest first)
+      const sortedResponses = aggregate.responses
+        .slice()
+        .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
+      
+      // Debug logging to verify responses are being collected
+      if (sortedResponses.length > 1) {
+        console.log(`[PromptsAnalytics] Query ${aggregate.queryId || aggregate.id} has ${sortedResponses.length} responses:`, 
+          sortedResponses.map(r => r.collectorType).join(', '))
+      }
+
       return {
         id: aggregate.id,
         queryId: aggregate.queryId,
@@ -938,6 +973,7 @@ export class PromptsAnalyticsService {
         latestCollectorType: aggregate.latestCollectorType,
         lastUpdated: aggregate.lastUpdated,
         response: aggregate.response,
+        responses: sortedResponses,
         volumeCount: aggregate.count,
         volumePercentage:
           totalResponses > 0 ? roundToPrecision((aggregate.count / totalResponses) * 100, 1) : 0,

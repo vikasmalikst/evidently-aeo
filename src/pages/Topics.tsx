@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { TopicsAnalysisPage } from './TopicsAnalysis/TopicsAnalysisPage';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useCachedData } from '../hooks/useCachedData';
+import { calculatePreviousPeriod } from '../components/DateRangePicker/DateRangePicker';
 import type { TopicsAnalysisData, TopicSource } from './TopicsAnalysis/types';
 
 interface ApiResponse<T> {
@@ -35,7 +36,13 @@ interface BackendTopic {
   industryBrandCount?: number; // Number of brands in industry average calculation
 }
 
-function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData {
+interface TopicsApiResponse {
+  topics?: BackendTopic[];
+  availableModels?: string[];
+  avgSoADelta?: number; // Change from previous period (percentage points)
+}
+
+function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<string, number>): TopicsAnalysisData {
   const totalSearchVolume = 0;
   const uniqueCategories = new Set(backendTopics.map(t => t.category));
   
@@ -78,6 +85,12 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
       // Use industry trend if available, otherwise default to neutral
       const industryTrend = t.industryAvgSoATrend || { direction: 'neutral' as const, delta: 0 };
 
+      // Get delta for this topic if available
+      const topicKey = t.topic_name || t.topic || '';
+      const topicDelta = topicDeltaMap?.get(topicKey) || 0;
+      const trendDirection: 'up' | 'down' | 'neutral' = 
+        topicDelta > 0 ? 'up' : topicDelta < 0 ? 'down' : 'neutral';
+      
       return {
         id: t.id || `topic-${index}`,
         rank: 0, // Will be assigned after sorting
@@ -86,7 +99,7 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
         soA: soAMultiplier, // Keep for internal calculations
         currentSoA: soAPercentage, // Percentage (0-100) for display
         visibilityTrend: Array(12).fill(t.avgVisibility || 0),
-        trend: { direction: 'neutral' as const, delta: 0 },
+        trend: { direction: trendDirection, delta: topicDelta },
         searchVolume: null,
         sentiment,
         sources: sources, // Map topSources from backend
@@ -147,8 +160,20 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
   const maxSoA = soAValues.length > 0 ? Math.max(...soAValues) : 0;
   const minSoA = soAValues.length > 0 ? Math.min(...soAValues) : 0;
 
+  // Find the topic with the highest positive delta (trending/gaining topic)
+  // If no positive deltas, find the one with the least negative delta
   const weeklyGainer = topics.length > 0 
-    ? topics[0] 
+    ? topics.reduce((best, current) => {
+        const currentDelta = current.trend?.delta || 0;
+        const bestDelta = best.trend?.delta || 0;
+        
+        // Prefer positive deltas
+        if (currentDelta > 0 && bestDelta <= 0) return current;
+        if (bestDelta > 0 && currentDelta <= 0) return best;
+        
+        // If both positive or both negative, pick the one with higher delta
+        return currentDelta > bestDelta ? current : best;
+      }, topics[0])
     : { name: 'N/A', category: 'N/A', trend: { delta: 0 } };
 
   return {
@@ -162,6 +187,7 @@ function transformTopicsData(backendTopics: BackendTopic[]): TopicsAnalysisData 
       avgSoA,
       maxSoA,
       minSoA,
+      avgSoADelta: undefined, // Will be set from API response if available
       weeklyGainer: {
         topic: weeklyGainer.name,
         delta: weeklyGainer.trend.delta,
@@ -218,12 +244,12 @@ export const Topics = () => {
   }, [selectedBrandId, filtersKey]);
 
   // Use cached data hook - refetch when filters change
-  // Response can be either BackendTopic[] (old format) or { topics: BackendTopic[], availableModels: string[] } (new format)
+  // Response can be either BackendTopic[] (old format) or { topics: BackendTopic[], availableModels: string[], avgSoADelta?: number } (new format)
   const {
     data: response,
     loading: isLoading,
     error: fetchError
-  } = useCachedData<ApiResponse<BackendTopic[] | { topics: BackendTopic[]; availableModels: string[] }>>(
+  } = useCachedData<ApiResponse<BackendTopic[] | TopicsApiResponse>>(
     topicsEndpoint,
     {},
     { requiresAuth: true },
@@ -247,6 +273,37 @@ export const Topics = () => {
     }
   }, [response]);
   
+  // Calculate previous period date range for comparison
+  const previousPeriodRange = useMemo(() => {
+    if (!filters.startDate || !filters.endDate) return null;
+    return calculatePreviousPeriod(filters.startDate, filters.endDate);
+  }, [filters.startDate, filters.endDate]);
+
+  // Build previous period endpoint
+  const previousPeriodEndpoint = useMemo(() => {
+    if (!selectedBrandId || !previousPeriodRange) return null;
+    const params = new URLSearchParams();
+    params.append('startDate', previousPeriodRange.start);
+    params.append('endDate', previousPeriodRange.end);
+    if (filters.collectorType) params.append('collectors', filters.collectorType);
+    if (filters.country) params.append('country', filters.country);
+    return `/brands/${selectedBrandId}/topics?${params.toString()}`;
+  }, [selectedBrandId, previousPeriodRange, filters.collectorType, filters.country]);
+
+  // Fetch previous period data
+  const {
+    data: previousResponse,
+    loading: previousLoading
+  } = useCachedData<ApiResponse<BackendTopic[] | TopicsApiResponse>>(
+    previousPeriodEndpoint,
+    {},
+    { requiresAuth: true },
+    { 
+      enabled: !brandsLoading && !!previousPeriodEndpoint, 
+      refetchOnMount: false
+    }
+  );
+
   // Transform and process data
   const topicsData = useMemo(() => {
     if (!response?.success || !response.data) {
@@ -265,11 +322,74 @@ export const Topics = () => {
       // Handle both old format (array) and new format (object with topics array)
       const topicsArray = Array.isArray(response.data) 
         ? response.data 
-        : (response.data as any)?.topics || [];
+        : (response.data as TopicsApiResponse)?.topics || [];
+      
+      // Extract avgSoADelta from response if available
+      let avgSoADelta = Array.isArray(response.data) 
+        ? undefined 
+        : (response.data as TopicsApiResponse)?.avgSoADelta;
+      
+      // Calculate avgSoADelta from previous period if not provided by backend
+      // Also calculate per-topic deltas for trending topic calculation
+      const topicDeltaMap = new Map<string, number>();
+      if (avgSoADelta === undefined && previousResponse?.success && previousResponse.data) {
+        const previousTopicsArray = Array.isArray(previousResponse.data) 
+          ? previousResponse.data 
+          : (previousResponse.data as TopicsApiResponse)?.topics || [];
+        
+        // Create a map of previous period topics by topic_name for quick lookup
+        const previousTopicsMap = new Map<string, BackendTopic>();
+        previousTopicsArray.forEach((t: BackendTopic) => {
+          const key = t.topic_name || t.topic || '';
+          if (key) {
+            previousTopicsMap.set(key, t);
+          }
+        });
+        
+        // Calculate per-topic deltas
+        topicsArray.forEach((t: BackendTopic) => {
+          const key = t.topic_name || t.topic || '';
+          const currentSoA = t.avgShareOfAnswer || 0;
+          const previousTopic = previousTopicsMap.get(key);
+          const previousSoA = previousTopic?.avgShareOfAnswer || 0;
+          const delta = currentSoA - previousSoA;
+          topicDeltaMap.set(key, delta);
+        });
+        
+        // Calculate current period avg SOA
+        const currentSoAValues = topicsArray
+          .map(t => t.avgShareOfAnswer || 0)
+          .filter(v => v > 0);
+        const currentAvgSoA = currentSoAValues.length > 0 
+          ? currentSoAValues.reduce((sum, v) => sum + v, 0) / currentSoAValues.length 
+          : 0;
+        
+        // Calculate previous period avg SOA
+        const previousSoAValues = previousTopicsArray
+          .map(t => t.avgShareOfAnswer || 0)
+          .filter(v => v > 0);
+        const previousAvgSoA = previousSoAValues.length > 0 
+          ? previousSoAValues.reduce((sum, v) => sum + v, 0) / previousSoAValues.length 
+          : 0;
+        
+        // Calculate delta (percentage points difference)
+        avgSoADelta = currentAvgSoA - previousAvgSoA;
+        
+        console.log('📊 Calculated avgSoADelta from previous period:', {
+          currentAvgSoA: currentAvgSoA.toFixed(2),
+          previousAvgSoA: previousAvgSoA.toFixed(2),
+          delta: avgSoADelta.toFixed(2),
+          currentTopicsCount: topicsArray.length,
+          previousTopicsCount: previousTopicsArray.length,
+          topicDeltas: Array.from(topicDeltaMap.entries()).map(([name, delta]) => ({ name, delta: delta.toFixed(2) }))
+        });
+      }
       
       console.log('📊 Transforming topics data:', { 
         backendTopicsCount: topicsArray.length,
         availableModels: response?.availableModels || [],
+        avgSoADelta,
+        topicDeltaMapSize: topicDeltaMap.size,
         backendTopics: topicsArray.map((t: BackendTopic) => ({ 
           id: t.id, 
           topic_name: t.topic_name, 
@@ -278,9 +398,16 @@ export const Topics = () => {
           availableModels: t.availableModels
         }))
       });
-      const transformed = transformTopicsData(topicsArray);
+      const transformed = transformTopicsData(topicsArray, topicDeltaMap);
+      
+      // Set avgSoADelta from API response or calculated value
+      if (avgSoADelta !== undefined && avgSoADelta !== null) {
+        transformed.performance.avgSoADelta = avgSoADelta;
+      }
+      
       console.log('📊 Transformed topics:', { 
         topicsCount: transformed.topics.length,
+        avgSoADelta: transformed.performance.avgSoADelta,
         topics: transformed.topics.map(t => ({ id: t.id, name: t.name }))
       });
       return transformed;
@@ -289,7 +416,7 @@ export const Topics = () => {
       setError(err instanceof Error ? err.message : 'Failed to transform topics');
       return null;
     }
-  }, [response]);
+  }, [response, previousResponse]);
 
   useEffect(() => {
     if (fetchError) {

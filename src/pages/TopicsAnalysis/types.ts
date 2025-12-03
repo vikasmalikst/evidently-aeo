@@ -54,6 +54,7 @@ export interface Performance {
   avgSoA: number;
   maxSoA: number;
   minSoA: number;
+  avgSoADelta?: number; // Change from previous period (percentage points)
   weeklyGainer: {
     topic: string;
     delta: number;

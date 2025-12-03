@@ -5,6 +5,13 @@ export interface PromptHighlights {
   competitors: string[]
 }
 
+export interface CollectorResponse {
+  collectorResultId: number
+  collectorType: string
+  response: string
+  lastUpdated: string
+}
+
 export interface PromptEntry {
   id: string
   queryId: string | null
@@ -15,6 +22,7 @@ export interface PromptEntry {
   latestCollectorType: string | null
   lastUpdated: string | null
   response: string | null
+  responses?: CollectorResponse[] // All responses from all collectors
   volumePercentage: number
   volumeCount: number
   sentimentScore: number | null

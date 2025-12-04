@@ -138,13 +138,14 @@ module.exports = {
     },
     {
       name: 'job-scheduler',
-      script: 'npx',
-      args: 'ts-node --transpile-only src/cron/unified-job-scheduler.ts',
+      script: 'node',
+      args: '-r ts-node/register src/cron/unified-job-scheduler.ts',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
+        TS_NODE_TRANSPILE_ONLY: 'true',
         // Load all environment variables from .env file
         SUPABASE_URL: process.env.SUPABASE_URL,
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -168,13 +169,14 @@ module.exports = {
     },
     {
       name: 'job-worker',
-      script: 'npx',
-      args: 'ts-node --transpile-only src/cron/unified-job-worker.ts',
+      script: 'node',
+      args: '-r ts-node/register src/cron/unified-job-worker.ts',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
+        TS_NODE_TRANSPILE_ONLY: 'true',
         // Load all environment variables from .env file
         SUPABASE_URL: process.env.SUPABASE_URL,
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -198,13 +200,14 @@ module.exports = {
     },
     {
       name: 'query-execution-cleanup',
-      script: 'npx',
-      args: 'ts-node --transpile-only src/cron/queryExecutionCleanup.cron.ts',
+      script: 'node',
+      args: '-r ts-node/register src/cron/queryExecutionCleanup.cron.ts',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
+        TS_NODE_TRANSPILE_ONLY: 'true',
         // Load all environment variables from .env file
         SUPABASE_URL: process.env.SUPABASE_URL,
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,

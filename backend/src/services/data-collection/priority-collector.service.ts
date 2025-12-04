@@ -96,29 +96,30 @@ export class PriorityCollectorService {
     };
 
     // ChatGPT Collector Priority Configuration
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('chatgpt', {
       collector_type: 'chatgpt',
       providers: [
         {
           name: 'brightdata_chatgpt',
           priority: 1,
-          enabled: true, // ✅ Enabled with async trigger endpoint
+          enabled: true,
           timeout: 10000, // 10s timeout - async returns snapshot_id quickly
           retries: 1,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
           name: 'dataforseo_chatgpt',
           priority: 2,
-          enabled: false,
-          timeout: 60000, // 60s for DataForSEO ChatGPT
+          enabled: false, // Disabled for testing
+          timeout: 60000,
           retries: 1,
           fallback_on_failure: true
         },
         {
           name: 'groq_chatgpt',
           priority: 3,
-          enabled: false,
+          enabled: false, // Disabled for testing
           timeout: 30000,
           retries: 1,
           fallback_on_failure: true
@@ -126,25 +127,25 @@ export class PriorityCollectorService {
         {
           name: 'oxylabs_chatgpt',
           priority: 4,
-          enabled: false,
-          timeout: 90000, // 90s for ChatGPT (matches chatgpt-oxylabs-collector.service.ts)
+          enabled: false, // Disabled for testing
+          timeout: 90000,
           retries: 1,
           fallback_on_failure: true
         },
         {
           name: 'openai_direct',
           priority: 5,
-          enabled: false,
+          enabled: false, // Disabled for testing
           timeout: 30000,
           retries: 1,
-          fallback_on_failure: true // Fallback to OpenAI direct when other providers fail
+          fallback_on_failure: true
         },
        
       ]
     });
 
     // Google AIO Collector Priority Configuration
-    // Using BrightData as primary provider (supports async trigger endpoint)
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('google_aio', {
       collector_type: 'google_aio',
       providers: [
@@ -154,12 +155,12 @@ export class PriorityCollectorService {
           enabled: true,
           timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
           name: 'oxylabs_google_aio',
           priority: 2,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 45000,
           retries: 2,
           fallback_on_failure: true
@@ -167,7 +168,7 @@ export class PriorityCollectorService {
         {
           name: 'dataforseo_google_aio',
           priority: 3,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 45000,
           retries: 1,
           fallback_on_failure: true
@@ -177,7 +178,7 @@ export class PriorityCollectorService {
     });
 
     // Perplexity Collector Priority Configuration
-    // Using BrightData as primary provider (supports async trigger endpoint)
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('perplexity', {
       collector_type: 'perplexity',
       providers: [
@@ -187,12 +188,12 @@ export class PriorityCollectorService {
           enabled: true,
           timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
           name: 'oxylabs_perplexity',
           priority: 2,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 60000,
           retries: 2,
           fallback_on_failure: true
@@ -200,7 +201,7 @@ export class PriorityCollectorService {
         {
           name: 'dataforseo_perplexity',
           priority: 3,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 45000,
           retries: 1,
           fallback_on_failure: true
@@ -226,7 +227,7 @@ export class PriorityCollectorService {
   
 
     // Bing Copilot Collector Priority Configuration
-    // Using BrightData as primary provider (supports async trigger endpoint)
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('bing_copilot', {
       collector_type: 'bing_copilot',
       providers: [
@@ -236,13 +237,13 @@ export class PriorityCollectorService {
           enabled: true,
           timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
           name: 'serpapi_bing_copilot',
           priority: 2,
-          enabled: true,
-          timeout: 60000, // 60 seconds for SerpApi (synchronous)
+          enabled: false, // Disabled for testing
+          timeout: 60000,
           retries: 2,
           fallback_on_failure: true
         }
@@ -250,7 +251,7 @@ export class PriorityCollectorService {
     });
 
     // Gemini Collector Priority Configuration
-    // Using BrightData as primary provider (supports async trigger endpoint)
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('gemini', {
       collector_type: 'gemini',
       providers: [
@@ -260,12 +261,12 @@ export class PriorityCollectorService {
           enabled: true,
           timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
           name: 'google_gemini_direct',
           priority: 2,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 45000,
           retries: 2,
           fallback_on_failure: true
@@ -275,7 +276,7 @@ export class PriorityCollectorService {
     });
 
     // Grok Collector Priority Configuration
-    // Using BrightData as primary provider (supports async trigger endpoint)
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('grok', {
       collector_type: 'grok',
       providers: [
@@ -285,7 +286,7 @@ export class PriorityCollectorService {
           enabled: true,
           timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         }
       ]
     });

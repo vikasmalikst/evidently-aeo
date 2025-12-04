@@ -138,8 +138,8 @@ module.exports = {
     },
     {
       name: 'job-scheduler',
-      script: 'node_modules/.bin/ts-node',
-      args: '--transpile-only src/cron/unified-job-scheduler.ts',
+      script: 'npx',
+      args: 'ts-node --transpile-only src/cron/unified-job-scheduler.ts',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',
@@ -168,8 +168,8 @@ module.exports = {
     },
     {
       name: 'job-worker',
-      script: 'node_modules/.bin/ts-node',
-      args: '--transpile-only src/cron/unified-job-worker.ts',
+      script: 'npx',
+      args: 'ts-node --transpile-only src/cron/unified-job-worker.ts',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',
@@ -198,8 +198,8 @@ module.exports = {
     },
     {
       name: 'query-execution-cleanup',
-      script: 'node_modules/.bin/ts-node',
-      args: '--transpile-only src/cron/queryExecutionCleanup.cron.ts',
+      script: 'npx',
+      args: 'ts-node --transpile-only src/cron/queryExecutionCleanup.cron.ts',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',

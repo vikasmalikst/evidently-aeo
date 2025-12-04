@@ -137,6 +137,66 @@ module.exports = {
       autorestart: true,
     },
     {
+      name: 'job-scheduler',
+      script: 'npm',
+      args: 'run cron:job:scheduler',
+      cwd: '/home/dev/projects/evidently/backend',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production',
+        // Load all environment variables from .env file
+        SUPABASE_URL: process.env.SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        JOB_SCHEDULER_POLL_MS: process.env.JOB_SCHEDULER_POLL_MS || '60000', // 60 seconds default
+        JOB_SCHEDULER_BATCH: process.env.JOB_SCHEDULER_BATCH || '25', // Max jobs per tick
+      },
+      // Logging
+      error_file: '/home/dev/logs/job-scheduler-error.log',
+      out_file: '/home/dev/logs/job-scheduler-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      
+      // Auto-restart configuration
+      watch: false,
+      max_memory_restart: '500M',
+      
+      // Advanced settings
+      min_uptime: '10s',
+      max_restarts: 10,
+      autorestart: true,
+    },
+    {
+      name: 'job-worker',
+      script: 'npm',
+      args: 'run cron:job:worker',
+      cwd: '/home/dev/projects/evidently/backend',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production',
+        // Load all environment variables from .env file
+        SUPABASE_URL: process.env.SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        JOB_WORKER_POLL_MS: process.env.JOB_WORKER_POLL_MS || '30000', // 30 seconds default
+        JOB_WORKER_BATCH: process.env.JOB_WORKER_BATCH || '5', // Max runs per tick
+      },
+      // Logging
+      error_file: '/home/dev/logs/job-worker-error.log',
+      out_file: '/home/dev/logs/job-worker-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      
+      // Auto-restart configuration
+      watch: false,
+      max_memory_restart: '1G',
+      
+      // Advanced settings
+      min_uptime: '10s',
+      max_restarts: 10,
+      autorestart: true,
+    },
+    {
       name: 'query-execution-cleanup',
       script: 'node',
       args: '-r ts-node/register src/cron/queryExecutionCleanup.cron.ts',

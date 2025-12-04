@@ -791,6 +791,68 @@ router.post('/:brandId/topic-configuration/:versionId/revert', authenticateToken
 });
 
 /**
+ * GET /brands/:brandId/data-updates
+ * Check if there are recent collector_results updates (for dashboard refresh detection)
+ * Query params: since (ISO timestamp) - check for updates since this time
+ */
+router.get('/:brandId/data-updates', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const sinceParam = typeof req.query.since === 'string' ? req.query.since : undefined;
+    
+    if (!brandId) {
+      res.status(400).json({ success: false, error: 'Brand ID is required' });
+      return;
+    }
+    
+    // Check if there are collector_results with raw_answer populated that were updated since the given time
+    // This helps detect when async BrightData responses have been populated
+    let query = supabaseAdmin
+      .from('collector_results')
+      .select('id, updated_at', { count: 'exact' })
+      .eq('brand_id', brandId)
+      .not('raw_answer', 'is', null)
+      .neq('raw_answer', '');
+    
+    if (sinceParam) {
+      query = query.gte('updated_at', sinceParam);
+    } else {
+      // Default to last 2 minutes if no since param
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+      query = query.gte('updated_at', twoMinutesAgo);
+    }
+    
+    const { data, error, count } = await query.limit(1);
+    
+    if (error) {
+      console.error('Error checking for data updates:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to check for data updates'
+      });
+      return;
+    }
+    
+    const hasUpdates = (count || 0) > 0;
+    
+    res.json({
+      success: true,
+      data: {
+        hasUpdates,
+        count: count || 0
+      }
+    });
+  } catch (error) {
+    console.error('Error checking for data updates:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to check for data updates'
+    });
+  }
+});
+
+/**
  * GET /brands/:brandId/onboarding-progress
  * Get real-time progress of data collection and scoring for onboarding
  */

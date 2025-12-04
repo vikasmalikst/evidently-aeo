@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { useDashboardData } from './hooks/useDashboardData';
 import { getBrandData, formatMetricValue, computeTrend } from './utils';
-import { DataCollectionProgressBar } from './components/DataCollectionProgressBar';
 import { KeyInsights } from './components/KeyInsights';
 import { MetricCard } from './components/MetricCard';
 import { TopBrandSources } from './components/TopBrandSources';
@@ -153,14 +152,6 @@ export const Dashboard = () => {
   return (
     <Layout>
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-        {(isDataCollectionInProgress || progressData) && selectedBrandId && (
-          <DataCollectionProgressBar
-            selectedBrandId={selectedBrandId}
-            progress={progressData}
-            isLoading={false}
-          />
-        )}
-
         <div className="mb-6">
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
             AI Visibility Dashboard

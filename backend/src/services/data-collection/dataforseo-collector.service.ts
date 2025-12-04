@@ -14,7 +14,7 @@ loadEnvironment();
 export interface DataForSeoQueryRequest {
   prompt: string;
   // Supported sources via DataForSEO
-  source: 'baidu' | 'bing' | 'youtube' | 'claude' | 'perplexity' | 'google_aio';
+  source: 'baidu' | 'bing' | 'youtube' | 'claude' | 'perplexity' | 'google_aio' | 'chatgpt';
   locale?: string;
   country?: string;
 }
@@ -49,7 +49,7 @@ export class DataForSeoCollectorService {
       hasUsername: !!this.username,
       hasPassword: !!this.password,
       ready: hasCredentials,
-      supportedSources: ['baidu', 'bing', 'youtube', 'claude']
+      supportedSources: ['baidu', 'bing', 'youtube', 'claude', 'perplexity', 'google_aio', 'chatgpt']
     });
     
     if (!hasCredentials) {
@@ -70,6 +70,11 @@ export class DataForSeoCollectorService {
       // Perplexity AI Optimization (DataForSEO) - similar to Claude
       if (request.source === 'perplexity') {
         return await this.executePerplexityQuery(request, queryId, startTime);
+      }
+      
+      // ChatGPT AI Optimization (DataForSEO)
+      if (request.source === 'chatgpt') {
+        return await this.executeChatGPTQuery(request, queryId, startTime);
       }
       
       // Google AI Mode (AI Overviews) uses SERP live advanced endpoint
@@ -361,6 +366,118 @@ export class DataForSeoCollectorService {
   }
 
   /**
+   * Execute query using DataForSEO ChatGPT AI Optimization API
+   */
+  private async executeChatGPTQuery(
+    request: DataForSeoQueryRequest,
+    queryId: string,
+    startTime: string
+  ): Promise<DataForSeoQueryResponse> {
+    // Use LIVE endpoint for synchronous responses
+    const chatgptUrl = 'https://api.dataforseo.com/v3/ai_optimization/chat_gpt/llm_responses/live';
+    
+    const taskBody = [{
+      system_message: 'You are a helpful and precise research assistant. Provide factual, well-structured answers with bullet points where useful.',
+      message_chain: [], // Empty message chain for single-turn conversations
+      max_output_tokens: 200,
+      temperature: 0.3,
+      top_p: 0.5,
+      model_name: 'gpt-4.1-mini',
+      web_search: true,
+      web_search_country_iso_code: this.getCountryIso(request.country || 'US'),
+      web_search_city: this.getCityFromCountry(request.country || 'US'),
+      user_prompt: request.prompt
+    }];
+
+    console.log('🔍 DataForSEO ChatGPT Request:', {
+      url: chatgptUrl,
+      prompt: request.prompt.substring(0, 60) + '...',
+      model: 'gpt-4.1-mini',
+      hasAuth: !!(this.username && this.password),
+      country: request.country || 'US'
+    });
+
+    try {
+      // Call LIVE endpoint
+      const taskResponse = await fetch(chatgptUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${Buffer.from(`${this.username}:${this.password}`).toString('base64')}`
+        },
+        body: JSON.stringify(taskBody)
+      });
+
+      if (!taskResponse.ok) {
+        const errorText = await taskResponse.text();
+        console.error('❌ DataForSEO ChatGPT Task Error:', {
+          status: taskResponse.status,
+          body: errorText
+        });
+        throw new Error(`DataForSEO ChatGPT task error: ${taskResponse.status} - ${errorText}`);
+      }
+
+      const taskData: any = await taskResponse.json();
+      
+      // Check top-level status
+      if (taskData.status_code >= 40000) {
+        throw new Error(`DataForSEO API error: ${taskData.status_message || 'Unknown error'}`);
+      }
+      
+      const task = taskData?.tasks?.[0];
+      if (!task) {
+        throw new Error('No task returned from DataForSEO ChatGPT API');
+      }
+      
+      // Check task-level status
+      if (task.status_code >= 40000) {
+        throw new Error(`ChatGPT LIVE API error: ${task.status_message || 'Unknown error'}`);
+      }
+
+      const liveResult = task.result?.[0];
+      if (!liveResult) {
+        throw new Error('No results from ChatGPT LIVE API');
+      }
+      
+      // Log successful response
+      console.log('✅ DataForSEO ChatGPT Response:', {
+        model: liveResult.model_name,
+        input_tokens: liveResult.input_tokens,
+        output_tokens: liveResult.output_tokens,
+        money_spent: liveResult.money_spent,
+        items_count: liveResult.items?.length || 0
+      });
+
+      // Extract text, URLs, and citations from items/sections
+      const { answer, urls, citations } = this.parseChatGPTItems(liveResult.items || []);
+
+      return {
+        query_id: queryId,
+        run_start: startTime,
+        run_end: new Date().toISOString(),
+        prompt: request.prompt,
+        response: answer,
+        model_used: liveResult.model_name || 'gpt-4.1-mini',
+        collector_type: 'chatgpt',
+        citations: citations.length > 0 ? citations : urls, // Use citation titles if available, fallback to URLs
+        urls,
+        metadata: {
+          input_tokens: liveResult.input_tokens,
+          output_tokens: liveResult.output_tokens,
+          money_spent: liveResult.money_spent,
+          web_search: liveResult.web_search || true,
+          model_name: liveResult.model_name,
+          datetime: liveResult.datetime
+        }
+      };
+
+    } catch (error: any) {
+      console.error('❌ DataForSEO ChatGPT execution failed:', error);
+      throw new Error(`DataForSEO ChatGPT execution failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Execute Google AI Mode (AI Overviews) via DataForSEO SERP live advanced
    */
   private async executeGoogleAioLive(
@@ -464,6 +581,78 @@ export class DataForSeoCollectorService {
     return map[country] || 'US';
   }
 
+  private getCityFromCountry(country: string): string {
+    const cityMap: { [key: string]: string } = {
+      'US': 'New York',
+      'GB': 'London',
+      'FR': 'Paris',
+      'DE': 'Berlin',
+      'ES': 'Madrid',
+      'CN': 'Beijing',
+      'JP': 'Tokyo',
+      'KR': 'Seoul'
+    };
+    return cityMap[country] || 'New York';
+  }
+
+  /**
+   * Parse ChatGPT response items - extracts text, URLs, and citation titles
+   * Structure: items[].sections[].text and items[].sections[].annotations[]
+   */
+  private parseChatGPTItems(items: any[]): { answer: string; urls: string[]; citations: string[] } {
+    const texts: string[] = [];
+    const urls: string[] = [];
+    const citations: string[] = [];
+    
+    try {
+      items.forEach((it: any) => {
+        // ChatGPT items have type "message" and contain sections
+        if (it.type === 'message' && it.sections && Array.isArray(it.sections)) {
+          it.sections.forEach((sec: any) => {
+            // Extract text from sections with type "text"
+            if (sec.type === 'text' && typeof sec.text === 'string') {
+              texts.push(sec.text);
+              
+              // Extract URLs and citation titles from annotations
+              if (Array.isArray(sec.annotations)) {
+                sec.annotations.forEach((ann: any) => {
+                  const url = ann?.url;
+                  const title = ann?.title;
+                  
+                  if (url) {
+                    urls.push(url);
+                  }
+                  
+                  // Use title as citation if available, otherwise use URL
+                  if (title) {
+                    citations.push(title);
+                  } else if (url) {
+                    citations.push(url);
+                  }
+                });
+              }
+            }
+          });
+        }
+      });
+    } catch (error) {
+      console.error('Error parsing ChatGPT items:', error);
+    }
+    
+    // Remove duplicates
+    const uniqueUrls = Array.from(new Set(urls));
+    const uniqueCitations = Array.from(new Set(citations));
+    
+    return {
+      answer: texts.join('\n\n') || 'No response',
+      urls: uniqueUrls.slice(0, 25),
+      citations: uniqueCitations.slice(0, 25)
+    };
+  }
+
+  /**
+   * Parse live items for Claude/Perplexity (legacy method)
+   */
   private parseLiveItems(items: any[]): { answer: string; urls: string[] } {
     const texts: string[] = [];
     const urls: string[] = [];

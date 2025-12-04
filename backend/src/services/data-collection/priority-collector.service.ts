@@ -6,10 +6,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { oxylabsCollectorService } from './oxylabs-collector.service';
+import { chatgptOxylabsCollectorService } from './chatgpt-oxylabs-collector.service';
 import { dataForSeoCollectorService } from './dataforseo-collector.service';
 import { brightDataCollectorService } from './brightdata-collector.service';
 import { openRouterCollectorService } from './openrouter-collector.service';
 import { serpApiCollectorService } from './serpapi-collector.service';
+import { groqCollectorService } from './groq-collector.service';
 
 // Load environment variables
 loadEnvironment();
@@ -98,29 +100,46 @@ export class PriorityCollectorService {
       collector_type: 'chatgpt',
       providers: [
         {
-          name: 'oxylabs_chatgpt',
+          name: 'brightdata_chatgpt',
           priority: 1,
-          enabled: true,
+          enabled: true, // ✅ Enabled with async trigger endpoint
+          timeout: 10000, // 10s timeout - async returns snapshot_id quickly
+          retries: 1,
+          fallback_on_failure: true
+        },
+        {
+          name: 'dataforseo_chatgpt',
+          priority: 2,
+          enabled: false,
+          timeout: 60000, // 60s for DataForSEO ChatGPT
+          retries: 1,
+          fallback_on_failure: true
+        },
+        {
+          name: 'groq_chatgpt',
+          priority: 3,
+          enabled: false,
           timeout: 30000,
           retries: 1,
           fallback_on_failure: true
         },
         {
+          name: 'oxylabs_chatgpt',
+          priority: 4,
+          enabled: false,
+          timeout: 90000, // 90s for ChatGPT (matches chatgpt-oxylabs-collector.service.ts)
+          retries: 1,
+          fallback_on_failure: true
+        },
+        {
           name: 'openai_direct',
-          priority: 2,
-          enabled: true,
+          priority: 5,
+          enabled: false,
           timeout: 30000,
           retries: 1,
-          fallback_on_failure: true // Fallback to OpenAI direct when Oxylabs fails
+          fallback_on_failure: true // Fallback to OpenAI direct when other providers fail
         },
-        // {
-        //   name: 'brightdata_chatgpt',
-        //   priority: 3,
-        //   enabled: false, // Disabled - skip BrightData for now
-        //   timeout: 30000,
-        //   retries: 1,
-        //   fallback_on_failure: false
-        // },
+       
       ]
     });
 
@@ -467,7 +486,9 @@ export class PriorityCollectorService {
     console.log(`🔄 Calling ${provider.name} for ${collectorType}`);
 
     // Route to appropriate service based on provider name
-    if (provider.name.includes('serpapi')) {
+    if (provider.name.includes('groq')) {
+      return await this.callGroqProvider(provider, queryText, brandId, locale, country, collectorType);
+    } else if (provider.name.includes('serpapi')) {
       return await this.callSerpApiProvider(provider, queryText, brandId, locale, country, collectorType);
     } else if (provider.name.includes('openrouter')) {
       return await this.callOpenRouterProvider(provider, queryText, brandId, locale, country, collectorType);
@@ -482,6 +503,25 @@ export class PriorityCollectorService {
     } else {
       throw new Error(`Unknown provider type: ${provider.name}`);
     }
+  }
+
+  /**
+   * Call Groq provider
+   */
+  private async callGroqProvider(
+    provider: CollectorProvider,
+    queryText: string,
+    brandId: string,
+    locale: string,
+    country: string,
+    collectorType: string
+  ): Promise<any> {
+    console.log(`🔄 Calling Groq ${provider.name} for ${collectorType}`);
+    
+    return await groqCollectorService.executeQuery({
+      prompt: queryText,
+      collectorType
+    });
   }
 
   /**
@@ -514,8 +554,18 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
+    // Use dedicated ChatGPT Oxylabs service for ChatGPT
+    if (provider.name === 'oxylabs_chatgpt' || collectorType === 'chatgpt') {
+      return await chatgptOxylabsCollectorService.executeQuery({
+        prompt: queryText,
+        brand: brandId,
+        locale,
+        country
+      });
+    }
+
+    // Use general Oxylabs service for other collectors
     const sourceMap: { [key: string]: string } = {
-      'oxylabs_chatgpt': 'chatgpt',
       'oxylabs_google_aio': 'google_ai_mode',
       'oxylabs_perplexity': 'perplexity'
     };

@@ -858,6 +858,7 @@ router.post('/brands/:brandId/score-now', async (req: Request, res: Response) =>
 /**
  * POST /api/admin/brands/:brandId/collect-and-score-now
  * Immediately trigger data collection followed by scoring (no schedule needed)
+ * Returns immediately and runs the work in the background to avoid timeout issues
  */
 router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: Response) => {
   try {
@@ -873,63 +874,81 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
 
     console.log(`[Admin] Immediate data collection + scoring requested for brand ${brandId}, customer ${customer_id}`);
 
-    const results: any = {
-      dataCollection: null,
-      scoring: null,
-      errors: [],
-    };
-
-    // Step 1: Execute data collection
-    try {
-      console.log(`[Admin] Step 1: Starting data collection for brand ${brandId}, customer ${customer_id}...`);
-      const collectionResult = await dataCollectionJobService.executeDataCollection(
-        brandId,
-        customer_id,
-        {
-          collectors,
-          locale,
-          country,
-        }
-      );
-      results.dataCollection = collectionResult;
-      console.log(`[Admin] Step 1: Data collection completed - ${collectionResult.queriesExecuted} queries executed`);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`[Admin] Data collection failed:`, errorMsg);
-      results.errors.push({ operation: 'data_collection', error: errorMsg });
-    }
-
-    // Step 2: Execute scoring (only if data collection succeeded or partially succeeded)
-    if (results.dataCollection && results.dataCollection.successfulExecutions > 0) {
-      try {
-        console.log(`[Admin] Step 2: Starting scoring...`);
-        const { brandScoringService } = await import('../services/scoring/brand-scoring.orchestrator');
-        const scoringResult = await brandScoringService.scoreBrand({
-          brandId,
-          customerId: customer_id,
-          positionLimit,
-          sentimentLimit,
-          parallel: parallel || false,
-        });
-        results.scoring = scoringResult;
-        console.log(`[Admin] Step 2: Scoring completed - ${scoringResult.positionsProcessed} positions, ${scoringResult.sentimentsProcessed} sentiments`);
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`[Admin] Scoring failed:`, errorMsg);
-        results.errors.push({ operation: 'scoring', error: errorMsg });
-      }
-    } else {
-      console.warn(`[Admin] Skipping scoring - no successful data collection results`);
-      results.errors.push({
-        operation: 'scoring',
-        error: 'Skipped: No successful data collection results to score',
-      });
-    }
-
+    // Return immediately to avoid timeout
     res.json({
-      success: results.errors.length === 0 || (results.dataCollection && results.scoring),
-      data: results,
-      message: 'Data collection and scoring completed',
+      success: true,
+      message: 'Data collection and scoring started in background. This process may take 10-30 minutes. Check job run history for progress.',
+      data: {
+        brandId,
+        status: 'started',
+        startedAt: new Date().toISOString(),
+      },
+    });
+
+    // Run the work in the background (don't await - let it run asynchronously)
+    setImmediate(async () => {
+      const results: any = {
+        dataCollection: null,
+        scoring: null,
+        errors: [],
+      };
+
+      try {
+        // Step 1: Execute data collection
+        try {
+          console.log(`[Admin] Step 1: Starting data collection for brand ${brandId}, customer ${customer_id}...`);
+          const collectionResult = await dataCollectionJobService.executeDataCollection(
+            brandId,
+            customer_id,
+            {
+              collectors,
+              locale,
+              country,
+            }
+          );
+          results.dataCollection = collectionResult;
+          console.log(`[Admin] Step 1: Data collection completed - ${collectionResult.queriesExecuted} queries executed`);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.error(`[Admin] Data collection failed:`, errorMsg);
+          results.errors.push({ operation: 'data_collection', error: errorMsg });
+        }
+
+        // Step 2: Execute scoring (only if data collection succeeded or partially succeeded)
+        if (results.dataCollection && results.dataCollection.successfulExecutions > 0) {
+          try {
+            console.log(`[Admin] Step 2: Starting scoring...`);
+            const { brandScoringService } = await import('../services/scoring/brand-scoring.orchestrator');
+            const scoringResult = await brandScoringService.scoreBrand({
+              brandId,
+              customerId: customer_id,
+              positionLimit,
+              sentimentLimit,
+              parallel: parallel || false,
+            });
+            results.scoring = scoringResult;
+            console.log(`[Admin] Step 2: Scoring completed - ${scoringResult.positionsProcessed} positions, ${scoringResult.sentimentsProcessed} sentiments`);
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            console.error(`[Admin] Scoring failed:`, errorMsg);
+            results.errors.push({ operation: 'scoring', error: errorMsg });
+          }
+        } else {
+          console.warn(`[Admin] Skipping scoring - no successful data collection results`);
+          results.errors.push({
+            operation: 'scoring',
+            error: 'Skipped: No successful data collection results to score',
+          });
+        }
+
+        console.log(`[Admin] Background job completed for brand ${brandId}:`, {
+          dataCollection: results.dataCollection ? 'completed' : 'failed',
+          scoring: results.scoring ? 'completed' : 'skipped/failed',
+          errors: results.errors.length,
+        });
+      } catch (error) {
+        console.error(`[Admin] Background job error for brand ${brandId}:`, error);
+      }
     });
   } catch (error) {
     console.error('Error triggering immediate data collection and scoring:', error);

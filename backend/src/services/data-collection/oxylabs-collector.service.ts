@@ -10,7 +10,7 @@ loadEnvironment();
 
 export interface OxylabsQueryRequest {
   prompt: string;
-  source: 'chatgpt' | 'google' | 'perplexity' | 'google_aio';
+  source: 'google' | 'perplexity' | 'google_aio';
   brand?: string;
   locale?: string;
   country?: string;
@@ -48,11 +48,9 @@ export class OxylabsCollectorService {
     try {
       // Map source to Oxylabs source format
       const sourceMapping: { [key: string]: string } = {
-        chatgpt: 'chatgpt',
         google: 'google_search',
         google_aio: 'google_ai_mode',
         perplexity: 'perplexity'
-       
       };
 
       const oxylabsSource = sourceMapping[request.source] || request.source || 'google_search';
@@ -60,18 +58,6 @@ export class OxylabsCollectorService {
 
       // Prepare Oxylabs request body based on source type
       switch (oxylabsSource) {
-        case 'chatgpt':
-          // ChatGPT requires: source, prompt, parse, search, geo_location
-          // Note: Oxylabs ChatGPT uses the latest model by default
-          // Format matches official Oxylabs documentation
-          oxylabsBody = {
-            source: 'chatgpt',
-            prompt: request.prompt,
-            parse: true,
-            search: true,
-            geo_location: request.country || 'United States'
-          };
-          break;
         case 'google_ai_mode':
           // Google AI Overviews requires: source, query, parse, geo_location
           oxylabsBody = {
@@ -112,8 +98,7 @@ export class OxylabsCollectorService {
       });
 
       // Create an AbortController for timeout
-      // ChatGPT needs 90s, others need 60s
-      const timeoutDuration = request.source === 'chatgpt' ? 90000 : 60000; // 90s for ChatGPT, 60s for others
+      const timeoutDuration = 60000; // 60s for all sources
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
@@ -204,7 +189,7 @@ export class OxylabsCollectorService {
       if (data.results && data.results.length > 0) {
         const result = data.results[0];
         if (result.content) {
-          // Prefer structured ChatGPT response_text or markdown_text when available
+          // Prefer structured response_text or markdown_text when available
           if (typeof result.content === 'object') {
             if (typeof result.content.response_text === 'string' && result.content.response_text.trim()) {
               return result.content.response_text;
@@ -257,7 +242,7 @@ export class OxylabsCollectorService {
         if (result.sources) {
           citations.push(...result.sources);
         }
-        // Extract from ChatGPT markdown_json annotations
+        // Extract from markdown_json annotations
         if (result.content && result.content.markdown_json && Array.isArray(result.content.markdown_json)) {
           result.content.markdown_json.forEach((node: any) => {
             if (node.sections && Array.isArray(node.sections)) {
@@ -351,7 +336,7 @@ export class OxylabsCollectorService {
             }
           });
         }
-        // Also extract from ChatGPT markdown_json annotations
+        // Also extract from markdown_json annotations
         if (result.content && result.content.markdown_json && Array.isArray(result.content.markdown_json)) {
           result.content.markdown_json.forEach((node: any) => {
             if (node.sections && Array.isArray(node.sections)) {
@@ -428,7 +413,6 @@ export class OxylabsCollectorService {
 
   private getCollectorTypeName(source: string): string {
     const typeMap: { [key: string]: string } = {
-      'chatgpt': 'ChatGPT Collector',
       'google': 'Google AIO Collector', 
       'google_aio': 'Google AIO Collector',
       'google_ai_mode': 'Google AIO Collector',
@@ -481,12 +465,12 @@ export class OxylabsCollectorService {
 
   async checkHealth(): Promise<boolean> {
     try {
-      // Test Oxylabs connection with a simple ChatGPT request
+      // Test Oxylabs connection with a simple Google AIO request
       const testRequest = {
-        source: 'chatgpt',
-        prompt: 'test health check',
+        source: 'google_ai_mode',
+        query: 'test health check',
+        render: 'html',
         parse: true,
-        search: true,
         geo_location: 'United States'
       };
 

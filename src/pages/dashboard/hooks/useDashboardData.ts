@@ -197,9 +197,47 @@ export const useDashboardData = () => {
     { 
       enabled: !!dashboardEndpoint, 
       refetchOnMount: false,
-      refetchInterval: 60000 // Refresh dashboard data every 60 seconds
+      // Use more frequent refresh when data collection is in progress (15 seconds) or normal refresh (30 seconds)
+      // This ensures dashboard updates quickly when async data arrives
+      refetchInterval: isDataCollectionInProgress ? 15000 : 30000 // 15 seconds during collection, 30 seconds normally
     }
   );
+  
+  // Check for recent data updates and trigger refresh when new data is detected
+  useEffect(() => {
+    if (!selectedBrandId || !dashboardEndpoint) return;
+    
+    const checkForNewData = async () => {
+      try {
+        // Check if there are collector_results with raw_answer updated in the last 2 minutes
+        // This catches async BrightData responses that were just populated
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const response = await apiClient.request<ApiResponse<{ hasUpdates: boolean; count?: number }>>(
+          `/brands/${selectedBrandId}/data-updates?since=${twoMinutesAgo}`,
+          {},
+          { requiresAuth: true }
+        );
+        
+        if (response?.success && response.data?.hasUpdates) {
+          console.log(`[DASHBOARD] New data detected (${response.data.count || 0} new results), triggering refresh...`);
+          // Trigger immediate refresh when new data is detected
+          refetchDashboard().catch((err) => {
+            console.error('[DASHBOARD] Error refreshing after detecting new data:', err);
+          });
+        }
+      } catch (error) {
+        // Silently fail - this is a background check, don't spam console
+        if (error instanceof Error && !error.message.includes('aborted')) {
+          console.debug('[DASHBOARD] Error checking for new data:', error);
+        }
+      }
+    };
+    
+    // Check for new data every 20 seconds (between normal refresh intervals)
+    const interval = setInterval(checkForNewData, 20000);
+    
+    return () => clearInterval(interval);
+  }, [selectedBrandId, dashboardEndpoint, refetchDashboard]);
   
   useEffect(() => {
     if (dashboardEndpoint) {

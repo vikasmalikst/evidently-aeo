@@ -53,6 +53,7 @@ export interface CollectorResult {
   brandId?: string;
   customerId?: string;
   snapshotId?: string;
+  rawResponseJson?: any; // Raw JSON response from collector API
 }
 
 export interface CollectorConfig {
@@ -816,6 +817,12 @@ export class DataCollectionService {
         );
         
         // Store result if successful
+        // Extract raw_response_json from metadata if available (but don't store it back in metadata to avoid 413 errors)
+        const rawResponseJson = result.metadata?.raw_response_json;
+        
+        // Remove raw_response_json from metadata to avoid 413 Request Entity Too Large errors
+        const { raw_response_json: _, ...metadataWithoutRawJson } = result.metadata || {};
+        
         await this.storeCollectorResult({
           queryId: result.queryId,
           executionId: result.executionId,
@@ -826,14 +833,15 @@ export class DataCollectionService {
           urls: result.urls,
           executionTimeMs: result.executionTimeMs,
           metadata: {
-            ...result.metadata,
+            ...metadataWithoutRawJson,
             provider: result.provider,
             fallbackUsed: result.fallbackUsed,
             fallbackChain: result.fallbackChain
           },
           brandId: result.brandId,
           customerId: result.customerId,
-          snapshotId: result.snapshotId
+          snapshotId: result.snapshotId,
+          rawResponseJson: rawResponseJson
         });
       } else {
         // Update execution status for failed attempts
@@ -924,6 +932,12 @@ export class DataCollectionService {
       const executionTime = Date.now() - startTime;
       
       // Store result with ALL required fields
+      // Extract raw_response_json from metadata if available (but don't store it back in metadata to avoid 413 errors)
+      const rawResponseJson = response.metadata?.raw_response_json;
+      
+      // Remove raw_response_json from metadata to avoid 413 Request Entity Too Large errors
+      const { raw_response_json: _, ...metadataWithoutRawJson } = response.metadata || {};
+      
       await this.storeCollectorResult({
         queryId: request.queryId,
         executionId,
@@ -933,10 +947,11 @@ export class DataCollectionService {
         citations: response.citations || [],
         urls: response.urls || [],
         executionTimeMs: executionTime,
-        metadata: response.metadata || {},
+        metadata: metadataWithoutRawJson || {},
         // Add missing fields from request
         brandId: request.brandId,
-        customerId: request.customerId
+        customerId: request.customerId,
+        rawResponseJson: rawResponseJson
       });
 
       // CRITICAL: Update execution status to 'completed' after successful result storage
@@ -1130,16 +1145,20 @@ export class DataCollectionService {
       competitors: competitorsList.length > 0 ? competitorsList : null, // Add competitors as JSONB array (not stringified)
       topic: topicFromQuery || null, // Store topic in dedicated column
       collection_time_ms: result.executionTimeMs || null, // Store collection time in dedicated column
-      metadata: {
-        ...result.metadata,
-        execution_time_ms: result.executionTimeMs, // Also store in metadata for backward compatibility
-        status: result.status,
-        collected_by: 'main_process',
-        collected_at: new Date().toISOString(),
-        ...(topicFromQuery ? { topic: topicFromQuery } : {}), // Also store in metadata for backward compatibility
-        ...(result.error ? { error: result.error } : {}), // Store error message for failed results
-        ...(result.status === 'failed' ? { failed: true, failed_at: new Date().toISOString() } : {})
-      }
+      metadata: (() => {
+        // Remove raw_response_json from metadata to avoid 413 Request Entity Too Large errors
+        const { raw_response_json: _, ...metadataWithoutRawJson } = result.metadata || {};
+        return {
+          ...metadataWithoutRawJson,
+          execution_time_ms: result.executionTimeMs, // Also store in metadata for backward compatibility
+          status: result.status,
+          collected_by: 'main_process',
+          collected_at: new Date().toISOString(),
+          ...(topicFromQuery ? { topic: topicFromQuery } : {}), // Also store in metadata for backward compatibility
+          ...(result.error ? { error: result.error } : {}), // Store error message for failed results
+          ...(result.status === 'failed' ? { failed: true, failed_at: new Date().toISOString() } : {})
+        };
+      })()
     };
     
     // Add error_message if status is failed
@@ -1171,6 +1190,12 @@ export class DataCollectionService {
     if (result.snapshotId) {
       insertData.brightdata_snapshot_id = result.snapshotId;
       console.log(`✅ Added brightdata_snapshot_id: ${result.snapshotId}`);
+    }
+
+    // Add raw_response_json if available
+    if (result.rawResponseJson) {
+      insertData.raw_response_json = result.rawResponseJson;
+      console.log(`✅ Added raw_response_json to insertData`);
     }
 
     console.log('📤 About to insert into collector_results:', JSON.stringify(insertData, null, 2));
@@ -1300,9 +1325,11 @@ export class DataCollectionService {
 
       // 🎯 Trigger automatic scoring for this brand (position extraction, sentiment scoring, citation extraction)
       // Run asynchronously to not block data collection
-      if (insertedData && insertedData.length > 0 && result.brandId && result.customerId) {
+      // Only trigger scoring if raw_answer is populated (skip for async BrightData requests that will be updated later)
+      const hasAnswer = result.response && result.response.trim().length > 0;
+      if (insertedData && insertedData.length > 0 && result.brandId && result.customerId && hasAnswer) {
         try {
-          console.log(`🔄 Triggering automatic scoring for brand ${result.brandId} (new collector result inserted)...`);
+          console.log(`🔄 Triggering automatic scoring for brand ${result.brandId} (new collector result inserted with answer)...`);
           // Import and trigger scoring asynchronously (non-blocking)
           const { brandScoringService } = await import('../scoring/brand-scoring.orchestrator');
           // Use async method to not block data collection response
@@ -1319,6 +1346,8 @@ export class DataCollectionService {
           console.warn(`⚠️ Failed to trigger scoring for brand ${result.brandId} (non-blocking):`, scoringError);
           // Don't throw - scoring failure shouldn't block data collection
         }
+      } else if (insertedData && insertedData.length > 0 && result.brandId && result.customerId && !hasAnswer) {
+        console.log(`⏭️ Skipping scoring trigger for brand ${result.brandId} - raw_answer is empty (async request, will trigger after data is fetched)`);
       }
     }
   }

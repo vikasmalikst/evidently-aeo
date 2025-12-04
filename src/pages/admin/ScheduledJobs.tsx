@@ -252,20 +252,27 @@ export const ScheduledJobs = () => {
         customer_id: customerId,
       });
       if (response.success) {
-        const collection = response.data.dataCollection;
-        const scoring = response.data.scoring;
-        let message = `✅ Completed!\n\n`;
-        if (collection) {
-          message += `Data Collection: ${collection.queriesExecuted} queries executed, ${collection.successfulExecutions} successful\n`;
+        // Check if this is the new async response format
+        if (response.data.status === 'started') {
+          alert(`✅ Data collection and scoring started!\n\nThis process will run in the background and may take 10-30 minutes. Check the job run history below to monitor progress.`);
+          loadRecentRuns();
+        } else {
+          // Legacy synchronous response format (for backwards compatibility)
+          const collection = response.data.dataCollection;
+          const scoring = response.data.scoring;
+          let message = `✅ Completed!\n\n`;
+          if (collection) {
+            message += `Data Collection: ${collection.queriesExecuted} queries executed, ${collection.successfulExecutions} successful\n`;
+          }
+          if (scoring) {
+            message += `Scoring: ${scoring.positionsProcessed} positions, ${scoring.sentimentsProcessed} sentiments processed\n`;
+          }
+          if (response.data.errors && response.data.errors.length > 0) {
+            message += `\n⚠️ Some errors occurred. Check job run history for details.`;
+          }
+          alert(message);
+          loadRecentRuns();
         }
-        if (scoring) {
-          message += `Scoring: ${scoring.positionsProcessed} positions, ${scoring.sentimentsProcessed} sentiments processed\n`;
-        }
-        if (response.data.errors && response.data.errors.length > 0) {
-          message += `\n⚠️ Some errors occurred. Check job run history for details.`;
-        }
-        alert(message);
-        loadRecentRuns();
       }
     } catch (error: any) {
       console.error('Failed to start collection and scoring:', error);

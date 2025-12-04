@@ -6,6 +6,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { oxylabsCollectorService } from './oxylabs-collector.service';
+import { chatgptOxylabsCollectorService } from './chatgpt-oxylabs-collector.service';
 import { dataForSeoCollectorService } from './dataforseo-collector.service';
 import { brightDataCollectorService } from './brightdata-collector.service';
 import { openRouterCollectorService } from './openrouter-collector.service';
@@ -99,37 +100,46 @@ export class PriorityCollectorService {
       collector_type: 'chatgpt',
       providers: [
         {
-          name: 'groq_chatgpt',
+          name: 'brightdata_chatgpt',
           priority: 1,
-          enabled: true,
+          enabled: true, // ✅ Enabled with async trigger endpoint
+          timeout: 10000, // 10s timeout - async returns snapshot_id quickly
+          retries: 1,
+          fallback_on_failure: true
+        },
+        {
+          name: 'dataforseo_chatgpt',
+          priority: 2,
+          enabled: false,
+          timeout: 60000, // 60s for DataForSEO ChatGPT
+          retries: 1,
+          fallback_on_failure: true
+        },
+        {
+          name: 'groq_chatgpt',
+          priority: 3,
+          enabled: false,
           timeout: 30000,
           retries: 1,
           fallback_on_failure: true
         },
         {
           name: 'oxylabs_chatgpt',
-          priority: 2,
-          enabled: true,
-          timeout: 30000,
+          priority: 4,
+          enabled: false,
+          timeout: 90000, // 90s for ChatGPT (matches chatgpt-oxylabs-collector.service.ts)
           retries: 1,
           fallback_on_failure: true
         },
         {
           name: 'openai_direct',
-          priority: 3,
-          enabled: true,
+          priority: 5,
+          enabled: false,
           timeout: 30000,
           retries: 1,
-          fallback_on_failure: true // Fallback to OpenAI direct when Oxylabs fails
+          fallback_on_failure: true // Fallback to OpenAI direct when other providers fail
         },
-        // {
-        //   name: 'brightdata_chatgpt',
-        //   priority: 4,
-        //   enabled: false, // Disabled - skip BrightData for now
-        //   timeout: 30000,
-        //   retries: 1,
-        //   fallback_on_failure: false
-        // },
+       
       ]
     });
 
@@ -544,8 +554,18 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
+    // Use dedicated ChatGPT Oxylabs service for ChatGPT
+    if (provider.name === 'oxylabs_chatgpt' || collectorType === 'chatgpt') {
+      return await chatgptOxylabsCollectorService.executeQuery({
+        prompt: queryText,
+        brand: brandId,
+        locale,
+        country
+      });
+    }
+
+    // Use general Oxylabs service for other collectors
     const sourceMap: { [key: string]: string } = {
-      'oxylabs_chatgpt': 'chatgpt',
       'oxylabs_google_aio': 'google_ai_mode',
       'oxylabs_perplexity': 'perplexity'
     };

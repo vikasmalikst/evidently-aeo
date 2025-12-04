@@ -107,13 +107,50 @@ export class BrightDataBackgroundService {
             continue;
           }
 
-          // Check if data is ready
-          if (downloadResult && downloadResult.answer_text) {
+          // Handle different response structures - BrightData returns array format: [{answer_text, citations, ...}]
+          let actualResult = downloadResult;
+          
+          // If response is an array, take the first element (this is the standard BrightData format)
+          if (Array.isArray(downloadResult) && downloadResult.length > 0) {
+            actualResult = downloadResult[0];
+            console.log(`📦 Background service: Response is array, using first element`);
+          }
+          
+          // Check if data is ready - look for answer_text field (primary field in BrightData response)
+          const hasAnswerText = actualResult && actualResult.answer_text && typeof actualResult.answer_text === 'string' && actualResult.answer_text.trim().length > 0;
+          
+          if (actualResult && hasAnswerText) {
             console.log(`✅ Snapshot ${execution.brightdata_snapshot_id} is ready! Completing execution...`);
 
-            const answer = downloadResult.answer_text || 'No response';
-            const sources = downloadResult.sources || downloadResult.citations || [];
-            const urls = Array.isArray(sources) ? sources.map((s: any) => s.url || s).filter(Boolean) : [];
+            const answer = actualResult.answer_text || 'No response';
+            
+            // Extract citations from the response - BrightData format: citations array with objects {url, title, description, icon}
+            let citationsArray: any[] = [];
+            
+            // Primary: Check citations array in actualResult (standard BrightData format)
+            if (actualResult.citations && Array.isArray(actualResult.citations)) {
+              citationsArray = actualResult.citations;
+            } else if (actualResult.links_attached && Array.isArray(actualResult.links_attached)) {
+              citationsArray = actualResult.links_attached;
+            }
+            
+            // Extract URLs from citations array
+            let urls: string[] = [];
+            if (Array.isArray(citationsArray) && citationsArray.length > 0) {
+              urls = citationsArray
+                .map((citation: any) => {
+                  if (typeof citation === 'string') {
+                    return citation.startsWith('http://') || citation.startsWith('https://') ? citation : null;
+                  }
+                  if (typeof citation === 'object' && citation !== null) {
+                    return citation.url || citation.source || citation.link || citation.href || null;
+                  }
+                  return null;
+                })
+                .filter((url: string | null): url is string => url !== null && (url.startsWith('http://') || url.startsWith('https://')));
+              
+              urls = [...new Set(urls)]; // Remove duplicates
+            }
 
             // Get query text
             const { data: queryData } = await supabase
@@ -157,7 +194,7 @@ export class BrightDataBackgroundService {
             // Store result in collector_results
             const { error: insertError } = await supabase
               .from('collector_results')
-              .insert({
+              .upsert({
                 query_id: execution.query_id,
                 execution_id: execution.id,
                 collector_type: execution.collector_type,
@@ -170,11 +207,15 @@ export class BrightDataBackgroundService {
                 competitors: competitorsList.length > 0 ? competitorsList : null,
                 brand: brandData?.name || null,
                 brightdata_snapshot_id: execution.brightdata_snapshot_id,
+                raw_response_json: downloadResult, // Store full JSON response in column only
                 metadata: {
                   collected_by: 'background_service',
                   collected_at: new Date().toISOString(),
                   execution_created_at: execution.executed_at
+                  // Removed raw_response_json from metadata to avoid 413 Request Entity Too Large errors
                 }
+              }, {
+                onConflict: 'execution_id'
               });
 
             if (insertError) {

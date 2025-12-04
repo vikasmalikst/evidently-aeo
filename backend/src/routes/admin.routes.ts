@@ -461,7 +461,11 @@ router.post('/scheduled-jobs', async (req: Request, res: Response) => {
       });
     }
 
-    const createdBy = req.user?.id || null;
+    // Only set created_by if it's a valid UUID, otherwise set to null
+    const userId = req.user?.id;
+    const createdBy = userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
+      ? userId
+      : null;
 
     const job = await jobSchedulerService.createScheduledJob({
       brand_id,

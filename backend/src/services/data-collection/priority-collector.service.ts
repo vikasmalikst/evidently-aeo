@@ -144,19 +144,20 @@ export class PriorityCollectorService {
     });
 
     // Google AIO Collector Priority Configuration
+    // Using BrightData as primary provider (supports async trigger endpoint)
     this.collectorConfigs.set('google_aio', {
       collector_type: 'google_aio',
       providers: [
         {
-          name: 'oxylabs_google_aio',
+          name: 'brightdata_google_aio',
           priority: 1,
-          enabled: true, // Re-enabled as per user's request
+          enabled: true,
           timeout: 45000,
           retries: 2,
           fallback_on_failure: true
         },
         {
-          name: 'brightdata_google_aio',
+          name: 'oxylabs_google_aio',
           priority: 2,
           enabled: true,
           timeout: 45000,
@@ -176,19 +177,20 @@ export class PriorityCollectorService {
     });
 
     // Perplexity Collector Priority Configuration
+    // Using BrightData as primary provider (supports async trigger endpoint)
     this.collectorConfigs.set('perplexity', {
       collector_type: 'perplexity',
       providers: [
         {
-          name: 'oxylabs_perplexity',
+          name: 'brightdata_perplexity',
           priority: 1,
           enabled: true,
-          timeout: 60000,
+          timeout: 45000,
           retries: 2,
           fallback_on_failure: true
         },
         {
-          name: 'brightdata_perplexity',
+          name: 'oxylabs_perplexity',
           priority: 2,
           enabled: true,
           timeout: 60000,
@@ -224,22 +226,23 @@ export class PriorityCollectorService {
   
 
     // Bing Copilot Collector Priority Configuration
+    // Using BrightData as primary provider (supports async trigger endpoint)
     this.collectorConfigs.set('bing_copilot', {
       collector_type: 'bing_copilot',
       providers: [
         {
-          name: 'serpapi_bing_copilot',
+          name: 'brightdata_bing_copilot',
           priority: 1,
           enabled: true,
-          timeout: 60000, // 60 seconds for SerpApi (synchronous)
+          timeout: 45000,
           retries: 2,
           fallback_on_failure: true
         },
         {
-          name: 'brightdata_bing_copilot',
+          name: 'serpapi_bing_copilot',
           priority: 2,
-          enabled: false,
-          timeout: 300000, // Increased to 5 minutes for BrightData async processing
+          enabled: true,
+          timeout: 60000, // 60 seconds for SerpApi (synchronous)
           retries: 2,
           fallback_on_failure: true
         }
@@ -247,7 +250,7 @@ export class PriorityCollectorService {
     });
 
     // Gemini Collector Priority Configuration
-    // Using Google Gemini Direct as primary (user requested)
+    // Using BrightData as primary provider (supports async trigger endpoint)
     this.collectorConfigs.set('gemini', {
       collector_type: 'gemini',
       providers: [
@@ -272,6 +275,7 @@ export class PriorityCollectorService {
     });
 
     // Grok Collector Priority Configuration
+    // Using BrightData as primary provider (supports async trigger endpoint)
     this.collectorConfigs.set('grok', {
       collector_type: 'grok',
       providers: [
@@ -279,7 +283,7 @@ export class PriorityCollectorService {
           name: 'brightdata_grok',
           priority: 1,
           enabled: true,
-          timeout: 300000, // Increased to 5 minutes for BrightData async processing
+          timeout: 45000,
           retries: 2,
           fallback_on_failure: true
         }

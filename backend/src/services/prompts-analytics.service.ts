@@ -716,40 +716,16 @@ export class PromptsAnalyticsService {
       }
     }
 
-    // Fetch sentiments from collector_results and visibility scores from extracted_positions
+    // Fetch sentiments from extracted_positions (same source as dashboard) and visibility scores from extracted_positions
+    // Use sentiment_score from extracted_positions table only (no fallback to collector_results) - matches dashboard behavior
     const sentimentByCollectorResult = new Map<number, number>()
-    if (allCollectorResultIds.length > 0) {
-      const { data: collectorResultsData, error: sentimentError } = await supabaseAdmin
-        .from('collector_results')
-        .select('id, sentiment_score')
-        .in('id', allCollectorResultIds)
-        .not('sentiment_score', 'is', null)
-        .gte('created_at', normalizedRange.startIsoBound)
-        .lte('created_at', normalizedRange.endIsoBound)
 
-      if (sentimentError) {
-        console.warn(`Failed to load sentiments from collector_results: ${sentimentError.message}`)
-      } else if (collectorResultsData) {
-        collectorResultsData.forEach((row: any) => {
-          const sentimentValue =
-            typeof row?.sentiment_score === 'number'
-              ? row.sentiment_score
-              : typeof row?.sentiment_score === 'string'
-                ? Number(row.sentiment_score)
-                : null
-          if (sentimentValue !== null && Number.isFinite(sentimentValue)) {
-            sentimentByCollectorResult.set(row.id, sentimentValue)
-          }
-        })
-      }
-    }
-
-    // Fetch visibility scores from extracted_positions (still stored there)
+    // Fetch visibility scores and sentiment scores from extracted_positions (same source as dashboard)
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       let visibilityQuery = supabaseAdmin
         .from('extracted_positions')
-        .select('query_id, collector_result_id, visibility_index, competitor_name')
+        .select('query_id, collector_result_id, visibility_index, competitor_name, sentiment_score')
         .eq('brand_id', brandRow.id)
         .eq('customer_id', customerId)
         .gte('processed_at', normalizedRange.startIsoBound)
@@ -785,12 +761,19 @@ export class PromptsAnalyticsService {
         })
 
         filteredRows.forEach((row: any) => {
-          // Process visibility_index (sentiment is now from collector_results, handled separately above)
+          // Process visibility_index and sentiment_score from extracted_positions (same source as dashboard)
           const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
           
-          // Add sentiment from collector_results if available
-          if (row?.collector_result_id) {
-            const sentimentValue = sentimentByCollectorResult.get(row.collector_result_id)
+          // Add sentiment from extracted_positions if available (same source as dashboard)
+          // Use sentiment_score from extracted_positions table - matches dashboard behavior
+          if (row?.collector_result_id && isBrandRow) {
+            // Only use brand rows (where competitor_name is null) for sentiment, matching dashboard
+            const sentimentValue =
+              typeof row?.sentiment_score === 'number'
+                ? row.sentiment_score
+                : typeof row?.sentiment_score === 'string'
+                  ? Number(row.sentiment_score)
+                  : null
             if (sentimentValue !== null && sentimentValue !== undefined && Number.isFinite(sentimentValue)) {
               const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
               const keyByCollector =

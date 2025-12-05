@@ -29,11 +29,12 @@ export class BrightDataGrokService extends BaseBrightDataService {
     try {
       console.log(`🚀 Executing Grok query via BrightData Async (dataset: ${datasetId})`);
       
-      // Use async trigger endpoint format (matching user's provided format)
+      // Use async trigger endpoint format (matching pattern of other collectors)
       const payload = {
         input: [{
           url: 'https://grok.com/',
           prompt: request.prompt,
+          country: request.country || '',
           index: 1
         }]
       };

@@ -123,22 +123,22 @@ export class DataCollectionService {
       priority: 1
     });
 
-    // Google AIO Collector (via Oxylabs)
+    // Google AIO Collector (via Priority/BrightData)
     this.collectors.set('google_aio', {
       name: 'Google AIO Collector',
       enabled: true,
-      baseUrl: 'oxylabs',
-      timeout: 45000, // Increased to 45s
+      baseUrl: 'priority', // ✅ Changed to priority to use BrightData
+      timeout: 300000, // Increased to 5 minutes for BrightData async processing
       retries: 2,
       priority: 2
     });
 
-    // Perplexity Collector (via Oxylabs)
+    // Perplexity Collector (via Priority/BrightData)
     this.collectors.set('perplexity', {
       name: 'Perplexity Collector',
       enabled: true,
-      baseUrl: 'oxylabs',
-      timeout: 60000, // 60s for Perplexity
+      baseUrl: 'priority', // ✅ Changed to priority to use BrightData
+      timeout: 300000, // Increased to 5 minutes for BrightData async processing
       retries: 2,
       priority: 3
     });

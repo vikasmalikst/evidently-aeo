@@ -5,7 +5,8 @@
 
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { positionExtractionService } from './position-extraction.service';
-import { sentimentScoringService } from './sentiment-scoring.service';
+import { brandSentimentService } from './sentiment/brand-sentiment.service';
+import { competitorSentimentService } from './sentiment/competitor-sentiment.service';
 import { citationExtractionService } from '../citations/citation-extraction.service';
 
 // Load environment variables
@@ -85,8 +86,8 @@ export class BrandScoringService {
         
         const [positionsResult, brandSentimentsResult, competitorSentimentsResult, citationsResult] = await Promise.allSettled([
           positionExtractionService.extractPositionsForNewResults(positionOptions),
-          sentimentScoringService.scoreBrandSentiment(sentimentOptions),
-          sentimentScoringService.scoreCompetitorSentiment(sentimentOptions),
+          brandSentimentService.scoreBrandSentiment(sentimentOptions),
+          competitorSentimentService.scoreCompetitorSentiment(sentimentOptions),
           citationExtractionService.extractAndStoreCitations(brandId)
         ]);
 
@@ -153,7 +154,7 @@ export class BrandScoringService {
 
         // 2. Brand sentiment scoring (for extracted_positions - brand only, priority)
         try {
-          const brandSentimentsProcessed = await sentimentScoringService.scoreBrandSentiment(sentimentOptions);
+          const brandSentimentsProcessed = await brandSentimentService.scoreBrandSentiment(sentimentOptions);
           console.log(`✅ Brand sentiment scoring completed: ${brandSentimentsProcessed} positions processed`);
           // Note: This is separate from competitorSentimentsProcessed for tracking
         } catch (error) {
@@ -165,7 +166,7 @@ export class BrandScoringService {
 
         // 3. Competitor sentiment scoring (for extracted_positions - competitors only, secondary)
         try {
-          result.competitorSentimentsProcessed = await sentimentScoringService.scoreCompetitorSentiment(sentimentOptions);
+          result.competitorSentimentsProcessed = await competitorSentimentService.scoreCompetitorSentiment(sentimentOptions);
           console.log(`✅ Competitor sentiment scoring completed: ${result.competitorSentimentsProcessed} positions processed`);
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);

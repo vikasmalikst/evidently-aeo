@@ -54,7 +54,13 @@ interface MultiEntitySentimentResult {
 }
 
 interface CompetitorSentimentResult {
-  competitors: EntitySentimentAnalysis[];
+  competitors: Array<{
+    competitorName: string;
+    label: string;
+    score: number;
+    positiveSentences: string[];
+    negativeSentences: string[];
+  }>;
 }
 
 export interface SentimentScoreOptions {
@@ -324,9 +330,14 @@ export class SentimentScoringService {
       return 0;
     }
 
+    // Filter to only brand rows (competitor_name is null or empty)
+    const brandRows = positionRows.filter(row => 
+      !row.competitor_name || row.competitor_name.trim().length === 0
+    );
+
     // Group by collector_result_id
     const groupedByCollectorResult = new Map<number, Array<typeof positionRows[0]>>();
-    for (const row of positionRows) {
+    for (const row of brandRows) {
       const collectorResultId = row.collector_result_id;
       if (!collectorResultId) continue;
       

@@ -12,3 +12,4 @@ CREATE INDEX IF NOT EXISTS idx_collector_results_raw_response_json
 -- Add comment for documentation
 COMMENT ON COLUMN public.collector_results.raw_response_json IS 'Complete raw JSON response from the collector API for debugging and analysis purposes';
 
+

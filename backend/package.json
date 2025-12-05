@@ -15,6 +15,7 @@
     "citations:extract": "ts-node --transpile-only src/scripts/extractCitations.ts",
     "citations:extract:simple": "ts-node --transpile-only src/scripts/extractCitationsSimple.ts",
     "citations:categorize": "ts-node --transpile-only src/scripts/categorize-citations-for-existing.ts",
+    "sentiments:score:brand": "ts-node --transpile-only src/scripts/score-brand-sentiments.ts",
     "sentiments:score": "ts-node --transpile-only src/scripts/score-sentiment.ts",
     "cron:scoring:scheduler": "ts-node --transpile-only src/cron/scoringScheduler.ts",
     "cron:scoring:worker": "ts-node --transpile-only src/cron/scoringWorker.ts",

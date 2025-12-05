@@ -58,7 +58,7 @@ export class BrandScoringService {
 
     const result: BrandScoringResult = {
       positionsProcessed: 0,
-      sentimentsProcessed: 0,
+      sentimentsProcessed: 0, // collector-level sentiment is deprecated; kept for compatibility
       competitorSentimentsProcessed: 0,
       citationsProcessed: 0,
       errors: []
@@ -83,9 +83,8 @@ export class BrandScoringService {
         // Run all scoring operations in parallel
         console.log('⚡ Running scoring operations in parallel...');
         
-        const [positionsResult, sentimentsResult, brandSentimentsResult, competitorSentimentsResult, citationsResult] = await Promise.allSettled([
+        const [positionsResult, brandSentimentsResult, competitorSentimentsResult, citationsResult] = await Promise.allSettled([
           positionExtractionService.extractPositionsForNewResults(positionOptions),
-          sentimentScoringService.scorePending(sentimentOptions),
           sentimentScoringService.scoreBrandSentiment(sentimentOptions),
           sentimentScoringService.scoreCompetitorSentiment(sentimentOptions),
           citationExtractionService.extractAndStoreCitations(brandId)
@@ -101,18 +100,6 @@ export class BrandScoringService {
             : String(positionsResult.reason);
           result.errors.push({ operation: 'position_extraction', error: errorMsg });
           console.error(`❌ Position extraction failed:`, errorMsg);
-        }
-
-        // Process sentiments result
-        if (sentimentsResult.status === 'fulfilled') {
-          result.sentimentsProcessed = sentimentsResult.value;
-          console.log(`✅ Sentiment scoring completed: ${result.sentimentsProcessed} sentiments processed`);
-        } else {
-          const errorMsg = sentimentsResult.reason instanceof Error 
-            ? sentimentsResult.reason.message 
-            : String(sentimentsResult.reason);
-          result.errors.push({ operation: 'sentiment_scoring', error: errorMsg });
-          console.error(`❌ Sentiment scoring failed:`, errorMsg);
         }
 
         // Process brand sentiments result (extracted_positions)
@@ -164,17 +151,7 @@ export class BrandScoringService {
           console.error(`❌ Position extraction failed:`, errorMsg);
         }
 
-        // 2. Sentiment scoring (for collector_results - brand only)
-        try {
-          result.sentimentsProcessed = await sentimentScoringService.scorePending(sentimentOptions);
-          console.log(`✅ Sentiment scoring completed: ${result.sentimentsProcessed} sentiments processed`);
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          result.errors.push({ operation: 'sentiment_scoring', error: errorMsg });
-          console.error(`❌ Sentiment scoring failed:`, errorMsg);
-        }
-
-        // 3. Brand sentiment scoring (for extracted_positions - brand only, priority)
+        // 2. Brand sentiment scoring (for extracted_positions - brand only, priority)
         try {
           const brandSentimentsProcessed = await sentimentScoringService.scoreBrandSentiment(sentimentOptions);
           console.log(`✅ Brand sentiment scoring completed: ${brandSentimentsProcessed} positions processed`);
@@ -186,7 +163,7 @@ export class BrandScoringService {
           // Don't block competitor scoring if brand fails
         }
 
-        // 4. Competitor sentiment scoring (for extracted_positions - competitors only, secondary)
+        // 3. Competitor sentiment scoring (for extracted_positions - competitors only, secondary)
         try {
           result.competitorSentimentsProcessed = await sentimentScoringService.scoreCompetitorSentiment(sentimentOptions);
           console.log(`✅ Competitor sentiment scoring completed: ${result.competitorSentimentsProcessed} positions processed`);
@@ -196,7 +173,7 @@ export class BrandScoringService {
           console.error(`❌ Competitor sentiment scoring failed:`, errorMsg);
         }
 
-        // 5. Citation extraction
+        // 4. Citation extraction
         try {
           const citationStats = await citationExtractionService.extractAndStoreCitations(brandId);
           result.citationsProcessed = citationStats.processed || citationStats.inserted || 0;

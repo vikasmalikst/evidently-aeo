@@ -6,11 +6,11 @@ dotenv.config();
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Sentiment Scoring for Brands uses CEREBRAS_API_KEY_2 (fallback: CEREBRAS_API_KEY)
-// Sentiment Scoring for Competitors uses CEREBRAS_API_KEY_4 (fallback: CEREBRAS_API_KEY)
+// Sentiment Scoring for Brands uses CEREBRAS_API_KEY_2 ONLY (no fallback)
+// Sentiment Scoring for Competitors uses CEREBRAS_API_KEY_4 ONLY (no fallback)
 const { getSentimentScoringKey, getCompetitorSentimentScoringKey, getGeminiKey, getGeminiModel, getCerebrasModel } = require('../../utils/api-key-resolver');
-const brandSentimentApiKey = getSentimentScoringKey(); // CEREBRAS_API_KEY_2 for brands
-const competitorSentimentApiKey = getCompetitorSentimentScoringKey(); // CEREBRAS_API_KEY_4 for competitors
+const brandSentimentApiKey = getSentimentScoringKey(); // CEREBRAS_API_KEY_2 for brands (ONLY, no fallback)
+const competitorSentimentApiKey = getCompetitorSentimentScoringKey(); // CEREBRAS_API_KEY_4 for competitors (ONLY, no fallback)
 const cerebrasApiKey = brandSentimentApiKey; // Default for general sentiment (backward compatibility)
 const cerebrasModel = getCerebrasModel();
 // Accept both GEMINI_API_KEY and GOOGLE_GEMINI_API_KEY for compatibility
@@ -21,6 +21,12 @@ const huggingFaceToken = process.env.HUGGINGFACE_API_TOKEN;
 const huggingFaceModelUrl =
   process.env.HF_SENTIMENT_MODEL_URL ??
   'https://router.huggingface.co/hf-inference/models/distilbert/distilbert-base-uncased-finetuned-sst-2-english';
+
+// Throttling/backoff configuration (env overrides)
+const competitorDelayMs = parseInt(process.env.COMPETITOR_SENTIMENT_DELAY_MS || '6000', 10); // default 6s between competitor groups
+const competitorGroupLimit = parseInt(process.env.COMPETITOR_SENTIMENT_GROUP_LIMIT || '15', 10); // max groups per run
+const rateLimitBaseWaitMs = parseInt(process.env.SENTIMENT_RATE_LIMIT_BASE_WAIT_MS || '60000', 10); // 60s initial backoff
+const rateLimitMaxWaitMs = parseInt(process.env.SENTIMENT_RATE_LIMIT_MAX_WAIT_MS || '240000', 10); // cap backoff at 4m
 
 // Sentiment provider priority: Cerebras > Gemini > Hugging Face
 const SENTIMENT_PROVIDER = (process.env.SENTIMENT_PROVIDER || 'cerebras').toLowerCase();
@@ -355,6 +361,7 @@ export class SentimentScoringService {
     let processed = 0;
     let failed = 0;
     let processedGroups = 0;
+    let rateLimitBackoffMs = rateLimitBaseWaitMs;
 
     // Process each group (one API call per collector_result_id)
     for (const [collectorResultId, rows] of Array.from(groupedByCollectorResult.entries()).slice(0, limit)) {
@@ -525,9 +532,11 @@ export class SentimentScoringService {
     let processed = 0;
     let failed = 0;
     let processedGroups = 0;
+    let rateLimitBackoffMs = rateLimitBaseWaitMs;
 
     // Process each group (one API call per collector_result_id with ALL competitors)
-    for (const [collectorResultId, rows] of Array.from(groupedByCollectorResult.entries()).slice(0, limit)) {
+    const maxGroups = Math.min(limit, competitorGroupLimit);
+    for (const [collectorResultId, rows] of Array.from(groupedByCollectorResult.entries()).slice(0, maxGroups)) {
       try {
         processedGroups++;
         const competitorNames = [...new Set(rows.map(r => r.competitor_name!).filter(Boolean))];
@@ -608,9 +617,10 @@ export class SentimentScoringService {
           }
         }
 
-        // Add delay between API calls to avoid rate limits
-        if (processedGroups < Math.min(groupedByCollectorResult.size, limit)) {
-          await this.sleep(2500); // 2.5 second delay between requests (slightly longer for competitor calls)
+        // Reset backoff after a successful call and add delay between API calls to avoid rate limits
+        rateLimitBackoffMs = rateLimitBaseWaitMs;
+        if (processedGroups < maxGroups) {
+          await this.sleep(competitorDelayMs); // configurable delay between requests
         }
       } catch (scoringError) {
         const message = scoringError instanceof Error ? scoringError.message : String(scoringError);
@@ -622,9 +632,10 @@ export class SentimentScoringService {
                            message.includes('request_quota_exceeded');
         
         if (isRateLimit) {
-          console.warn(`⚠️ Rate limit hit for collector_result_id ${collectorResultId}. Skipping this group.`);
-          console.warn(`   Waiting 60 seconds before continuing...`);
-          await this.sleep(60000); // Wait 60 seconds on rate limit
+          const waitMs = Math.min(rateLimitBackoffMs, rateLimitMaxWaitMs);
+          console.warn(`⚠️ Rate limit hit for collector_result_id ${collectorResultId}. Waiting ${Math.round(waitMs / 1000)}s before continuing...`);
+          await this.sleep(waitMs);
+          rateLimitBackoffMs = Math.min(rateLimitBackoffMs * 2, rateLimitMaxWaitMs); // exponential backoff
           continue;
         }
         

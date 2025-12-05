@@ -3,7 +3,9 @@ import 'dotenv/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 import { positionExtractionService } from '../services/scoring/position-extraction.service';
-import { sentimentScoringService } from '../services/scoring/sentiment-scoring.service';
+import { collectorSentimentService } from '../services/scoring/sentiment/collector-sentiment.service';
+import { brandSentimentService } from '../services/scoring/sentiment/brand-sentiment.service';
+import { competitorSentimentService } from '../services/scoring/sentiment/competitor-sentiment.service';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -130,14 +132,14 @@ async function processSingleRun(run: ScoringJobRun): Promise<void> {
     const positionsProcessed = await positionExtractionService.extractPositionsForNewResults(
       extractionOptions,
     );
-    const sentimentsProcessed = await sentimentScoringService.scorePending(sentimentOptions);
+    const sentimentsProcessed = await collectorSentimentService.scorePending(sentimentOptions);
     
-    // Use new separated methods for brand and competitor sentiment
+    // Use new separated services for brand and competitor sentiment
     let brandSentimentsProcessed = 0;
     let competitorSentimentsProcessed = 0;
     
     try {
-      brandSentimentsProcessed = await sentimentScoringService.scoreBrandSentiment(sentimentOptions);
+      brandSentimentsProcessed = await brandSentimentService.scoreBrandSentiment(sentimentOptions);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`[Worker] Brand sentiment scoring failed for run ${run.id}:`, errorMsg);
@@ -145,7 +147,7 @@ async function processSingleRun(run: ScoringJobRun): Promise<void> {
     }
     
     try {
-      competitorSentimentsProcessed = await sentimentScoringService.scoreCompetitorSentiment(sentimentOptions);
+      competitorSentimentsProcessed = await competitorSentimentService.scoreCompetitorSentiment(sentimentOptions);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`[Worker] Competitor sentiment scoring failed for run ${run.id}:`, errorMsg);

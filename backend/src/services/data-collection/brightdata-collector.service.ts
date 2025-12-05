@@ -72,7 +72,7 @@ export class BrightDataCollectorService {
    */
   async executeGrokQuery(request: BrightDataRequest): Promise<BrightDataResponse> {
     return await this.grokService.executeQuery(request);
-  }
+        }
 
   /**
    * Execute Google AIO query via BrightData
@@ -100,7 +100,7 @@ export class BrightDataCollectorService {
    */
   async executeBingQuery(request: BrightDataRequest): Promise<BrightDataResponse> {
     return await this.bingService.executeQuery(request);
-  }
+        }
 
   /**
    * Get available dataset information (kept for backward compatibility)

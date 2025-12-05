@@ -20,8 +20,16 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useChartResize } from '../hooks/useChartResize';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
+import { ManagedCompetitor, getActiveCompetitors, getCompetitorSources, CompetitorSourceAttributionResponse } from '../api/competitorManagementApi';
 
 // Type definitions
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
 interface SourceAttributionResponse {
   sources: SourceData[];
   overallMentionRate: number;
@@ -29,22 +37,6 @@ interface SourceAttributionResponse {
   avgSentiment: number;
   avgSentimentChange: number;
 }
-
-// Helper function for date range
-const getDateRangeForTimeRange = (timeRange: string) => {
-  const end = new Date();
-  end.setUTCHours(23, 59, 59, 999);
-
-  const start = new Date(end);
-  const days = parseInt(timeRange) || 30;
-  start.setUTCDate(start.getUTCDate() - days);
-  start.setUTCHours(0, 0, 0, 0);
-
-  return {
-    start: start.toISOString(),
-    end: end.toISOString()
-  };
-};
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend, BarElement, CategoryScale, ArcElement, LineElement);
 
@@ -133,6 +125,9 @@ export const SearchSources = () => {
   const [competitors, setCompetitors] = useState<ManagedCompetitor[]>([]);
   const [selectedCompetitorId, setSelectedCompetitorId] = useState<string | null>(null);
   const [competitorsLoading, setCompetitorsLoading] = useState(false);
+  const [competitorSourceData, setCompetitorSourceData] = useState<CompetitorSourceAttributionResponse | null>(null);
+  const [competitorSourceLoading, setCompetitorSourceLoading] = useState(false);
+  const [competitorSourceError, setCompetitorSourceError] = useState<string | null>(null);
   
   // Analytics chart selector state
   const [selectedAnalyticsChart, setSelectedAnalyticsChart] = useState<'funnel' | 'soa' | 'sentiment' | 'type'>('funnel');
@@ -288,6 +283,35 @@ export const SearchSources = () => {
     loadCompetitors();
   }, [selectedCompetitorId, selectedBrandId]);
 
+  // Load competitor source data when competitor is selected and comparison is enabled
+  useEffect(() => {
+    const loadCompetitorSources = async () => {
+      if (!selectedBrandId || !selectedCompetitorId || !competitorComparisonEnabled) {
+        setCompetitorSourceData(null);
+        return;
+      }
+      
+      setCompetitorSourceLoading(true);
+      setCompetitorSourceError(null);
+      try {
+        const data = await getCompetitorSources(
+          selectedBrandId,
+          selectedCompetitorId,
+          { startDate, endDate }
+        );
+        setCompetitorSourceData(data);
+      } catch (error) {
+        console.error('Error loading competitor sources:', error);
+        setCompetitorSourceError(error instanceof Error ? error.message : 'Failed to load competitor sources');
+        setCompetitorSourceData(null);
+      } finally {
+        setCompetitorSourceLoading(false);
+      }
+    };
+    
+    loadCompetitorSources();
+  }, [selectedBrandId, selectedCompetitorId, competitorComparisonEnabled, startDate, endDate]);
+
   const error = fetchError?.message || (response && !response.success ? (response.error || response.message || 'Failed to load source data.') : null);
 
   const handleSort = (field: SortField) => {
@@ -379,11 +403,8 @@ export const SearchSources = () => {
   // Handle chart resize on window resize (e.g., when dev tools open/close)
   useChartResize(chartRef, !loading && filteredData.length > 0);
 
-  // Calculate distributions and top lists for new charts
-  const { tierDistribution, topSoaSources, topSentimentSources, typeDistribution, thresholds } = useMemo(() => {
-    const data = filteredData;
-    
-    // 1. Mention Rate Distribution (Funnel)
+  // Shared analytics helpers
+  const computeAnalytics = (data: SourceData[]) => {
     const tiers = {
       tier1: { count: 0, soaSum: 0, label: 'Tier 1 (>30%)' },
       tier2: { count: 0, soaSum: 0, label: 'Tier 2 (15-30%)' },
@@ -407,27 +428,21 @@ export const SearchSources = () => {
       }
     });
 
-    const tierDist = [
+    const tierDistribution = [
       { label: tiers.tier1.label, count: tiers.tier1.count, avgSoa: tiers.tier1.count > 0 ? tiers.tier1.soaSum / tiers.tier1.count : 0 },
       { label: tiers.tier2.label, count: tiers.tier2.count, avgSoa: tiers.tier2.count > 0 ? tiers.tier2.soaSum / tiers.tier2.count : 0 },
       { label: tiers.tier3.label, count: tiers.tier3.count, avgSoa: tiers.tier3.count > 0 ? tiers.tier3.soaSum / tiers.tier3.count : 0 },
       { label: tiers.tier4.label, count: tiers.tier4.count, avgSoa: tiers.tier4.count > 0 ? tiers.tier4.soaSum / tiers.tier4.count : 0 }
     ];
 
-    // 2. Top Sources by Share of Answer
-    const topSoa = [...data].sort((a, b) => b.soa - a.soa).slice(0, 10);
+    const topSoaSources = [...data].sort((a, b) => b.soa - a.soa).slice(0, 10);
+    const topSentimentSources = [...data].sort((a, b) => b.sentiment - a.sentiment).slice(0, 10);
 
-    // 3. Top Sources by Sentiment Quality (positive only for simplicity in "quality" chart)
-    const topSentiment = [...data].sort((a, b) => b.sentiment - a.sentiment).slice(0, 10);
-
-    // 4. Distribution by Source Type
-    const typeDist: Record<string, number> = {};
+    const typeDistribution: Record<string, number> = {};
     data.forEach(source => {
-      typeDist[source.type] = (typeDist[source.type] || 0) + 1;
+      typeDistribution[source.type] = (typeDistribution[source.type] || 0) + 1;
     });
 
-    // 5. Dynamic Thresholds for Matrix
-    // Calculate median mention rate and SOA
     const sortedMention = [...data].sort((a, b) => a.mentionRate - b.mentionRate);
     const sortedSoa = [...data].sort((a, b) => a.soa - b.soa);
     
@@ -437,50 +452,68 @@ export const SearchSources = () => {
     if (data.length > 0) {
       const midIndex = Math.floor(data.length / 2);
       if (data.length % 2 === 0) {
-        // Even number: average of two middle values
         medianMention = (sortedMention[midIndex - 1].mentionRate + sortedMention[midIndex].mentionRate) / 2;
         medianSoa = (sortedSoa[midIndex - 1].soa + sortedSoa[midIndex].soa) / 2;
       } else {
-        // Odd number: middle value
         medianMention = sortedMention[midIndex].mentionRate;
         medianSoa = sortedSoa[midIndex].soa;
       }
     }
 
     return {
-      tierDistribution: tierDist,
-      topSoaSources: topSoa,
-      topSentimentSources: topSentiment,
-      typeDistribution: typeDist,
+      tierDistribution,
+      topSoaSources,
+      topSentimentSources,
+      typeDistribution,
       thresholds: {
-        x: Math.max(medianMention, 5), // Minimum threshold to avoid crowding at 0
-        y: Math.max(medianSoa, 20)     // Minimum threshold
+        x: Math.max(medianMention, 5),
+        y: Math.max(medianSoa, 20)
       }
     };
-  }, [filteredData]);
+  };
 
-  // Calculate dynamic scale maximums based on data
-  const scaleMaximums = useMemo(() => {
-    if (filteredData.length === 0) {
+  const computeScaleMaximums = (data: SourceData[]) => {
+    if (!data || data.length === 0) {
       return { xMax: 45, yMax: 100, sentimentMin: -1, sentimentMax: 1 };
     }
     
-    const maxMention = Math.max(...filteredData.map(s => s.mentionRate));
-    const maxSoa = Math.max(...filteredData.map(s => s.soa));
-    const minSentiment = Math.min(...filteredData.map(s => s.sentiment));
-    const maxSentiment = Math.max(...filteredData.map(s => s.sentiment));
+    const maxMention = Math.max(...data.map(s => s.mentionRate));
+    const maxSoa = Math.max(...data.map(s => s.soa));
+    const minSentiment = Math.min(...data.map(s => s.sentiment));
+    const maxSentiment = Math.max(...data.map(s => s.sentiment));
     
-    // Add 10% padding and round up to nice numbers
-    const xMax = Math.max(Math.ceil((maxMention * 1.1) / 5) * 5, 15); // Round to nearest 5, min 15
-    const yMax = Math.max(Math.ceil((maxSoa * 1.1) / 10) * 10, 50);   // Round to nearest 10, min 50
+    const xMax = Math.max(Math.ceil((maxMention * 1.1) / 5) * 5, 15);
+    const yMax = Math.max(Math.ceil((maxSoa * 1.1) / 10) * 10, 50);
     
-    // Sentiment scale - ensure it includes 0 and has symmetry if possible
     const sentimentExtent = Math.max(Math.abs(minSentiment), Math.abs(maxSentiment));
     const sentimentMin = -Math.max(sentimentExtent, 0.1);
     const sentimentMax = Math.max(sentimentExtent, 0.1);
     
     return { xMax, yMax, sentimentMin, sentimentMax };
-  }, [filteredData]);
+  };
+
+  // Calculate distributions and top lists for new charts
+  const { tierDistribution, topSoaSources, topSentimentSources, typeDistribution, thresholds } = useMemo(
+    () => computeAnalytics(filteredData),
+    [filteredData]
+  );
+
+  const {
+    tierDistribution: competitorTierDistribution,
+    topSoaSources: competitorTopSoaSources,
+    topSentimentSources: competitorTopSentimentSources,
+    typeDistribution: competitorTypeDistribution,
+  } = useMemo(
+    () => computeAnalytics(competitorSourceData?.sources || []),
+    [competitorSourceData]
+  );
+
+  // Calculate dynamic scale maximums based on data
+  const scaleMaximums = useMemo(() => computeScaleMaximums(filteredData), [filteredData]);
+  const competitorScaleMaximums = useMemo(
+    () => computeScaleMaximums(competitorSourceData?.sources || []),
+    [competitorSourceData]
+  );
 
   // Helper function to map sentiment to bubble radius with enhanced visual distinction
   const sentimentToRadius = (sentiment: number): number => {
@@ -494,17 +527,28 @@ export const SearchSources = () => {
     return radius;
   };
 
-  // Helper function to add jittering to prevent exact overlaps
-  const addJitter = (value: number, maxJitter: number = 0.4): number => {
-    return value + (Math.random() - 0.5) * maxJitter;
+  // Deterministic pseudo-random generator to keep jitter stable until data changes
+  const deterministicRandom = (seed: string): number => {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash << 5) - hash + seed.charCodeAt(i);
+      hash |= 0; // Convert to 32-bit integer
+    }
+    return ((hash >>> 0) % 10000) / 10000; // 0..0.9999
   };
 
-  const chartData = {
+  // Helper function to add jittering to prevent exact overlaps (stable per source)
+  const addJitter = (value: number, seed: string, maxJitter: number = 0.4): number => {
+    const rand = deterministicRandom(seed) - 0.5; // -0.5 .. 0.4999
+    return value + rand * maxJitter;
+  };
+
+  const chartData = useMemo(() => ({
     datasets: filteredData.map((source) => ({
       label: source.name,
       data: [{
-        x: addJitter(source.mentionRate),
-        y: addJitter(source.soa),
+        x: addJitter(source.mentionRate, source.name),
+        y: addJitter(source.soa, `${source.name}-soa`),
         r: sentimentToRadius(source.sentiment),
       }],
       backgroundColor: sourceTypeColors[source.type] + 'B3', // 70% opacity (B3 in hex)
@@ -512,7 +556,25 @@ export const SearchSources = () => {
       borderWidth: 2,
       sourceData: source,
     }))
-  };
+  }), [filteredData]);
+
+  const competitorChartData = useMemo(() => {
+    if (!competitorSourceData) return null;
+    return {
+      datasets: competitorSourceData.sources.map((source) => ({
+        label: source.name,
+        data: [{
+          x: addJitter(source.mentionRate, `competitor-${source.name}`),
+          y: addJitter(source.soa, `competitor-${source.name}-soa`),
+          r: sentimentToRadius(source.sentiment),
+        }],
+        backgroundColor: sourceTypeColors[source.type] + 'B3',
+        borderColor: sourceTypeColors[source.type],
+        borderWidth: 2,
+        sourceData: source,
+      }))
+    };
+  }, [competitorSourceData]);
 
   const chartOptions: any = {
     responsive: true,
@@ -679,6 +741,237 @@ export const SearchSources = () => {
       ctx.restore();
     }
   }), [thresholds]);
+
+  // Analytics chart renderers (shared by brand and competitor)
+  const renderFunnelChart = (distribution: Array<{ label: string; count: number; avgSoa: number }>) => (
+    <div>
+      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Mention Rate Distribution (Funnel)</h3>
+      <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>How awareness drops across tiers</p>
+      <div style={{ height: '400px' }}>
+        {distribution.length > 0 ? (
+          <Bar
+            data={{
+              labels: distribution.map(t => t.label),
+              datasets: [
+                {
+                  type: 'line' as any,
+                  label: 'Avg Share of Answer',
+                  data: distribution.map(t => t.avgSoa),
+                  borderColor: '#fa8a40',
+                  backgroundColor: '#fa8a40',
+                  borderWidth: 2,
+                  yAxisID: 'y1',
+                },
+                {
+                  type: 'bar' as any,
+                  label: 'Number of Sources',
+                  data: distribution.map(t => t.count),
+                  backgroundColor: '#498cf9',
+                  borderRadius: 4,
+                  yAxisID: 'y',
+                }
+              ]
+            }}
+            options={{
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'top' as const },
+              },
+              scales: {
+                y: {
+                  type: 'linear' as const,
+                  display: true,
+                  position: 'left' as const,
+                  title: { display: true, text: 'Number of Sources' },
+                  grid: { color: '#e8e9ed' },
+                  beginAtZero: true
+                },
+                y1: {
+                  type: 'linear' as const,
+                  display: true,
+                  position: 'right' as const,
+                  title: { display: true, text: 'Avg Share (%)' },
+                  grid: { display: false },
+                  min: 0,
+                  max: 100
+                },
+                x: {
+                  grid: { display: false }
+                }
+              }
+            }}
+          />
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
+            No data available
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderSoaChart = (sources: SourceData[]) => (
+    <div>
+      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Top Sources by Share of Answer (Authority)</h3>
+      <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Which sources dominate when cited</p>
+      <div style={{ height: '400px' }}>
+        {sources.length > 0 ? (
+          <Bar
+            data={{
+              labels: sources.map(s => s.name),
+              datasets: [{
+                label: 'Share of Answer (%)',
+                data: sources.map(s => s.soa),
+                backgroundColor: (context) => context.dataIndex % 2 === 0 ? '#fa8a40' : '#498cf9',
+                borderRadius: 4,
+              }]
+            }}
+            options={{
+              indexAxis: 'y' as const,
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                   callbacks: {
+                     label: (ctx) => `SoA: ${ctx.parsed.x}%`
+                   }
+                }
+              },
+              scales: {
+                x: {
+                  title: { display: true, text: 'Share of Answer (%)' },
+                  grid: { color: '#e8e9ed' },
+                  min: 0,
+                  max: 100
+                },
+                y: {
+                  grid: { display: false }
+                }
+              }
+            }}
+          />
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
+            No data available
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderSentimentChart = (sources: SourceData[], sentimentScales: { sentimentMin: number; sentimentMax: number }) => (
+    <div>
+      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Top Sources by Sentiment Quality</h3>
+      <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Which sources receive positive mentions</p>
+      <div style={{ height: '400px' }}>
+        {sources.length > 0 ? (
+          <Bar
+            data={{
+              labels: sources.map(s => s.name),
+              datasets: [{
+                label: 'Sentiment Score',
+                data: sources.map(s => s.sentiment),
+                backgroundColor: '#06c686',
+                borderRadius: 4,
+              }]
+            }}
+            options={{
+              indexAxis: 'y' as const,
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+              },
+              scales: {
+                x: {
+                  title: { display: true, text: 'Sentiment Score' },
+                  grid: { color: '#e8e9ed' },
+                  min: sentimentScales.sentimentMin,
+                  max: sentimentScales.sentimentMax
+                },
+                y: {
+                  grid: { display: false }
+                }
+              }
+            }}
+          />
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
+            No data available
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderTypeChart = (types: Record<string, number>) => (
+    <div>
+      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Distribution by Source Type</h3>
+      <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Editorial vs Corporate vs Reference</p>
+      <div style={{ height: '400px', display: 'flex', justifyContent: 'center' }}>
+        {Object.keys(types).length > 0 ? (
+          <Doughnut
+            data={{
+              labels: Object.keys(types).map(type => sourceTypeLabels[type] || type),
+              datasets: [{
+                data: Object.values(types),
+                backgroundColor: Object.keys(types).map(type => sourceTypeColors[type] || '#64748b'),
+                borderWidth: 2,
+                borderColor: '#ffffff'
+              }]
+            }}
+            options={{
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'right' as const },
+                tooltip: {
+                  callbacks: {
+                    label: (context) => {
+                      const label = context.label || '';
+                      const value = context.parsed;
+                      const total = Object.values(types).reduce((a, b) => a + b, 0);
+                      const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                      return `${label}: ${value} (${percentage}%)`;
+                    }
+                  }
+                }
+              },
+              cutout: '60%'
+            }}
+          />
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
+            No data available
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderSelectedChart = (context: 'brand' | 'competitor') => {
+    const isBrand = context === 'brand';
+    const funnel = isBrand ? tierDistribution : competitorTierDistribution;
+    const soa = isBrand ? topSoaSources : competitorTopSoaSources;
+    const sentiment = isBrand ? topSentimentSources : competitorTopSentimentSources;
+    const types = isBrand ? typeDistribution : competitorTypeDistribution;
+    const sentimentScale = isBrand ? scaleMaximums : competitorScaleMaximums;
+
+    switch (selectedAnalyticsChart) {
+      case 'funnel':
+        return renderFunnelChart(funnel);
+      case 'soa':
+        return renderSoaChart(soa);
+      case 'sentiment':
+        return renderSentimentChart(sentiment, sentimentScale);
+      case 'type':
+        return renderTypeChart(types);
+      default:
+        return null;
+    }
+  };
 
   return (
     <Layout>
@@ -886,6 +1179,96 @@ export const SearchSources = () => {
               </div>
             ) : (
           <>
+            {/* Date Range Filter - Full Width */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                padding: '16px 24px',
+                borderRadius: '8px',
+                marginBottom: '24px',
+                display: 'flex',
+                gap: '12px',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <select
+                  value={topicFilter}
+                  onChange={(e) => setTopicFilter(e.target.value)}
+                  aria-label="Filter by topic"
+                  style={{
+                    border: '1px solid #dcdfe5',
+                    borderRadius: '4px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontFamily: 'IBM Plex Sans, sans-serif',
+                    color: '#212534',
+                    backgroundColor: '#ffffff',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">All Topics</option>
+                  {topicOptions.map(topic => (
+                    <option key={topic} value={topic}>{topic}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={sentimentFilter}
+                  onChange={(e) => setSentimentFilter(e.target.value)}
+                  aria-label="Filter by sentiment"
+                  style={{
+                    border: '1px solid #dcdfe5',
+                    borderRadius: '4px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontFamily: 'IBM Plex Sans, sans-serif',
+                    color: '#212534',
+                    backgroundColor: '#ffffff',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">All Sentiments</option>
+                  <option value="positive">Positive Only</option>
+                  <option value="neutral">Neutral Only</option>
+                  <option value="negative">Negative Only</option>
+                </select>
+
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  aria-label="Filter by source type"
+                  style={{
+                    border: '1px solid #dcdfe5',
+                    borderRadius: '4px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontFamily: 'IBM Plex Sans, sans-serif',
+                    color: '#212534',
+                    backgroundColor: '#ffffff',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">All Types</option>
+                  {Object.entries(sourceTypeLabels).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <DateRangePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                  showComparisonInfo={true}
+                />
+              </div>
+            </div>
+
             {/* Split View Container - only when competitor comparison is enabled */}
             <div style={{ 
               display: competitorComparisonEnabled ? 'grid' : 'block',
@@ -908,27 +1291,32 @@ export const SearchSources = () => {
                   }}
                 >
                   {competitorComparisonEnabled && (
-                    <h3 style={{ 
-                      fontSize: '16px', 
-                      fontWeight: '600', 
-                      color: '#1a1d29', 
+                    <div style={{ 
                       marginBottom: '16px',
                       paddingBottom: '12px',
                       borderBottom: '2px solid #00bcdc'
                     }}>
-                      Your Brand: {selectedBrand?.name || 'Loading...'}
-                    </h3>
+                      <h3 style={{ 
+                        fontSize: '16px', 
+                        fontWeight: '600', 
+                        color: '#1a1d29', 
+                        margin: 0,
+                        lineHeight: '32px'
+                      }}>
+                        Your Brand: {selectedBrand?.name || 'Loading...'}
+                      </h3>
+                    </div>
                   )}
 
           {/* Top Metrics */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginTop: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: competitorComparisonEnabled ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '24px', marginTop: competitorComparisonEnabled ? '0' : '24px' }}>
             {/* Overall Mention Rate */}
             <div>
               <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
                 OVERALL MENTION RATE
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '32px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
+                <span style={{ fontSize: competitorComparisonEnabled ? '28px' : '32px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
                   {computedOverallMentionRate}%
                 </span>
                 <span style={{ fontSize: '10px', color: '#06c686', display: 'flex', alignItems: 'center' }}>
@@ -936,185 +1324,87 @@ export const SearchSources = () => {
                 </span>
               </div>
               <div style={{ fontSize: '12px', color: '#393e51' }}>
-                Brand mentioned in {computedOverallMentionRate} of 100 responses
+                Mentioned in {computedOverallMentionRate} of 100 responses
               </div>
             </div>
 
             {/* Avg Sentiment & Top Source */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ backgroundColor: '#f4f4f6', padding: '12px', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '4px' }}>
-                  AVG SENTIMENT SCORE
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                  <span style={{ fontSize: '20px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
-                    +{computedAvgSentiment}
-                  </span>
-                  <span style={{ fontSize: '10px', color: '#06c686' }}>
-                    ↑ {avgSentimentChange > 0 ? avgSentimentChange.toFixed(2) : '0.12'}
-                  </span>
-                </div>
-                <div style={{ fontSize: '11px', color: '#393e51' }}>Positive sentiment across mentions</div>
-              </div>
-
-              <div style={{ backgroundColor: '#f4f4f6', padding: '12px', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '4px' }}>
-                  TOP SOURCE
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                  <span style={{ fontSize: '16px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#1a1d29' }}>
-                    {computedTopSource?.name || 'N/A'}
-                  </span>
-                  <span style={{ fontSize: '10px', color: '#06c686' }}>
-                    ↑ 8%
-                  </span>
-                </div>
-                <div style={{ fontSize: '11px', color: '#393e51' }}>{computedTopSource?.mentionRate || 0}% mention · {filteredData.length} sources tracked</div>
-              </div>
-            </div>
-
-            {/* Insights & Actions */}
             <div>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
-                INSIGHTS & ACTIONS
+              <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                AVG SENTIMENT SCORE
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {/* High Priority Alert */}
-                <div
-                  style={{
-                    backgroundColor: '#fff5f5',
-                    border: '1px solid #fecaca',
-                    padding: '12px',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'start',
-                    gap: '10px'
-                  }}
-                >
-                  <IconAlertCircle size={16} style={{ color: '#f94343', flexShrink: 0, marginTop: '2px' }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '11px', fontWeight: '600', color: '#1a1d29', marginBottom: '4px' }}>
-                      High-Impact Opportunity
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#393e51', lineHeight: '1.5' }}>
-                      wikipedia.org has 18% SoA but only 4% brand mention
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Item */}
-                <div
-                  style={{
-                    backgroundColor: '#f4f4f6',
-                    padding: '12px',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                    <IconChartBar size={14} style={{ color: '#00bcdc', flexShrink: 0 }} />
-                    <span style={{ fontSize: '11px', color: '#393e51' }}>Used as a source in 23 prompts</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#393e51' }}>18% SoA</span>
-                    <IconArrowUpRight size={12} style={{ color: '#06c686', flexShrink: 0 }} />
-                    <span style={{ fontSize: '10px', fontWeight: '600', color: '#06c686' }}>+4.2%</span>
-                  </div>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '4px' }}>
+                <span style={{ fontSize: competitorComparisonEnabled ? '28px' : '32px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
+                  +{computedAvgSentiment}
+                </span>
+                <span style={{ fontSize: '10px', color: '#06c686', display: 'flex', alignItems: 'center' }}>
+                  ↑ {avgSentimentChange > 0 ? avgSentimentChange.toFixed(2) : '0.12'}
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', color: '#393e51' }}>
+                {competitorComparisonEnabled ? 'Sentiment across mentions' : 'Positive sentiment across mentions'}
               </div>
             </div>
+
+            {!competitorComparisonEnabled && (
+              <>
+                {/* Insights & Actions - Only shown when not comparing */}
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                    INSIGHTS & ACTIONS
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* High Priority Alert */}
+                    <div
+                      style={{
+                        backgroundColor: '#fff5f5',
+                        border: '1px solid #fecaca',
+                        padding: '12px',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'start',
+                        gap: '10px'
+                      }}
+                    >
+                      <IconAlertCircle size={16} style={{ color: '#f94343', flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#1a1d29', marginBottom: '4px' }}>
+                          High-Impact Opportunity
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#393e51', lineHeight: '1.5' }}>
+                          wikipedia.org has 18% SoA but only 4% brand mention
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Item */}
+                    <div
+                      style={{
+                        backgroundColor: '#f4f4f6',
+                        padding: '12px',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                        <IconChartBar size={14} style={{ color: '#00bcdc', flexShrink: 0 }} />
+                        <span style={{ fontSize: '11px', color: '#393e51' }}>Used as a source in 23 prompts</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '600', color: '#393e51' }}>18% SoA</span>
+                        <IconArrowUpRight size={12} style={{ color: '#06c686', flexShrink: 0 }} />
+                        <span style={{ fontSize: '10px', fontWeight: '600', color: '#06c686' }}>+4.2%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
                 </div>
-
-                {/* Filter Bar */}
-                <div
-          style={{
-            backgroundColor: '#ffffff',
-            padding: '16px 24px',
-            borderRadius: '8px',
-            marginBottom: '24px',
-            display: 'flex',
-            gap: '12px',
-            flexWrap: 'wrap',
-            alignItems: 'center'
-          }}
-        >
-          <select
-            value={topicFilter}
-            onChange={(e) => setTopicFilter(e.target.value)}
-            aria-label="Filter by topic"
-            style={{
-              border: '1px solid #dcdfe5',
-              borderRadius: '4px',
-              padding: '8px 12px',
-              fontSize: '13px',
-              fontFamily: 'IBM Plex Sans, sans-serif',
-              color: '#212534',
-              backgroundColor: '#ffffff',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="all">All Topics</option>
-            {topicOptions.map(topic => (
-              <option key={topic} value={topic}>{topic}</option>
-            ))}
-          </select>
-
-          <select
-            value={sentimentFilter}
-            onChange={(e) => setSentimentFilter(e.target.value)}
-            aria-label="Filter by sentiment"
-            style={{
-              border: '1px solid #dcdfe5',
-              borderRadius: '4px',
-              padding: '8px 12px',
-              fontSize: '13px',
-              fontFamily: 'IBM Plex Sans, sans-serif',
-              color: '#212534',
-              backgroundColor: '#ffffff',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="all">All Sentiments</option>
-            <option value="positive">Positive Only</option>
-            <option value="neutral">Neutral Only</option>
-            <option value="negative">Negative Only</option>
-          </select>
-
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            aria-label="Filter by source type"
-            style={{
-              border: '1px solid #dcdfe5',
-              borderRadius: '4px',
-              padding: '8px 12px',
-              fontSize: '13px',
-              fontFamily: 'IBM Plex Sans, sans-serif',
-              color: '#212534',
-              backgroundColor: '#ffffff',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="all">All Types</option>
-            {Object.entries(sourceTypeLabels).map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
-
-          <div style={{ marginLeft: 'auto' }}>
-            <DateRangePicker
-              startDate={startDate}
-              endDate={endDate}
-              onStartDateChange={setStartDate}
-              onEndDateChange={setEndDate}
-              showComparisonInfo={true}
-            />
-          </div>
-        </div>
 
                 {/* Bubble Chart */}
                 <div
@@ -1126,19 +1416,21 @@ export const SearchSources = () => {
             marginBottom: '24px'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <h2 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
               Source Performance Matrix
             </h2>
             <a
               href="#"
+              onClick={exportToCSV}
               style={{
                 fontSize: '13px',
                 color: '#00bcdc',
                 textDecoration: 'none',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px'
+                gap: '4px',
+                cursor: 'pointer'
               }}
             >
               Export data <IconDownload size={14} />
@@ -1220,7 +1512,7 @@ export const SearchSources = () => {
                   minWidth: 0, // Prevent content from breaking grid layout
                   overflow: 'hidden' // Contain content within column
                 }}>
-                  {/* Competitor Dropdown and Empty State */}
+                  {/* Competitor Metrics Section */}
                   <div
                     style={{
                       backgroundColor: '#ffffff',
@@ -1230,75 +1522,142 @@ export const SearchSources = () => {
                       marginBottom: '24px'
                     }}
                   >
-                    <div style={{ marginBottom: '20px' }}>
-                      <label
-                        htmlFor="competitor-selector"
-                        style={{
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          color: '#6c7289',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          display: 'block',
-                          marginBottom: '8px'
-                        }}
-                      >
-                        Competitor
-                      </label>
-                      <select
-                        id="competitor-selector"
-                        value={selectedCompetitorId || ''}
-                        onChange={(e) => setSelectedCompetitorId(e.target.value)}
-                        disabled={competitorsLoading}
-                        style={{
-                          fontSize: '14px',
-                          border: '2px solid #00bcdc',
-                          borderRadius: '6px',
-                          padding: '10px 12px',
-                          backgroundColor: '#ffffff',
-                          color: '#1a1d29',
-                          cursor: 'pointer',
-                          fontFamily: 'IBM Plex Sans, sans-serif',
-                          width: '100%',
-                          fontWeight: '600'
-                        }}
-                      >
-                        {competitors.map((competitor) => (
-                          <option key={competitor.name} value={competitor.name}>
-                            {competitor.name}
-                          </option>
-                        ))}
-                      </select>
+                    <div style={{ 
+                      marginBottom: '16px',
+                      paddingBottom: '12px',
+                      borderBottom: '2px solid #fa8a40'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '32px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', margin: 0, lineHeight: '32px' }}>
+                          Competitor
+                        </h3>
+                        <select
+                          id="competitor-selector"
+                          value={selectedCompetitorId || ''}
+                          onChange={(e) => setSelectedCompetitorId(e.target.value)}
+                          disabled={competitorsLoading}
+                          aria-label="Select competitor"
+                          style={{
+                            fontSize: '13px',
+                            border: '2px solid #fa8a40',
+                            borderRadius: '6px',
+                            padding: '5px 10px',
+                            backgroundColor: '#ffffff',
+                            color: '#1a1d29',
+                            cursor: 'pointer',
+                            fontFamily: 'IBM Plex Sans, sans-serif',
+                            fontWeight: '600',
+                            height: '32px'
+                          }}
+                        >
+                          {competitors.map((competitor) => (
+                            <option key={competitor.name} value={competitor.name}>
+                              {competitor.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     
-                    {/* Placeholder Metrics */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-                      <div style={{ backgroundColor: '#f4f4f6', padding: '16px', borderRadius: '6px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
-                          MENTION RATE
+                    {/* Competitor Metrics */}
+                    {competitorSourceLoading ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginTop: '0' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                            OVERALL MENTION RATE
+                          </div>
+                          <div style={{ fontSize: '28px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+                            ...
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                            Loading...
+                          </div>
                         </div>
-                        <div style={{ fontSize: '24px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#cbd5e1' }}>
-                          —
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                          Data not available
+                        <div>
+                          <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                            AVG SENTIMENT SCORE
+                          </div>
+                          <div style={{ fontSize: '28px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+                            ...
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                            Loading...
+                          </div>
                         </div>
                       </div>
-                      <div style={{ backgroundColor: '#f4f4f6', padding: '16px', borderRadius: '6px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
-                          AVG SENTIMENT
+                    ) : competitorSourceError ? (
+                      <div style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca', padding: '16px', borderRadius: '6px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#f94343', marginBottom: '4px' }}>
+                          Error Loading Data
                         </div>
-                        <div style={{ fontSize: '24px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#cbd5e1' }}>
-                          —
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                          Data not available
+                        <div style={{ fontSize: '11px', color: '#393e51' }}>
+                          {competitorSourceError}
                         </div>
                       </div>
-                    </div>
+                    ) : competitorSourceData ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginTop: '0' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                            OVERALL MENTION RATE
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '28px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
+                              {competitorSourceData.overallMentionRate}%
+                            </span>
+                            <span style={{ fontSize: '10px', color: competitorSourceData.overallMentionChange >= 0 ? '#06c686' : '#f94343', display: 'flex', alignItems: 'center' }}>
+                              {competitorSourceData.overallMentionChange >= 0 ? '↑' : '↓'} {Math.abs(competitorSourceData.overallMentionChange || 0)}%
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#393e51' }}>
+                            Mentioned in {competitorSourceData.overallMentionRate} of 100 responses
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                            AVG SENTIMENT SCORE
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '28px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
+                              {competitorSourceData.avgSentiment > 0 ? '+' : ''}{competitorSourceData.avgSentiment.toFixed(2)}
+                            </span>
+                            <span style={{ fontSize: '10px', color: competitorSourceData.avgSentimentChange >= 0 ? '#06c686' : '#f94343', display: 'flex', alignItems: 'center' }}>
+                              {competitorSourceData.avgSentimentChange >= 0 ? '↑' : '↓'} {Math.abs(competitorSourceData.avgSentimentChange || 0).toFixed(2)}%
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#393e51' }}>
+                            Sentiment across mentions
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginTop: '0' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                            OVERALL MENTION RATE
+                          </div>
+                          <div style={{ fontSize: '28px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+                            —
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                            No data available
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
+                            AVG SENTIMENT SCORE
+                          </div>
+                          <div style={{ fontSize: '28px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+                            —
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                            No data available
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Competitor Empty Chart Placeholder */}
+                  {/* Competitor Chart */}
                   <div
                     style={{
                       backgroundColor: '#ffffff',
@@ -1308,64 +1667,199 @@ export const SearchSources = () => {
                       marginBottom: '24px'
                     }}
                   >
-                    <h3 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', marginBottom: '16px' }}>
-                      Competitor Source Performance Matrix
-                    </h3>
-                    <div style={{ 
-                      height: '500px', 
-                      backgroundColor: '#f9f9fb', 
-                      borderRadius: '8px',
-                      border: '2px dashed #e8e9ed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '40px',
-                      textAlign: 'center'
-                    }}>
-                      <div>
-                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#393e51', marginBottom: '8px' }}>
-                          Competitor Source Data Not Yet Available
-                        </h4>
-                        <p style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6', maxWidth: '400px' }}>
-                          Configure data collection for competitors to see their source performance metrics, attribution, and sentiment analysis.
-                        </p>
-                      </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <h3 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
+                        Competitor Source Performance Matrix
+                      </h3>
+                      <a
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (competitorSourceData) {
+                            const headers = ['Source', 'Type', 'Mention Rate (%)', 'Mention Rate Change (%)', 'Share of Answer (%)', 'Share of Answer Change (%)', 'Sentiment', 'Sentiment Change', 'Top Topics', 'Pages', 'Prompts'];
+                            const rows = competitorSourceData.sources.map(source => [
+                              source.name,
+                              sourceTypeLabels[source.type] || source.type,
+                              source.mentionRate.toFixed(2),
+                              source.mentionChange.toFixed(2),
+                              source.soa.toFixed(2),
+                              source.soaChange.toFixed(2),
+                              source.sentiment.toFixed(2),
+                              source.sentimentChange.toFixed(2),
+                              source.topics.join('; '),
+                              source.pages.join('; '),
+                              source.prompts.join('; ')
+                            ]);
+                            const csvContent = [
+                              headers.join(','),
+                              ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+                            ].join('\n');
+                            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                            const link = document.createElement('a');
+                            const url = URL.createObjectURL(blob);
+                            link.setAttribute('href', url);
+                            link.setAttribute('download', `competitor-source-attribution-${selectedCompetitorId}-${new Date().toISOString().split('T')[0]}.csv`);
+                            link.style.visibility = 'hidden';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                          }
+                        }}
+                        style={{
+                          fontSize: '13px',
+                          color: '#00bcdc',
+                          textDecoration: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Export data <IconDownload size={14} />
+                      </a>
                     </div>
-                  </div>
+                    
+                    <p style={{ fontSize: '13px', color: '#393e51', marginBottom: '16px' }}>
+                      Sources in the top-right quadrant (high mention rate + high share of answer) are your highest-value targets. Colors indicate source type.
+                    </p>
+                    {competitorSourceLoading ? (
+                      <div style={{ 
+                        height: '500px', 
+                        backgroundColor: '#f9f9fb', 
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '40px',
+                        textAlign: 'center'
+                      }}>
+                        <div>
+                          <div style={{ 
+                            width: '48px', 
+                            height: '48px', 
+                            border: '3px solid #e8e9ed', 
+                            borderTopColor: '#00bcdc', 
+                            borderRadius: '50%', 
+                            animation: 'spin 1s linear infinite',
+                            margin: '0 auto 16px'
+                          }} />
+                          <p style={{ fontSize: '14px', color: '#64748b' }}>Loading competitor data...</p>
+                        </div>
+                      </div>
+                    ) : competitorSourceError ? (
+                      <div style={{ 
+                        height: '500px', 
+                        backgroundColor: '#fff5f5', 
+                        border: '1px solid #fecaca',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '40px',
+                        textAlign: 'center'
+                      }}>
+                        <div>
+                          <IconAlertCircle size={48} style={{ color: '#f94343', marginBottom: '16px' }} />
+                          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>
+                            Error Loading Competitor Data
+                          </h4>
+                          <p style={{ fontSize: '13px', color: '#393e51', lineHeight: '1.6', maxWidth: '400px' }}>
+                            {competitorSourceError}
+                          </p>
+                        </div>
+                      </div>
+                    ) : competitorSourceData && competitorSourceData.sources.length > 0 ? (
+                      <>
+                        <div style={{ height: '500px', position: 'relative' }}>
+                          <Scatter 
+                            data={competitorChartData!} 
+                            options={chartOptions} 
+                            plugins={[quadrantPlugin]} 
+                          />
+                        </div>
+                        
+                        {/* Matrix Legend */}
+                        <div style={{ marginTop: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                          {/* Dominant */}
+                          <div style={{ display: 'flex', gap: '12px', padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(6, 198, 134, 0.08)', border: '1px solid rgba(6, 198, 134, 0.2)' }}>
+                            <div style={{ fontSize: '20px' }}>📈</div>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1a1d29' }}>Dominant</div>
+                              <div style={{ fontSize: '11px', color: '#393e51' }}>High mention + High authority</div>
+                            </div>
+                          </div>
+                          
+                          {/* Niche */}
+                          <div style={{ display: 'flex', gap: '12px', padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(73, 140, 249, 0.08)', border: '1px solid rgba(73, 140, 249, 0.2)' }}>
+                            <div style={{ fontSize: '20px' }}>👑</div>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1a1d29' }}>Niche</div>
+                              <div style={{ fontSize: '11px', color: '#393e51' }}>Low mention + High authority</div>
+                            </div>
+                          </div>
 
-                  {/* Competitor Analytics Chart Placeholder - only show when in split mode */}
-                  <div style={{ 
-                    backgroundColor: '#ffffff', 
-                    padding: '24px', 
-                    borderRadius: '8px', 
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                    marginBottom: '24px'
-                  }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '16px' }}>
-                      Competitor Analytics
-                    </h3>
-                    <div style={{ 
-                      height: '400px', 
-                      backgroundColor: '#f9f9fb', 
-                      borderRadius: '8px',
-                      border: '2px dashed #e8e9ed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '40px',
-                      textAlign: 'center'
-                    }}>
-                      <div>
-                        <div style={{ fontSize: '40px', marginBottom: '12px' }}>📈</div>
-                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#393e51', marginBottom: '6px' }}>
-                          Analytics Data Not Available
-                        </h4>
-                        <p style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
-                          Competitor analytics will appear here
-                        </p>
+                          {/* Awareness */}
+                          <div style={{ display: 'flex', gap: '12px', padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(250, 138, 64, 0.08)', border: '1px solid rgba(250, 138, 64, 0.2)' }}>
+                            <div style={{ fontSize: '20px' }}>📱</div>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1a1d29' }}>Awareness</div>
+                              <div style={{ fontSize: '11px', color: '#393e51' }}>High mention + Low authority</div>
+                            </div>
+                          </div>
+
+                          {/* Weak */}
+                          <div style={{ display: 'flex', gap: '12px', padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(249, 67, 67, 0.05)', border: '1px solid rgba(249, 67, 67, 0.2)' }}>
+                            <div style={{ fontSize: '20px' }}>❌</div>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1a1d29' }}>Weak</div>
+                              <div style={{ fontSize: '11px', color: '#393e51' }}>Low mention + Low authority</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Type Legend */}
+                        <div style={{ marginTop: '16px', display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
+                          {Object.entries(sourceTypeLabels).map(([key, label]) => (
+                            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div
+                                style={{
+                                  width: '12px',
+                                  height: '12px',
+                                  borderRadius: '50%',
+                                  backgroundColor: sourceTypeColors[key]
+                                }}
+                              />
+                              <span style={{ fontSize: '12px', color: '#393e51' }}>{label}</span>
+                            </div>
+                          ))}
+                          <div style={{ fontSize: '11px', color: '#64748b', marginLeft: '8px' }}>
+                            • Bubble Size: Sentiment Score (larger = more positive)
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ 
+                        height: '500px', 
+                        backgroundColor: '#f9f9fb', 
+                        borderRadius: '8px',
+                        border: '2px dashed #e8e9ed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '40px',
+                        textAlign: 'center'
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+                          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#393e51', marginBottom: '8px' }}>
+                            No Source Data Available
+                          </h4>
+                          <p style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6', maxWidth: '400px' }}>
+                            No sources found for this competitor in the selected date range. Try adjusting the date range or check if data collection is configured for this competitor.
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1428,213 +1922,41 @@ export const SearchSources = () => {
               </div>
 
               {/* Selected Chart Display */}
-              {selectedAnalyticsChart === 'funnel' && (
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Mention Rate Distribution (Funnel)</h3>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>How awareness drops across tiers</p>
-                  <div style={{ height: '400px' }}>
-              {filteredData.length > 0 ? (
-                <Bar
-                  data={{
-                    labels: tierDistribution.map(t => t.label),
-                    datasets: [
-                      {
-                        type: 'line' as any,
-                        label: 'Avg Share of Answer',
-                        data: tierDistribution.map(t => t.avgSoa),
-                        borderColor: '#fa8a40',
-                        backgroundColor: '#fa8a40',
-                        borderWidth: 2,
-                        yAxisID: 'y1',
-                        // pointRadius configured via chart options
-                      },
-                      {
-                        type: 'bar' as any,
-                        label: 'Number of Sources',
-                        data: tierDistribution.map(t => t.count),
-                        backgroundColor: '#498cf9',
-                        borderRadius: 4,
-                        yAxisID: 'y',
-                      }
-                    ]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { position: 'top' as const },
-                    },
-                    scales: {
-                      y: {
-                        type: 'linear' as const,
-                        display: true,
-                        position: 'left' as const,
-                        title: { display: true, text: 'Number of Sources' },
-                        grid: { color: '#e8e9ed' },
-                        beginAtZero: true
-                      },
-                      y1: {
-                        type: 'linear' as const,
-                        display: true,
-                        position: 'right' as const,
-                        title: { display: true, text: 'Avg Share (%)' },
-                        grid: { display: false },
-                        min: 0,
-                        max: 100
-                      },
-                      x: {
-                        grid: { display: false }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
-                  No data available
-                </div>
-              )}
+              {competitorComparisonEnabled ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '2px solid #00bcdc' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1a1d29', margin: 0 }}>
+                        Your Brand: {selectedBrand?.name || 'Your brand'}
+                      </h3>
+                    </div>
+                    {renderSelectedChart('brand')}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '2px solid #fa8a40' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1a1d29', margin: 0 }}>
+                        Competitor: {selectedCompetitorId || 'Select competitor'}
+                      </h3>
+                    </div>
+                    {competitorSourceLoading ? (
+                      <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                        Loading competitor data...
+                      </div>
+                    ) : competitorSourceError ? (
+                      <div style={{ height: '400px', backgroundColor: '#fff5f5', border: '1px solid #fecaca', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', color: '#f94343', textAlign: 'center' }}>
+                        {competitorSourceError}
+                      </div>
+                    ) : competitorSourceData && competitorSourceData.sources.length > 0 ? (
+                      renderSelectedChart('competitor')
+                    ) : (
+                      <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                        No competitor data available
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
-
-              {selectedAnalyticsChart === 'soa' && (
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Top Sources by Share of Answer (Authority)</h3>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Which sources dominate when cited</p>
-                  <div style={{ height: '400px' }}>
-              {topSoaSources.length > 0 ? (
-                <Bar
-                  data={{
-                    labels: topSoaSources.map(s => s.name),
-                    datasets: [{
-                      label: 'Share of Answer (%)',
-                      data: topSoaSources.map(s => s.soa),
-                      backgroundColor: (context) => context.dataIndex % 2 === 0 ? '#fa8a40' : '#498cf9',
-                      borderRadius: 4,
-                    }]
-                  }}
-                  options={{
-                    indexAxis: 'y' as const,
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                      tooltip: {
-                         callbacks: {
-                           label: (ctx) => `SoA: ${ctx.parsed.x}%`
-                         }
-                      }
-                    },
-                    scales: {
-                      x: {
-                        title: { display: true, text: 'Share of Answer (%)' },
-                        grid: { color: '#e8e9ed' },
-                        min: 0,
-                        max: 100
-                      },
-                      y: {
-                        grid: { display: false }
-                      }
-                    }
-                  }}
-                />
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
-                  No data available
-                </div>
-              )}
-                  </div>
-                </div>
-              )}
-
-              {selectedAnalyticsChart === 'sentiment' && (
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Top Sources by Sentiment Quality</h3>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Which sources receive positive mentions</p>
-                  <div style={{ height: '400px' }}>
-              {topSentimentSources.length > 0 ? (
-                <Bar
-                  data={{
-                    labels: topSentimentSources.map(s => s.name),
-                    datasets: [{
-                      label: 'Sentiment Score',
-                      data: topSentimentSources.map(s => s.sentiment),
-                      backgroundColor: '#06c686',
-                      borderRadius: 4,
-                    }]
-                  }}
-                  options={{
-                    indexAxis: 'y' as const,
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                    },
-                    scales: {
-                      x: {
-                        title: { display: true, text: 'Sentiment Score' },
-                        grid: { color: '#e8e9ed' },
-                        min: scaleMaximums.sentimentMin,
-                        max: scaleMaximums.sentimentMax
-                      },
-                      y: {
-                        grid: { display: false }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
-                  No data available
-                </div>
-              )}
-                  </div>
-                </div>
-              )}
-
-              {selectedAnalyticsChart === 'type' && (
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Distribution by Source Type</h3>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Editorial vs Corporate vs Reference</p>
-                  <div style={{ height: '400px', display: 'flex', justifyContent: 'center' }}>
-              {Object.keys(typeDistribution).length > 0 ? (
-                <Doughnut
-                  data={{
-                    labels: Object.keys(typeDistribution).map(type => sourceTypeLabels[type] || type),
-                    datasets: [{
-                      data: Object.values(typeDistribution),
-                      backgroundColor: Object.keys(typeDistribution).map(type => sourceTypeColors[type] || '#64748b'),
-                      borderWidth: 2,
-                      borderColor: '#ffffff'
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { position: 'right' as const },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => {
-                            const label = context.label || '';
-                            const value = context.parsed;
-                            const total = Object.values(typeDistribution).reduce((a, b) => a + b, 0);
-                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                            return `${label}: ${value} (${percentage}%)`;
-                          }
-                        }
-                      }
-                    },
-                    cutout: '60%'
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
-                  No data available
-                </div>
-              )}
-                  </div>
-                </div>
+                renderSelectedChart('brand')
               )}
             </div>
 

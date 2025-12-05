@@ -322,3 +322,4 @@ const impactScore = 0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm
 3. **Performance**: Previous period queries may add latency - consider caching if needed
 4. **Accuracy**: Ensure previous period comparison uses same aggregation logic as current period
 
+

@@ -39,7 +39,27 @@ export const AuthPage = () => {
     }
   }, [navigate]);
 
-  const handleSuccess = async () => {
+  const handleSuccess = async (isRegistration: boolean = false) => {
+    // For new user registrations, always redirect to onboarding first
+    if (isRegistration) {
+      console.log('🆕 New user registration - redirecting to onboarding');
+      // Check feature flags that might override this behavior
+      if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
+        console.log('🚀 Feature flag override - skipping onboarding check');
+        navigate('/dashboard');
+        return;
+      }
+      if (featureFlags.skipOnboardingAfterLogin) {
+        console.log('🚀 Feature flag override - skipping onboarding, going to setup');
+        navigate('/setup');
+        return;
+      }
+      // Always go to onboarding for new registrations
+      navigate('/onboarding');
+      return;
+    }
+
+    // For existing users (login), use the existing logic
     // Check if onboarding (brand/competitors) is complete
     const hasCompletedOnboarding = localStorage.getItem('onboarding_complete') === 'true';
     const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
@@ -126,7 +146,7 @@ export const AuthPage = () => {
       )}
       {view === 'register' && (
         <RegisterForm
-          onSuccess={handleSuccess}
+          onSuccess={() => handleSuccess(true)}
           onSwitchToLogin={() => setView('login')}
         />
       )}

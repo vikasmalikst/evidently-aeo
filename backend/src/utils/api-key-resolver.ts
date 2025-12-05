@@ -4,10 +4,10 @@
  * Maps numbered API keys to specific operations with fallback logic:
  * 
  * CEREBRAS_API_KEY_1 -> Position Extraction (fallback: CEREBRAS_API_KEY)
- * CEREBRAS_API_KEY_2 -> Sentiment Scoring (fallback: CEREBRAS_API_KEY)
+ * CEREBRAS_API_KEY_2 -> Sentiment Scoring for Brands (fallback: CEREBRAS_API_KEY)
  * GOOGLE_GEMINI_API_KEY_3 -> Citation Categorization (fallback: GOOGLE_GEMINI_API_KEY)
  * CEREBRAS_API_KEY_3 -> Keyword Generation (fallback: CEREBRAS_API_KEY)
- * CEREBRAS_API_KEY_4 -> Topic/Query Generation (fallback: CEREBRAS_API_KEY)
+ * CEREBRAS_API_KEY_4 -> Competitor Sentiment Scoring (fallback: CEREBRAS_API_KEY)
  */
 
 /**
@@ -19,11 +19,19 @@ export function getPositionExtractionKey(): string | null {
 }
 
 /**
- * Get API key for Sentiment Scoring
+ * Get API key for Sentiment Scoring (Brand sentiment)
  * Uses CEREBRAS_API_KEY_2, falls back to CEREBRAS_API_KEY
  */
 export function getSentimentScoringKey(): string | null {
   return process.env.CEREBRAS_API_KEY_2 || process.env.CEREBRAS_API_KEY || null;
+}
+
+/**
+ * Get API key for Competitor Sentiment Scoring
+ * Uses CEREBRAS_API_KEY_4, falls back to CEREBRAS_API_KEY
+ */
+export function getCompetitorSentimentScoringKey(): string | null {
+  return process.env.CEREBRAS_API_KEY_4 || process.env.CEREBRAS_API_KEY || null;
 }
 
 /**

@@ -6,9 +6,12 @@ dotenv.config();
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Sentiment Scoring uses CEREBRAS_API_KEY_2 (fallback: CEREBRAS_API_KEY)
-const { getSentimentScoringKey, getGeminiKey, getGeminiModel, getCerebrasModel } = require('../../utils/api-key-resolver');
-const cerebrasApiKey = getSentimentScoringKey();
+// Sentiment Scoring for Brands uses CEREBRAS_API_KEY_2 (fallback: CEREBRAS_API_KEY)
+// Sentiment Scoring for Competitors uses CEREBRAS_API_KEY_4 (fallback: CEREBRAS_API_KEY)
+const { getSentimentScoringKey, getCompetitorSentimentScoringKey, getGeminiKey, getGeminiModel, getCerebrasModel } = require('../../utils/api-key-resolver');
+const brandSentimentApiKey = getSentimentScoringKey(); // CEREBRAS_API_KEY_2 for brands
+const competitorSentimentApiKey = getCompetitorSentimentScoringKey(); // CEREBRAS_API_KEY_4 for competitors
+const cerebrasApiKey = brandSentimentApiKey; // Default for general sentiment (backward compatibility)
 const cerebrasModel = getCerebrasModel();
 // Accept both GEMINI_API_KEY and GOOGLE_GEMINI_API_KEY for compatibility
 const geminiApiKey = getGeminiKey();
@@ -454,11 +457,11 @@ export class SentimentScoringService {
 
     console.log('\n🎯 Starting competitor sentiment scoring for extracted_positions...');
     
-    // Force Cerebras for competitor sentiment analysis
-    if (!cerebrasApiKey) {
-      throw new Error('Cerebras API key required for competitor sentiment scoring. Please set CEREBRAS_API_KEY or CEREBRAS_API_KEY_2');
+    // Force Cerebras for competitor sentiment analysis (uses CEREBRAS_API_KEY_4)
+    if (!competitorSentimentApiKey) {
+      throw new Error('Cerebras API key required for competitor sentiment scoring. Please set CEREBRAS_API_KEY_4 or CEREBRAS_API_KEY');
     }
-    console.log(`   ▶ Provider: Cerebras (required for multi-entity analysis)`);
+    console.log(`   ▶ Provider: Cerebras (required for multi-entity analysis, using CEREBRAS_API_KEY_4)`);
     
     if (options.customerId) {
       console.log(`   ▶ customer: ${options.customerId}`);
@@ -642,8 +645,8 @@ export class SentimentScoringService {
     text: string,
     competitorNames: string[]
   ): Promise<Map<string, EntitySentimentAnalysis>> {
-    if (!cerebrasApiKey) {
-      throw new Error('Cerebras API key not configured');
+    if (!competitorSentimentApiKey) {
+      throw new Error('Cerebras API key not configured for competitor sentiment scoring');
     }
 
     if (competitorNames.length === 0) {
@@ -694,7 +697,7 @@ ${prompt}`;
       const response = await fetch('https://api.cerebras.ai/v1/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${cerebrasApiKey}`,
+          'Authorization': `Bearer ${competitorSentimentApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -856,11 +859,11 @@ ${prompt}`;
 
     console.log('\n🎯 Starting sentiment scoring for extracted_positions (brand + competitors)...');
     
-    // Force Cerebras for competitor sentiment analysis
-    if (!cerebrasApiKey) {
-      throw new Error('Cerebras API key required for competitor sentiment scoring. Please set CEREBRAS_API_KEY or CEREBRAS_API_KEY_2');
+    // Force Cerebras for competitor sentiment analysis (uses CEREBRAS_API_KEY_4)
+    if (!competitorSentimentApiKey) {
+      throw new Error('Cerebras API key required for competitor sentiment scoring. Please set CEREBRAS_API_KEY_4 or CEREBRAS_API_KEY');
     }
-    console.log(`   ▶ Provider: Cerebras (required for multi-entity analysis)`);
+    console.log(`   ▶ Provider: Cerebras (required for multi-entity analysis, using CEREBRAS_API_KEY_4)`);
     
     if (options.customerId) {
       console.log(`   ▶ customer: ${options.customerId}`);

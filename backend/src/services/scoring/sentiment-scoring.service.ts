@@ -6,36 +6,27 @@ dotenv.config();
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Sentiment Scoring for Brands uses CEREBRAS_API_KEY_2 ONLY (no fallback)
-// Sentiment Scoring for Competitors uses CEREBRAS_API_KEY_4 ONLY (no fallback)
+// NOTE: legacy file kept for compatibility; brand/competitor sentiment now modularized under ./sentiment/*
+// Imports retained only for existing callers of scorePending / analyzeSentiment.
+// For brand/competitor sentiment, use brandSentimentService and competitorSentimentService from ./sentiment/.
 const { getSentimentScoringKey, getCompetitorSentimentScoringKey, getGeminiKey, getGeminiModel, getCerebrasModel } = require('../../utils/api-key-resolver');
-const brandSentimentApiKey = getSentimentScoringKey(); // CEREBRAS_API_KEY_2 for brands (ONLY, no fallback)
-const competitorSentimentApiKey = getCompetitorSentimentScoringKey(); // CEREBRAS_API_KEY_4 for competitors (ONLY, no fallback)
-const cerebrasApiKey = brandSentimentApiKey; // Default for general sentiment (backward compatibility)
+const brandSentimentApiKey = getSentimentScoringKey();
+const competitorSentimentApiKey = getCompetitorSentimentScoringKey();
+const cerebrasApiKey = brandSentimentApiKey;
 const cerebrasModel = getCerebrasModel();
-// Accept both GEMINI_API_KEY and GOOGLE_GEMINI_API_KEY for compatibility
 const geminiApiKey = getGeminiKey();
-// Allow overriding Gemini model via env (supports GOOGLE_GEMINI_MODEL or GEMINI_MODEL)
 const geminiModel = getGeminiModel('gemini-1.5-flash');
 const huggingFaceToken = process.env.HUGGINGFACE_API_TOKEN;
 const huggingFaceModelUrl =
   process.env.HF_SENTIMENT_MODEL_URL ??
   'https://router.huggingface.co/hf-inference/models/distilbert/distilbert-base-uncased-finetuned-sst-2-english';
 
-// Throttling/backoff configuration (env overrides)
-const competitorDelayMs = parseInt(process.env.COMPETITOR_SENTIMENT_DELAY_MS || '6000', 10); // default 6s between competitor groups
-const competitorGroupLimit = parseInt(process.env.COMPETITOR_SENTIMENT_GROUP_LIMIT || '15', 10); // max groups per run
-const rateLimitBaseWaitMs = parseInt(process.env.SENTIMENT_RATE_LIMIT_BASE_WAIT_MS || '60000', 10); // 60s initial backoff
-const rateLimitMaxWaitMs = parseInt(process.env.SENTIMENT_RATE_LIMIT_MAX_WAIT_MS || '240000', 10); // cap backoff at 4m
-
-// Sentiment provider priority: Cerebras > Gemini > Hugging Face
 const SENTIMENT_PROVIDER = (process.env.SENTIMENT_PROVIDER || 'cerebras').toLowerCase();
 
 if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error('Missing Supabase credentials (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
 }
 
-// At least one provider must be configured
 if (!geminiApiKey && !cerebrasApiKey && !huggingFaceToken) {
   throw new Error('Missing sentiment analysis credentials. Please set at least one: GEMINI_API_KEY, CEREBRAS_API_KEY, or HUGGINGFACE_API_TOKEN');
 }
@@ -656,12 +647,17 @@ export class SentimentScoringService {
     text: string,
     competitorNames: string[]
   ): Promise<Map<string, EntitySentimentAnalysis>> {
-    if (!competitorSentimentApiKey) {
-      throw new Error('Cerebras API key not configured for competitor sentiment scoring');
-    }
-
     if (competitorNames.length === 0) {
       return new Map();
+    }
+
+    // Prefer OpenRouter if configured
+    if (SENTIMENT_PROVIDER === 'openrouter' && openRouterApiKey) {
+      return this.analyzeCompetitorSentimentWithOpenRouter(text, competitorNames);
+    }
+
+    if (!competitorSentimentApiKey) {
+      throw new Error('Cerebras API key not configured for competitor sentiment scoring');
     }
 
     // Truncate to 20k words max
@@ -1305,6 +1301,15 @@ ${prompt}`;
       return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
     }
 
+    // Prefer OpenRouter if configured
+    if (SENTIMENT_PROVIDER === 'openrouter' && openRouterApiKey) {
+      try {
+        return await this.analyzeSentimentWithOpenRouter(text);
+      } catch (error) {
+        console.warn('⚠️ OpenRouter sentiment analysis failed, falling back...');
+      }
+    }
+
     // Use Cerebras (primary) or Gemini (fallback) for full text analysis (no chunking needed due to high token limits)
     if (SENTIMENT_PROVIDER === 'cerebras' && cerebrasApiKey) {
       try {
@@ -1717,6 +1722,179 @@ ${prompt}`;
       // Fallback to neutral
       return { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
     }
+  }
+
+  /**
+   * Analyze sentiment using OpenRouter (GPT-5 Nano)
+   */
+  private async analyzeSentimentWithOpenRouter(text: string): Promise<SentimentAnalysis> {
+    if (!openRouterApiKey) {
+      throw new Error('OpenRouter API key not configured');
+    }
+
+    const maxWords = 10000; // trim large payloads
+    const truncated = this.truncateToWordLimit(text, maxWords);
+
+    const prompt = `Analyze the sentiment of the following text and provide:
+1. Overall sentiment label: POSITIVE, NEGATIVE, or NEUTRAL
+2. Sentiment score: -1.0 (very negative) to 1.0 (very positive)
+3. List of positive sentences (sentences with positive sentiment)
+4. List of negative sentences (sentences with negative sentiment)
+
+Text to analyze:
+${truncated}
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "label": "POSITIVE|NEGATIVE|NEUTRAL",
+  "score": -1.0 to 1.0,
+  "positiveSentences": ["sentence 1", "sentence 2"],
+  "negativeSentences": ["sentence 1", "sentence 2"]
+}`;
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openRouterApiKey}`,
+        'Content-Type': 'application/json',
+        ...(openRouterSiteUrl ? { 'HTTP-Referer': openRouterSiteUrl } : {}),
+        ...(openRouterSiteTitle ? { 'X-Title': openRouterSiteTitle } : {}),
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-5-nano',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt }
+            ]
+          }
+        ],
+        temperature: 0.2,
+        max_tokens: 1500
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    const content = data.choices?.[0]?.message?.content || '';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in OpenRouter response');
+    }
+    const result = JSON.parse(jsonMatch[0]);
+    return {
+      label: result.label?.toUpperCase() || 'NEUTRAL',
+      score: Math.max(-1, Math.min(1, parseFloat(result.score) || 0)),
+      positiveSentences: Array.isArray(result.positiveSentences) ? result.positiveSentences : [],
+      negativeSentences: Array.isArray(result.negativeSentences) ? result.negativeSentences : [],
+    };
+  }
+
+  private async analyzeCompetitorSentimentWithOpenRouter(
+    text: string,
+    competitorNames: string[]
+  ): Promise<Map<string, EntitySentimentAnalysis>> {
+    if (!openRouterApiKey) {
+      throw new Error('OpenRouter API key not configured');
+    }
+
+    const maxWords = 10000; // trim large payloads
+    const truncated = this.truncateToWordLimit(text, maxWords);
+    const competitorsList = competitorNames.map((name, idx) => `${idx + 1}. ${name}`).join('\n');
+
+    const prompt = `Analyze the sentiment for each of the following competitors mentioned in the text below.
+
+Competitors to analyze:
+${competitorsList}
+
+For each competitor, provide:
+1. Sentiment label: POSITIVE, NEGATIVE, or NEUTRAL
+2. Sentiment score: A precise decimal number from -1.0 (very negative) to 1.0 (very positive)
+3. List of positive sentences mentioning this competitor
+4. List of negative sentences mentioning this competitor
+
+Text to analyze:
+${truncated}
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "competitors": [
+    {
+      "competitorName": "${competitorNames[0]}",
+      "label": "POSITIVE|NEGATIVE|NEUTRAL",
+      "score": -1.0 to 1.0 (precise decimal),
+      "positiveSentences": ["sentence 1", "sentence 2"],
+      "negativeSentences": ["sentence 1", "sentence 2"]
+    }
+  ]
+}`;
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openRouterApiKey}`,
+        'Content-Type': 'application/json',
+        ...(openRouterSiteUrl ? { 'HTTP-Referer': openRouterSiteUrl } : {}),
+        ...(openRouterSiteTitle ? { 'X-Title': openRouterSiteTitle } : {}),
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-5-nano',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt }
+            ]
+          }
+        ],
+        temperature: 0.2,
+        max_tokens: 2500
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    const content = data.choices?.[0]?.message?.content || '';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in OpenRouter response');
+    }
+    const result = JSON.parse(jsonMatch[0]) as CompetitorSentimentResult;
+
+    if (!result.competitors || !Array.isArray(result.competitors)) {
+      throw new Error('Invalid response format: competitors array not found');
+    }
+
+    const sentimentMap = new Map<string, EntitySentimentAnalysis>();
+    for (const competitor of result.competitors) {
+      const competitorName = competitor.competitorName || '';
+      if (!competitorName) continue;
+      sentimentMap.set(competitorName, {
+        entityName: competitorName,
+        label: (competitor.label || 'NEUTRAL').toUpperCase(),
+        score: Math.max(-1, Math.min(1, parseFloat(String(competitor.score)) || 0)),
+        positiveSentences: Array.isArray(competitor.positiveSentences) ? competitor.positiveSentences : [],
+        negativeSentences: Array.isArray(competitor.negativeSentences) ? competitor.negativeSentences : [],
+      });
+    }
+
+    // Ensure all requested competitors are present
+    for (const name of competitorNames) {
+      if (!sentimentMap.has(name)) {
+        sentimentMap.set(name, { entityName: name, label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] });
+      }
+    }
+
+    return sentimentMap;
   }
 
   /**

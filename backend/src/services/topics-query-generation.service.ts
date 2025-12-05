@@ -35,8 +35,12 @@ export interface TopicsAndQueriesRequest {
 }
 
 class TopicsQueryGenerationService {
-  private cerebrasApiKey = process.env['CEREBRAS_API_KEY_4'];
+  private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
   private cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
+  private openRouterApiKey = process.env['OPENROUTER_API_KEY'];
+  private openRouterModel = process.env['OPENROUTER_TOPICS_MODEL'] || 'openai/gpt-5-nano';
+  private openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
+  private openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
 
   /**
    * Generate topics and queries using the new improved prompt
@@ -44,62 +48,38 @@ class TopicsQueryGenerationService {
   async generateTopicsAndQueries(
     request: TopicsAndQueriesRequest
   ): Promise<TopicsAndQueriesResponse> {
-    if (!this.cerebrasApiKey) {
-      throw new Error('CEREBRAS_API_KEY is not configured');
-    }
-
     const maxTopics = request.maxTopics || 20;
     const prompt = this.buildPrompt(request);
+    let lastError: unknown;
 
-    try {
-      console.log('🤖 Generating topics and queries with new prompt approach...');
-      console.log(`📋 Brand: ${request.brandName}, Max topics: ${maxTopics}`);
-
-      const response = await axios.post<any>(
-        'https://api.cerebras.ai/v1/chat/completions',
-        {
-          model: this.cerebrasModel,
-          messages: [
-            { role: 'system', content: 'You are an AEO (Answer Engine Optimization) Topic & Query Architect. Always respond with valid JSON only.' },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7,
-          max_tokens: 4000, // Increased for larger output
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${this.cerebrasApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 60000, // 60 seconds for larger responses
-        }
-      );
-
-      const content = response.data?.choices?.[0]?.message?.content ?? '';
-      if (!content.trim()) {
-        throw new Error('Empty response from Cerebras API');
+    // Prefer Cerebras when configured, otherwise fall back to OpenRouter GPT Nano
+    if (this.cerebrasApiKey) {
+      try {
+        return await this.generateWithCerebras(prompt, maxTopics);
+      } catch (error) {
+        console.error('❌ Cerebras topics generation failed, attempting OpenRouter fallback...', error);
+        lastError = error;
       }
-
-      // Parse the response
-      const parsed = this.parseResponse(content);
-      
-      // Filter and rank topics
-      const filtered = this.filterAndRankTopics(parsed.topics, maxTopics);
-
-      console.log(`✅ Generated ${filtered.length} topics (from ${parsed.topics.length} total)`);
-
-      return {
-        primaryDomain: parsed.primaryDomain,
-        topics: filtered,
-      };
-    } catch (error) {
-      console.error('❌ Topics and queries generation failed:', error);
-      throw new Error(
-        `Failed to generate topics and queries: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`
-      );
+    } else {
+      console.warn('⚠️ CEREBRAS_API_KEY is not configured. Using OpenRouter fallback if available.');
     }
+
+    if (this.openRouterApiKey) {
+      try {
+        return await this.generateWithOpenRouter(prompt, maxTopics);
+      } catch (error) {
+        console.error('❌ OpenRouter topics generation failed.', error);
+        lastError = lastError || error;
+      }
+    } else {
+      console.warn('⚠️ OPENROUTER_API_KEY is not configured. No fallback available.');
+    }
+
+    throw new Error(
+      `Failed to generate topics and queries: ${
+        lastError instanceof Error ? lastError.message : 'No provider succeeded'
+      }`
+    );
   }
 
   /**
@@ -239,6 +219,91 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
       console.error('Response preview:', cleaned.substring(0, 500));
       throw new Error(`Failed to parse response: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Call Cerebras to generate topics
+   */
+  private async generateWithCerebras(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
+    console.log('🤖 Generating topics and queries with Cerebras...');
+
+    const response = await axios.post<any>(
+      'https://api.cerebras.ai/v1/chat/completions',
+      {
+        model: this.cerebrasModel,
+        messages: [
+          { role: 'system', content: 'You are an AEO (Answer Engine Optimization) Topic & Query Architect. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 4000, // Increased for larger output
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.cerebrasApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 60000, // 60 seconds for larger responses
+      }
+    );
+
+    const content = response.data?.choices?.[0]?.message?.content ?? '';
+    if (!content.trim()) {
+      throw new Error('Empty response from Cerebras API');
+    }
+
+    return this.processResponse(content, maxTopics);
+  }
+
+  /**
+   * Call OpenRouter GPT Nano as fallback provider
+   */
+  private async generateWithOpenRouter(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
+    console.log('🌐 Generating topics and queries with OpenRouter GPT Nano fallback...');
+
+    const response = await axios.post<any>(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: this.openRouterModel,
+        messages: [
+          { role: 'system', content: 'You are an AEO (Answer Engine Optimization) Topic & Query Architect. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.openRouterApiKey}`,
+          'Content-Type': 'application/json',
+          ...(this.openRouterSiteUrl ? { 'HTTP-Referer': this.openRouterSiteUrl } : {}),
+          ...(this.openRouterSiteTitle ? { 'X-Title': this.openRouterSiteTitle } : {}),
+        },
+        timeout: 60000,
+      }
+    );
+
+    const content = response.data?.choices?.[0]?.message?.content ?? '';
+    if (!content.trim()) {
+      throw new Error('Empty response from OpenRouter API');
+    }
+
+    return this.processResponse(content, maxTopics);
+  }
+
+  /**
+   * Parse, filter, and rank LLM output
+   */
+  private processResponse(content: string, maxTopics: number): TopicsAndQueriesResponse {
+    const parsed = this.parseResponse(content);
+    const filtered = this.filterAndRankTopics(parsed.topics, maxTopics);
+
+    console.log(`✅ Generated ${filtered.length} topics (from ${parsed.topics.length} total)`);
+
+    return {
+      primaryDomain: parsed.primaryDomain,
+      topics: filtered,
+    };
   }
 
   /**

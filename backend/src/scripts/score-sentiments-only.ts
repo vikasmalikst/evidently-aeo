@@ -15,7 +15,7 @@ async function main() {
   const brandId =
     process.env.BRAND_ID ||
     getArg('--brandId') ||
-    '0b8f4e80-7592-4e2c-ab35-cb95c8b83896';
+    '0fa491bf-3b62-45a3-b498-8241b6bf689d';
   const customerId =
     process.env.CUSTOMER_ID ||
     getArg('--customerId') ||

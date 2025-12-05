@@ -154,10 +154,10 @@ export class DataCollectionService {
       priority: 4
     });
 
-    // Claude Collector (via DataForSEO priority chain)
+   
     this.collectors.set('claude', {
       name: 'Claude Collector',
-      enabled: true, // enable once DataForSEO credentials are configured
+      enabled: true, 
       baseUrl: 'priority',
       timeout: 30000,
       retries: 2,

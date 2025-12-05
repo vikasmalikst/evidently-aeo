@@ -43,8 +43,8 @@ export const PromptMetrics = ({ metrics }: PromptMetricsProps) => {
       />
       <MetricCard
         label="Sentiment"
-        value={metrics.avgSentiment.toFixed(1)}
-        subtitle="Average score (1-5)"
+        value={Math.round(metrics.avgSentiment * 100)}
+        subtitle="Average score"
       />
     </div>
   );

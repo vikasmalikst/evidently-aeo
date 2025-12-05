@@ -35,7 +35,7 @@ export interface TopicsAndQueriesRequest {
 }
 
 class TopicsQueryGenerationService {
-  private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
+  private cerebrasApiKey = process.env['CEREBRAS_API_KEY_4'];
   private cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
 
   /**

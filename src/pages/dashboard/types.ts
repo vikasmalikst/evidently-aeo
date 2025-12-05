@@ -66,6 +66,7 @@ export interface DashboardPayload {
     delta: number;
     brandPresenceCount: number;
     totalQueries?: number;
+    totalCollectorResults?: number; // Total unique collector results (for accurate brand presence %)
     color?: string;
     topTopic?: string | null;
     topTopics?: Array<{

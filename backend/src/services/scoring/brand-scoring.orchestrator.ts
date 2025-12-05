@@ -83,10 +83,11 @@ export class BrandScoringService {
         // Run all scoring operations in parallel
         console.log('⚡ Running scoring operations in parallel...');
         
-        const [positionsResult, sentimentsResult, competitorSentimentsResult, citationsResult] = await Promise.allSettled([
+        const [positionsResult, sentimentsResult, brandSentimentsResult, competitorSentimentsResult, citationsResult] = await Promise.allSettled([
           positionExtractionService.extractPositionsForNewResults(positionOptions),
           sentimentScoringService.scorePending(sentimentOptions),
-          sentimentScoringService.scoreExtractedPositions(sentimentOptions),
+          sentimentScoringService.scoreBrandSentiment(sentimentOptions),
+          sentimentScoringService.scoreCompetitorSentiment(sentimentOptions),
           citationExtractionService.extractAndStoreCitations(brandId)
         ]);
 
@@ -112,6 +113,18 @@ export class BrandScoringService {
             : String(sentimentsResult.reason);
           result.errors.push({ operation: 'sentiment_scoring', error: errorMsg });
           console.error(`❌ Sentiment scoring failed:`, errorMsg);
+        }
+
+        // Process brand sentiments result (extracted_positions)
+        if (brandSentimentsResult.status === 'fulfilled') {
+          // Note: Brand sentiment is tracked separately but not in result object for now
+          console.log(`✅ Brand sentiment scoring completed: ${brandSentimentsResult.value} positions processed`);
+        } else {
+          const errorMsg = brandSentimentsResult.reason instanceof Error 
+            ? brandSentimentsResult.reason.message 
+            : String(brandSentimentsResult.reason);
+          result.errors.push({ operation: 'brand_sentiment_scoring', error: errorMsg });
+          console.error(`❌ Brand sentiment scoring failed:`, errorMsg);
         }
 
         // Process competitor sentiments result
@@ -161,9 +174,21 @@ export class BrandScoringService {
           console.error(`❌ Sentiment scoring failed:`, errorMsg);
         }
 
-        // 3. Competitor sentiment scoring (for extracted_positions - brand + competitors)
+        // 3. Brand sentiment scoring (for extracted_positions - brand only, priority)
         try {
-          result.competitorSentimentsProcessed = await sentimentScoringService.scoreExtractedPositions(sentimentOptions);
+          const brandSentimentsProcessed = await sentimentScoringService.scoreBrandSentiment(sentimentOptions);
+          console.log(`✅ Brand sentiment scoring completed: ${brandSentimentsProcessed} positions processed`);
+          // Note: This is separate from competitorSentimentsProcessed for tracking
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          result.errors.push({ operation: 'brand_sentiment_scoring', error: errorMsg });
+          console.error(`❌ Brand sentiment scoring failed:`, errorMsg);
+          // Don't block competitor scoring if brand fails
+        }
+
+        // 4. Competitor sentiment scoring (for extracted_positions - competitors only, secondary)
+        try {
+          result.competitorSentimentsProcessed = await sentimentScoringService.scoreCompetitorSentiment(sentimentOptions);
           console.log(`✅ Competitor sentiment scoring completed: ${result.competitorSentimentsProcessed} positions processed`);
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
@@ -171,7 +196,7 @@ export class BrandScoringService {
           console.error(`❌ Competitor sentiment scoring failed:`, errorMsg);
         }
 
-        // 4. Citation extraction
+        // 5. Citation extraction
         try {
           const citationStats = await citationExtractionService.extractAndStoreCitations(brandId);
           result.citationsProcessed = citationStats.processed || citationStats.inserted || 0;

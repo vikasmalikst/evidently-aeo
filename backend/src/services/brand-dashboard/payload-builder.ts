@@ -572,6 +572,8 @@ export async function buildDashboardPayload(
             mentions: 0,
             brandPresenceCount: 0,
             uniqueQueryIds: new Set<string>(),
+            uniqueCollectorResults: new Set<number>(), // Track unique collector results
+            collectorResultsWithBrandPresence: new Set<number>(), // Track unique collector results with brand presence
             topics: new Map()
           })
         }
@@ -589,8 +591,12 @@ export async function buildDashboardPayload(
 
         collectorAggregate.mentions += brandMentions > 0 ? brandMentions : 1
 
-        if (hasBrandPresence) {
-          collectorAggregate.brandPresenceCount += 1
+        // Track unique collector results (not rows) for brand presence calculation
+        if (row.collector_result_id && typeof row.collector_result_id === 'number' && Number.isFinite(row.collector_result_id)) {
+          collectorAggregate.uniqueCollectorResults.add(row.collector_result_id)
+          if (hasBrandPresence) {
+            collectorAggregate.collectorResultsWithBrandPresence.add(row.collector_result_id)
+          }
         }
         
         // Track unique queries per collector
@@ -1208,6 +1214,191 @@ export async function buildDashboardPayload(
   })
   const totalCollectorResultsCount = uniqueCollectorResultIdsForMentionRate.size || 1 // Avoid division by zero
 
+  // Step: Calculate previous period data for historical change comparison
+  // Compare the most recent day in the current period to the previous day
+  // Example: If viewing Dec 1-2, compare Dec 2 (most recent) to Dec 1 (previous day)
+  // Example: If viewing Dec 2 only, compare Dec 2 to Dec 1 (previous day)
+  const previousPeriodStartTime = Date.now()
+  
+  // Use the end date of the current period as the "current day" to compare
+  const currentDay = new Date(range.endDate)
+  currentDay.setUTCHours(0, 0, 0, 0) // Start of the most recent day
+  
+  // Previous day is one day before the current day
+  const previousDay = new Date(currentDay)
+  previousDay.setUTCDate(previousDay.getUTCDate() - 1)
+  
+  // Previous period is just the previous day (00:00:00 to 23:59:59)
+  const previousStart = new Date(previousDay)
+  previousStart.setUTCHours(0, 0, 0, 0)
+  const previousEnd = new Date(previousDay)
+  previousEnd.setUTCHours(23, 59, 59, 999)
+
+  console.log(`[Dashboard] 📊 Calculating day-over-day change for Top Brand Sources...`)
+  console.log(`[Dashboard] Current period: ${range.startDate.toISOString()} to ${range.endDate.toISOString()}`)
+  console.log(`[Dashboard] Comparing: Most recent day (${currentDay.toISOString()}) vs Previous day (${previousStart.toISOString()} to ${previousEnd.toISOString()})`)
+
+  // Fetch previous period citations and positions
+  const { data: previousCitations, error: prevCitationsError } = await supabaseAdmin
+    .from('citations')
+    .select('domain, url, usage_count, collector_result_id')
+    .eq('brand_id', brand.id)
+    .eq('customer_id', customerId)
+    .gte('created_at', previousStart.toISOString())
+    .lt('created_at', previousEnd.toISOString())
+
+  if (prevCitationsError) {
+    console.warn(`[Dashboard] Error fetching previous period citations: ${prevCitationsError.message}`)
+  }
+
+  const { data: previousPositions, error: prevPositionsError } = await supabaseAdmin
+    .from('extracted_positions')
+    .select('collector_result_id, share_of_answers_brand, visibility_index')
+    .eq('brand_id', brand.id)
+    .eq('customer_id', customerId)
+    .gte('created_at', previousStart.toISOString())
+    .lte('created_at', previousEnd.toISOString())
+
+  if (prevPositionsError) {
+    console.warn(`[Dashboard] Error fetching previous period positions: ${prevPositionsError.message}`)
+  }
+
+  console.log(`[Dashboard] Previous period data: ${previousCitations?.length || 0} citations, ${previousPositions?.length || 0} positions`)
+
+  // Aggregate previous period data by domain
+  const previousSourceAggregates = new Map<string, {
+    usage: number
+    share: number[]
+    visibility: number[]
+    collectorIds: Set<number>
+  }>()
+
+  // Helper to extract and normalize domain (same logic as current period)
+  const extractDomain = (url: string | null, domain: string | null): string | null => {
+    if (domain && domain.trim().length > 0) {
+      return domain.trim().toLowerCase().replace(/^www\./, '')
+    }
+    if (url && url.trim().length > 0) {
+      try {
+        const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`)
+        return urlObj.hostname.toLowerCase().replace(/^www\./, '')
+      } catch {
+        const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/i)
+        return match ? match[1].toLowerCase().replace(/^www\./, '') : null
+      }
+    }
+    return null
+  }
+
+  // Process previous period citations
+  if (previousCitations && previousCitations.length > 0) {
+    for (const citation of previousCitations) {
+      const normalizedDomain = extractDomain(
+        typeof citation.url === 'string' ? citation.url : null,
+        typeof citation.domain === 'string' ? citation.domain : null
+      )
+
+      if (!normalizedDomain) continue
+
+      const sourceKey = normalizedDomain
+
+      if (!previousSourceAggregates.has(sourceKey)) {
+        previousSourceAggregates.set(sourceKey, {
+          usage: 0,
+          share: [],
+          visibility: [],
+          collectorIds: new Set<number>()
+        })
+      }
+
+      const prev = previousSourceAggregates.get(sourceKey)!
+      prev.usage += citation.usage_count || 1
+
+      if (citation.collector_result_id && typeof citation.collector_result_id === 'number') {
+        prev.collectorIds.add(citation.collector_result_id)
+      }
+    }
+  }
+
+  // Process previous period positions to get share and visibility
+  if (previousPositions && previousPositions.length > 0) {
+    // Create a map of collector_result_id to domain from citations
+    const collectorIdToDomain = new Map<number, string>()
+    if (previousCitations) {
+      for (const citation of previousCitations) {
+        if (citation.collector_result_id && typeof citation.collector_result_id === 'number') {
+          const normalizedDomain = extractDomain(
+            typeof citation.url === 'string' ? citation.url : null,
+            typeof citation.domain === 'string' ? citation.domain : null
+          )
+          if (normalizedDomain) {
+            collectorIdToDomain.set(citation.collector_result_id, normalizedDomain)
+          }
+        }
+      }
+    }
+
+    // Get domain from citations map (extracted_positions doesn't have domain column)
+    for (const position of previousPositions) {
+      if (!position.collector_result_id) continue
+
+      // Domain comes from citations, not positions
+      const domain = collectorIdToDomain.get(position.collector_result_id)
+
+      if (!domain) continue
+
+      if (!previousSourceAggregates.has(domain)) {
+        previousSourceAggregates.set(domain, {
+          usage: 0,
+          share: [],
+          visibility: [],
+          collectorIds: new Set<number>()
+        })
+      }
+
+      const prev = previousSourceAggregates.get(domain)!
+
+      if (position.share_of_answers_brand !== null && position.share_of_answers_brand !== undefined) {
+        prev.share.push(toNumber(position.share_of_answers_brand))
+      }
+
+      if (position.visibility_index !== null && position.visibility_index !== undefined) {
+        // visibility_index is 0-1 scale, convert to 0-100 for consistency
+        prev.visibility.push(toNumber(position.visibility_index) * 100)
+      }
+    }
+  }
+
+  // Calculate previous period impact scores
+  const previousImpactScores = new Map<string, number>()
+  const previousMaxUsage = Array.from(previousSourceAggregates.values()).reduce(
+    (max, source) => (source.usage > max ? source.usage : max),
+    0
+  )
+
+  for (const [domain, prev] of previousSourceAggregates.entries()) {
+    const avgShare = prev.share.length > 0 ? average(prev.share) : 0
+    const avgVisibility = prev.visibility.length > 0 ? average(prev.visibility) : 0
+
+    const hasImpact = prev.usage > 0 || avgShare > 0 || avgVisibility > 0
+    if (hasImpact) {
+      const usageNorm = previousMaxUsage > 0 ? (prev.usage / previousMaxUsage) * 10 : 0
+      const shareNorm = (avgShare / 100) * 10
+      const visibilityNorm = (avgVisibility / 100) * 10
+      const impactScore = round((0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm), 1)
+      previousImpactScores.set(domain, impactScore)
+    }
+  }
+
+  const previousPeriodDuration = Date.now() - previousPeriodStartTime
+  console.log(`[Dashboard] ✅ Previous period data processed (${previousPeriodDuration}ms)`)
+  console.log(`[Dashboard] Previous period sources: ${previousSourceAggregates.size}, impact scores calculated: ${previousImpactScores.size}`)
+  if (previousImpactScores.size > 0) {
+    console.log(`[Dashboard] Sample previous impact scores:`, Array.from(previousImpactScores.entries()).slice(0, 3))
+  } else {
+    console.log(`[Dashboard] ⚠️  No previous period impact scores calculated - this may be because there's no historical data`)
+  }
+
   const topBrandSources = Array.from(domainMap.values())
     .map((source) => {
       // Calculate mentionRate: percentage of total collector results where this source is cited
@@ -1226,6 +1417,33 @@ export async function buildDashboardPayload(
       const impactScore = hasImpact
         ? round((0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm), 1)
         : null
+      
+      // Calculate change from previous period
+      // Match by normalized domain (same as used in previous period aggregation)
+      // Normalize domain the same way as domainMap key (lowercase, remove www.)
+      const normalizedDomain = source.domain?.toLowerCase().replace(/^www\./, '') || 'unknown'
+      const previousImpactScore = previousImpactScores.get(normalizedDomain)
+      
+      let change: number | null = null
+      if (hasImpact && impactScore !== null) {
+        if (previousImpactScore !== undefined) {
+          change = round(impactScore - previousImpactScore, 1)
+          console.log(`[Dashboard] Change for ${source.domain}: ${impactScore} - ${previousImpactScore} = ${change}`)
+        } else {
+          // New source in current period - no previous data to compare
+          // Set change to 0 or null? For new sources, we could show 0 or leave as null
+          // Let's set to null so frontend shows "—" for new sources
+          change = null
+        }
+      }
+      
+      // Debug logging for first few sources
+      if (previousImpactScores.size > 0 && normalizedDomain !== 'unknown') {
+        const found = previousImpactScores.has(normalizedDomain)
+        if (!found) {
+          console.log(`[Dashboard] No previous data found for domain: ${normalizedDomain} (current impact: ${impactScore})`)
+        }
+      }
       
       // Get all unique URLs for this domain (exact URLs from database, no normalization)
       // URLs that differ only by trailing slash will be shown separately
@@ -1252,7 +1470,7 @@ export async function buildDashboardPayload(
         domain: source.domain,
         mentionRate: round(mentionRate, 1), // Add mentionRate for ranking
         impactScore,
-        change: hasImpact ? 0 : null,
+        change,
         visibility: round(source.visibility, 1),
         share: round(source.share, 1),
         usage: source.usage

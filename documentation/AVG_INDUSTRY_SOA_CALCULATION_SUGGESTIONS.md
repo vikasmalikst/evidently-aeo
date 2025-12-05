@@ -338,3 +338,4 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY industry_soa_benchmarks;
 
 
 
+

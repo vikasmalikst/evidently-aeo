@@ -24,6 +24,13 @@ interface PromptHighlights {
   competitors: string[]
 }
 
+interface CollectorResponse {
+  collectorResultId: number
+  collectorType: string
+  response: string
+  lastUpdated: string
+}
+
 interface PromptEntryPayload {
   id: string
   queryId: string | null
@@ -34,6 +41,7 @@ interface PromptEntryPayload {
   latestCollectorType: string | null
   lastUpdated: string | null
   response: string | null
+  responses: CollectorResponse[] // All responses from all collectors
   volumePercentage: number
   volumeCount: number
   sentimentScore: number | null
@@ -67,7 +75,7 @@ export interface PromptAnalyticsPayload {
 type MetadataRecord = Record<string, unknown>
 
 const DEFAULT_LOOKBACK_DAYS = 30
-const DEFAULT_LIMIT = 1000
+const DEFAULT_LIMIT = 10000 // Increased to ensure we get all responses for all queries
 
 const parseMetadata = (metadata: unknown): MetadataRecord | null => {
   if (metadata === null || metadata === undefined) {
@@ -439,6 +447,7 @@ export class PromptsAnalyticsService {
       latestCollectorType: string | null
       lastUpdated: string | null
       response: string | null
+      responses: CollectorResponse[] // Store all responses
       highlights: {
         brand: Set<string>
         products: Set<string>
@@ -496,6 +505,7 @@ export class PromptsAnalyticsService {
           latestCollectorType: null,
           lastUpdated: null,
           response: null,
+          responses: [],
           highlights: {
             brand: new Set<string>(),
             products: new Set<string>(),
@@ -536,6 +546,20 @@ export class PromptsAnalyticsService {
 
       const createdAt =
         typeof row.created_at === 'string' && row.created_at.trim().length > 0 ? row.created_at.trim() : null
+
+      // Store all responses (avoid duplicates by collectorResultId)
+      if (collectorResultId !== null && response && collectorType && createdAt) {
+        // Check if this response already exists (by collectorResultId)
+        const existingIndex = aggregate.responses.findIndex(r => r.collectorResultId === collectorResultId)
+        if (existingIndex === -1) {
+          aggregate.responses.push({
+            collectorResultId,
+            collectorType,
+            response,
+            lastUpdated: createdAt
+          })
+        }
+      }
 
       const shouldUpdate =
         createdAt &&
@@ -692,40 +716,16 @@ export class PromptsAnalyticsService {
       }
     }
 
-    // Fetch sentiments from collector_results and visibility scores from extracted_positions
+    // Fetch sentiments from extracted_positions (same source as dashboard) and visibility scores from extracted_positions
+    // Use sentiment_score from extracted_positions table only (no fallback to collector_results) - matches dashboard behavior
     const sentimentByCollectorResult = new Map<number, number>()
-    if (allCollectorResultIds.length > 0) {
-      const { data: collectorResultsData, error: sentimentError } = await supabaseAdmin
-        .from('collector_results')
-        .select('id, sentiment_score')
-        .in('id', allCollectorResultIds)
-        .not('sentiment_score', 'is', null)
-        .gte('created_at', normalizedRange.startIsoBound)
-        .lte('created_at', normalizedRange.endIsoBound)
 
-      if (sentimentError) {
-        console.warn(`Failed to load sentiments from collector_results: ${sentimentError.message}`)
-      } else if (collectorResultsData) {
-        collectorResultsData.forEach((row: any) => {
-          const sentimentValue =
-            typeof row?.sentiment_score === 'number'
-              ? row.sentiment_score
-              : typeof row?.sentiment_score === 'string'
-                ? Number(row.sentiment_score)
-                : null
-          if (sentimentValue !== null && Number.isFinite(sentimentValue)) {
-            sentimentByCollectorResult.set(row.id, sentimentValue)
-          }
-        })
-      }
-    }
-
-    // Fetch visibility scores from extracted_positions (still stored there)
+    // Fetch visibility scores and sentiment scores from extracted_positions (same source as dashboard)
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       let visibilityQuery = supabaseAdmin
         .from('extracted_positions')
-        .select('query_id, collector_result_id, visibility_index, competitor_name')
+        .select('query_id, collector_result_id, visibility_index, competitor_name, sentiment_score')
         .eq('brand_id', brandRow.id)
         .eq('customer_id', customerId)
         .gte('processed_at', normalizedRange.startIsoBound)
@@ -761,12 +761,19 @@ export class PromptsAnalyticsService {
         })
 
         filteredRows.forEach((row: any) => {
-          // Process visibility_index (sentiment is now from collector_results, handled separately above)
+          // Process visibility_index and sentiment_score from extracted_positions (same source as dashboard)
           const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
           
-          // Add sentiment from collector_results if available
-          if (row?.collector_result_id) {
-            const sentimentValue = sentimentByCollectorResult.get(row.collector_result_id)
+          // Add sentiment from extracted_positions if available (same source as dashboard)
+          // Use sentiment_score from extracted_positions table - matches dashboard behavior
+          if (row?.collector_result_id && isBrandRow) {
+            // Only use brand rows (where competitor_name is null) for sentiment, matching dashboard
+            const sentimentValue =
+              typeof row?.sentiment_score === 'number'
+                ? row.sentiment_score
+                : typeof row?.sentiment_score === 'string'
+                  ? Number(row.sentiment_score)
+                  : null
             if (sentimentValue !== null && sentimentValue !== undefined && Number.isFinite(sentimentValue)) {
               const keyByQuery = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
               const keyByCollector =
@@ -928,6 +935,17 @@ export class PromptsAnalyticsService {
         finalBrandHighlights = [brandRow.name.trim()]
       }
       
+      // Sort responses by lastUpdated (newest first)
+      const sortedResponses = aggregate.responses
+        .slice()
+        .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
+      
+      // Debug logging to verify responses are being collected
+      if (sortedResponses.length > 1) {
+        console.log(`[PromptsAnalytics] Query ${aggregate.queryId || aggregate.id} has ${sortedResponses.length} responses:`, 
+          sortedResponses.map(r => r.collectorType).join(', '))
+      }
+
       return {
         id: aggregate.id,
         queryId: aggregate.queryId,
@@ -938,6 +956,7 @@ export class PromptsAnalyticsService {
         latestCollectorType: aggregate.latestCollectorType,
         lastUpdated: aggregate.lastUpdated,
         response: aggregate.response,
+        responses: sortedResponses,
         volumeCount: aggregate.count,
         volumePercentage:
           totalResponses > 0 ? roundToPrecision((aggregate.count / totalResponses) * 100, 1) : 0,

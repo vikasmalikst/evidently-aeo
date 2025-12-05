@@ -1,5 +1,5 @@
 import { IconInfoCircle, IconPlus, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Topic } from '../../types/topic';
 import { fetchPromptsForTopics } from '../../api/onboardingApi';
 import { Spinner } from './common/Spinner';
@@ -46,6 +46,97 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
   const topicRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const modalButtonRef = useRef<HTMLButtonElement>(null);
 
+  const prefetchTopicPrompts = useCallback(async (topicIds: string[]) => {
+    const topicsToFetch = topicIds.filter(
+      (topicId) => !promptsByTopic[topicId] && !loadingTopics.has(topicId)
+    );
+
+    if (topicsToFetch.length === 0) {
+      return;
+    }
+
+    setLoadingTopics((prev) => {
+      const next = new Set(prev);
+      topicsToFetch.forEach((id) => next.add(id));
+      return next;
+    });
+
+    try {
+      const brandData = localStorage.getItem('onboarding_brand');
+      const competitorsData = localStorage.getItem('onboarding_competitors');
+      const brand = brandData ? JSON.parse(brandData) : {};
+      const competitors = competitorsData ? JSON.parse(competitorsData) : [];
+
+      const topicsPayload = selectedTopics.filter((topic) => topicsToFetch.includes(topic.id));
+      if (topicsPayload.length === 0) {
+        return;
+      }
+
+      console.log(
+        '🔁 Prefetching prompts for topics:',
+        topicsPayload.map((topic) => topic.name)
+      );
+
+      const response = await fetchPromptsForTopics({
+        brand_name: brand.companyName || brand.name || 'Brand',
+        industry: brand.industry || 'General',
+        competitors: competitors.map((c: any) => c.name || c.companyName || ''),
+        topics: topicsPayload.map((topic) => topic.name),
+        locale: 'en-US',
+        country: 'US',
+        brand_id: undefined,
+        website_url: brand.website || brand.domain || undefined
+      });
+
+      setPromptsByTopic((prev) => {
+        const updated = { ...prev };
+        topicsPayload.forEach((topic) => {
+          updated[topic.id] = updated[topic.id] || [];
+        });
+
+        if (response.success && response.data) {
+          response.data.forEach(({ topic, prompts }) => {
+            const topicMatch = topicsPayload.find((t) => t.name === topic);
+            if (topicMatch) {
+              updated[topicMatch.id] = prompts || [];
+            }
+          });
+          console.log(
+            `✅ Prefetched prompts for ${response.data.length} topics`
+          );
+        } else {
+          console.warn(
+            '⚠️ No prompts returned for topics:',
+            topicsPayload.map((topic) => topic.name)
+          );
+        }
+        return updated;
+      });
+    } catch (error) {
+      console.error('Failed to fetch prompts in batch:', error);
+      setPromptsByTopic((prev) => {
+        const updated = { ...prev };
+        topicsToFetch.forEach((topicId) => {
+          updated[topicId] = updated[topicId] || [];
+        });
+        return updated;
+      });
+    } finally {
+      setLoadingTopics((prev) => {
+        const next = new Set(prev);
+        topicsToFetch.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+  }, [loadingTopics, promptsByTopic, selectedTopics]);
+
+  useEffect(() => {
+    if (selectedTopics.length === 0) {
+      return;
+    }
+    prefetchTopicPrompts(selectedTopics.map((topic) => topic.id));
+  }, [prefetchTopicPrompts, selectedTopics]);
+
   const toggleTopic = async (topicId: string) => {
     const isCurrentlyExpanded = expandedTopics.has(topicId);
     
@@ -56,67 +147,12 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
     } else {
       newExpanded.add(topicId);
       
-      // Load prompts if not already loaded
-      if (!promptsByTopic[topicId] && !loadingTopics.has(topicId)) {
-        const newLoading = new Set(loadingTopics);
-        newLoading.add(topicId);
-        setLoadingTopics(newLoading);
-        await fetchPromptsForTopic(topicId);
-        setLoadingTopics(prev => {
-          const next = new Set(prev);
-          next.delete(topicId);
-          return next;
-        });
+      // Ensure prompts exist if not already prefetched
+      if (!promptsByTopic[topicId]) {
+        await prefetchTopicPrompts([topicId]);
       }
     }
     setExpandedTopics(newExpanded);
-  };
-
-  const fetchPromptsForTopic = async (topicId: string) => {
-    try {
-      const topic = selectedTopics.find(t => t.id === topicId);
-      if (!topic) return;
-      
-      // Get fresh brand data from localStorage (should be current onboarding session)
-      const brandData = localStorage.getItem('onboarding_brand');
-      const competitorsData = localStorage.getItem('onboarding_competitors');
-      const brand = brandData ? JSON.parse(brandData) : {};
-      const competitors = competitorsData ? JSON.parse(competitorsData) : [];
-      
-      // Don't use brand_id during onboarding - brand hasn't been created yet
-      // brand_id from localStorage may be stale from previous sessions
-      
-      console.log('🔍 Fetching prompts for topic:', topic.name, 'for brand:', brand.companyName || brand.name);
-      
-      const response = await fetchPromptsForTopics({
-        brand_name: brand.companyName || brand.name || 'Brand',
-        industry: brand.industry || 'General',
-        competitors: competitors.map((c: any) => c.name || c.companyName || ''),
-        topics: [topic.name],
-        locale: 'en-US',
-        country: 'US',
-        // Don't pass brand_id during onboarding - it may be stale
-        brand_id: undefined,
-        website_url: brand.website || brand.domain || undefined
-      });
-      
-      if (response.success && response.data && response.data[0]) {
-        const prompts = response.data[0].prompts || [];
-        setPromptsByTopic(prev => ({
-          ...prev,
-          [topicId]: prompts
-        }));
-        console.log(`✅ Loaded ${prompts.length} prompts for "${topic.name}"`);
-      } else {
-        // Fallback to empty array
-        setPromptsByTopic(prev => ({ ...prev, [topicId]: [] }));
-        console.warn('No prompts returned for topic:', topic.name);
-      }
-    } catch (error) {
-      console.error('Failed to fetch prompts:', error);
-      // Fallback to empty array
-      setPromptsByTopic(prev => ({ ...prev, [topicId]: [] }));
-    }
   };
 
   const scrollToTopic = (topicId: string) => {

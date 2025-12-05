@@ -72,7 +72,7 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
                     <div className={`flex items-center justify-center w-12 h-12 rounded-lg ${sentimentStyle.bg} flex-shrink-0`}>
                       <div className="text-center">
                         <span className={`text-[16px] font-bold ${sentimentStyle.text} block leading-none`}>
-                          {sentimentScore > 0 ? '+' : ''}{sentimentScore.toFixed(2)}
+                          {Math.round(sentimentScore * 100)}
                         </span>
                         </div>
                       </div>

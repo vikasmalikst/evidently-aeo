@@ -231,9 +231,11 @@ export const SearchVisibility = () => {
     const llmModels = llmSlices.map((slice) => {
       const totalQueries = slice.totalQueries ?? 0;
       const brandPresenceCount = slice.brandPresenceCount ?? 0;
-      // Brand Presence % = (queries with brand presence / total queries) * 100, capped at 100%
-      const brandPresencePercentage = totalQueries > 0 
-        ? Math.min(100, Math.round((brandPresenceCount / totalQueries) * 100))
+      // Brand Presence % = (collector results with brand presence / total collector results) * 100
+      // Use totalCollectorResults if available (more accurate), otherwise fall back to totalQueries
+      const totalCollectorResults = slice.totalCollectorResults ?? totalQueries;
+      const brandPresencePercentage = totalCollectorResults > 0 
+        ? Math.min(100, Math.round((brandPresenceCount / totalCollectorResults) * 100))
         : 0;
       
       const visibilityValue = slice.visibility ?? 0;
@@ -599,7 +601,7 @@ export const SearchVisibility = () => {
           )}
 
           <div className="flex flex-col flex-[0_0_60%] rounded-3xl border border-[#e4e7ec] bg-white shadow-[0_20px_45px_rgb(15_23_42_/_0.08)] overflow-hidden">
-            <div className="border-b border-[#e7ecff] bg-gradient-to-br from-white via-white to-[#f6fbff] p-6">
+            <div className="border-b border-[#e7ecff] bg-white p-6">
               <div className="flex flex-col gap-6">
                 <KpiToggle metricType={metricType} onChange={setMetricType} />
                 <div className="flex flex-col gap-3">
@@ -607,7 +609,9 @@ export const SearchVisibility = () => {
                     View Mode
                   </div>
                   <div className="flex flex-wrap items-start justify-between gap-4">
-                    <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                    <div className="flex items-center bg-white">
+                      <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                    </div>
                     <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm pt-1">
                       {activeTab === 'brand'
                         ? 'Focus on how each collector sees your brand.'

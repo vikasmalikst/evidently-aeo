@@ -6,10 +6,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { oxylabsCollectorService } from './oxylabs-collector.service';
+import { chatgptOxylabsCollectorService } from './chatgpt-oxylabs-collector.service';
 import { dataForSeoCollectorService } from './dataforseo-collector.service';
 import { brightDataCollectorService } from './brightdata-collector.service';
 import { openRouterCollectorService } from './openrouter-collector.service';
 import { serpApiCollectorService } from './serpapi-collector.service';
+import { groqCollectorService } from './groq-collector.service';
 
 // Load environment variables
 loadEnvironment();
@@ -94,52 +96,71 @@ export class PriorityCollectorService {
     };
 
     // ChatGPT Collector Priority Configuration
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('chatgpt', {
       collector_type: 'chatgpt',
       providers: [
         {
-          name: 'oxylabs_chatgpt',
+          name: 'brightdata_chatgpt',
           priority: 1,
           enabled: true,
+          timeout: 10000, // 10s timeout - async returns snapshot_id quickly
+          retries: 1,
+          fallback_on_failure: false // Fail instead of falling back
+        },
+        {
+          name: 'dataforseo_chatgpt',
+          priority: 2,
+          enabled: false, // Disabled for testing
+          timeout: 60000,
+          retries: 1,
+          fallback_on_failure: true
+        },
+        {
+          name: 'groq_chatgpt',
+          priority: 3,
+          enabled: false, // Disabled for testing
           timeout: 30000,
+          retries: 1,
+          fallback_on_failure: true
+        },
+        {
+          name: 'oxylabs_chatgpt',
+          priority: 4,
+          enabled: false, // Disabled for testing
+          timeout: 90000,
           retries: 1,
           fallback_on_failure: true
         },
         {
           name: 'openai_direct',
-          priority: 2,
-          enabled: true,
+          priority: 5,
+          enabled: false, // Disabled for testing
           timeout: 30000,
           retries: 1,
-          fallback_on_failure: true // Fallback to OpenAI direct when Oxylabs fails
+          fallback_on_failure: true
         },
-        // {
-        //   name: 'brightdata_chatgpt',
-        //   priority: 3,
-        //   enabled: false, // Disabled - skip BrightData for now
-        //   timeout: 30000,
-        //   retries: 1,
-        //   fallback_on_failure: false
-        // },
+       
       ]
     });
 
     // Google AIO Collector Priority Configuration
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('google_aio', {
       collector_type: 'google_aio',
       providers: [
         {
-          name: 'oxylabs_google_aio',
+          name: 'brightdata_google_aio',
           priority: 1,
-          enabled: true, // Re-enabled as per user's request
+          enabled: true,
           timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
-          name: 'brightdata_google_aio',
+          name: 'oxylabs_google_aio',
           priority: 2,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 45000,
           retries: 2,
           fallback_on_failure: true
@@ -147,7 +168,7 @@ export class PriorityCollectorService {
         {
           name: 'dataforseo_google_aio',
           priority: 3,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 45000,
           retries: 1,
           fallback_on_failure: true
@@ -157,21 +178,22 @@ export class PriorityCollectorService {
     });
 
     // Perplexity Collector Priority Configuration
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('perplexity', {
       collector_type: 'perplexity',
       providers: [
         {
-          name: 'oxylabs_perplexity',
+          name: 'brightdata_perplexity',
           priority: 1,
           enabled: true,
-          timeout: 60000,
+          timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
-          name: 'brightdata_perplexity',
+          name: 'oxylabs_perplexity',
           priority: 2,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 60000,
           retries: 2,
           fallback_on_failure: true
@@ -179,7 +201,7 @@ export class PriorityCollectorService {
         {
           name: 'dataforseo_perplexity',
           priority: 3,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 45000,
           retries: 1,
           fallback_on_failure: true
@@ -205,22 +227,23 @@ export class PriorityCollectorService {
   
 
     // Bing Copilot Collector Priority Configuration
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('bing_copilot', {
       collector_type: 'bing_copilot',
       providers: [
         {
-          name: 'serpapi_bing_copilot',
+          name: 'brightdata_bing_copilot',
           priority: 1,
           enabled: true,
-          timeout: 60000, // 60 seconds for SerpApi (synchronous)
+          timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
-          name: 'brightdata_bing_copilot',
+          name: 'serpapi_bing_copilot',
           priority: 2,
-          enabled: false,
-          timeout: 300000, // Increased to 5 minutes for BrightData async processing
+          enabled: false, // Disabled for testing
+          timeout: 60000,
           retries: 2,
           fallback_on_failure: true
         }
@@ -228,7 +251,7 @@ export class PriorityCollectorService {
     });
 
     // Gemini Collector Priority Configuration
-    // Using Google Gemini Direct as primary (user requested)
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('gemini', {
       collector_type: 'gemini',
       providers: [
@@ -238,12 +261,12 @@ export class PriorityCollectorService {
           enabled: true,
           timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         },
         {
           name: 'google_gemini_direct',
           priority: 2,
-          enabled: true,
+          enabled: false, // Disabled for testing
           timeout: 45000,
           retries: 2,
           fallback_on_failure: true
@@ -253,6 +276,7 @@ export class PriorityCollectorService {
     });
 
     // Grok Collector Priority Configuration
+    // TESTING MODE: BrightData only, no fallbacks
     this.collectorConfigs.set('grok', {
       collector_type: 'grok',
       providers: [
@@ -260,9 +284,9 @@ export class PriorityCollectorService {
           name: 'brightdata_grok',
           priority: 1,
           enabled: true,
-          timeout: 300000, // Increased to 5 minutes for BrightData async processing
+          timeout: 45000,
           retries: 2,
-          fallback_on_failure: true
+          fallback_on_failure: false // Fail instead of falling back
         }
       ]
     });
@@ -467,7 +491,9 @@ export class PriorityCollectorService {
     console.log(`🔄 Calling ${provider.name} for ${collectorType}`);
 
     // Route to appropriate service based on provider name
-    if (provider.name.includes('serpapi')) {
+    if (provider.name.includes('groq')) {
+      return await this.callGroqProvider(provider, queryText, brandId, locale, country, collectorType);
+    } else if (provider.name.includes('serpapi')) {
       return await this.callSerpApiProvider(provider, queryText, brandId, locale, country, collectorType);
     } else if (provider.name.includes('openrouter')) {
       return await this.callOpenRouterProvider(provider, queryText, brandId, locale, country, collectorType);
@@ -482,6 +508,25 @@ export class PriorityCollectorService {
     } else {
       throw new Error(`Unknown provider type: ${provider.name}`);
     }
+  }
+
+  /**
+   * Call Groq provider
+   */
+  private async callGroqProvider(
+    provider: CollectorProvider,
+    queryText: string,
+    brandId: string,
+    locale: string,
+    country: string,
+    collectorType: string
+  ): Promise<any> {
+    console.log(`🔄 Calling Groq ${provider.name} for ${collectorType}`);
+    
+    return await groqCollectorService.executeQuery({
+      prompt: queryText,
+      collectorType
+    });
   }
 
   /**
@@ -514,8 +559,18 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
+    // Use dedicated ChatGPT Oxylabs service for ChatGPT
+    if (provider.name === 'oxylabs_chatgpt' || collectorType === 'chatgpt') {
+      return await chatgptOxylabsCollectorService.executeQuery({
+        prompt: queryText,
+        brand: brandId,
+        locale,
+        country
+      });
+    }
+
+    // Use general Oxylabs service for other collectors
     const sourceMap: { [key: string]: string } = {
-      'oxylabs_chatgpt': 'chatgpt',
       'oxylabs_google_aio': 'google_ai_mode',
       'oxylabs_perplexity': 'perplexity'
     };

@@ -131,7 +131,26 @@ async function processSingleRun(run: ScoringJobRun): Promise<void> {
       extractionOptions,
     );
     const sentimentsProcessed = await sentimentScoringService.scorePending(sentimentOptions);
-    const competitorSentimentsProcessed = await sentimentScoringService.scoreExtractedPositions(sentimentOptions);
+    
+    // Use new separated methods for brand and competitor sentiment
+    let brandSentimentsProcessed = 0;
+    let competitorSentimentsProcessed = 0;
+    
+    try {
+      brandSentimentsProcessed = await sentimentScoringService.scoreBrandSentiment(sentimentOptions);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[Worker] Brand sentiment scoring failed for run ${run.id}:`, errorMsg);
+      // Continue with competitor scoring even if brand fails
+    }
+    
+    try {
+      competitorSentimentsProcessed = await sentimentScoringService.scoreCompetitorSentiment(sentimentOptions);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[Worker] Competitor sentiment scoring failed for run ${run.id}:`, errorMsg);
+      // Don't fail the entire run if competitor scoring fails
+    }
 
     const finishedAt = new Date();
 
@@ -154,13 +173,14 @@ async function processSingleRun(run: ScoringJobRun): Promise<void> {
           brandCount: brandIds.length,
           extractionOptions,
           sentimentOptions,
+          brandSentimentsProcessed,
           competitorSentimentsProcessed,
         },
       })
       .eq('id', run.id);
 
     console.log(
-      `[Worker] Completed scoring run ${run.id}: positions=${positionsProcessed}, sentiments=${sentimentsProcessed}, competitorSentiments=${competitorSentimentsProcessed}`,
+      `[Worker] Completed scoring run ${run.id}: positions=${positionsProcessed}, sentiments=${sentimentsProcessed}, brandSentiments=${brandSentimentsProcessed}, competitorSentiments=${competitorSentimentsProcessed}`,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

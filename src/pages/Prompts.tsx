@@ -116,10 +116,10 @@ export const Prompts = () => {
       endDate: bounds.endIso
     });
 
-    // Don't filter by collector on backend - we want all responses for client-side filtering
-    // if (selectedLLM) {
-    //   params.set('collectors', selectedLLM);
-    // }
+    // Filter by collector on backend so visibility/sentiment reflect the selected LLM
+    if (selectedLLM) {
+      params.set('collectors', selectedLLM);
+    }
 
     // Add current version parameter to filter prompts by current version
     // Backend should return only prompts from the current version
@@ -130,7 +130,7 @@ export const Prompts = () => {
     const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
     perfLog('Prompts: Endpoint computation', endpointStart);
     return endpoint;
-  }, [selectedBrandId, dateRangeKey, brandsLoading, currentVersion]);
+  }, [selectedBrandId, dateRangeKey, brandsLoading, currentVersion, selectedLLM]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());

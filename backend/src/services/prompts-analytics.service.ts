@@ -29,6 +29,9 @@ interface CollectorResponse {
   collectorType: string
   response: string
   lastUpdated: string
+  brandMentions: number | null
+  productMentions: number | null
+  competitorMentions: number | null
 }
 
 interface PromptEntryPayload {
@@ -556,7 +559,10 @@ export class PromptsAnalyticsService {
             collectorResultId,
             collectorType,
             response,
-            lastUpdated: createdAt
+            lastUpdated: createdAt,
+            brandMentions: null,
+            productMentions: null,
+            competitorMentions: null
           })
         }
       }
@@ -722,10 +728,12 @@ export class PromptsAnalyticsService {
 
     // Fetch visibility scores and sentiment scores from extracted_positions (same source as dashboard)
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
+    const mentionCountsByCollector = new Map<number, { brand: number; product: number; competitor: number }>()
+    const mentionCountsByQuery = new Map<string, { brand: number; product: number; competitor: number }>()
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       let visibilityQuery = supabaseAdmin
         .from('extracted_positions')
-        .select('query_id, collector_result_id, visibility_index, competitor_name, sentiment_score')
+        .select('query_id, collector_result_id, visibility_index, competitor_name, sentiment_score, total_brand_mentions, total_brand_product_mentions, competitor_mentions')
         .eq('brand_id', brandRow.id)
         .eq('customer_id', customerId)
         .gte('processed_at', normalizedRange.startIsoBound)
@@ -763,7 +771,53 @@ export class PromptsAnalyticsService {
         filteredRows.forEach((row: any) => {
           // Process visibility_index and sentiment_score from extracted_positions (same source as dashboard)
           const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
-          
+          const collectorResultId =
+            typeof row?.collector_result_id === 'number' ? row.collector_result_id : null
+          const queryId = typeof row?.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+
+          const brandMentionsRaw =
+            typeof row?.total_brand_mentions === 'number'
+              ? row.total_brand_mentions
+              : typeof row?.total_brand_mentions === 'string'
+                ? Number(row.total_brand_mentions)
+                : 0
+          const productMentionsRaw =
+            typeof row?.total_brand_product_mentions === 'number'
+              ? row.total_brand_product_mentions
+              : typeof row?.total_brand_product_mentions === 'string'
+                ? Number(row.total_brand_product_mentions)
+                : 0
+          const competitorMentionsRaw =
+            typeof row?.competitor_mentions === 'number'
+              ? row.competitor_mentions
+              : typeof row?.competitor_mentions === 'string'
+                ? Number(row.competitor_mentions)
+                : 0
+
+          const brandMentions = Number.isFinite(brandMentionsRaw) ? brandMentionsRaw : 0
+          const productMentions = Number.isFinite(productMentionsRaw) ? productMentionsRaw : 0
+          const competitorMentions = Number.isFinite(competitorMentionsRaw) ? competitorMentionsRaw : 0
+
+          const applyCounts = (target: { brand: number; product: number; competitor: number }) => {
+            if (isBrandRow) {
+              target.brand += brandMentions
+              target.product += productMentions
+            } else {
+              target.competitor += competitorMentions
+            }
+          }
+
+          if (collectorResultId !== null) {
+            const existing = mentionCountsByCollector.get(collectorResultId) ?? { brand: 0, product: 0, competitor: 0 }
+            applyCounts(existing)
+            mentionCountsByCollector.set(collectorResultId, existing)
+          }
+
+          if (queryId) {
+            const existing = mentionCountsByQuery.get(queryId) ?? { brand: 0, product: 0, competitor: 0 }
+            applyCounts(existing)
+            mentionCountsByQuery.set(queryId, existing)
+          }
           // Add sentiment from extracted_positions if available (same source as dashboard)
           // Use sentiment_score from extracted_positions table - matches dashboard behavior
           if (row?.collector_result_id && isBrandRow) {
@@ -956,7 +1010,18 @@ export class PromptsAnalyticsService {
         latestCollectorType: aggregate.latestCollectorType,
         lastUpdated: aggregate.lastUpdated,
         response: aggregate.response,
-        responses: sortedResponses,
+        responses: sortedResponses.map((response) => {
+          const counts =
+            (response.collectorResultId !== null ? mentionCountsByCollector.get(response.collectorResultId) : null) ??
+            (aggregate.queryId ? mentionCountsByQuery.get(aggregate.queryId) : null) ??
+            null
+          return {
+            ...response,
+            brandMentions: counts ? counts.brand : null,
+            productMentions: counts ? counts.product : null,
+            competitorMentions: counts ? counts.competitor : null
+          }
+        }),
         volumeCount: aggregate.count,
         volumePercentage:
           totalResponses > 0 ? roundToPrecision((aggregate.count / totalResponses) * 100, 1) : 0,
@@ -981,9 +1046,9 @@ export class PromptsAnalyticsService {
           if (values.length === 0) {
             return null
           }
-          // Return RAW average sentiment in [-1, 1], rounded to 1 decimal
+          // Return raw average sentiment in [-1, 1] with higher precision to avoid masking changes
           const avg = values.reduce((sum, v) => sum + v, 0) / values.length
-          return roundToPrecision(avg, 1)
+          return roundToPrecision(avg, 4)
         })(),
         visibilityScore: (() => {
           // Visibility scores in extracted_positions are the source of truth
@@ -1054,7 +1119,7 @@ export class PromptsAnalyticsService {
           .filter((v): v is number => v !== null)
         const avgSentiment =
           sentimentScores.length > 0
-            ? roundToPrecision(sentimentScores.reduce((sum, v) => sum + v, 0) / sentimentScores.length, 1)
+            ? roundToPrecision(sentimentScores.reduce((sum, v) => sum + v, 0) / sentimentScores.length, 4)
             : null
 
         return {

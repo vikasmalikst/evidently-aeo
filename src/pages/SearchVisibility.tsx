@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { VisibilityTabs } from '../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../components/Visibility/ChartControls';
@@ -111,6 +112,15 @@ interface ModelData {
 
 const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+type MetricType = 'visibility' | 'share' | 'sentiment';
+
+const parseMetricType = (value: string | null): MetricType | null => {
+  if (value === 'visibility' || value === 'share' || value === 'sentiment') {
+    return value;
+  }
+  return null;
+};
+
 const normalizeId = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
 
 const buildTimeseries = (value: number) => Array(chartLabels.length).fill(Math.max(0, Math.round(value)));
@@ -159,10 +169,13 @@ export const SearchVisibility = () => {
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [metricType, setMetricType] = useState<'visibility' | 'share' | 'sentiment'>('visibility');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [metricType, setMetricType] = useState<MetricType>(() => parseMetricType(searchParams.get('kpi')) ?? 'visibility');
   const [brandModels, setBrandModels] = useState<ModelData[]>([]);
   const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
+  const kpiSectionRef = useRef<HTMLDivElement | null>(null);
+  const kpiParam = useMemo(() => parseMetricType(searchParams.get('kpi')), [searchParams]);
 
   const authLoading = useAuthStore((state) => state.isLoading);
   const {
@@ -174,6 +187,25 @@ export const SearchVisibility = () => {
   } = useManualBrandDashboard();
 
   const dateRange = useMemo(() => getDateRangeForTimeframe(timeframe), [timeframe]);
+
+  useEffect(() => {
+    if (!kpiParam) {
+      return;
+    }
+    setMetricType((current) => (current === kpiParam ? current : kpiParam));
+    if (kpiSectionRef.current) {
+      kpiSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [kpiParam]);
+
+  useEffect(() => {
+    if (kpiParam === metricType) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('kpi', metricType);
+    setSearchParams(nextParams, { replace: true });
+  }, [kpiParam, metricType, searchParams, setSearchParams]);
 
   // Build endpoint
   const visibilityEndpoint = useMemo(() => {
@@ -525,7 +557,7 @@ export const SearchVisibility = () => {
         ? model.data 
         : metricType === 'share' 
           ? (model.shareData ?? model.data)
-          : (model.sentimentData ?? model.data)
+          : (model.sentimentData ?? model.data).map((v) => v ?? 0) // avoid null gaps in sentiment lines
     }))
   }), [currentModels, metricType]);
 
@@ -600,7 +632,10 @@ export const SearchVisibility = () => {
             </div>
           )}
 
-          <div className="flex flex-col flex-[0_0_60%] rounded-3xl border border-[#e4e7ec] bg-white shadow-[0_20px_45px_rgb(15_23_42_/_0.08)] overflow-hidden">
+          <div
+            ref={kpiSectionRef}
+            className="flex flex-col flex-[0_0_60%] rounded-3xl border border-[#e4e7ec] bg-white shadow-[0_20px_45px_rgb(15_23_42_/_0.08)] overflow-hidden"
+          >
             <div className="border-b border-[#e7ecff] bg-white p-6">
               <div className="flex flex-col gap-6">
                 <KpiToggle metricType={metricType} onChange={setMetricType} />

@@ -42,7 +42,10 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
         collectorResultId: prompt.collectorResultId,
         collectorType: prompt.latestCollectorType,
         response: prompt.response,
-        lastUpdated: prompt.lastUpdated || new Date().toISOString()
+        lastUpdated: prompt.lastUpdated || new Date().toISOString(),
+        brandMentions: null,
+        productMentions: null,
+        competitorMentions: null
       };
       
       // Apply filter if needed (null means show all)
@@ -172,7 +175,7 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
 
               return (
                 <div key={`${responseItem.collectorResultId}-${index}`} className="border-b border-[var(--border-default)] pb-6 last:border-b-0 last:pb-0">
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <div className="flex items-center gap-2">
                       {getLLMIcon(responseItem.collectorType)}
                       <span className="text-sm font-semibold text-[var(--text-headings)]">
@@ -185,6 +188,27 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
                       </span>
                     )}
                   </div>
+                  {(responseItem.brandMentions !== null ||
+                    responseItem.productMentions !== null ||
+                    responseItem.competitorMentions !== null) && (
+                    <div className="text-xs text-[var(--text-caption)] flex items-center gap-2 mb-3 flex-wrap">
+                      {responseItem.brandMentions !== null && (
+                        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
+                          Brand: {responseItem.brandMentions}
+                        </span>
+                      )}
+                      {responseItem.productMentions !== null && (
+                        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
+                          Product: {responseItem.productMentions}
+                        </span>
+                      )}
+                      {responseItem.competitorMentions !== null && (
+                        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
+                          Competitor: {responseItem.competitorMentions}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="text-sm text-[var(--text-body)]">
                     <KeywordHighlighter
                       text={responseItem.response}

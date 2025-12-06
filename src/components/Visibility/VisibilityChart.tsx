@@ -117,10 +117,11 @@ export const VisibilityChart = memo(({
             borderColor: color,
             backgroundColor: 'transparent',
             borderWidth: 2,
-            pointRadius: 0,
-            pointHoverRadius: 0,
+            pointRadius: 3,
+            pointHoverRadius: 5,
             tension: 0.4,
             fill: false,
+            spanGaps: true,
           };
         }
       })

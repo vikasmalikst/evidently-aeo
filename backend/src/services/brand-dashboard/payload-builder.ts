@@ -44,57 +44,111 @@ export async function buildDashboardPayload(
   const startIsoBound = range.startIso
   const endIsoBound = range.endIso
 
-  console.log(`[Dashboard] Querying scores for brand_id=${brand.id}, customer_id=${customerId}`)
-  
   // Debug: Check what customer_ids exist for this brand in scores table
   const competitorListPromise = (async () => {
-    const start = Date.now()
     const result = await supabaseAdmin
       .from('brand_competitors')
       .select('competitor_name')
       .eq('brand_id', brand.id)
       .order('priority', { ascending: true })
-    console.log(`[Dashboard] ⏱ competitor list query: ${Date.now() - start}ms`)
     return result
   })()
 
-  const positionsPromise = (async () => {
-    const start = Date.now()
-    const result = await supabaseAdmin
+  const fetchPositions = async (
+    includeCustomer: boolean,
+    useProcessedAt: boolean
+  ) => {
+    const query = supabaseAdmin
       .from('extracted_positions')
       .select(
         'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, sentiment_score_competitor, sentiment_label_competitor, total_brand_mentions, competitor_mentions, processed_at, created_at, brand_positions, competitor_positions, has_brand_presence, topic, metadata'
       )
       .eq('brand_id', brand.id)
-      .eq('customer_id', customerId)
-      .gte('created_at', startIsoBound)
-      .lte('created_at', endIsoBound)
-      .order('created_at', { ascending: true })
-    console.log(`[Dashboard] ⏱ extracted positions query: ${Date.now() - start}ms (filtered by created_at: ${startIsoBound} to ${endIsoBound})`)
-    return result
+      .order(useProcessedAt ? 'processed_at' : 'created_at', { ascending: true })
+
+    const lowerBoundColumn = useProcessedAt ? 'processed_at' : 'created_at'
+
+    query.gte(lowerBoundColumn, startIsoBound)
+    query.lte(lowerBoundColumn, endIsoBound)
+
+    if (includeCustomer && customerId) {
+      query.eq('customer_id', customerId)
+    }
+
+    return query
+  }
+
+  const positionsPromise = (async () => {
+    const primary = await fetchPositions(true, false)
+    if (!primary.error && (primary.data?.length ?? 0) > 0) {
+      return primary
+    }
+
+    // If nothing came back (likely missing customer_id on rows), retry scoped only by brand
+    const fallbackBrandOnly = await fetchPositions(false, false)
+    if (!fallbackBrandOnly.error && (fallbackBrandOnly.data?.length ?? 0) > 0) {
+      console.warn(
+        `[Dashboard] Fallback used for extracted_positions (brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+      )
+      return fallbackBrandOnly
+    }
+
+    // If still nothing, try processed_at window (some pipelines only set processed_at)
+    const processedPrimary = await fetchPositions(true, true)
+    if (!processedPrimary.error && (processedPrimary.data?.length ?? 0) > 0) {
+      console.warn(
+        `[Dashboard] Fallback used for extracted_positions (processed_at window, customer scoped) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+      )
+      return processedPrimary
+    }
+
+    const processedFallback = await fetchPositions(false, true)
+    if (!processedFallback.error && (processedFallback.data?.length ?? 0) > 0) {
+      console.warn(
+        `[Dashboard] Fallback used for extracted_positions (processed_at window, brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+      )
+      return processedFallback
+    }
+
+    // Prefer to return primary error if exists
+    return primary.error ? primary : processedFallback
   })()
 
   const queryCountPromise = (async () => {
-    const start = Date.now()
-    const result = await supabaseAdmin
+    const scoped = await supabaseAdmin
       .from('generated_queries')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brand.id)
       .eq('customer_id', customerId)
       .gte('created_at', startIsoBound)
       .lte('created_at', endIsoBound)
-    console.log(`[Dashboard] ⏱ generated queries count query: ${Date.now() - start}ms`)
-    return result
+
+    if ((scoped.count ?? 0) > 0 || scoped.error) {
+      return scoped
+    }
+
+    const fallback = await supabaseAdmin
+      .from('generated_queries')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brand.id)
+      .gte('created_at', startIsoBound)
+      .lte('created_at', endIsoBound)
+
+    if ((fallback.count ?? 0) > 0) {
+      console.warn(
+        `[Dashboard] Fallback used for generated_queries count (brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+      )
+    }
+
+    return fallback
   })()
 
   const brandTopicsPromise = (async () => {
-    const start = Date.now()
     const result = await supabaseAdmin
       .from('brand_topics')
       .select('topic_name, priority')
       .eq('brand_id', brand.id)
       .order('priority', { ascending: true })
-    console.log(`[Dashboard] ⏱ brand topics query: ${Date.now() - start}ms`)
     return result
   })()
 
@@ -105,8 +159,6 @@ export async function buildDashboardPayload(
     brandTopicsPromise
   ])
   mark('initial Supabase queries')
-
-  console.log(`[Dashboard] Supabase extracted_positions query returned: ${positionsResult.data?.length ?? 0} rows, error: ${positionsResult.error?.message ?? 'none'}`)
 
   let totalQueries = queryCountResult.count ?? 0
 
@@ -128,11 +180,6 @@ export async function buildDashboardPayload(
   }
 
   const positionRows: PositionRow[] = (positionsResult.data as PositionRow[]) ?? []
-  
-  console.log(`[Dashboard] Fetched ${positionRows.length} extracted position rows for brand ${brand.name} (${brand.id})`)
-  if (positionRows.length > 0) {
-    console.log('[Dashboard] Sample row:', JSON.stringify(positionRows[0], null, 2))
-  }
 
   // Helper function to extract date from timestamp (YYYY-MM-DD format)
   const extractDate = (timestamp: string | null): string | null => {

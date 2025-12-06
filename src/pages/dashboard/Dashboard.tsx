@@ -73,7 +73,7 @@ export const Dashboard = () => {
       trend: computeTrend(shareMetric?.delta),
       icon: <Target size={20} />,
       color: '#06c686',
-      linkTo: '/search-visibility',
+      linkTo: '/search-visibility?kpi=share',
       description: 'Represents your brand\'s share of the total answer space across all AI models. This metric shows what percentage of all mentions (your brand + competitors) belong to your brand, indicating your relative market presence.'
     },
     {
@@ -84,7 +84,7 @@ export const Dashboard = () => {
       trend: computeTrend(sentimentMetric?.delta),
       icon: <MessageSquare size={20} />,
       color: '#00bcdc',
-      linkTo: '/prompts',
+      linkTo: '/search-visibility?kpi=sentiment',
       description: 'Average sentiment of how your brand is discussed in AI-generated answers. Scores range from -1 (very negative) to +1 (very positive), with 0 being neutral. This reflects overall brand perception across all queries.'
     },
     {
@@ -109,7 +109,9 @@ export const Dashboard = () => {
   const collectorSummaries = dashboardData?.collectorSummaries ?? [];
 
   // NOW we can do conditional returns AFTER all hooks
-  if (shouldShowLoading) {
+  const isLoadingView = shouldShowLoading || (!dashboardData && !dashboardErrorMsg);
+
+  if (isLoadingView) {
     return (
       <Layout>
         <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
@@ -210,9 +212,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {(() => {
-        console.log('Rendering modal check - showTopicModal:', showTopicModal);
-        return showTopicModal && (
+      {showTopicModal && (
           <TopicSelectionModal
             brandName={getBrandData().name}
             industry={getBrandData().industry}
@@ -220,8 +220,7 @@ export const Dashboard = () => {
             onBack={() => {}}
             onClose={handleTopicModalClose}
           />
-        );
-      })()}
+      )}
     </Layout>
   );
 };

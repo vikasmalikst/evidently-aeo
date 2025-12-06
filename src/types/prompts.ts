@@ -10,6 +10,9 @@ export interface CollectorResponse {
   collectorType: string
   response: string
   lastUpdated: string
+  brandMentions: number | null
+  productMentions: number | null
+  competitorMentions: number | null
 }
 
 export interface PromptEntry {

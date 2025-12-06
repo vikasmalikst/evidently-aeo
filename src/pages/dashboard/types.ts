@@ -58,6 +58,7 @@ export interface DashboardPayload {
     percentage: number;
     color?: string;
   }>;
+  topSourcesByType?: Record<string, Array<{ domain: string; title: string | null; url: string | null; usage: number }>>; // Top 5 sources per source type for tooltips
   llmVisibility: Array<{
     provider: string;
     share: number;

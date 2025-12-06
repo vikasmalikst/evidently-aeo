@@ -44,22 +44,17 @@ export async function buildDashboardPayload(
   const startIsoBound = range.startIso
   const endIsoBound = range.endIso
 
-  console.log(`[Dashboard] Querying scores for brand_id=${brand.id}, customer_id=${customerId}`)
-  
   // Debug: Check what customer_ids exist for this brand in scores table
   const competitorListPromise = (async () => {
-    const start = Date.now()
     const result = await supabaseAdmin
       .from('brand_competitors')
       .select('competitor_name')
       .eq('brand_id', brand.id)
       .order('priority', { ascending: true })
-    console.log(`[Dashboard] ⏱ competitor list query: ${Date.now() - start}ms`)
     return result
   })()
 
   const positionsPromise = (async () => {
-    const start = Date.now()
     const result = await supabaseAdmin
       .from('extracted_positions')
       .select(
@@ -70,12 +65,10 @@ export async function buildDashboardPayload(
       .gte('created_at', startIsoBound)
       .lte('created_at', endIsoBound)
       .order('created_at', { ascending: true })
-    console.log(`[Dashboard] ⏱ extracted positions query: ${Date.now() - start}ms (filtered by created_at: ${startIsoBound} to ${endIsoBound})`)
     return result
   })()
 
   const queryCountPromise = (async () => {
-    const start = Date.now()
     const result = await supabaseAdmin
       .from('generated_queries')
       .select('id', { count: 'exact', head: true })
@@ -83,18 +76,15 @@ export async function buildDashboardPayload(
       .eq('customer_id', customerId)
       .gte('created_at', startIsoBound)
       .lte('created_at', endIsoBound)
-    console.log(`[Dashboard] ⏱ generated queries count query: ${Date.now() - start}ms`)
     return result
   })()
 
   const brandTopicsPromise = (async () => {
-    const start = Date.now()
     const result = await supabaseAdmin
       .from('brand_topics')
       .select('topic_name, priority')
       .eq('brand_id', brand.id)
       .order('priority', { ascending: true })
-    console.log(`[Dashboard] ⏱ brand topics query: ${Date.now() - start}ms`)
     return result
   })()
 
@@ -105,8 +95,6 @@ export async function buildDashboardPayload(
     brandTopicsPromise
   ])
   mark('initial Supabase queries')
-
-  console.log(`[Dashboard] Supabase extracted_positions query returned: ${positionsResult.data?.length ?? 0} rows, error: ${positionsResult.error?.message ?? 'none'}`)
 
   let totalQueries = queryCountResult.count ?? 0
 
@@ -128,11 +116,6 @@ export async function buildDashboardPayload(
   }
 
   const positionRows: PositionRow[] = (positionsResult.data as PositionRow[]) ?? []
-  
-  console.log(`[Dashboard] Fetched ${positionRows.length} extracted position rows for brand ${brand.name} (${brand.id})`)
-  if (positionRows.length > 0) {
-    console.log('[Dashboard] Sample row:', JSON.stringify(positionRows[0], null, 2))
-  }
 
   // Helper function to extract date from timestamp (YYYY-MM-DD format)
   const extractDate = (timestamp: string | null): string | null => {

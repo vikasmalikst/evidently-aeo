@@ -40,9 +40,9 @@ const getEnvVar = (key: string, defaultValue: string): string => {
 };
 
 const INITIAL_UPDATE_DELAY = parseInt(
-  getEnvVar('VITE_LOADING_INITIAL_DELAY_MS', '25000'),
+  getEnvVar('VITE_LOADING_INITIAL_DELAY_MS', '60000'),
   10
-); // 25 seconds default (user requested 25 seconds)
+); // default to 60 seconds (can override via env)
 
 export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingScreenProps) => {
   const navigate = useNavigate();
@@ -71,21 +71,17 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
         return;
       }
       
-      console.log(`[LoadingScreen] Fetching dashboard data for brand: ${brandId}`);
       const endpoint = `/brands/${brandId}/dashboard?skipCache=true&cacheBust=${Date.now()}`;
       const data = await apiClient.request<ApiResponse<DashboardPayload>>(endpoint, {}, { requiresAuth: true });
 
       if (data.success && data.data) {
         if (data.data.brandId && data.data.brandId !== brandId) {
-          console.warn(`[LoadingScreen] Brand ID mismatch! Expected ${brandId}, got ${data.data.brandId}`);
           return;
         }
-
-        console.log('[LoadingScreen] Dashboard data received for brand:', brandId, data.data);
         setDashboardData(data.data);
         setHasShownInitialData(true);
       } else {
-        console.warn('[LoadingScreen] Dashboard response not successful:', data);
+        console.warn('[LoadingScreen] Dashboard response not successful');
       }
     } catch (error) {
       console.error('[LoadingScreen] Error fetching dashboard data:', error);
@@ -96,22 +92,17 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
   useEffect(() => {
     if (!brandId) return;
     
-    console.log(`[LoadingScreen] Setting up pre-fetch timer for brand: ${brandId}`);
-    // Fetch dashboard data at 20 seconds (5 seconds before redirect)
+    // Fetch dashboard data shortly before redirect to warm cache
     const preFetchTimer = setTimeout(() => {
-      console.log(`[LoadingScreen] Pre-fetching dashboard data at 20 seconds for brand: ${brandId}`);
       fetchDashboardData();
-    }, INITIAL_UPDATE_DELAY - 5000); // 5 seconds before redirect
+    }, Math.max(0, INITIAL_UPDATE_DELAY - 5000)); // 5 seconds before redirect
 
-    // Navigate to dashboard at 25 seconds
-    console.log(`[LoadingScreen] Setting up navigation timer for ${INITIAL_UPDATE_DELAY}ms for brand: ${brandId}`);
+    // Navigate to dashboard after configured delay
     const navigateTimer = setTimeout(() => {
-      console.log(`[LoadingScreen] 25 seconds elapsed, navigating to dashboard for brand: ${brandId}`);
       // Store flag that we're showing partial data
       localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
       // Pass brandId in navigation state so dashboard can auto-select it
       const currentBrandId = brandId;
-      console.log(`[LoadingScreen] Redirecting to dashboard with brandId: ${currentBrandId}`);
       navigate('/dashboard', { 
         replace: true,
         state: { 
@@ -133,21 +124,21 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     
     // Animate progress bar smoothly based on elapsed time
     const updateProgress = () => {
-      if (elapsedTime < 8) {
-        // Collecting stage: 0-50% over 8 seconds
-        setProgressBarValue((elapsedTime / 8) * 50);
+      if (elapsedTime < 30) {
+        // Collecting stage: 0-50% over first 30 seconds
+        setProgressBarValue((elapsedTime / 30) * 50);
         if (currentStage !== 'collecting') {
           setCurrentStage('collecting');
         }
-      } else if (elapsedTime < 25) {
-        // Scoring stage: 50-90% over next 17 seconds
-        const scoringProgress = ((elapsedTime - 8) / 17) * 40;
+      } else if (elapsedTime < 55) {
+        // Scoring stage: 50-90% over next 25 seconds
+        const scoringProgress = ((elapsedTime - 30) / 25) * 40;
         setProgressBarValue(50 + scoringProgress);
         if (currentStage !== 'scoring') {
           setCurrentStage('scoring');
         }
       } else {
-        // After 25 seconds, show 100% briefly before navigation
+        // After 55 seconds, show 100% briefly before navigation
         setProgressBarValue(100);
       }
     };

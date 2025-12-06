@@ -12,8 +12,6 @@ import { apiClient } from '../../../lib/apiClient';
 
 export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
-  console.log('[DASHBOARD] Component mounting at', performance.now());
-  
   const authLoading = useAuthStore((state) => state.isLoading);
   const defaultDateRange = useMemo(getDefaultDateRange, []);
   const [startDate, setStartDate] = useState(defaultDateRange.start);
@@ -38,16 +36,6 @@ export const useDashboardData = () => {
     selectBrand
   } = useManualBrandDashboard();
   
-  console.log('[DASHBOARD] Initial state set at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
-
-  useEffect(() => {
-    if (!brandsLoading && brands.length > 0) {
-      console.log('[DASHBOARD] Brands loaded at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Brands:', brands.length, '- Selected brand ID:', selectedBrandId);
-    } else if (brandsLoading) {
-      console.log('[DASHBOARD] Brands loading... at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
-    }
-  }, [brandsLoading, brands.length, selectedBrandId]);
-
   useEffect(() => {
     if (brandsLoading || brands.length === 0) {
       return;
@@ -60,13 +48,11 @@ export const useDashboardData = () => {
       const brandExists = brands.some(brand => brand.id === brandToSelect);
       
       if (brandExists && selectedBrandId !== brandToSelect) {
-        console.log(`[DASHBOARD] Auto-selecting brand from onboarding: ${brandToSelect}`);
         selectBrand(brandToSelect);
         window.history.replaceState({}, document.title);
       } else if (!brandExists) {
         const latestBrand = brands[0];
         if (latestBrand && selectedBrandId !== latestBrand.id) {
-          console.log(`[DASHBOARD] Brand ${brandToSelect} not found, selecting latest brand: ${latestBrand.id}`);
           selectBrand(latestBrand.id);
           window.history.replaceState({}, document.title);
         }
@@ -74,7 +60,6 @@ export const useDashboardData = () => {
     } else if (locationState?.fromOnboarding && !selectedBrandId && brands.length > 0) {
       const latestBrand = brands[0];
       if (latestBrand) {
-        console.log(`[DASHBOARD] From onboarding, selecting latest brand: ${latestBrand.id}`);
         selectBrand(latestBrand.id);
         window.history.replaceState({}, document.title);
       }
@@ -91,12 +76,10 @@ export const useDashboardData = () => {
     };
 
     if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
-      console.log('🚀 Skipping setup check (feature flag enabled)');
       return () => clearTimer();
     }
 
     if (featureFlags.forceSetup || featureFlags.forceOnboarding) {
-      console.log('🚀 Forcing setup (feature flag enabled)');
       navigate('/setup');
       return () => clearTimer();
     }
@@ -110,27 +93,17 @@ export const useDashboardData = () => {
     const hasCompletedTopicSelection = onboardingUtils.getOnboardingTopics();
     const hasCompletedPromptSelection = onboardingUtils.getOnboardingPrompts();
 
-    console.log('Dashboard useEffect - Checking flow:', {
-      hasBackendBrands,
-      hasCompletedSetup,
-      hasCompletedTopicSelection: !!hasCompletedTopicSelection,
-      hasCompletedPromptSelection: !!hasCompletedPromptSelection
-    });
-
     if (!hasBackendBrands && !hasCompletedSetup) {
-      console.log('No setup - redirecting to /setup');
       navigate('/setup');
       return () => clearTimer();
     }
 
     if (hasBackendBrands) {
-      console.log('✅ Backend brands found - skipping onboarding modal');
       setShowTopicModal(false);
       return () => clearTimer();
     }
 
     if (featureFlags.enableTestingMode && featureFlags.isDevelopment) {
-      console.log('🧪 Testing mode enabled - showing topic modal');
       timer = setTimeout(() => {
         setShowTopicModal(true);
       }, 500);
@@ -138,19 +111,15 @@ export const useDashboardData = () => {
     }
 
     if (!hasCompletedTopicSelection) {
-      console.log('No topics - showing topic modal in 500ms');
       timer = setTimeout(() => {
         setShowTopicModal(true);
       }, 500);
       return () => clearTimer();
     } else if (!hasCompletedPromptSelection) {
-      console.log('No prompts - redirecting to /prompt-selection in 500ms');
       timer = setTimeout(() => {
         navigate('/prompt-selection');
       }, 500);
       return () => clearTimer();
-    } else {
-      console.log('All setup complete - showing full dashboard');
     }
 
     return () => clearTimer();
@@ -169,18 +138,17 @@ export const useDashboardData = () => {
   const dashboardEndpoint = useMemo(() => {
     const endpointStart = performance.now();
     if (!selectedBrandId || !startDate || !endDate) {
-      console.log('[DASHBOARD] Endpoint computation skipped - missing params at', endpointStart, '- Time since mount:', (endpointStart - pageMountTime.current).toFixed(2) + 'ms');
       return null;
     }
     const params = new URLSearchParams({
       startDate,
-      endDate
+      endDate,
+      skipCache: 'true'
     });
     if (reloadKey > 0) {
       params.set('cacheBust', String(reloadKey));
     }
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
-    console.log('[DASHBOARD] Endpoint computed at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Endpoint:', endpoint);
     return endpoint;
   }, [selectedBrandId, startDate, endDate, reloadKey]);
 
@@ -199,7 +167,8 @@ export const useDashboardData = () => {
       refetchOnMount: false,
       // Use more frequent refresh when data collection is in progress (15 seconds) or normal refresh (30 seconds)
       // This ensures dashboard updates quickly when async data arrives
-      refetchInterval: isDataCollectionInProgress ? 15000 : 30000 // 15 seconds during collection, 30 seconds normally
+      refetchInterval: isDataCollectionInProgress ? 15000 : 30000, // 15 seconds during collection, 30 seconds normally
+      refetchOnMount: true
     }
   );
   
@@ -219,7 +188,6 @@ export const useDashboardData = () => {
         );
         
         if (response?.success && response.data?.hasUpdates) {
-          console.log(`[DASHBOARD] New data detected (${response.data.count || 0} new results), triggering refresh...`);
           // Trigger immediate refresh when new data is detected
           refetchDashboard().catch((err) => {
             console.error('[DASHBOARD] Error refreshing after detecting new data:', err);
@@ -240,17 +208,9 @@ export const useDashboardData = () => {
   }, [selectedBrandId, dashboardEndpoint, refetchDashboard]);
   
   useEffect(() => {
-    if (dashboardEndpoint) {
-      console.log('[DASHBOARD] useCachedData hook called at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Loading:', dashboardLoading, '- Has data:', !!dashboardResponse, '- Auth loading:', authLoading, '- Selected brand ID:', selectedBrandId);
-    } else {
-      console.log('[DASHBOARD] No endpoint yet at', performance.now(), '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Auth loading:', authLoading, '- Selected brand ID:', selectedBrandId, '- Brands loading:', brandsLoading);
-    }
-  }, [dashboardEndpoint, dashboardLoading, dashboardResponse, authLoading, selectedBrandId, brandsLoading]);
-  
-  useEffect(() => {
     if (dashboardResponse && !dashboardLoading) {
       const fetchDuration = performance.now() - dataFetchStart.current;
-      console.log('[DASHBOARD] ✅ Data fetch completed at', performance.now(), '- Fetch duration:', fetchDuration.toFixed(2) + 'ms', '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms', '- Success:', dashboardResponse.success);
+      console.info('[DASHBOARD] Data fetch completed', { durationMs: Number(fetchDuration.toFixed(2)), success: dashboardResponse.success });
       dataFetchStart.current = performance.now();
     }
   }, [dashboardResponse, dashboardLoading]);
@@ -264,7 +224,7 @@ export const useDashboardData = () => {
   useEffect(() => {
     if (dashboardData) {
       const processDuration = performance.now() - dataProcessStart.current;
-      console.log('[DASHBOARD] ✅ Data processed at', performance.now(), '- Process duration:', processDuration.toFixed(2) + 'ms', '- Time since mount:', (performance.now() - pageMountTime.current).toFixed(2) + 'ms');
+      console.info('[DASHBOARD] Data processed', { durationMs: Number(processDuration.toFixed(2)) });
       dataProcessStart.current = performance.now();
     }
   }, [dashboardData]);
@@ -283,14 +243,7 @@ export const useDashboardData = () => {
   useEffect(() => {
     if (!shouldShowLoading && dashboardData) {
       const totalTime = performance.now() - pageMountTime.current;
-      console.log('[DASHBOARD] ✅✅✅ PAGE FULLY LOADED at', performance.now(), '- TOTAL TIME:', totalTime.toFixed(2) + 'ms');
-      console.log('[DASHBOARD] Breakdown:', {
-        'Time to brands load': brands.length > 0 ? 'N/A' : 'Waiting...',
-        'Time to endpoint ready': dashboardEndpoint ? 'Ready' : 'Waiting...',
-        'Time to data fetch': dashboardResponse ? 'Complete' : 'Waiting...',
-        'Time to data process': dashboardData ? 'Complete' : 'Waiting...',
-        'Total time': totalTime.toFixed(2) + 'ms'
-      });
+      console.info('[DASHBOARD] Page loaded', { totalTimeMs: Number(totalTime.toFixed(2)) });
     }
   }, [shouldShowLoading, dashboardData, brands.length, dashboardEndpoint, dashboardResponse]);
 
@@ -314,7 +267,6 @@ export const useDashboardData = () => {
 
     const checkProgress = async () => {
       try {
-        console.log(`[DASHBOARD] Checking progress for brand: ${selectedBrandId}`);
         const data = await apiClient.request<ApiResponse<{
           queries: { total: number; completed: number };
           scoring: { positions: boolean; sentiments: boolean; citations: boolean };
@@ -326,12 +278,11 @@ export const useDashboardData = () => {
         );
 
         if (!isMounted) {
-          console.log('[DASHBOARD] Component unmounted, skipping progress update');
           return;
         }
 
         if (!data?.success || !data?.data) {
-          console.warn('[DASHBOARD] Progress check failed or no data:', data);
+          console.warn('[DASHBOARD] Progress check failed or no data');
           return;
         }
 
@@ -340,16 +291,6 @@ export const useDashboardData = () => {
           scoring: data.data.scoring,
           currentOperation: data.data.currentOperation || 'collecting'
         };
-
-        console.log('[DASHBOARD] Progress update received:', {
-          queries: `${progressUpdate.queries.completed}/${progressUpdate.queries.total}`,
-          scoring: {
-            positions: progressUpdate.scoring.positions,
-            sentiments: progressUpdate.scoring.sentiments,
-            citations: progressUpdate.scoring.citations
-          },
-          operation: progressUpdate.currentOperation
-        });
 
         // Update progress data
         setProgressData(progressUpdate);
@@ -362,18 +303,15 @@ export const useDashboardData = () => {
           data.data.scoring.citations;
 
         if (isComplete) {
-          console.log('[DASHBOARD] ✅ Data collection complete!');
           localStorage.removeItem(storageKey);
           setIsDataCollectionInProgress(false);
           // Trigger immediate dashboard data refresh when collection completes
-          console.log('[DASHBOARD] Refreshing dashboard data after completion...');
           refetchDashboard().catch((err) => {
             console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
           });
           // Keep progress data for a moment to show completion, then clear
           setTimeout(() => {
             if (isMounted) {
-              console.log('[DASHBOARD] Clearing progress data after completion display');
               setProgressData(null);
             }
           }, 3000);

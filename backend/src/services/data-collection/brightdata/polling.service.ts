@@ -5,6 +5,13 @@
 
 import { BrightDataRequest, BrightDataResponse } from './types';
 
+const verboseLogging = process.env.COLLECTOR_VERBOSE_LOGS === 'true';
+const logVerbose = (...args: any[]) => {
+  if (verboseLogging) {
+    console.log(...args);
+  }
+};
+
 export class BrightDataPollingService {
   private apiKey: string;
   private supabase: any;
@@ -51,12 +58,12 @@ export class BrightDataPollingService {
       
       if (Array.isArray(downloadResult) && downloadResult.length > 0) {
         actualResult = downloadResult[0];
-        console.log(`📦 Quick poll: Response is array, using first element`);
+        logVerbose(`📦 Quick poll: Response is array, using first element`);
       }
       
       if (actualResult && actualResult.data && Array.isArray(actualResult.data) && actualResult.data.length > 0) {
         actualResult = actualResult.data[0];
-        console.log(`📦 Quick poll: Response has data array, using first element`);
+        logVerbose(`📦 Quick poll: Response has data array, using first element`);
       }
       
       // Check if data is ready
@@ -65,7 +72,7 @@ export class BrightDataPollingService {
       const hasAnswer = actualResult && (actualResult.answer || actualResult.response || actualResult.content);
       
       if (actualResult && (hasAnswerText || hasAnswerSectionHtml || hasAnswer)) {
-        console.log(`📋 Full JSON Response for quick poll snapshot ${snapshotId}:`, JSON.stringify(downloadResult, null, 2));
+        logVerbose(`📋 Full JSON Response for quick poll snapshot ${snapshotId}:`, JSON.stringify(downloadResult, null, 2));
         
         const { answer, urls } = this.extractAnswerAndUrls(actualResult);
         
@@ -116,10 +123,10 @@ export class BrightDataPollingService {
     const maxAttempts = 60; // 10 minutes max
     const pollInterval = 10000; // 10 seconds
     
-    console.log(`🔄 Starting async polling for snapshot ${snapshotId} (max ${maxAttempts} attempts, ${pollInterval/1000}s intervals)`);
+    logVerbose(`🔄 Starting async polling for snapshot ${snapshotId} (max ${maxAttempts} attempts, ${pollInterval/1000}s intervals)`);
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`⏳ Async polling attempt ${attempt}/${maxAttempts} for snapshot ${snapshotId}`);
+      logVerbose(`⏳ Async polling attempt ${attempt}/${maxAttempts} for snapshot ${snapshotId}`);
       
       try {
         const snapshotUrl = `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}`;
@@ -131,10 +138,10 @@ export class BrightDataPollingService {
           }
         });
 
-        console.log(`📡 Snapshot response status: ${response.status}`);
+        logVerbose(`📡 Snapshot response status: ${response.status}`);
         
         if (response.status === 202) {
-          console.log(`⏳ Async poll: Snapshot ${snapshotId} still processing (202), waiting...`);
+          logVerbose(`⏳ Async poll: Snapshot ${snapshotId} still processing (202), waiting...`);
           if (attempt < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, pollInterval));
             continue;
@@ -149,9 +156,9 @@ export class BrightDataPollingService {
         
         try {
           downloadResult = JSON.parse(responseText);
-          console.log(`✅ Async poll: Successfully parsed JSON response`);
+          logVerbose(`✅ Async poll: Successfully parsed JSON response`);
         } catch (parseError) {
-          console.log(`⚠️ Async poll: Response is not JSON, data still processing...`);
+          logVerbose(`⚠️ Async poll: Response is not JSON, data still processing...`);
           if (attempt < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, pollInterval));
             continue;
@@ -165,7 +172,7 @@ export class BrightDataPollingService {
         
         if (Array.isArray(downloadResult) && downloadResult.length > 0) {
           actualResult = downloadResult[0];
-          console.log(`📦 Async poll: Response is array, using first element`);
+          logVerbose(`📦 Async poll: Response is array, using first element`);
         }
         
         const hasAnswerText = actualResult && actualResult.answer_text && typeof actualResult.answer_text === 'string' && actualResult.answer_text.trim().length > 0;
@@ -173,12 +180,12 @@ export class BrightDataPollingService {
         const hasAnswer = actualResult && (actualResult.answer || actualResult.response || actualResult.content);
         
         if (actualResult && (hasAnswerText || hasAnswerSectionHtml || hasAnswer)) {
-          console.log(`✅ Async poll: Snapshot ${snapshotId} data is ready!`);
-          console.log(`📋 Full JSON Response for async poll snapshot ${snapshotId}:`, JSON.stringify(downloadResult, null, 2));
+          logVerbose(`✅ Async poll: Snapshot ${snapshotId} data is ready!`);
+          logVerbose(`📋 Full JSON Response for async poll snapshot ${snapshotId}:`, JSON.stringify(downloadResult, null, 2));
           
           const { answer, urls } = this.extractAnswerAndUrls(actualResult);
           
-          console.log(`✅ Async poll: Snapshot ${snapshotId} completed - Answer length: ${answer ? answer.length : 0}, URLs: ${urls.length}`);
+          logVerbose(`✅ Async poll: Snapshot ${snapshotId} completed - Answer length: ${answer ? answer.length : 0}, URLs: ${urls.length}`);
           
           await this.updateDatabaseWithResults(snapshotId, collectorType, datasetId, request, answer, urls, downloadResult);
           
@@ -215,10 +222,10 @@ export class BrightDataPollingService {
     const maxAttempts = 60; // 10 minutes max
     const pollInterval = 10000; // 10 seconds
     
-    console.log(`🔄 Starting polling for snapshot ${snapshotId} (max ${maxAttempts} attempts, ${pollInterval/1000}s intervals)`);
+    logVerbose(`🔄 Starting polling for snapshot ${snapshotId} (max ${maxAttempts} attempts, ${pollInterval/1000}s intervals)`);
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`⏳ Polling attempt ${attempt}/${maxAttempts} for snapshot ${snapshotId}`);
+      logVerbose(`⏳ Polling attempt ${attempt}/${maxAttempts} for snapshot ${snapshotId}`);
       
       try {
         const snapshotUrl = `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}`;
@@ -230,10 +237,10 @@ export class BrightDataPollingService {
           }
         });
 
-        console.log(`📡 Snapshot response status: ${response.status}`);
+        logVerbose(`📡 Snapshot response status: ${response.status}`);
         
         if (response.status === 202) {
-          console.log(`⏳ Snapshot ${snapshotId} still processing (202), waiting...`);
+          logVerbose(`⏳ Snapshot ${snapshotId} still processing (202), waiting...`);
           if (attempt < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, pollInterval));
             continue;
@@ -247,9 +254,9 @@ export class BrightDataPollingService {
         
         try {
           downloadResult = JSON.parse(responseText);
-          console.log(`✅ Successfully parsed JSON response`);
+          logVerbose(`✅ Successfully parsed JSON response`);
         } catch (parseError) {
-          console.log(`⚠️ Response is not JSON, data still processing...`);
+          logVerbose(`⚠️ Response is not JSON, data still processing...`);
           if (attempt < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, pollInterval));
             continue;
@@ -262,12 +269,12 @@ export class BrightDataPollingService {
         
         if (Array.isArray(downloadResult) && downloadResult.length > 0) {
           actualResult = downloadResult[0];
-          console.log(`📦 Response is array with ${downloadResult.length} element(s), using first element`);
+          logVerbose(`📦 Response is array with ${downloadResult.length} element(s), using first element`);
         }
         
         if (actualResult && actualResult.data && Array.isArray(actualResult.data) && actualResult.data.length > 0) {
           actualResult = actualResult.data[0];
-          console.log(`📦 Response has data array, using first element`);
+          logVerbose(`📦 Response has data array, using first element`);
         }
         
         const hasAnswerText = actualResult && actualResult.answer_text && typeof actualResult.answer_text === 'string' && actualResult.answer_text.trim().length > 0;
@@ -275,8 +282,8 @@ export class BrightDataPollingService {
         const hasAnswer = actualResult && (actualResult.answer || actualResult.response || actualResult.content);
         
         if (actualResult && (hasAnswerText || hasAnswerSectionHtml || hasAnswer)) {
-          console.log(`✅ Data is ready! Found answer fields: answer_text=${!!hasAnswerText}, answer_section_html=${!!hasAnswerSectionHtml}, answer=${!!hasAnswer}`);
-          console.log(`📋 Full JSON Response for snapshot ${snapshotId}:`, JSON.stringify(downloadResult, null, 2));
+          logVerbose(`✅ Data is ready! Found answer fields: answer_text=${!!hasAnswerText}, answer_section_html=${!!hasAnswerSectionHtml}, answer=${!!hasAnswer}`);
+          logVerbose(`📋 Full JSON Response for snapshot ${snapshotId}:`, JSON.stringify(downloadResult, null, 2));
           
           const { answer, urls } = this.extractAnswerAndUrls(actualResult);
           
@@ -290,7 +297,7 @@ export class BrightDataPollingService {
             }
           }
           
-          console.log(`✅ Successfully extracted answer and citations for snapshot ${snapshotId}`);
+          logVerbose(`✅ Successfully extracted answer and citations for snapshot ${snapshotId}`);
 
           return {
             query_id: `brightdata_${collectorType}_${Date.now()}`,
@@ -317,7 +324,7 @@ export class BrightDataPollingService {
         }
         
         // If we get here, data is not ready yet
-        console.log('⏳ Data not ready yet, continuing to poll...');
+        logVerbose('⏳ Data not ready yet, continuing to poll...');
         if (attempt < maxAttempts) {
           await new Promise(resolve => setTimeout(resolve, pollInterval));
           continue;

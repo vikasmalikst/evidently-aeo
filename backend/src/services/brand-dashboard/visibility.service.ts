@@ -128,13 +128,6 @@ export class VisibilityService {
           ? round(average(sentimentValues), 2)
           : null
         
-        // Debug logging
-        if (sentimentValues.length > 0) {
-          console.log(`[VisibilityService] Collector ${collectorType}: ${sentimentValues.length} sentiment values, average=${sentiment}, values=[${sentimentValues.slice(0, 5).join(', ')}${sentimentValues.length > 5 ? '...' : ''}]`)
-        } else {
-          console.log(`[VisibilityService] Collector ${collectorType}: No sentiment values found`)
-        }
-
         // Get time-series data for this collector
         const timeSeries = timeSeriesData?.get(collectorType)
 

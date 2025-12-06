@@ -109,7 +109,9 @@ export const Dashboard = () => {
   const collectorSummaries = dashboardData?.collectorSummaries ?? [];
 
   // NOW we can do conditional returns AFTER all hooks
-  if (shouldShowLoading) {
+  const isLoadingView = shouldShowLoading || (!dashboardData && !dashboardErrorMsg);
+
+  if (isLoadingView) {
     return (
       <Layout>
         <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
@@ -210,18 +212,15 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {(() => {
-        console.log('Rendering modal check - showTopicModal:', showTopicModal);
-        return showTopicModal && (
-          <TopicSelectionModal
-            brandName={getBrandData().name}
-            industry={getBrandData().industry}
-            onNext={handleTopicsSelected}
-            onBack={() => {}}
-            onClose={handleTopicModalClose}
-          />
-        );
-      })()}
+      {showTopicModal && (
+        <TopicSelectionModal
+          brandName={getBrandData().name}
+          industry={getBrandData().industry}
+          onNext={handleTopicsSelected}
+          onBack={() => {}}
+          onClose={handleTopicModalClose}
+        />
+      )}
     </Layout>
   );
 };

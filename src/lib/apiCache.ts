@@ -7,6 +7,14 @@ import { apiClient } from './apiClient';
 import { cacheManager } from './cacheManager';
 import { authService } from './auth';
 
+const cacheDebugEnabled =
+  typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_CACHE_DEBUG === 'true';
+const cacheDebugLog = (...args: any[]) => {
+  if (cacheDebugEnabled) {
+    console.log(...args);
+  }
+};
+
 interface CacheStrategy {
   ttl: number; // Time to live in milliseconds
   staleTime: number; // Time after which data is considered stale
@@ -150,7 +158,7 @@ export async function cachedRequest<T>(
   config: { requiresAuth?: boolean; retry?: boolean } = {}
 ): Promise<T> {
   const apiCacheStart = performance.now();
-  console.log(`[apiCache] cachedRequest called for: ${endpoint} at`, apiCacheStart);
+  cacheDebugLog(`[apiCache] cachedRequest called for: ${endpoint} at`, apiCacheStart);
   
   // Extract params from endpoint or options
   const url = new URL(endpoint.startsWith('http') ? endpoint : `http://dummy${endpoint}`);
@@ -159,14 +167,22 @@ export async function cachedRequest<T>(
     params[key] = value;
   });
 
+  const skipCache = params.skipCache === 'true';
+
+  // If caller explicitly requests to skip cache, go straight to the API
+  if (skipCache) {
+    cacheDebugLog('[apiCache] skipCache=true - bypassing cache for', endpoint);
+    return apiClient.request<T>(endpoint, options, config);
+  }
+
   const cacheKey = generateCacheKey(endpoint, params);
   const strategy = getCacheStrategy(endpoint);
-  console.log(`[apiCache] Cache key: ${cacheKey} - Strategy: ${endpoint.includes('/dashboard') ? 'dashboard' : 'other'}`);
+  cacheDebugLog(`[apiCache] Cache key: ${cacheKey} - Strategy: ${endpoint.includes('/dashboard') ? 'dashboard' : 'other'}`);
 
   // Check if we have a pending request for this key
   const pendingRequest = cacheManager.getPendingRequest<T>(cacheKey);
   if (pendingRequest) {
-    console.log(`[apiCache] ✅ Pending request found, reusing at`, performance.now(), `- Time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
+    cacheDebugLog(`[apiCache] ✅ Pending request found, reusing at`, performance.now(), `- Time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
     return pendingRequest;
   }
 
@@ -178,17 +194,17 @@ export async function cachedRequest<T>(
   const isExpired = cacheManager.isExpired(cacheKey);
   const cacheCheckTime = performance.now() - cacheCheckStart;
   
-  console.log(`[apiCache] Cache check completed at`, performance.now(), `- Check time: ${cacheCheckTime.toFixed(2)}ms - Has data: ${!!cachedData}, Fresh: ${isFresh}, Stale: ${isStale}, Expired: ${isExpired}`);
+  cacheDebugLog(`[apiCache] Cache check completed at`, performance.now(), `- Check time: ${cacheCheckTime.toFixed(2)}ms - Has data: ${!!cachedData}, Fresh: ${isFresh}, Stale: ${isStale}, Expired: ${isExpired}`);
 
   // If we have fresh data, return it immediately
   if (isFresh && cachedData) {
-    console.log(`[apiCache] ✅✅✅ RETURNING FRESH CACHE at`, performance.now(), `- Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
+    cacheDebugLog(`[apiCache] ✅✅✅ RETURNING FRESH CACHE at`, performance.now(), `- Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
     return cachedData;
   }
 
   // If we have stale data, return it but fetch fresh in background
   if (isStale && cachedData) {
-    console.log(`[apiCache] ✅✅ RETURNING STALE CACHE (will refresh in background) at`, performance.now(), `- Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
+    cacheDebugLog(`[apiCache] ✅✅ RETURNING STALE CACHE (will refresh in background) at`, performance.now(), `- Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
     
     // Check if signal is already aborted - if so, just return stale data
     const signal = (options as any)?.signal;
@@ -202,21 +218,21 @@ export async function cachedRequest<T>(
     delete (backgroundOptions as any).signal; // Remove signal from background request
     
     const bgRefreshStart = performance.now();
-    console.log(`[apiCache] Starting background refresh at`, bgRefreshStart);
+    cacheDebugLog(`[apiCache] Starting background refresh at`, bgRefreshStart);
     const freshRequest = apiClient.request<T>(endpoint, backgroundOptions, config);
     cacheManager.registerPendingRequest(cacheKey, freshRequest);
     
     freshRequest
       .then(data => {
         const bgRefreshTime = performance.now() - bgRefreshStart;
-        console.log(`[apiCache] ✅ Background refresh completed at`, performance.now(), `- Duration: ${bgRefreshTime.toFixed(2)}ms`);
+        cacheDebugLog(`[apiCache] ✅ Background refresh completed at`, performance.now(), `- Duration: ${bgRefreshTime.toFixed(2)}ms`);
         cacheManager.set(cacheKey, data, strategy);
       })
       .catch(error => {
         const bgRefreshTime = performance.now() - bgRefreshStart;
         // Ignore AbortError in background refresh
         if (error instanceof Error && error.name === 'AbortError') {
-          console.log(`[apiCache] Background refresh aborted at`, performance.now(), `- Duration: ${bgRefreshTime.toFixed(2)}ms`);
+          cacheDebugLog(`[apiCache] Background refresh aborted at`, performance.now(), `- Duration: ${bgRefreshTime.toFixed(2)}ms`);
           return;
         }
         console.warn(`[apiCache] ❌ Background refresh failed at`, performance.now(), `- Duration: ${bgRefreshTime.toFixed(2)}ms - Error:`, error);
@@ -227,13 +243,13 @@ export async function cachedRequest<T>(
   }
 
   // If expired or no cache, fetch fresh data
-  console.log(`[apiCache] ❌ No cache or expired, fetching fresh data at`, performance.now(), `- Time since start: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
+  cacheDebugLog(`[apiCache] ❌ No cache or expired, fetching fresh data at`, performance.now(), `- Time since start: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
   
   const signal = (options as any)?.signal;
   
   // Check if signal is already aborted before making request
   if (signal && signal.aborted) {
-    console.log(`[apiCache] Signal already aborted, returning cached data if available`);
+    cacheDebugLog(`[apiCache] Signal already aborted, returning cached data if available`);
     // If we have any cached data (even expired), return it
     if (cachedData) {
       return cachedData;
@@ -243,14 +259,14 @@ export async function cachedRequest<T>(
   }
   
   const apiRequestStart = performance.now();
-  console.log(`[apiCache] Making API request at`, apiRequestStart);
+  cacheDebugLog(`[apiCache] Making API request at`, apiRequestStart);
   const request = apiClient.request<T>(endpoint, options, config);
   const registeredRequest = cacheManager.registerPendingRequest(cacheKey, request);
   
   try {
     const data = await registeredRequest;
     const apiRequestTime = performance.now() - apiRequestStart;
-    console.log(`[apiCache] ✅ API request completed at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms - Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
+    cacheDebugLog(`[apiCache] ✅ API request completed at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms - Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
     
     // Check if request was aborted after completion
     if (signal && signal.aborted) {
@@ -265,7 +281,7 @@ export async function cachedRequest<T>(
     const cacheSetStart = performance.now();
     cacheManager.set(cacheKey, data, strategy);
     const cacheSetTime = performance.now() - cacheSetStart;
-    console.log(`[apiCache] Data cached at`, performance.now(), `- Cache set time: ${cacheSetTime.toFixed(2)}ms`);
+    cacheDebugLog(`[apiCache] Data cached at`, performance.now(), `- Cache set time: ${cacheSetTime.toFixed(2)}ms`);
     return data;
   } catch (error) {
     const apiRequestTime = performance.now() - apiRequestStart;
@@ -273,16 +289,16 @@ export async function cachedRequest<T>(
     if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted'))) {
       // If we have stale data, return it even on abort
       if (cachedData && !isExpired) {
-        console.log(`[apiCache] Request aborted, returning stale cache at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
+        cacheDebugLog(`[apiCache] Request aborted, returning stale cache at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
         return cachedData;
       }
       // If we have any cached data at all, return it
       if (cachedData) {
-        console.log(`[apiCache] Request aborted, returning expired cache at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
+        cacheDebugLog(`[apiCache] Request aborted, returning expired cache at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
         return cachedData;
       }
       // Log but don't error - this is expected cleanup behavior
-      console.log(`[apiCache] Request aborted (no cache available) at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
+      cacheDebugLog(`[apiCache] Request aborted (no cache available) at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);
       // Return empty/default data instead of throwing to prevent unhandled promise rejections
       return {} as T;
     }

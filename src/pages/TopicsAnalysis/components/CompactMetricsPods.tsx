@@ -284,6 +284,23 @@ export const CompactMetricsPods = ({
     () => getGapCount(topics),
     [topics]
   );
+  const avgSoADelta = performance.avgSoADelta;
+  const hasAvgSoADelta = avgSoADelta !== undefined && avgSoADelta !== null;
+  const currentAvgSoAPercentage = (performance.avgSoA || 0) * 20;
+  const previousAvgSoAPercentage = hasAvgSoADelta ? currentAvgSoAPercentage - avgSoADelta : null;
+  const trendingDirection = hasAvgSoADelta
+    ? avgSoADelta > 0
+      ? 'up'
+      : avgSoADelta < 0
+        ? 'down'
+        : 'neutral'
+    : 'neutral';
+  const trendingPrimaryValue = hasAvgSoADelta
+    ? `${avgSoADelta > 0 ? '+' : ''}${avgSoADelta.toFixed(1)}%`
+    : 'No delta yet';
+  const trendingSecondary = hasAvgSoADelta && previousAvgSoAPercentage !== null
+    ? `${currentAvgSoAPercentage.toFixed(1)}% current vs ${previousAvgSoAPercentage.toFixed(1)}% previous`
+    : 'Need previous period to compare';
 
   return (
     <div
@@ -333,15 +350,20 @@ export const CompactMetricsPods = ({
       <MetricPod
         podId="momentum"
         icon={<TrendingUp size={20} />}
-        primaryValue={performance.weeklyGainer.topic}
+        primaryValue={trendingPrimaryValue}
         label="Trending"
-        secondary={performance.weeklyGainer.category}
-        isLongText={true}
-        changeIndicator={performance.weeklyGainer.delta !== undefined && performance.weeklyGainer.delta !== null && performance.weeklyGainer.delta !== 0 ? {
-          value: `${Math.abs(performance.weeklyGainer.delta).toFixed(1)}%`,
-          direction: performance.weeklyGainer.delta > 0 ? 'up' : 'down',
+        secondary={trendingSecondary}
+        changeIndicator={hasAvgSoADelta ? {
+          value: trendingDirection === 'neutral'
+            ? 'No change vs previous period'
+            : `${Math.abs(avgSoADelta).toFixed(1)}% ${trendingDirection === 'up' ? 'increase' : 'decrease'}`,
+          direction: trendingDirection,
         } : undefined}
-        tooltip={`${performance.weeklyGainer.topic} is the top trending topic${performance.weeklyGainer.delta !== undefined && performance.weeklyGainer.delta !== null && performance.weeklyGainer.delta !== 0 ? ` with ${performance.weeklyGainer.delta > 0 ? '+' : ''}${performance.weeklyGainer.delta.toFixed(1)}% change` : ''}. [View topic]`}
+        tooltip={
+          hasAvgSoADelta
+            ? `Avg SOA is ${currentAvgSoAPercentage.toFixed(1)}%, ${trendingPrimaryValue} vs previous period${previousAvgSoAPercentage !== null ? ` (${previousAvgSoAPercentage.toFixed(1)}%)` : ''}.`
+            : 'Avg SOA change will appear after a previous period is available.'
+        }
         borderColor="#06c686"
         iconColor="#06c686"
         hoverBgColor="#f0fdf4"

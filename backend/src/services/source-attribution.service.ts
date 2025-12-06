@@ -260,35 +260,15 @@ export class SourceAttributionService {
         return topicName
       }
 
-      // Step 8: Fetch sentiment from collector_results and other data from extracted_positions
+      // Step 8: Fetch SoA, mention counts, topics, and sentiment from extracted_positions
       const positionsStartTime = Date.now();
       
-      // Fetch sentiment from collector_results (new location)
-      const sentimentByCollectorResult = new Map<number, number>()
-      if (collectorResultIds.length > 0) {
-        const { data: collectorResultsData, error: collectorResultsError } = await supabaseAdmin
-          .from('collector_results')
-          .select('id, sentiment_score')
-          .in('id', collectorResultIds)
-          .not('sentiment_score', 'is', null)
-
-        if (collectorResultsError) {
-          console.warn('[SourceAttribution] Failed to fetch sentiment from collector_results:', collectorResultsError)
-        } else if (collectorResultsData) {
-          for (const cr of collectorResultsData) {
-            if (cr.sentiment_score !== null) {
-              sentimentByCollectorResult.set(cr.id, toNumber(cr.sentiment_score))
-            }
-          }
-          console.log(`[SourceAttribution] 📊 Found sentiment for ${sentimentByCollectorResult.size} collector results`)
-        }
-      }
-
-      // Fetch SoA, mention counts, and topics from extracted_positions (still stored there)
       let extractedPositions: Array<{
         collector_result_id: number | null;
         share_of_answers_brand: number | null;
         total_brand_mentions: number | null;
+        sentiment_score?: number | null;
+        competitor_name?: string | null;
         metadata: any;
       }> = []
 
@@ -299,6 +279,8 @@ export class SourceAttributionService {
             collector_result_id,
             share_of_answers_brand,
             total_brand_mentions,
+            sentiment_score,
+            competitor_name,
             topic,
             metadata
           `)
@@ -358,13 +340,9 @@ export class SourceAttributionService {
         avgShareByCollectorResult.set(collectorId, average(shareValues))
       }
       
-      // Sentiment is already in sentimentByCollectorResult map (from collector_results)
-      // Convert to avgSentimentByCollectorResult for compatibility with existing code
-      const avgSentimentByCollectorResult = new Map<number, number>()
-      for (const [collectorId, sentimentScore] of sentimentByCollectorResult.entries()) {
-        avgSentimentByCollectorResult.set(collectorId, sentimentScore)
-      }
-      
+      // Collect sentiment values (brand rows only) from extracted_positions
+      const sentimentValuesByCollectorResult = new Map<number, number[]>()
+
       // Create map from collector_result_id to topic name (from extracted_positions topic column or metadata)
       const collectorResultTopicMap = new Map<number, string>()
       for (const position of extractedPositions) {
@@ -374,10 +352,31 @@ export class SourceAttributionService {
             collectorResultTopicMap.set(position.collector_result_id, topicName)
           }
         }
+        
+        // Sentiment: only use brand rows (no competitor_name) to match other pages
+        const collectorId = position.collector_result_id
+        const isBrandRow =
+          !position.competitor_name ||
+          (typeof position.competitor_name === 'string' && position.competitor_name.trim().length === 0)
+        if (collectorId && isBrandRow && position.sentiment_score !== null && position.sentiment_score !== undefined) {
+          const score = toNumber(position.sentiment_score)
+          if (Number.isFinite(score)) {
+            if (!sentimentValuesByCollectorResult.has(collectorId)) {
+              sentimentValuesByCollectorResult.set(collectorId, [])
+            }
+            sentimentValuesByCollectorResult.get(collectorId)!.push(score)
+          }
+        }
       }
       
       const calculationsStartTime = Date.now();
       console.log(`[SourceAttribution] 🧮 Calculated average share of answer for ${avgShareByCollectorResult.size} collector results`)
+      
+      // Calculate average sentiment per collector result (from extracted_positions)
+      const avgSentimentByCollectorResult = new Map<number, number>()
+      for (const [collectorId, sentimentValues] of sentimentValuesByCollectorResult.entries()) {
+        avgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
+      }
       console.log(`[SourceAttribution] 🧮 Calculated average sentiment for ${avgSentimentByCollectorResult.size} collector results`)
       console.log(`[SourceAttribution] 🏷️  Mapped topics for ${collectorResultTopicMap.size} collector results`)
       stepTimings['calculations'] = Date.now() - calculationsStartTime;
@@ -567,28 +566,10 @@ export class SourceAttributionService {
           previousCitations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
         ))
         
-        // Fetch previous period sentiment from collector_results (new location)
-        const previousSentimentByCollectorResult = new Map<number, number>()
-        const { data: previousCollectorResults } = await supabaseAdmin
-        .from('collector_results')
-        .select('id, sentiment_score')
-        .in('id', previousCollectorIds)
-        .not('sentiment_score', 'is', null)
-        .gte('created_at', previousStart.toISOString())
-        .lte('created_at', previousEnd.toISOString())
-
-        if (previousCollectorResults) {
-          for (const cr of previousCollectorResults) {
-            if (cr.sentiment_score !== null) {
-              previousSentimentByCollectorResult.set(cr.id, toNumber(cr.sentiment_score))
-            }
-          }
-        }
-
-        // Fetch previous period share of answer from extracted_positions
+        // Fetch previous period share of answer and sentiment from extracted_positions
         const { data: previousPositions } = await supabaseAdmin
         .from('extracted_positions')
-        .select('collector_result_id, share_of_answers_brand')
+        .select('collector_result_id, share_of_answers_brand, sentiment_score, competitor_name')
         .in('collector_result_id', previousCollectorIds)
         .eq('brand_id', brandId)
         .gte('processed_at', previousStart.toISOString())
@@ -596,6 +577,7 @@ export class SourceAttributionService {
 
         // Calculate average share of answer per collector result for previous period
         const previousShareByCollectorResult = new Map<number, number[]>()
+        const previousSentimentValuesByCollectorResult = new Map<number, number[]>()
         
         if (previousPositions) {
           for (const position of previousPositions) {
@@ -609,6 +591,19 @@ export class SourceAttributionService {
                 }
                 previousShareByCollectorResult.get(collectorId)!.push(toNumber(position.share_of_answers_brand))
               }
+
+              const isBrandRow =
+                !position.competitor_name ||
+                (typeof position.competitor_name === 'string' && position.competitor_name.trim().length === 0)
+              if (isBrandRow && position.sentiment_score !== null && position.sentiment_score !== undefined) {
+                const score = toNumber(position.sentiment_score)
+                if (Number.isFinite(score)) {
+                  if (!previousSentimentValuesByCollectorResult.has(collectorId)) {
+                    previousSentimentValuesByCollectorResult.set(collectorId, [])
+                  }
+                  previousSentimentValuesByCollectorResult.get(collectorId)!.push(score)
+                }
+              }
             }
           }
         }
@@ -618,8 +613,11 @@ export class SourceAttributionService {
           previousAvgShareByCollectorResult.set(collectorId, average(shareValues))
         }
         
-        // Sentiment is already in previousSentimentByCollectorResult map (from collector_results)
-        const previousAvgSentimentByCollectorResult = previousSentimentByCollectorResult
+        // Average sentiment per collector result for previous period
+        const previousAvgSentimentByCollectorResult = new Map<number, number>()
+        for (const [collectorId, sentimentValues] of previousSentimentValuesByCollectorResult.entries()) {
+          previousAvgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
+        }
 
         for (const citation of previousCitations) {
           const domain = citation.domain || 'unknown'

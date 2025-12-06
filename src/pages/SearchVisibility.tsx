@@ -9,6 +9,7 @@ import { KpiToggle } from '../components/Visibility/KpiToggle';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useCachedData } from '../hooks/useCachedData';
+import { getLLMIcon } from '../components/Visibility/LLMIcons';
 import '../styles/visibility.css';
 
 // Performance logging
@@ -42,8 +43,16 @@ interface LlmVisibilitySlice {
   color?: string;
   brandPresenceCount?: number;
   totalQueries?: number;
+  totalCollectorResults?: number;
   topTopic?: string | null;
   topTopics?: LlmTopic[];
+  sentiment?: number | null;
+  timeSeries?: {
+    dates: string[];
+    visibility: number[];
+    share: number[];
+    sentiment: (number | null)[];
+  };
 }
 
 interface VisibilityComparisonEntry {
@@ -70,6 +79,13 @@ interface CompetitorVisibilityEntry {
     collectorType: string;
     mentions: number;
   }>;
+  sentiment?: number | null;
+  timeSeries?: {
+    dates: string[];
+    visibility: number[];
+    share: number[];
+    sentiment: (number | null)[];
+  };
 }
 
 interface BrandSummary {
@@ -168,6 +184,8 @@ export const SearchVisibility = () => {
   const [timeframe, setTimeframe] = useState('weekly');
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
+  const [llmFilters, setLlmFilters] = useState<string[]>([]);
+  const [allLlmOptions, setAllLlmOptions] = useState<Array<{ value: string; label: string; color?: string }>>([]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [metricType, setMetricType] = useState<MetricType>(() => parseMetricType(searchParams.get('kpi')) ?? 'visibility');
@@ -215,10 +233,13 @@ export const SearchVisibility = () => {
       startDate: dateRange.startDate,
       endDate: dateRange.endDate
     });
+    if (activeTab === 'competitive' && llmFilters.length > 0) {
+      params.append('collectors', llmFilters.map((v) => v.toLowerCase()).join(','));
+    }
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     perfLog('SearchVisibility: Endpoint computation', endpointStart);
     return endpoint;
-  }, [selectedBrandId, dateRange.startDate, dateRange.endDate, reloadToken]);
+  }, [selectedBrandId, dateRange.startDate, dateRange.endDate, reloadToken, activeTab, llmFilters]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());
@@ -242,6 +263,35 @@ export const SearchVisibility = () => {
     }
   }, [response, loading]);
 
+  // Persist the full list of LLMs we've seen so selection doesn't shrink options after filtering
+  useEffect(() => {
+    const providers = new Map<string, { label: string; color?: string }>();
+    (response?.data?.llmVisibility ?? []).forEach((slice: any) => {
+      if (slice?.provider) {
+        const providerLabel = String(slice.provider);
+        providers.set(providerLabel.toLowerCase(), { label: providerLabel, color: slice.color });
+      }
+    });
+    if (providers.size === 0) return;
+    setAllLlmOptions((prev) => {
+      const merged = new Map<string, { label: string; color?: string }>();
+      prev.forEach((opt) => merged.set(opt.value, { label: opt.label, color: opt.color }));
+      providers.forEach((meta, value) => {
+        merged.set(value, { label: meta.label, color: meta.color });
+      });
+      return Array.from(merged.entries()).map(([value, meta]) => ({
+        value,
+        label: meta.label,
+        color: meta.color
+      }));
+    });
+  }, [response?.data?.llmVisibility]);
+
+  const llmOptions = useMemo(() => {
+    if (allLlmOptions.length === 0) return [];
+    return [{ value: 'all', label: 'All LLMs', color: '#e8e9ed' }, ...allLlmOptions];
+  }, [allLlmOptions]);
+
   // Process response data - moved to useMemo for better performance
   const processedData = useMemo(() => {
     const processStart = performance.now();
@@ -250,14 +300,16 @@ export const SearchVisibility = () => {
     }
 
     const llmSlices = response.data.llmVisibility ?? [];
+
+    const competitorEntries = response.data.competitorVisibility ?? [];
     
     // Extract date labels from time-series data (if available)
     // Try brand visibility first, then competitor visibility
     let chartDateLabels: string[] = chartLabels
     if (llmSlices.length > 0 && llmSlices[0].timeSeries?.dates && llmSlices[0].timeSeries.dates.length > 0) {
       chartDateLabels = llmSlices[0].timeSeries.dates.map(formatDateLabel)
-    } else if (competitorEntries.length > 0 && competitorEntries[0].timeSeries?.dates && competitorEntries[0].timeSeries.dates.length > 0) {
-      chartDateLabels = competitorEntries[0].timeSeries.dates.map(formatDateLabel)
+    } else if (competitorEntries.length > 0 && competitorEntries[0].timeSeries?.dates && competitorEntries[0].timeSeries?.dates.length > 0) {
+      chartDateLabels = competitorEntries[0].timeSeries!.dates.map(formatDateLabel)
     }
     
     const llmModels = llmSlices.map((slice) => {
@@ -298,7 +350,7 @@ export const SearchVisibility = () => {
           ? slice.timeSeries.share
           : buildTimeseries(shareValue),
         sentimentData: slice.timeSeries?.sentiment && slice.timeSeries.sentiment.length > 0
-          ? slice.timeSeries.sentiment.map(s => s !== null ? ((s + 1) / 2) * 100 : null)
+          ? slice.timeSeries.sentiment.map((s: number | null) => s !== null ? ((s + 1) / 2) * 100 : null)
           : (sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined),
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
@@ -310,8 +362,6 @@ export const SearchVisibility = () => {
         color: slice.color // Include color from backend
       };
     });
-
-    const competitorEntries = response.data.competitorVisibility ?? [];
 
     // Create brand summary model for competitive view
     const brandSummary = response.data.brandSummary;
@@ -486,7 +536,7 @@ export const SearchVisibility = () => {
           ? entry.timeSeries.share
           : buildTimeseries(competitorShareValue),
         sentimentData: entry.timeSeries?.sentiment && entry.timeSeries.sentiment.length > 0
-          ? entry.timeSeries.sentiment.map(s => s !== null ? ((s + 1) / 2) * 100 : null)
+          ? entry.timeSeries.sentiment.map((s: number | null) => s !== null ? ((s + 1) / 2) * 100 : null)
           : (competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined),
         topTopics: entry.topTopics?.map(topic => ({
           topic: topic.topic,
@@ -653,6 +703,55 @@ export const SearchVisibility = () => {
                         : 'Benchmark the selected KPI against competitors.'}
                     </p>
                   </div>
+                  {activeTab === 'competitive' && llmOptions.filter((o) => o.value !== 'all').length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8690a8]">
+                        LLM Filter
+                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setLlmFilters([])}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
+                            llmFilters.length === 0
+                              ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
+                              : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
+                          }`}
+                        >
+                          All
+                        </button>
+                        {llmOptions
+                          .filter((option) => option.value !== 'all')
+                          .map((option) => {
+                            const isActive = llmFilters.includes(option.value);
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() =>
+                                  setLlmFilters((prev) =>
+                                    prev.includes(option.value)
+                                      ? prev.filter((v) => v !== option.value)
+                                      : [...prev, option.value]
+                                  )
+                                }
+                                className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${
+                                  isActive
+                                    ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
+                                    : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
+                                }`}
+                                title={option.label}
+                                aria-label={`Filter by ${option.label}`}
+                              >
+                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
+                                  {getLLMIcon(option.label)}
+                                </span>
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

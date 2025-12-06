@@ -2,17 +2,16 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SourceTabs } from '../components/Sources/SourceTabs';
 import { SourceCoverageHeatmap } from '../components/Sources/SourceCoverageHeatmap';
-import { Scatter, Bar, Doughnut } from 'react-chartjs-2';
+import { Bubble, Bar, Doughnut, Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   LinearScale,
   PointElement,
   Tooltip,
   Legend,
-  BarElement,
   CategoryScale,
+  BarElement,
   ArcElement,
-  LineElement,
 } from 'chart.js';
 import { IconDownload, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, IconChartBar, IconArrowUpRight } from '@tabler/icons-react';
 import { useCachedData } from '../hooks/useCachedData';
@@ -20,15 +19,13 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useChartResize } from '../hooks/useChartResize';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
-import { ManagedCompetitor, getActiveCompetitors, getCompetitorSources, CompetitorSourceAttributionResponse } from '../api/competitorManagementApi';
-
-// Type definitions
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
-}
+import {
+  getActiveCompetitors,
+  getCompetitorSources,
+  type ManagedCompetitor,
+  type CompetitorSourceAttributionResponse
+} from '../api/competitorManagementApi';
+import { ApiResponse } from './dashboard/types';
 
 interface SourceAttributionResponse {
   sources: SourceData[];
@@ -38,7 +35,7 @@ interface SourceAttributionResponse {
   avgSentimentChange: number;
 }
 
-ChartJS.register(LinearScale, PointElement, Tooltip, Legend, BarElement, CategoryScale, ArcElement, LineElement);
+ChartJS.register(CategoryScale, LinearScale, PointElement, BarElement, ArcElement, Tooltip, Legend);
 
 const sourceTypeColors: Record<string, string> = {
   'brand': '#00bcdc',
@@ -74,7 +71,7 @@ interface SourceData {
   pages: string[];
 }
 
-const topicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
+const fallbackTopicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
 
 type SortField = 'name' | 'type' | 'mentionRate' | 'soa' | 'sentiment' | 'topics' | 'pages' | 'prompts';
 type SortDirection = 'asc' | 'desc';
@@ -129,21 +126,18 @@ export const SearchSources = () => {
   const [competitorSourceLoading, setCompetitorSourceLoading] = useState(false);
   const [competitorSourceError, setCompetitorSourceError] = useState<string | null>(null);
   
-  // Analytics chart selector state
-  const [selectedAnalyticsChart, setSelectedAnalyticsChart] = useState<'funnel' | 'soa' | 'sentiment' | 'type'>('funnel');
-
   // CSV Export function
   const exportToCSV = () => {
     const headers = ['Source', 'Type', 'Mention Rate (%)', 'Mention Rate Change (%)', 'Share of Answer (%)', 'Share of Answer Change (%)', 'Sentiment', 'Sentiment Change', 'Top Topics', 'Pages', 'Prompts'];
     const rows = filteredData.map(source => [
       source.name,
       sourceTypeLabels[source.type] || source.type,
-      source.mentionRate.toFixed(2),
-      source.mentionChange.toFixed(2),
-      source.soa.toFixed(2),
-      source.soaChange.toFixed(2),
-      source.sentiment.toFixed(2),
-      source.sentimentChange.toFixed(2),
+      source.mentionRate,
+      source.mentionChange,
+      source.soa,
+      source.soaChange,
+      Math.round(source.sentiment * 100),
+      Math.round(source.sentimentChange * 100),
       source.topics.join('; '),
       source.pages.join('; '),
       source.prompts.join('; ')
@@ -168,7 +162,6 @@ export const SearchSources = () => {
   const [overallMentionChange, setOverallMentionChange] = useState<number>(0);
   const [avgSentiment, setAvgSentiment] = useState<number>(0);
   const [avgSentimentChange, setAvgSentimentChange] = useState<number>(0);
-  const [topSource, setTopSource] = useState<SourceData | null>(null);
 
   // Build endpoint
   const sourcesEndpoint = useMemo(() => {
@@ -195,13 +188,15 @@ export const SearchSources = () => {
   // Process response data - only use API data
   const sourceData: SourceData[] = response?.success && response.data ? response.data.sources : [];
   
-  // Extract unique topics from all sources for heatmap
+  // Extract unique topics from API data (sorted, deduped). Fallback to defaults if empty.
   const allTopics = useMemo(() => {
     const topicSet = new Set<string>();
     sourceData.forEach(source => {
       source.topics.forEach(topic => topicSet.add(topic));
     });
-    return Array.from(topicSet);
+    const topics = Array.from(topicSet);
+    topics.sort((a, b) => a.localeCompare(b));
+    return topics.length > 0 ? topics : fallbackTopicOptions;
   }, [sourceData]);
 
   // Generate heatmap data from API data only
@@ -249,11 +244,6 @@ export const SearchSources = () => {
       setAvgSentimentChange(response.data.avgSentimentChange);
       
       // Set top source (highest mention rate)
-      if (response.data.sources.length > 0) {
-        setTopSource(response.data.sources[0]);
-      } else {
-        setTopSource(null);
-      }
     }
   }, [response]);
   
@@ -326,9 +316,9 @@ export const SearchSources = () => {
   const filteredData = useMemo(() => {
     const filtered = sourceData.filter(source => {
       if (topicFilter !== 'all' && !source.topics.includes(topicFilter)) return false;
-      if (sentimentFilter === 'positive' && source.sentiment <= 0.3) return false;
-      if (sentimentFilter === 'neutral' && (source.sentiment < -0.1 || source.sentiment > 0.3)) return false;
-      if (sentimentFilter === 'negative' && source.sentiment >= -0.1) return false;
+      if (sentimentFilter === 'positive' && source.sentiment <= 0) return false;
+      if (sentimentFilter === 'neutral' && source.sentiment !== 0) return false;
+      if (sentimentFilter === 'negative' && source.sentiment >= 0) return false;
       if (typeFilter !== 'all' && source.type !== typeFilter) return false;
       return true;
     });
@@ -389,88 +379,20 @@ export const SearchSources = () => {
   }, [filteredData, overallMentionRate]);
 
   const computedAvgSentiment = useMemo(() => {
-    if (avgSentiment !== 0) return avgSentiment.toFixed(2);
+    if (avgSentiment !== 0) return avgSentiment;
     const avg = filteredData.reduce((sum, s) => sum + s.sentiment, 0) / filteredData.length;
-    return avg.toFixed(2);
+    return Number.isFinite(avg) ? avg : 0;
   }, [filteredData, avgSentiment]);
 
-  const computedTopSource = useMemo(() => {
-    if (topSource) return topSource;
-    if (filteredData.length === 0) return null;
-    return filteredData.reduce((max, s) => s.mentionRate > max.mentionRate ? s : max, filteredData[0]);
-  }, [filteredData, topSource]);
+  // Format sentiment as whole-number percentage without sign; color/arrow convey polarity
+  const formatSentimentDisplay = (value: number): string => {
+    if (!Number.isFinite(value)) return '0';
+    const scaled = Math.round(value * 100);
+    return `${Math.abs(scaled)}`;
+  };
 
   // Handle chart resize on window resize (e.g., when dev tools open/close)
   useChartResize(chartRef, !loading && filteredData.length > 0);
-
-  // Shared analytics helpers
-  const computeAnalytics = (data: SourceData[]) => {
-    const tiers = {
-      tier1: { count: 0, soaSum: 0, label: 'Tier 1 (>30%)' },
-      tier2: { count: 0, soaSum: 0, label: 'Tier 2 (15-30%)' },
-      tier3: { count: 0, soaSum: 0, label: 'Tier 3 (5-15%)' },
-      tier4: { count: 0, soaSum: 0, label: 'Tier 4 (0-5%)' }
-    };
-
-    data.forEach(source => {
-      if (source.mentionRate >= 30) {
-        tiers.tier1.count++;
-        tiers.tier1.soaSum += source.soa;
-      } else if (source.mentionRate >= 15) {
-        tiers.tier2.count++;
-        tiers.tier2.soaSum += source.soa;
-      } else if (source.mentionRate >= 5) {
-        tiers.tier3.count++;
-        tiers.tier3.soaSum += source.soa;
-      } else {
-        tiers.tier4.count++;
-        tiers.tier4.soaSum += source.soa;
-      }
-    });
-
-    const tierDistribution = [
-      { label: tiers.tier1.label, count: tiers.tier1.count, avgSoa: tiers.tier1.count > 0 ? tiers.tier1.soaSum / tiers.tier1.count : 0 },
-      { label: tiers.tier2.label, count: tiers.tier2.count, avgSoa: tiers.tier2.count > 0 ? tiers.tier2.soaSum / tiers.tier2.count : 0 },
-      { label: tiers.tier3.label, count: tiers.tier3.count, avgSoa: tiers.tier3.count > 0 ? tiers.tier3.soaSum / tiers.tier3.count : 0 },
-      { label: tiers.tier4.label, count: tiers.tier4.count, avgSoa: tiers.tier4.count > 0 ? tiers.tier4.soaSum / tiers.tier4.count : 0 }
-    ];
-
-    const topSoaSources = [...data].sort((a, b) => b.soa - a.soa).slice(0, 10);
-    const topSentimentSources = [...data].sort((a, b) => b.sentiment - a.sentiment).slice(0, 10);
-
-    const typeDistribution: Record<string, number> = {};
-    data.forEach(source => {
-      typeDistribution[source.type] = (typeDistribution[source.type] || 0) + 1;
-    });
-
-    const sortedMention = [...data].sort((a, b) => a.mentionRate - b.mentionRate);
-    const sortedSoa = [...data].sort((a, b) => a.soa - b.soa);
-    
-    let medianMention = 15; // Fallback
-    let medianSoa = 50; // Fallback
-    
-    if (data.length > 0) {
-      const midIndex = Math.floor(data.length / 2);
-      if (data.length % 2 === 0) {
-        medianMention = (sortedMention[midIndex - 1].mentionRate + sortedMention[midIndex].mentionRate) / 2;
-        medianSoa = (sortedSoa[midIndex - 1].soa + sortedSoa[midIndex].soa) / 2;
-      } else {
-        medianMention = sortedMention[midIndex].mentionRate;
-        medianSoa = sortedSoa[midIndex].soa;
-      }
-    }
-
-    return {
-      tierDistribution,
-      topSoaSources,
-      topSentimentSources,
-      typeDistribution,
-      thresholds: {
-        x: Math.max(medianMention, 5),
-        y: Math.max(medianSoa, 20)
-      }
-    };
-  };
 
   const computeScaleMaximums = (data: SourceData[]) => {
     if (!data || data.length === 0) {
@@ -492,8 +414,39 @@ export const SearchSources = () => {
     return { xMax, yMax, sentimentMin, sentimentMax };
   };
 
+  // Aggregate analytics for tier, SoA, sentiment, and type distributions
+  const computeAnalytics = (data: SourceData[]) => {
+    const buckets = [
+      { label: 'Tier 1 (>=40% mention)', sources: data.filter((s) => s.mentionRate >= 40) },
+      { label: 'Tier 2 (20-39%)', sources: data.filter((s) => s.mentionRate >= 20 && s.mentionRate < 40) },
+      { label: 'Tier 3 (5-19%)', sources: data.filter((s) => s.mentionRate >= 5 && s.mentionRate < 20) },
+      { label: 'Tier 4 (<5%)', sources: data.filter((s) => s.mentionRate < 5) },
+    ];
+
+    const tierDistribution = buckets.map(({ label, sources }) => ({
+      label,
+      count: sources.length,
+      avgSoa: sources.length
+        ? Math.min(
+            100,
+            parseFloat((sources.reduce((sum, s) => sum + s.soa, 0) / sources.length).toFixed(2))
+          )
+        : 0,
+    }));
+
+    const topSoaSources = [...data].sort((a, b) => b.soa - a.soa).slice(0, 8);
+    const topSentimentSources = [...data].sort((a, b) => b.sentiment - a.sentiment).slice(0, 8);
+
+    const typeDistribution = data.reduce<Record<string, number>>((acc, s) => {
+      acc[s.type] = (acc[s.type] || 0) + 1;
+      return acc;
+    }, {});
+
+    return { tierDistribution, topSoaSources, topSentimentSources, typeDistribution };
+  };
+
   // Calculate distributions and top lists for new charts
-  const { tierDistribution, topSoaSources, topSentimentSources, typeDistribution, thresholds } = useMemo(
+  const { tierDistribution, topSoaSources, topSentimentSources, typeDistribution } = useMemo(
     () => computeAnalytics(filteredData),
     [filteredData]
   );
@@ -515,16 +468,25 @@ export const SearchSources = () => {
     [competitorSourceData]
   );
 
-  // Helper function to map sentiment to bubble radius with enhanced visual distinction
+  // Matrix thresholds: split axes at midpoints for symmetrical quadrants
+  const thresholds = useMemo(() => {
+    const xMid = scaleMaximums.xMax > 0 ? scaleMaximums.xMax / 2 : 10;
+    const yMid = scaleMaximums.yMax > 0 ? scaleMaximums.yMax / 2 : 50;
+    return { x: xMid, y: yMid };
+  }, [scaleMaximums]);
+
+  // Map raw sentiment to bubble radius using the observed min/max range (no normalization)
   const sentimentToRadius = (sentiment: number): number => {
-    // Sentiment ranges from -1 to 1, map to 5-45px with exponential scaling for better visual distinction
-    // Add safety check for invalid values
-    const safeSentiment = isNaN(sentiment) ? 0 : Math.max(-1, Math.min(1, sentiment));
-    const normalized = (safeSentiment + 1) / 2; // Convert -1..1 to 0..1
-    // Apply power function to amplify differences: smaller values stay small, larger values grow more
-    const scaled = Math.pow(normalized, 0.7); // Power < 1 creates more dramatic visual differences
-    const radius = 5 + (scaled * 40); // 5 + (0-40) = 5-45px range
-    return radius;
+    const min = scaleMaximums.sentimentMin;
+    const max = scaleMaximums.sentimentMax;
+    if (!Number.isFinite(sentiment) || !Number.isFinite(min) || !Number.isFinite(max) || max === min) {
+      return 12;
+    }
+    const normalized = (sentiment - min) / (max - min);
+    const clamped = Math.max(0, Math.min(1, normalized));
+    const minRadius = 12;
+    const maxRadius = 48;
+    return minRadius + clamped * (maxRadius - minRadius);
   };
 
   // Deterministic pseudo-random generator to keep jitter stable until data changes
@@ -579,6 +541,12 @@ export const SearchSources = () => {
   const chartOptions: any = {
     responsive: true,
     maintainAspectRatio: false,
+    elements: {
+      point: {
+        radius: (ctx: any) => ctx?.raw?.r ?? 6,
+        hoverRadius: (ctx: any) => ((ctx?.raw?.r ?? 6) + 4)
+      }
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -591,17 +559,17 @@ export const SearchSources = () => {
           title: (context: any) => context[0].dataset.label,
           label: (context: any) => {
             const source = context.dataset.sourceData;
-            const sentimentEmoji = source.sentiment > 0.3 ? '😊' : source.sentiment < -0.1 ? '😟' : '😐';
-            const sentimentLabel = source.sentiment > 0.3 ? 'Positive' : source.sentiment < -0.1 ? 'Negative' : 'Neutral';
+            const sentimentEmoji = source.sentiment > 0 ? '😊' : source.sentiment < 0 ? '😟' : '😐';
+            const sentimentLabel = source.sentiment > 0 ? 'Positive' : source.sentiment < 0 ? 'Negative' : 'Neutral';
             const bubbleRadius = Math.round(context.raw.r);
             return [
               '',
               `Type: ${source.type.charAt(0).toUpperCase() + source.type.slice(1)}`,
-              `Mention Rate: ${source.mentionRate.toFixed(1)}%`,
-              `Share of Answer: ${source.soa.toFixed(1)}%`,
+              `Mention Rate: ${source.mentionRate}%`,
+              `Share of Answer: ${source.soa}%`,
               `Citations: ${source.citations}`,
               '',
-              `${sentimentEmoji} Sentiment: ${sentimentLabel} (${source.sentiment > 0 ? '+' : ''}${source.sentiment.toFixed(2)})`,
+              `${sentimentEmoji} Sentiment: ${sentimentLabel} (${formatSentimentDisplay(source.sentiment)})`,
               `Bubble Size: ${bubbleRadius}px`,
               '',
               `🔗 ${source.url}`
@@ -823,7 +791,7 @@ export const SearchSources = () => {
               datasets: [{
                 label: 'Share of Answer (%)',
                 data: sources.map(s => s.soa),
-                backgroundColor: (context) => context.dataIndex % 2 === 0 ? '#fa8a40' : '#498cf9',
+                backgroundColor: (context: any) => context.dataIndex % 2 === 0 ? '#fa8a40' : '#498cf9',
                 borderRadius: 4,
               }]
             }}
@@ -835,7 +803,7 @@ export const SearchSources = () => {
                 legend: { display: false },
                 tooltip: {
                    callbacks: {
-                     label: (ctx) => `SoA: ${ctx.parsed.x}%`
+                     label: (ctx: any) => `SoA: ${ctx.parsed.x}%`
                    }
                 }
               },
@@ -929,7 +897,7 @@ export const SearchSources = () => {
                 legend: { position: 'right' as const },
                 tooltip: {
                   callbacks: {
-                    label: (context) => {
+                    label: (context: any) => {
                       const label = context.label || '';
                       const value = context.parsed;
                       const total = Object.values(types).reduce((a, b) => a + b, 0);
@@ -950,28 +918,6 @@ export const SearchSources = () => {
       </div>
     </div>
   );
-
-  const renderSelectedChart = (context: 'brand' | 'competitor') => {
-    const isBrand = context === 'brand';
-    const funnel = isBrand ? tierDistribution : competitorTierDistribution;
-    const soa = isBrand ? topSoaSources : competitorTopSoaSources;
-    const sentiment = isBrand ? topSentimentSources : competitorTopSentimentSources;
-    const types = isBrand ? typeDistribution : competitorTypeDistribution;
-    const sentimentScale = isBrand ? scaleMaximums : competitorScaleMaximums;
-
-    switch (selectedAnalyticsChart) {
-      case 'funnel':
-        return renderFunnelChart(funnel);
-      case 'soa':
-        return renderSoaChart(soa);
-      case 'sentiment':
-        return renderSentimentChart(sentiment, sentimentScale);
-      case 'type':
-        return renderTypeChart(types);
-      default:
-        return null;
-    }
-  };
 
   return (
     <Layout>
@@ -1210,7 +1156,7 @@ export const SearchSources = () => {
                   }}
                 >
                   <option value="all">All Topics</option>
-                  {topicOptions.map(topic => (
+                  {allTopics.map(topic => (
                     <option key={topic} value={topic}>{topic}</option>
                   ))}
                 </select>
@@ -1329,9 +1275,20 @@ export const SearchSources = () => {
             </div>
 
             {/* Avg Sentiment & Top Source */}
-            <div>
-              <div style={{ fontSize: '12px', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '8px' }}>
-                AVG SENTIMENT SCORE
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ backgroundColor: '#f4f4f6', padding: '12px', borderRadius: '6px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#393e51', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  AVG SENTIMENT SCORE
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '20px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
+                    {formatSentimentDisplay(computedAvgSentiment)}
+                  </span>
+                  <span style={{ fontSize: '10px', color: '#06c686' }}>
+                    ↑ {formatSentimentDisplay(avgSentimentChange)}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#393e51' }}>Positive sentiment across mentions</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '4px' }}>
                 <span style={{ fontSize: competitorComparisonEnabled ? '28px' : '32px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
@@ -1406,6 +1363,37 @@ export const SearchSources = () => {
           </div>
                 </div>
 
+                {/* Analytics Charts */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: '24px',
+                    marginBottom: '24px'
+                  }}
+                >
+                  {renderFunnelChart(tierDistribution)}
+                  {renderSoaChart(topSoaSources)}
+                  {renderSentimentChart(topSentimentSources, scaleMaximums)}
+                  {renderTypeChart(typeDistribution)}
+                </div>
+
+                {competitorComparisonEnabled && competitorSourceData && (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                      gap: '24px',
+                      marginBottom: '24px'
+                    }}
+                  >
+                    {renderFunnelChart(competitorTierDistribution)}
+                    {renderSoaChart(competitorTopSoaSources)}
+                    {renderSentimentChart(competitorTopSentimentSources, competitorScaleMaximums)}
+                    {renderTypeChart(competitorTypeDistribution)}
+                  </div>
+                )}
+
                 {/* Bubble Chart */}
                 <div
           style={{
@@ -1442,7 +1430,7 @@ export const SearchSources = () => {
           </p>
 
           <div style={{ height: '500px', position: 'relative' }}>
-            <Scatter data={chartData} options={chartOptions} plugins={[quadrantPlugin]} ref={chartRef} />
+            <Bubble data={chartData} options={chartOptions} plugins={[quadrantPlugin]} ref={chartRef} />
           </div>
 
           {/* Matrix Legend */}
@@ -1865,101 +1853,6 @@ export const SearchSources = () => {
               )}
             </div>
 
-            {/* New Analytics Charts Section with Segmented Control - Full Width */}
-            <div style={{ 
-              backgroundColor: '#ffffff', 
-              padding: '24px', 
-              borderRadius: '8px', 
-              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-              marginBottom: '24px'
-            }}>
-              {/* Segmented Control */}
-              <div style={{ 
-                display: 'flex', 
-                gap: '8px', 
-                marginBottom: '24px',
-                padding: '4px',
-                backgroundColor: '#f4f4f6',
-                borderRadius: '8px',
-                width: 'fit-content'
-              }}>
-                {[
-                  { id: 'funnel' as const, label: 'Mention Rate Distribution' },
-                  { id: 'soa' as const, label: 'Top by Share of Answer' },
-                  { id: 'sentiment' as const, label: 'Top by Sentiment' },
-                  { id: 'type' as const, label: 'Source Type Distribution' }
-                ].map((chart) => (
-                  <button
-                    key={chart.id}
-                    onClick={() => setSelectedAnalyticsChart(chart.id)}
-                    style={{
-                      padding: '10px 20px',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      fontFamily: 'IBM Plex Sans, sans-serif',
-                      borderRadius: '6px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      backgroundColor: selectedAnalyticsChart === chart.id ? '#00bcdc' : 'transparent',
-                      color: selectedAnalyticsChart === chart.id ? '#ffffff' : '#393e51',
-                      whiteSpace: 'nowrap'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (selectedAnalyticsChart !== chart.id) {
-                        e.currentTarget.style.backgroundColor = '#e8e9ed';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (selectedAnalyticsChart !== chart.id) {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                      }
-                    }}
-                  >
-                    {chart.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Selected Chart Display */}
-              {competitorComparisonEnabled ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '2px solid #00bcdc' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1a1d29', margin: 0 }}>
-                        Your Brand: {selectedBrand?.name || 'Your brand'}
-                      </h3>
-                    </div>
-                    {renderSelectedChart('brand')}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '2px solid #fa8a40' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1a1d29', margin: 0 }}>
-                        Competitor: {selectedCompetitorId || 'Select competitor'}
-                      </h3>
-                    </div>
-                    {competitorSourceLoading ? (
-                      <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                        Loading competitor data...
-                      </div>
-                    ) : competitorSourceError ? (
-                      <div style={{ height: '400px', backgroundColor: '#fff5f5', border: '1px solid #fecaca', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', color: '#f94343', textAlign: 'center' }}>
-                        {competitorSourceError}
-                      </div>
-                    ) : competitorSourceData && competitorSourceData.sources.length > 0 ? (
-                      renderSelectedChart('competitor')
-                    ) : (
-                      <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                        No competitor data available
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                renderSelectedChart('brand')
-              )}
-            </div>
-
         {/* Source Attribution Table */}
         <div
           style={{
@@ -2300,10 +2193,10 @@ export const SearchSources = () => {
                               fontSize: '14px',
                               fontFamily: 'IBM Plex Mono, monospace',
                               fontWeight: '600',
-                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < -0.1 ? '#f94343' : '#64748b'
+                              color: source.sentiment > 0 ? '#06c686' : source.sentiment < 0 ? '#f94343' : '#64748b'
                             }}
                           >
-                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
+                            {formatSentimentDisplay(source.sentiment)}
                           </span>
                           {source.sentimentChange !== 0 && (
                             <span style={{ 
@@ -2314,7 +2207,7 @@ export const SearchSources = () => {
                               alignItems: 'center',
                               gap: '2px'
                             }}>
-                              {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
+                              {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(Math.round(source.sentimentChange * 100))}
                             </span>
                           )}
                         </div>
@@ -2633,7 +2526,7 @@ export const SearchSources = () => {
         {activeTab === 'source-coverage' && (
           <SourceCoverageHeatmap
             sources={heatmapSources}
-            topics={allTopics.length > 0 ? allTopics : topicOptions}
+            topics={allTopics}
             data={heatmapData}
           />
         )}

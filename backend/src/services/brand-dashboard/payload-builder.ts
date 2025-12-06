@@ -29,7 +29,8 @@ import { visibilityService } from './visibility.service'
 export async function buildDashboardPayload(
   brand: BrandRow,
   customerId: string,
-  range: NormalizedDashboardRange
+  range: NormalizedDashboardRange,
+  options: { collectors?: string[] } = {}
 ): Promise<BrandDashboardPayload> {
   const requestStart = Date.now()
   let lastMark = requestStart
@@ -179,7 +180,18 @@ export async function buildDashboardPayload(
     console.warn('[Dashboard] Failed to load brand topics:', brandTopicsResult.error.message)
   }
 
-  const positionRows: PositionRow[] = (positionsResult.data as PositionRow[]) ?? []
+  const rawPositionRows: PositionRow[] = (positionsResult.data as PositionRow[]) ?? []
+
+  const normalizedCollectors = (options.collectors ?? [])
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0)
+
+  const positionRows: PositionRow[] =
+    normalizedCollectors.length === 0
+      ? rawPositionRows
+      : rawPositionRows.filter(
+          (row) => normalizedCollectors.includes((row.collector_type ?? 'unknown').toLowerCase())
+        )
 
   // Helper function to extract date from timestamp (YYYY-MM-DD format)
   const extractDate = (timestamp: string | null): string | null => {

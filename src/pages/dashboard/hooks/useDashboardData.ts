@@ -35,7 +35,7 @@ export const useDashboardData = () => {
     selectedBrand,
     selectBrand
   } = useManualBrandDashboard();
-  
+
   useEffect(() => {
     if (brandsLoading || brands.length === 0) {
       return;
@@ -136,7 +136,6 @@ export const useDashboardData = () => {
   };
 
   const dashboardEndpoint = useMemo(() => {
-    const endpointStart = performance.now();
     if (!selectedBrandId || !startDate || !endDate) {
       return null;
     }
@@ -164,7 +163,6 @@ export const useDashboardData = () => {
     { requiresAuth: true },
     { 
       enabled: !!dashboardEndpoint, 
-      refetchOnMount: false,
       // Use more frequent refresh when data collection is in progress (15 seconds) or normal refresh (30 seconds)
       // This ensures dashboard updates quickly when async data arrives
       refetchInterval: isDataCollectionInProgress ? 15000 : 30000, // 15 seconds during collection, 30 seconds normally

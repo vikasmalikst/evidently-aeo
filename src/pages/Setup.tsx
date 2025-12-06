@@ -9,6 +9,7 @@ export const Setup = () => {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isPreparingRedirect, setIsPreparingRedirect] = useState(false);
 
   // Redirect to dashboard if skip setup check is enabled
   useEffect(() => {
@@ -23,6 +24,7 @@ export const Setup = () => {
       return;
     }
     setIsSubmitting(true);
+    setIsPreparingRedirect(true);
     setSubmitError(null);
 
     try {
@@ -140,6 +142,7 @@ export const Setup = () => {
     } catch (error) {
       console.error('❌ Onboarding submission failed:', error);
       setSubmitError(error instanceof Error ? error.message : 'Failed to complete onboarding');
+      setIsPreparingRedirect(false);
       setIsSubmitting(false);
     }
   };
@@ -192,6 +195,16 @@ export const Setup = () => {
       onComplete={handleComplete}
       onClose={handleClose}
       isSubmitting={isSubmitting}
+      overlay={
+        isPreparingRedirect ? (
+          <div className="fixed inset-0 flex items-center justify-center bg-white/80 z-[9999]">
+            <div className="bg-white border border-gray-200 shadow-lg rounded-xl px-6 py-4 flex items-center gap-3">
+              <div className="h-6 w-6 border-2 border-[#00bcdc] border-t-transparent rounded-full animate-spin" />
+              <div className="text-sm text-gray-700">Preparing data collection…</div>
+            </div>
+          </div>
+        ) : null
+      }
     />
   );
 };

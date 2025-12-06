@@ -213,13 +213,13 @@ export const Dashboard = () => {
       </div>
 
       {showTopicModal && (
-        <TopicSelectionModal
-          brandName={getBrandData().name}
-          industry={getBrandData().industry}
-          onNext={handleTopicsSelected}
-          onBack={() => {}}
-          onClose={handleTopicModalClose}
-        />
+          <TopicSelectionModal
+            brandName={getBrandData().name}
+            industry={getBrandData().industry}
+            onNext={handleTopicsSelected}
+            onBack={() => {}}
+            onClose={handleTopicModalClose}
+          />
       )}
     </Layout>
   );

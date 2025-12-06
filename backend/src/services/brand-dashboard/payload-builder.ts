@@ -54,29 +54,93 @@ export async function buildDashboardPayload(
     return result
   })()
 
-  const positionsPromise = (async () => {
-    const result = await supabaseAdmin
+  const fetchPositions = async (
+    includeCustomer: boolean,
+    useProcessedAt: boolean
+  ) => {
+    const query = supabaseAdmin
       .from('extracted_positions')
       .select(
         'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, sentiment_score_competitor, sentiment_label_competitor, total_brand_mentions, competitor_mentions, processed_at, created_at, brand_positions, competitor_positions, has_brand_presence, topic, metadata'
       )
       .eq('brand_id', brand.id)
-      .eq('customer_id', customerId)
-      .gte('created_at', startIsoBound)
-      .lte('created_at', endIsoBound)
-      .order('created_at', { ascending: true })
-    return result
+      .order(useProcessedAt ? 'processed_at' : 'created_at', { ascending: true })
+
+    const lowerBoundColumn = useProcessedAt ? 'processed_at' : 'created_at'
+
+    query.gte(lowerBoundColumn, startIsoBound)
+    query.lte(lowerBoundColumn, endIsoBound)
+
+    if (includeCustomer && customerId) {
+      query.eq('customer_id', customerId)
+    }
+
+    return query
+  }
+
+  const positionsPromise = (async () => {
+    const primary = await fetchPositions(true, false)
+    if (!primary.error && (primary.data?.length ?? 0) > 0) {
+      return primary
+    }
+
+    // If nothing came back (likely missing customer_id on rows), retry scoped only by brand
+    const fallbackBrandOnly = await fetchPositions(false, false)
+    if (!fallbackBrandOnly.error && (fallbackBrandOnly.data?.length ?? 0) > 0) {
+      console.warn(
+        `[Dashboard] Fallback used for extracted_positions (brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+      )
+      return fallbackBrandOnly
+    }
+
+    // If still nothing, try processed_at window (some pipelines only set processed_at)
+    const processedPrimary = await fetchPositions(true, true)
+    if (!processedPrimary.error && (processedPrimary.data?.length ?? 0) > 0) {
+      console.warn(
+        `[Dashboard] Fallback used for extracted_positions (processed_at window, customer scoped) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+      )
+      return processedPrimary
+    }
+
+    const processedFallback = await fetchPositions(false, true)
+    if (!processedFallback.error && (processedFallback.data?.length ?? 0) > 0) {
+      console.warn(
+        `[Dashboard] Fallback used for extracted_positions (processed_at window, brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+      )
+      return processedFallback
+    }
+
+    // Prefer to return primary error if exists
+    return primary.error ? primary : processedFallback
   })()
 
   const queryCountPromise = (async () => {
-    const result = await supabaseAdmin
+    const scoped = await supabaseAdmin
       .from('generated_queries')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brand.id)
       .eq('customer_id', customerId)
       .gte('created_at', startIsoBound)
       .lte('created_at', endIsoBound)
-    return result
+
+    if ((scoped.count ?? 0) > 0 || scoped.error) {
+      return scoped
+    }
+
+    const fallback = await supabaseAdmin
+      .from('generated_queries')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brand.id)
+      .gte('created_at', startIsoBound)
+      .lte('created_at', endIsoBound)
+
+    if ((fallback.count ?? 0) > 0) {
+      console.warn(
+        `[Dashboard] Fallback used for generated_queries count (brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+      )
+    }
+
+    return fallback
   })()
 
   const brandTopicsPromise = (async () => {

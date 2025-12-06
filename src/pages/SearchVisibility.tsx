@@ -525,7 +525,7 @@ export const SearchVisibility = () => {
         ? model.data 
         : metricType === 'share' 
           ? (model.shareData ?? model.data)
-          : (model.sentimentData ?? model.data)
+          : (model.sentimentData ?? model.data).map((v) => v ?? 0) // avoid null gaps in sentiment lines
     }))
   }), [currentModels, metricType]);
 

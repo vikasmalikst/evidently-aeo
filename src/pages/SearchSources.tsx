@@ -2,17 +2,13 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SourceTabs } from '../components/Sources/SourceTabs';
 import { SourceCoverageHeatmap } from '../components/Sources/SourceCoverageHeatmap';
-import { Scatter, Bar, Doughnut } from 'react-chartjs-2';
+import { Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   LinearScale,
   PointElement,
   Tooltip,
   Legend,
-  BarElement,
-  CategoryScale,
-  ArcElement,
-  LineElement,
 } from 'chart.js';
 import { IconDownload, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, IconChartBar, IconArrowUpRight } from '@tabler/icons-react';
 import { useCachedData } from '../hooks/useCachedData';
@@ -20,6 +16,8 @@ import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useChartResize } from '../hooks/useChartResize';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
+import { getActiveCompetitors, type ManagedCompetitor } from '../api/competitorManagementApi';
+import { ApiResponse } from './dashboard/types';
 
 // Type definitions
 interface SourceAttributionResponse {
@@ -30,23 +28,7 @@ interface SourceAttributionResponse {
   avgSentimentChange: number;
 }
 
-// Helper function for date range
-const getDateRangeForTimeRange = (timeRange: string) => {
-  const end = new Date();
-  end.setUTCHours(23, 59, 59, 999);
-
-  const start = new Date(end);
-  const days = parseInt(timeRange) || 30;
-  start.setUTCDate(start.getUTCDate() - days);
-  start.setUTCHours(0, 0, 0, 0);
-
-  return {
-    start: start.toISOString(),
-    end: end.toISOString()
-  };
-};
-
-ChartJS.register(LinearScale, PointElement, Tooltip, Legend, BarElement, CategoryScale, ArcElement, LineElement);
+ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
 const sourceTypeColors: Record<string, string> = {
   'brand': '#00bcdc',
@@ -134,21 +116,18 @@ export const SearchSources = () => {
   const [selectedCompetitorId, setSelectedCompetitorId] = useState<string | null>(null);
   const [competitorsLoading, setCompetitorsLoading] = useState(false);
   
-  // Analytics chart selector state
-  const [selectedAnalyticsChart, setSelectedAnalyticsChart] = useState<'funnel' | 'soa' | 'sentiment' | 'type'>('funnel');
-
   // CSV Export function
   const exportToCSV = () => {
     const headers = ['Source', 'Type', 'Mention Rate (%)', 'Mention Rate Change (%)', 'Share of Answer (%)', 'Share of Answer Change (%)', 'Sentiment', 'Sentiment Change', 'Top Topics', 'Pages', 'Prompts'];
     const rows = filteredData.map(source => [
       source.name,
       sourceTypeLabels[source.type] || source.type,
-      source.mentionRate.toFixed(2),
-      source.mentionChange.toFixed(2),
-      source.soa.toFixed(2),
-      source.soaChange.toFixed(2),
-      source.sentiment.toFixed(2),
-      source.sentimentChange.toFixed(2),
+      source.mentionRate,
+      source.mentionChange,
+      source.soa,
+      source.soaChange,
+      Math.round(source.sentiment * 100),
+      Math.round(source.sentimentChange * 100),
       source.topics.join('; '),
       source.pages.join('; '),
       source.prompts.join('; ')
@@ -302,9 +281,9 @@ export const SearchSources = () => {
   const filteredData = useMemo(() => {
     const filtered = sourceData.filter(source => {
       if (topicFilter !== 'all' && !source.topics.includes(topicFilter)) return false;
-      if (sentimentFilter === 'positive' && source.sentiment <= 0.3) return false;
-      if (sentimentFilter === 'neutral' && (source.sentiment < -0.1 || source.sentiment > 0.3)) return false;
-      if (sentimentFilter === 'negative' && source.sentiment >= -0.1) return false;
+      if (sentimentFilter === 'positive' && source.sentiment <= 0) return false;
+      if (sentimentFilter === 'neutral' && source.sentiment !== 0) return false;
+      if (sentimentFilter === 'negative' && source.sentiment >= 0) return false;
       if (typeFilter !== 'all' && source.type !== typeFilter) return false;
       return true;
     });
@@ -365,10 +344,17 @@ export const SearchSources = () => {
   }, [filteredData, overallMentionRate]);
 
   const computedAvgSentiment = useMemo(() => {
-    if (avgSentiment !== 0) return avgSentiment.toFixed(2);
+    if (avgSentiment !== 0) return avgSentiment;
     const avg = filteredData.reduce((sum, s) => sum + s.sentiment, 0) / filteredData.length;
-    return avg.toFixed(2);
+    return Number.isFinite(avg) ? avg : 0;
   }, [filteredData, avgSentiment]);
+
+  // Format sentiment as whole-number percentage without sign; color/arrow convey polarity
+  const formatSentimentDisplay = (value: number): string => {
+    if (!Number.isFinite(value)) return '0';
+    const scaled = Math.round(value * 100);
+    return `${Math.abs(scaled)}`;
+  };
 
   const computedTopSource = useMemo(() => {
     if (topSource) return topSource;
@@ -379,55 +365,11 @@ export const SearchSources = () => {
   // Handle chart resize on window resize (e.g., when dev tools open/close)
   useChartResize(chartRef, !loading && filteredData.length > 0);
 
-  // Calculate distributions and top lists for new charts
-  const { tierDistribution, topSoaSources, topSentimentSources, typeDistribution, thresholds } = useMemo(() => {
+  // Matrix thresholds (median-based) for quadrant overlays
+  const thresholds = useMemo(() => {
     const data = filteredData;
-    
-    // 1. Mention Rate Distribution (Funnel)
-    const tiers = {
-      tier1: { count: 0, soaSum: 0, label: 'Tier 1 (>30%)' },
-      tier2: { count: 0, soaSum: 0, label: 'Tier 2 (15-30%)' },
-      tier3: { count: 0, soaSum: 0, label: 'Tier 3 (5-15%)' },
-      tier4: { count: 0, soaSum: 0, label: 'Tier 4 (0-5%)' }
-    };
 
-    data.forEach(source => {
-      if (source.mentionRate >= 30) {
-        tiers.tier1.count++;
-        tiers.tier1.soaSum += source.soa;
-      } else if (source.mentionRate >= 15) {
-        tiers.tier2.count++;
-        tiers.tier2.soaSum += source.soa;
-      } else if (source.mentionRate >= 5) {
-        tiers.tier3.count++;
-        tiers.tier3.soaSum += source.soa;
-      } else {
-        tiers.tier4.count++;
-        tiers.tier4.soaSum += source.soa;
-      }
-    });
-
-    const tierDist = [
-      { label: tiers.tier1.label, count: tiers.tier1.count, avgSoa: tiers.tier1.count > 0 ? tiers.tier1.soaSum / tiers.tier1.count : 0 },
-      { label: tiers.tier2.label, count: tiers.tier2.count, avgSoa: tiers.tier2.count > 0 ? tiers.tier2.soaSum / tiers.tier2.count : 0 },
-      { label: tiers.tier3.label, count: tiers.tier3.count, avgSoa: tiers.tier3.count > 0 ? tiers.tier3.soaSum / tiers.tier3.count : 0 },
-      { label: tiers.tier4.label, count: tiers.tier4.count, avgSoa: tiers.tier4.count > 0 ? tiers.tier4.soaSum / tiers.tier4.count : 0 }
-    ];
-
-    // 2. Top Sources by Share of Answer
-    const topSoa = [...data].sort((a, b) => b.soa - a.soa).slice(0, 10);
-
-    // 3. Top Sources by Sentiment Quality (positive only for simplicity in "quality" chart)
-    const topSentiment = [...data].sort((a, b) => b.sentiment - a.sentiment).slice(0, 10);
-
-    // 4. Distribution by Source Type
-    const typeDist: Record<string, number> = {};
-    data.forEach(source => {
-      typeDist[source.type] = (typeDist[source.type] || 0) + 1;
-    });
-
-    // 5. Dynamic Thresholds for Matrix
-    // Calculate median mention rate and SOA
+    // Calculate median mention rate and SOA to position quadrant dividers
     const sortedMention = [...data].sort((a, b) => a.mentionRate - b.mentionRate);
     const sortedSoa = [...data].sort((a, b) => a.soa - b.soa);
     
@@ -448,14 +390,8 @@ export const SearchSources = () => {
     }
 
     return {
-      tierDistribution: tierDist,
-      topSoaSources: topSoa,
-      topSentimentSources: topSentiment,
-      typeDistribution: typeDist,
-      thresholds: {
-        x: Math.max(medianMention, 5), // Minimum threshold to avoid crowding at 0
-        y: Math.max(medianSoa, 20)     // Minimum threshold
-      }
+      x: Math.max(medianMention, 5), // Minimum threshold to avoid crowding at 0
+      y: Math.max(medianSoa, 20)     // Minimum threshold
     };
   }, [filteredData]);
 
@@ -482,16 +418,18 @@ export const SearchSources = () => {
     return { xMax, yMax, sentimentMin, sentimentMax };
   }, [filteredData]);
 
-  // Helper function to map sentiment to bubble radius with enhanced visual distinction
+  // Map raw sentiment to bubble radius using the observed min/max range (no normalization)
   const sentimentToRadius = (sentiment: number): number => {
-    // Sentiment ranges from -1 to 1, map to 5-45px with exponential scaling for better visual distinction
-    // Add safety check for invalid values
-    const safeSentiment = isNaN(sentiment) ? 0 : Math.max(-1, Math.min(1, sentiment));
-    const normalized = (safeSentiment + 1) / 2; // Convert -1..1 to 0..1
-    // Apply power function to amplify differences: smaller values stay small, larger values grow more
-    const scaled = Math.pow(normalized, 0.7); // Power < 1 creates more dramatic visual differences
-    const radius = 5 + (scaled * 40); // 5 + (0-40) = 5-45px range
-    return radius;
+    const min = scaleMaximums.sentimentMin;
+    const max = scaleMaximums.sentimentMax;
+    if (!Number.isFinite(sentiment) || !Number.isFinite(min) || !Number.isFinite(max) || max === min) {
+      return 12;
+    }
+    const normalized = (sentiment - min) / (max - min);
+    const clamped = Math.max(0, Math.min(1, normalized));
+    const minRadius = 12;
+    const maxRadius = 48;
+    return minRadius + clamped * (maxRadius - minRadius);
   };
 
   // Helper function to add jittering to prevent exact overlaps
@@ -529,17 +467,17 @@ export const SearchSources = () => {
           title: (context: any) => context[0].dataset.label,
           label: (context: any) => {
             const source = context.dataset.sourceData;
-            const sentimentEmoji = source.sentiment > 0.3 ? '😊' : source.sentiment < -0.1 ? '😟' : '😐';
-            const sentimentLabel = source.sentiment > 0.3 ? 'Positive' : source.sentiment < -0.1 ? 'Negative' : 'Neutral';
+            const sentimentEmoji = source.sentiment > 0 ? '😊' : source.sentiment < 0 ? '😟' : '😐';
+            const sentimentLabel = source.sentiment > 0 ? 'Positive' : source.sentiment < 0 ? 'Negative' : 'Neutral';
             const bubbleRadius = Math.round(context.raw.r);
             return [
               '',
               `Type: ${source.type.charAt(0).toUpperCase() + source.type.slice(1)}`,
-              `Mention Rate: ${source.mentionRate.toFixed(1)}%`,
-              `Share of Answer: ${source.soa.toFixed(1)}%`,
+              `Mention Rate: ${source.mentionRate}%`,
+              `Share of Answer: ${source.soa}%`,
               `Citations: ${source.citations}`,
               '',
-              `${sentimentEmoji} Sentiment: ${sentimentLabel} (${source.sentiment > 0 ? '+' : ''}${source.sentiment.toFixed(2)})`,
+              `${sentimentEmoji} Sentiment: ${sentimentLabel} (${formatSentimentDisplay(source.sentiment)})`,
               `Bubble Size: ${bubbleRadius}px`,
               '',
               `🔗 ${source.url}`
@@ -948,10 +886,10 @@ export const SearchSources = () => {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                   <span style={{ fontSize: '20px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '700', color: '#1a1d29' }}>
-                    +{computedAvgSentiment}
+                    {formatSentimentDisplay(computedAvgSentiment)}
                   </span>
                   <span style={{ fontSize: '10px', color: '#06c686' }}>
-                    ↑ {avgSentimentChange > 0 ? avgSentimentChange.toFixed(2) : '0.12'}
+                    ↑ {formatSentimentDisplay(avgSentimentChange)}
                   </span>
                 </div>
                 <div style={{ fontSize: '11px', color: '#393e51' }}>Positive sentiment across mentions</div>
@@ -1371,273 +1309,6 @@ export const SearchSources = () => {
               )}
             </div>
 
-            {/* New Analytics Charts Section with Segmented Control - Full Width */}
-            <div style={{ 
-              backgroundColor: '#ffffff', 
-              padding: '24px', 
-              borderRadius: '8px', 
-              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-              marginBottom: '24px'
-            }}>
-              {/* Segmented Control */}
-              <div style={{ 
-                display: 'flex', 
-                gap: '8px', 
-                marginBottom: '24px',
-                padding: '4px',
-                backgroundColor: '#f4f4f6',
-                borderRadius: '8px',
-                width: 'fit-content'
-              }}>
-                {[
-                  { id: 'funnel' as const, label: 'Mention Rate Distribution' },
-                  { id: 'soa' as const, label: 'Top by Share of Answer' },
-                  { id: 'sentiment' as const, label: 'Top by Sentiment' },
-                  { id: 'type' as const, label: 'Source Type Distribution' }
-                ].map((chart) => (
-                  <button
-                    key={chart.id}
-                    onClick={() => setSelectedAnalyticsChart(chart.id)}
-                    style={{
-                      padding: '10px 20px',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      fontFamily: 'IBM Plex Sans, sans-serif',
-                      borderRadius: '6px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      backgroundColor: selectedAnalyticsChart === chart.id ? '#00bcdc' : 'transparent',
-                      color: selectedAnalyticsChart === chart.id ? '#ffffff' : '#393e51',
-                      whiteSpace: 'nowrap'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (selectedAnalyticsChart !== chart.id) {
-                        e.currentTarget.style.backgroundColor = '#e8e9ed';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (selectedAnalyticsChart !== chart.id) {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                      }
-                    }}
-                  >
-                    {chart.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Selected Chart Display */}
-              {selectedAnalyticsChart === 'funnel' && (
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Mention Rate Distribution (Funnel)</h3>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>How awareness drops across tiers</p>
-                  <div style={{ height: '400px' }}>
-              {filteredData.length > 0 ? (
-                <Bar
-                  data={{
-                    labels: tierDistribution.map(t => t.label),
-                    datasets: [
-                      {
-                        type: 'line' as any,
-                        label: 'Avg Share of Answer',
-                        data: tierDistribution.map(t => t.avgSoa),
-                        borderColor: '#fa8a40',
-                        backgroundColor: '#fa8a40',
-                        borderWidth: 2,
-                        yAxisID: 'y1',
-                        // pointRadius configured via chart options
-                      },
-                      {
-                        type: 'bar' as any,
-                        label: 'Number of Sources',
-                        data: tierDistribution.map(t => t.count),
-                        backgroundColor: '#498cf9',
-                        borderRadius: 4,
-                        yAxisID: 'y',
-                      }
-                    ]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { position: 'top' as const },
-                    },
-                    scales: {
-                      y: {
-                        type: 'linear' as const,
-                        display: true,
-                        position: 'left' as const,
-                        title: { display: true, text: 'Number of Sources' },
-                        grid: { color: '#e8e9ed' },
-                        beginAtZero: true
-                      },
-                      y1: {
-                        type: 'linear' as const,
-                        display: true,
-                        position: 'right' as const,
-                        title: { display: true, text: 'Avg Share (%)' },
-                        grid: { display: false },
-                        min: 0,
-                        max: 100
-                      },
-                      x: {
-                        grid: { display: false }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
-                  No data available
-                </div>
-              )}
-                  </div>
-                </div>
-              )}
-
-              {selectedAnalyticsChart === 'soa' && (
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Top Sources by Share of Answer (Authority)</h3>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Which sources dominate when cited</p>
-                  <div style={{ height: '400px' }}>
-              {topSoaSources.length > 0 ? (
-                <Bar
-                  data={{
-                    labels: topSoaSources.map(s => s.name),
-                    datasets: [{
-                      label: 'Share of Answer (%)',
-                      data: topSoaSources.map(s => s.soa),
-                      backgroundColor: (context) => context.dataIndex % 2 === 0 ? '#fa8a40' : '#498cf9',
-                      borderRadius: 4,
-                    }]
-                  }}
-                  options={{
-                    indexAxis: 'y' as const,
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                      tooltip: {
-                         callbacks: {
-                           label: (ctx) => `SoA: ${ctx.parsed.x}%`
-                         }
-                      }
-                    },
-                    scales: {
-                      x: {
-                        title: { display: true, text: 'Share of Answer (%)' },
-                        grid: { color: '#e8e9ed' },
-                        min: 0,
-                        max: 100
-                      },
-                      y: {
-                        grid: { display: false }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
-                  No data available
-                </div>
-              )}
-                  </div>
-                </div>
-              )}
-
-              {selectedAnalyticsChart === 'sentiment' && (
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Top Sources by Sentiment Quality</h3>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Which sources receive positive mentions</p>
-                  <div style={{ height: '400px' }}>
-              {topSentimentSources.length > 0 ? (
-                <Bar
-                  data={{
-                    labels: topSentimentSources.map(s => s.name),
-                    datasets: [{
-                      label: 'Sentiment Score',
-                      data: topSentimentSources.map(s => s.sentiment),
-                      backgroundColor: '#06c686',
-                      borderRadius: 4,
-                    }]
-                  }}
-                  options={{
-                    indexAxis: 'y' as const,
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                    },
-                    scales: {
-                      x: {
-                        title: { display: true, text: 'Sentiment Score' },
-                        grid: { color: '#e8e9ed' },
-                        min: scaleMaximums.sentimentMin,
-                        max: scaleMaximums.sentimentMax
-                      },
-                      y: {
-                        grid: { display: false }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
-                  No data available
-                </div>
-              )}
-                  </div>
-                </div>
-              )}
-
-              {selectedAnalyticsChart === 'type' && (
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1a1d29', marginBottom: '8px' }}>Distribution by Source Type</h3>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px' }}>Editorial vs Corporate vs Reference</p>
-                  <div style={{ height: '400px', display: 'flex', justifyContent: 'center' }}>
-              {Object.keys(typeDistribution).length > 0 ? (
-                <Doughnut
-                  data={{
-                    labels: Object.keys(typeDistribution).map(type => sourceTypeLabels[type] || type),
-                    datasets: [{
-                      data: Object.values(typeDistribution),
-                      backgroundColor: Object.keys(typeDistribution).map(type => sourceTypeColors[type] || '#64748b'),
-                      borderWidth: 2,
-                      borderColor: '#ffffff'
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { position: 'right' as const },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => {
-                            const label = context.label || '';
-                            const value = context.parsed;
-                            const total = Object.values(typeDistribution).reduce((a, b) => a + b, 0);
-                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                            return `${label}: ${value} (${percentage}%)`;
-                          }
-                        }
-                      }
-                    },
-                    cutout: '60%'
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '14px' }}>
-                  No data available
-                </div>
-              )}
-                  </div>
-                </div>
-              )}
-            </div>
-
         {/* Source Attribution Table */}
         <div
           style={{
@@ -1978,10 +1649,10 @@ export const SearchSources = () => {
                               fontSize: '14px',
                               fontFamily: 'IBM Plex Mono, monospace',
                               fontWeight: '600',
-                              color: source.sentiment > 0.3 ? '#06c686' : source.sentiment < -0.1 ? '#f94343' : '#64748b'
+                              color: source.sentiment > 0 ? '#06c686' : source.sentiment < 0 ? '#f94343' : '#64748b'
                             }}
                           >
-                            {source.sentiment > 0 ? '+' : ''}{source.sentiment.toFixed(2)}
+                            {formatSentimentDisplay(source.sentiment)}
                           </span>
                           {source.sentimentChange !== 0 && (
                             <span style={{ 
@@ -1992,7 +1663,7 @@ export const SearchSources = () => {
                               alignItems: 'center',
                               gap: '2px'
                             }}>
-                              {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(source.sentimentChange).toFixed(2)}
+                              {source.sentimentChange >= 0 ? '↑' : '↓'} {Math.abs(Math.round(source.sentimentChange * 100))}
                             </span>
                           )}
                         </div>

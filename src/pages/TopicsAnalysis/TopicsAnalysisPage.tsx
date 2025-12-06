@@ -721,12 +721,7 @@ export const TopicsAnalysisPage = ({
                 // Filter table to show gaps
                 console.log('Filter to gaps');
               } else if (podId === 'momentum') {
-                // Scroll to or highlight trending topic
-                const trendingTopic = data.topics.find(t => t.name === data.performance.weeklyGainer.topic);
-                if (trendingTopic) {
-                  handleTopicClick(trendingTopic);
-                }
-                console.log('Highlight trending topic:', data.performance.weeklyGainer.topic);
+                console.log('View Avg SOA change vs previous period');
               }
             }}
           />

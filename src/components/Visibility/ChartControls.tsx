@@ -84,13 +84,12 @@ export const ChartControls = ({
   ];
 
   const currentTimeframe = timeframeOptions.find(o => o.value === timeframe);
-  const currentChartType = chartTypeOptions.find(o => o.value === chartType);
   const allRegionOptions = [...countryOptions, ...regionOptions];
   const currentRegion = allRegionOptions.find(o => o.value === region);
 
   const renderDropdown = (
     id: string,
-    label: string,
+    _label: string,
     value: string | undefined,
     options: { value: string; label: string }[],
     onChange: (value: string) => void,

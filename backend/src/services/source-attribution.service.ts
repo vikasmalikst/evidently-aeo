@@ -342,7 +342,7 @@ export class SourceAttributionService {
       
       // Collect sentiment values (brand rows only) from extracted_positions
       const sentimentValuesByCollectorResult = new Map<number, number[]>()
-
+      
       // Create map from collector_result_id to topic name (from extracted_positions topic column or metadata)
       const collectorResultTopicMap = new Map<number, string>()
       for (const position of extractedPositions) {

@@ -1210,4 +1210,114 @@ router.get('/:brandId/competitors/versions', authenticateToken, async (req: Requ
   }
 });
 
+/**
+ * GET /brands/:brandId/competitors/:competitorName/sources
+ * Get source attribution data for a specific competitor
+ */
+router.get('/:brandId/competitors/:competitorName/sources', authenticateToken, async (req: Request, res: Response) => {
+  const requestStartTime = Date.now();
+  const requestId = `req-comp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  try {
+    console.log(`\n[CompetitorSourceAttribution API] 🚀 Request ${requestId} started at ${new Date().toISOString()}`);
+    
+    const { brandId, competitorName } = req.params;
+    const customerId = req.user!.customer_id;
+    const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    
+    console.log(`[CompetitorSourceAttribution API] 📊 Params: brandId=${brandId}, competitor=${competitorName}, customerId=${customerId}`);
+    console.log(`[CompetitorSourceAttribution API] 📅 Date Range: startDate=${startQuery || 'default'}, endDate=${endQuery || 'default'}`);
+    
+    if (!brandId || !customerId || !competitorName) {
+      res.status(400).json({
+        success: false,
+        error: 'Brand ID, Customer ID, and Competitor Name are required'
+      });
+      return;
+    }
+
+    let dateRange: { start: string; end: string } | undefined;
+    
+    if (startQuery || endQuery) {
+      try {
+        const parseDate = (value: string): Date => {
+          const parsed = new Date(value);
+          if (Number.isNaN(parsed.getTime())) {
+            throw new Error(`Invalid date: ${value}`);
+          }
+          return parsed;
+        };
+
+        let startDate = startQuery ? parseDate(startQuery) : undefined;
+        let endDate = endQuery ? parseDate(endQuery) : undefined;
+
+        if (endDate && !startDate) {
+          startDate = new Date(endDate);
+          startDate.setUTCDate(startDate.getUTCDate() - 30);
+        }
+
+        if (startDate && !endDate) {
+          endDate = new Date(startDate);
+          endDate.setUTCDate(endDate.getUTCDate() + 30);
+        }
+
+        if (!startDate || !endDate) {
+          throw new Error('Both startDate and endDate are required');
+        }
+
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate.setUTCHours(23, 59, 59, 999);
+
+        if (startDate.getTime() > endDate.getTime()) {
+          throw new Error('startDate must be before or equal to endDate');
+        }
+
+        dateRange = {
+          start: startDate.toISOString(),
+          end: endDate.toISOString()
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid date range';
+        res.status(400).json({ success: false, error: message });
+        return;
+      }
+    }
+
+    const serviceStartTime = Date.now();
+    console.log(`[CompetitorSourceAttribution API] ⏱️  Calling service.getCompetitorSourceAttribution()...`);
+    
+    const sourceData = await sourceAttributionService.getCompetitorSourceAttribution(
+      brandId,
+      customerId,
+      decodeURIComponent(competitorName),
+      dateRange
+    );
+    
+    const serviceEndTime = Date.now();
+    const serviceDuration = serviceEndTime - serviceStartTime;
+    console.log(`[CompetitorSourceAttribution API] ✅ Service completed in ${serviceDuration}ms`);
+    console.log(`[CompetitorSourceAttribution API] 📦 Response: ${sourceData.sources.length} sources, ${sourceData.totalSources} total`);
+
+    res.json({ success: true, data: sourceData });
+    
+    const totalDuration = Date.now() - requestStartTime;
+    console.log(`[CompetitorSourceAttribution API] ⏱️  Total request duration: ${totalDuration}ms`);
+    console.log(`[CompetitorSourceAttribution API] ✅ Request ${requestId} completed successfully\n`);
+  } catch (error) {
+    const totalDuration = Date.now() - requestStartTime;
+    console.error(`[CompetitorSourceAttribution API] ❌ Request ${requestId} failed after ${totalDuration}ms:`, error);
+
+    if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
+      res.status(404).json({ success: false, error: error.message });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch competitor source attribution'
+    });
+  }
+});
+
 export default router;

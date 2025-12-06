@@ -810,6 +810,386 @@ export class SourceAttributionService {
       throw new DatabaseError(error instanceof Error ? error.message : 'Unknown error in source attribution')
     }
   }
+
+  /**
+   * Get source attribution for a competitor brand
+   */
+  async getCompetitorSourceAttribution(
+    brandId: string,
+    customerId: string,
+    competitorName: string,
+    dateRange?: { start: string; end: string }
+  ): Promise<SourceAttributionResponse> {
+    const serviceStartTime = Date.now();
+    const stepTimings: Record<string, number> = {};
+    
+    try {
+      console.log(`\n[CompetitorSourceAttribution] 🚀 Starting for competitor "${competitorName}"`);
+      
+      // Step 1: Resolve brand
+      const brandStartTime = Date.now();
+      const { data: brand, error: brandError } = await supabaseAdmin
+        .from('brands')
+        .select('id, name, slug')
+        .eq('id', brandId)
+        .eq('customer_id', customerId)
+        .maybeSingle()
+      stepTimings['brand_resolution'] = Date.now() - brandStartTime;
+
+      if (brandError) {
+        throw new DatabaseError(`Failed to load brand: ${brandError.message}`)
+      }
+
+      if (!brand) {
+        throw new DatabaseError('Brand not found for current customer')
+      }
+
+      // Verify competitor exists for this brand
+      const { data: competitorData, error: competitorError } = await supabaseAdmin
+        .from('brand_competitors')
+        .select('competitor_name')
+        .eq('brand_id', brandId)
+        .eq('competitor_name', competitorName)
+        .maybeSingle()
+
+      if (competitorError || !competitorData) {
+        throw new DatabaseError(`Competitor "${competitorName}" not found for this brand`)
+      }
+
+      const normalizedRange = normalizeDateRange(dateRange)
+      const startIso = normalizedRange.startIso
+      const endIso = normalizedRange.endIso
+
+      console.log(`[CompetitorSourceAttribution] Date range: ${startIso} to ${endIso}`)
+
+      // Step 2: Fetch extracted_positions for this competitor
+      const positionsStartTime = Date.now();
+      const { data: positionsData, error: positionsError } = await supabaseAdmin
+        .from('extracted_positions')
+        .select(`
+          collector_result_id,
+          competitor_name,
+          competitor_mentions,
+          share_of_answers_competitor,
+          sentiment_score_competitor,
+          visibility_index_competitor,
+          topic,
+          metadata,
+          processed_at
+        `)
+        .eq('brand_id', brandId)
+        .eq('competitor_name', competitorName)
+        .gte('processed_at', startIso)
+        .lte('processed_at', endIso)
+      stepTimings['positions_query'] = Date.now() - positionsStartTime;
+
+      if (positionsError) {
+        console.error('[CompetitorSourceAttribution] Positions query error:', positionsError)
+        throw new DatabaseError(`Failed to fetch positions: ${positionsError.message}`)
+      }
+
+      console.log(`[CompetitorSourceAttribution] 📊 Found ${positionsData?.length || 0} position rows (query: ${stepTimings['positions_query']}ms)`)
+
+      if (!positionsData || positionsData.length === 0) {
+        // Return empty response if no positions found
+        return {
+          sources: [],
+          overallMentionRate: 0,
+          overallMentionChange: 0,
+          avgSentiment: 0,
+          avgSentimentChange: 0,
+          totalSources: 0,
+          dateRange: { start: startIso, end: endIso }
+        }
+      }
+
+      // Step 3: Get collector_result_ids from positions
+      const collectorResultIds = Array.from(new Set(
+        positionsData.map(p => p.collector_result_id).filter((id): id is number => typeof id === 'number')
+      ))
+
+      console.log(`[CompetitorSourceAttribution] 🔑 Extracted ${collectorResultIds.length} unique collector results`)
+
+      // Step 4: Fetch citations for these collector results
+      const citationsStartTime = Date.now();
+      const { data: citationsData, error: citationsError } = await supabaseAdmin
+        .from('citations')
+        .select(`
+          domain,
+          page_name,
+          url,
+          category,
+          usage_count,
+          collector_result_id,
+          query_id,
+          created_at
+        `)
+        .eq('brand_id', brandId)
+        .in('collector_result_id', collectorResultIds)
+      stepTimings['citations_query'] = Date.now() - citationsStartTime;
+
+      if (citationsError) {
+        console.error('[CompetitorSourceAttribution] Citations query error:', citationsError)
+        throw new DatabaseError(`Failed to fetch citations: ${citationsError.message}`)
+      }
+
+      console.log(`[CompetitorSourceAttribution] 📊 Found ${citationsData?.length || 0} citations (query: ${stepTimings['citations_query']}ms)`)
+
+      if (!citationsData || citationsData.length === 0) {
+        return {
+          sources: [],
+          overallMentionRate: 0,
+          overallMentionChange: 0,
+          avgSentiment: 0,
+          avgSentimentChange: 0,
+          totalSources: 0,
+          dateRange: { start: startIso, end: endIso }
+        }
+      }
+
+      // Step 5: Fetch queries and collector results for prompts
+      const queryIdsFromCitations = Array.from(new Set(
+        citationsData.map(c => c.query_id).filter((id): id is string => typeof id === 'string')
+      ))
+
+      const queriesStartTime = Date.now();
+      let queries: Array<{ id: string; query_text: string; topic?: string | null }> = []
+      if (queryIdsFromCitations.length > 0) {
+        const { data: queriesData } = await supabaseAdmin
+          .from('generated_queries')
+          .select('id, query_text, topic')
+          .in('id', queryIdsFromCitations)
+        queries = queriesData || []
+      }
+      stepTimings['queries_query'] = Date.now() - queriesStartTime;
+
+      const collectorResultsStartTime = Date.now();
+      let collectorResults: Array<{ id: number; query_id: string | null; question: string | null }> = []
+      if (collectorResultIds.length > 0) {
+        const { data: collectorResultsData } = await supabaseAdmin
+          .from('collector_results')
+          .select('id, query_id, question')
+          .in('id', collectorResultIds)
+        collectorResults = collectorResultsData || []
+      }
+      stepTimings['collector_results_query'] = Date.now() - collectorResultsStartTime;
+
+      console.log(`[CompetitorSourceAttribution] 📝 Fetched ${queries.length} queries, ${collectorResults.length} collector results`)
+
+      // Create lookup maps
+      const queryMap = new Map(queries.map(q => [q.id, q]))
+      const collectorResultMap = new Map(collectorResults.map(cr => [cr.id, cr]))
+      
+      // Create maps for metrics by collector_result_id
+      const shareByCollectorResult = new Map<number, number[]>()
+      const sentimentByCollectorResult = new Map<number, number[]>()
+      const mentionsByCollectorResult = new Map<number, number>()
+      
+      for (const position of positionsData) {
+        const collectorId = position.collector_result_id
+        if (!collectorId) continue
+        
+        if (position.share_of_answers_competitor !== null) {
+          if (!shareByCollectorResult.has(collectorId)) {
+            shareByCollectorResult.set(collectorId, [])
+          }
+          shareByCollectorResult.get(collectorId)!.push(toNumber(position.share_of_answers_competitor))
+        }
+        
+        if (position.sentiment_score_competitor !== null) {
+          if (!sentimentByCollectorResult.has(collectorId)) {
+            sentimentByCollectorResult.set(collectorId, [])
+          }
+          sentimentByCollectorResult.get(collectorId)!.push(toNumber(position.sentiment_score_competitor))
+        }
+        
+        if (position.competitor_mentions !== null) {
+          mentionsByCollectorResult.set(collectorId, toNumber(position.competitor_mentions))
+        }
+      }
+
+      // Calculate averages
+      const avgShareByCollectorResult = new Map<number, number>()
+      for (const [collectorId, shareValues] of shareByCollectorResult.entries()) {
+        avgShareByCollectorResult.set(collectorId, average(shareValues))
+      }
+      
+      const avgSentimentByCollectorResult = new Map<number, number>()
+      for (const [collectorId, sentimentValues] of sentimentByCollectorResult.entries()) {
+        avgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
+      }
+
+      console.log(`[CompetitorSourceAttribution] 🧮 Calculated metrics for ${avgShareByCollectorResult.size} collector results`)
+
+      // Step 6: Aggregate sources by domain
+      const aggregationStartTime = Date.now();
+      const sourceAggregates = new Map<
+        string,
+        {
+          domain: string
+          url: string
+          pageName: string
+          category: string | null
+          citations: number
+          collectorResultIds: Set<number>
+          shareValues: number[]
+          sentimentValues: number[]
+          mentionCounts: number[]
+          topics: Set<string>
+          queryIds: Set<string>
+          pages: Set<string>
+          prompts: Set<string>
+        }
+      >()
+
+      for (const citation of citationsData) {
+        const domain = citation.domain || (citation.url ? (() => {
+          try {
+            return new URL(citation.url.startsWith('http') ? citation.url : `https://${citation.url}`).hostname.replace(/^www\./, '')
+          } catch {
+            return 'unknown'
+          }
+        })() : 'unknown')
+        
+        const sourceKey = domain.toLowerCase().trim()
+        if (!sourceKey || sourceKey === 'unknown') continue
+
+        if (!sourceAggregates.has(sourceKey)) {
+          sourceAggregates.set(sourceKey, {
+            domain,
+            url: citation.url || `https://${domain}`,
+            pageName: citation.page_name || '',
+            category: citation.category,
+            citations: 0,
+            collectorResultIds: new Set(),
+            shareValues: [],
+            sentimentValues: [],
+            mentionCounts: [],
+            topics: new Set<string>(),
+            queryIds: new Set<string>(),
+            pages: new Set<string>(),
+            prompts: new Set<string>()
+          })
+        }
+
+        const aggregate = sourceAggregates.get(sourceKey)!
+        aggregate.citations += citation.usage_count || 1
+
+        if (citation.query_id) {
+          aggregate.queryIds.add(citation.query_id)
+          const query = queryMap.get(citation.query_id)
+          if (query?.topic) {
+            aggregate.topics.add(query.topic)
+          }
+        }
+
+        if (citation.collector_result_id) {
+          aggregate.collectorResultIds.add(citation.collector_result_id)
+          
+          const avgShare = avgShareByCollectorResult.get(citation.collector_result_id)
+          if (avgShare !== undefined) {
+            aggregate.shareValues.push(avgShare)
+          }
+
+          const avgSentiment = avgSentimentByCollectorResult.get(citation.collector_result_id)
+          if (avgSentiment !== undefined) {
+            aggregate.sentimentValues.push(avgSentiment)
+          }
+          
+          const mentions = mentionsByCollectorResult.get(citation.collector_result_id)
+          if (mentions !== undefined) {
+            aggregate.mentionCounts.push(mentions)
+          }
+          
+          const collectorResult = collectorResultMap.get(citation.collector_result_id)
+          if (collectorResult?.question) {
+            aggregate.prompts.add(collectorResult.question)
+          }
+        }
+
+        if (citation.page_name) {
+          aggregate.pages.add(citation.page_name)
+        }
+      }
+
+      stepTimings['aggregation'] = Date.now() - aggregationStartTime;
+      console.log(`[CompetitorSourceAttribution] ✅ Aggregated ${sourceAggregates.size} unique sources (${stepTimings['aggregation']}ms)`)
+
+      // Step 7: Get total responses count for mention rate
+      const totalResponsesStartTime = Date.now();
+      const { count: totalResponses } = await supabaseAdmin
+        .from('collector_results')
+        .select('*', { count: 'exact', head: true })
+        .eq('brand_id', brandId)
+        .gte('created_at', startIso)
+        .lte('created_at', endIso)
+
+      const totalResponsesCount = totalResponses || 1
+      stepTimings['total_responses'] = Date.now() - totalResponsesStartTime;
+      console.log(`[CompetitorSourceAttribution] 📊 Total responses: ${totalResponsesCount}`)
+
+      // Step 8: Convert aggregates to source data
+      const sources: SourceAttributionData[] = []
+      
+      for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
+        const avgShare = aggregate.shareValues.length > 0 ? average(aggregate.shareValues) : 0
+        const avgSentiment = aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
+        
+        const uniqueCollectorResults = aggregate.collectorResultIds.size
+        const mentionRate = totalResponsesCount > 0 ? (uniqueCollectorResults / totalResponsesCount) * 100 : 0
+
+        const sourceType = getSourceType(aggregate.category, aggregate.domain)
+
+        sources.push({
+          name: aggregate.domain,
+          url: aggregate.url,
+          type: sourceType,
+          mentionRate: round(mentionRate, 1),
+          mentionChange: 0, // TODO: Calculate from previous period if needed
+          soa: round(avgShare, 1),
+          soaChange: 0, // TODO: Calculate from previous period if needed
+          sentiment: round(avgSentiment, 2),
+          sentimentChange: 0, // TODO: Calculate from previous period if needed
+          citations: aggregate.citations,
+          topics: Array.from(aggregate.topics),
+          prompts: Array.from(aggregate.prompts).length > 0 
+            ? Array.from(aggregate.prompts)
+            : Array.from(aggregate.queryIds).map(qId => queryMap.get(qId)?.query_text || '').filter(Boolean),
+          pages: Array.from(aggregate.pages)
+        })
+      }
+
+      // Sort by mention rate descending
+      sources.sort((a, b) => b.mentionRate - a.mentionRate)
+
+      // Calculate overall metrics
+      const overallMentionRate = sources.length > 0
+        ? round(average(sources.map(s => s.mentionRate)), 1)
+        : 0
+
+      const avgSentiment = sources.length > 0
+        ? round(average(sources.map(s => s.sentiment)), 2)
+        : 0
+
+      const payload: SourceAttributionResponse = {
+        sources,
+        overallMentionRate,
+        overallMentionChange: 0, // TODO: Calculate from previous period if needed
+        avgSentiment,
+        avgSentimentChange: 0, // TODO: Calculate from previous period if needed
+        totalSources: sources.length,
+        dateRange: { start: startIso, end: endIso }
+      }
+
+      const totalTime = Date.now() - serviceStartTime;
+      console.log(`[CompetitorSourceAttribution] ✅ Completed in ${totalTime}ms\n`)
+
+      return payload
+    } catch (error) {
+      console.error('[CompetitorSourceAttribution] Error:', error)
+      throw new DatabaseError(error instanceof Error ? error.message : 'Unknown error in competitor source attribution')
+    }
+  }
 }
 
 export const sourceAttributionService = new SourceAttributionService()

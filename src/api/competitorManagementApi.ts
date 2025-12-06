@@ -190,3 +190,62 @@ export async function getCompetitorVersionHistory(
   return response.data;
 }
 
+// Source attribution types (matching backend)
+export interface CompetitorSourceData {
+  name: string;
+  url: string;
+  type: 'brand' | 'editorial' | 'corporate' | 'reference' | 'ugc' | 'institutional';
+  mentionRate: number;
+  mentionChange: number;
+  soa: number;
+  soaChange: number;
+  sentiment: number;
+  sentimentChange: number;
+  citations: number;
+  topics: string[];
+  prompts: string[];
+  pages: string[];
+}
+
+export interface CompetitorSourceAttributionResponse {
+  sources: CompetitorSourceData[];
+  overallMentionRate: number;
+  overallMentionChange: number;
+  avgSentiment: number;
+  avgSentimentChange: number;
+  totalSources: number;
+  dateRange: { start: string; end: string };
+}
+
+/**
+ * Get source attribution data for a competitor
+ */
+export async function getCompetitorSources(
+  brandId: string,
+  competitorName: string,
+  dateRange?: { startDate: string; endDate: string }
+): Promise<CompetitorSourceAttributionResponse> {
+  const params = new URLSearchParams();
+  if (dateRange?.startDate) {
+    params.append('startDate', dateRange.startDate);
+  }
+  if (dateRange?.endDate) {
+    params.append('endDate', dateRange.endDate);
+  }
+
+  const queryString = params.toString();
+  const url = `/brands/${brandId}/competitors/${encodeURIComponent(competitorName)}/sources${queryString ? `?${queryString}` : ''}`;
+
+  const response = await apiClient.request<ApiResponse<CompetitorSourceAttributionResponse>>(
+    url,
+    { method: 'GET' },
+    { requiresAuth: true }
+  );
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Failed to fetch competitor sources');
+  }
+
+  return response.data;
+}
+

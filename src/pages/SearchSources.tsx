@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SourceTabs } from '../components/Sources/SourceTabs';
 import { SourceCoverageHeatmap } from '../components/Sources/SourceCoverageHeatmap';
-import { Scatter } from 'react-chartjs-2';
+import { Bubble } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   LinearScale,
@@ -71,7 +71,7 @@ interface SourceData {
   pages: string[];
 }
 
-const topicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
+const fallbackTopicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
 
 type SortField = 'name' | 'type' | 'mentionRate' | 'soa' | 'sentiment' | 'topics' | 'pages' | 'prompts';
 type SortDirection = 'asc' | 'desc';
@@ -189,13 +189,15 @@ export const SearchSources = () => {
   // Process response data - only use API data
   const sourceData: SourceData[] = response?.success && response.data ? response.data.sources : [];
   
-  // Extract unique topics from all sources for heatmap
+  // Extract unique topics from API data (sorted, deduped). Fallback to defaults if empty.
   const allTopics = useMemo(() => {
     const topicSet = new Set<string>();
     sourceData.forEach(source => {
       source.topics.forEach(topic => topicSet.add(topic));
     });
-    return Array.from(topicSet);
+    const topics = Array.from(topicSet);
+    topics.sort((a, b) => a.localeCompare(b));
+    return topics.length > 0 ? topics : fallbackTopicOptions;
   }, [sourceData]);
 
   // Generate heatmap data from API data only
@@ -475,6 +477,13 @@ export const SearchSources = () => {
     [competitorSourceData]
   );
 
+  // Matrix thresholds: split axes at midpoints for symmetrical quadrants
+  const thresholds = useMemo(() => {
+    const xMid = scaleMaximums.xMax > 0 ? scaleMaximums.xMax / 2 : 10;
+    const yMid = scaleMaximums.yMax > 0 ? scaleMaximums.yMax / 2 : 50;
+    return { x: xMid, y: yMid };
+  }, [scaleMaximums]);
+
   // Map raw sentiment to bubble radius using the observed min/max range (no normalization)
   const sentimentToRadius = (sentiment: number): number => {
     const min = scaleMaximums.sentimentMin;
@@ -541,6 +550,12 @@ export const SearchSources = () => {
   const chartOptions: any = {
     responsive: true,
     maintainAspectRatio: false,
+    elements: {
+      point: {
+        radius: (ctx: any) => ctx?.raw?.r ?? 6,
+        hoverRadius: (ctx: any) => ((ctx?.raw?.r ?? 6) + 4)
+      }
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -1415,7 +1430,7 @@ export const SearchSources = () => {
           </p>
 
           <div style={{ height: '500px', position: 'relative' }}>
-            <Scatter data={chartData} options={chartOptions} plugins={[quadrantPlugin]} ref={chartRef} />
+            <Bubble data={chartData} options={chartOptions} plugins={[quadrantPlugin]} ref={chartRef} />
           </div>
 
           {/* Matrix Legend */}
@@ -2511,7 +2526,7 @@ export const SearchSources = () => {
         {activeTab === 'source-coverage' && (
           <SourceCoverageHeatmap
             sources={heatmapSources}
-            topics={allTopics.length > 0 ? allTopics : topicOptions}
+            topics={allTopics}
             data={heatmapData}
           />
         )}

@@ -67,19 +67,24 @@ export class DashboardService {
     brandKey: string,
     customerId: string,
     dateRange?: DashboardDateRange,
-    options: { skipCache?: boolean } = {}
+    options: { skipCache?: boolean; collectors?: string[] } = {}
   ): Promise<BrandDashboardPayload> {
     try {
-      const { skipCache = false } = options
+      const { skipCache = false, collectors } = options
+      const hasCollectorFilter = Array.isArray(collectors) && collectors.length > 0
+      const effectiveSkipCache = skipCache || hasCollectorFilter
       const brand = await this.resolveBrand(brandKey, customerId)
 
       const normalizedRange = normalizeDateRange(dateRange)
       
       console.log(`[Dashboard] Looking up cache for brand ${brand.id}, range ${normalizedRange.startIso} → ${normalizedRange.endIso}`)
       
-      const shouldUseCache = !skipCache
-      if (skipCache) {
+      const shouldUseCache = !effectiveSkipCache
+      if (effectiveSkipCache) {
         console.log('[Dashboard] skipCache requested - bypassing snapshot lookup')
+        if (hasCollectorFilter) {
+          console.log('[Dashboard] Collector filter provided - bypassing cache to ensure fresh data')
+        }
       }
 
       // Try to get cached dashboard, but don't let cache errors block the request
@@ -235,7 +240,7 @@ export class DashboardService {
         )
       }
 
-      const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange)
+      const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange, collectors)
       
       // Ensure required fields exist with proper defaults
       if (!payload.llmVisibility) {
@@ -277,21 +282,25 @@ export class DashboardService {
         (Array.isArray(payload.competitorVisibility) && payload.competitorVisibility.length > 0)
 
       // Only cache if we have valid data structure (even if arrays are empty) AND payload has meaningful data
-      if (
-        hasMeaningfulData &&
-        payload &&
-        typeof payload === 'object' &&
-        'brandId' in payload &&
-        'llmVisibility' in payload
-      ) {
-        // Upsert cache in background, don't block response
-        dashboardCacheService.upsertDashboardSnapshot(brand.id, customerId, payload, normalizedRange).catch((error) => {
-          console.warn('[Dashboard] Failed to cache dashboard (non-blocking):', error)
-        })
-      } else if (!hasMeaningfulData) {
-        console.log('[Dashboard] ⏭ Cache bypassed because payload lacks visibility data')
+      if (!hasCollectorFilter) {
+        if (
+          hasMeaningfulData &&
+          payload &&
+          typeof payload === 'object' &&
+          'brandId' in payload &&
+          'llmVisibility' in payload
+        ) {
+          // Upsert cache in background, don't block response
+          dashboardCacheService.upsertDashboardSnapshot(brand.id, customerId, payload, normalizedRange).catch((error) => {
+            console.warn('[Dashboard] Failed to cache dashboard (non-blocking):', error)
+          })
+        } else if (!hasMeaningfulData) {
+          console.log('[Dashboard] ⏭ Cache bypassed because payload lacks visibility data')
+        } else {
+          console.warn('[Dashboard] ⚠️ Skipping cache - invalid payload structure')
+        }
       } else {
-        console.warn('[Dashboard] ⚠️ Skipping cache - invalid payload structure')
+        console.log('[Dashboard] ⏭ Cache bypassed because collector filter was used')
       }
       
       return payload
@@ -304,9 +313,10 @@ export class DashboardService {
   private async buildDashboardPayload(
     brand: BrandRow,
     customerId: string,
-    range: NormalizedDashboardRange
+    range: NormalizedDashboardRange,
+    collectors?: string[]
   ): Promise<BrandDashboardPayload> {
-    return buildDashboardPayload(brand, customerId, range)
+    return buildDashboardPayload(brand, customerId, range, { collectors })
   }
 }
 

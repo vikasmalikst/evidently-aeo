@@ -8,7 +8,7 @@ import {
   Eye
 } from 'lucide-react';
 import { useDashboardData } from './hooks/useDashboardData';
-import { getBrandData, formatMetricValue, computeTrend } from './utils';
+import { getBrandData, formatMetricValue, computeTrend, formatNumber } from './utils';
 import { KeyInsights } from './components/KeyInsights';
 import { MetricCard } from './components/MetricCard';
 import { TopBrandSources } from './components/TopBrandSources';
@@ -48,52 +48,59 @@ export const Dashboard = () => {
     ? Math.min(100, Math.round((brandPresenceRows / totalBrandRows) * 100))
     : 0;
 
-  const metricCards = useMemo(() => [
-    {
-      key: 'visibility-index',
-      title: 'Visibility Index',
-      value: formatMetricValue(visibilityMetric, ''),
-      subtitle: '',
-      trend: computeTrend(visibilityMetric?.delta),
-      icon: <Eye size={20} />,
-      color: '#498cf9',
-      linkTo: '/search-visibility',
-      description: 'Measures your brand\'s average prominence across all AI-generated answers. Higher scores indicate your brand appears more prominently in responses, calculated as the average position-weighted visibility across all queries.'
-    },
-    {
-      key: 'share-of-answers',
-      title: 'Share of Answers',
-      value: formatMetricValue(shareMetric),
-      subtitle: '',
-      trend: computeTrend(shareMetric?.delta),
-      icon: <Target size={20} />,
-      color: '#06c686',
-      linkTo: '/search-visibility?kpi=share',
-      description: 'Represents your brand\'s share of the total answer space across all AI models. This metric shows what percentage of all mentions (your brand + competitors) belong to your brand, indicating your relative market presence.'
-    },
-    {
-      key: 'sentiment-score',
-      title: 'Sentiment Score',
-      value: formatMetricValue(sentimentMetric, ''),
-      subtitle: '',
-      trend: computeTrend(sentimentMetric?.delta),
-      icon: <MessageSquare size={20} />,
-      color: '#00bcdc',
-      linkTo: '/search-visibility?kpi=sentiment',
-      description: 'Average sentiment of how your brand is discussed in AI-generated answers. Scores range from -1 (very negative) to +1 (very positive), with 0 being neutral. This reflects overall brand perception across all queries.'
-    },
-    {
-      key: 'brand-presence',
-      title: 'Brand Presence',
-      value: `${brandPresencePercentage}%`,
-      subtitle: '',
-      trend: computeTrend(dashboardData?.trendPercentage),
-      icon: <Activity size={20} />,
-      color: '#7c3aed',
-      linkTo: '/search-visibility',
-      description: 'Percentage of queries where your brand appears in AI-generated answers. Calculated as (queries with brand presence / total queries) × 100. Higher percentages indicate your brand is mentioned more frequently across different queries.'
-    }
-  ], [visibilityMetric, shareMetric, sentimentMetric, brandPresencePercentage, dashboardData?.trendPercentage]);
+  const metricCards = useMemo(
+    () => [
+      {
+        key: 'visibility-index',
+        title: 'Visibility Index',
+        value: formatMetricValue(visibilityMetric, ''),
+        subtitle: '',
+        trend: computeTrend(visibilityMetric?.delta),
+        icon: <Eye size={20} />,
+        color: '#498cf9',
+        linkTo: '/search-visibility',
+        description:
+          'Measures your brand\'s average prominence across all AI-generated answers. Higher scores indicate your brand appears more prominently in responses, calculated as the average position-weighted visibility across all queries.'
+      },
+      {
+        key: 'share-of-answers',
+        title: 'Share of Answers',
+        value: formatMetricValue(shareMetric),
+        subtitle: '',
+        trend: computeTrend(shareMetric?.delta),
+        icon: <Target size={20} />,
+        color: '#06c686',
+        linkTo: '/search-visibility?kpi=share',
+        description:
+          'Represents your brand\'s share of the total answer space across all AI models. This metric shows what percentage of all mentions (your brand + competitors) belong to your brand, indicating your relative market presence.'
+      },
+      {
+        key: 'sentiment-score',
+        title: 'Sentiment Score',
+        value: sentimentMetric ? formatNumber(sentimentMetric.value * 100, 0) : '—',
+        subtitle: '',
+        trend: computeTrend(sentimentMetric?.delta),
+        icon: <MessageSquare size={20} />,
+        color: '#00bcdc',
+        linkTo: '/search-visibility?kpi=sentiment',
+        description:
+          'Average sentiment of how your brand is discussed in AI-generated answers. Scores range from -1 (very negative) to +1 (very positive), with 0 being neutral. This reflects overall brand perception across all queries.'
+      },
+      {
+        key: 'brand-presence',
+        title: 'Brand Presence',
+        value: `${brandPresencePercentage}%`,
+        subtitle: '',
+        trend: computeTrend(dashboardData?.trendPercentage),
+        icon: <Activity size={20} />,
+        color: '#7c3aed',
+        linkTo: '/search-visibility',
+        description:
+          'Percentage of queries where your brand appears in AI-generated answers. Calculated as (queries with brand presence / total queries) × 100. Higher percentages indicate your brand is mentioned more frequently across different queries.'
+      }
+    ],
+    [visibilityMetric, shareMetric, sentimentMetric, brandPresencePercentage, dashboardData?.trendPercentage]
+  );
 
   const overviewSubtitle = (selectedBrand?.name ?? dashboardData?.brandName)
     ? `Here's your AI visibility performance overview for ${selectedBrand?.name ?? dashboardData?.brandName}`

@@ -28,7 +28,7 @@ const KPI_OPTIONS: Array<{
   {
     id: 'brandPresence',
     label: 'Brand Presence',
-    description: 'How often collectors show your brand at all',
+    description: 'Percentage of queries where your brand appears in answers',
     Icon: Eye
   },
   {
@@ -36,12 +36,6 @@ const KPI_OPTIONS: Array<{
     label: 'Sentiment Score',
     description: 'How positively your brand and competitors are discussed',
     Icon: Heart
-  },
-  {
-    id: 'brandPresence',
-    label: 'Brand Presence',
-    description: 'Percentage of queries where your brand appears in answers',
-    Icon: Target
   }
 ];
 

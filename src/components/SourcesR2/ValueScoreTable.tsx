@@ -17,11 +17,20 @@ interface ValueScoreTableProps {
 
 type SortKey = 'name' | 'type' | 'valueScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' | 'quadrant';
 
-const quadrantBadgeColor: Record<string, string> = {
-  priority: '#06c686',
-  reputation: '#f97373',
-  growth: '#498cf9',
-  monitor: '#cbd5e1'
+const zoneStyles: Record<
+  string,
+  { bg: string; text: string; label?: string }
+> = {
+  // Legacy quadrants
+  priority: { bg: '#06c686', text: '#fff', label: 'Priority Partnerships' },
+  reputation: { bg: '#f97373', text: '#fff', label: 'Reputation Management' },
+  growth: { bg: '#498cf9', text: '#fff', label: 'Growth Opportunities' },
+  monitor: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor' },
+  // New zone view
+  marketLeaders: { bg: '#0ea5e9', text: '#fff', label: 'Market Leaders' },
+  reputationRisks: { bg: '#f97373', text: '#fff', label: 'Reputation Risks' },
+  growthBets: { bg: '#6366f1', text: '#fff', label: 'Growth Bets' },
+  monitorImprove: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor & Improve' }
 };
 
 export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
@@ -58,7 +67,7 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, height: '100%', boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 16, color: '#1a1d29', fontWeight: 700 }}>Top Sources by Value Score</h3>
+          <h3 style={{ margin: 0, fontSize: 16, color: '#1a1d29', fontWeight: 700 }}>Top Sources</h3>
           <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Composite score combining visibility, SOA, sentiment, citations, topics</p>
         </div>
       </div>
@@ -110,13 +119,13 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
                       display: 'inline-block',
                       padding: '4px 10px',
                       borderRadius: 999,
-                      backgroundColor: quadrantBadgeColor[s.quadrant] || '#e2e8f0',
-                      color: s.quadrant === 'monitor' ? '#0f172a' : '#fff',
+                      backgroundColor: zoneStyles[s.quadrant]?.bg || '#e2e8f0',
+                      color: zoneStyles[s.quadrant]?.text || '#0f172a',
                       fontWeight: 700,
                       fontSize: 12
                     }}
                   >
-                    {s.quadrant}
+                    {zoneStyles[s.quadrant]?.label || s.quadrant}
                   </span>
                 </td>
               </tr>

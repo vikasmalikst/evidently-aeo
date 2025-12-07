@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { authService } from '../../lib/auth';
 import { useAuthStore } from '../../store/authStore';
-import { Mail, Lock, User, AlertCircle, CheckCircle } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, CheckCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
+// 1. Import 'Variants' type specifically
+import { motion, Variants } from 'framer-motion';
+
+// 2. Explicitly type the constant as 'Variants'
+const formVariants: Variants = {
+  hidden: { opacity: 0, x: 20 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.3, ease: "easeOut" } },
+  exit: { opacity: 0, x: -20, transition: { duration: 0.2, ease: "easeIn" } }
+};
 
 interface RegisterFormProps {
   onSuccess?: () => void | Promise<void>;
@@ -13,11 +22,13 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const setUser = useAuthStore((state) => state.setUser);
 
+  // ... (validatePassword function remains same)
   const validatePassword = (pwd: string): string | null => {
     if (pwd.length < 8) return 'Password must be at least 8 characters';
     if (!/[A-Z]/.test(pwd)) return 'Password must contain at least one uppercase letter';
@@ -60,95 +71,107 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-8 bg-white rounded-lg shadow-lg">
-      <h2 className="text-3xl font-bold mb-6 text-gray-900">Create Account</h2>
+    <motion.div
+      variants={formVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      className="w-full space-y-6"
+    >
+      <div className="text-center space-y-2">
+        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Create an Account</h2>
+        <p className="text-slate-500">Start your journey with intelligent decision making</p>
+      </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-start gap-2">
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700">{error}</p>
+          <p className="text-sm text-red-700 font-medium">{error}</p>
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md flex items-start gap-2">
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
           <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-green-700">{success}</p>
+          <p className="text-sm text-green-700 font-medium">{success}</p>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Full Name Input */}
         <div>
-          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
-            Full Name
-          </label>
           <div className="relative">
-            <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               id="fullName"
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="John Doe"
+              className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+              placeholder="Full Name"
             />
           </div>
         </div>
 
+        {/* Email Input */}
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-            Email
-          </label>
           <div className="relative">
-            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="your@email.com"
+              className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+              placeholder="Email"
             />
           </div>
         </div>
 
+        {/* Password Input */}
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-            Password
-          </label>
           <div className="relative">
-            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               id="password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Create a strong password"
+              className="w-full pl-10 pr-12 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+              placeholder="Create Password"
             />
+             <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 focus:outline-none rounded-md hover:bg-slate-100 transition-colors"
+            >
+              {showPassword ? (
+                <EyeOff className="w-5 h-5" />
+              ) : (
+                <Eye className="w-5 h-5" />
+              )}
+            </button>
           </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Min 8 characters, 1 uppercase, 1 number, 1 special character
+          <p className="mt-2 text-xs text-slate-500 ml-1">
+            Must be at least 8 characters with 1 uppercase, 1 number, and 1 special character.
           </p>
         </div>
 
+        {/* Confirm Password Input */}
         <div>
-          <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-            Confirm Password
-          </label>
           <div className="relative">
-            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               id="confirmPassword"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Confirm your password"
+              className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+              placeholder="Confirm Password"
             />
           </div>
         </div>
@@ -156,21 +179,31 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="w-full py-3 px-4 text-white font-bold rounded-lg transition-all disabled:opacity-70 disabled:cursor-not-allowed shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 flex items-center justify-center 
+          bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] mt-2"
         >
-          {isLoading ? 'Creating account...' : 'Sign Up'}
+          {isLoading ? (
+            <div className="flex items-center gap-2">
+              <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Creating account...</span>
+            </div>
+          ) : (
+            <>
+              Create Account <ArrowRight className="w-5 h-5 ml-2" />
+            </>
+          )}
         </button>
       </form>
 
-      <div className="mt-6 text-center text-sm">
-        <span className="text-gray-600">Already have an account? </span>
+      <div className="mt-4 text-center text-sm">
+        <span className="text-slate-600">Already have an account? </span>
         <button
           onClick={onSwitchToLogin}
-          className="text-blue-600 hover:text-blue-700 font-medium"
+          className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
         >
           Sign in
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 };

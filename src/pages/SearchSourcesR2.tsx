@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
-import { EnhancedQuadrantMatrix, EnhancedSource } from '../components/SourcesR2/EnhancedQuadrantMatrix';
+import type { EnhancedSource } from '../components/SourcesR2/EnhancedQuadrantMatrix';
 import { ValueScoreTable } from '../components/SourcesR2/ValueScoreTable';
-import { CorrelationHeatmap } from '../components/SourcesR2/CorrelationHeatmap';
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { SourceRadar } from '../components/SourcesR2/SourceRadar';
+import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -40,6 +40,52 @@ interface SourceAttributionResponse {
   avgSentimentChange: number;
 }
 
+type ViewMode = 'current' | 'newZones';
+
+const median = (nums: number[]): number => {
+  if (!nums.length) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+const percentile = (nums: number[], p: number): number => {
+  if (!nums.length) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
+  return sorted[idx];
+};
+
+type NewZone = 'marketLeaders' | 'reputationRisks' | 'growthBets' | 'monitorImprove';
+
+const classifyNewZone = (
+  mentionPct: number,
+  soaPct: number,
+  sentimentPct: number,
+  citationsPct: number,
+  score: number,
+  cutoffs: {
+    scoreP75: number;
+    scoreMedian: number;
+    mentionMedian: number;
+    soaMedian: number;
+  }
+): NewZone => {
+  if (score >= cutoffs.scoreP75 && sentimentPct >= 50 && citationsPct >= 25) {
+    return 'marketLeaders';
+  }
+
+  if ((mentionPct >= cutoffs.mentionMedian || soaPct >= cutoffs.soaMedian) && (sentimentPct < 50 || citationsPct < 20) && score < cutoffs.scoreP75) {
+    return 'reputationRisks';
+  }
+
+  if (score >= cutoffs.scoreMedian && score < cutoffs.scoreP75 && (sentimentPct >= 55 || citationsPct >= 30) && mentionPct < cutoffs.mentionMedian) {
+    return 'growthBets';
+  }
+
+  return 'monitorImprove';
+};
+
 const valueScoreForSource = (src: SourceData, maxCitations: number, maxTopics: number): number => {
   const sentimentPct = ((src.sentiment + 1) / 2) * 100; // -1..1 -> 0..100
   const citationsNorm = maxCitations > 0 ? (src.citations / maxCitations) * 100 : 0;
@@ -53,35 +99,48 @@ const valueScoreForSource = (src: SourceData, maxCitations: number, maxTopics: n
   );
 };
 
-const classifyQuadrant = (mention: number, soa: number, xMid: number, yMid: number): EnhancedSource['quadrant'] => {
-  if (mention >= xMid && soa >= yMid) return 'priority';
-  if (mention >= xMid && soa < yMid) return 'reputation';
-  if (mention < xMid && soa >= yMid) return 'growth';
-  return 'monitor';
-};
+const classifyQuadrant = (
+  mention: number,
+  soa: number,
+  sentiment: number,
+  citations: number,
+  thresholds: {
+    mentionMedian: number;
+    soaMedian: number;
+    sentimentMedian: number;
+    citationsMedian: number;
+    compositeMedian: number;
+    compositeTopQuartile: number;
+  },
+  maxCitations: number
+): EnhancedSource['quadrant'] => {
+  const mentionNorm = mention / 100;
+  const soaNorm = soa / 100;
+  const sentimentNorm = (sentiment + 1) / 2; // -1..1 -> 0..1
+  const citationsNorm = maxCitations > 0 ? citations / maxCitations : 0;
 
-const correlation = (arrX: number[], arrY: number[]) => {
-  const n = Math.min(arrX.length, arrY.length);
-  if (n === 0) return 0;
-  const xMean = arrX.reduce((a, b) => a + b, 0) / n;
-  const yMean = arrY.reduce((a, b) => a + b, 0) / n;
-  let num = 0;
-  let denX = 0;
-  let denY = 0;
-  for (let i = 0; i < n; i++) {
-    const dx = arrX[i] - xMean;
-    const dy = arrY[i] - yMean;
-    num += dx * dy;
-    denX += dx * dx;
-    denY += dy * dy;
-  }
-  const den = Math.sqrt(denX * denY);
-  return den === 0 ? 0 : num / den;
+  const compositeScore =
+    mentionNorm * 0.35 +
+    soaNorm * 0.35 +
+    sentimentNorm * 0.2 +
+    citationsNorm * 0.1;
+
+  const visibilityStrong = mention >= thresholds.mentionMedian;
+  const soaStrong = soa >= thresholds.soaMedian;
+  const sentimentPositive = sentimentNorm >= thresholds.sentimentMedian;
+  const citationsStrong = citationsNorm >= thresholds.citationsMedian;
+  const compositeStrong = compositeScore >= thresholds.compositeTopQuartile;
+  const compositeHealthy = compositeScore >= thresholds.compositeMedian;
+
+  if (visibilityStrong && soaStrong && compositeStrong) return 'priority';
+  if (visibilityStrong && (!sentimentPositive || !citationsStrong)) return 'reputation';
+  if (!visibilityStrong && (sentimentPositive || citationsStrong) && compositeHealthy) return 'growth';
+  return 'monitor';
 };
 
 export const SearchSourcesR2 = () => {
   const authLoading = useAuthStore((state) => state.isLoading);
-  const { selectedBrandId, brands, isLoading: brandsLoading } = useManualBrandDashboard();
+  const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
   const [startDate, setStartDate] = useState<string>(() => {
     const end = new Date();
     end.setUTCHours(23, 59, 59, 999);
@@ -91,6 +150,9 @@ export const SearchSourcesR2 = () => {
     return start.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('current');
+  const [activeNewZone, setActiveNewZone] = useState<string | null>(null);
 
   const sourcesEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
@@ -115,8 +177,26 @@ export const SearchSourcesR2 = () => {
 
     const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
     const maxTopics = Math.max(...sourceData.map((s) => s.topics.length), 1);
-    const xMid = sourceData.map((s) => s.mentionRate).sort((a, b) => a - b)[Math.floor(sourceData.length / 2)] || 0;
-    const yMid = sourceData.map((s) => s.soa).sort((a, b) => a - b)[Math.floor(sourceData.length / 2)] || 0;
+    const mentionMedian = median(sourceData.map((s) => s.mentionRate));
+    const soaMedian = median(sourceData.map((s) => s.soa));
+    const sentimentMedian = median(sourceData.map((s) => (s.sentiment + 1) / 2));
+    const citationsMedian = median(sourceData.map((s) => (maxCitations > 0 ? s.citations / maxCitations : 0)));
+
+    const compositeScores = sourceData.map((s) => {
+      const mentionNorm = s.mentionRate / 100;
+      const soaNorm = s.soa / 100;
+      const sentimentNorm = (s.sentiment + 1) / 2;
+      const citationsNorm = maxCitations > 0 ? s.citations / maxCitations : 0;
+      return (
+        mentionNorm * 0.35 +
+        soaNorm * 0.35 +
+        sentimentNorm * 0.2 +
+        citationsNorm * 0.1
+      );
+    });
+
+    const compositeMedian = median(compositeScores);
+    const compositeTopQuartile = percentile(compositeScores, 75);
 
     return sourceData.map((s) => {
       const valueScore = valueScoreForSource(s, maxCitations, maxTopics);
@@ -128,10 +208,70 @@ export const SearchSourcesR2 = () => {
         sentiment: s.sentiment,
         citations: s.citations,
         valueScore,
-        quadrant: classifyQuadrant(s.mentionRate, s.soa, xMid, yMid)
+        quadrant: classifyQuadrant(s.mentionRate, s.soa, s.sentiment, s.citations, {
+          mentionMedian,
+          soaMedian,
+          sentimentMedian,
+          citationsMedian,
+          compositeMedian,
+          compositeTopQuartile
+        }, maxCitations)
       };
     });
   }, [sourceData]);
+
+  const newZoneSources = useMemo(() => {
+    if (!sourceData.length) return [];
+
+    const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
+
+    const sentimentPcts = sourceData.map((s) => ((s.sentiment + 1) / 2) * 100);
+    const citationPcts = sourceData.map((s) => (maxCitations > 0 ? Math.min(100, (s.citations / maxCitations) * 100) : 0));
+    const mentionPcts = sourceData.map((s) => s.mentionRate);
+    const soaPcts = sourceData.map((s) => s.soa);
+
+    const compositeScores = sourceData.map((s, idx) => {
+      const sentimentPct = sentimentPcts[idx];
+      const citationsPct = citationPcts[idx];
+      return s.mentionRate * 0.35 + s.soa * 0.35 + sentimentPct * 0.2 + citationsPct * 0.1;
+    });
+
+    const scoreP75 = percentile(compositeScores, 75);
+    const scoreMedian = median(compositeScores);
+    const mentionMedian = median(mentionPcts);
+    const soaMedian = median(soaPcts);
+
+    const mapped = sourceData.map((s, idx) => {
+      const sentimentPct = sentimentPcts[idx];
+      const citationsPct = citationPcts[idx];
+      const score = compositeScores[idx];
+      const zone = classifyNewZone(
+        s.mentionRate,
+        s.soa,
+        sentimentPct,
+        citationsPct,
+        score,
+        { scoreP75, scoreMedian, mentionMedian, soaMedian }
+      );
+
+      return {
+        name: s.name,
+        type: s.type,
+        mentionRate: s.mentionRate,
+        soa: s.soa,
+        sentiment: s.sentiment,
+        citations: s.citations,
+        valueScore: score,
+        quadrant: zone as NewZone
+      };
+    });
+    return mapped;
+  }, [sourceData]);
+
+  const filteredSources = useMemo(() => {
+    if (!activeQuadrant) return enhancedSources;
+    return enhancedSources.filter((s) => s.quadrant === activeQuadrant);
+  }, [enhancedSources, activeQuadrant]);
 
   const quadrantCounts = useMemo(() => {
     return enhancedSources.reduce(
@@ -143,88 +283,144 @@ export const SearchSourcesR2 = () => {
     );
   }, [enhancedSources]);
 
-  const correlationMatrix = useMemo(() => {
-    if (!sourceData.length) return { matrix: [], labels: [] };
-    const labels = ['Mention Rate', 'SOA', 'Sentiment', 'Citations'];
-    const cols = [
-      sourceData.map((s) => s.mentionRate),
-      sourceData.map((s) => s.soa),
-      sourceData.map((s) => s.sentiment),
-      sourceData.map((s) => s.citations)
-    ];
-    const matrix = cols.map((colX) => cols.map((colY) => correlation(colX, colY)));
-    return { matrix, labels };
-  }, [sourceData]);
+  const filteredNewSources = useMemo(() => {
+    if (!activeNewZone) return newZoneSources;
+    return newZoneSources.filter((s) => s.quadrant === activeNewZone);
+  }, [newZoneSources, activeNewZone]);
+
+  const newZoneCounts = useMemo(() => {
+    return newZoneSources.reduce(
+      (acc, s) => {
+        acc[s.quadrant] = (acc[s.quadrant] || 0) + 1;
+        return acc;
+      },
+      {
+        marketLeaders: 0,
+        reputationRisks: 0,
+        growthBets: 0,
+        monitorImprove: 0
+      } as Record<NewZone, number>
+    );
+  }, [newZoneSources]);
+
+  const displayedSources = viewMode === 'current' ? filteredSources : filteredNewSources;
 
   const radarSources = useMemo(() => {
     if (!sourceData.length) return [];
-    return sourceData.map((s) => ({
-      name: s.name,
-      mentionRate: s.mentionRate,
-      soa: s.soa,
-      sentiment: s.sentiment,
-      citations: s.citations,
-      topicsCount: s.topics.length
-    }));
-  }, [sourceData]);
-
-  const handleDateChange = (range: { start: string; end: string }) => {
-    setStartDate(range.start);
-    setEndDate(range.end);
-  };
+    return displayedSources.map((s) => {
+      const src = sourceData.find((sd) => sd.name === s.name);
+      return {
+        name: s.name,
+        mentionRate: s.mentionRate,
+        soa: s.soa,
+        sentiment: s.sentiment,
+        citations: s.citations,
+        topicsCount: src ? src.topics.length : 0
+      };
+    });
+  }, [displayedSources, sourceData]);
 
   const isLoading = authLoading || brandsLoading || loading;
+  const errorMessage = error
+    ? typeof error === 'string'
+      ? error
+      : error.message || 'Something went wrong while loading sources.'
+    : null;
 
   return (
     <Layout>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 8px 18px rgba(15,23,42,0.05)' }}>
-          <h1 style={{ margin: '0 0 6px 0', fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Search Sources R2</h1>
-          <p style={{ margin: 0, color: '#475569' }}>Experimental view to validate enhanced source insights (Visibility, SOA, Sentiment, Citations)</p>
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 8px 18px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Search Sources</h1>
+            <p style={{ margin: 0, color: '#475569' }}>Understand how your sources perform across visibility, share of answer, sentiment, and citations.</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: 4, display: 'flex', gap: 4 }}>
+              {(['current', 'newZones'] as ViewMode[]).map((mode) => {
+                const isActive = viewMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      setViewMode(mode);
+                      setActiveQuadrant(null);
+                      setActiveNewZone(null);
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: 'none',
+                      background: isActive ? '#0ea5e9' : 'transparent',
+                      color: isActive ? '#fff' : '#0f172a',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      transition: 'background 160ms ease, color 160ms ease',
+                      boxShadow: isActive ? '0 6px 14px rgba(14,165,233,0.35)' : 'none'
+                    }}
+                  >
+                    {mode === 'current' ? 'Current View' : 'New Zone View'}
+                  </button>
+                );
+              })}
+            </div>
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+              showComparisonInfo={false}
+              className="flex-shrink-0"
+            />
+          </div>
         </div>
 
-        {error && (
+        {errorMessage && (
           <div style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecdd3', borderRadius: 12, padding: 12 }}>
-            {error}
+            {errorMessage}
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-          <SummaryCards counts={quadrantCounts} />
+        <SummaryCards
+          counts={viewMode === 'current' ? quadrantCounts : newZoneCounts}
+          active={viewMode === 'current' ? activeQuadrant : activeNewZone}
+          onSelect={(key) => {
+            if (viewMode === 'current') {
+              setActiveQuadrant(key as EnhancedSource['quadrant'] | null);
+            } else {
+              setActiveNewZone(key);
+            }
+          }}
+          cardMetaOverride={
+            viewMode === 'current'
+              ? undefined
+              : {
+                  marketLeaders: { label: 'Market Leaders', color: '#0ea5e9' },
+                  reputationRisks: { label: 'Reputation Risks', color: '#f97373' },
+                  growthBets: { label: 'Growth Bets', color: '#6366f1' },
+                  monitorImprove: { label: 'Monitor & Improve', color: '#cbd5e1' }
+                }
+          }
+        />
 
-          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 12px 30px rgba(15,23,42,0.06)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Quadrant Matrix</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Visibility (Mention Rate) vs Share of Answer; bubble size = Sentiment</p>
-              </div>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                Date range: {startDate} → {endDate}
-              </div>
+        {isLoading ? (
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, color: '#94a3b8', textAlign: 'center', boxShadow: '0 8px 18px rgba(15,23,42,0.05)' }}>
+            Loading sources…
+          </div>
+        ) : enhancedSources.length === 0 ? (
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, color: '#94a3b8', textAlign: 'center', boxShadow: '0 8px 18px rgba(15,23,42,0.05)' }}>
+            No source data available for the selected range.
+          </div>
+        ) : (
+          <>
+            <ValueScoreTable sources={displayedSources} />
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
+              <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Source Performance Radar</h3>
+              <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>Top sources across visibility, SOA, sentiment, citations, topics</p>
+              <SourceRadar sources={radarSources} maxItems={5} />
             </div>
-            {isLoading ? (
-              <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>Loading…</div>
-            ) : enhancedSources.length === 0 ? (
-              <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>No source data available.</div>
-            ) : (
-              <EnhancedQuadrantMatrix
-                sources={enhancedSources}
-                xThreshold={enhancedSources.length ? enhancedSources.map((s) => s.mentionRate).sort((a, b) => a - b)[Math.floor(enhancedSources.length / 2)] : 0}
-                yThreshold={enhancedSources.length ? enhancedSources.map((s) => s.soa).sort((a, b) => a - b)[Math.floor(enhancedSources.length / 2)] : 0}
-              />
-            )}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
-            <ValueScoreTable sources={enhancedSources} />
-            <CorrelationHeatmap matrix={correlationMatrix.matrix} labels={correlationMatrix.labels} />
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
-            <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Source Performance Radar</h3>
-            <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>Top 5 sources across visibility, SOA, sentiment, citations, topics</p>
-            <SourceRadar sources={radarSources} maxItems={5} />
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </Layout>
   );

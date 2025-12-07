@@ -147,16 +147,16 @@ export const VisibilityChart = memo(({
         y: {
           beginAtZero: true,
           min: 0,
-          max: 100,
+          max: 120,
           title: {
             display: true,
             text: metricType === 'visibility' 
               ? 'Visibility Score' 
               : metricType === 'share' 
                 ? 'Share of Answers (%)'
-                : metricType === 'sentiment'
-                  ? 'Sentiment Score'
-                  : 'Brand Presence (%)',
+                : metricType === 'brandPresence'
+                  ? 'Brand Presence (%)'
+                  : 'Sentiment Score',
             color: neutrals[700],
             font: {
               size: 11,
@@ -268,7 +268,7 @@ export const VisibilityChart = memo(({
           label: (context: any) => {
             const label = context.dataset.label || '';
             const value = context.parsed.y;
-            const suffix = (metricType === 'share' || metricType === 'brandPresence') ? '%' : '';
+            const suffix = metricType === 'share' || metricType === 'brandPresence' ? '%' : '';
             return `  ${label}: ${value}${suffix}`;
           },
         },

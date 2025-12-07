@@ -328,6 +328,14 @@ export const SearchVisibility = () => {
       const sentimentValue = slice.sentiment ?? null;
       // Convert sentiment from -1 to 1 scale to 0-100 scale for display
       const sentimentDisplayValue = sentimentValue !== null ? ((sentimentValue + 1) / 2) * 100 : null;
+      const brandPresenceSeries = (slice.timeSeries as any)?.brandPresencePercentage ?? (slice.timeSeries as any)?.brandPresence;
+      const brandPresenceData = Array.isArray(brandPresenceSeries) && brandPresenceSeries.length > 0
+        ? brandPresenceSeries.map((value: number) => Math.round(value))
+        : (slice.timeSeries?.share && slice.timeSeries.share.length > 0
+          ? slice.timeSeries.share.map((value: number) => Math.round(value))
+          : (slice.timeSeries?.visibility && slice.timeSeries.visibility.length > 0
+            ? slice.timeSeries.visibility.map((value: number) => Math.round(value))
+            : buildTimeseries(brandPresencePercentage)));
       
       return {
         id: normalizeId(slice.provider),
@@ -353,7 +361,7 @@ export const SearchVisibility = () => {
         sentimentData: slice.timeSeries?.sentiment && slice.timeSeries.sentiment.length > 0
           ? slice.timeSeries.sentiment.map((s: number | null) => s !== null ? ((s + 1) / 2) * 100 : null)
           : (sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined),
-        brandPresenceData: buildTimeseries(brandPresencePercentage),
+        brandPresenceData,
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -529,6 +537,14 @@ export const SearchVisibility = () => {
       const competitorShareValue = entry.share ?? 0;
       const competitorSentimentRaw = entry.sentiment ?? null;
       const competitorSentimentDisplay = competitorSentimentRaw !== null ? ((competitorSentimentRaw + 1) / 2) * 100 : null;
+      const competitorBrandPresenceSeries = (entry.timeSeries as any)?.brandPresencePercentage ?? (entry.timeSeries as any)?.brandPresence;
+      const competitorBrandPresenceData = Array.isArray(competitorBrandPresenceSeries) && competitorBrandPresenceSeries.length > 0
+        ? competitorBrandPresenceSeries.map((value: number) => Math.round(value))
+        : (entry.timeSeries?.share && entry.timeSeries.share.length > 0
+          ? entry.timeSeries.share.map((value: number) => Math.round(value))
+          : (entry.timeSeries?.visibility && entry.timeSeries.visibility.length > 0
+            ? entry.timeSeries.visibility.map((value: number) => Math.round(value))
+            : buildTimeseries(Math.round(entry.brandPresencePercentage ?? 0))));
       
       return {
         id: normalizeId(entry.competitor),
@@ -550,7 +566,7 @@ export const SearchVisibility = () => {
         sentimentData: entry.timeSeries?.sentiment && entry.timeSeries.sentiment.length > 0
           ? entry.timeSeries.sentiment.map((s: number | null) => s !== null ? ((s + 1) / 2) * 100 : null)
           : (competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined),
-        brandPresenceData: buildTimeseries(Math.round(entry.brandPresencePercentage ?? 0)),
+        brandPresenceData: competitorBrandPresenceData,
         topTopics: entry.topTopics?.map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -620,9 +636,9 @@ export const SearchVisibility = () => {
         ? model.data 
         : metricType === 'share' 
           ? (model.shareData ?? model.data)
-          : metricType === 'sentiment'
-            ? (model.sentimentData ?? model.data).map((v) => v ?? 0) // avoid null gaps in sentiment lines
-            : (model.brandPresenceData ?? model.data) // brandPresence metric
+          : metricType === 'brandPresence'
+            ? (model.brandPresenceData ?? buildTimeseries(model.brandPresencePercentage ?? 0))
+            : (model.sentimentData ?? model.data).map((v) => v ?? 0) // avoid null gaps in sentiment lines
     }))
   }), [currentModels, metricType, chartDateLabels]);
 

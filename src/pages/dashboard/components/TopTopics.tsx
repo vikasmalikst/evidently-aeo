@@ -8,14 +8,18 @@ interface TopTopicsProps {
 }
 
 export const TopTopics = ({ topTopics }: TopTopicsProps) => {
-  const getSentimentColor = (score: number | null) => {
-    if (score === null) return { bg: 'bg-[#f4f4f6]', text: 'text-[#64748b]', label: 'No Data' };
-    if (score >= 0.5) return { bg: 'bg-[#e6f7f1]', text: 'text-[#06c686]', label: 'Very Positive' };
-    if (score >= 0.1) return { bg: 'bg-[#fff8e6]', text: 'text-[#f9db43]', label: 'Positive' };
-    if (score >= -0.1) return { bg: 'bg-[#fff4e6]', text: 'text-[#fa8a40]', label: 'Neutral' };
-    if (score >= -0.5) return { bg: 'bg-[#fff0f0]', text: 'text-[#f94343]', label: 'Negative' };
-    return { bg: 'bg-[#ffe6e6]', text: 'text-[#d32f2f]', label: 'Very Negative' };
-  };
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+  const sentimentBlockColors = [
+    '#f94343',
+    '#fa8a40',
+    '#f9b700',
+    '#f7d64c',
+    '#a9d977',
+    '#72c880',
+    '#41b36f'
+  ];
+
 
   return (
     <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
@@ -51,7 +55,13 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
               ? topic.sentimentScore
               : null;
             
-            const sentimentStyle = getSentimentColor(sentimentScore);
+            const sentimentValue = sentimentScore !== null ? Math.round(sentimentScore * 100) : null;
+            const sentimentBlockIndex = sentimentScore !== null
+              ? Math.round(((clamp(sentimentScore, -1, 1) + 1) / 2) * 6)
+              : 3;
+            const sentimentColorHex = sentimentScore !== null
+              ? sentimentBlockColors[sentimentBlockIndex]
+              : '#64748b';
 
             return (
               <div
@@ -68,16 +78,48 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
                     </p>
                   </div>
                   {sentimentScore !== null && (
-                    <div className="relative group/sentiment flex-shrink-0">
-                    <div className={`flex items-center justify-center w-12 h-12 rounded-lg ${sentimentStyle.bg} flex-shrink-0`}>
-                      <div className="text-center">
-                        <span className={`text-[16px] font-bold ${sentimentStyle.text} block leading-none`}>
-                          {Math.round(sentimentScore * 100)}
+                    <div className="relative group/sentiment flex-shrink-0 w-36">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-[#64748b] uppercase tracking-wide">Sentiment</span>
+                        <span
+                          className="text-[13px] font-semibold"
+                          style={{ color: sentimentColorHex }}
+                        >
+                          {sentimentValue}
                         </span>
+                      </div>
+                      <div className="relative mt-1.5">
+                        <div className="grid grid-cols-7 gap-1 h-2">
+                          {sentimentBlockColors.map((color, idx) => (
+                            <div
+                              key={color + idx}
+                              className="rounded-[3px]"
+                              style={{
+                                backgroundColor: color,
+                                opacity: sentimentBlockIndex === idx ? 1 : 0.65
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <div
+                          className="absolute -top-2 left-0"
+                          style={{
+                            left: `calc((100% / 7) * ${sentimentBlockIndex} + (100% / 14) - 6px)`
+                          }}
+                        >
+                          <div
+                            className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent"
+                            style={{ borderTopColor: '#1a1d29' }}
+                          />
                         </div>
                       </div>
-                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 p-2 bg-[#1a1d29] text-white text-[11px] rounded-lg shadow-lg z-[100] opacity-0 invisible group-hover/sentiment:opacity-100 group-hover/sentiment:visible transition-all pointer-events-none whitespace-normal text-center">
-                        Sentiment Score
+                      <div className="text-[10px] text-[#64748b] mt-1 grid grid-cols-3 items-center">
+                        <span>Negative</span>
+                        <span className="text-center font-medium">Neutral</span>
+                        <span className="text-right">Positive</span>
+                      </div>
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-52 p-2 bg-[#1a1d29] text-white text-[11px] rounded-lg shadow-lg z-[100] opacity-0 invisible group-hover/sentiment:opacity-100 group-hover/sentiment:visible transition-all pointer-events-none whitespace-normal text-center">
+                        Sentiment is mapped from -1 (very negative) to +1 (very positive) and shown here with a gradient marker for quick scanning.
                         <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#1a1d29]"></div>
                       </div>
                     </div>

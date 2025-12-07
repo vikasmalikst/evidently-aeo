@@ -1685,7 +1685,7 @@ export async function buildDashboardPayload(
     .filter((source) => source.impactScore !== null && Number.isFinite(source.impactScore))
     // Sort by mentionRate (descending) to match Source Attribution table, then by usage as tiebreaker
     .sort((a, b) => (b.mentionRate || 0) - (a.mentionRate || 0) || b.usage - a.usage)
-    .slice(0, 5)
+    .slice(0, 10)
 
   // Calculate top 10 sources distribution by domain (for donut chart)
   const domainUsageMap = new Map<string, number>()

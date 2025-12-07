@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import { authService } from '../../lib/auth';
-import { Mail, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Mail, AlertCircle, CheckCircle, ArrowLeft, ArrowRight } from 'lucide-react';
+// Import motion for animation
+import { motion, type Variants } from 'framer-motion';
+
+// Animation variants
+const formVariants: Variants = {
+  hidden: { opacity: 0, x: 20 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.3, ease: 'easeOut' as const } },
+  exit: { opacity: 0, x: -20, transition: { duration: 0.2, ease: 'easeIn' as const } }
+};
 
 interface PasswordResetFormProps {
   onBack?: () => void;
@@ -31,61 +40,78 @@ export const PasswordResetForm = ({ onBack }: PasswordResetFormProps) => {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-8 bg-white rounded-lg shadow-lg">
+    
+    <motion.div
+      variants={formVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      className="w-full space-y-6"
+    >
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 text-sm"
+        className="flex items-center gap-2 text-slate-500 hover:text-slate-800 text-sm mb-2 group font-medium transition-colors"
       >
-        <ArrowLeft className="w-4 h-4" />
+        <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
         Back to Sign In
       </button>
 
-      <h2 className="text-3xl font-bold mb-2 text-gray-900">Reset Password</h2>
-      <p className="text-gray-600 mb-6">
-        Enter your email address and we'll send you a link to reset your password.
-      </p>
+      {/* New Header inside the box */}
+      <div className="text-center space-y-2">
+        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Reset Password</h2>
+        <p className="text-slate-500">Enter your email to receive a reset link</p>
+      </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-start gap-2">
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700">{error}</p>
+          <p className="text-sm text-red-700 font-medium">{error}</p>
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md flex items-start gap-2">
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
           <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-green-700">{success}</p>
+          <p className="text-sm text-green-700 font-medium">{success}</p>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Email Input */}
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-            Email
-          </label>
           <div className="relative">
-            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="your@email.com"
+              className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+              placeholder="Email"
             />
           </div>
         </div>
 
+        {/* Send Link Button */}
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="w-full py-3 px-4 text-white font-bold rounded-lg transition-all disabled:opacity-70 disabled:cursor-not-allowed shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 flex items-center justify-center 
+          bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99]"
         >
-          {isLoading ? 'Sending...' : 'Send Reset Link'}
+          {isLoading ? (
+            <div className="flex items-center gap-2">
+              <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Sending...</span>
+            </div>
+          ) : (
+            <>
+              Send Reset Link <ArrowRight className="w-5 h-5 ml-2" />
+            </>
+          )}
         </button>
       </form>
-    </div>
+    </motion.div>
   );
 };

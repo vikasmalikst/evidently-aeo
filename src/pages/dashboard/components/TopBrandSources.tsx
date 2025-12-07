@@ -9,6 +9,8 @@ interface TopBrandSourcesProps {
 }
 
 export const TopBrandSources = ({ brandPages }: TopBrandSourcesProps) => {
+  const displayedPages = brandPages.slice(0, 10);
+
   return (
     <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
       <div className="flex items-center justify-between mb-5">
@@ -28,8 +30,8 @@ export const TopBrandSources = ({ brandPages }: TopBrandSourcesProps) => {
       </div>
 
       <div className="space-y-3">
-        {brandPages.length > 0 ? (
-          brandPages.map((page) => {
+        {displayedPages.length > 0 ? (
+          displayedPages.map((page) => {
             const hasImpactScore =
               typeof page.impactScore === 'number' && Number.isFinite(page.impactScore);
             const impactLabel = hasImpactScore

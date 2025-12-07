@@ -40,3 +40,45 @@
     transform: rotate(360deg);
   }
 }
+
+/* Original Bubble Animations (Preserved for safety) */
+@keyframes bubble-float {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate3d(12px, -10px, 0);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.55;
+  }
+}
+
+.bubble {
+  position: absolute;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 30% 30%, rgba(56, 189, 248, 0.25), rgba(56, 189, 248, 0.16), rgba(125, 211, 252, 0.08));
+  filter: blur(0px);
+  animation: bubble-float 12s ease-in-out infinite;
+}
+
+.bubble-sm {
+  width: 120px;
+  height: 120px;
+  animation-duration: 9s;
+}
+
+.bubble-md {
+  width: 180px;
+  height: 180px;
+  animation-duration: 11s;
+}
+
+.bubble-lg {
+  width: 260px;
+  height: 260px;
+  animation-duration: 14s;
+}

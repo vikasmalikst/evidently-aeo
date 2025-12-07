@@ -10,14 +10,24 @@ interface TopTopicsProps {
 export const TopTopics = ({ topTopics }: TopTopicsProps) => {
   const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
+  // Bright glossy scale (first variant)
   const sentimentBlockColors = [
-    '#f94343',
-    '#fa8a40',
-    '#f9b700',
-    '#f7d64c',
-    '#a9d977',
-    '#72c880',
-    '#41b36f'
+    '#ff3b3f',
+    '#ff7a1a',
+    '#ffc400',
+    '#ffe760',
+    '#b6ff73',
+    '#4cea7a',
+    '#13d46b'
+  ];
+  const sentimentBlockGradients = [
+    'linear-gradient(135deg, #ff8a8e 0%, #ff3b3f 100%)',
+    'linear-gradient(135deg, #ffb066 0%, #ff7a1a 100%)',
+    'linear-gradient(135deg, #ffe066 0%, #ffc400 100%)',
+    'linear-gradient(135deg, #fff1a6 0%, #ffe760 100%)',
+    'linear-gradient(135deg, #d6ffad 0%, #b6ff73 100%)',
+    'linear-gradient(135deg, #8bffad 0%, #4cea7a 100%)',
+    'linear-gradient(135deg, #5afc9d 0%, #13d46b 100%)'
   ];
 
 
@@ -95,8 +105,11 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
                               key={color + idx}
                               className="rounded-[3px]"
                               style={{
-                                backgroundColor: color,
-                                opacity: sentimentBlockIndex === idx ? 1 : 0.65
+                                background: sentimentBlockGradients[idx],
+                                opacity: sentimentBlockIndex === idx ? 1 : 0.7,
+                                boxShadow: sentimentBlockIndex === idx
+                                  ? '0 2px 6px rgba(0,0,0,0.18)'
+                                  : '0 1px 4px rgba(0,0,0,0.08)'
                               }}
                             />
                           ))}

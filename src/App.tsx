@@ -3,7 +3,6 @@ import { AuthPage } from './pages/AuthPage';
 import { Dashboard } from './pages/dashboard/Dashboard';
 import { SearchVisibility } from './pages/SearchVisibility';
 import { AISources } from './pages/AISources';
-import { SearchSources } from './pages/SearchSources';
 import { SearchSourcesR2 } from './pages/SearchSourcesR2';
 import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
@@ -109,7 +108,7 @@ function App() {
           path="/search-sources"
           element={
             <ProtectedRoute>
-              <SearchSources />
+              <SearchSourcesR2 />
             </ProtectedRoute>
           }
         />
@@ -117,7 +116,7 @@ function App() {
           path="/search-sources-r2"
           element={
             <ProtectedRoute>
-              <SearchSourcesR2 />
+              <Navigate to="/search-sources" replace />
             </ProtectedRoute>
           }
         />

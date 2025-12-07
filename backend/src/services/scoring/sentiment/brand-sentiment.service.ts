@@ -164,7 +164,7 @@ Respond with ONLY valid JSON in this exact format:
         ...(openRouterSiteTitle ? { 'X-Title': openRouterSiteTitle } : {}),
       },
       body: JSON.stringify({
-        model: 'openai/gpt-5-nano',
+        model: 'openai/gpt-oss-120b:free',
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
         temperature: 0.6,
         max_tokens: 2500,

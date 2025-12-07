@@ -640,7 +640,7 @@ export const SearchVisibility = () => {
             ? (model.brandPresenceData ?? buildTimeseries(model.brandPresencePercentage ?? 0))
             : (model.sentimentData ?? model.data).map((v) => v ?? 0) // avoid null gaps in sentiment lines
     }))
-  }), [currentModels, metricType]);
+  }), [currentModels, metricType, chartDateLabels]);
 
   const combinedLoading = authLoading || brandsLoading || loading;
 

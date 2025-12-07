@@ -705,7 +705,7 @@ Respond with ONLY valid JSON in this exact format:
         ...(openRouterSiteTitle ? { 'X-Title': openRouterSiteTitle } : {}),
       },
       body: JSON.stringify({
-        model: 'openai/gpt-5-nano',
+        model: 'openai/gpt-oss-120b:free',
         messages: [
           {
             role: 'user',

@@ -206,6 +206,7 @@ export interface BrandDashboardPayload {
   scores: ScoreMetric[]
   sourceDistribution: DistributionSlice[]
   topSourcesDistribution: DistributionSlice[] // Top 10 sources by domain
+  topSourcesByType?: Record<string, Array<{ domain: string; title: string | null; url: string | null; usage: number }>> // Top 5 sources per source type for tooltips
   categoryDistribution: DistributionSlice[]
   llmVisibility: LlmVisibilitySlice[]
   actionItems: ActionItem[]

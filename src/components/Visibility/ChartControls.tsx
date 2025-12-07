@@ -17,8 +17,8 @@ interface ChartControlsProps {
   brands?: BrandOption[];
   selectedBrandId?: string | null;
   onBrandChange?: (brandId: string) => void;
-  metricType?: 'visibility' | 'share' | 'sentiment';
-  onMetricTypeChange?: (value: 'visibility' | 'share' | 'sentiment') => void;
+  metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
+  onMetricTypeChange?: (value: 'visibility' | 'share' | 'sentiment' | 'brandPresence') => void;
 }
 
 export const ChartControls = ({
@@ -276,6 +276,16 @@ export const ChartControls = ({
                 }`}
               >
                 Sentiment Score
+              </button>
+              <button
+                onClick={() => onMetricTypeChange('brandPresence')}
+                className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 whitespace-nowrap relative ${
+                  metricType === 'brandPresence'
+                    ? 'bg-white text-[#06b6d4] shadow-sm'
+                    : 'text-[#6c7289] hover:text-[#212534] hover:bg-white/50'
+                }`}
+              >
+                Brand Presence
               </button>
             </div>
           </div>

@@ -898,6 +898,8 @@ export async function buildDashboardPayload(
     }
   >()
   const citationCounts = new Map<string, number>()
+  // Track domain usage by category for top sources by type calculation
+  const domainUsageByCategory = new Map<string, Map<string, number>>() // category -> domain -> usage count
   if (citationsData && citationsData.length > 0) {
     for (const citation of citationsData) {
       const categoryKey =
@@ -1000,6 +1002,15 @@ export async function buildDashboardPayload(
         existingSource.domain = normalizedDomain
       }
 
+      // Track domain usage by category for top sources by type calculation
+      if (normalizedDomain) {
+        if (!domainUsageByCategory.has(categoryKey)) {
+          domainUsageByCategory.set(categoryKey, new Map<string, number>())
+        }
+        const categoryDomainMap = domainUsageByCategory.get(categoryKey)!
+        categoryDomainMap.set(normalizedDomain, (categoryDomainMap.get(normalizedDomain) || 0) + count)
+      }
+
       if (
         typeof citation.collector_result_id === 'number' &&
         Number.isFinite(citation.collector_result_id)
@@ -1060,6 +1071,9 @@ export async function buildDashboardPayload(
     return categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1).replace(/[_-]/g, ' ')
   }
 
+  // Track which categories are in the top 5 (for "Other" aggregation later)
+  const top5CategoryKeys = new Set<string>()
+  
   if (totalCategoryVisibility > 0) {
     const sortedCategories = Array.from(categoryVisibilityAggregates.entries()).sort(
       (a, b) => b[1].visibilitySum - a[1].visibilitySum
@@ -1069,6 +1083,7 @@ export async function buildDashboardPayload(
 
     sortedCategories.slice(0, 5).forEach(([categoryKey, aggregate], index) => {
       accumulatedVisibility += aggregate.visibilitySum
+      top5CategoryKeys.add(categoryKey) // Track top 5 categories
       sourceDistribution.push({
         label: formatCategoryLabel(categoryKey),
         percentage: round((aggregate.visibilitySum / totalCategoryVisibility) * 100),
@@ -1111,6 +1126,138 @@ export async function buildDashboardPayload(
         : 0,
       color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
     }))
+
+  // Calculate top 5 sources by source type for tooltip display
+  const topSourcesByType: Record<string, Array<{ domain: string; title: string | null; url: string | null; usage: number }>> = {}
+  
+  // Helper function to get top sources for a single category
+  const getTopSourcesForCategory = (categoryKey: string): Array<{ domain: string; title: string | null; url: string | null; usage: number }> => {
+    if (!domainUsageByCategory.has(categoryKey)) {
+      return []
+    }
+    
+    const categoryDomainMap = domainUsageByCategory.get(categoryKey)!
+    
+    // Get top 5 domains by usage count
+    const topDomains = Array.from(categoryDomainMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+    
+    // Map domains to source information
+    return topDomains
+      .map(([domain, usage]) => {
+        // Find the source aggregate for this domain
+        const sourceKey = `domain:${domain}`
+        const sourceAggregate = sourceAggregates.get(sourceKey)
+        
+        if (sourceAggregate) {
+          return {
+            domain,
+            title: sourceAggregate.title,
+            url: sourceAggregate.url,
+            usage
+          }
+        }
+        
+        // Fallback if source aggregate not found
+        return {
+          domain,
+          title: null,
+          url: domain ? `https://${domain}` : null,
+          usage
+        }
+      })
+      .filter(source => source.domain) // Filter out invalid domains
+  }
+  
+  // Process each category in sourceDistribution to get top sources
+  sourceDistribution.forEach((distributionSlice) => {
+    // Special handling for "Other" - aggregate sources from all non-top-5 categories
+    if (distributionSlice.label === 'Other') {
+      // Aggregate all domains from categories NOT in top 5
+      const otherDomainsMap = new Map<string, number>()
+      
+      for (const [categoryKey, categoryDomainMap] of domainUsageByCategory.entries()) {
+        // Skip categories that are in the top 5
+        if (top5CategoryKeys.has(categoryKey)) {
+          continue
+        }
+        
+        // Aggregate usage counts for each domain across all "other" categories
+        for (const [domain, usage] of categoryDomainMap.entries()) {
+          otherDomainsMap.set(domain, (otherDomainsMap.get(domain) || 0) + usage)
+        }
+      }
+      
+      // Get top 5 domains from aggregated "other" categories
+      const topOtherDomains = Array.from(otherDomainsMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+      
+      // Map domains to source information
+      const topSources = topOtherDomains
+        .map(([domain, usage]) => {
+          const sourceKey = `domain:${domain}`
+          const sourceAggregate = sourceAggregates.get(sourceKey)
+          
+          if (sourceAggregate) {
+            return {
+              domain,
+              title: sourceAggregate.title,
+              url: sourceAggregate.url,
+              usage
+            }
+          }
+          
+          return {
+            domain,
+            title: null,
+            url: domain ? `https://${domain}` : null,
+            usage
+          }
+        })
+        .filter(source => source.domain)
+      
+      if (topSources.length > 0) {
+        topSourcesByType['Other'] = topSources
+      }
+      return // Skip normal processing for "Other"
+    }
+    
+    // Normal processing for non-"Other" categories
+    // Normalize the label back to category key (lowercase, handle spaces)
+    const categoryKey = distributionSlice.label.toLowerCase().replace(/\s+/g, '_').replace(/[_-]/g, '')
+    
+    // Try to find matching category in domainUsageByCategory
+    // Check both the normalized key and original category keys
+    let matchingCategoryKey: string | null = null
+    for (const [key] of domainUsageByCategory.entries()) {
+      const normalizedKey = key.toLowerCase().replace(/\s+/g, '_').replace(/[_-]/g, '')
+      if (normalizedKey === categoryKey || key.toLowerCase() === categoryKey) {
+        matchingCategoryKey = key
+        break
+      }
+    }
+    
+    // Also check if the label matches any category directly
+    if (!matchingCategoryKey) {
+      const labelLower = distributionSlice.label.toLowerCase()
+      for (const [key] of domainUsageByCategory.entries()) {
+        if (formatCategoryLabel(key).toLowerCase() === labelLower) {
+          matchingCategoryKey = key
+          break
+        }
+      }
+    }
+    
+    if (matchingCategoryKey) {
+      const topSources = getTopSourcesForCategory(matchingCategoryKey)
+      if (topSources.length > 0) {
+        // Use the formatted label as the key (e.g., "Editorial", "Corporate")
+        topSourcesByType[distributionSlice.label] = topSources
+      }
+    }
+  })
 
   const sourceAggregateEntries = Array.from(sourceAggregates.entries()).map(([key, aggregate]) => {
     // Normalize domain: remove www. prefix and convert to lowercase
@@ -2029,6 +2176,7 @@ export async function buildDashboardPayload(
     scores,
     sourceDistribution,
     topSourcesDistribution,
+    topSourcesByType,
     categoryDistribution,
     llmVisibility,
     actionItems: actionItems.slice(0, 4),

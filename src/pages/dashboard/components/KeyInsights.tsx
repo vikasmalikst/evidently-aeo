@@ -72,10 +72,13 @@ export const KeyInsights = ({ dashboardData, startDate, endDate, onStartDateChan
         <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
           <div className="flex items-center gap-2 mb-4">
             <h3 className="text-[14px] font-semibold text-[#1a1d29]">Source Type Distribution</h3>
-            <InfoTooltip description="Shows the breakdown of citation sources by category (Editorial, Corporate, Reference, UGC, Social, Institutional). This helps you understand where your brand is being cited across different types of content sources in AI-generated answers." />
+            <InfoTooltip description="Shows the breakdown of citation sources by category (Editorial, Corporate, Reference, UGC, Social, Institutional). This helps you understand where your brand is being cited across different types of content sources in AI-generated answers. Click on any bar to see the top 5 sources for that source type." />
           </div>
           {hasSourceData ? (
-            <StackedRacingChart data={sourceSlices} />
+            <StackedRacingChart 
+              data={sourceSlices} 
+              topSourcesByType={dashboardData?.topSourcesByType}
+            />
           ) : (
             <EmptyState message="No source distribution data available for this period." />
           )}

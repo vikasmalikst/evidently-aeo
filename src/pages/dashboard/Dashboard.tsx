@@ -12,9 +12,7 @@ import { getBrandData, formatMetricValue, computeTrend } from './utils';
 import { KeyInsights } from './components/KeyInsights';
 import { MetricCard } from './components/MetricCard';
 import { TopBrandSources } from './components/TopBrandSources';
-import { QuickActions } from './components/QuickActions';
 import { TopTopics } from './components/TopTopics';
-import { PartnershipOpportunities } from './components/PartnershipOpportunities';
 import type { DashboardScoreMetric } from './types';
 
 export const Dashboard = () => {
@@ -24,9 +22,6 @@ export const Dashboard = () => {
     setStartDate,
     setEndDate,
     showTopicModal,
-    isDataCollectionInProgress,
-    setIsDataCollectionInProgress,
-    progressData,
     brands,
     brandsError,
     selectedBrandId,
@@ -106,7 +101,6 @@ export const Dashboard = () => {
 
   const brandPages = dashboardData?.topBrandSources ?? [];
   const topTopics = dashboardData?.topTopics ?? [];
-  const collectorSummaries = dashboardData?.collectorSummaries ?? [];
 
   // NOW we can do conditional returns AFTER all hooks
   const isLoadingView = shouldShowLoading || (!dashboardData && !dashboardErrorMsg);
@@ -198,17 +192,9 @@ export const Dashboard = () => {
           ))}
         </div>
 
-        <div className="grid grid-cols-3 gap-5 mb-6">
-          <div className="col-span-2">
-            <TopBrandSources brandPages={brandPages} />
-          </div>
-
-          <QuickActions />
-        </div>
-
         <div className="grid grid-cols-2 gap-5 mb-6">
+          <TopBrandSources brandPages={brandPages} />
           <TopTopics topTopics={topTopics} />
-          <PartnershipOpportunities collectorSummaries={collectorSummaries} />
         </div>
       </div>
 

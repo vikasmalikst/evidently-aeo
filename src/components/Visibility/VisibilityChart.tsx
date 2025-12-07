@@ -67,7 +67,7 @@ interface VisibilityChartProps {
   loading?: boolean;
   activeTab: string;
   models?: Model[];
-  metricType?: 'visibility' | 'share' | 'sentiment';
+  metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
 }
 
 export const VisibilityChart = memo(({
@@ -154,7 +154,9 @@ export const VisibilityChart = memo(({
               ? 'Visibility Score' 
               : metricType === 'share' 
                 ? 'Share of Answers (%)'
-                : 'Sentiment Score',
+                : metricType === 'sentiment'
+                  ? 'Sentiment Score'
+                  : 'Brand Presence (%)',
             color: neutrals[700],
             font: {
               size: 11,
@@ -266,7 +268,7 @@ export const VisibilityChart = memo(({
           label: (context: any) => {
             const label = context.dataset.label || '';
             const value = context.parsed.y;
-            const suffix = metricType === 'share' ? '%' : '';
+            const suffix = (metricType === 'share' || metricType === 'brandPresence') ? '%' : '';
             return `  ${label}: ${value}${suffix}`;
           },
         },

@@ -1,6 +1,6 @@
-import { PieChart, TrendingUp, Heart } from 'lucide-react';
+import { PieChart, TrendingUp, Heart, Target } from 'lucide-react';
 
-type MetricType = 'visibility' | 'share' | 'sentiment';
+type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence';
 
 interface KpiToggleProps {
   metricType: MetricType;
@@ -30,6 +30,12 @@ const KPI_OPTIONS: Array<{
     label: 'Sentiment Score',
     description: 'How positively your brand and competitors are discussed',
     Icon: Heart
+  },
+  {
+    id: 'brandPresence',
+    label: 'Brand Presence',
+    description: 'Percentage of queries where your brand appears in answers',
+    Icon: Target
   }
 ];
 

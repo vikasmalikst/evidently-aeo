@@ -121,6 +121,7 @@ interface ModelData {
   data: number[];
   shareData?: number[];
   sentimentData?: number[];
+  brandPresenceData?: number[];
   topTopics?: LlmTopic[];
   color?: string;
   isBrand?: boolean;
@@ -128,10 +129,10 @@ interface ModelData {
 
 const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-type MetricType = 'visibility' | 'share' | 'sentiment';
+type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence';
 
 const parseMetricType = (value: string | null): MetricType | null => {
-  if (value === 'visibility' || value === 'share' || value === 'sentiment') {
+  if (value === 'visibility' || value === 'share' || value === 'sentiment' || value === 'brandPresence') {
     return value;
   }
   return null;
@@ -352,6 +353,7 @@ export const SearchVisibility = () => {
         sentimentData: slice.timeSeries?.sentiment && slice.timeSeries.sentiment.length > 0
           ? slice.timeSeries.sentiment.map((s: number | null) => s !== null ? ((s + 1) / 2) * 100 : null)
           : (sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined),
+        brandPresenceData: buildTimeseries(brandPresencePercentage),
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -443,7 +445,7 @@ export const SearchVisibility = () => {
     const brandSentimentDisplay = brandSentimentRaw !== null ? ((brandSentimentRaw + 1) / 2) * 100 : null;
     
     // Aggregate time-series from all LLM models for brand summary
-    let brandTimeSeries: { dates: string[], visibility: number[], share: number[], sentiment: (number | null)[] } | undefined
+    let brandTimeSeries: { dates: string[], visibility: number[], share: number[], sentiment: (number | null)[], brandPresence: number[] } | undefined
     if (llmModels.length > 0 && llmModels[0].data && llmModels[0].data.length > 0) {
       // Use the dates from first model (all should have same dates)
       const dates = llmSlices[0]?.timeSeries?.dates || []
@@ -451,6 +453,7 @@ export const SearchVisibility = () => {
         const visibility: number[] = []
         const share: number[] = []
         const sentiment: (number | null)[] = []
+        const brandPresence: number[] = []
         
         // For each day, average across all collectors
         dates.forEach((_, dayIndex) => {
@@ -466,6 +469,9 @@ export const SearchVisibility = () => {
               return s !== undefined && s !== null ? s : null
             })
             .filter(s => s !== null) as number[]
+          const dayBrandPresence = llmModels
+            .map(model => model.brandPresenceData?.[dayIndex])
+            .filter(v => v !== undefined && v !== null) as number[]
           
           visibility.push(dayVisibilities.length > 0 
             ? Math.round(dayVisibilities.reduce((sum, v) => sum + v, 0) / dayVisibilities.length)
@@ -476,9 +482,12 @@ export const SearchVisibility = () => {
           sentiment.push(daySentiments.length > 0
             ? Math.round(daySentiments.reduce((sum, v) => sum + v, 0) / daySentiments.length)
             : null)
+          brandPresence.push(dayBrandPresence.length > 0
+            ? Math.round(dayBrandPresence.reduce((sum, v) => sum + v, 0) / dayBrandPresence.length)
+            : 0)
         })
         
-        brandTimeSeries = { dates, visibility, share, sentiment }
+        brandTimeSeries = { dates, visibility, share, sentiment, brandPresence }
       }
     }
     
@@ -502,6 +511,9 @@ export const SearchVisibility = () => {
       sentimentData: brandTimeSeries?.sentiment && brandTimeSeries.sentiment.length > 0
         ? brandTimeSeries.sentiment
         : (brandSentimentDisplay !== null ? buildTimeseries(brandSentimentDisplay) : undefined),
+      brandPresenceData: brandTimeSeries?.brandPresence && brandTimeSeries.brandPresence.length > 0
+        ? brandTimeSeries.brandPresence
+        : buildTimeseries(Math.round(brandData.brandPresencePercentage ?? 0)),
       topTopics: brandData.topTopics?.map(topic => ({
         topic: topic.topic,
         occurrences: topic.occurrences,
@@ -538,6 +550,7 @@ export const SearchVisibility = () => {
         sentimentData: entry.timeSeries?.sentiment && entry.timeSeries.sentiment.length > 0
           ? entry.timeSeries.sentiment.map((s: number | null) => s !== null ? ((s + 1) / 2) * 100 : null)
           : (competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined),
+        brandPresenceData: buildTimeseries(Math.round(entry.brandPresencePercentage ?? 0)),
         topTopics: entry.topTopics?.map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -607,9 +620,11 @@ export const SearchVisibility = () => {
         ? model.data 
         : metricType === 'share' 
           ? (model.shareData ?? model.data)
-          : (model.sentimentData ?? model.data).map((v) => v ?? 0) // avoid null gaps in sentiment lines
+          : metricType === 'sentiment'
+            ? (model.sentimentData ?? model.data).map((v) => v ?? 0) // avoid null gaps in sentiment lines
+            : (model.brandPresenceData ?? model.data) // brandPresence metric
     }))
-  }), [currentModels, metricType]);
+  }), [currentModels, metricType, chartDateLabels]);
 
   const combinedLoading = authLoading || brandsLoading || loading;
 

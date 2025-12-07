@@ -4,6 +4,7 @@ import { Dashboard } from './pages/dashboard/Dashboard';
 import { SearchVisibility } from './pages/SearchVisibility';
 import { AISources } from './pages/AISources';
 import { SearchSources } from './pages/SearchSources';
+import { SearchSourcesR2 } from './pages/SearchSourcesR2';
 import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
@@ -109,6 +110,14 @@ function App() {
           element={
             <ProtectedRoute>
               <SearchSources />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search-sources-r2"
+          element={
+            <ProtectedRoute>
+              <SearchSourcesR2 />
             </ProtectedRoute>
           }
         />

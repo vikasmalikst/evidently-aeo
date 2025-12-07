@@ -58,7 +58,7 @@ interface VisibilityChartProps {
     datasets: Array<{
       id: string;
       label: string;
-      data: number[];
+      data: Array<number | null>;
     }>;
   };
   chartType: string;
@@ -121,7 +121,7 @@ export const VisibilityChart = memo(({
             pointHoverRadius: 5,
             tension: 0.4,
             fill: false,
-            spanGaps: true,
+            spanGaps: false,
           };
         }
       })

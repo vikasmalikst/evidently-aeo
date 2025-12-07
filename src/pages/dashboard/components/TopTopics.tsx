@@ -119,7 +119,7 @@ export const TopTopics = ({ topTopics }: TopTopicsProps) => {
                         <span className="text-right">Positive</span>
                       </div>
                       <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-52 p-2 bg-[#1a1d29] text-white text-[11px] rounded-lg shadow-lg z-[100] opacity-0 invisible group-hover/sentiment:opacity-100 group-hover/sentiment:visible transition-all pointer-events-none whitespace-normal text-center">
-                        Sentiment is mapped from -1 (very negative) to +1 (very positive) and shown here with a gradient marker for quick scanning.
+                        Sentiment is mapped from -100 (very negative) to +100 (very positive) and shown here with a gradient marker for quick scanning.
                         <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#1a1d29]"></div>
                       </div>
                     </div>

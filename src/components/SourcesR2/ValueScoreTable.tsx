@@ -82,7 +82,7 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
                 Type {sortIndicator('type')}
               </th>
               <th style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('valueScore')}>
-                Value {sortIndicator('valueScore')}
+                Impact Score {sortIndicator('valueScore')}
               </th>
               <th style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('mentionRate')}>
                 Mention % {sortIndicator('mentionRate')}
@@ -97,7 +97,7 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
                 Citations {sortIndicator('citations')}
               </th>
               <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('quadrant')}>
-                Zone {sortIndicator('quadrant')}
+                Category {sortIndicator('quadrant')}
               </th>
             </tr>
           </thead>

@@ -14,8 +14,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { icon: IconLayoutDashboard, label: 'Performance Overview', path: '/' },
-  { icon: IconEye, label: 'Search Visibility', path: '/search-visibility' },
-  { icon: IconTargetArrow, label: 'Search Sources', path: '/search-sources' },
+  { icon: IconEye, label: 'Metrics Analysis', path: '/search-visibility' },
+  { icon: IconTargetArrow, label: 'Citations Sources', path: '/search-sources' },
   { icon: IconFolderSearch, label: 'Topics', path: '/topics' },
   { icon: IconForms, label: 'Prompts', path: '/prompts' },
   { icon: IconKey, label: 'Keywords', path: '/keywords' },

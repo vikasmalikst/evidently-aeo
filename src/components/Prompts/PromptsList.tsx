@@ -68,7 +68,7 @@ export const PromptsList = memo(({
           <thead className="bg-[var(--bg-secondary)] border-b border-[var(--border-default)]">
             <tr>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-4 py-2">Prompt</th>
-              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-24">Visibility</th>
+              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-28">Visibility Score</th>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-32">Sentiment</th>
             </tr>
           </thead>

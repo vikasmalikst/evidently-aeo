@@ -86,7 +86,8 @@ export interface DashboardPayload {
     url: string;
     urls?: string[];
     domain: string;
-    impactScore: number | null;
+    impactScore: number | null; // Kept for backward compatibility, but Value should be used
+    value?: number; // Composite score based on Visibility, SOA, Sentiment, Citations and Topics
     change: number | null;
     visibility: number;
     share: number;

@@ -26,6 +26,16 @@ import {
 } from './utils'
 import { visibilityService } from './visibility.service'
 
+/**
+ * Helper function to detect if any filters are active
+ * When filters are active, we may want to use different aggregation methods
+ */
+function hasActiveFilters(options: { collectors?: string[] }): boolean {
+  const hasCollectorFilter = (options.collectors ?? []).length > 0
+  // Add competitor filter check here if you add that feature
+  return hasCollectorFilter
+}
+
 export async function buildDashboardPayload(
   brand: BrandRow,
   customerId: string,
@@ -693,7 +703,11 @@ export async function buildDashboardPayload(
       continue
     }
     const competitorName = rawCompetitorName
-    const competitorShare = Math.max(0, toNumber(row.share_of_answers_competitor))
+    // Only include valid competitor SOA values (exclude null/undefined, same as SQL AVG does)
+    const competitorShareRaw = row.share_of_answers_competitor
+    const competitorShare = (competitorShareRaw !== null && competitorShareRaw !== undefined)
+      ? Math.max(0, toNumber(competitorShareRaw))
+      : null // Mark as null to exclude from average calculation
     const competitorVisibility = Math.max(0, toNumber(row.visibility_index_competitor))
     
     // Priority: 1) sentiment_score_competitor from extracted_positions (competitor-specific column)
@@ -744,7 +758,19 @@ export async function buildDashboardPayload(
 
     const competitorAggregate = competitorAggregates.get(competitorName)!
 
-    competitorAggregate.shareValues.push(competitorShare)
+    // Only push valid competitor SOA values (exclude null, matching SQL AVG behavior)
+    if (competitorShare !== null && competitorShare !== undefined && Number.isFinite(competitorShare) && competitorShare >= 0) {
+      competitorAggregate.shareValues.push(competitorShare)
+      // Debug logging for Samsung to verify correct values are being collected
+      if (competitorName.toLowerCase().includes('samsung') && processedRowCount <= 10) {
+        console.log(`[Dashboard] Collecting Samsung SOA value: ${competitorShare.toFixed(2)}% from row ${processedRowCount}`)
+      }
+    } else {
+      // Debug: log when we exclude a value
+      if (competitorName.toLowerCase().includes('samsung') && processedRowCount <= 10) {
+        console.log(`[Dashboard] Excluding Samsung SOA value (null/invalid): raw=${competitorShareRaw}, processed=${competitorShare}`)
+      }
+    }
     competitorAggregate.visibilityValues.push(competitorVisibility)
     if (hasCompetitorSentiment) {
       competitorAggregate.sentimentValues.push(competitorSentimentValue)
@@ -766,15 +792,20 @@ export async function buildDashboardPayload(
         count: 0
       }
 
+    // Track valid share values separately to calculate correct average (matching SQL AVG behavior)
+    const newShareSum = competitorQueryAggregate.shareSum + (competitorShare !== null && competitorShare !== undefined && Number.isFinite(competitorShare) ? competitorShare : 0)
+    const newCount = competitorQueryAggregate.count + 1
+    // Note: shareSum / count gives average, but we'll use aggregate.shareValues array for final average instead
+    
     competitorAggregate.queries.set(queryId, {
       text: queryText,
-      shareSum: competitorQueryAggregate.shareSum + competitorShare,
+      shareSum: newShareSum, // For backward compatibility, but final average uses shareValues array
       visibilitySum: competitorQueryAggregate.visibilitySum + competitorVisibility,
       sentimentValues: hasCompetitorSentiment
         ? [...competitorQueryAggregate.sentimentValues, competitorSentimentValue]
         : competitorQueryAggregate.sentimentValues,
       mentionSum: competitorQueryAggregate.mentionSum + competitorMentions,
-      count: competitorQueryAggregate.count + 1
+      count: newCount
     })
 
     // Track topics for this competitor
@@ -790,7 +821,10 @@ export async function buildDashboardPayload(
       }
       const topicStats = competitorAggregate.topics.get(topicName)!
       topicStats.occurrences += 1
-      topicStats.shareSum += competitorShare
+      // Only add valid competitor share values (exclude null)
+      if (competitorShare !== null) {
+        topicStats.shareSum += competitorShare
+      }
       topicStats.visibilitySum += competitorVisibility
       topicStats.mentions += competitorMentions > 0 ? competitorMentions : 1
       if (queryId) {
@@ -845,6 +879,40 @@ export async function buildDashboardPayload(
   
   const totalResponses = totalPositionRows
 
+  // Check if filters are applied
+  const filtersActive = hasActiveFilters(options)
+
+  // Calculate Share of Answers
+  // When no filters are applied: use simple average of all share_of_answers_brand values
+  // When filters are applied: use simple average of filtered share_of_answers_brand values
+  let shareOfAnswersPercentage = 0
+  if (!filtersActive) {
+    // Simple average: collect all share_of_answers_brand values from brand rows and average them
+    const allBrandShareValues = positionRows
+      .filter(row => !row.competitor_name || row.competitor_name.trim().length === 0) // Only brand rows
+      .map(row => toNumber(row.share_of_answers_brand))
+      .filter(val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0)
+    
+    shareOfAnswersPercentage = allBrandShareValues.length > 0
+      ? average(allBrandShareValues)
+      : 0
+    
+    console.log(`[Dashboard] SOA calculation: Simple average (no filters). ${allBrandShareValues.length} brand positions, avg=${shareOfAnswersPercentage.toFixed(2)}%`)
+  } else {
+    // When filters are applied, still use simple average but only from filtered rows
+    const filteredBrandShareValues = positionRows
+      .filter(row => !row.competitor_name || row.competitor_name.trim().length === 0) // Only brand rows
+      .map(row => toNumber(row.share_of_answers_brand))
+      .filter(val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0)
+    
+    shareOfAnswersPercentage = filteredBrandShareValues.length > 0
+      ? average(filteredBrandShareValues)
+      : 0
+    
+    console.log(`[Dashboard] SOA calculation: Simple average (filters applied). ${filteredBrandShareValues.length} filtered brand positions, avg=${shareOfAnswersPercentage.toFixed(2)}%`)
+  }
+
+  // Keep these for backward compatibility with other calculations (visibility, competitor comparisons, etc.)
   const brandShareSum = brandShareValues.reduce((sum, value) => sum + value, 0)
   const competitorShareSum = Array.from(competitorAggregates.values()).reduce(
     (sum, aggregate) => sum + aggregate.shareValues.reduce((inner, value) => inner + value, 0),
@@ -853,9 +921,6 @@ export async function buildDashboardPayload(
   const totalShareUniverse = brandShareSum + competitorShareSum
 
   console.log(`[Dashboard] Brand share sum: ${brandShareSum}, Competitor share sum: ${competitorShareSum}, Total: ${totalShareUniverse}`)
-
-  // Calculate Share of Answers (brand's share of total answer space)
-  const shareOfAnswersPercentage = totalShareUniverse > 0 ? (brandShareSum / totalShareUniverse) * 100 : 0
   
   // Calculate Visibility Index (average prominence across queries)
   const visibilityIndexPercentage = average(brandVisibilityValues) * 100 // Convert 0-1 scale to 0-100
@@ -863,7 +928,7 @@ export async function buildDashboardPayload(
   // Display exact average sentiment in [-1, 1] (no normalization). average() returns 0 when empty.
   const sentimentScore = round(average(brandSentimentValues), 2)
   
-  console.log(`[Dashboard] Final metrics: shareOfAnswers=${shareOfAnswersPercentage}%, visibilityIndex=${visibilityIndexPercentage}%, sentiment=${sentimentScore}`)
+  console.log(`[Dashboard] Final metrics: shareOfAnswers=${shareOfAnswersPercentage.toFixed(2)}% (${filtersActive ? 'filtered' : 'unfiltered'} simple average), visibilityIndex=${visibilityIndexPercentage.toFixed(2)}%, sentiment=${sentimentScore}`)
 
   // Fetch citation sources for Source Type Distribution
   const { data: citationsData } = await (async () => {
@@ -1307,9 +1372,12 @@ export async function buildDashboardPayload(
 
     const shareValues = collectorStats.flatMap((stats) => stats.shareValues)
     const visibilityValues = collectorStats.flatMap((stats) => stats.visibilityValues)
+    const sentimentValues = collectorStats.flatMap((stats) => stats.sentimentValues)
+    const topics = new Set(collectorStats.map((stats) => stats.topic).filter((t): t is string => Boolean(t)))
 
     const avgShare = shareValues.length > 0 ? average(shareValues) : 0
     const avgVisibilityRaw = visibilityValues.length > 0 ? average(visibilityValues) : 0
+    const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
 
     // Convert URLs Set to sorted array (prefer shorter URLs first)
     // NOTE: URLs are kept as-is from database (no normalization), so URLs differing only by trailing slash are separate
@@ -1326,6 +1394,8 @@ export async function buildDashboardPayload(
       usage: aggregate.usage,
       share: avgShare, // Already in 0-100 format (from position-extraction.service.ts)
       visibility: avgVisibilityRaw * 100, // Convert 0-1 scale to 0-100 percentage
+      sentiment: avgSentiment, // Average sentiment (-1 to 1 scale)
+      topicsCount: topics.size, // Number of unique topics
       collectorIds: aggregate.collectorIds // Preserve collectorIds for mentionRate calculation
     }
   })
@@ -1334,9 +1404,20 @@ export async function buildDashboardPayload(
     (max, source) => (source.usage > max ? source.usage : max),
     0
   )
+  
+  // Calculate max values for Value score normalization
+  const maxTopicsCount = sourceAggregateEntries.reduce(
+    (max, source) => ((source.topicsCount || 0) > max ? (source.topicsCount || 0) : max),
+    1
+  )
 
   // Group by normalized domain to ensure no duplicates
-  const domainMap = new Map<string, Omit<typeof sourceAggregateEntries[0], 'urls' | 'collectorIds'> & { urls?: string[] | Set<string>; collectorIds?: Set<number> }>()
+  const domainMap = new Map<string, Omit<typeof sourceAggregateEntries[0], 'urls' | 'collectorIds'> & { 
+    urls?: string[] | Set<string>; 
+    collectorIds?: Set<number>;
+    sentiment?: number;
+    topicsCount?: number;
+  }>()
   
   sourceAggregateEntries.forEach((source) => {
     const normalizedDomain = source.domain?.toLowerCase().replace(/^www\./, '') || 'unknown'
@@ -1364,14 +1445,20 @@ export async function buildDashboardPayload(
         collectorIds: sourceAggregate?.collectorIds ? new Set(sourceAggregate.collectorIds) : new Set<number>()
       })
     } else {
-      // Merge entries with same domain: combine usage, share, visibility
+      // Merge entries with same domain: combine usage, share, visibility, sentiment, topics
       existing.usage += source.usage
-      // Average share and visibility (weighted by usage)
+      // Average share, visibility, and sentiment (weighted by usage)
       const totalUsage = existing.usage + source.usage
       if (totalUsage > 0) {
         existing.share = (existing.share * existing.usage + source.share * source.usage) / totalUsage
         existing.visibility = (existing.visibility * existing.usage + source.visibility * source.usage) / totalUsage
+        // For sentiment, average across all values (not weighted by usage)
+        const existingSentiment = existing.sentiment || 0
+        const sourceSentiment = source.sentiment || 0
+        existing.sentiment = (existingSentiment + sourceSentiment) / 2
       }
+      // For topics, take the maximum count (union would require tracking all topics)
+      existing.topicsCount = Math.max(existing.topicsCount || 0, source.topicsCount || 0)
       // Merge collectorIds sets to track all collector results citing this domain
       const sourceAggregate = sourceAggregates.get(source.key)
       if (sourceAggregate?.collectorIds) {
@@ -1575,8 +1662,9 @@ export async function buildDashboardPayload(
     }
   }
 
-  // Calculate previous period impact scores
-  const previousImpactScores = new Map<string, number>()
+  // Calculate previous period values (for change tracking)
+  // Note: We'll calculate Value in the same way as current period
+  const previousValues = new Map<string, number>()
   const previousMaxUsage = Array.from(previousSourceAggregates.values()).reduce(
     (max, source) => (source.usage > max ? source.usage : max),
     0
@@ -1586,23 +1674,33 @@ export async function buildDashboardPayload(
     const avgShare = prev.share.length > 0 ? average(prev.share) : 0
     const avgVisibility = prev.visibility.length > 0 ? average(prev.visibility) : 0
 
-    const hasImpact = prev.usage > 0 || avgShare > 0 || avgVisibility > 0
-    if (hasImpact) {
-      const usageNorm = previousMaxUsage > 0 ? (prev.usage / previousMaxUsage) * 10 : 0
-      const shareNorm = (avgShare / 100) * 10
-      const visibilityNorm = (avgVisibility / 100) * 10
-      const impactScore = round((0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm), 1)
-      previousImpactScores.set(domain, impactScore)
-    }
+    // Calculate Value using same formula as current period
+    // For previous period, we don't have sentiment/topics, so we'll use available data
+    const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
+    const normalizedSOA = Math.min(100, Math.max(0, avgShare))
+    const normalizedCitations = previousMaxUsage > 0 ? Math.min(100, (prev.usage / previousMaxUsage) * 100) : 0
+    // Use placeholders for sentiment and topics (50 for sentiment, 50 for topics) if not available
+    const normalizedSentiment = 50 // Default neutral if not available
+    const normalizedTopics = 50 // Default middle if not available
+    
+    const value = round(
+      (normalizedVisibility * 0.2) +
+      (normalizedSOA * 0.2) +
+      (normalizedSentiment * 0.2) +
+      (normalizedCitations * 0.2) +
+      (normalizedTopics * 0.2),
+      1
+    )
+    previousValues.set(domain, value)
   }
 
   const previousPeriodDuration = Date.now() - previousPeriodStartTime
   console.log(`[Dashboard] ✅ Previous period data processed (${previousPeriodDuration}ms)`)
-  console.log(`[Dashboard] Previous period sources: ${previousSourceAggregates.size}, impact scores calculated: ${previousImpactScores.size}`)
-  if (previousImpactScores.size > 0) {
-    console.log(`[Dashboard] Sample previous impact scores:`, Array.from(previousImpactScores.entries()).slice(0, 3))
+  console.log(`[Dashboard] Previous period sources: ${previousSourceAggregates.size}, values calculated: ${previousValues.size}`)
+  if (previousValues.size > 0) {
+    console.log(`[Dashboard] Sample previous values:`, Array.from(previousValues.entries()).slice(0, 3))
   } else {
-    console.log(`[Dashboard] ⚠️  No previous period impact scores calculated - this may be because there's no historical data`)
+    console.log(`[Dashboard] ⚠️  No previous period values calculated - this may be because there's no historical data`)
   }
 
   const topBrandSources = Array.from(domainMap.values())
@@ -1614,40 +1712,43 @@ export async function buildDashboardPayload(
         ? (uniqueCollectorResultsCitingSource / totalCollectorResultsCount) * 100 
         : 0
       
-      // Calculate impact score using real values (no normalization)
-      // Weighted combination: 35% SOA, 35% Visibility, 30% Usage (normalized to 0-10 scale for display)
-      const usageNorm = maxSourceUsage > 0 ? (source.usage / maxSourceUsage) * 10 : 0
-      const shareNorm = (source.share / 100) * 10 // SOA is 0-100, scale to 0-10
-      const visibilityNorm = (source.visibility / 100) * 10 // Visibility is 0-100, scale to 0-10
-      const hasImpact = source.usage > 0 || source.share > 0 || source.visibility > 0
-      const impactScore = hasImpact
-        ? round((0.35 * shareNorm + 0.35 * visibilityNorm + 0.3 * usageNorm), 1)
-        : null
+      // Calculate Value: Composite score based on Visibility, SOA, Sentiment, Citations and Topics
+      // Same formula as in source-attribution.service.ts
+      const normalizedVisibility = Math.min(100, Math.max(0, source.visibility))
+      const normalizedSOA = Math.min(100, Math.max(0, source.share))
+      const normalizedSentiment = Math.min(100, Math.max(0, ((source.sentiment || 0) + 1) / 2 * 100)) // Convert -1 to 1 scale to 0-100
+      const normalizedCitations = maxSourceUsage > 0 ? Math.min(100, (source.usage / maxSourceUsage) * 100) : 0
+      const normalizedTopics = maxTopicsCount > 0 ? Math.min(100, ((source.topicsCount || 0) / maxTopicsCount) * 100) : 0
+      
+      const value = round(
+        (normalizedVisibility * 0.2) +
+        (normalizedSOA * 0.2) +
+        (normalizedSentiment * 0.2) +
+        (normalizedCitations * 0.2) +
+        (normalizedTopics * 0.2),
+        1
+      )
       
       // Calculate change from previous period
       // Match by normalized domain (same as used in previous period aggregation)
       // Normalize domain the same way as domainMap key (lowercase, remove www.)
       const normalizedDomain = source.domain?.toLowerCase().replace(/^www\./, '') || 'unknown'
-      const previousImpactScore = previousImpactScores.get(normalizedDomain)
+      const previousValue = previousValues.get(normalizedDomain)
       
       let change: number | null = null
-      if (hasImpact && impactScore !== null) {
-        if (previousImpactScore !== undefined) {
-          change = round(impactScore - previousImpactScore, 1)
-          console.log(`[Dashboard] Change for ${source.domain}: ${impactScore} - ${previousImpactScore} = ${change}`)
-        } else {
-          // New source in current period - no previous data to compare
-          // Set change to 0 or null? For new sources, we could show 0 or leave as null
-          // Let's set to null so frontend shows "—" for new sources
-          change = null
-        }
+      if (previousValue !== undefined) {
+        change = round(value - previousValue, 1)
+        console.log(`[Dashboard] Change for ${source.domain}: ${value} - ${previousValue} = ${change}`)
+      } else {
+        // New source in current period - no previous data to compare
+        change = null
       }
       
       // Debug logging for first few sources
-      if (previousImpactScores.size > 0 && normalizedDomain !== 'unknown') {
-        const found = previousImpactScores.has(normalizedDomain)
+      if (previousValues.size > 0 && normalizedDomain !== 'unknown') {
+        const found = previousValues.has(normalizedDomain)
         if (!found) {
-          console.log(`[Dashboard] No previous data found for domain: ${normalizedDomain} (current impact: ${impactScore})`)
+          console.log(`[Dashboard] No previous data found for domain: ${normalizedDomain} (current value: ${value})`)
         }
       }
       
@@ -1675,16 +1776,17 @@ export async function buildDashboardPayload(
         urls: allUrls, // All cited URLs for this domain
         domain: source.domain,
         mentionRate: round(mentionRate, 1), // Add mentionRate for ranking
-        impactScore,
+        impactScore: value, // Use Value as impactScore (for backward compatibility with frontend)
+        value: value, // New Value field
         change,
         visibility: round(source.visibility, 1),
         share: round(source.share, 1),
         usage: source.usage
       }
     })
-    .filter((source) => source.impactScore !== null && Number.isFinite(source.impactScore))
-    // Sort by mentionRate (descending) to match Source Attribution table, then by usage as tiebreaker
-    .sort((a, b) => (b.mentionRate || 0) - (a.mentionRate || 0) || b.usage - a.usage)
+    .filter((source) => source.value !== null && Number.isFinite(source.value))
+    // Sort by Value (descending), then by mentionRate as tiebreaker
+    .sort((a, b) => (b.value || 0) - (a.value || 0) || (b.mentionRate || 0) - (a.mentionRate || 0))
     .slice(0, 10)
 
   // Calculate top 10 sources distribution by domain (for donut chart)
@@ -1889,7 +1991,9 @@ export async function buildDashboardPayload(
         const dayData = dailyData.get(date)
         if (dayData) {
           const brandVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index) ?? 0))
-          const brandShare = Math.min(1, Math.max(0, toNumber(row.share_of_answers_brand) ?? 0))
+          // Note: share_of_answers_brand is stored as percentage (0-100), not decimal (0-1)
+          // This matches the main brand share calculation (line 897) and visibility.service.ts (line 82)
+          const brandShare = Math.max(0, toNumber(row.share_of_answers_brand) ?? 0)
           const brandSentimentRaw = row.sentiment_score !== null && row.sentiment_score !== undefined
             ? toNumber(row.sentiment_score)
             : null
@@ -1911,14 +2015,23 @@ export async function buildDashboardPayload(
         const dayData = dailyData.get(date)
         if (dayData) {
           const competitorVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index_competitor) ?? 0))
-          const competitorShare = Math.min(1, Math.max(0, toNumber(row.share_of_answers_competitor) ?? 0))
+          // Only include valid competitor SOA values (exclude null, matching SQL AVG behavior)
+          // Note: share_of_answers_competitor is stored as percentage (0-100), not decimal (0-1)
+          // This matches the main competitor share calculation (line 709) and visibility.service.ts (line 221)
+          const competitorShareRaw = row.share_of_answers_competitor
+          const competitorShare = (competitorShareRaw !== null && competitorShareRaw !== undefined)
+            ? Math.max(0, toNumber(competitorShareRaw))
+            : null
           const competitorSentimentRaw = row.sentiment_score_competitor !== null && row.sentiment_score_competitor !== undefined
             ? toNumber(row.sentiment_score_competitor)
             : null
           const competitorSentiment = competitorSentimentRaw !== null && Number.isFinite(competitorSentimentRaw) ? competitorSentimentRaw : null
 
           dayData.visibilityValues.push(competitorVisibility)
-          dayData.shareValues.push(competitorShare)
+          // Only push valid competitor share values (exclude null)
+          if (competitorShare !== null && Number.isFinite(competitorShare)) {
+            dayData.shareValues.push(competitorShare)
+          }
           if (competitorSentiment !== null) {
             dayData.sentimentValues.push(competitorSentiment)
           }
@@ -1948,8 +2061,10 @@ export async function buildDashboardPayload(
         const avgVisibility = dayData.visibilityValues.length > 0
           ? round(average(dayData.visibilityValues) * 100)
           : 0
+        // Note: shareValues are already percentages (0-100), not decimals, so don't multiply by 100
+        // This matches the main brand share calculation (line 897) which uses average(...) without * 100
         const avgShare = dayData.shareValues.length > 0
-          ? round(average(dayData.shareValues) * 100)
+          ? round(average(dayData.shareValues))
           : 0
         const avgSentiment = dayData.sentimentValues.length > 0
           ? round(average(dayData.sentimentValues), 2)
@@ -1967,6 +2082,8 @@ export async function buildDashboardPayload(
   console.log(`[Dashboard] Time-series data calculated for ${timeSeriesData.size} collectors`)
 
   // Calculate daily averages for each competitor
+  // Note: shareValues arrays only contain valid (non-null) competitor SOA values
+  // because null values are filtered out during data collection (see line 2028-2029)
   const competitorTimeSeriesData = new Map<string, {
     dates: string[]
     visibility: number[]
@@ -1987,8 +2104,11 @@ export async function buildDashboardPayload(
         const avgVisibility = dayData.visibilityValues.length > 0
           ? round(average(dayData.visibilityValues) * 100)
           : 0
+        // Calculate average share using simple average of valid values (matches SQL AVG behavior)
+        // Note: shareValues are already percentages (0-100), not decimals, so don't multiply by 100
+        // This ensures charts display the same SOA values as the main table (which uses round(average(...)) without * 100)
         const avgShare = dayData.shareValues.length > 0
-          ? round(average(dayData.shareValues) * 100)
+          ? round(average(dayData.shareValues))
           : 0
         const avgSentiment = dayData.sentimentValues.length > 0
           ? round(average(dayData.sentimentValues), 2)
@@ -2009,9 +2129,12 @@ export async function buildDashboardPayload(
     collectorAggregates,
     totalCollectorMentions,
     totalCollectorShareSum,
-    timeSeriesData
+    timeSeriesData,
+    filtersActive // Pass filter status
   )
 
+  // Note: totalShareUniverse is no longer used in calculateCompetitorVisibility (we use simple average now)
+  // Keeping it for backward compatibility with function signature
   const competitorVisibility = visibilityService.calculateCompetitorVisibility(
     competitorAggregates,
     totalShareUniverse,
@@ -2052,7 +2175,7 @@ export async function buildDashboardPayload(
       label: 'Share of Answers',
       value: round(shareOfAnswersPercentage),
       delta: 0,
-      description: 'Share of answers that explicitly reference your brand versus key competitors.'
+      description: 'Average share of answers across all queries. Calculated as the mean of all brand share values in the dataset.'
     },
     {
       label: 'Sentiment Score',

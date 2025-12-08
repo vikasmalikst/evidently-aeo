@@ -237,6 +237,9 @@ export const SearchVisibility = () => {
     if (activeTab === 'competitive' && llmFilters.length > 0) {
       params.append('collectors', llmFilters.map((v) => v.toLowerCase()).join(','));
     }
+    // Add skipCache to bypass cached data and get fresh calculation with updated SOA logic
+    // This ensures we get the corrected competitor SOA calculation
+    params.append('skipCache', 'true');
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     perfLog('SearchVisibility: Endpoint computation', endpointStart);
     return endpoint;

@@ -17,6 +17,8 @@ export interface SourceAttributionData {
   topics: string[]
   prompts: string[]
   pages: string[]
+  value?: number // Composite score based on Visibility, SOA, Sentiment, Citations and Topics
+  visibility?: number // Visibility index (0-100)
 }
 
 export interface SourceAttributionResponse {
@@ -268,6 +270,7 @@ export class SourceAttributionService {
         share_of_answers_brand: number | null;
         total_brand_mentions: number | null;
         sentiment_score?: number | null;
+        visibility_index?: number | null;
         competitor_name?: string | null;
         metadata: any;
       }> = []
@@ -280,6 +283,7 @@ export class SourceAttributionService {
             share_of_answers_brand,
             total_brand_mentions,
             sentiment_score,
+            visibility_index,
             competitor_name,
             topic,
             metadata
@@ -306,11 +310,12 @@ export class SourceAttributionService {
       )
       console.log(`[SourceAttribution] Created queryMap with ${queryMap.size} entries`)
       
-      // Create maps for share of answer and mention counts by collector_result_id
+      // Create maps for share of answer, mention counts, and visibility by collector_result_id
       // Multiple positions can exist per collector_result_id, so we'll average them
       // Note: sentiment is now stored directly in collector_results (already fetched above)
       const shareOfAnswerByCollectorResult = new Map<number, number[]>()
       const mentionCountsByCollectorResult = new Map<number, number[]>()
+      const visibilityByCollectorResult = new Map<number, number[]>()
       
       for (const position of extractedPositions) {
         if (position.collector_result_id) {
@@ -331,6 +336,18 @@ export class SourceAttributionService {
             }
             mentionCountsByCollectorResult.get(collectorId)!.push(toNumber(position.total_brand_mentions))
           }
+
+          // Collect visibility values (brand rows only, visibility_index is 0-1, convert to 0-100)
+          const isBrandRow =
+            !position.competitor_name ||
+            (typeof position.competitor_name === 'string' && position.competitor_name.trim().length === 0)
+          if (isBrandRow && position.visibility_index !== null && position.visibility_index !== undefined) {
+            if (!visibilityByCollectorResult.has(collectorId)) {
+              visibilityByCollectorResult.set(collectorId, [])
+            }
+            // visibility_index is 0-1 scale, convert to 0-100 for consistency
+            visibilityByCollectorResult.get(collectorId)!.push(toNumber(position.visibility_index) * 100)
+          }
         }
       }
       
@@ -338,6 +355,12 @@ export class SourceAttributionService {
       const avgShareByCollectorResult = new Map<number, number>()
       for (const [collectorId, shareValues] of shareOfAnswerByCollectorResult.entries()) {
         avgShareByCollectorResult.set(collectorId, average(shareValues))
+      }
+
+      // Calculate average visibility per collector result
+      const avgVisibilityByCollectorResult = new Map<number, number>()
+      for (const [collectorId, visibilityValues] of visibilityByCollectorResult.entries()) {
+        avgVisibilityByCollectorResult.set(collectorId, average(visibilityValues))
       }
       
       // Collect sentiment values (brand rows only) from extracted_positions
@@ -394,6 +417,7 @@ export class SourceAttributionService {
           collectorResultIds: Set<number>
           shareValues: number[]
           sentimentValues: number[]
+          visibilityValues: number[]
           mentionCounts: number[]
           topics: Set<string>
           queryIds: Set<string>
@@ -429,6 +453,7 @@ export class SourceAttributionService {
             collectorResultIds: new Set(),
             shareValues: [],
             sentimentValues: [],
+            visibilityValues: [],
             mentionCounts: [],
             topics: new Set<string>(),
             queryIds: new Set<string>(),
@@ -484,6 +509,12 @@ export class SourceAttributionService {
           const avgSentiment = avgSentimentByCollectorResult.get(citation.collector_result_id)
           if (avgSentiment !== undefined) {
             aggregate.sentimentValues.push(avgSentiment)
+          }
+
+          // Add visibility from extracted_positions
+          const avgVisibility = avgVisibilityByCollectorResult.get(citation.collector_result_id)
+          if (avgVisibility !== undefined) {
+            aggregate.visibilityValues.push(avgVisibility)
           }
           
           // Get mention counts from extracted_positions (average if multiple)
@@ -673,6 +704,10 @@ export class SourceAttributionService {
       const sources: SourceAttributionData[] = []
       
       console.log(`[SourceAttribution] 🔄 Converting ${sourceAggregates.size} aggregates to source data...`)
+      // Calculate max values for normalization in Value score
+      const maxCitations = Math.max(...Array.from(sourceAggregates.values()).map(a => a.citations), 1)
+      const maxTopics = Math.max(...Array.from(sourceAggregates.values()).map(a => a.topics.size), 1)
+
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         // Share of Answer: Average across all collector results where this source is cited
         // share_of_answers_brand is stored as 0-100 percentage format (confirmed in position-extraction.service.ts:736)
@@ -680,6 +715,7 @@ export class SourceAttributionService {
         const avgShare = avgShareRaw // Already in 0-100 format, no normalization needed
         
         const avgSentiment = aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
+        const avgVisibility = aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
         const totalMentions = aggregate.mentionCounts.reduce((sum, count) => sum + count, 0)
         
         // Mention Rate: percentage of total collector results where this source is cited
@@ -687,6 +723,29 @@ export class SourceAttributionService {
         // Example: If learn.microsoft.com is cited in 8 out of 23 total responses, mention rate = (8/23) * 100 = 34.8%
         const uniqueCollectorResults = aggregate.collectorResultIds.size
         const mentionRate = totalResponsesCount > 0 ? (uniqueCollectorResults / totalResponsesCount) * 100 : 0
+
+        // Calculate Value: Composite score based on Visibility, SOA, Sentiment, Citations and Topics
+        // Normalize all components to 0-100 scale, then weight them
+        // Visibility (0-100): avgVisibility is already 0-100
+        // SOA (0-100): avgShare is already 0-100
+        // Sentiment (-1 to 1): normalize to 0-100 scale: (sentiment + 1) / 2 * 100
+        // Citations: normalize to 0-100: (citations / maxCitations) * 100
+        // Topics: normalize to 0-100: (topics.size / maxTopics) * 100
+        // Equal weighting: 20% each
+        const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
+        const normalizedSOA = Math.min(100, Math.max(0, avgShare))
+        const normalizedSentiment = Math.min(100, Math.max(0, ((avgSentiment + 1) / 2) * 100)) // Convert -1 to 1 scale to 0-100
+        const normalizedCitations = maxCitations > 0 ? Math.min(100, (aggregate.citations / maxCitations) * 100) : 0
+        const normalizedTopics = maxTopics > 0 ? Math.min(100, (aggregate.topics.size / maxTopics) * 100) : 0
+        
+        const value = round(
+          (normalizedVisibility * 0.2) +
+          (normalizedSOA * 0.2) +
+          (normalizedSentiment * 0.2) +
+          (normalizedCitations * 0.2) +
+          (normalizedTopics * 0.2),
+          1
+        )
 
         // Calculate changes from previous period
         const previous = previousSourceAggregates.get(sourceKey)
@@ -724,6 +783,8 @@ export class SourceAttributionService {
           sentimentChange: round(sentimentChange, 2),
           citations: aggregate.citations,
           topics: Array.from(aggregate.topics),
+          visibility: round(avgVisibility, 1),
+          value: value,
           // Use prompts from collector_results.question, fallback to query_text from generated_queries
           prompts: (() => {
             const promptsFromCollector = Array.from(aggregate.prompts)
@@ -746,8 +807,8 @@ export class SourceAttributionService {
         })
       }
 
-      // Sort by mention rate descending
-      sources.sort((a, b) => b.mentionRate - a.mentionRate)
+      // Sort by Value descending (composite score), then by mention rate as tiebreaker
+      sources.sort((a, b) => (b.value || 0) - (a.value || 0) || b.mentionRate - a.mentionRate)
       
       stepTimings['conversion'] = Date.now() - conversionStartTime;
       console.log(`[SourceAttribution] ✅ Converted to ${sources.length} sources (${stepTimings['conversion']}ms)`)
@@ -1034,6 +1095,7 @@ export class SourceAttributionService {
           collectorResultIds: Set<number>
           shareValues: number[]
           sentimentValues: number[]
+          visibilityValues: number[]
           mentionCounts: number[]
           topics: Set<string>
           queryIds: Set<string>
@@ -1064,6 +1126,7 @@ export class SourceAttributionService {
             collectorResultIds: new Set(),
             shareValues: [],
             sentimentValues: [],
+            visibilityValues: [],
             mentionCounts: [],
             topics: new Set<string>(),
             queryIds: new Set<string>(),

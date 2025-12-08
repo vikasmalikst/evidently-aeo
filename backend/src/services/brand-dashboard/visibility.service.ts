@@ -62,7 +62,8 @@ export class VisibilityService {
       visibility: number[]
       share: number[]
       sentiment: (number | null)[]
-    }>
+    }>,
+    filtersActive: boolean = false
   ): LlmVisibilitySlice[] {
     const llmVisibility: LlmVisibilitySlice[] = Array.from(collectorAggregates.entries())
       .map(([collectorType, aggregate]) => {
@@ -71,17 +72,26 @@ export class VisibilityService {
         const clampedVisibility = Math.min(1, Math.max(0, averageVisibilityRaw))
         const visibilityPercentage = round(clampedVisibility * 100)
 
-        const shareValueSum = aggregate.shareValues.reduce((sum, value) => sum + value, 0)
-        const shareFromValues =
-          totalCollectorShareSum > 0 ? round((shareValueSum / totalCollectorShareSum) * 100) : 0
-        const shareFromMentions =
-          totalCollectorMentions > 0 ? round((aggregate.mentions / totalCollectorMentions) * 100) : 0
-        const shareOfSearch =
-          shareFromValues > 0
-            ? shareFromValues
-            : shareFromMentions > 0
-              ? shareFromMentions
-              : visibilityPercentage
+        // Calculate Share of Answers per LLM
+        // When no filters: use simple average of all share_of_answers_brand values for this collector_type
+        // When filters applied: use simple average of filtered values
+        let shareOfSearch = 0
+        if (!filtersActive) {
+          // Simple average: average all share values for this collector type
+          shareOfSearch = aggregate.shareValues.length > 0
+            ? round(average(aggregate.shareValues))
+            : 0
+        } else {
+          // When filters are applied, still use simple average but from filtered data
+          shareOfSearch = aggregate.shareValues.length > 0
+            ? round(average(aggregate.shareValues))
+            : 0
+        }
+        
+        // Fallback to visibility if no share values (for backward compatibility)
+        if (shareOfSearch === 0 && aggregate.shareValues.length === 0) {
+          shareOfSearch = visibilityPercentage
+        }
 
         const normalizedCollectorType = collectorType.toLowerCase().trim()
         const color =
@@ -202,8 +212,23 @@ export class VisibilityService {
   ): CompetitorVisibility[] {
     let competitorVisibility: CompetitorVisibility[] = Array.from(competitorAggregates.entries())
       .map(([competitorName, aggregate]) => {
-        const competitorShare = aggregate.shareValues.reduce((sum, value) => sum + value, 0)
-        const share = totalShareUniverse > 0 ? round((competitorShare / totalShareUniverse) * 100) : round(average(aggregate.shareValues) * 100)
+        // Use simple average for competitor SOA (consistent with Topics page and brand SOA calculation)
+        // Filter out invalid values (null, undefined, NaN, Infinity) to match SQL AVG behavior
+        const validShareValues = aggregate.shareValues.filter(
+          val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0
+        )
+        const share = validShareValues.length > 0
+          ? round(average(validShareValues))
+          : 0
+        
+        // Debug logging to verify calculation matches SQL query
+        if (competitorName.toLowerCase().includes('samsung')) {
+          console.log(`[Visibility] Competitor "${competitorName}": ${validShareValues.length} valid SOA values (out of ${aggregate.shareValues.length} total), average=${share.toFixed(2)}%`)
+          if (validShareValues.length > 0 && validShareValues.length <= 10) {
+            console.log(`[Visibility] Samsung SOA values: [${validShareValues.slice(0, 10).map(v => v.toFixed(2)).join(', ')}${validShareValues.length > 10 ? '...' : ''}]`)
+          }
+        }
+        
         const avgVisibilityRaw = aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
         const visibility = round(Math.min(1, Math.max(0, avgVisibilityRaw)) * 100)
 
@@ -409,12 +434,17 @@ export class VisibilityService {
     mentions: number
     share: number
   }> {
+    // Use simple average for brand share (consistent with dashboard SOA calculation)
+    const brandShare = brandShareValues.length > 0
+      ? round(average(brandShareValues))
+      : 0
+    
     const visibilityComparison = [
       {
         entity: brandName,
         isBrand: true,
         mentions: totalResponses,
-        share: totalShareUniverse > 0 ? round((brandShareSum / totalShareUniverse) * 100) : round(average(brandShareValues))
+        share: brandShare
       },
       ...competitorVisibility.map((competitor) => ({
         entity: competitor.competitor,

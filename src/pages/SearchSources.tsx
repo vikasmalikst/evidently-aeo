@@ -69,11 +69,13 @@ interface SourceData {
   topics: string[];
   prompts: string[];
   pages: string[];
+  value?: number; // Composite score based on Visibility, SOA, Sentiment, Citations and Topics
+  visibility?: number;
 }
 
 const fallbackTopicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
 
-type SortField = 'name' | 'type' | 'mentionRate' | 'soa' | 'sentiment' | 'topics' | 'pages' | 'prompts';
+type SortField = 'name' | 'type' | 'value' | 'mentionRate' | 'soa' | 'sentiment' | 'topics' | 'pages' | 'prompts';
 type SortDirection = 'asc' | 'desc';
 
 export const SearchSources = () => {
@@ -103,7 +105,7 @@ export const SearchSources = () => {
   const [modalType, setModalType] = useState<'prompts' | 'pages' | null>(null);
   const [modalData, setModalData] = useState<string[]>([]);
   const [modalTitle, setModalTitle] = useState('');
-  const [sortField, setSortField] = useState<SortField>('mentionRate');
+  const [sortField, setSortField] = useState<SortField>('value');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const chartRef = useRef<any>(null);
   
@@ -336,6 +338,10 @@ export const SearchSources = () => {
         case 'type':
           aValue = a.type;
           bValue = b.type;
+          break;
+        case 'value':
+          aValue = a.value ?? 0;
+          bValue = b.value ?? 0;
           break;
         case 'mentionRate':
           aValue = a.mentionRate;
@@ -1865,9 +1871,12 @@ export const SearchSources = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div>
               <h2 style={{ fontSize: '18px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 4px 0' }}>
-                Source Attribution Details
+                Top Sources
               </h2>
               <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                Composite score based on Visibility, SOA, Sentiment, Citations and Topics
+              </p>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>
                 {filteredData.length} source{filteredData.length !== 1 ? 's' : ''} found
               </p>
             </div>
@@ -1951,6 +1960,28 @@ export const SearchSources = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Type
                       {sortField === 'type' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('value')}
+                    style={{
+                      textAlign: 'right',
+                      padding: '14px 12px',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      color: '#1a1d29',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
+                    }}
+                    title="Composite score based on Visibility, SOA, Sentiment, Citations and Topics"
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                      Value
+                      {sortField === 'value' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
                       )}
                     </div>
@@ -2146,6 +2177,11 @@ export const SearchSources = () => {
                           }}
                         >
                           {sourceTypeLabels[source.type] || source.type}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 12px', textAlign: 'right' }}>
+                        <span style={{ fontSize: '14px', fontFamily: 'IBM Plex Mono, monospace', fontWeight: '600', color: '#1a1d29' }}>
+                          {source.value !== undefined ? source.value.toFixed(1) : '—'}
                         </span>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'right' }}>

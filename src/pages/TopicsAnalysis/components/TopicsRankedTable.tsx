@@ -12,14 +12,14 @@ interface TopicsRankedTableProps {
   brandFavicon?: string;
 }
 
-// Get industry average SOA for a topic (from backend data)
-const getAvgIndustrySoA = (topic: Topic): number => {
-  // Use real industry data if available
+// Get competitor average SOA for a topic (from backend data)
+const getAvgCompetitorSoA = (topic: Topic): number => {
+  // Use real competitor data if available
   if (topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0) {
     return topic.industryAvgSoA;
   }
   
-  // Fallback: return 0 if no industry data
+  // Fallback: return 0 if no competitor data
   return 0;
 };
 
@@ -227,7 +227,7 @@ export const TopicsRankedTable = ({
                 </th>
                 <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[140px]">
                   <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
-                    Avg Industry SoA
+                    Competitor SoA
                   </span>
                 </th>
                 <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[150px]">
@@ -236,7 +236,21 @@ export const TopicsRankedTable = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-default)]">
-              {filteredAndSortedTopics.map((topic) => {
+              {filteredAndSortedTopics.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 sm:px-4 lg:px-5 py-12 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <p className="text-sm font-medium text-[var(--text-headings)]">
+                        No topics found for selected filters
+                      </p>
+                      <p className="text-xs text-[var(--text-caption)]">
+                        Try adjusting your date range or LLM model filters to see more results
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedTopics.map((topic) => {
                 return (
                   <tr
                     key={topic.id}
@@ -297,24 +311,24 @@ export const TopicsRankedTable = ({
                     </td>
                     <td className="px-3 sm:px-4 lg:px-5 py-4">
                       {(() => {
-                        const avgIndustrySoA = getAvgIndustrySoA(topic);
+                        const avgCompetitorSoA = getAvgCompetitorSoA(topic);
                         
-                        // Show industry average as a single percentage value if available
-                        if (avgIndustrySoA > 0) {
-                          const industrySoAColor = getSoAColor(avgIndustrySoA);
+                        // Show competitor average as a single percentage value if available
+                        if (avgCompetitorSoA > 0) {
+                          const competitorSoAColor = getSoAColor(avgCompetitorSoA);
                           return (
                             <span 
                               className="text-sm font-semibold whitespace-nowrap" 
-                              style={{ color: industrySoAColor }}
-                              title={`Industry average: ${(avgIndustrySoA * 20).toFixed(1)}%`}
+                              style={{ color: competitorSoAColor }}
+                              title={`Competitor average: ${(avgCompetitorSoA * 20).toFixed(1)}%`}
                             >
-                              {(avgIndustrySoA * 20).toFixed(1)}%
+                              {(avgCompetitorSoA * 20).toFixed(1)}%
                             </span>
                           );
                         } else {
-                          // No industry data available
+                          // No competitor data available
                           return (
-                            <span className="text-sm text-[var(--text-caption)]" title="Industry average data not available (no other brands tracking same topics)">
+                            <span className="text-sm text-[var(--text-caption)]" title="Competitor average data not available (no competitors tracking same topics)">
                               —
                             </span>
                           );
@@ -363,7 +377,8 @@ export const TopicsRankedTable = ({
                     </td>
                   </tr>
                 );
-              })}
+                })
+              )}
             </tbody>
           </table>
       </div>

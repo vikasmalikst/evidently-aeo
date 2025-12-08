@@ -108,3 +108,4 @@ Both `collector_results` and `extracted_positions` tables have independent `coll
 
 
 
+

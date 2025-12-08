@@ -41,6 +41,11 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
     return location.pathname === path;
   };
 
+  // Filter out "Settings" nav item when on manage-prompts page
+  const visibleNavItems = location.pathname === '/settings/manage-prompts'
+    ? settingsNavItems.filter(item => item.id !== 'settings')
+    : settingsNavItems;
+
   return (
     <div className="flex" style={{ height: 'calc(100vh - 4rem)' }}>
       {/* Settings Navigation Sidebar */}
@@ -50,7 +55,7 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
         </div>
         <nav className="p-4 flex-1 overflow-y-auto">
           <ul className="space-y-2">
-            {settingsNavItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const active = isActive(item.path);
 
               return (

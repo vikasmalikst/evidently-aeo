@@ -82,8 +82,11 @@ export const TopBrandSources = ({ brandPages }: TopBrandSourcesProps) => {
                 </div>
                 <div className="flex items-center gap-6 flex-shrink-0">
                   <div className="text-center min-w-[80px]">
-                    <div className="text-[11px] text-[#64748b] uppercase tracking-wide mb-1">
-                      Impact
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <span className="text-[11px] text-[#64748b] uppercase tracking-wide">
+                        Impact
+                      </span>
+                      <InfoTooltip description="Impact Score (0-10) measures how prominently your brand appears from this source. Formula: 35% Share of Answers + 35% Visibility + 30% Usage (all normalized to 0-10 scale). Share reflects brand mention percentage, Visibility measures prominence in responses, and Usage counts citation frequency." />
                     </div>
                     <div className="flex items-baseline justify-center gap-1">
                       <span className="text-[16px] font-bold text-[#1a1d29]">

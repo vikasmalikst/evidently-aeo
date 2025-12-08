@@ -733,20 +733,28 @@ export class PromptsAnalyticsService {
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       let visibilityQuery = supabaseAdmin
         .from('extracted_positions')
-        .select('query_id, collector_result_id, visibility_index, competitor_name, sentiment_score, total_brand_mentions, total_brand_product_mentions, competitor_mentions')
+        .select('query_id, collector_result_id, collector_type, visibility_index, competitor_name, sentiment_score, total_brand_mentions, total_brand_product_mentions, competitor_mentions')
         .eq('brand_id', brandRow.id)
         .eq('customer_id', customerId)
         .gte('processed_at', normalizedRange.startIsoBound)
         .lte('processed_at', normalizedRange.endIsoBound)
-        .or(
-          [
-            allQueryIds.length > 0 ? `query_id.in.(${allQueryIds.join(',')})` : '',
-            allCollectorResultIds.length > 0 ? `collector_result_id.in.(${allCollectorResultIds.join(',')})` : ''
-          ]
-            .filter(Boolean)
-            .join(',')
-        )
 
+      // Build the OR condition for query_id and collector_result_id
+      const orConditions: string[] = []
+      if (allQueryIds.length > 0) {
+        orConditions.push(`query_id.in.(${allQueryIds.join(',')})`)
+      }
+      if (allCollectorResultIds.length > 0) {
+        orConditions.push(`collector_result_id.in.(${allCollectorResultIds.join(',')})`)
+      }
+      if (orConditions.length > 0) {
+        visibilityQuery = visibilityQuery.or(orConditions.join(','))
+      }
+
+      // Filter by collector_type if multiple collectors are selected
+      // This ensures we get all sentiment data from the selected collectors
+      // CRITICAL: When filtering by collector_type, we get ALL rows for those collectors,
+      // not just those whose collector_result_ids we already know about
       if (collectorFilterActive) {
         visibilityQuery = visibilityQuery.in('collector_type', collectorFilter)
       }
@@ -756,17 +764,10 @@ export class PromptsAnalyticsService {
       if (visibilityError) {
         console.warn(`Failed to load visibility scores: ${visibilityError.message}`)
       } else {
-        const filteredRows = (visibilityRows ?? []).filter((row: any) => {
-          if (!collectorFilterActive) {
-            return true
-          }
-          const collectorResultId =
-            typeof row?.collector_result_id === 'number' ? row.collector_result_id : null
-          if (collectorResultId === null) {
-            return false
-          }
-          return allowedCollectorResultIds.has(collectorResultId)
-        })
+        // When collector filter is active, we've already filtered by collector_type in the query
+        // All rows returned match the selected collectors, so we just need to verify they're valid
+        // No need to double-filter since the query already handles collector_type filtering
+        const filteredRows = visibilityRows ?? []
 
         filteredRows.forEach((row: any) => {
           // Process visibility_index and sentiment_score from extracted_positions (same source as dashboard)
@@ -838,11 +839,14 @@ export class PromptsAnalyticsService {
                 arr.push(sentimentValue)
                 sentimentMap.set(key, arr)
               }
+              // CRITICAL: Always use :brand suffix for brand rows to ensure consistency
+              // When multiple collectors are selected, we aggregate sentiment by query_id
+              // so all sentiment values for a query from selected collectors are combined
               if (keyByQuery) {
-                pushSentiment(keyByQuery + (isBrandRow ? ':brand' : ':all'))
+                pushSentiment(keyByQuery + ':brand')
               }
               if (keyByCollector) {
-                pushSentiment(keyByCollector + (isBrandRow ? ':brand' : ':all'))
+                pushSentiment(keyByCollector + ':brand')
               }
             }
           }

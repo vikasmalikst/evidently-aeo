@@ -5,10 +5,10 @@ import { getLLMIcon } from '../Visibility/LLMIcons';
 
 interface ResponseViewerProps {
   prompt: PromptEntry | null;
-  selectedLLM: string | null;
+  selectedLLMs: string[];
 }
 
-export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => {
+export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
   const [highlightProducts, setHighlightProducts] = useState(true);
   const [highlightKeywords, setHighlightKeywords] = useState(true);
@@ -28,12 +28,12 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
     
     // If responses array exists, use it; otherwise fall back to single response
     if (prompt.responses && prompt.responses.length > 0) {
-      // If selectedLLM is null (All Models), show all responses
-      if (!selectedLLM) {
+      // If no LLMs selected (All Models), show all responses
+      if (selectedLLMs.length === 0) {
         return prompt.responses;
       }
-      // Otherwise filter by selected collector
-      return prompt.responses.filter(r => r.collectorType === selectedLLM);
+      // Otherwise filter by selected collectors
+      return prompt.responses.filter(r => selectedLLMs.includes(r.collectorType));
     }
     
     // Fallback: if no responses array but we have a single response, create a response object
@@ -48,14 +48,14 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
         competitorMentions: null
       };
       
-      // Apply filter if needed (null means show all)
-      if (!selectedLLM || singleResponse.collectorType === selectedLLM) {
+      // Apply filter if needed (empty array means show all)
+      if (selectedLLMs.length === 0 || selectedLLMs.includes(singleResponse.collectorType)) {
         return [singleResponse];
       }
     }
     
     return [];
-  }, [prompt, selectedLLM]);
+  }, [prompt, selectedLLMs]);
 
   const formattedTimestamp = useMemo(() => {
     if (!prompt?.lastUpdated) {
@@ -161,8 +161,8 @@ export const ResponseViewer = ({ prompt, selectedLLM }: ResponseViewerProps) => 
       <div className="flex-1 overflow-y-auto p-6 font-data" style={{ maxHeight: 'calc(100vh - 450px)' }}>
         {filteredResponses.length === 0 ? (
           <p className="text-sm text-[var(--text-caption)]">
-            {selectedLLM
-              ? `No response available for ${selectedLLM} for this prompt.`
+            {selectedLLMs.length > 0
+              ? `No response available for ${selectedLLMs.length === 1 ? selectedLLMs[0] : selectedLLMs.join(', ')} for this prompt.`
               : 'No response captured for this prompt within the selected filters.'}
           </p>
         ) : (

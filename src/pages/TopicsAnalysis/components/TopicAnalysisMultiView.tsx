@@ -4,9 +4,11 @@ import { TopicsRacingBarChart } from './TopicsRacingBarChart';
 import { TopicsBarChart } from './TopicsBarChart';
 import { TopicsAreaChart } from './TopicsAreaChart';
 import { TopicsChartTypeSelector } from './TopicsChartTypeSelector';
+import { CompetitorFilter } from './CompetitorFilter';
 import { TopicDetailModal } from './TopicDetailModal';
 import type { Topic } from '../types';
 import type { Competitor } from '../utils/competitorColors';
+import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 
 export type ChartType = 'racing-bar' | 'bar' | 'line';
 
@@ -21,9 +23,15 @@ interface TopicAnalysisMultiViewProps {
   selectedDateRange?: string;
   selectedCountry?: string;
   competitors?: Competitor[];
-  selectedCompetitor?: string;
+  managedCompetitors?: ManagedCompetitor[];
+  selectedCompetitors?: Set<string>;
+  onCompetitorToggle?: (competitorName: string) => void;
+  onSelectAllCompetitors?: () => void;
+  onDeselectAllCompetitors?: () => void;
+  selectedCompetitor?: string; // Legacy prop, kept for backward compatibility
   brandFavicon?: string;
   brandName?: string;
+  isLoadingCompetitors?: boolean; // Loading state for competitor data
   onExport?: () => void;
 }
 
@@ -38,9 +46,15 @@ export const TopicAnalysisMultiView = ({
   selectedDateRange,
   selectedCountry,
   competitors = [],
-  selectedCompetitor = '',
+  managedCompetitors = [],
+  selectedCompetitors = new Set(),
+  onCompetitorToggle,
+  onSelectAllCompetitors,
+  onDeselectAllCompetitors,
+  selectedCompetitor = '', // Legacy prop
   brandFavicon,
   brandName,
+  isLoadingCompetitors = false,
   onExport,
 }: TopicAnalysisMultiViewProps) => {
   const [chartType, setChartType] = useState<ChartType>(defaultChartType);
@@ -142,11 +156,22 @@ export const TopicAnalysisMultiView = ({
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm">
       {/* Chart Type Selector and Controls */}
       <div className="p-4 border-b border-[var(--border-default)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <TopicsChartTypeSelector
             activeChart={mapChartTypeReverse(chartType)}
             onChartChange={(type) => handleChartTypeChange(mapChartType(type))}
           />
+          {/* Always show competitor filter if handlers are available (competitors may be loading) */}
+          {onCompetitorToggle && onSelectAllCompetitors && onDeselectAllCompetitors && (
+            <CompetitorFilter
+              competitors={managedCompetitors}
+              selectedCompetitors={selectedCompetitors}
+              onCompetitorToggle={onCompetitorToggle}
+              onSelectAll={onSelectAllCompetitors}
+              onDeselectAll={onDeselectAllCompetitors}
+              isLoading={isLoadingCompetitors}
+            />
+          )}
         </div>
         
         {/* Export Control */}

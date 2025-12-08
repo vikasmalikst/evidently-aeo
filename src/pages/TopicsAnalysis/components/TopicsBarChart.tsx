@@ -64,8 +64,8 @@ export const TopicsBarChart = ({
     return map;
   }, [sortedTopics]);
 
-  // Use real industry average SOA from backend (stored as multiplier 0-5x, convert to percentage 0-100)
-  // Only show comparison if at least one topic has industry data
+  // Use real competitor average SOA from backend (stored as multiplier 0-5x, convert to percentage 0-100)
+  // Only show comparison if at least one topic has competitor data
   const hasIndustryData = useMemo(() => {
     return sortedTopics.some(topic => 
       topic.industryAvgSoA !== null && 
@@ -75,7 +75,7 @@ export const TopicsBarChart = ({
   }, [sortedTopics]);
 
 
-  // Chart keys: brand, avgIndustry (only show comparison if industry data exists)
+  // Chart keys: brand, avgIndustry (only show comparison if competitor data exists)
   const chartKeys = useMemo(() => {
     if (showComparison && hasIndustryData) {
       return ['brand', 'avgIndustry'];
@@ -92,7 +92,7 @@ export const TopicsBarChart = ({
         soA: topic.soA, // Include SoA metric (0-5x scale)
       }));
     } else {
-      // Brand and avg industry SoA per topic (industry avg also shown as marker line)
+      // Brand and avg competitor SoA per topic (competitor avg also shown as marker line)
       return sortedTopics.map((topic) => {
         const data: Record<string, string | number> = { 
           topic: topic.name,
@@ -102,8 +102,8 @@ export const TopicsBarChart = ({
         // Add brand performance
         data['brand'] = topic.currentSoA ?? 0;
         
-        // Add avg industry SoA from backend (convert multiplier to percentage)
-        // Only show if industry data exists for this topic
+        // Add avg competitor SoA from backend (convert multiplier to percentage)
+        // Only show if competitor data exists for this topic
         if (topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0) {
           data['avgIndustry'] = (topic.industryAvgSoA * 20); // Convert multiplier (0-5x) to percentage (0-100)
         } else {
@@ -308,7 +308,7 @@ export const TopicsBarChart = ({
                 label = 'Brand';
                 barColor = BRAND_COLOR; // Data viz 02 (blue) for brand
               } else if (key === 'avgIndustry') {
-                label = 'Avg Industry SoA';
+                label = 'Competitor SoA';
                 barColor = AVG_INDUSTRY_COLOR;
               }
             }
@@ -455,7 +455,7 @@ export const TopicsBarChart = ({
         />
       </div>
       
-      {/* Custom Legend with Brand, Avg Industry SoA Bar, and Avg Industry SoA Marker */}
+      {/* Custom Legend with Brand, Competitor SoA Bar, and Competitor SoA Marker */}
       {showComparison && hasIndustryData && (
         <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pb-2">
           {/* Brand */}
@@ -474,7 +474,7 @@ export const TopicsBarChart = ({
             </span>
           </div>
           
-          {/* Avg Industry SoA - Bar */}
+          {/* Competitor SoA - Bar */}
           <div className="flex items-center gap-1.5">
             <div
               style={{
@@ -486,7 +486,7 @@ export const TopicsBarChart = ({
               }}
             />
             <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              Avg Industry SoA
+              Competitor SoA
             </span>
           </div>
           

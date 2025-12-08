@@ -33,17 +33,18 @@ const getGapCount = (topics: Topic[]): number => {
     return 0;
   }
   
-  // Count topics where brand's SOA is less than industry average SOA
+  // Count topics where brand's SOA is less than competitor average SOA
   // Even if the difference is very small, it's still a gap
   return topics.filter(topic => {
     const brandSoA = topic.currentSoA || (topic.soA * 20); // Brand SOA in percentage (0-100)
     
     // industryAvgSoA is stored as multiplier (0-5x), convert to percentage (0-100)
+    // Note: This represents competitor average SOA (calculated from competitor SOA values only)
     const industryAvgSoA = topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
       ? (topic.industryAvgSoA * 20) // Convert multiplier to percentage
       : null;
     
-    // If industry average exists and brand SOA is less than it (even slightly), it's a gap
+    // If competitor average exists and brand SOA is less than it (even slightly), it's a gap
     if (industryAvgSoA !== null && brandSoA < industryAvgSoA) {
       return true;
     }
@@ -138,10 +139,12 @@ const MetricPod = ({
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="w-full text-left"
+        className="w-full"
         style={{
           display: 'flex',
           flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
           gap: '6px',
           padding: '14px 16px',
           minHeight: '140px',
@@ -158,7 +161,7 @@ const MetricPod = ({
         aria-describedby={`tooltip-${podId}`}
       >
         {/* Title */}
-        <div className="flex items-center gap-2 w-full" style={{ marginBottom: '4px' }}>
+        <div className="flex items-center justify-center gap-2 w-full" style={{ marginBottom: '4px' }}>
           <span style={{ width: 10, height: 10, borderRadius: '50%', background: iconColor }} />
           <span
             style={{
@@ -188,6 +191,7 @@ const MetricPod = ({
             lineHeight: isLongText ? 1.35 : 1.15,
             wordBreak: isLongText ? 'break-word' : 'normal',
             marginBottom: '4px',
+            textAlign: 'center',
           }}
           title={primaryValue}
         >
@@ -195,23 +199,26 @@ const MetricPod = ({
         </div>
 
         {/* Secondary */}
-        <div
-          className="leading-normal"
-          style={{
-            fontSize: '12px',
-            color: '#94a3b8',
-            lineHeight: 1.4,
-            marginBottom: changeIndicator ? '2px' : 0,
-          }}
-          title={secondary}
-        >
-          {secondary || '\u00a0'}
-        </div>
+        {secondary && (
+          <div
+            className="leading-normal"
+            style={{
+              fontSize: '12px',
+              color: '#94a3b8',
+              lineHeight: 1.4,
+              marginBottom: changeIndicator ? '2px' : 0,
+              textAlign: 'center',
+            }}
+            title={secondary}
+          >
+            {secondary}
+          </div>
+        )}
 
         {/* Change Indicator */}
         {changeIndicator && (
           <div
-            className="flex items-center gap-1 leading-normal"
+            className="flex items-center justify-center gap-1 leading-normal"
             style={{
               fontSize: '11px',
               color: getChangeColor(changeIndicator.direction),
@@ -314,11 +321,8 @@ export const CompactMetricsPods = ({
         icon={<IconFolderSearch size={20} />}
         primaryValue={portfolio.totalTopics.toString()}
         label="Topics"
-        secondary={`${portfolio.categories} categories`}
-        changeIndicator={{
-          value: `Last analyzed: ${lastAnalyzed}`,
-          direction: 'neutral',
-        }}
+        secondary=""
+        changeIndicator={undefined}
         tooltip={`${portfolio.totalTopics} topics tracked across ${portfolio.categories} categories. Last analyzed ${lastAnalyzed}. [Edit topics]`}
         borderColor="#1a1d29"
         iconColor="#1a1d29"
@@ -332,10 +336,7 @@ export const CompactMetricsPods = ({
         primaryValue={`${(performance.avgSoA * 20).toFixed(1)}%`}
         label="Avg SOA"
         secondary=""
-        changeIndicator={performance.avgSoADelta !== undefined && performance.avgSoADelta !== null ? {
-          value: `${Math.abs(performance.avgSoADelta).toFixed(1)}%`,
-          direction: performance.avgSoADelta > 0 ? 'up' : performance.avgSoADelta < 0 ? 'down' : 'neutral',
-        } : undefined}
+        changeIndicator={undefined}
         tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}%${performance.avgSoADelta !== undefined && performance.avgSoADelta !== null ? ` (${performance.avgSoADelta > 0 ? '+' : ''}${performance.avgSoADelta.toFixed(1)}% from previous period)` : ''}`}
         borderColor="#00bcdc"
         iconColor="#00bcdc"
@@ -348,13 +349,8 @@ export const CompactMetricsPods = ({
         icon={<TrendingUp size={20} />}
         primaryValue={trendingPrimaryValue}
         label="Trending"
-        secondary={trendingSecondary}
-        changeIndicator={hasAvgSoADelta ? {
-          value: trendingDirection === 'neutral'
-            ? 'No change vs previous period'
-            : `${Math.abs(avgSoADelta).toFixed(1)}% ${trendingDirection === 'up' ? 'increase' : 'decrease'}`,
-          direction: trendingDirection,
-        } : undefined}
+        secondary=""
+        changeIndicator={undefined}
         tooltip={
           hasAvgSoADelta
             ? `Avg SOA is ${currentAvgSoAPercentage.toFixed(1)}%, ${trendingPrimaryValue} vs previous period${previousAvgSoAPercentage !== null ? ` (${previousAvgSoAPercentage.toFixed(1)}%)` : ''}.`

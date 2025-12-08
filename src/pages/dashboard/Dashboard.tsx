@@ -52,7 +52,7 @@ export const Dashboard = () => {
     () => [
       {
         key: 'visibility-index',
-        title: 'Visibility Index',
+        title: 'Visibility Score',
         value: formatMetricValue(visibilityMetric, ''),
         subtitle: '',
         trend: computeTrend(visibilityMetric?.delta),

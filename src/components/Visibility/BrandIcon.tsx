@@ -90,24 +90,24 @@ export const BrandIcon = ({ brandName, size = 24, className = '' }: BrandIconPro
   }, [brandName]);
 
   if (hasError) {
-    // Default fallback icon
+    // Default fallback icon - show first letter of brand name
+    const firstLetter = brandName.charAt(0).toUpperCase();
+    const sizeClass = size >= 32 ? 'w-10 h-10 text-sm' : size >= 24 ? 'w-6 h-6 text-xs' : 'w-4 h-4 text-[10px]';
     return (
-      <div className={`w-6 h-6 flex items-center justify-center bg-[#8b90a7] rounded-md ${className}`}>
-        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="white">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
-          <circle cx="12" cy="12" r="4"/>
-        </svg>
+      <div className={`${sizeClass} flex items-center justify-center bg-[#8b90a7] rounded-md text-white font-semibold ${className}`}>
+        {firstLetter}
       </div>
     );
   }
 
   // Use favicon service
+  const sizeClass = size >= 32 ? 'w-10 h-10' : size >= 24 ? 'w-6 h-6' : 'w-4 h-4';
   return (
-    <div className={`w-6 h-6 flex items-center justify-center ${className}`}>
+    <div className={`${sizeClass} flex items-center justify-center ${className}`}>
       <img
         src={faviconUrl}
         alt={brandName}
-        className="w-6 h-6 rounded"
+        className={`${sizeClass} rounded object-contain`}
         loading="lazy"
         onError={() => setHasError(true)}
       />

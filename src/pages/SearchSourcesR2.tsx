@@ -332,7 +332,7 @@ export const SearchSourcesR2 = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 8px 18px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Search Sources</h1>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Citations Sources</h1>
             <p style={{ margin: 0, color: '#475569' }}>Understand how your sources perform across visibility, share of answer, sentiment, and citations.</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

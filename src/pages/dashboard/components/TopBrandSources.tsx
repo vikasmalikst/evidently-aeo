@@ -16,7 +16,7 @@ export const TopBrandSources = ({ brandPages }: TopBrandSourcesProps) => {
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
           <h2 className="text-[18px] font-semibold text-[#1a1d29]">
-            Top Brand Sources
+            Top Citations Sources
           </h2>
           <InfoTooltip description="Lists the web pages and sources where your brand is most frequently cited in AI-generated answers. Impact Score reflects how prominently your brand appears, helping you identify high-value content partnerships and citation opportunities." />
         </div>

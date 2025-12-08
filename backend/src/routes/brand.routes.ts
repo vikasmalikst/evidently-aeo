@@ -480,13 +480,22 @@ router.get('/:id/topics', authenticateToken, async (req: Request, res: Response)
     const { id } = req.params;
     const customerId = req.user!.customer_id;
     // Accept both 'collectors' (same as Prompts API) and 'collectorType' for backward compatibility
-    const { startDate, endDate, collectorType, collectors, country } = req.query;
+    const { startDate, endDate, collectorType, collectors, country, competitors } = req.query;
     
     // Use collectors param if provided, otherwise fall back to collectorType
     const modelFilter = collectors || collectorType;
     
+    // Parse competitor filter (comma-separated list of competitor names)
+    const competitorFilter = competitors
+      ? (typeof competitors === 'string'
+          ? competitors.split(',').map(c => c.toLowerCase().trim()).filter(Boolean)
+          : Array.isArray(competitors)
+          ? competitors.map(c => String(c).toLowerCase().trim()).filter(Boolean)
+          : undefined)
+      : undefined;
+    
     console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
-    console.log(`🔍 Filters: model=${modelFilter}, country=${country}, dateRange=${startDate} to ${endDate}`);
+    console.log(`🔍 Filters: model=${modelFilter}, country=${country}, competitors=${competitorFilter?.join(',') || 'all'}, dateRange=${startDate} to ${endDate}`);
     
     const result = await brandService.getBrandTopicsWithAnalytics(
       id, 
@@ -494,7 +503,8 @@ router.get('/:id/topics', authenticateToken, async (req: Request, res: Response)
       startDate as string | undefined,
       endDate as string | undefined,
       modelFilter as string | undefined,
-      country as string | undefined
+      country as string | undefined,
+      competitorFilter
     );
     
     res.json({

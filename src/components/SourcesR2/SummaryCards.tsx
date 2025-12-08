@@ -1,11 +1,17 @@
+interface SummaryCardMeta {
+  label: string;
+  color: string;
+  description?: string;
+}
+
 interface SummaryCardsProps {
   counts: Record<string, number>;
   active?: string | null;
   onSelect?: (quadrant: string | null) => void;
-  cardMetaOverride?: Record<string, { label: string; color: string }>;
+  cardMetaOverride?: Record<string, SummaryCardMeta>;
 }
 
-const defaultCardMeta: Record<string, { label: string; color: string }> = {
+const defaultCardMeta: Record<string, SummaryCardMeta> = {
   priority: { label: 'Priority Partnerships', color: '#06c686' },
   reputation: { label: 'Reputation Management', color: '#f97373' },
   growth: { label: 'Growth Opportunities', color: '#498cf9' },
@@ -43,6 +49,11 @@ export const SummaryCards = ({ counts, active = null, onSelect, cardMetaOverride
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: meta.color }} />
             <span style={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>{meta.label}</span>
           </div>
+          {meta.description && (
+            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6, lineHeight: 1.4 }}>
+              {meta.description}
+            </div>
+          )}
           <div style={{ fontSize: 24, fontWeight: 800, color: '#0f172a' }}>{counts[key as keyof typeof counts] ?? 0}</div>
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>sources</div>
         </div>

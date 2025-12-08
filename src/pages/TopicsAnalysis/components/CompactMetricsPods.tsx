@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { PieChart, TrendingUp } from 'lucide-react';
 import { IconFolderSearch, IconSpace } from '@tabler/icons-react';
-import type { Portfolio, Performance, Topic } from '../types';
+import type { Topic } from '../types';
 
 export type PodId = 'portfolio' | 'performance' | 'gaps' | 'momentum';
 
@@ -33,17 +33,18 @@ const getGapCount = (topics: Topic[]): number => {
     return 0;
   }
   
-  // Count topics where brand's SOA is less than industry average SOA
+  // Count topics where brand's SOA is less than competitor average SOA
   // Even if the difference is very small, it's still a gap
   return topics.filter(topic => {
     const brandSoA = topic.currentSoA || (topic.soA * 20); // Brand SOA in percentage (0-100)
     
     // industryAvgSoA is stored as multiplier (0-5x), convert to percentage (0-100)
+    // Note: This represents competitor average SOA (calculated from competitor SOA values only)
     const industryAvgSoA = topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
       ? (topic.industryAvgSoA * 20) // Convert multiplier to percentage
       : null;
     
-    // If industry average exists and brand SOA is less than it (even slightly), it's a gap
+    // If competitor average exists and brand SOA is less than it (even slightly), it's a gap
     if (industryAvgSoA !== null && brandSoA < industryAvgSoA) {
       return true;
     }
@@ -80,7 +81,6 @@ interface MetricPodProps {
   tooltip: string;
   borderColor: string;
   iconColor: string;
-  hoverBgColor: string;
   onPodClick?: (podId: PodId) => void;
   isLongText?: boolean; // For pods with long text values (like Trending topic names)
 }
@@ -95,7 +95,6 @@ const MetricPod = ({
   tooltip,
   borderColor,
   iconColor,
-  hoverBgColor,
   onPodClick,
   isLongText = false,
 }: MetricPodProps) => {
@@ -136,100 +135,105 @@ const MetricPod = ({
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className={`
-          w-full sm:w-[220px] md:w-[240px]
-          min-w-[140px] sm:min-w-[220px] md:min-w-[240px]
-          h-[150px] md:h-[160px]
-          px-5 py-5
-          bg-white
-          border border-[var(--border-default)]
-          rounded-lg
-          shadow-sm
-          transition-all duration-200
-          cursor-pointer
-          flex flex-col
-          relative
-          ${isHovered ? 'shadow-md' : ''}
-        `}
+        className="w-full"
         style={{
-          borderColor: isHovered ? borderColor : 'var(--border-default)',
-          backgroundColor: isHovered ? hoverBgColor : 'white',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          padding: '14px 16px',
+          minHeight: '140px',
+          backgroundColor: isHovered ? '#fcfdff' : '#ffffff',
+          border: `1px solid ${isHovered ? borderColor : '#e5e7eb'}`,
+          borderRadius: '12px',
+          boxShadow: isHovered ? '0 10px 24px rgba(15,23,42,0.08)' : '0 8px 18px rgba(15,23,42,0.05)',
+          transition: 'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease',
+          cursor: 'pointer',
+          position: 'relative',
+          transform: isHovered ? 'translateY(-1px)' : 'none',
         }}
         aria-label={tooltip}
         aria-describedby={`tooltip-${podId}`}
       >
-        {/* Icon and Title - Inline */}
-        <div className="flex items-center gap-3 mb-4 w-full">
-          <div
-            className="flex items-center justify-center flex-shrink-0"
-            style={{ color: iconColor }}
-          >
-            {icon}
-          </div>
-          <div
-            className="font-semibold text-left flex-1"
+        {/* Title */}
+        <div className="flex items-center justify-center gap-2 w-full" style={{ marginBottom: '4px' }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: iconColor }} />
+          <span
             style={{
-              fontSize: '16px',
-              color: '#1a1d29',
-              lineHeight: 1.2,
+              fontSize: '13px',
+              color: '#475569',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
             }}
           >
             {label}
-          </div>
+            {icon && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: iconColor, transform: 'scale(0.9)' }}>
+                {icon}
+              </span>
+            )}
+          </span>
         </div>
 
-        {/* Content Container */}
-        <div className="flex flex-col flex-1 justify-between">
-          {/* Primary Value */}
-          <div
-            className={`font-bold leading-none mb-2 ${isLongText ? 'line-clamp-2' : ''}`}
-            style={{
-              fontSize: isLongText ? '14px' : '28px',
-              color: '#1a1d29',
-              lineHeight: isLongText ? 1.4 : 1.2,
-              wordBreak: isLongText ? 'break-word' : 'normal',
-            }}
-            title={primaryValue}
-          >
-            {primaryValue}
-          </div>
+        {/* Primary Value */}
+        <div
+          className={`font-bold leading-none ${isLongText ? 'line-clamp-2' : ''}`}
+          style={{
+            fontSize: isLongText ? '16px' : '28px',
+            color: '#0f172a',
+            lineHeight: isLongText ? 1.35 : 1.15,
+            wordBreak: isLongText ? 'break-word' : 'normal',
+            marginBottom: '4px',
+            textAlign: 'center',
+          }}
+          title={primaryValue}
+        >
+          {primaryValue}
+        </div>
 
-          {/* Secondary */}
+        {/* Secondary */}
+        {secondary && (
           <div
-            className="leading-normal mb-2"
+            className="leading-normal"
             style={{
               fontSize: '12px',
-              color: '#393e51',
+              color: '#94a3b8',
               lineHeight: 1.4,
+              marginBottom: changeIndicator ? '2px' : 0,
+              textAlign: 'center',
             }}
             title={secondary}
           >
             {secondary}
           </div>
+        )}
 
-          {/* Change Indicator */}
-          {changeIndicator && (
-            <div
-              className="flex items-center gap-1 leading-normal"
-              style={{
-                fontSize: '11px',
-                color: getChangeColor(changeIndicator.direction),
-                lineHeight: 1.4,
-              }}
-            >
-              {changeIndicator.direction === 'up' && (
-                <TrendingUp size={12} style={{ color: getChangeColor(changeIndicator.direction) }} />
-              )}
-              {changeIndicator.direction === 'down' && (
-                <TrendingUp size={12} style={{ color: getChangeColor(changeIndicator.direction), transform: 'rotate(180deg)' }} />
-              )}
-              <span>{changeIndicator.value}</span>
-            </div>
-          )}
-        </div>
+        {/* Change Indicator */}
+        {changeIndicator && (
+          <div
+            className="flex items-center justify-center gap-1 leading-normal"
+            style={{
+              fontSize: '11px',
+              color: getChangeColor(changeIndicator.direction),
+              lineHeight: 1.4,
+            }}
+          >
+            {changeIndicator.direction === 'up' && (
+              <TrendingUp size={12} style={{ color: getChangeColor(changeIndicator.direction) }} />
+            )}
+            {changeIndicator.direction === 'down' && (
+              <TrendingUp size={12} style={{ color: getChangeColor(changeIndicator.direction), transform: 'rotate(180deg)' }} />
+            )}
+            <span>{changeIndicator.value}</span>
+          </div>
+        )}
       </button>
 
       {/* Tooltip */}
@@ -304,10 +308,11 @@ export const CompactMetricsPods = ({
 
   return (
     <div
-      className="flex flex-wrap gap-4 w-full"
+      className="w-full"
       style={{
-        justifyContent: 'flex-start',
-        // Desktop: 5 pods in row, Tablet: 3+2 wrap, Mobile: 2 per row
+        display: 'grid',
+        gap: '16px',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
       }}
     >
       {/* POD 1: Topics */}
@@ -316,15 +321,11 @@ export const CompactMetricsPods = ({
         icon={<IconFolderSearch size={20} />}
         primaryValue={portfolio.totalTopics.toString()}
         label="Topics"
-        secondary={`${portfolio.categories} categories`}
-        changeIndicator={{
-          value: `Last analyzed: ${lastAnalyzed}`,
-          direction: 'neutral',
-        }}
+        secondary=""
+        changeIndicator={undefined}
         tooltip={`${portfolio.totalTopics} topics tracked across ${portfolio.categories} categories. Last analyzed ${lastAnalyzed}. [Edit topics]`}
         borderColor="#1a1d29"
         iconColor="#1a1d29"
-        hoverBgColor="#f9f9fb"
         onPodClick={onPodClick}
       />
 
@@ -335,14 +336,10 @@ export const CompactMetricsPods = ({
         primaryValue={`${(performance.avgSoA * 20).toFixed(1)}%`}
         label="Avg SOA"
         secondary=""
-        changeIndicator={performance.avgSoADelta !== undefined && performance.avgSoADelta !== null ? {
-          value: `${Math.abs(performance.avgSoADelta).toFixed(1)}%`,
-          direction: performance.avgSoADelta > 0 ? 'up' : performance.avgSoADelta < 0 ? 'down' : 'neutral',
-        } : undefined}
+        changeIndicator={undefined}
         tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}%${performance.avgSoADelta !== undefined && performance.avgSoADelta !== null ? ` (${performance.avgSoADelta > 0 ? '+' : ''}${performance.avgSoADelta.toFixed(1)}% from previous period)` : ''}`}
         borderColor="#00bcdc"
         iconColor="#00bcdc"
-        hoverBgColor="#e6f7f9"
         onPodClick={onPodClick}
       />
 
@@ -352,13 +349,8 @@ export const CompactMetricsPods = ({
         icon={<TrendingUp size={20} />}
         primaryValue={trendingPrimaryValue}
         label="Trending"
-        secondary={trendingSecondary}
-        changeIndicator={hasAvgSoADelta ? {
-          value: trendingDirection === 'neutral'
-            ? 'No change vs previous period'
-            : `${Math.abs(avgSoADelta).toFixed(1)}% ${trendingDirection === 'up' ? 'increase' : 'decrease'}`,
-          direction: trendingDirection,
-        } : undefined}
+        secondary=""
+        changeIndicator={undefined}
         tooltip={
           hasAvgSoADelta
             ? `Avg SOA is ${currentAvgSoAPercentage.toFixed(1)}%, ${trendingPrimaryValue} vs previous period${previousAvgSoAPercentage !== null ? ` (${previousAvgSoAPercentage.toFixed(1)}%)` : ''}.`
@@ -366,7 +358,6 @@ export const CompactMetricsPods = ({
         }
         borderColor="#06c686"
         iconColor="#06c686"
-        hoverBgColor="#f0fdf4"
         onPodClick={onPodClick}
       />
 
@@ -380,7 +371,6 @@ export const CompactMetricsPods = ({
         tooltip={`${gapCount} topics where your SOA is below competitor average. These are high-value opportunities to gain share. [View gaps]`}
         borderColor="#f94343"
         iconColor="#f94343"
-        hoverBgColor="#fff5f5"
         onPodClick={onPodClick}
       />
     </div>

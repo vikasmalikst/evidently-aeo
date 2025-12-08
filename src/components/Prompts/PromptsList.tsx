@@ -1,32 +1,21 @@
 import { useEffect, useState, memo } from 'react';
-import { ChevronDown, ChevronRight, CalendarDays } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { PromptEntry, PromptTopic } from '../../types/prompts';
-
-interface DateRangeOption {
-  value: string;
-  label: string;
-}
 
 interface PromptsListProps {
   topics: PromptTopic[];
   selectedPromptId: string | null;
   onPromptSelect: (prompt: PromptEntry) => void;
-  dateRangeKey: string;
-  dateRangeOptions: DateRangeOption[];
-  onDateRangeChange: (range: string) => void;
   loading: boolean;
-  selectedLLM: string | null;
+  selectedLLMs: string[];
 }
 
 export const PromptsList = memo(({
   topics,
   selectedPromptId,
   onPromptSelect,
-  dateRangeKey,
-  dateRangeOptions,
-  onDateRangeChange,
   loading,
-  selectedLLM
+  selectedLLMs
 }: PromptsListProps) => {
   const [expandedTopics, setExpandedTopics] = useState<string[]>([]);
 
@@ -60,24 +49,18 @@ export const PromptsList = memo(({
 
   return (
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm overflow-hidden h-full">
-      <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-[var(--border-default)] relative">
         <h3 className="text-sm font-semibold text-[var(--text-headings)]">
           Prompts
         </h3>
-        <div className="relative">
-          <CalendarDays size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-caption)] pointer-events-none" />
-          <select
-            value={dateRangeKey}
-            onChange={(e) => onDateRangeChange(e.target.value)}
-            className="text-xs border border-[var(--border-default)] rounded pl-7 pr-2 py-1 text-[var(--text-body)] bg-white font-data appearance-none"
-          >
-            {dateRangeOptions.map((range) => (
-              <option key={range.value} value={range.value}>
-                {range.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {loading && hasPrompts && (
+          <Loader2 
+            size={18} 
+            className="absolute top-3 right-[calc(0.5rem+64px)] animate-spin text-[#00bcdc]" 
+            aria-label="Loading metrics"
+            style={{ filter: 'brightness(1.2)' }}
+          />
+        )}
       </div>
 
       <div className="overflow-x-auto">
@@ -87,19 +70,20 @@ export const PromptsList = memo(({
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-4 py-2">Prompt</th>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-24">Visibility</th>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-32">Sentiment</th>
-              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-4 py-2 w-32">Topic</th>
             </tr>
           </thead>
         </table>
       </div>
 
       <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 450px)' }}>
-        {loading && (
+        {/* Only show loading on initial load when we have no data */}
+        {loading && !hasPrompts && (
           <div className="px-4 py-6 text-sm text-[var(--text-caption)] border-b border-[var(--border-default)]">
             Loading prompts…
           </div>
         )}
 
+        {/* Only show empty state when not loading and no prompts */}
         {!loading && !hasPrompts && (
           <div className="px-4 py-6 text-sm text-[var(--text-caption)] border-b border-[var(--border-default)]">
             No prompts available for the selected filters.
@@ -146,7 +130,6 @@ export const PromptsList = memo(({
                         {topic.sentimentScore !== null ? `${Math.round(topic.sentimentScore * 100)}` : '—'}
                       </span>
                     </td>
-                    <td className="px-4 py-2 w-32"></td>
                   </tr>
                   {isExpanded &&
                     topic.prompts.map((prompt) => {
@@ -167,9 +150,9 @@ export const PromptsList = memo(({
                               {prompt.question}
                             </p>
                             {prompt.collectorTypes.length > 0 && (() => {
-                              // Filter collectors to show only the selected LLM if one is selected
-                              const collectorsToShow = selectedLLM 
-                                ? prompt.collectorTypes.filter(collector => collector === selectedLLM)
+                              // Filter collectors to show only the selected LLMs if any are selected
+                              const collectorsToShow = selectedLLMs.length > 0
+                                ? prompt.collectorTypes.filter(collector => selectedLLMs.includes(collector))
                                 : prompt.collectorTypes;
                               
                               return collectorsToShow.length > 0 && (
@@ -194,11 +177,6 @@ export const PromptsList = memo(({
                           <td className="px-2 py-3 w-32 text-center">
                             <span className="text-sm font-medium text-[var(--text-caption)]">
                               {prompt.sentimentScore !== null ? `${Math.round(prompt.sentimentScore * 100)}` : '—'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 w-32 text-center">
-                            <span className="text-xs text-[var(--text-caption)] font-data">
-                              {topic.name}
                             </span>
                           </td>
                         </tr>

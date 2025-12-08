@@ -1,23 +1,32 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { getLLMIcon } from '../Visibility/LLMIcons';
+import { DateRangePicker } from '../DateRangePicker/DateRangePicker';
 
 interface PromptFiltersProps {
   llmOptions: string[];
-  selectedLLM: string | null;
-  onLLMChange: (llm: string | null) => void;
+  selectedLLMs: string[];
+  onLLMChange: (llms: string[]) => void;
   brands: Array<{ id: string; name: string }>;
   selectedBrandId: string | null;
   onBrandChange: (brandId: string) => void;
+  startDate: string;
+  endDate: string;
+  onStartDateChange: (date: string) => void;
+  onEndDateChange: (date: string) => void;
 }
 
 export const PromptFilters = ({
   llmOptions,
-  selectedLLM,
+  selectedLLMs,
   onLLMChange,
   brands,
   selectedBrandId,
-  onBrandChange
+  onBrandChange,
+  startDate,
+  endDate,
+  onStartDateChange,
+  onEndDateChange
 }: PromptFiltersProps) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -42,12 +51,12 @@ export const PromptFilters = ({
     }
   }, [openDropdown]);
 
-
   const currentBrand = brands.find(b => b.id === selectedBrandId);
 
   return (
-    <div ref={dropdownRef} className="flex items-center justify-end gap-3 mb-6">
-      {brands.length > 1 && (
+    <div ref={dropdownRef} className="flex items-center justify-between gap-3 mb-6">
+      {/* Left: Brand dropdown (if multiple brands) */}
+      {brands.length > 1 ? (
         <div className="relative min-w-[200px]">
           <button
             className="flex items-center gap-2 w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--accent-primary)] hover:bg-[var(--bg-secondary)]"
@@ -64,7 +73,7 @@ export const PromptFilters = ({
             />
           </button>
           {openDropdown === 'brand' && (
-            <div className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[300px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]">
+            <div className="absolute top-[calc(100%+4px)] left-0 min-w-full max-h-[300px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]">
               {brands.map((brand) => (
                 <button
                   key={brand.id}
@@ -84,83 +93,64 @@ export const PromptFilters = ({
             </div>
           )}
         </div>
+      ) : (
+        <div className="min-w-[200px]"></div>
       )}
-      <div className="relative min-w-[200px]">
+
+      {/* Center: LLM icon filters - multi-select */}
+      <div className="flex-1 flex items-center justify-center gap-2">
         <button
           type="button"
-          className="flex items-center gap-2 w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-white cursor-pointer text-sm text-[var(--text-body)] transition-all duration-150 justify-between hover:border-[var(--accent-primary)] hover:bg-[var(--bg-secondary)]"
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpenDropdown(openDropdown === 'llm' ? null : 'llm');
-          }}
+          onClick={() => onLLMChange([])}
+          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
+            selectedLLMs.length === 0
+              ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
+              : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
+          }`}
+          title="All Models"
         >
-          <span className="text-[var(--text-body)] whitespace-nowrap overflow-hidden text-ellipsis flex-1 text-left font-medium">
-            {selectedLLM || 'All Models'}
-          </span>
-          <ChevronDown
-            size={16}
-            className={`text-[var(--text-caption)] transition-transform duration-150 flex-shrink-0 ${
-              openDropdown === 'llm' ? 'rotate-180' : ''
-            }`}
-          />
+          All
         </button>
-        {openDropdown === 'llm' && (
-          <div 
-            className="absolute top-[calc(100%+4px)] right-0 min-w-full max-h-[400px] overflow-y-auto bg-white border border-[var(--border-default)] rounded-lg shadow-lg z-[1000]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* All Models option */}
+        {llmOptions.map((llm) => {
+          const isActive = selectedLLMs.includes(llm);
+          return (
             <button
+              key={llm}
               type="button"
-              className={`w-full px-4 py-3 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] flex items-center gap-2 ${
-                selectedLLM === null || selectedLLM === 'All Models'
-                  ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
-                  : ''
-              }`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onLLMChange(null);
-                setOpenDropdown(null);
+              onClick={() => {
+                if (isActive) {
+                  // Remove from selection
+                  onLLMChange(selectedLLMs.filter(m => m !== llm));
+                } else {
+                  // Add to selection
+                  onLLMChange([...selectedLLMs, llm]);
+                }
               }}
+              className={`flex items-center justify-center w-10 h-10 rounded-full border transition-all ${
+                isActive
+                  ? 'bg-[#e6f7f0] border-[#12b76a] shadow-sm'
+                  : 'bg-white border-[#e4e7ec] hover:border-[#cfd4e3]'
+              }`}
+              title={llm}
+              aria-label={`Filter by ${llm}`}
             >
-              <div className="w-6 h-6 flex items-center justify-center">
-                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
-                  <circle cx="12" cy="12" r="4"/>
-                </svg>
-              </div>
-              <span>All Models</span>
+              <span className="inline-flex items-center justify-center w-6 h-6">
+                {getLLMIcon(llm)}
+              </span>
             </button>
-            {llmOptions.length > 0 && (
-              <>
-                <div className="border-t border-[var(--border-default)] my-1"></div>
-                {llmOptions.map((llm) => (
-                  <button
-                    key={llm}
-                    type="button"
-                    className={`w-full px-4 py-3 border-none bg-transparent cursor-pointer text-sm text-[var(--text-body)] text-left transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--accent-primary)] flex items-center gap-2 ${
-                      selectedLLM === llm
-                        ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)] font-medium'
-                        : ''
-                    }`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (selectedLLM !== llm) {
-                        onLLMChange(llm);
-                      }
-                      setOpenDropdown(null);
-                    }}
-                  >
-                    {getLLMIcon(llm)}
-                    <span>{llm}</span>
-                  </button>
-                ))}
-              </>
-            )}
-          </div>
-        )}
+          );
+        })}
+      </div>
+
+      {/* Right: Date Range Picker */}
+      <div className="min-w-[200px] flex justify-end">
+        <DateRangePicker
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={onStartDateChange}
+          onEndDateChange={onEndDateChange}
+          showComparisonInfo={false}
+        />
       </div>
     </div>
   );

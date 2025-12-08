@@ -78,7 +78,7 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
   const soAChange = currentSoA - previousSoA;
   const soAChangePercent = previousSoA > 0 ? ((soAChange / previousSoA) * 100) : 0;
   
-  // Use real industry average SOA from backend (stored as multiplier 0-5x, convert to percentage 0-100)
+  // Use real competitor average SOA from backend (stored as multiplier 0-5x, convert to percentage 0-100)
   const avgIndustrySoA = topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
     ? (topic.industryAvgSoA * 20) // Convert multiplier (0-5x) to percentage (0-100)
     : null;
@@ -256,9 +256,9 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
               </div>
             </div>
 
-            {/* Avg Industry SoA */}
+            {/* Competitor SoA */}
             <div className="bg-[var(--bg-secondary)] rounded-lg p-4">
-              <div className="text-xs text-[var(--text-caption)] mb-1">Avg Industry SoA</div>
+              <div className="text-xs text-[var(--text-caption)] mb-1">Competitor SoA</div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-[var(--text-body)]">
                   {avgIndustrySoA !== null ? `${avgIndustrySoA.toFixed(1)}%` : '—'}

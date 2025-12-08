@@ -395,10 +395,26 @@ export const SearchSourcesR2 = () => {
             viewMode === 'current'
               ? undefined
               : {
-                  marketLeaders: { label: 'Market Leaders', color: '#0ea5e9' },
-                  reputationRisks: { label: 'Reputation Risks', color: '#f97373' },
-                  growthBets: { label: 'Growth Bets', color: '#6366f1' },
-                  monitorImprove: { label: 'Monitor & Improve', color: '#cbd5e1' }
+                  marketLeaders: {
+                    label: 'Market Leaders',
+                    color: '#0ea5e9',
+                    description: 'High visibility and quality; protect and expand benchmarks.'
+                  },
+                  reputationRisks: {
+                    label: 'Reputation Risks',
+                    color: '#f97373',
+                    description: 'Visible but sentiment/authority weak—fix quality and credibility.'
+                  },
+                  growthBets: {
+                    label: 'Growth Bets',
+                    color: '#6366f1',
+                    description: 'Quality signals present; visibility low—invest to grow.'
+                  },
+                  monitorImprove: {
+                    label: 'Monitor & Improve',
+                    color: '#cbd5e1',
+                    description: 'Low signals overall—monitor closely and improve fundamentals.'
+                  }
                 }
           }
         />

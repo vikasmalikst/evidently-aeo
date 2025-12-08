@@ -1310,7 +1310,8 @@ export class BrandService {
     startDate?: string,
     endDate?: string,
     collectorType?: string,
-    country?: string
+    country?: string,
+    competitorNames?: string[] // Optional: filter by specific competitor names (lowercase)
   ): Promise<{ topics: any[]; availableModels: string[] }> {
     try {
       console.log(`🎯 Fetching topics WITH analytics (only topics with collector_results) for brand ${brandId}`);
@@ -1353,8 +1354,9 @@ export class BrandService {
       }
       
       // Step 2: Get collector_results (optional - we can query positions directly)
-      // Map collector type if provided (do this early so we can use it for filtering collector_results)
-      let mappedCollectorType: string | undefined = undefined;
+      // Map collector type(s) if provided (do this early so we can use it for filtering collector_results)
+      // Support both single collector type and comma-separated multiple types
+      let mappedCollectorTypes: string[] = [];
       if (collectorType && collectorType.trim() !== '') {
         // Map frontend model IDs to collector_type values as stored in database
         // Database stores capitalized versions like "Google AIO", "ChatGPT", etc.
@@ -1374,9 +1376,15 @@ export class BrandService {
           'bing_copilot': 'Bing Copilot',
           'bing copilot': 'Bing Copilot'
         };
-        const normalizedInput = collectorType.toLowerCase().trim();
-        mappedCollectorType = collectorTypeMap[normalizedInput] || normalizedInput;
-        console.log(`🔍 Filtering by collector_type: ${mappedCollectorType} (from input: ${collectorType})`);
+        
+        // Split by comma and map each collector type
+        const inputTypes = collectorType.split(',').map(t => t.trim()).filter(Boolean);
+        mappedCollectorTypes = inputTypes.map(input => {
+          const normalizedInput = input.toLowerCase().trim();
+          return collectorTypeMap[normalizedInput] || normalizedInput;
+        });
+        
+        console.log(`🔍 Filtering by collector_type(s): ${mappedCollectorTypes.join(', ')} (from input: ${collectorType})`);
       }
       
       let collectorResults: any[] = [];
@@ -1390,10 +1398,14 @@ export class BrandService {
             .select('id, query_id, collector_type')
             .in('query_id', queryIds);
           
-          // Filter collector_results by collector_type if provided
-          if (mappedCollectorType) {
-            crQuery = crQuery.eq('collector_type', mappedCollectorType);
-            console.log(`🔍 Filtering collector_results by collector_type: ${mappedCollectorType}`);
+          // Filter collector_results by collector_type(s) if provided
+          if (mappedCollectorTypes.length > 0) {
+            if (mappedCollectorTypes.length === 1) {
+              crQuery = crQuery.eq('collector_type', mappedCollectorTypes[0]);
+            } else {
+              crQuery = crQuery.in('collector_type', mappedCollectorTypes);
+            }
+            console.log(`🔍 Filtering collector_results by collector_type(s): ${mappedCollectorTypes.join(', ')}`);
           }
           
           const { data: crData, error: crError } = await crQuery;
@@ -1405,7 +1417,7 @@ export class BrandService {
             collectorResults.forEach(cr => {
               crToQueryMap.set(cr.id, cr.query_id);
             });
-            console.log(`📋 Found ${collectorResults.length} collector_results${mappedCollectorType ? ` for collector_type: ${mappedCollectorType}` : ''}`);
+            console.log(`📋 Found ${collectorResults.length} collector_results${mappedCollectorTypes.length > 0 ? ` for collector_type(s): ${mappedCollectorTypes.join(', ')}` : ''}`);
           }
         } catch (error) {
           console.warn('⚠️ Warning: Error fetching collector_results, continuing with direct position query:', error);
@@ -1445,9 +1457,13 @@ export class BrandService {
         .gte('processed_at', startIso)
         .lte('processed_at', endIso);
       
-      // Filter by collector_type (model) if provided and not empty
-      if (mappedCollectorType) {
-        positionsQuery = positionsQuery.eq('collector_type', mappedCollectorType);
+      // Filter by collector_type(s) (model) if provided and not empty
+      if (mappedCollectorTypes.length > 0) {
+        if (mappedCollectorTypes.length === 1) {
+          positionsQuery = positionsQuery.eq('collector_type', mappedCollectorTypes[0]);
+        } else {
+          positionsQuery = positionsQuery.in('collector_type', mappedCollectorTypes);
+        }
       }
       
       if (collectorResults.length > 0) {
@@ -1462,11 +1478,15 @@ export class BrandService {
           .lte('processed_at', endIso)
           .in('collector_result_id', collectorResultIds);
         
-        // IMPORTANT: Also filter by collector_type if provided
+        // IMPORTANT: Also filter by collector_type(s) if provided
         // Both collector_results AND extracted_positions tables have collector_type column
         // We need to filter both to ensure all data is properly filtered by LLM model
-        if (mappedCollectorType) {
-          positionsQueryFiltered = positionsQueryFiltered.eq('collector_type', mappedCollectorType);
+        if (mappedCollectorTypes.length > 0) {
+          if (mappedCollectorTypes.length === 1) {
+            positionsQueryFiltered = positionsQueryFiltered.eq('collector_type', mappedCollectorTypes[0]);
+          } else {
+            positionsQueryFiltered = positionsQueryFiltered.in('collector_type', mappedCollectorTypes);
+          }
         }
         
         const { data: posData, error: positionsError } = await positionsQueryFiltered;
@@ -1476,7 +1496,7 @@ export class BrandService {
           throw new DatabaseError('Failed to fetch positions');
         }
         positions = posData || [];
-        console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorType ? ` (for collector_type: ${mappedCollectorType})` : ''}`);
+        console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorTypes.length > 0 ? ` (for collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''}`);
       } else {
         // If no collector_results, get positions directly by brand_id (with collector_type filter if provided)
         console.log('⚠️ No collector_results found, querying positions directly by brand_id');
@@ -1487,11 +1507,11 @@ export class BrandService {
           throw new DatabaseError('Failed to fetch positions');
         }
         positions = posData || [];
-        console.log(`📊 Found ${positions.length} positions after querying directly${mappedCollectorType ? ` (filtered by collector_type: ${mappedCollectorType})` : ''}`);
+        console.log(`📊 Found ${positions.length} positions after querying directly${mappedCollectorTypes.length > 0 ? ` (filtered by collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''}`);
       }
       
       if (!positions || positions.length === 0) {
-        console.log(`⚠️ No extracted_positions found${mappedCollectorType ? ` for collector_type: ${mappedCollectorType}` : ''} in date range`);
+        console.log(`⚠️ No extracted_positions found${mappedCollectorTypes.length > 0 ? ` for collector_type(s): ${mappedCollectorTypes.join(', ')}` : ''} in date range`);
         // Return empty topics but still return availableModels so the filter dropdown works
         return { topics: [], availableModels: Array.from(availableModels) };
       }
@@ -1587,7 +1607,7 @@ export class BrandService {
       console.log(`   - Distinct topics found: ${topicMap.size}`);
 
       // Debug: Check collector types in the filtered data
-      if (mappedCollectorType) {
+      if (mappedCollectorTypes.length > 0) {
         const collectorTypeCounts = new Map<string, number>();
         positions.forEach(pos => {
           const ct = pos.collector_type || 'null';
@@ -1629,7 +1649,7 @@ export class BrandService {
         const analytics = data.analytics;
 
         // Debug: Log analytics summary for this topic
-        if (mappedCollectorType) {
+        if (mappedCollectorTypes.length > 0) {
           const avgSoA = analytics.length > 0
             ? analytics.reduce((sum, a) => sum + (a.share_of_answers_brand || 0), 0) / analytics.length
             : 0;
@@ -1713,30 +1733,36 @@ export class BrandService {
         positions // Pass filtered positions to ensure citations are also filtered by collector_type
       );
       
-      // Step 7: Calculate industry-wide average SOA per topic
+      // Step 7: Calculate competitor average SOA per topic (only competitor SOA, not brand SOA)
       const industryAvgSoAMap = await this.getIndustryAvgSoAPerTopic(
         brandId,
         customerId,
         topicsWithAnalytics.map(t => t.topic_name),
         startIso,
-        endIso
+        endIso,
+        competitorNames
       );
       
-      // Add top sources and industry average SOA to each topic
+      // Add top sources and competitor average SOA to each topic
       topicsWithAnalytics.forEach(topic => {
         const normalizedName = topic.topic_name.toLowerCase().trim();
         topic.topSources = topicSourcesMap.get(normalizedName) || [];
         
-        // Add industry average SOA
+        // Add competitor average SOA (calculated from competitor SOA values only)
         const industryAvg = industryAvgSoAMap.get(normalizedName);
         if (industryAvg) {
           topic.industryAvgSoA = industryAvg.avgSoA;
           topic.industryAvgSoATrend = industryAvg.trend;
           topic.industryBrandCount = industryAvg.brandCount;
+          // Add individual competitor SOA map if available (for single competitor selection)
+          if (industryAvg.competitorSoA) {
+            topic.competitorSoAMap = Object.fromEntries(industryAvg.competitorSoA);
+          }
         } else {
           topic.industryAvgSoA = null;
           topic.industryAvgSoATrend = null;
           topic.industryBrandCount = 0;
+          topic.competitorSoAMap = undefined;
         }
       });
       
@@ -1764,8 +1790,9 @@ export class BrandService {
     customerId: string,
     topicNames: string[],
     startIso: string,
-    endIso: string
-  ): Promise<Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number }>> {
+    endIso: string,
+    competitorNames?: string[] // Optional: filter by specific competitor names (lowercase)
+  ): Promise<Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number; competitorSoA?: Map<string, number> }>> {
     try {
       if (topicNames.length === 0) {
         return new Map();
@@ -1784,22 +1811,21 @@ export class BrandService {
       const normalizedTopicNames = topicNames.map(name => name.toLowerCase().trim());
       const topicNameSet = new Set(normalizedTopicNames);
 
-      // Get all extracted_positions for all brands (including current brand) in the date range
-      // Note: Brand and competitor SOA are stored adjacently - we need both values
-      // Industry average should include both brand SOA and competitor SOA from all brands
+      // Get all extracted_positions for all brands in the date range
+      // Note: We only use competitor SOA values (share_of_answers_competitor column)
+      // This gives us the average SOA of competitors only, excluding brand SOA values
       const { data: positions, error: positionsError } = await supabaseAdmin
         .from('extracted_positions')
         .select(`
           topic,
           metadata,
-          share_of_answers_brand,
           share_of_answers_competitor,
           processed_at,
           brand_id,
           competitor_name
         `)
         .eq('customer_id', customerId)
-        // Include all brands (including current brand) to calculate true industry average
+        // Exclude rows where current brand appears as the competitor (we want competitor SOA, not our brand's SOA)
         .gte('processed_at', startIso)
         .lte('processed_at', endIso);
 
@@ -1809,17 +1835,17 @@ export class BrandService {
       }
 
       if (!positions || positions.length === 0) {
-        console.log('ℹ️ No industry data found for comparison');
+        console.log('ℹ️ No competitor data found for comparison');
         console.log(`   - Looking for topics: ${normalizedTopicNames.join(', ')}`);
         console.log(`   - Date range: ${startIso} to ${endIso}`);
-        console.log(`   - Including all brands (industry average includes brand + competitor SOA)`);
+        console.log(`   - Using only competitor SOA values (excluding brand SOA)`);
         return new Map();
       }
 
-      console.log(`📊 Found ${positions.length} industry positions for comparison`);
+      console.log(`📊 Found ${positions.length} competitor positions for comparison`);
 
       // Group by normalized topic name and calculate averages
-      const topicDataMap = new Map<string, { soaValues: number[]; brandIds: Set<string>; timestamps: Date[] }>();
+      const topicDataMap = new Map<string, { soaValues: number[]; brandIds: Set<string>; timestamps: Date[]; competitorSoAMap?: Map<string, number[]> }>();
 
       positions.forEach(pos => {
         // Extract topic name (same logic as in getBrandTopicsWithAnalytics)
@@ -1845,43 +1871,95 @@ export class BrandService {
           topicDataMap.set(normalizedTopicName, {
             soaValues: [],
             brandIds: new Set(),
-            timestamps: []
+            timestamps: [],
+            competitorSoAMap: competitorNames && competitorNames.length > 0 ? new Map() : undefined
           });
         }
 
         const topicData = topicDataMap.get(normalizedTopicName)!;
         
-        // Add brand's SOA (including current brand - industry average should include all brands)
-        const brandSoA = pos.share_of_answers_brand;
-        if (typeof brandSoA === 'number' && isFinite(brandSoA) && brandSoA !== null) {
-          topicData.soaValues.push(brandSoA);
-          if (pos.brand_id) {
-            topicData.brandIds.add(pos.brand_id);
+        // Only use competitor SOA values (exclude brand SOA)
+        // Exclude rows where the current brand appears as the competitor
+        if (pos.competitor_name && currentBrandName) {
+          const competitorName = pos.competitor_name.toLowerCase().trim();
+          if (competitorName === currentBrandName) {
+            // Skip this row - current brand appears as competitor, we don't want to include our own SOA
+            return;
+          }
+          
+          // Filter by specific competitors if provided
+          if (competitorNames && competitorNames.length > 0) {
+            if (!competitorNames.includes(competitorName)) {
+              // Skip this competitor if not in the filter list
+              return;
+            }
           }
         }
         
-        // Add competitor's SOA (including all competitors - industry average should include all competitor SOA)
-        // This captures competitor brands' SOA values that are stored in the competitor column
+        // Add competitor's SOA only
         const competitorSoA = pos.share_of_answers_competitor;
         if (typeof competitorSoA === 'number' && isFinite(competitorSoA) && competitorSoA !== null) {
-          // Include all competitor SOA values (industry average includes both brand and competitor SOA)
           topicData.soaValues.push(competitorSoA);
+          // Track the brand_id that this competitor SOA belongs to (for brand count)
+          if (pos.brand_id) {
+            topicData.brandIds.add(pos.brand_id);
+          }
+          
+          // Track individual competitor SOA values if filtering by specific competitors
+          if (competitorNames && competitorNames.length > 0 && pos.competitor_name) {
+            const competitorName = pos.competitor_name.toLowerCase().trim();
+            if (!topicData.competitorSoAMap) {
+              topicData.competitorSoAMap = new Map<string, number[]>();
+            }
+            if (!topicData.competitorSoAMap.has(competitorName)) {
+              topicData.competitorSoAMap.set(competitorName, []);
+            }
+            topicData.competitorSoAMap.get(competitorName)!.push(competitorSoA);
+          }
         }
         
-        // Track timestamp for trend calculation (use brand's timestamp)
+        // Track timestamp for trend calculation
         if (pos.processed_at) {
           topicData.timestamps.push(new Date(pos.processed_at));
         }
       });
 
       // Calculate averages and trends for each topic
-      const result = new Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number }>();
+      const result = new Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number; competitorSoA?: Map<string, number> }>();
 
       topicDataMap.forEach((data, normalizedTopicName) => {
         if (data.soaValues.length === 0) return;
 
-        // Calculate average SOA
-        const avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
+        // Calculate average SOA (or individual competitor SOA if single competitor selected)
+        let avgSoA: number;
+        let competitorSoA: Map<string, number> | undefined;
+        
+        // If filtering by specific competitors and only one is selected, return that competitor's SOA
+        if (competitorNames && competitorNames.length === 1 && data.competitorSoAMap) {
+          const singleCompetitor = competitorNames[0];
+          const competitorValues = data.competitorSoAMap.get(singleCompetitor) || [];
+          if (competitorValues.length > 0) {
+            avgSoA = competitorValues.reduce((sum, val) => sum + val, 0) / competitorValues.length;
+            competitorSoA = new Map([[singleCompetitor, avgSoA]]);
+          } else {
+            avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
+          }
+        } else {
+          // Calculate average across all selected competitors
+          avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
+          
+          // If multiple competitors selected, calculate per-competitor averages
+          if (competitorNames && competitorNames.length > 1 && data.competitorSoAMap) {
+            competitorSoA = new Map<string, number>();
+            data.competitorSoAMap.forEach((values, compName) => {
+              if (values.length > 0) {
+                const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+                competitorSoA!.set(compName, avg);
+              }
+            });
+          }
+        }
+        
         const brandCount = data.brandIds.size;
 
         // Calculate trend (compare first half vs second half of time period)
@@ -1917,21 +1995,22 @@ export class BrandService {
         result.set(normalizedTopicName, {
           avgSoA: Number(avgSoA.toFixed(2)),
           trend,
-          brandCount
+          brandCount,
+          competitorSoA
         });
       });
 
-      console.log(`📊 Calculated industry averages for ${result.size} topics`);
+      console.log(`📊 Calculated competitor averages for ${result.size} topics`);
       if (result.size > 0) {
         result.forEach((data, topic) => {
           const topicData = topicDataMap.get(topic);
           const totalSoAValues = topicData?.soaValues.length || 0;
-          console.log(`   - ${topic}: ${data.avgSoA.toFixed(2)}% (${data.brandCount} brands, ${totalSoAValues} SOA values from brand+competitor columns)`);
+          console.log(`   - ${topic}: ${data.avgSoA.toFixed(2)}% (${data.brandCount} brands, ${totalSoAValues} competitor SOA values)`);
         });
       } else {
-        console.log('   ⚠️ No matching topics found in industry data');
+        console.log('   ⚠️ No matching topics found in competitor data');
         console.log(`   - Your topics: ${Array.from(topicNameSet).join(', ')}`);
-        console.log(`   - Found ${topicDataMap.size} topics in industry data (may not match)`);
+        console.log(`   - Found ${topicDataMap.size} topics in competitor data (may not match)`);
       }
       return result;
 

@@ -23,39 +23,15 @@ interface ApiResponse<T> {
   message?: string;
 }
 
-interface DatePreset {
-  value: string;
-  days: number;
-}
-
-const DATE_PRESETS: DatePreset[] = [
-  { value: 'last7', days: 7 },
-  { value: 'last14', days: 14 },
-  { value: 'last30', days: 30 }
-];
-
-const formatDateRangeLabel = (start: Date, end: Date) => {
-  const formatter = new Intl.DateTimeFormat(undefined, {
-    month: '2-digit',
-    day: '2-digit'
-  });
-  return `${formatter.format(start)} - ${formatter.format(end)}`;
-};
-
-const getDateBounds = (preset: DatePreset) => {
+const getDefaultDateRange = () => {
   const end = new Date();
   end.setUTCHours(23, 59, 59, 999);
-
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - (preset.days - 1));
+  start.setUTCDate(start.getUTCDate() - 29);
   start.setUTCHours(0, 0, 0, 0);
-
   return {
-    start,
-    end,
-    startIso: start.toISOString(),
-    endIso: end.toISOString(),
-    label: formatDateRangeLabel(start, end)
+    start: start.toISOString().split('T')[0],
+    end: end.toISOString().split('T')[0],
   };
 };
 
@@ -63,63 +39,70 @@ export const Prompts = () => {
   const pageLoadStart = useRef(performance.now());
   const [selectedPrompt, setSelectedPrompt] = useState<PromptEntry | null>(null);
   const navigate = useNavigate();
-  const [selectedLLM, setSelectedLLM] = useState<string | null>(null);
-  const [dateRangeKey, setDateRangeKey] = useState<string>(DATE_PRESETS[2]?.value ?? 'last30');
+  const [selectedLLMs, setSelectedLLMs] = useState<string[]>([]);
+  const defaultDateRange = getDefaultDateRange();
+  const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
+  const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
   const [currentVersion, setCurrentVersion] = useState<number | null>(null);
   const { brands, selectedBrandId, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
 
   // Fetch current version to filter prompts by current version
+  // This is a separate API call, but it doesn't block the main prompts fetch
   useEffect(() => {
     if (!selectedBrandId || brandsLoading) {
       setCurrentVersion(null);
       return;
     }
 
+    let isMounted = true;
+
     const fetchCurrentVersion = async () => {
       try {
         const versionData = await getVersionHistory(selectedBrandId);
-        setCurrentVersion(versionData.currentVersion);
+        // Only update if component is still mounted and brand hasn't changed
+        if (isMounted) {
+          setCurrentVersion(versionData.currentVersion);
+        }
       } catch (error) {
         console.error('Error fetching current version:', error);
         // If version fetch fails, continue without version filter
-        setCurrentVersion(null);
+        // This allows the prompts to load without version filtering
+        if (isMounted) {
+          setCurrentVersion(null);
+        }
       }
     };
 
     fetchCurrentVersion();
-  }, [selectedBrandId, brandsLoading]);
 
-  const dateRangeOptions = useMemo(
-    () =>
-      DATE_PRESETS.map((preset) => {
-        const bounds = getDateBounds(preset);
-        return {
-          value: preset.value,
-          label: bounds.label
-        };
-      }),
-    []
-  );
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedBrandId, brandsLoading]);
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
   };
 
   // Build endpoint - always fetch all prompts with all responses (filtering happens client-side)
+  // NOTE: We use a two-step approach to handle "All" selection correctly:
+  // 1. First request (no collectors param) to get available collectors
+  // 2. Subsequent requests explicitly pass collectors to ensure consistent aggregation
   const promptsEndpoint = useMemo(() => {
     const endpointStart = performance.now();
     if (!selectedBrandId || brandsLoading) return null;
-    const preset = DATE_PRESETS.find((item) => item.value === dateRangeKey) ?? DATE_PRESETS[0];
-    const bounds = getDateBounds(preset);
     const params = new URLSearchParams({
-      startDate: bounds.startIso,
-      endDate: bounds.endIso
+      startDate: startDate ? new Date(startDate + 'T00:00:00Z').toISOString() : '',
+      endDate: endDate ? new Date(endDate + 'T23:59:59.999Z').toISOString() : ''
     });
 
-    // Filter by collector on backend so visibility/sentiment reflect the selected LLM
-    if (selectedLLM) {
-      params.set('collectors', selectedLLM);
+    // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
+    if (selectedLLMs.length > 0) {
+      // Explicitly selected models: pass them as comma-separated list
+      params.set('collectors', selectedLLMs.join(','));
     }
+    // When "All" is selected (empty array), don't pass collectors parameter
+    // Backend will return data aggregated across all collectors
 
     // Add current version parameter to filter prompts by current version
     // Backend should return only prompts from the current version
@@ -130,7 +113,7 @@ export const Prompts = () => {
     const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
     perfLog('Prompts: Endpoint computation', endpointStart);
     return endpoint;
-  }, [selectedBrandId, dateRangeKey, brandsLoading, currentVersion, selectedLLM]);
+  }, [selectedBrandId, startDate, endDate, brandsLoading, currentVersion, selectedLLMs]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());
@@ -153,6 +136,14 @@ export const Prompts = () => {
     }
   }, [response, loading]);
 
+  // Extract available collectors from response
+  const llmOptions = useMemo(() => {
+    if (!response?.success || !response.data) {
+      return [];
+    }
+    return response.data.collectors ?? [];
+  }, [response]);
+
   // Process response data with performance logging
   const topics = useMemo(() => {
     const start = performance.now();
@@ -165,28 +156,22 @@ export const Prompts = () => {
     return filtered;
   }, [response]);
 
-  const llmOptions = useMemo(() => {
-    if (!response?.success || !response.data) {
-      return [];
-    }
-    return response.data.collectors ?? [];
-  }, [response]);
-
-  // Keep selected LLM in sync with available options
-  // Default to "All Models" (null) instead of first option
+  // Keep selected LLMs in sync with available options
+  // Remove any selected LLMs that are no longer available
   useEffect(() => {
     if (llmOptions.length === 0) {
-      if (selectedLLM !== null) {
-        setSelectedLLM(null);
+      if (selectedLLMs.length > 0) {
+        setSelectedLLMs([]);
       }
       return;
     }
 
-    // Only auto-select if selectedLLM is set and not in options, otherwise keep current selection (including null for "All Models")
-    if (selectedLLM && !llmOptions.includes(selectedLLM)) {
-      setSelectedLLM(null); // Default to "All Models" if selected option is no longer available
+    // Filter out any selected LLMs that are no longer in available options
+    const validSelected = selectedLLMs.filter(llm => llmOptions.includes(llm));
+    if (validSelected.length !== selectedLLMs.length) {
+      setSelectedLLMs(validSelected);
     }
-  }, [llmOptions, selectedLLM]);
+  }, [llmOptions, selectedLLMs]);
 
   // Set selected prompt
   useEffect(() => {
@@ -218,8 +203,8 @@ export const Prompts = () => {
     }
   }, [loading, topics.length]);
 
-  const handleLLMChange = (llm: string | null) => {
-    setSelectedLLM(llm);
+  const handleLLMChange = (llms: string[]) => {
+    setSelectedLLMs(llms);
   };
 
   return (
@@ -244,11 +229,15 @@ export const Prompts = () => {
 
         <PromptFilters
           llmOptions={llmOptions}
-          selectedLLM={selectedLLM}
+          selectedLLMs={selectedLLMs}
           onLLMChange={handleLLMChange}
           brands={brands}
           selectedBrandId={selectedBrandId}
           onBrandChange={selectBrand}
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
         />
 
         {error && (
@@ -263,16 +252,13 @@ export const Prompts = () => {
               topics={topics}
               selectedPromptId={selectedPrompt?.id ?? null}
               onPromptSelect={handlePromptSelect}
-              dateRangeKey={dateRangeKey}
-              dateRangeOptions={dateRangeOptions}
-              onDateRangeChange={setDateRangeKey}
               loading={loading}
-              selectedLLM={selectedLLM}
+              selectedLLMs={selectedLLMs}
             />
           </div>
 
           <div className="col-span-4">
-            <ResponseViewer prompt={selectedPrompt} selectedLLM={selectedLLM} />
+            <ResponseViewer prompt={selectedPrompt} selectedLLMs={selectedLLMs} />
           </div>
         </div>
       </div>

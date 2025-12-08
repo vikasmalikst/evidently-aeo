@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import { Info } from 'lucide-react';
 
 interface DateRangePickerProps {
@@ -64,6 +64,25 @@ export const DateRangePicker = ({
   }, [startDate, endDate]);
 
   const maxDate = new Date().toISOString().split('T')[0]; // Today
+  
+  // Local state for input values (allows visual updates without triggering callbacks)
+  const [localStartDate, setLocalStartDate] = useState(startDate);
+  const [localEndDate, setLocalEndDate] = useState(endDate);
+  
+  // Track the value when input is focused to detect actual changes on blur
+  const startDateOnFocusRef = useRef<string>(startDate);
+  const endDateOnFocusRef = useRef<string>(endDate);
+  
+  // Sync local state when props change (from parent)
+  useEffect(() => {
+    setLocalStartDate(startDate);
+    startDateOnFocusRef.current = startDate;
+  }, [startDate]);
+  
+  useEffect(() => {
+    setLocalEndDate(endDate);
+    endDateOnFocusRef.current = endDate;
+  }, [endDate]);
 
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
@@ -71,13 +90,30 @@ export const DateRangePicker = ({
         <label className="text-[13px] text-[#64748b] font-medium">Date Range:</label>
         <input
           type="date"
-          value={startDate}
-          max={endDate || maxDate}
+          value={localStartDate}
+          max={localEndDate || maxDate}
+          onFocus={(e) => {
+            // Store the value when user starts interacting with the date picker
+            startDateOnFocusRef.current = e.target.value;
+          }}
           onChange={(e) => {
+            // Update local state for immediate visual feedback
             const value = e.target.value;
-            onStartDateChange(value);
-            if (value && endDate && value > endDate) {
-              onEndDateChange(value);
+            setLocalStartDate(value);
+          }}
+          onBlur={(e) => {
+            // Only trigger callback when input loses focus AND value actually changed
+            // This prevents updates when just navigating months without selecting a date
+            const value = e.target.value;
+            if (value && value !== startDateOnFocusRef.current && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+              onStartDateChange(value);
+              if (value && localEndDate && value > localEndDate) {
+                setLocalEndDate(value);
+                onEndDateChange(value);
+              }
+            } else {
+              // If value didn't actually change, revert to prop value
+              setLocalStartDate(startDate);
             }
           }}
           className="px-3 py-1.5 border border-[#e8e9ed] rounded-lg text-[13px] bg-white focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc]"
@@ -85,14 +121,31 @@ export const DateRangePicker = ({
         <span className="text-[13px] text-[#64748b]">to</span>
         <input
           type="date"
-          value={endDate}
-          min={startDate}
+          value={localEndDate}
+          min={localStartDate}
           max={maxDate}
+          onFocus={(e) => {
+            // Store the value when user starts interacting with the date picker
+            endDateOnFocusRef.current = e.target.value;
+          }}
           onChange={(e) => {
+            // Update local state for immediate visual feedback
             const value = e.target.value;
-            onEndDateChange(value);
-            if (value && startDate && value < startDate) {
-              onStartDateChange(value);
+            setLocalEndDate(value);
+          }}
+          onBlur={(e) => {
+            // Only trigger callback when input loses focus AND value actually changed
+            // This prevents updates when just navigating months without selecting a date
+            const value = e.target.value;
+            if (value && value !== endDateOnFocusRef.current && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+              onEndDateChange(value);
+              if (value && localStartDate && value < localStartDate) {
+                setLocalStartDate(value);
+                onStartDateChange(value);
+              }
+            } else {
+              // If value didn't actually change, revert to prop value
+              setLocalEndDate(endDate);
             }
           }}
           className="px-3 py-1.5 border border-[#e8e9ed] rounded-lg text-[13px] bg-white focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc]"
@@ -111,5 +164,6 @@ export const DateRangePicker = ({
     </div>
   );
 };
+
 
 

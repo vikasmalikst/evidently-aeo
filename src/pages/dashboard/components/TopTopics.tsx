@@ -10,24 +10,26 @@ interface TopTopicsProps {
 export const TopTopics = ({ topTopics }: TopTopicsProps) => {
   const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-  // Bright glossy scale (first variant)
+  // High contrast colors with dramatically distinct shades for clear differentiation
+  // Each segment is visually distinct, especially in the green range (indices 4-6)
+  // Index 4 (bright lime) and 5 (medium green) are now very different to distinguish scores like 27 vs 54
   const sentimentBlockColors = [
-    '#ff3b3f',
-    '#ff7a1a',
-    '#ffc400',
-    '#ffe760',
-    '#b6ff73',
-    '#4cea7a',
-    '#13d46b'
+    '#b91c1c', // Deep red (very negative)
+    '#d97706', // Orange-red
+    '#f59e0b', // Orange
+    '#eab308', // Yellow (neutral)
+    '#84cc16', // Bright lime-green (slightly positive) - vibrant yellow-green, high saturation
+    '#16a34a', // Medium green (positive) - true green, clearly different from lime
+    '#047857'  // Deep emerald (very positive) - rich dark green, clearly different
   ];
   const sentimentBlockGradients = [
-    'linear-gradient(135deg, #ff8a8e 0%, #ff3b3f 100%)',
-    'linear-gradient(135deg, #ffb066 0%, #ff7a1a 100%)',
-    'linear-gradient(135deg, #ffe066 0%, #ffc400 100%)',
-    'linear-gradient(135deg, #fff1a6 0%, #ffe760 100%)',
-    'linear-gradient(135deg, #d6ffad 0%, #b6ff73 100%)',
-    'linear-gradient(135deg, #8bffad 0%, #4cea7a 100%)',
-    'linear-gradient(135deg, #5afc9d 0%, #13d46b 100%)'
+    'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+    'linear-gradient(135deg, #ea580c 0%, #d97706 100%)',
+    'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+    'linear-gradient(135deg, #fcd34d 0%, #eab308 100%)',
+    'linear-gradient(135deg, #a3e635 0%, #84cc16 100%)',
+    'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+    'linear-gradient(135deg, #059669 0%, #047857 100%)'
   ];
 
 

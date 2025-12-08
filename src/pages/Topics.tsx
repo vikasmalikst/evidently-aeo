@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { TopicsAnalysisPage } from './TopicsAnalysis/TopicsAnalysisPage';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useCachedData } from '../hooks/useCachedData';
 import { calculatePreviousPeriod } from '../components/DateRangePicker/DateRangePicker';
+import { getActiveCompetitors, type ManagedCompetitor } from '../api/competitorManagementApi';
 import type { TopicsAnalysisData, TopicSource } from './TopicsAnalysis/types';
 
 interface ApiResponse<T> {
@@ -31,9 +32,9 @@ interface BackendTopic {
   totalQueries?: number;
   availableModels?: string[]; // Available models for this topic (from collector_type)
   topSources?: Array<{ name: string; url: string; type: string; citations: number }>;
-  industryAvgSoA?: number | null; // Industry average SOA (0-100 percentage)
+  industryAvgSoA?: number | null; // Competitor average SOA (0-100 percentage) - calculated from competitor SOA only
   industryAvgSoATrend?: { direction: 'up' | 'down' | 'neutral'; delta: number } | null;
-  industryBrandCount?: number; // Number of brands in industry average calculation
+  industryBrandCount?: number; // Number of brands in competitor average calculation
 }
 
 interface TopicsApiResponse {
@@ -69,20 +70,20 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
         citations: source.citations
       }));
 
-      // Calculate industry average SOA (backend returns as percentage 0-100, convert to multiplier 0-5x)
-      // Backend returns avgSoA as percentage (0-100) - confirmed in source-attribution.service.ts:666
+      // Calculate competitor average SOA (backend returns as percentage 0-100, convert to multiplier 0-5x)
+      // Backend returns avgSoA as percentage (0-100) - calculated from competitor SOA values only
       const industryAvgSoA = t.industryAvgSoA !== null && t.industryAvgSoA !== undefined
         ? (t.industryAvgSoA / 20) // Convert percentage (0-100) to multiplier (0-5x)
         : null;
       
-      // Debug logging for industry SOA
+      // Debug logging for competitor SOA
       if (industryAvgSoA !== null) {
-        console.log(`📊 Topic "${t.topic_name}": Industry Avg SOA = ${t.industryAvgSoA}% (${industryAvgSoA.toFixed(2)}x multiplier), Brand SOA = ${soAPercentage}%`);
+        console.log(`📊 Topic "${t.topic_name}": Competitor Avg SOA = ${t.industryAvgSoA}% (${industryAvgSoA.toFixed(2)}x multiplier), Brand SOA = ${soAPercentage}%`);
       } else if (t.industryAvgSoA === null || t.industryAvgSoA === undefined) {
-        console.log(`⚠️ Topic "${t.topic_name}": No industry Avg SOA data (null/undefined)`);
+        console.log(`⚠️ Topic "${t.topic_name}": No competitor Avg SOA data (null/undefined)`);
       }
       
-      // Use industry trend if available, otherwise default to neutral
+      // Use competitor trend if available, otherwise default to neutral
       const industryTrend = t.industryAvgSoATrend || { direction: 'neutral' as const, delta: 0 };
 
       // Get delta for this topic if available
@@ -105,7 +106,7 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
         sources: sources, // Map topSources from backend
         // Store original priority for fallback sorting (will be removed before returning)
         priority: t.priority || 999,
-        // Industry average data
+        // Competitor average data (calculated from competitor SOA values only)
         industryAvgSoA: industryAvgSoA,
         industryTrend: industryTrend,
         industryBrandCount: t.industryBrandCount || 0
@@ -204,14 +205,131 @@ interface TopicsFilters {
   endDate?: string;
   collectorType?: string;
   country?: string;
+  competitors?: string[]; // Array of competitor names (lowercase)
 }
+
+const getDefaultDateRange = () => {
+  const end = new Date();
+  end.setUTCHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 29);
+  start.setUTCHours(0, 0, 0, 0);
+  return {
+    start: start.toISOString().split('T')[0],
+    end: end.toISOString().split('T')[0],
+  };
+};
 
 export const Topics = () => {
   const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<TopicsFilters>({});
+  const [filters, setFilters] = useState<TopicsFilters>(() => {
+    const defaults = getDefaultDateRange();
+    return { startDate: defaults.start, endDate: defaults.end };
+  });
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const lastEndpointRef = useRef<string | null>(null);
+  
+  // Define updateFilters first so it can be used in competitor handlers
+  const updateFilters = useCallback((next: TopicsFilters) => {
+    setFilters((prev) => {
+      const updated = { ...prev, ...next };
+      // If competitors filter is provided, ensure it's properly set
+      if (next.competitors !== undefined) {
+        updated.competitors = next.competitors;
+      }
+      return updated;
+    });
+  }, []);
+  
+  // Fetch competitors early to avoid delay in TopicsAnalysisPage
+  const [competitors, setCompetitors] = useState<ManagedCompetitor[]>([]);
+  const [selectedCompetitors, setSelectedCompetitors] = useState<Set<string>>(new Set());
+  const [isLoadingCompetitors, setIsLoadingCompetitors] = useState(false);
+  
+  useEffect(() => {
+    const fetchCompetitors = async () => {
+      if (!selectedBrandId) {
+        setCompetitors([]);
+        setSelectedCompetitors(new Set());
+        setIsLoadingCompetitors(false);
+        return;
+      }
+
+      setIsLoadingCompetitors(true);
+      try {
+        const data = await getActiveCompetitors(selectedBrandId);
+        const competitorsList = data.competitors || [];
+        setCompetitors(competitorsList);
+        // Default: select all competitors (show average) if not already set
+        setSelectedCompetitors((prev) => {
+          if (prev.size === 0) {
+            return new Set(competitorsList.map(c => c.name.toLowerCase()));
+          }
+          return prev;
+        });
+      } catch (error) {
+        console.error('Error fetching competitors:', error);
+        setCompetitors([]);
+        setSelectedCompetitors(new Set());
+      } finally {
+        setIsLoadingCompetitors(false);
+      }
+    };
+
+    fetchCompetitors();
+  }, [selectedBrandId]);
+  
+  const handleCompetitorToggle = useCallback((competitorName: string) => {
+    setSelectedCompetitors((prev) => {
+      const allCompetitorKeys = new Set(competitors.map(c => c.name.toLowerCase()));
+      const isAllSelected = prev.size === competitors.length && 
+        competitors.every(c => prev.has(c.name.toLowerCase()));
+      
+      const key = competitorName.toLowerCase();
+      let newSet: Set<string>;
+      
+      // If all are selected and user clicks a competitor, select only that competitor
+      if (isAllSelected) {
+        newSet = new Set([key]);
+      } else {
+        // Normal toggle behavior
+        newSet = new Set(prev);
+        if (newSet.has(key)) {
+          newSet.delete(key);
+          // If no competitors selected after removal, select all (show average)
+          if (newSet.size === 0) {
+            newSet = allCompetitorKeys;
+          }
+        } else {
+          newSet.add(key);
+        }
+      }
+      
+      // Update filters to trigger API call
+      updateFilters({
+        competitors: Array.from(newSet),
+      });
+      return newSet;
+    });
+  }, [competitors, updateFilters]);
+
+  const handleSelectAllCompetitors = useCallback(() => {
+    const allSelected = new Set(competitors.map(c => c.name.toLowerCase()));
+    setSelectedCompetitors(allSelected);
+    updateFilters({
+      competitors: Array.from(allSelected),
+    });
+  }, [competitors, updateFilters]);
+
+  const handleDeselectAllCompetitors = useCallback(() => {
+    // When deselecting all, select all again (to show average)
+    const allSelected = new Set(competitors.map(c => c.name.toLowerCase()));
+    setSelectedCompetitors(allSelected);
+    updateFilters({
+      competitors: Array.from(allSelected),
+    });
+  }, [competitors, updateFilters]);
 
   // Build endpoint with filters - SAME AS PROMPTS PAGE
   // Memoize filters to prevent unnecessary endpoint recalculations
@@ -220,9 +338,10 @@ export const Topics = () => {
       startDate: filters.startDate || '',
       endDate: filters.endDate || '',
       collectorType: filters.collectorType || '',
-      country: filters.country || ''
+      country: filters.country || '',
+      competitors: filters.competitors ? filters.competitors.sort().join(',') : ''
     });
-  }, [filters.startDate, filters.endDate, filters.collectorType, filters.country]);
+  }, [filters.startDate, filters.endDate, filters.collectorType, filters.country, filters.competitors]);
 
   const topicsEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
@@ -232,6 +351,10 @@ export const Topics = () => {
     // Use 'collectors' parameter (same as Prompts page) instead of 'collectorType'
     if (filters.collectorType) params.append('collectors', filters.collectorType);
     if (filters.country) params.append('country', filters.country);
+    // Add competitor filter if provided
+    if (filters.competitors && filters.competitors.length > 0) {
+      params.append('competitors', filters.competitors.join(','));
+    }
     const queryString = params.toString();
     const endpoint = `/brands/${selectedBrandId}/topics${queryString ? `?${queryString}` : ''}`;
     
@@ -426,8 +549,12 @@ export const Topics = () => {
     }
   }, [fetchError, response]);
 
-  // Show loading state
-  if (isLoading || brandsLoading) {
+  const hasTransformedData = !!topicsData;
+  const showInitialLoading = (isLoading || brandsLoading) && !hasTransformedData;
+  const isRefreshing = (isLoading || previousLoading) && hasTransformedData;
+
+  // Show loading state only on initial load (no existing data)
+  if (showInitialLoading) {
     return (
       <TopicsAnalysisPage
         data={{
@@ -440,10 +567,17 @@ export const Topics = () => {
         onTopicClick={(topic) => {
           console.log('Topic clicked:', topic);
         }}
-        onCategoryFilter={(categoryId) => {
-          console.log('Category filtered:', categoryId);
-        }}
+        onFiltersChange={updateFilters}
+        availableModels={availableModels}
         currentCollectorType={filters.collectorType}
+        currentStartDate={filters.startDate}
+        currentEndDate={filters.endDate}
+        competitors={competitors}
+        selectedCompetitors={selectedCompetitors}
+        onCompetitorToggle={handleCompetitorToggle}
+        onSelectAllCompetitors={handleSelectAllCompetitors}
+        onDeselectAllCompetitors={handleDeselectAllCompetitors}
+        isLoadingCompetitors={isLoadingCompetitors}
       />
     );
   }
@@ -468,32 +602,45 @@ export const Topics = () => {
           onCategoryFilter={(categoryId) => {
             console.log('Category filtered:', categoryId);
           }}
-          onFiltersChange={setFilters}
+          onFiltersChange={updateFilters}
           availableModels={availableModels}
           currentCollectorType={filters.collectorType}
+          currentStartDate={filters.startDate}
+          currentEndDate={filters.endDate}
+          competitors={competitors}
+          selectedCompetitors={selectedCompetitors}
+          onCompetitorToggle={handleCompetitorToggle}
+          onSelectAllCompetitors={handleSelectAllCompetitors}
+          onDeselectAllCompetitors={handleDeselectAllCompetitors}
+          isLoadingCompetitors={isLoadingCompetitors}
         />
       );
     }
     // If response is successful but transformation failed, show error
     return (
-      <TopicsAnalysisPage
-        data={{
-          portfolio: { totalTopics: 0, searchVolume: 0, categories: 0, lastUpdated: new Date().toISOString() },
-          performance: { avgSoA: 0, maxSoA: 0, minSoA: 0, weeklyGainer: { topic: '', delta: 0, category: '' } },
-          topics: [],
-          categories: []
-        }}
-        isLoading={false}
-        onTopicClick={(topic) => {
-          console.log('Topic clicked:', topic);
-        }}
-        onCategoryFilter={(categoryId) => {
-          console.log('Category filtered:', categoryId);
-        }}
-        onFiltersChange={setFilters}
-        availableModels={availableModels}
-        currentCollectorType={filters.collectorType}
-      />
+        <TopicsAnalysisPage
+          data={{
+            portfolio: { totalTopics: 0, searchVolume: 0, categories: 0, lastUpdated: new Date().toISOString() },
+            performance: { avgSoA: 0, maxSoA: 0, minSoA: 0, weeklyGainer: { topic: '', delta: 0, category: '' } },
+            topics: [],
+            categories: []
+          }}
+          isLoading={false}
+          onTopicClick={(topic) => {
+            console.log('Topic clicked:', topic);
+          }}
+          onFiltersChange={updateFilters}
+          availableModels={availableModels}
+          currentCollectorType={filters.collectorType}
+          currentStartDate={filters.startDate}
+          currentEndDate={filters.endDate}
+          competitors={competitors}
+          selectedCompetitors={selectedCompetitors}
+          onCompetitorToggle={handleCompetitorToggle}
+          onSelectAllCompetitors={handleSelectAllCompetitors}
+          onDeselectAllCompetitors={handleDeselectAllCompetitors}
+          isLoadingCompetitors={isLoadingCompetitors}
+        />
     );
   }
 
@@ -532,15 +679,21 @@ export const Topics = () => {
       <TopicsAnalysisPage
         data={dataToShow}
         isLoading={false}
+        isRefreshing={isRefreshing}
         onTopicClick={(topic) => {
           console.log('Topic clicked:', topic);
         }}
-        onCategoryFilter={(categoryId) => {
-          console.log('Category filtered:', categoryId);
-        }}
-        onFiltersChange={setFilters}
+        onFiltersChange={updateFilters}
         availableModels={availableModels}
         currentCollectorType={filters.collectorType}
+        currentStartDate={filters.startDate}
+        currentEndDate={filters.endDate}
+        competitors={competitors}
+        selectedCompetitors={selectedCompetitors}
+        onCompetitorToggle={handleCompetitorToggle}
+        onSelectAllCompetitors={handleSelectAllCompetitors}
+        onDeselectAllCompetitors={handleDeselectAllCompetitors}
+        isLoadingCompetitors={isLoadingCompetitors}
       />
     </>
   );

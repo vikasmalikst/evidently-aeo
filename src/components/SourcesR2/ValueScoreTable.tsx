@@ -68,7 +68,7 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 16, color: '#1a1d29', fontWeight: 700 }}>Top Sources</h3>
-          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Composite score combining visibility, SOA, sentiment, citations, topics</p>
+          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Composite score based on Visibility, SOA, Sentiment, Citations and Topics</p>
         </div>
       </div>
       <div style={{ overflowX: 'auto' }}>

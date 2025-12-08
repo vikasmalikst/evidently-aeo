@@ -87,7 +87,6 @@ export const PromptsList = memo(({
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-4 py-2">Prompt</th>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-24">Visibility</th>
               <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-32">Sentiment</th>
-              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-4 py-2 w-32">Topic</th>
             </tr>
           </thead>
         </table>
@@ -146,7 +145,6 @@ export const PromptsList = memo(({
                         {topic.sentimentScore !== null ? `${Math.round(topic.sentimentScore * 100)}` : '—'}
                       </span>
                     </td>
-                    <td className="px-4 py-2 w-32"></td>
                   </tr>
                   {isExpanded &&
                     topic.prompts.map((prompt) => {
@@ -194,11 +192,6 @@ export const PromptsList = memo(({
                           <td className="px-2 py-3 w-32 text-center">
                             <span className="text-sm font-medium text-[var(--text-caption)]">
                               {prompt.sentimentScore !== null ? `${Math.round(prompt.sentimentScore * 100)}` : '—'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 w-32 text-center">
-                            <span className="text-xs text-[var(--text-caption)] font-data">
-                              {topic.name}
                             </span>
                           </td>
                         </tr>

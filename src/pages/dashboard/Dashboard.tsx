@@ -94,7 +94,7 @@ export const Dashboard = () => {
         trend: computeTrend(dashboardData?.trendPercentage),
         icon: <Activity size={20} />,
         color: '#7c3aed',
-        linkTo: '/search-visibility',
+        linkTo: '/search-visibility?kpi=brandPresence',
         description:
           'Percentage of queries where your brand appears in AI-generated answers. Calculated as (queries with brand presence / total queries) × 100. Higher percentages indicate your brand is mentioned more frequently across different queries.'
       }

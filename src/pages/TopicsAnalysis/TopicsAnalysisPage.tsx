@@ -424,7 +424,7 @@ export const TopicsAnalysisPage = ({
 
 
         {/* Section 1: Compact Metrics Pods */}
-        <div style={{ marginBottom: '24px' }}>
+        <div style={{ marginBottom: '24px', gap: '24px' }}>
           <CompactMetricsPods
             portfolio={data.portfolio}
             performance={data.performance}

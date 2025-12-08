@@ -32,10 +32,12 @@ export const TopBrandSources = ({ brandPages }: TopBrandSourcesProps) => {
       <div className="space-y-3">
         {displayedPages.length > 0 ? (
           displayedPages.map((page) => {
-            const hasImpactScore =
-              typeof page.impactScore === 'number' && Number.isFinite(page.impactScore);
-            const impactLabel = hasImpactScore
-              ? page.impactScore!.toFixed(1)
+            // Use Value (composite score) instead of impactScore
+            const value = page.value !== undefined ? page.value : page.impactScore;
+            const hasValue =
+              typeof value === 'number' && Number.isFinite(value);
+            const valueLabel = hasValue
+              ? value.toFixed(1)
               : '—';
             const hasChange =
               typeof page.change === 'number' && Number.isFinite(page.change);
@@ -86,15 +88,12 @@ export const TopBrandSources = ({ brandPages }: TopBrandSourcesProps) => {
                       <span className="text-[11px] text-[#64748b] uppercase tracking-wide">
                         Impact
                       </span>
-                      <InfoTooltip description="Impact Score (0-10) measures how prominently your brand appears from this source. Formula: 35% Share of Answers + 35% Visibility + 30% Usage (all normalized to 0-10 scale). Share reflects brand mention percentage, Visibility measures prominence in responses, and Usage counts citation frequency." />
+                      <InfoTooltip description="Composite score based on Visibility, SOA, Sentiment, Citations and Topics. Each component is normalized to 0-100 and weighted equally (20% each). This score helps identify high-value sources for your brand." />
                     </div>
                     <div className="flex items-baseline justify-center gap-1">
                       <span className="text-[16px] font-bold text-[#1a1d29]">
-                        {impactLabel}
+                        {valueLabel}
                       </span>
-                      {hasImpactScore && (
-                        <span className="text-[11px] text-[#64748b]">/10</span>
-                      )}
                     </div>
                   </div>
                   <div className="text-center min-w-[70px]">

@@ -1,4 +1,5 @@
-import { useRef, useMemo, memo } from 'react';
+import { useRef, useMemo, memo, useState, useEffect } from 'react';
+import type { ChartEvent, LegendItem } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -46,6 +47,15 @@ const neutrals = {
   900: '#1a1d29',
 };
 
+const fadeColor = (hex: string, alpha = 0.2) => {
+  if (!hex.startsWith('#') || (hex.length !== 7 && hex.length !== 4)) return hex;
+  const expand = (value: string) => (hex.length === 4 ? `${value}${value}` : value);
+  const r = parseInt(expand(hex.slice(1, hex.length === 4 ? 2 : 3)), 16);
+  const g = parseInt(expand(hex.slice(hex.length === 4 ? 2 : 3, hex.length === 4 ? 3 : 5)), 16);
+  const b = parseInt(expand(hex.slice(hex.length === 4 ? 3 : 5)), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 interface Model {
   id: string;
   name: string;
@@ -80,6 +90,11 @@ export const VisibilityChart = memo(({
   metricType = 'visibility'
 }: VisibilityChartProps) => {
   const chartRef = useRef<any>(null);
+  const [focusedDataset, setFocusedDataset] = useState<number | null>(null);
+
+  useEffect(() => {
+    setFocusedDataset(null);
+  }, [selectedModels]);
 
   const chartData = useMemo(() => {
     if (!data || selectedModels.length === 0) {
@@ -97,15 +112,18 @@ export const VisibilityChart = memo(({
         // Use color from model if available, otherwise fall back to generic color palette
         const model = models.find(m => m.id === modelId);
         const color = model?.color || chartColors[colorKeys[index % colorKeys.length] as keyof typeof chartColors];
+        const isDimmed = focusedDataset !== null && focusedDataset !== index;
+        const activeBorderColor = color;
+        const inactiveBorderColor = fadeColor(color, 0.25);
 
         if (isBarChart) {
           // Bar chart configuration
           return {
             label: modelData.label,
             data: modelData.data,
-            backgroundColor: color,
-            borderColor: color,
-            borderWidth: 1,
+            backgroundColor: isDimmed ? fadeColor(color, 0.25) : color,
+            borderColor: isDimmed ? inactiveBorderColor : activeBorderColor,
+            borderWidth: isDimmed ? 0.5 : 1,
             borderRadius: 4,
             borderSkipped: 'start' as const,
           };
@@ -114,11 +132,12 @@ export const VisibilityChart = memo(({
           return {
             label: modelData.label,
             data: modelData.data,
-            borderColor: color,
+            borderColor: isDimmed ? inactiveBorderColor : activeBorderColor,
+            pointBackgroundColor: isDimmed ? inactiveBorderColor : activeBorderColor,
             backgroundColor: 'transparent',
-            borderWidth: 2,
-            pointRadius: 3,
-            pointHoverRadius: 5,
+            borderWidth: isDimmed ? 1 : 2.5,
+            pointRadius: isDimmed ? 2 : 3,
+            pointHoverRadius: isDimmed ? 3 : 6,
             tension: 0.4,
             fill: false,
             spanGaps: false,
@@ -131,7 +150,7 @@ export const VisibilityChart = memo(({
       labels: data.labels,
       datasets
     };
-  }, [data, selectedModels, models, chartType]);
+  }, [data, selectedModels, models, chartType, focusedDataset]);
 
   const options = useMemo(() => {
     const isBarChart = chartType === 'bar';
@@ -235,6 +254,11 @@ export const VisibilityChart = memo(({
                 };
               });
             },
+          },
+          onClick: (_event: ChartEvent, legendItem: LegendItem) => {
+            const datasetIndex = legendItem.datasetIndex;
+            if (typeof datasetIndex !== 'number') return;
+            setFocusedDataset((prev) => (prev === datasetIndex ? null : datasetIndex));
           },
         },
       tooltip: {

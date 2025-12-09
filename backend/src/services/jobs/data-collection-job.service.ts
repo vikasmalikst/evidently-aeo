@@ -190,10 +190,9 @@ export class DataCollectionJobService {
           'google_aio',
           'perplexity',
           'claude',
-          'deepseek',
-          'baidu',
-          'bing',
-          'gemini',
+          'grok',
+          'bing_copilot',
+          'gemini'
         ],
       }));
 

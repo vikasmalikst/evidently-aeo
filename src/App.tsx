@@ -7,6 +7,7 @@ import { SearchSourcesR2 } from './pages/SearchSourcesR2';
 import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
+import { Recommendations } from './pages/Recommendations';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
@@ -141,6 +142,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Keywords />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/recommendations"
+          element={
+            <ProtectedRoute>
+              <Recommendations />
             </ProtectedRoute>
           }
         />

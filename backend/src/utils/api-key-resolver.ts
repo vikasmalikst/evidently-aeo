@@ -81,7 +81,7 @@ export function getGeminiModel(defaultModel: string = 'gemini-1.5-flash'): strin
 /**
  * Get Cerebras model name
  */
-export function getCerebrasModel(defaultModel: string = 'qwen-3-235b-a22b-instruct-2507'): string {
+export function getCerebrasModel(defaultModel: string = 'zai-glm-4.6'): string {
   return process.env.CEREBRAS_MODEL || defaultModel;
 }
 

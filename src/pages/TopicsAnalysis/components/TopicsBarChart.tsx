@@ -8,6 +8,7 @@ interface TopicsBarChartProps {
   topics: Topic[];
   onBarClick?: (topic: Topic) => void;
   competitors?: Competitor[];
+  selectedCompetitor?: string;
 }
 
 const LEFT_AXIS_CHAR_LIMIT = 25;
@@ -18,7 +19,8 @@ const BOTTOM_AXIS_LINE_HEIGHT = 13;
 export const TopicsBarChart = ({ 
   topics, 
   onBarClick,
-  competitors = []
+  competitors = [],
+  selectedCompetitor: _selectedCompetitor, // kept for future filtering logic
 }: TopicsBarChartProps) => {
   // Always show comparison (brand + avg competitor + industry line) when competitors are available
   const showComparison = competitors.length > 0;

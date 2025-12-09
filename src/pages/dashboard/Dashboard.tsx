@@ -47,6 +47,71 @@ export const Dashboard = () => {
   const brandPresencePercentage = totalBrandRows > 0 
     ? Math.min(100, Math.round((brandPresenceRows / totalBrandRows) * 100))
     : 0;
+  const competitorEntries = dashboardData?.competitorVisibility ?? [];
+  const brandLabel = selectedBrand?.name ?? dashboardData?.brandName ?? 'Your Brand';
+
+  const normalizeSentiment = (value: number | null | undefined) => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    return Math.max(0, Math.min(100, ((value + 1) / 2) * 100));
+  };
+
+  const buildComparisons = (metric: 'visibility' | 'share' | 'sentiment' | 'brandPresence') => {
+    const brandValue =
+      metric === 'visibility'
+        ? visibilityMetric?.value ?? null
+        : metric === 'share'
+          ? shareMetric?.value ?? null
+          : metric === 'sentiment'
+            ? normalizeSentiment(sentimentMetric?.value) ?? null
+            : brandPresencePercentage ?? null;
+
+    const competitorValues = competitorEntries
+      .map((entry) => {
+        const value =
+          metric === 'visibility'
+            ? entry.visibility
+            : metric === 'share'
+              ? entry.share
+              : metric === 'sentiment'
+                ? normalizeSentiment(entry.sentiment)
+                : entry.brandPresencePercentage;
+
+        if (!Number.isFinite(value)) {
+          return null;
+        }
+
+        return {
+          label: entry.competitor,
+          value: value as number,
+          isBrand: false
+        };
+      })
+      .filter(Boolean) as Array<{ label: string; value: number; isBrand: boolean }>;
+
+    const combined = [
+      ...(brandValue !== null && Number.isFinite(brandValue)
+        ? [{ label: brandLabel, value: brandValue as number, isBrand: true }]
+        : []),
+      ...competitorValues
+    ];
+
+    const ranked = combined.sort((a, b) => b.value - a.value).slice(0, 3);
+
+    if (brandValue !== null && Number.isFinite(brandValue) && !ranked.some((item) => item.isBrand)) {
+      return [...ranked, { label: brandLabel, value: brandValue as number, isBrand: true }].slice(0, 4);
+    }
+
+    return ranked;
+  };
+
+  const comparisonSuffix = {
+    visibility: '',
+    share: '%',
+    sentiment: '%',
+    brandPresence: '%'
+  };
 
   const metricCards = useMemo(
     () => [
@@ -59,6 +124,8 @@ export const Dashboard = () => {
         icon: <Eye size={20} />,
         color: '#498cf9',
         linkTo: '/search-visibility',
+        comparisons: buildComparisons('visibility'),
+        comparisonSuffix: comparisonSuffix.visibility,
         description:
           'Measures your brand\'s average prominence across all AI-generated answers. Higher scores indicate your brand appears more prominently in responses, calculated as the average position-weighted visibility across all queries.'
       },
@@ -71,6 +138,8 @@ export const Dashboard = () => {
         icon: <Target size={20} />,
         color: '#06c686',
         linkTo: '/search-visibility?kpi=share',
+        comparisons: buildComparisons('share'),
+        comparisonSuffix: comparisonSuffix.share,
         description:
           'Represents your brand\'s share of the total answer space across all AI models. This metric shows what percentage of all mentions (your brand + competitors) belong to your brand, indicating your relative market presence.'
       },
@@ -83,6 +152,8 @@ export const Dashboard = () => {
         icon: <MessageSquare size={20} />,
         color: '#00bcdc',
         linkTo: '/search-visibility?kpi=sentiment',
+        comparisons: buildComparisons('sentiment'),
+        comparisonSuffix: comparisonSuffix.sentiment,
         description:
           'Average sentiment of how your brand is discussed in AI-generated answers. Scores range from -1 (very negative) to +1 (very positive), with 0 being neutral. This reflects overall brand perception across all queries.'
       },
@@ -95,11 +166,21 @@ export const Dashboard = () => {
         icon: <Activity size={20} />,
         color: '#7c3aed',
         linkTo: '/search-visibility?kpi=brandPresence',
+        comparisons: buildComparisons('brandPresence'),
+        comparisonSuffix: comparisonSuffix.brandPresence,
         description:
           'Percentage of queries where your brand appears in AI-generated answers. Calculated as (queries with brand presence / total queries) × 100. Higher percentages indicate your brand is mentioned more frequently across different queries.'
       }
     ],
-    [visibilityMetric, shareMetric, sentimentMetric, brandPresencePercentage, dashboardData?.trendPercentage]
+    [
+      visibilityMetric,
+      shareMetric,
+      sentimentMetric,
+      brandPresencePercentage,
+      dashboardData?.trendPercentage,
+      competitorEntries,
+      brandLabel
+    ]
   );
 
   const overviewSubtitle = (selectedBrand?.name ?? dashboardData?.brandName)

@@ -28,13 +28,6 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
-const verboseLogging = process.env.COLLECTOR_VERBOSE_LOGS === 'true';
-const logVerbose = (...args: any[]) => {
-  if (verboseLogging) {
-    console.log(...args);
-  }
-};
-
 export interface QueryExecutionRequest {
   queryId: string;
   brandId: string;
@@ -200,8 +193,6 @@ export class DataCollectionService {
       retries: 1,
       priority: 8
     });
-
-    logVerbose('🔧 Data Collection Service initialized with collectors:', Array.from(this.collectors.keys()));
   }
 
   /**
@@ -211,27 +202,17 @@ export class DataCollectionService {
   async executeQueries(requests: QueryExecutionRequest[]): Promise<CollectorResult[]> {
     const results: CollectorResult[] = [];
     const BATCH_SIZE = 3; // Process 3 queries at a time
-    
-    logVerbose(`📊 Processing ${requests.length} queries in batches of ${BATCH_SIZE}...`);
-
     // Process requests in batches
     for (let i = 0; i < requests.length; i += BATCH_SIZE) {
       const batch = requests.slice(i, i + BATCH_SIZE);
-      logVerbose(`\n🔄 Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(requests.length / BATCH_SIZE)} (queries ${i + 1}-${Math.min(i + BATCH_SIZE, requests.length)})`);
-      
       const batchPromises = batch.map(async (request, batchIndex) => {
         const queryNum = i + batchIndex + 1;
         try {
-          logVerbose(`\n🚀 [${queryNum}/${requests.length}] Executing: "${request.queryText.substring(0, 60)}..."`);
-          
           // Execute across enabled collectors with retry mechanism
           // Each collector will create its own execution record
           const collectorResults = await this.executeQueryAcrossCollectorsWithRetry(request, 2); // 2 retries
-          logVerbose(`✅ [${queryNum}/${requests.length}] Completed ${collectorResults.length} collector executions`);
-          
           // If all collectors failed, create a failed collector_result entry so the query is tracked
           if (collectorResults.length === 0 || collectorResults.every(r => r.status === 'failed')) {
-            console.warn(`⚠️ [${queryNum}/${requests.length}] All collectors failed for query "${request.queryText.substring(0, 60)}...". Creating failed collector_result entry.`);
             try {
               // Create a failed collector_result entry to track this query attempt
               await this.storeCollectorResult({
@@ -288,7 +269,6 @@ export class DataCollectionService {
       
       // Small delay between batches to be nice to the API
       if (i + BATCH_SIZE < requests.length) {
-        logVerbose('⏸️  Brief pause before next batch...');
         await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second pause
       }
     }
@@ -297,16 +277,10 @@ export class DataCollectionService {
     const successCount = results.filter(r => r.status === 'completed').length;
     const failedCount = results.filter(r => r.status === 'failed').length;
     const totalExecutions = results.length;
-    
-    logVerbose(`\n✅ All queries processed. Summary:`);
-    logVerbose(`   Total executions: ${totalExecutions}`);
     if (totalExecutions > 0) {
-      logVerbose(`   Successful: ${successCount} (${Math.round((successCount / totalExecutions) * 100)}%)`);
-      logVerbose(`   Failed: ${failedCount} (${Math.round((failedCount / totalExecutions) * 100)}%)`);
     }
     
     if (failedCount > 0) {
-      console.warn(`⚠️ ${failedCount} collector executions failed. Check logs above for details.`);
     }
     
     return results;
@@ -325,21 +299,16 @@ export class DataCollectionService {
     
     // Check circuit breaker for this collector combination
     if (this.isCircuitBreakerOpen(collectorKeys)) {
-      console.warn(`🚫 Circuit breaker is OPEN for collectors: ${request.collectors.join(', ')}. Skipping execution.`);
       throw new Error(`Circuit breaker is open for collectors: ${request.collectors.join(', ')}`);
     }
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         if (attempt > 0) {
-          logVerbose(`🔄 Retry attempt ${attempt}/${maxRetries} for query: "${request.queryText.substring(0, 60)}..."`);
-          
           // Calculate exponential backoff with jitter
           const baseDelay = this.retryBaseDelayMs * Math.pow(2, attempt - 1);
           const jitter = Math.random() * 0.3 * baseDelay; // Up to 30% jitter
           const delayMs = baseDelay + jitter;
-          
-          logVerbose(`⏸️  Waiting ${Math.round(delayMs)}ms before retry (base: ${baseDelay}ms, jitter: ${Math.round(jitter)}ms)`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }
         
@@ -348,7 +317,6 @@ export class DataCollectionService {
         // Reset circuit breaker on success
         if (attempt > 0) {
           this.resetCircuitBreaker(collectorKeys);
-          logVerbose(`✅ Query succeeded on retry attempt ${attempt}`);
         }
         
         return results;
@@ -363,16 +331,8 @@ export class DataCollectionService {
         }, attempt);
         
         lastError = collectorError;
-        
-        console.warn(`⚠️ Attempt ${attempt + 1}/${maxRetries + 1} failed:`, {
-          errorType: collectorError.errorType,
-          retryable: collectorError.retryable,
-          message: collectorError.message
-        });
-        
         // Don't retry on non-retryable errors
         if (!collectorError.retryable) {
-          logVerbose(`🚫 Error is non-retryable (${collectorError.errorType}). Stopping retries.`);
           throw collectorError;
         }
         
@@ -421,7 +381,6 @@ export class DataCollectionService {
       const timeSinceLastFailure = Date.now() - breaker.lastFailure;
       if (timeSinceLastFailure > this.circuitBreakerTimeoutMs) {
         breaker.isOpen = false; // Move to half-open state
-        logVerbose(`🟡 Circuit breaker moved to HALF-OPEN for: ${collectorKey}`);
         return false;
       }
       return true;
@@ -447,7 +406,6 @@ export class DataCollectionService {
       breaker.isOpen = true;
       console.error(`🔴 Circuit breaker OPENED for: ${collectorKey} (${breaker.failures} consecutive failures)`);
     } else {
-      console.warn(`⚠️ Circuit breaker: ${breaker.failures}/${this.circuitBreakerThreshold} failures for: ${collectorKey}`);
     }
     
     this.circuitBreakers.set(collectorKey, breaker);
@@ -462,7 +420,6 @@ export class DataCollectionService {
       breaker.failures = 0;
       breaker.isOpen = false;
       this.circuitBreakers.set(collectorKey, breaker);
-      logVerbose(`🟢 Circuit breaker RESET for: ${collectorKey}`);
     }
   }
 
@@ -492,7 +449,6 @@ export class DataCollectionService {
           brandName = brandData.name;
         }
       } catch (error) {
-        console.warn(`⚠️ Could not retrieve brand name for ${request.brandId}:`, error);
       }
     }
     
@@ -533,9 +489,6 @@ export class DataCollectionService {
         }];
       }
     }
-
-    logVerbose(`📝 Creating query execution for ${collectorType} with status: ${status}`);
-    
     const { data, error } = await supabase
       .from('query_executions')
       .insert(insertData)
@@ -546,8 +499,6 @@ export class DataCollectionService {
       console.error(`❌ Failed to create query execution for ${collectorType}:`, error);
       throw new Error(`Failed to create query execution: ${error.message}`);
     }
-
-    logVerbose(`✅ Successfully created query execution ${data.id} for ${collectorType} with status: ${status}`);
     return data.id;
   }
 
@@ -569,8 +520,6 @@ export class DataCollectionService {
     }
 
     // Log status update for debugging
-    logVerbose(`🔄 Updating execution ${executionId} (${collectorType}) status to: ${status}`);
-
     const updateData: any = {
       status: status,
       updated_at: new Date().toISOString()
@@ -624,9 +573,7 @@ export class DataCollectionService {
 
     // Verify the update was successful
     if (!data || data.length === 0) {
-      console.warn(`⚠️ No rows updated for execution ${executionId} - execution may not exist`);
     } else {
-      logVerbose(`✅ Successfully updated execution ${executionId} status to: ${status}`);
     }
   }
 
@@ -725,9 +672,6 @@ export class DataCollectionService {
    */
   private async verifyAndFixExecutionStatuses(collectorResults: CollectorResult[]): Promise<void> {
     if (collectorResults.length === 0) return;
-
-    logVerbose(`🔍 Verifying execution statuses for ${collectorResults.length} collector results...`);
-
     for (const result of collectorResults) {
       if (!result.executionId) continue; // Skip if no execution ID
 
@@ -740,7 +684,6 @@ export class DataCollectionService {
           .single();
 
         if (fetchError || !execution) {
-          console.warn(`⚠️ Execution ${result.executionId} not found, skipping verification`);
           continue;
         }
 
@@ -753,12 +696,10 @@ export class DataCollectionService {
 
         // If execution is still 'running' but we have a result, update to 'completed'
         if (execution.status === 'running' && storedResult && storedResult.raw_answer) {
-          logVerbose(`🔧 Fixing: Execution ${result.executionId} is 'running' but has result, updating to 'completed'`);
           await this.updateExecutionStatus(result.executionId, result.collectorType, 'completed');
         }
         // If execution is 'running' but result status is 'failed', update to 'failed'
         else if (execution.status === 'running' && result.status === 'failed') {
-          logVerbose(`🔧 Fixing: Execution ${result.executionId} is 'running' but result is 'failed', updating to 'failed'`);
           const collectorError = result.error 
             ? CollectorError.fromError(new Error(result.error), {
                 queryId: result.queryId,
@@ -772,7 +713,6 @@ export class DataCollectionService {
         }
         // If execution is 'completed' but no result exists, this is a data inconsistency
         else if (execution.status === 'completed' && (!storedResult || !storedResult.raw_answer)) {
-          console.warn(`⚠️ Data inconsistency: Execution ${result.executionId} is 'completed' but no result found`);
         }
 
       } catch (error: any) {
@@ -780,8 +720,6 @@ export class DataCollectionService {
         // Don't throw - continue with other executions
       }
     }
-
-    logVerbose(`✅ Finished verifying execution statuses`);
   }
 
   /**
@@ -1073,9 +1011,6 @@ export class DataCollectionService {
   private async storeCollectorResult(result: CollectorResult): Promise<void> {
     // Try to insert with execution_id first, fallback to without it
     const mappedCollectorType = this.mapCollectorTypeToDatabase(result.collectorType);
-    
-    logVerbose(`📝 Storing result with brandId: ${result.brandId}, customerId: ${result.customerId}`);
-    
     // Get brand name from database
     let brandName = null;
     if (result.brandId) {
@@ -1088,10 +1023,8 @@ export class DataCollectionService {
         
         if (brandData) {
           brandName = brandData.name;
-          logVerbose(`✅ Retrieved brand name: ${brandName}`);
         }
       } catch (error) {
-        console.warn(`⚠️ Could not retrieve brand name for ${result.brandId}:`, error);
       }
     }
 
@@ -1113,13 +1046,10 @@ export class DataCollectionService {
                           queryData.metadata?.topic_name || 
                           queryData.metadata?.topic || 
                           null;
-          logVerbose(`✅ Retrieved query text: ${queryText?.substring(0, 50)}...`);
           if (topicFromQuery) {
-            logVerbose(`✅ Retrieved topic: ${topicFromQuery}`);
           }
         }
       } catch (error) {
-        console.warn(`⚠️ Could not retrieve query text for ${result.queryId}:`, error);
       }
     }
 
@@ -1134,10 +1064,8 @@ export class DataCollectionService {
         
         if (competitorsData && competitorsData.length > 0) {
           competitorsList = competitorsData.map(c => c.competitor_name).filter(Boolean);
-          logVerbose(`✅ Retrieved ${competitorsList.length} competitors`);
         }
       } catch (error) {
-        console.warn(`⚠️ Could not retrieve competitors for ${result.brandId}:`, error);
       }
     }
     
@@ -1176,16 +1104,12 @@ export class DataCollectionService {
     // Add brand and customer IDs for multi-tenant support
     if (result.brandId) {
       insertData.brand_id = result.brandId;
-      logVerbose(`✅ Added brand_id to insertData: ${insertData.brand_id}`);
     } else {
-      logVerbose(`⚠️ No brandId in result object`);
     }
     
     if (result.customerId) {
       insertData.customer_id = result.customerId;
-      logVerbose(`✅ Added customer_id to insertData: ${insertData.customer_id}`);
     } else {
-      logVerbose(`⚠️ No customerId in result object`);
     }
 
     // Only add execution_id if the column exists
@@ -1196,17 +1120,12 @@ export class DataCollectionService {
     // Add snapshot_id for BrightData collectors
     if (result.snapshotId) {
       insertData.brightdata_snapshot_id = result.snapshotId;
-      logVerbose(`✅ Added brightdata_snapshot_id: ${result.snapshotId}`);
     }
 
     // Add raw_response_json if available
     if (result.rawResponseJson) {
       insertData.raw_response_json = result.rawResponseJson;
-      logVerbose(`✅ Added raw_response_json to insertData`);
     }
-
-    logVerbose('📤 About to insert into collector_results:', JSON.stringify(insertData, null, 2));
-
     const { data: insertedData, error } = await this.supabase
       .from('collector_results')
       .insert(insertData)
@@ -1218,7 +1137,6 @@ export class DataCollectionService {
       
       // If execution_id column doesn't exist, try without it
       if (error.code === 'PGRST204' && result.executionId) {
-        logVerbose('🔄 Retrying without execution_id...');
         const { error: retryError } = await this.supabase
           .from('collector_results')
           .insert({
@@ -1244,13 +1162,9 @@ export class DataCollectionService {
         if (retryError) {
           console.error('Failed to store collector result (retry):', retryError);
         } else {
-          logVerbose('✅ Successfully stored collector result without execution_id column');
         }
       }
     } else {
-      logVerbose('✅ Successfully stored collector result');
-      logVerbose('📥 Inserted data returned from DB:', JSON.stringify(insertedData, null, 2));
-      
       // CRITICAL: Verify execution status matches the stored result
       // This ensures status is updated even if the earlier update failed
       if (result.executionId) {
@@ -1272,10 +1186,8 @@ export class DataCollectionService {
             // If execution is still 'running' but we have a stored result, update status
             if (execution.status === 'running' && storedResult) {
               if (storedResult.raw_answer && result.status === 'completed') {
-                logVerbose(`🔧 Auto-fixing: Execution ${result.executionId} is 'running' but result exists in DB, updating to 'completed'`);
                 await this.updateExecutionStatus(result.executionId, result.collectorType, 'completed');
               } else if (result.status === 'failed') {
-                logVerbose(`🔧 Auto-fixing: Execution ${result.executionId} is 'running' but result is 'failed', updating to 'failed'`);
                 const collectorError = result.error 
                   ? CollectorError.fromError(new Error(result.error), {
                       queryId: result.queryId,
@@ -1290,12 +1202,10 @@ export class DataCollectionService {
             }
             // If we just stored a successful result but status wasn't updated, fix it
             else if (execution.status === 'running' && result.status === 'completed' && storedResult?.raw_answer) {
-              logVerbose(`🔧 Auto-fixing: Execution ${result.executionId} is 'running' but result was stored successfully, updating to 'completed'`);
               await this.updateExecutionStatus(result.executionId, result.collectorType, 'completed');
             }
             // If execution is still 'running' but result is 'failed', fix it
             else if (execution.status === 'running' && result.status === 'failed') {
-              logVerbose(`🔧 Auto-fixing: Execution ${result.executionId} is 'running' but result is 'failed', updating to 'failed'`);
               const collectorError = result.error 
                 ? CollectorError.fromError(new Error(result.error), {
                     queryId: result.queryId,
@@ -1309,7 +1219,6 @@ export class DataCollectionService {
             }
           }
         } catch (verifyError) {
-          console.warn(`⚠️ Failed to verify execution status for ${result.executionId}:`, verifyError);
           // Don't throw - result is already stored
         }
       }
@@ -1326,7 +1235,6 @@ export class DataCollectionService {
           queryText,
           result.citations || []
         ).catch(error => {
-          console.warn('⚠️ Keyword generation failed (non-blocking):', error);
         });
       }
 
@@ -1336,7 +1244,6 @@ export class DataCollectionService {
       const hasAnswer = result.response && result.response.trim().length > 0;
       if (insertedData && insertedData.length > 0 && result.brandId && result.customerId && hasAnswer) {
         try {
-          logVerbose(`🔄 Triggering automatic scoring for brand ${result.brandId} (new collector result inserted with answer)...`);
           // Import and trigger scoring asynchronously (non-blocking)
           const { brandScoringService } = await import('../scoring/brand-scoring.orchestrator');
           // Use async method to not block data collection response
@@ -1348,13 +1255,10 @@ export class DataCollectionService {
             // The scoring services will only process results that haven't been scored yet
             parallel: false // Run sequentially for better reliability
           });
-          logVerbose(`✅ Automatic scoring triggered for brand ${result.brandId} (running in background)`);
         } catch (scoringError) {
-          console.warn(`⚠️ Failed to trigger scoring for brand ${result.brandId} (non-blocking):`, scoringError);
           // Don't throw - scoring failure shouldn't block data collection
         }
       } else if (insertedData && insertedData.length > 0 && result.brandId && result.customerId && !hasAnswer) {
-        logVerbose(`⏭️ Skipping scoring trigger for brand ${result.brandId} - raw_answer is empty (async request, will trigger after data is fetched)`);
       }
     }
   }
@@ -1372,8 +1276,6 @@ export class DataCollectionService {
     citations?: string[]
   ): Promise<void> {
     try {
-      logVerbose('🔑 Generating keywords for collector result...');
-
       // No need to fetch topics or categories - LLM will extract keywords directly from answer
 
       // Generate keywords using LLM
@@ -1397,8 +1299,6 @@ export class DataCollectionService {
           brand_id: brandId,
           customer_id: customerId
         });
-
-        logVerbose(`✅ Generated and stored ${keywordResponse.keywords.length} keywords`);
       }
     } catch (error) {
       console.error('❌ Error generating keywords:', error);

@@ -27,8 +27,6 @@ export class BrightDataGeminiService extends BaseBrightDataService {
     this.validateConfig(collectorType);
 
     try {
-      console.log(`🚀 Executing Gemini query via BrightData Async (dataset: ${datasetId})`);
-      
       const payload = {
         input: [{
           url: 'https://gemini.google.com/',
@@ -38,9 +36,6 @@ export class BrightDataGeminiService extends BaseBrightDataService {
       };
 
       const triggerUrl = `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${datasetId}&notify=false&include_errors=true`;
-      
-      console.log(`📡 Triggering async Gemini request: ${triggerUrl}`);
-
       const response = await fetch(triggerUrl, {
         method: 'POST',
         headers: {
@@ -49,9 +44,6 @@ export class BrightDataGeminiService extends BaseBrightDataService {
         },
         body: JSON.stringify(payload)
       });
-
-      console.log(`📡 Gemini trigger response status: ${response.status}`);
-
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ BrightData Gemini trigger error:', {
@@ -63,17 +55,12 @@ export class BrightDataGeminiService extends BaseBrightDataService {
       }
 
       const result = await response.json() as any;
-      console.log(`✅ Gemini trigger response:`, JSON.stringify(result, null, 2));
-
       const snapshotId = this.extractSnapshotId(result);
 
       if (!snapshotId) {
         console.error('❌ No snapshot_id found in trigger response:', JSON.stringify(result, null, 2));
         throw new Error('BrightData Gemini trigger did not return snapshot_id');
       }
-
-      console.log(`✅ Got snapshot_id: ${snapshotId} - Attempting quick poll...`);
-
       // Try one quick poll to see if result is ready
       const quickPollPromise = this.pollingService.quickPollSnapshot(snapshotId, datasetId, request, collectorType);
       const quickPollTimeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
@@ -81,13 +68,10 @@ export class BrightDataGeminiService extends BaseBrightDataService {
       const quickResult = await Promise.race([quickPollPromise, quickPollTimeout]) as BrightDataResponse | null;
 
       if (quickResult && quickResult.answer) {
-        console.log(`✅ Snapshot ${snapshotId} result ready immediately!`);
         return quickResult;
       }
 
       // Result not ready yet - start background polling
-      console.log(`⏳ Snapshot ${snapshotId} not ready yet, starting background polling...`);
-      
       this.pollingService.pollForSnapshotAsync(snapshotId, collectorType, datasetId, request).catch(error => {
         console.error(`❌ Background polling failed for snapshot ${snapshotId}:`, error);
       });

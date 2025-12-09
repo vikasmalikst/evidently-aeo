@@ -29,6 +29,53 @@ export interface CollectorSummary {
   lastRunAt?: string | null;
 }
 
+export interface VisibilityComparisonEntry {
+  entity: string;
+  isBrand: boolean;
+  mentions: number;
+  share: number;
+}
+
+export interface CompetitorVisibilityEntry {
+  competitor: string;
+  mentions: number;
+  share: number;
+  visibility: number;
+  sentiment: number | null;
+  brandPresencePercentage: number;
+  topTopics?: Array<{
+    topic: string;
+    occurrences: number;
+    share: number;
+    visibility: number;
+    mentions: number;
+  }>;
+  collectors?: Array<{
+    collectorType: string;
+    mentions: number;
+  }>;
+  timeSeries?: {
+    dates: string[];
+    visibility: number[];
+    share: number[];
+    sentiment: (number | null)[];
+    brandPresencePercentage?: number[];
+    brandPresence?: number[];
+  };
+}
+
+export interface BrandSummary {
+  visibility: number;
+  share: number;
+  brandPresencePercentage: number;
+  topTopics?: Array<{
+    topic: string;
+    occurrences: number;
+    share: number;
+    visibility: number;
+  }>;
+}
+
 export interface DashboardPayload {
   brandId: string;
   brandName: string;
@@ -80,6 +127,9 @@ export interface DashboardPayload {
   }>;
   actionItems?: ActionItem[];
   collectorSummaries?: CollectorSummary[];
+  visibilityComparison?: VisibilityComparisonEntry[];
+  competitorVisibility?: CompetitorVisibilityEntry[];
+  brandSummary?: BrandSummary;
   topBrandSources: Array<{
     id: string;
     title: string;
@@ -131,6 +181,8 @@ export interface MetricCardProps {
   color: string;
   linkTo: string;
   description?: string;
+  comparisons?: Array<{ label: string; value: number; isBrand?: boolean }>;
+  comparisonSuffix?: string;
 }
 
 export interface ActionCardProps {

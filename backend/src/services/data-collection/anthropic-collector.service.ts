@@ -39,11 +39,6 @@ export class AnthropicCollectorService {
     this.defaultModel = 'claude-3-5-sonnet-20241022';
     
     const hasApiKey = !!this.apiKey;
-    console.log('🔧 Anthropic Claude Service initialized:', {
-      hasApiKey,
-      model: this.defaultModel,
-      ready: hasApiKey
-    });
   }
 
   /**
@@ -58,12 +53,6 @@ export class AnthropicCollectorService {
     const startTime = new Date().toISOString();
 
     try {
-      console.log('🔍 Anthropic Claude Request:', {
-        model: request.model || this.defaultModel,
-        prompt_length: request.prompt.length,
-        query_id: queryId
-      });
-
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
@@ -98,14 +87,6 @@ export class AnthropicCollectorService {
       const answer = result.content?.[0]?.text || 'No response from Claude';
 
       const endTime = new Date().toISOString();
-
-      console.log('✅ Anthropic Claude Response:', {
-        query_id: queryId,
-        model: result.model,
-        tokens_used: (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0),
-        response_length: answer.length
-      });
-
       return {
         query_id: queryId,
         run_start: startTime,

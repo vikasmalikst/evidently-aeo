@@ -98,9 +98,7 @@ export class SerpApiCollectorService {
     this.baseUrl = 'https://serpapi.com/search.json';
     
     if (!this.apiKey) {
-      console.warn('⚠️ SerpApi API key not configured');
     } else {
-      console.log('✅ SerpApi Collector Service initialized');
     }
   }
 
@@ -113,8 +111,6 @@ export class SerpApiCollectorService {
     }
 
     try {
-      console.log(`🚀 Executing Bing Copilot query via SerpApi`);
-      
       // Build query parameters
       const params = new URLSearchParams({
         engine: 'bing_copilot',
@@ -131,18 +127,12 @@ export class SerpApiCollectorService {
       }
 
       const url = `${this.baseUrl}?${params.toString()}`;
-      
-      console.log(`📡 SerpApi Request URL: ${url.replace(this.apiKey, '***')}`);
-
       const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'
         }
       });
-
-      console.log(`📡 SerpApi response status: ${response.status}`);
-
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`SerpApi Bing Copilot API error: ${response.status} ${response.statusText} - ${errorText}`);
@@ -156,22 +146,12 @@ export class SerpApiCollectorService {
       }
 
       // Log response structure for debugging
-      console.log(`📦 SerpApi Response Structure:`, {
-        has_header: !!jsonResponse.header,
-        text_blocks_count: jsonResponse.text_blocks?.length || 0,
-        references_count: jsonResponse.references?.length || 0,
-        has_video: !!jsonResponse.header_video
-      });
-
       // Extract answer text from text_blocks
       const answer = this.extractAnswerFromTextBlocks(jsonResponse.text_blocks || []);
 
       // Extract citations/URLs from references
       const citations = this.extractCitations(jsonResponse.references || [], jsonResponse.text_blocks || []);
-
-      console.log(`✅ SerpApi Bing Copilot response extracted - Answer length: ${answer.length}, Citations: ${citations.length}`);
       if (citations.length > 0) {
-        console.log(`📎 Sample citations:`, citations.slice(0, 3));
       }
 
       return {
@@ -210,7 +190,6 @@ export class SerpApiCollectorService {
    */
   private extractAnswerFromTextBlocks(textBlocks: SerpApiJsonResponse['text_blocks']): string {
     if (!textBlocks || textBlocks.length === 0) {
-      console.log('⚠️ No text_blocks found in SerpApi response');
       return 'No response available';
     }
 
@@ -267,7 +246,6 @@ export class SerpApiCollectorService {
     }
 
     const result = answerParts.join('\n\n').trim() || 'No response available';
-    console.log(`📝 Extracted answer from ${textBlocks.length} text blocks:`, blockTypeCounts);
     return result;
   }
 
@@ -290,7 +268,6 @@ export class SerpApiCollectorService {
           urls.add(ref.link);
         }
       });
-      console.log(`🔗 Extracted ${urls.size} URLs from references array`);
     }
 
     // Extract URLs from snippet_links in text_blocks (secondary source)
@@ -324,11 +301,9 @@ export class SerpApiCollectorService {
     }
 
     if (snippetLinksCount > 0) {
-      console.log(`🔗 Extracted ${snippetLinksCount} additional URLs from snippet_links`);
     }
 
     const finalUrls = Array.from(urls);
-    console.log(`📎 Total unique citations extracted: ${finalUrls.length}`);
     return finalUrls;
   }
 }

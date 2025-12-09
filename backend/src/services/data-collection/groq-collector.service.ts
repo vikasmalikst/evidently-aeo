@@ -57,14 +57,11 @@ export class GroqCollectorService {
         this.groq = new Groq({ apiKey: trimmedKey });
         hasApiKey = true;
         // Log first few characters for debugging (without exposing full key)
-        console.log('🔑 Groq API key loaded:', trimmedKey.substring(0, 8) + '...');
       } else {
-        console.warn('⚠️ GROQ_API_KEY is empty or whitespace only');
       }
     } catch (error: any) {
       // API key not set, but don't throw in constructor
       // Will throw when executeQuery is called
-      console.warn('⚠️ GROQ_API_KEY not found in environment:', error.message);
       hasApiKey = false;
     }
     
@@ -80,11 +77,6 @@ export class GroqCollectorService {
         topP: 1
       }
     };
-
-    console.log('🔧 Groq Service initialized:', {
-      hasApiKey,
-      defaultModel: this.defaultModel
-    });
   }
 
   async executeQuery(request: GroqQueryRequest): Promise<GroqQueryResponse> {
@@ -97,7 +89,6 @@ export class GroqCollectorService {
           throw new Error('GROQ_API_KEY is empty or not set');
         }
         // Log first few characters for debugging (without exposing full key)
-        console.log('🔑 Initializing Groq with API key:', trimmedKey.substring(0, 8) + '...');
         this.groq = new Groq({ apiKey: trimmedKey });
       } catch (error: any) {
         console.error('❌ Failed to initialize Groq client:', error.message);
@@ -144,14 +135,6 @@ export class GroqCollectorService {
       top_p: resolvedConfig.topP ?? 1,
       stream: false
     };
-
-    console.log('🔍 Groq Request:', {
-      model: chatCompletionParams.model,
-      has_prompt: Boolean(request.prompt),
-      messages_count: messages.length,
-      query_id: queryId
-    });
-
     try {
       const chatCompletion = await this.groq.chat.completions.create(chatCompletionParams);
       
@@ -162,14 +145,6 @@ export class GroqCollectorService {
       const usage = chatCompletion?.usage as { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number } | undefined;
 
       const tokensUsed = usage?.total_tokens ?? ((usage?.prompt_tokens || 0) + (usage?.completion_tokens || 0));
-
-      console.log('✅ Groq Response:', {
-        query_id: queryId,
-        model: chatCompletion?.model || chatCompletionParams.model,
-        response_length: answer.length,
-        tokens_used: tokensUsed
-      });
-
       return {
         query_id: queryId,
         run_start: startTime,

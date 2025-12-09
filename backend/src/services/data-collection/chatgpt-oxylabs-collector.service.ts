@@ -37,7 +37,6 @@ export class ChatGPTOxylabsCollectorService {
     this.username = getEnvVar('OXYLABS_USERNAME', '');
     this.password = getEnvVar('OXYLABS_PASSWORD', '');
     this.baseUrl = 'https://realtime.oxylabs.io/v1/queries';
-    console.log('🔧 ChatGPT Oxylabs Collector Service initialized');
   }
 
   async executeQuery(request: ChatGPTOxylabsRequest): Promise<ChatGPTOxylabsResponse> {
@@ -56,12 +55,6 @@ export class ChatGPTOxylabsCollectorService {
       };
 
       // Make request to Oxylabs with 90-second timeout for ChatGPT
-      console.log('🔍 ChatGPT Oxylabs Request:', {
-        url: this.baseUrl,
-        body: oxylabsBody,
-        hasCredentials: !!(this.username && this.password)
-      });
-
       // Create an AbortController for timeout
       const timeoutDuration = 90000; // 90s for ChatGPT
       const controller = new AbortController();

@@ -53,19 +53,12 @@ export class SentimentScoringService {
    */
   public async scorePending(options: SentimentScoreOptions = {}): Promise<number> {
     const limit = Math.max(options.limit ?? DEFAULT_SENTIMENT_LIMIT, 1);
-
-    console.log('\n🎯 Starting sentiment scoring...');
     if (options.customerId) {
-      console.log(`   ▶ customer: ${options.customerId}`);
     }
     if (options.brandIds?.length) {
-      console.log(`   ▶ brands: ${options.brandIds.join(', ')}`);
     }
     if (options.since) {
-      console.log(`   ▶ since: ${options.since}`);
     }
-    console.log('   ▶ limit:', limit, '\n');
-
     let query = this.supabase
       .from('extracted_positions')
       .select(
@@ -92,7 +85,6 @@ export class SentimentScoringService {
     }
 
     if (!rows || rows.length === 0) {
-      console.log('✅ No pending sentiment rows found');
       return 0;
     }
 
@@ -117,9 +109,6 @@ export class SentimentScoringService {
         }
 
         processed += 1;
-        console.log(
-          `✅ Sentiment scored for extracted_positions.id=${row.id}: ${sentiment.label} (${sentiment.score})`
-        );
       } catch (scoringError) {
         const message =
           scoringError instanceof Error ? scoringError.message : String(scoringError);
@@ -128,8 +117,6 @@ export class SentimentScoringService {
         );
       }
     }
-
-    console.log(`\n✅ Sentiment scoring complete! Updated ${processed}/${rows.length} rows`);
     return processed;
   }
 
@@ -265,7 +252,6 @@ export class SentimentScoringService {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.warn(`⚠️ Failed to score sentence sentiment: ${message}`);
       }
     }
 

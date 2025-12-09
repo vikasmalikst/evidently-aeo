@@ -27,8 +27,6 @@ export class BrightDataGoogleAIOService extends BaseBrightDataService {
     this.validateConfig(collectorType);
 
     try {
-      console.log(`🚀 Executing Google AIO query via BrightData Async (dataset: ${datasetId})`);
-      
       // Use async trigger endpoint format (matching user's provided format)
       const payload = {
         input: [{
@@ -40,9 +38,6 @@ export class BrightDataGoogleAIOService extends BaseBrightDataService {
 
       // Use trigger endpoint for async execution
       const triggerUrl = `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${datasetId}&notify=false&include_errors=true`;
-      
-      console.log(`📡 Triggering async Google AIO request: ${triggerUrl}`);
-
       const response = await fetch(triggerUrl, {
         method: 'POST',
         headers: {
@@ -51,9 +46,6 @@ export class BrightDataGoogleAIOService extends BaseBrightDataService {
         },
         body: JSON.stringify(payload)
       });
-
-      console.log(`📡 Google AIO trigger response status: ${response.status}`);
-
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ BrightData Google AIO trigger error:', {
@@ -65,17 +57,12 @@ export class BrightDataGoogleAIOService extends BaseBrightDataService {
       }
 
       const result = await response.json() as any;
-      console.log(`✅ Google AIO trigger response:`, JSON.stringify(result, null, 2));
-
       const snapshotId = this.extractSnapshotId(result);
 
       if (!snapshotId) {
         console.error('❌ No snapshot_id found in trigger response:', JSON.stringify(result, null, 2));
         throw new Error('BrightData Google AIO trigger did not return snapshot_id');
       }
-
-      console.log(`✅ Got snapshot_id: ${snapshotId} - Attempting quick poll...`);
-
       // Try one quick poll to see if result is ready
       const quickPollPromise = this.pollingService.quickPollSnapshot(snapshotId, datasetId, request, collectorType);
       const quickPollTimeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
@@ -83,13 +70,10 @@ export class BrightDataGoogleAIOService extends BaseBrightDataService {
       const quickResult = await Promise.race([quickPollPromise, quickPollTimeout]) as BrightDataResponse | null;
 
       if (quickResult && quickResult.answer) {
-        console.log(`✅ Snapshot ${snapshotId} result ready immediately!`);
         return quickResult;
       }
 
       // Result not ready yet - start background polling
-      console.log(`⏳ Snapshot ${snapshotId} not ready yet, starting background polling...`);
-      
       this.pollingService.pollForSnapshotAsync(snapshotId, collectorType, datasetId, request).catch(error => {
         console.error(`❌ Background polling failed for snapshot ${snapshotId}:`, error);
       });

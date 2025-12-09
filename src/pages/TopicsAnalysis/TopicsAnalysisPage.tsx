@@ -10,6 +10,7 @@ import { DateRangePicker } from '../../components/DateRangePicker/DateRangePicke
 import { CompetitorFilter } from './components/CompetitorFilter';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { getActiveCompetitors, type ManagedCompetitor } from '../../api/competitorManagementApi';
+import type { Competitor } from './utils/competitorColors';
 import type { TopicsAnalysisData, Topic } from './types';
 import type { PodId } from './components/CompactMetricsPods';
 
@@ -234,6 +235,15 @@ export const TopicsAnalysisPage = ({
   const selectedCompetitors = externalSelectedCompetitors ?? internalSelectedCompetitors;
   // Combine loading states - if parent is loading or we're loading internally
   const isLoadingCompetitors = externalIsLoadingCompetitors || internalIsLoadingCompetitors;
+
+  // Normalize competitors for chart components that expect required IDs
+  const normalizedCompetitors = useMemo<Competitor[]>(() => {
+    return competitors.map((competitor, index) => ({
+      id: competitor.id ?? competitor.name ?? `competitor-${index}`,
+      name: competitor.name,
+      favicon: competitor.logo,
+    }));
+  }, [competitors]);
 
   // Only fetch competitors if not provided by parent
   useEffect(() => {
@@ -586,13 +596,13 @@ export const TopicsAnalysisPage = ({
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
             selectedDateRange={selectedDateRange}
-            competitors={competitors}
+            competitors={normalizedCompetitors}
             managedCompetitors={competitors}
             selectedCompetitors={selectedCompetitors}
             onCompetitorToggle={handleCompetitorToggle}
             onSelectAllCompetitors={handleSelectAllCompetitors}
             onDeselectAllCompetitors={handleDeselectAllCompetitors}
-            selectedCompetitor={selectedCompetitors.size === competitors.length ? "all" : Array.from(selectedCompetitors)[0] || "all"}
+            selectedCompetitor={selectedCompetitors.size === normalizedCompetitors.length ? "all" : Array.from(selectedCompetitors)[0] || "all"}
             brandFavicon={brandFavicon}
             isLoadingCompetitors={isLoadingCompetitors || isLoading || isRefreshing}
             onExport={() => {

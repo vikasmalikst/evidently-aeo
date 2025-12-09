@@ -132,19 +132,12 @@ export class PositionExtractionService {
   ): Promise<number> {
     const limit = Math.max(options.limit ?? DEFAULT_POSITION_LIMIT, 1);
     const fetchLimit = Math.max(limit * 2, limit);
-
-    console.log('\n🎯 Starting position extraction...');
     if (options.customerId) {
-      console.log(`   ▶ customer: ${options.customerId}`);
     }
     if (options.brandIds?.length) {
-      console.log(`   ▶ brands: ${options.brandIds.join(', ')}`);
     }
     if (options.since) {
-      console.log(`   ▶ since: ${options.since}`);
     }
-    console.log('   ▶ limit:', limit, '\n');
-
     // Fetch collector results (limit to recent ones)
     let query = this.supabase
       .from('collector_results')
@@ -166,7 +159,6 @@ export class PositionExtractionService {
 
     if (fetchError) throw fetchError;
     if (!allResults || allResults.length === 0) {
-      console.log('ℹ️  No collector results found');
       return 0;
     }
 
@@ -190,11 +182,7 @@ export class PositionExtractionService {
     const results = allResults.filter(r => {
       return !processedCollectorResults.has(r.id);
     }).slice(0, limit); // Process configurable batch size
-
-    console.log(`📊 Found ${allResults.length} total results, ${results.length} need position extraction (${processedCollectorResults.size} already processed)`);
-
     if (results.length === 0) {
-      console.log('✅ All results already processed! Nothing to extract.');
       return 0;
     }
 
@@ -203,29 +191,17 @@ export class PositionExtractionService {
     for (const result of results) {
       try {
         const parsedResult = CollectorResultRow.parse(result);
-        console.log(`\n🔍 Processing: ${parsedResult.collector_type} (ID: ${parsedResult.id})`);
-        console.log(`   Brand: ${parsedResult.brand}`);
-        console.log(`   Query: ${parsedResult.question.substring(0, 80)}...`);
-
         const positionResult = await this.extractPositions(parsedResult);
         await this.savePositions(positionResult);
 
         processed++;
         const totalCompetitorMentions = positionResult.competitorRows.reduce((sum, row) => sum + row.competitor_mentions, 0);
-        console.log(`✅ Extracted positions for ${parsedResult.brand} (${parsedResult.collector_type})`);
-        console.log(`   📊 Brand mentions: ${positionResult.brandRow.total_brand_mentions}, Competitor mentions: ${totalCompetitorMentions} across ${positionResult.competitorRows.length} competitors`);
       } catch (error) {
         console.error(`❌ Error processing result ${result.id}:`, error instanceof Error ? error.message : error);
         // Continue with next result
       }
     }
-
-    console.log(`\n✅ Position extraction complete! Processed ${processed}/${results.length} results`);
-
     if (this.totalTokenCalls > 0) {
-      console.log(
-        `\n🔢 Token usage summary → prompt: ${this.totalPromptTokens}, completion: ${this.totalCompletionTokens}, total: ${this.totalPromptTokens + this.totalCompletionTokens} across ${this.totalTokenCalls} calls`
-      );
     }
 
     return processed;
@@ -257,10 +233,6 @@ export class PositionExtractionService {
           topicName = queryMetadataRow.topic || this.getTopicNameFromMetadata(queryMetadataRow.metadata);
         }
       } catch (topicError) {
-        console.warn(
-          `⚠️ Unable to resolve topic metadata for query ${result.query_id}:`,
-          topicError instanceof Error ? topicError.message : topicError
-        );
       }
     }
 
@@ -459,7 +431,6 @@ export class PositionExtractionService {
   ): Promise<string[]> {
     // Check cache first
     if (this.productCache.has(brandId)) {
-      console.log(`   ✅ Using cached product names for ${brandName}`);
       return this.productCache.get(brandId)!;
     }
 
@@ -468,8 +439,6 @@ export class PositionExtractionService {
     
     // Cache for future use
     this.productCache.set(brandId, products);
-    console.log(`   💾 Cached ${products.length} product names for ${brandName}`);
-    
     return products;
   }
 
@@ -508,7 +477,6 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       const products = JSON.parse(response);
       
       if (!Array.isArray(products)) {
-        console.warn(`   ⚠️  Invalid product response, using brand name only`);
         return [];
       }
 
@@ -519,17 +487,13 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
             .filter((product) => product.length > 0)
         )
       );
-      
-      console.log(`   📦 Extracted ${sanitizedProducts.length} products: ${sanitizedProducts.join(', ')}`);
       return sanitizedProducts;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       
       // Check for token limit errors
       if (errorMsg.includes('token') || errorMsg.includes('context') || errorMsg.includes('length') || errorMsg.includes('400')) {
-        console.warn(`   ⚠️  Product extraction failed due to input length/token limit (raw_answer length: ${rawAnswer.length} chars). Consider truncating very long responses.`);
       } else {
-        console.warn(`   ⚠️  Product extraction failed, continuing without products:`, errorMsg);
       }
       return [];
     }
@@ -605,10 +569,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       }
       competitorProductPositions[competitor.competitor_name] = Array.from(productPositionSet).sort((a, b) => a - b);
     }
-
-    console.log(`   📍 Brand "${brandName}" positions (word index): ${brandPositions.join(', ') || 'none'}`);
     for (const [competitor, pos] of Object.entries(competitorPositions)) {
-      console.log(`   📍 Competitor "${competitor}" positions (word index): ${pos.join(', ') || 'none'}`);
     }
 
     return {
@@ -761,16 +722,13 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     // Try Cerebras first
     if (this.cerebrasApiKey) {
       try {
-        console.log(`   🤖 Calling Cerebras for ${purpose}...`);
         return await this.callCerebras(prompt);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         
         // Check if it's a rate limit error
         if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
-          console.warn(`   ⚠️  Cerebras rate limit hit, trying Gemini...`);
         } else {
-          console.warn(`   ⚠️  Cerebras failed (${errorMsg}), trying Gemini...`);
         }
       }
     }
@@ -778,7 +736,6 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     // Fallback to Gemini
     if (this.geminiApiKey) {
       try {
-        console.log(`   🤖 Calling Gemini for ${purpose}...`);
         return await this.callGemini(prompt);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -834,9 +791,6 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       this.totalPromptTokens += Number(promptTokens ?? 0);
       this.totalCompletionTokens += Number(completionTokens ?? 0);
       this.totalTokenCalls += 1;
-      console.log(
-        `   🔢 Cerebras tokens → prompt: ${promptTokens ?? 'n/a'}, completion: ${completionTokens ?? 'n/a'}, total: ${totalTokens ?? 'n/a'}`
-      );
     }
 
     return data.choices[0].message.content.trim();
@@ -883,9 +837,6 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       this.totalPromptTokens += Number(promptTokens ?? 0);
       this.totalCompletionTokens += Number(completionTokens ?? 0);
       this.totalTokenCalls += 1;
-      console.log(
-        `   🔢 Gemini tokens → prompt: ${promptTokens ?? 'n/a'}, completion: ${completionTokens ?? 'n/a'}, total: ${totalTokens ?? 'n/a'}`
-      );
     }
 
     return data.candidates[0].content.parts[0].text.trim();
@@ -961,7 +912,6 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
           .single();
 
         if (fetchError) {
-          console.warn(`⚠️ Could not fetch collector_results metadata to update product names: ${fetchError.message}`);
         } else {
           // Merge product names into existing metadata
           const currentMetadata = currentResult?.metadata || {};
@@ -978,13 +928,10 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
             .eq('id', payload.brandRow.collector_result_id);
 
           if (updateError) {
-            console.warn(`⚠️ Could not update collector_results metadata with product names: ${updateError.message}`);
           } else {
-            console.log(`✅ Updated collector_results metadata with ${payload.productNames.length} product names`);
           }
         }
       } catch (error) {
-        console.warn(`⚠️ Error updating collector_results metadata with product names:`, error instanceof Error ? error.message : error);
       }
     }
   }

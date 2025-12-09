@@ -290,8 +290,6 @@ export class PriorityCollectorService {
         }
       ]
     });
-
-    console.log('🔧 Priority Collector Service initialized with hardcoded priorities');
   }
 
   /**
@@ -301,7 +299,6 @@ export class PriorityCollectorService {
     // Return hardcoded configuration
     const config = this.collectorConfigs.get(collectorType);
     if (!config) {
-      console.warn(`⚠️ No priority config found for ${collectorType}`);
       return null;
     }
     return config;
@@ -339,13 +336,9 @@ export class PriorityCollectorService {
       if (sortedProviders.length === 0) {
         throw new Error(`No enabled providers found for collector type: ${collectorType}`);
       }
-
-      console.log(`🔄 Executing ${collectorType} with ${sortedProviders.length} providers in priority order`);
-
       // Try each provider in priority order
       for (const provider of sortedProviders) {
         try {
-          console.log(`🔄 Trying ${provider.name} (priority ${provider.priority}) for ${collectorType}`);
           fallbackChain.push(provider.name);
           
           // For BrightData, start polling but don't wait for completion if it takes too long
@@ -372,7 +365,6 @@ export class PriorityCollectorService {
               }
             } catch (err) {
               // Continue to normal execution flow
-              console.warn(`⚠️ Failed to get snapshot_id early: ${err}`);
             }
           }
           
@@ -386,9 +378,6 @@ export class PriorityCollectorService {
           );
 
           const executionTime = Date.now() - startTime;
-          
-          console.log(`✅ ${provider.name} succeeded for ${collectorType} in ${executionTime}ms`);
-          
           // Extract snapshot_id from BrightData results
           const snapshotId = result.metadata?.snapshot_id || result.snapshot_id;
           
@@ -411,8 +400,6 @@ export class PriorityCollectorService {
           };
 
         } catch (providerError: any) {
-          console.warn(`⚠️ ${provider.name} failed for ${collectorType}:`, providerError.message);
-          
           // If this provider has fallback_on_failure = false, stop trying
           if (!provider.fallback_on_failure) {
             throw new Error(`Provider ${provider.name} failed and fallback is disabled: ${providerError.message}`);
@@ -488,8 +475,6 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
-    console.log(`🔄 Calling ${provider.name} for ${collectorType}`);
-
     // Route to appropriate service based on provider name
     if (provider.name.includes('groq')) {
       return await this.callGroqProvider(provider, queryText, brandId, locale, country, collectorType);
@@ -521,8 +506,6 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
-    console.log(`🔄 Calling Groq ${provider.name} for ${collectorType}`);
-    
     return await groqCollectorService.executeQuery({
       prompt: queryText,
       collectorType
@@ -540,8 +523,6 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
-    console.log(`🔄 Calling OpenRouter ${provider.name} for ${collectorType}`);
-    
     return await openRouterCollectorService.executeQuery({
       prompt: queryText,
       collectorType
@@ -616,8 +597,6 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
-    console.log(`🔄 Calling SerpApi ${provider.name} for ${collectorType}`);
-    
     const request = {
       prompt: queryText,
       brand: brandId,
@@ -645,8 +624,6 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
-    console.log(`🔄 Calling BrightData ${provider.name} for ${collectorType}`);
-    
     const request = {
       prompt: queryText,
       brand: brandId,
@@ -690,8 +667,6 @@ export class PriorityCollectorService {
     country: string,
     collectorType: string
   ): Promise<any> {
-    console.log(`🔄 Calling direct API ${provider.name} for ${collectorType}`);
-    
     // Route to appropriate direct API based on provider
     
   }
@@ -727,9 +702,6 @@ export class PriorityCollectorService {
         maxOutputTokens: 1024,
       }
     };
-
-    console.log(`🔄 Calling Google Gemini Direct API with model: ${geminiModel}`);
-    
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -795,9 +767,6 @@ export class PriorityCollectorService {
       max_tokens: 1000,
       temperature: 0.7
     };
-
-    console.log(`🔄 Calling OpenAI Direct API (fallback) with model: ${openaiModel}`);
-    
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -831,9 +800,6 @@ export class PriorityCollectorService {
         if (!answer) {
           throw new Error('OpenAI API returned empty response');
         }
-        
-        console.log('✅ OpenAI Direct API call successful');
-        
         return {
           query_id: `openai_direct_${Date.now()}`,
           run_start: new Date().toISOString(),
@@ -939,7 +905,6 @@ export class PriorityCollectorService {
     if (error) {
       console.error(`Failed to update execution snapshot_id:`, error);
     } else {
-      console.log(`✅ Stored snapshot_id ${snapshotId} for execution ${executionId}`);
     }
   }
 }

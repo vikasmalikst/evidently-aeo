@@ -82,12 +82,6 @@ export class OpenRouterCollectorService {
     };
 
     const hasApiKey = Boolean(this.apiKey);
-    console.log('🔧 OpenRouter Service initialized:', {
-      hasApiKey,
-      defaultModel: this.defaultModel,
-      referer: this.referer,
-      appName: this.appName
-    });
   }
 
   async executeQuery(request: OpenRouterQueryRequest): Promise<OpenRouterQueryResponse> {
@@ -160,14 +154,6 @@ export class OpenRouterCollectorService {
         }
       ];
     }
-
-    console.log('🔍 OpenRouter Request:', {
-      model: body.model,
-      has_prompt: Boolean(request.prompt),
-      messages_count: messages.length,
-      query_id: queryId
-    });
-
     const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: {
@@ -199,14 +185,6 @@ export class OpenRouterCollectorService {
 
     const endTime = new Date().toISOString();
     const usage = result?.usage || {};
-
-    console.log('✅ OpenRouter Response:', {
-      query_id: queryId,
-      model: result?.model || body.model,
-      response_length: answer.length,
-      tokens_used: usage.total_tokens ?? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0)
-    });
-
     return {
       query_id: queryId,
       run_start: startTime,

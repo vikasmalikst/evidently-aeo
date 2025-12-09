@@ -38,7 +38,6 @@ export class OxylabsCollectorService {
     this.username = getEnvVar('OXYLABS_USERNAME', '');
     this.password = getEnvVar('OXYLABS_PASSWORD', '');
     this.baseUrl = 'https://realtime.oxylabs.io/v1/queries';
-    console.log('🔧 Oxylabs Collector Service initialized');
   }
 
   async executeQuery(request: OxylabsQueryRequest): Promise<OxylabsQueryResponse> {
@@ -89,14 +88,6 @@ export class OxylabsCollectorService {
       }
 
       // Make request to Oxylabs with 30-second timeout
-      console.log('🔍 Oxylabs Request:', {
-        url: this.baseUrl,
-        source: request.source,
-        oxylabsSource,
-        body: oxylabsBody,
-        hasCredentials: !!(this.username && this.password)
-      });
-
       // Create an AbortController for timeout
       const timeoutDuration = 60000; // 60s for all sources
       const controller = new AbortController();

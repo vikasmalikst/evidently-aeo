@@ -44,16 +44,7 @@ export class DataForSeoCollectorService {
     this.baseUrl = 'https://sandbox.dataforseo.com/v3/serp';
     
     const hasCredentials = !!(this.username && this.password);
-    console.log('🔧 DataForSEO Collector Service initialized:', {
-      mode: 'Sandbox',
-      hasUsername: !!this.username,
-      hasPassword: !!this.password,
-      ready: hasCredentials,
-      supportedSources: ['baidu', 'bing', 'youtube', 'claude', 'perplexity', 'google_aio', 'chatgpt']
-    });
-    
     if (!hasCredentials) {
-      console.warn('⚠️  DataForSEO credentials not found in environment. Collectors may fail with 401 errors.');
     }
   }
 
@@ -94,14 +85,6 @@ export class DataForSeoCollectorService {
         device: 'desktop',
         os: 'windows'
       }];
-
-      console.log('🔍 DataForSEO Request:', {
-        url: taskUrl,
-        source: request.source,
-        keyword: request.prompt.substring(0, 60) + '...',
-        hasAuth: !!(this.username && this.password)
-      });
-
       // Create timeout controller (45 seconds for SERP APIs)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 45000);
@@ -221,14 +204,6 @@ export class DataForSeoCollectorService {
       web_search_country_iso_code: this.getCountryIso(request.country || 'US'),
       user_prompt: encodeURI(request.prompt)
     }];
-
-    console.log('🔍 DataForSEO Claude Request:', {
-      url: claudeUrl,
-      prompt: request.prompt.substring(0, 60) + '...',
-      model: 'claude-3-5-sonnet-latest',
-      hasAuth: !!(this.username && this.password)
-    });
-
     try {
       // Call LIVE endpoint
       const taskResponse = await fetch(claudeUrl, {
@@ -310,14 +285,6 @@ export class DataForSeoCollectorService {
       web_search_country_iso_code: this.getCountryIso(request.country || 'US'),
       user_prompt: encodeURI(request.prompt)
     }];
-
-    console.log('🔍 DataForSEO Perplexity Request:', {
-      url: apiUrl,
-      prompt: request.prompt.substring(0, 60) + '...',
-      model: 'sonar-large-online',
-      hasAuth: !!(this.username && this.password)
-    });
-
     // Call LIVE endpoint
     const taskResponse = await fetch(apiUrl, {
       method: 'POST',
@@ -388,15 +355,6 @@ export class DataForSeoCollectorService {
       web_search_city: this.getCityFromCountry(request.country || 'US'),
       user_prompt: request.prompt
     }];
-
-    console.log('🔍 DataForSEO ChatGPT Request:', {
-      url: chatgptUrl,
-      prompt: request.prompt.substring(0, 60) + '...',
-      model: 'gpt-4.1-mini',
-      hasAuth: !!(this.username && this.password),
-      country: request.country || 'US'
-    });
-
     try {
       // Call LIVE endpoint
       const taskResponse = await fetch(chatgptUrl, {
@@ -440,14 +398,6 @@ export class DataForSeoCollectorService {
       }
       
       // Log successful response
-      console.log('✅ DataForSEO ChatGPT Response:', {
-        model: liveResult.model_name,
-        input_tokens: liveResult.input_tokens,
-        output_tokens: liveResult.output_tokens,
-        money_spent: liveResult.money_spent,
-        items_count: liveResult.items?.length || 0
-      });
-
       // Extract text, URLs, and citations from items/sections
       const { answer, urls, citations } = this.parseChatGPTItems(liveResult.items || []);
 

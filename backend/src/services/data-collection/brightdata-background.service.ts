@@ -43,8 +43,6 @@ export class BrightDataBackgroundService {
     };
 
     try {
-      console.log('🔄 Starting background check for failed BrightData executions...');
-
       // Find all failed executions with snapshot_ids from last 24 hours
       const { data: failedExecutions, error } = await supabase
         .from('query_executions')
@@ -60,21 +58,14 @@ export class BrightDataBackgroundService {
       }
 
       if (!failedExecutions || failedExecutions.length === 0) {
-        console.log('✅ No failed BrightData executions to check');
         return stats;
       }
-
-      console.log(`📊 Found ${failedExecutions.length} failed/running BrightData executions to check`);
-
       stats.checked = failedExecutions.length;
 
       // Process each execution
       for (const execution of failedExecutions) {
         try {
           if (!execution.brightdata_snapshot_id) continue;
-
-          console.log(`🔍 Checking snapshot ${execution.brightdata_snapshot_id} for execution ${execution.id}`);
-
           // Determine collector type
           const collectorType = execution.collector_type === 'Bing Copilot' ? 'bing_copilot' : 'grok';
           const datasetId = collectorType === 'bing_copilot' 
@@ -91,7 +82,6 @@ export class BrightDataBackgroundService {
           });
 
           if (!response.ok) {
-            console.warn(`⚠️ Snapshot ${execution.brightdata_snapshot_id} not ready yet (status: ${response.status})`);
             stats.stillProcessing++;
             continue;
           }
@@ -102,7 +92,6 @@ export class BrightDataBackgroundService {
           try {
             downloadResult = JSON.parse(responseText);
           } catch (parseError) {
-            console.warn(`⚠️ Snapshot ${execution.brightdata_snapshot_id} response not JSON yet`);
             stats.stillProcessing++;
             continue;
           }
@@ -113,15 +102,12 @@ export class BrightDataBackgroundService {
           // If response is an array, take the first element (this is the standard BrightData format)
           if (Array.isArray(downloadResult) && downloadResult.length > 0) {
             actualResult = downloadResult[0];
-            console.log(`📦 Background service: Response is array, using first element`);
           }
           
           // Check if data is ready - look for answer_text field (primary field in BrightData response)
           const hasAnswerText = actualResult && actualResult.answer_text && typeof actualResult.answer_text === 'string' && actualResult.answer_text.trim().length > 0;
           
           if (actualResult && hasAnswerText) {
-            console.log(`✅ Snapshot ${execution.brightdata_snapshot_id} is ready! Completing execution...`);
-
             const answer = actualResult.answer_text || 'No response';
             
             // Extract citations from the response - BrightData format: citations array with objects {url, title, description, icon}
@@ -188,7 +174,6 @@ export class BrightDataBackgroundService {
               console.error(`❌ Failed to update execution ${execution.id} to 'completed':`, updateError);
               throw updateError;
             } else {
-              console.log(`✅ Successfully updated execution ${execution.id} status to 'completed'`);
             }
 
             // Store result in collector_results
@@ -222,8 +207,6 @@ export class BrightDataBackgroundService {
               console.error(`❌ Failed to store result for execution ${execution.id}:`, insertError);
               stats.errors++;
             } else {
-              console.log(`✅ [BACKGROUND SERVICE] Successfully stored result for execution ${execution.id}`);
-              
               // Double-check that status is 'completed' after storing result
               // This ensures status is updated even if the earlier update didn't persist
               const { data: verifyExecution } = await supabase
@@ -233,7 +216,6 @@ export class BrightDataBackgroundService {
                 .single();
 
               if (verifyExecution && verifyExecution.status !== 'completed') {
-                console.log(`🔧 [BACKGROUND SERVICE] Status is ${verifyExecution.status}, re-updating to 'completed' for execution ${execution.id}`);
                 const { error: reUpdateError } = await supabase
                   .from('query_executions')
                   .update({
@@ -246,18 +228,13 @@ export class BrightDataBackgroundService {
                   console.error(`❌ Failed to re-update execution ${execution.id} to 'completed':`, reUpdateError);
                   stats.errors++;
                 } else {
-                  console.log(`✅ [BACKGROUND SERVICE] Successfully re-updated execution ${execution.id} status to 'completed'`);
                 }
               }
-              
-              console.log(`✅ [BACKGROUND SERVICE] Successfully completed execution ${execution.id} and stored result`);
               stats.completed++;
             }
           } else if (downloadResult?.status === 'running' || (downloadResult?.message && downloadResult.message.includes('not ready'))) {
-            console.log(`⏳ Snapshot ${execution.brightdata_snapshot_id} still processing...`);
             stats.stillProcessing++;
           } else {
-            console.warn(`⚠️ Unknown status for snapshot ${execution.brightdata_snapshot_id}:`, downloadResult);
             stats.stillProcessing++;
           }
 
@@ -266,9 +243,6 @@ export class BrightDataBackgroundService {
           stats.errors++;
         }
       }
-
-      console.log(`✅ Background check complete: ${stats.completed} completed, ${stats.stillProcessing} still processing, ${stats.errors} errors`);
-
       return stats;
 
     } catch (error: any) {

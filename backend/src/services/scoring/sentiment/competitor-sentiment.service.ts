@@ -183,28 +183,49 @@ Respond with ONLY valid JSON in this exact format:
   ]
 }`;
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterApiKey}`,
-        'Content-Type': 'application/json',
-        ...(openRouterSiteUrl ? { 'HTTP-Referer': openRouterSiteUrl } : {}),
-        ...(openRouterSiteTitle ? { 'X-Title': openRouterSiteTitle } : {}),
-      },
-      body: JSON.stringify({
-        model: 'openai/gpt-oss-120b:free',
-        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
-        temperature: 0.6,
-        max_tokens: 2500,
-      }),
-    });
+    const callOpenRouter = async (model: string) => {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openRouterApiKey}`,
+          'Content-Type': 'application/json',
+          ...(openRouterSiteUrl ? { 'HTTP-Referer': openRouterSiteUrl } : {}),
+          ...(openRouterSiteTitle ? { 'X-Title': openRouterSiteTitle } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+          temperature: 0.6,
+          max_tokens: 2500,
+        }),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+      }
+
+      return response.json() as Promise<any>;
+    };
+
+    const models = ['openai/gpt-oss-120b:free', 'openai/gpt-5-nano'];
+    let lastError: Error | null = null;
+    let data: any = null;
+
+    for (const model of models) {
+      try {
+        data = await callOpenRouter(model);
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.warn(`⚠️ OpenRouter competitor sentiment attempt failed for model "${model}": ${lastError.message}`);
+      }
     }
 
-    const data = await response.json() as any;
+    if (!data && lastError) {
+      throw new Error(`OpenRouter competitor sentiment failed after fallbacks: ${lastError.message}`);
+    }
+
     const content = data.choices?.[0]?.message?.content || '';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON found in OpenRouter response');

@@ -50,13 +50,8 @@ export class BrandScoringService {
    */
   async scoreBrand(options: BrandScoringOptions): Promise<BrandScoringResult> {
     const { brandId, customerId, since, positionLimit, sentimentLimit, parallel = false } = options;
-    
-    console.log(`\n🎯 Starting brand scoring for brand ${brandId} (customer: ${customerId})`);
     if (since) {
-      console.log(`   ▶ since: ${since}`);
     }
-    console.log(`   ▶ parallel: ${parallel}\n`);
-
     const result: BrandScoringResult = {
       positionsProcessed: 0,
       sentimentsProcessed: 0, // collector-level sentiment is deprecated; kept for compatibility
@@ -82,8 +77,6 @@ export class BrandScoringService {
     try {
       if (parallel) {
         // Run all scoring operations in parallel
-        console.log('⚡ Running scoring operations in parallel...');
-        
         const [positionsResult, brandSentimentsResult, competitorSentimentsResult, citationsResult] = await Promise.allSettled([
           positionExtractionService.extractPositionsForNewResults(positionOptions),
           brandSentimentService.scoreBrandSentiment(sentimentOptions),
@@ -94,7 +87,6 @@ export class BrandScoringService {
         // Process positions result
         if (positionsResult.status === 'fulfilled') {
           result.positionsProcessed = positionsResult.value;
-          console.log(`✅ Position extraction completed: ${result.positionsProcessed} positions processed`);
         } else {
           const errorMsg = positionsResult.reason instanceof Error 
             ? positionsResult.reason.message 
@@ -106,7 +98,6 @@ export class BrandScoringService {
         // Process brand sentiments result (extracted_positions)
         if (brandSentimentsResult.status === 'fulfilled') {
           // Note: Brand sentiment is tracked separately but not in result object for now
-          console.log(`✅ Brand sentiment scoring completed: ${brandSentimentsResult.value} positions processed`);
         } else {
           const errorMsg = brandSentimentsResult.reason instanceof Error 
             ? brandSentimentsResult.reason.message 
@@ -118,7 +109,6 @@ export class BrandScoringService {
         // Process competitor sentiments result
         if (competitorSentimentsResult.status === 'fulfilled') {
           result.competitorSentimentsProcessed = competitorSentimentsResult.value;
-          console.log(`✅ Competitor sentiment scoring completed: ${result.competitorSentimentsProcessed} positions processed`);
         } else {
           const errorMsg = competitorSentimentsResult.reason instanceof Error 
             ? competitorSentimentsResult.reason.message 
@@ -130,7 +120,6 @@ export class BrandScoringService {
         // Process citations result
         if (citationsResult.status === 'fulfilled') {
           result.citationsProcessed = citationsResult.value.processed || citationsResult.value.inserted || 0;
-          console.log(`✅ Citation extraction completed: ${result.citationsProcessed} citations processed (${citationsResult.value.inserted} inserted)`);
         } else {
           const errorMsg = citationsResult.reason instanceof Error 
             ? citationsResult.reason.message 
@@ -140,12 +129,9 @@ export class BrandScoringService {
         }
       } else {
         // Run scoring operations sequentially (safer, better error handling)
-        console.log('🔄 Running scoring operations sequentially...');
-
         // 1. Position extraction
         try {
           result.positionsProcessed = await positionExtractionService.extractPositionsForNewResults(positionOptions);
-          console.log(`✅ Position extraction completed: ${result.positionsProcessed} positions processed`);
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           result.errors.push({ operation: 'position_extraction', error: errorMsg });
@@ -155,7 +141,6 @@ export class BrandScoringService {
         // 2. Brand sentiment scoring (for extracted_positions - brand only, priority)
         try {
           const brandSentimentsProcessed = await brandSentimentService.scoreBrandSentiment(sentimentOptions);
-          console.log(`✅ Brand sentiment scoring completed: ${brandSentimentsProcessed} positions processed`);
           // Note: This is separate from competitorSentimentsProcessed for tracking
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
@@ -167,7 +152,6 @@ export class BrandScoringService {
         // 3. Competitor sentiment scoring (for extracted_positions - competitors only, secondary)
         try {
           result.competitorSentimentsProcessed = await competitorSentimentService.scoreCompetitorSentiment(sentimentOptions);
-          console.log(`✅ Competitor sentiment scoring completed: ${result.competitorSentimentsProcessed} positions processed`);
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           result.errors.push({ operation: 'competitor_sentiment_scoring', error: errorMsg });
@@ -178,24 +162,14 @@ export class BrandScoringService {
         try {
           const citationStats = await citationExtractionService.extractAndStoreCitations(brandId);
           result.citationsProcessed = citationStats.processed || citationStats.inserted || 0;
-          console.log(`✅ Citation extraction completed: ${result.citationsProcessed} citations processed (${citationStats.inserted} inserted)`);
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           result.errors.push({ operation: 'citation_extraction', error: errorMsg });
           console.error(`❌ Citation extraction failed:`, errorMsg);
         }
       }
-
-      console.log(`\n✅ Brand scoring complete for brand ${brandId}:`);
-      console.log(`   ▶ Positions: ${result.positionsProcessed}`);
-      console.log(`   ▶ Sentiments: ${result.sentimentsProcessed}`);
-      console.log(`   ▶ Competitor Sentiments: ${result.competitorSentimentsProcessed}`);
-      console.log(`   ▶ Citations: ${result.citationsProcessed}`);
       if (result.errors.length > 0) {
-        console.log(`   ⚠️  Errors: ${result.errors.length}`);
       }
-      console.log('');
-
       return result;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);

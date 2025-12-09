@@ -40,7 +40,6 @@ export abstract class BaseBrightDataService {
     this.datasetIds.set('google_aio', 'gd_mcswdt6z2elth3zqr2');
     
     if (!this.apiKey) {
-      console.warn('⚠️ BrightData API key not configured');
     }
   }
 

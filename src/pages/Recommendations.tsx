@@ -33,16 +33,16 @@ const LevelBadge = ({
 }) => {
   const colors = {
     High: type === 'priority' 
-      ? 'bg-red-50 text-red-700 border-red-200' 
-      : 'bg-orange-50 text-orange-700 border-orange-200',
-    Medium: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      ? 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca]' 
+      : 'bg-[#fed7aa] text-[#9a3412] border-[#fdba74]',
+    Medium: 'bg-[#fef3c7] text-[#92400e] border-[#fde68a]',
     Low: type === 'priority'
-      ? 'bg-gray-50 text-gray-600 border-gray-200'
-      : 'bg-green-50 text-green-700 border-green-200'
+      ? 'bg-[#f3f4f6] text-[#4b5563] border-[#e5e7eb]'
+      : 'bg-[#d1fae5] text-[#065f46] border-[#a7f3d0]'
   };
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${colors[level]}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${colors[level]}`}>
       {level}
     </span>
   );
@@ -53,15 +53,15 @@ const LevelBadge = ({
  */
 const FocusAreaBadge = ({ area }: { area: 'visibility' | 'soa' | 'sentiment' }) => {
   const config = {
-    visibility: { label: 'Visibility', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-    soa: { label: 'SOA', color: 'bg-purple-50 text-purple-700 border-purple-200' },
-    sentiment: { label: 'Sentiment', color: 'bg-teal-50 text-teal-700 border-teal-200' }
+    visibility: { label: 'Visibility', color: 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe]' },
+    soa: { label: 'SOA', color: 'bg-[#e9d5ff] text-[#6b21a8] border-[#d8b4fe]' },
+    sentiment: { label: 'Sentiment', color: 'bg-[#ccfbf1] text-[#134e4a] border-[#99f6e4]' }
   };
 
   const { label, color } = config[area];
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${color}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${color}`}>
       {label}
     </span>
   );
@@ -72,23 +72,107 @@ const FocusAreaBadge = ({ area }: { area: 'visibility' | 'soa' | 'sentiment' }) 
  */
 const ConfidenceBar = ({ value }: { value: number }) => {
   const getColor = (v: number) => {
-    if (v >= 80) return 'bg-green-500';
-    if (v >= 60) return 'bg-yellow-500';
-    return 'bg-orange-500';
+    if (v >= 80) return 'bg-[#06c686]';
+    if (v >= 60) return 'bg-[#00bcdc]';
+    return 'bg-[#f59e0b]';
   };
 
   return (
     <div className="flex items-center gap-2">
-      <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div className="w-20 h-2 bg-[#e8e9ed] rounded-full overflow-hidden">
         <div 
           className={`h-full ${getColor(value)} rounded-full transition-all`}
           style={{ width: `${value}%` }}
         />
       </div>
-      <span className="text-xs text-gray-600 font-medium">{value}%</span>
+      <span className="text-[12px] text-[#64748b] font-medium">{value}%</span>
     </div>
   );
 };
+
+/**
+ * Small stat pill for quick status context
+ */
+const StatPill = ({
+  label,
+  value,
+  helper
+}: {
+  label: string;
+  value: string;
+  helper?: string;
+}) => (
+  <div className="flex flex-col gap-1 px-4 py-3 rounded-xl border border-[#e8e9ed] bg-white shadow-[0_6px_20px_rgba(15,23,42,0.04)]">
+    <span className="text-[11px] font-semibold uppercase tracking-wide text-[#94a3b8]">
+      {label}
+    </span>
+    <span className="text-[18px] font-semibold text-[#0f172a]">{value}</span>
+    {helper && <span className="text-[12px] text-[#64748b]">{helper}</span>}
+  </div>
+);
+
+/**
+ * Card view for each recommendation (more scannable than a wide table)
+ */
+const RecommendationCard = ({ rec, index }: { rec: Recommendation; index: number }) => (
+  <div className="rounded-xl border border-[#e8e9ed] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)] overflow-hidden">
+    <div className="px-5 py-4 flex flex-col gap-3 border-b border-[#e8e9ed] bg-gradient-to-br from-[#f8fafc] to-white">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="h-9 w-9 rounded-full bg-[#e8f7ff] text-[#0284c7] flex items-center justify-center font-semibold text-[13px] border border-[#cfe9fb]">
+            {index + 1}
+          </div>
+          <div className="space-y-1">
+            <p className="text-[14px] font-semibold text-[#0f172a] leading-snug">{rec.action}</p>
+            <p className="text-[12px] text-[#64748b]">
+              KPI: <span className="font-semibold text-[#0f172a]">{rec.kpi}</span> • Expected boost{' '}
+              <span className="font-semibold text-[#06c686]">{rec.expectedBoost}</span>
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <FocusAreaBadge area={rec.focusArea} />
+          <LevelBadge level={rec.priority} type="priority" />
+          <LevelBadge level={rec.effort} type="effort" />
+        </div>
+      </div>
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-[#0f172a]">Why this matters</p>
+          <p className="text-[12px] text-[#1e293b] leading-relaxed">{rec.reason}</p>
+          <p className="text-[12px] text-[#475569] leading-relaxed">{rec.explanation}</p>
+        </div>
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-[#0f172a]">Source & metrics</p>
+          <p className="text-[13px] text-[#0f172a] font-semibold">{rec.citationSource}</p>
+          <p className="text-[11px] text-[#64748b]">
+            Impact: {rec.impactScore} • Mentions: {rec.mentionRate} • Citations: {rec.citationCount}
+          </p>
+          <p className="text-[11px] text-[#64748b]">
+            SOA: {rec.soa} • Sentiment: {rec.sentiment} • Visibility: {rec.visibilityScore}
+          </p>
+        </div>
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-[#0f172a]">Where to focus</p>
+          <p className="text-[12px] text-[#0f172a] font-semibold leading-relaxed">Sources: {rec.focusSources}</p>
+          <p className="text-[12px] text-[#475569] leading-relaxed">Content: {rec.contentFocus}</p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <ConfidenceBar value={rec.confidence} />
+            <span className="text-[12px] text-[#475569] whitespace-nowrap">{rec.timeline}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div className="px-5 py-3 bg-[#f8fafc] border-t border-[#e8e9ed] text-[12px] text-[#64748b] flex items-center justify-between flex-wrap gap-3">
+      <span>
+        Confidence-backed priority for <span className="text-[#0f172a] font-semibold">{rec.focusArea}</span> improvements
+      </span>
+      <span className="text-[11px] text-[#94a3b8]">
+        Visibility • SOA • Sentiment coverage
+      </span>
+    </div>
+  </div>
+);
 
 // ============================================================================
 // MAIN PAGE COMPONENT
@@ -112,6 +196,10 @@ export const Recommendations = () => {
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [problemsDetected, setProblemsDetected] = useState<number>(0);
+
+  const totalRecommendations = recommendations.length;
+  const lastGeneratedLabel = generatedAt ? new Date(generatedAt).toLocaleString() : 'Not generated yet';
+  const hasGeneratedResults = hasGenerated && totalRecommendations > 0;
 
   /**
    * Handle generate recommendations button click
@@ -182,25 +270,25 @@ export const Recommendations = () => {
   return (
     <Layout>
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2 flex items-center gap-3">
-            <IconSparkles size={32} className="text-[#00bcdc]" />
-            AI Recommendations
-          </h1>
-          <p className="text-[15px] text-[#64748b]">
-            Generate AI-powered recommendations to improve your brand's visibility, share of answers, and sentiment in AI-generated content.
-          </p>
-        </div>
+        <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="h-10 w-10 rounded-lg bg-[#e6f6fb] text-[#0ea5e9] flex items-center justify-center flex-shrink-0">
+              <IconSparkles size={20} />
+            </div>
+            <div>
+              <h1 className="text-[22px] font-semibold text-[#0f172a] leading-tight mb-1">AI Recommendations</h1>
+              <p className="text-[13px] text-[#64748b]">
+                Data-backed, prioritized actions in a clear table layout.
+              </p>
+            </div>
+          </div>
 
-        {/* Controls */}
-        <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-4 mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            {/* Brand Selector */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <label className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
-                Brand
-              </label>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] font-semibold text-[#0f172a]">Brand</label>
+                <p className="text-[12px] text-[#64748b]">Pick the brand to generate a tailored plan.</p>
+              </div>
               <select
                 value={selectedBrandId || ''}
                 onChange={(e) => {
@@ -209,7 +297,7 @@ export const Recommendations = () => {
                   setRecommendations([]);
                   setProblemsDetected(0);
                 }}
-                className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-2 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white min-w-[200px]"
+                className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-2 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white min-w-[220px] shadow-inner"
               >
                 {brands.map((brand) => (
                   <option key={brand.id} value={brand.id}>
@@ -219,14 +307,13 @@ export const Recommendations = () => {
               </select>
             </div>
 
-            {/* Generate Button */}
             <button
               onClick={handleGenerate}
               disabled={isGenerating || !selectedBrandId}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[14px] font-medium transition-all
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[14px] font-semibold transition-all
                 ${isGenerating || !selectedBrandId
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-[#00bcdc] text-white hover:bg-[#0096b0] shadow-sm hover:shadow'
+                  : 'bg-[#0ea5e9] text-white hover:bg-[#0284c7] shadow-md hover:shadow-lg'
                 }`}
             >
               {isGenerating ? (
@@ -243,149 +330,156 @@ export const Recommendations = () => {
             </button>
           </div>
 
-          {/* Generated timestamp and problems detected */}
-          {generatedAt && (
-            <div className="flex items-center gap-4 mt-3">
-              <p className="text-[11px] text-[#94a3b8]">
-                Last generated: {new Date(generatedAt).toLocaleString()}
-                {selectedBrand && ` for ${selectedBrand.name}`}
-              </p>
-              {problemsDetected > 0 && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                  {problemsDetected} data issue{problemsDetected !== 1 ? 's' : ''} analyzed
-                </span>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-3 flex-wrap mt-4">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-[#f8fafc] text-[#0f172a] border border-[#e2e8f0]">
+              Last generated: {lastGeneratedLabel}
+              {selectedBrand && ` • ${selectedBrand.name}`}
+            </span>
+            {problemsDetected > 0 && (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                {problemsDetected} data issue{problemsDetected !== 1 ? 's' : ''} analyzed
+              </span>
+            )}
+            {hasGeneratedResults && (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {totalRecommendations} ready-to-action item{totalRecommendations !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Error Message */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <StatPill label="Recommendations" value={`${totalRecommendations || '—'}`} helper={hasGenerated ? 'Ready to action' : 'Generate to populate'} />
+          <StatPill label="Last run" value={hasGenerated ? lastGeneratedLabel : 'Not yet generated'} helper={selectedBrand ? `Brand: ${selectedBrand.name}` : 'Select a brand'} />
+          <StatPill label="Data issues analyzed" value={`${problemsDetected || 0}`} helper={problemsDetected > 0 ? 'We factored these in' : 'No blockers detected'} />
+        </div>
+
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-3">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-center gap-3">
             <IconAlertCircle size={20} className="text-red-500 flex-shrink-0" />
             <p className="text-[13px] text-red-700">{error}</p>
           </div>
         )}
 
-        {/* Results */}
         {!hasGenerated ? (
-          // Initial state - prompt user to generate
-          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-10 text-center">
-            <IconSparkles size={48} className="mx-auto mb-4 text-[#00bcdc] opacity-50" />
-            <h3 className="text-[18px] font-semibold text-[#1a1d29] mb-2">
-              Ready to Generate Recommendations
+          <div className="bg-white border border-[#e8e9ed] rounded-2xl shadow-[0_14px_36px_rgba(15,23,42,0.08)] p-10 text-center">
+            <IconSparkles size={48} className="mx-auto mb-4 text-[#0ea5e9] opacity-80" />
+            <h3 className="text-[20px] font-semibold text-[#0f172a] mb-2">
+              Ready to generate a tailored action plan
             </h3>
-            <p className="text-[13px] text-[#64748b] max-w-md mx-auto">
-              Click "Generate Recommendations" to analyze your brand's performance data and receive AI-powered suggestions for improving your visibility, share of answers, and sentiment.
+            <p className="text-[13px] text-[#475569] max-w-md mx-auto">
+              Click "Generate Recommendations" to analyze your brand data and surface prioritized actions with rationale, metrics, and timelines.
             </p>
           </div>
-        ) : recommendations.length === 0 ? (
-          // No recommendations generated
-          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-10 text-center">
+        ) : !hasGeneratedResults ? (
+          <div className="bg-white border border-[#e8e9ed] rounded-2xl shadow-[0_14px_36px_rgba(15,23,42,0.08)] p-10 text-center">
             <IconAlertCircle size={48} className="mx-auto mb-4 text-[#94a3b8]" />
-            <h3 className="text-[18px] font-semibold text-[#1a1d29] mb-2">
-              No Recommendations Generated
+            <h3 className="text-[20px] font-semibold text-[#0f172a] mb-2">
+              No recommendations generated
             </h3>
-            <p className="text-[13px] text-[#64748b] max-w-md mx-auto">
+            <p className="text-[13px] text-[#475569] max-w-md mx-auto">
               {problemsDetected === 0 
-                ? 'No data issues were detected in your brand\'s performance metrics. Your visibility, SOA, and sentiment appear to be performing well.'
-                : 'No recommendations generated at this time.'}
+                ? 'No data issues were detected across visibility, SOA, or sentiment. Great job—try expanding the date range or monitoring for changes.'
+                : 'We reviewed your data but did not produce new actions this run. Re-run after new data is collected or adjust the date range.'}
             </p>
           </div>
         ) : (
-          // Recommendations table
           <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full border-collapse">
+                <colgroup>
+                  <col className="w-12" />
+                  <col className="min-w-[280px]" />
+                  <col className="min-w-[200px]" />
+                  <col className="min-w-[360px]" />
+                  <col className="w-[180px]" />
+                  <col className="w-[160px]" />
+                  <col className="min-w-[140px]" />
+                  <col className="min-w-[140px]" />
+                  <col className="min-w-[160px]" />
+                </colgroup>
                 <thead>
-                  <tr className="bg-[#f8fafc] border-b border-[#e8e9ed]">
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-[#64748b] uppercase tracking-wider w-8">#</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[220px]">Action (Topic-Specific)</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[240px]">Why This (Reason + Explanation)</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[240px]">Source & Metrics</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[220px]">Focus (Sources + Content)</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">KPI & Boost</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">Effort & Timeline</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">Confidence / Priority / Area</th>
+                  <tr className="bg-[#f8fafc] border-b-2 border-[#e2e8f0]">
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">#</th>
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Action</th>
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Reason</th>
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Explanation</th>
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Source & Metrics</th>
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Focus</th>
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">KPI / Boost</th>
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Effort / Timeline</th>
+                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Confidence / Priority / Area</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recommendations.map((rec, index) => (
-                    <tr 
-                      key={index} 
-                      className={`border-b border-[#e8e9ed] hover:bg-[#f8fafc] transition-colors ${
-                        index % 2 === 0 ? 'bg-white' : 'bg-[#fafbfc]'
-                      }`}
+                    <tr
+                      key={index}
+                      className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#f9fafb]'} border-b border-[#e8e9ed] hover:bg-[#f1f5f9] transition-colors`}
                     >
-                      <td className="px-4 py-4 text-[12px] text-[#94a3b8] font-medium">
+                      <td className="px-5 py-4 align-top text-[13px] text-[#64748b] font-medium">
                         {index + 1}
                       </td>
-                      <td className="px-4 py-4">
-                        <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed">
-                          {rec.action}
-                        </p>
+                      <td className="px-5 py-4 align-top">
+                        <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.action}</p>
                       </td>
-                      <td className="px-4 py-4">
-                        <p className="text-[12px] text-[#1a1d29] font-semibold leading-relaxed">
-                          {rec.reason}
-                        </p>
-                        <p className="text-[12px] text-[#64748b] leading-relaxed mt-1">
-                          {rec.explanation}
-                        </p>
+                      <td className="px-5 py-4 align-top">
+                        <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.reason}</p>
                       </td>
-                      <td className="px-4 py-4">
-                        <p className="text-[13px] text-[#1a1d29] font-semibold leading-relaxed">
-                          {rec.citationSource}
-                        </p>
-                        <p className="text-[11px] text-[#64748b]">
-                          Impact: {rec.impactScore} • Mentions: {rec.mentionRate} • Citations: {rec.citationCount}
-                        </p>
-                        <p className="text-[11px] text-[#64748b]">
-                          SOA: {rec.soa} • Sentiment: {rec.sentiment} • Visibility: {rec.visibilityScore}
-                        </p>
+                      <td className="px-5 py-4 align-top">
+                        <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.explanation}</p>
                       </td>
-                      <td className="px-4 py-4">
-                        <p className="text-[12px] text-[#1a1d29] leading-relaxed font-semibold">
-                          Sources: {rec.focusSources}
-                        </p>
-                        <p className="text-[12px] text-[#64748b] leading-relaxed mt-1">
-                          Content: {rec.contentFocus}
-                        </p>
+                      <td className="px-5 py-4 align-top">
+                        <p className="text-[13px] text-[#1a1d29] font-medium mb-1.5 break-words hyphens-auto">{rec.citationSource}</p>
+                        <div className="space-y-0.5">
+                          <p className="text-[12px] text-[#64748b] break-words">
+                            Impact: <span className="font-medium text-[#1a1d29]">{rec.impactScore}</span> • Mentions: <span className="font-medium text-[#1a1d29]">{rec.mentionRate}</span> • Citations: <span className="font-medium text-[#1a1d29]">{rec.citationCount}</span>
+                          </p>
+                          <p className="text-[12px] text-[#64748b] break-words">
+                            SOA: <span className="font-medium text-[#1a1d29]">{rec.soa}</span> • Sentiment: <span className="font-medium text-[#1a1d29]">{rec.sentiment}</span> • Visibility: <span className="font-medium text-[#1a1d29]">{rec.visibilityScore}</span>
+                          </p>
+                        </div>
                       </td>
-                      <td className="px-4 py-4">
-                        <span className="block text-[12px] text-[#1a1d29] font-medium whitespace-nowrap">
-                          {rec.kpi}
-                        </span>
-                        <span className="block text-[12px] text-[#06c686] font-semibold whitespace-nowrap">
-                          {rec.expectedBoost}
-                        </span>
+                      <td className="px-5 py-4 align-top">
+                        <p className="text-[13px] text-[#1a1d29] font-medium mb-1.5">Sources:</p>
+                        <p className="text-[13px] text-[#64748b] leading-relaxed mb-2.5 break-words hyphens-auto">{rec.focusSources}</p>
+                        <p className="text-[13px] text-[#1a1d29] font-medium mb-1.5">Content:</p>
+                        <p className="text-[13px] text-[#64748b] leading-relaxed break-words hyphens-auto">{rec.contentFocus}</p>
                       </td>
-                      <td className="px-4 py-4">
-                        <LevelBadge level={rec.effort} type="effort" />
-                        <p className="text-[12px] text-[#64748b] whitespace-nowrap mt-1">
-                          {rec.timeline}
-                        </p>
+                      <td className="px-5 py-4 align-top">
+                        <p className="text-[13px] text-[#1a1d29] font-medium mb-1.5">{rec.kpi}</p>
+                        <p className="text-[13px] text-[#06c686] font-semibold">{rec.expectedBoost}</p>
                       </td>
-                      <td className="px-4 py-4 space-y-1">
-                        <ConfidenceBar value={rec.confidence} />
-                        <LevelBadge level={rec.priority} type="priority" />
-                        <FocusAreaBadge area={rec.focusArea} />
+                      <td className="px-5 py-4 align-top">
+                        <div className="mb-2">
+                          <LevelBadge level={rec.effort} type="effort" />
+                        </div>
+                        <p className="text-[13px] text-[#64748b]">{rec.timeline}</p>
+                      </td>
+                      <td className="px-5 py-4 align-top">
+                        <div className="space-y-2.5">
+                          <ConfidenceBar value={rec.confidence} />
+                          <div>
+                            <LevelBadge level={rec.priority} type="priority" />
+                          </div>
+                          <div>
+                            <FocusAreaBadge area={rec.focusArea} />
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-
-            {/* Table footer */}
-            <div className="px-4 py-3 bg-[#f8fafc] border-t border-[#e8e9ed] flex items-center justify-between">
-              <p className="text-[12px] text-[#64748b]">
-                Showing {recommendations.length} data-driven recommendation{recommendations.length !== 1 ? 's' : ''}
+            <div className="px-5 py-3.5 bg-[#f8fafc] border-t border-[#e2e8f0] flex items-center justify-between flex-wrap gap-3">
+              <span className="text-[13px] text-[#64748b]">
+                Showing {totalRecommendations} recommendation{totalRecommendations !== 1 ? 's' : ''}
                 {problemsDetected > 0 && ` based on ${problemsDetected} detected issue${problemsDetected !== 1 ? 's' : ''}`}
-              </p>
-              <p className="text-[11px] text-[#94a3b8]">
-                Powered by Cerebras AI (QWEN) • Data-driven analysis
-              </p>
+              </span>
+              <span className="text-[12px] text-[#94a3b8]">
+                Powered by Cerebras AI (QWEN) • Data-backed analysis
+              </span>
             </div>
           </div>
         )}

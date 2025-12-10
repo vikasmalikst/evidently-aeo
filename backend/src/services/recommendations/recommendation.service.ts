@@ -57,6 +57,7 @@ export interface Recommendation {
     changePercent: number;  // e.g., -15.3 means 15.3% decrease
   };
   calculatedScore?: number; // Scientific score for ranking
+  citationCategory?: 'Priority Partnerships' | 'Reputation Management' | 'Growth Opportunities' | 'Monitor';
 }
 
 /**
@@ -105,7 +106,7 @@ type CerebrasChatResponse = {
  */
 interface DetectedProblem {
   id: string;                    // Unique identifier for reference
-  type: 'visibility' | 'soa' | 'sentiment' | 'source_coverage' | 'topic_gap' | 'llm_specific' | 'source_impact';
+  type: 'visibility' | 'soa' | 'sentiment' | 'source_coverage' | 'topic_gap' | 'llm_specific' | 'source_impact' | 'coverage_gap' | 'content_structure' | 'authority_gap' | 'reputation_risk' | 'sentiment_issue';
   severity: 'high' | 'medium' | 'low';
   category: 'llm' | 'source' | 'topic' | 'overall';
   
@@ -327,7 +328,8 @@ class RecommendationService {
           direction: rec.trend_direction as 'up' | 'down' | 'stable',
           changePercent: rec.trend_change_percent || 0
         } : undefined,
-        calculatedScore: rec.calculated_score || undefined
+        calculatedScore: rec.calculated_score || undefined,
+        citationCategory: rec.citation_category as Recommendation['citationCategory'] || undefined
       }));
 
       // Transform diagnostics
@@ -453,8 +455,12 @@ class RecommendationService {
         };
       }
 
-      // Step 4: Add trend context and calculate scores for ranking
+      // Step 4: Validate and correct citation sources to match actual brand data
+      recommendations = this.validateAndCorrectCitationSources(recommendations, context);
+      
+      // Step 5: Add trend context, assign categories, and calculate scores for ranking
       recommendations = this.enrichRecommendationsWithTrends(recommendations, context);
+      recommendations = this.assignCategoriesToRecommendations(recommendations, context);
       recommendations = this.rankRecommendations(recommendations);
 
       console.log(`✅ [RecommendationService] Generated ${recommendations.length} data-driven recommendations`);
@@ -1054,15 +1060,85 @@ class RecommendationService {
       const topProblems = detectedProblems.slice(0, 15);
 
       // ========================================
-      // ROOT CAUSE DIAGNOSTICS
+      // ROOT CAUSE DIAGNOSTICS (Enhanced with SOA)
       // ========================================
       const diagnostics: DiagnosticInsight[] = [];
       
-      // Calculate total citations
+      // Calculate total citations and averages
       const totalCitations = sourceMetrics.reduce((sum, s) => sum + s.citations, 0);
       const avgCitations = sourceMetrics.length > 0 ? totalCitations / sourceMetrics.length : 0;
+      const avgSourceSoa = sourceMetrics.length > 0 
+        ? sourceMetrics.reduce((sum, s) => sum + s.soa, 0) / sourceMetrics.length 
+        : 0;
       
-      // Diagnostic 1: High Citations + Low Visibility = Content Structure Issue
+      // HEURISTIC 1: Coverage Gap (Low SOA or SOA Drop)
+      if (shareOfAnswers !== undefined && shareOfAnswers < 35) {
+        diagnostics.push({
+          type: 'coverage_gap',
+          severity: shareOfAnswers < 20 ? 'high' : 'medium',
+          title: 'Coverage Gap - Low Share of Answers',
+          description: `Your SOA is ${Math.round(shareOfAnswers * 10) / 10}%, below the 35% threshold. This indicates you're not being chosen for direct answers/snippets, even if citations exist. Content needs optimization for answer boxes.`,
+          evidence: `SOA: ${Math.round(shareOfAnswers * 10) / 10}% (target: 35%+)`
+        });
+      }
+      
+      if (trends.soa?.direction === 'down' && trends.soa.changePercent < -20) {
+        diagnostics.push({
+          type: 'coverage_gap',
+          severity: Math.abs(trends.soa.changePercent) > 30 ? 'high' : 'medium',
+          title: 'Coverage Gap - Declining SOA',
+          description: `SOA has declined ${Math.abs(trends.soa.changePercent)}% compared to the previous period. This suggests competitors are winning answer boxes, requiring urgent content structure improvements.`,
+          evidence: `SOA dropped from ${Math.round(trends.soa.previous * 10) / 10}% to ${Math.round(trends.soa.current * 10) / 10}%`
+        });
+      }
+      
+      // HEURISTIC 2: Authority-to-Coverage Mismatch (High Citations + Low SOA)
+      if (totalCitations > 50 && shareOfAnswers !== undefined && shareOfAnswers < 30) {
+        diagnostics.push({
+          type: 'content_structure',
+          severity: totalCitations > 100 ? 'high' : 'medium',
+          title: 'Authority-to-Coverage Mismatch',
+          description: `High citation volume (${totalCitations}) but low SOA (${Math.round(shareOfAnswers * 10) / 10}%) indicates content is not structured for answer eligibility. Your content is cited but not chosen for snippets.`,
+          evidence: `${totalCitations} citations but only ${Math.round(shareOfAnswers * 10) / 10}% SOA`
+        });
+      }
+      
+      // HEURISTIC 3: Negative Narrative Risk (Low SOA + Negative Sentiment)
+      if (shareOfAnswers !== undefined && shareOfAnswers < 30 && sentimentScore !== undefined && sentimentScore < 0) {
+        diagnostics.push({
+          type: 'reputation_risk',
+          severity: sentimentScore < -0.2 ? 'high' : 'medium',
+          title: 'Negative Narrative Risk',
+          description: `Low SOA (${Math.round(shareOfAnswers * 10) / 10}%) combined with negative sentiment (${Math.round(sentimentScore * 100) / 100}) indicates reputation risk in answer surfaces. Competitors may be winning answer boxes with negative narratives.`,
+          evidence: `SOA: ${Math.round(shareOfAnswers * 10) / 10}%, Sentiment: ${Math.round(sentimentScore * 100) / 100}`
+        });
+      }
+      
+      // HEURISTIC 4: Emerging Opportunity (Low SOA + Rising Volume + Neutral/Positive Sentiment)
+      if (shareOfAnswers !== undefined && shareOfAnswers < 35 && 
+          trends.visibility?.direction === 'up' && trends.visibility.changePercent > 10 &&
+          sentimentScore !== undefined && sentimentScore >= 0) {
+        diagnostics.push({
+          type: 'coverage_gap',
+          severity: 'medium',
+          title: 'Emerging Opportunity',
+          description: `Low SOA (${Math.round(shareOfAnswers * 10) / 10}%) but rising query volume (+${Math.abs(trends.visibility.changePercent)}%) with positive sentiment indicates an opportunity to capture answer boxes in growing queries.`,
+          evidence: `SOA: ${Math.round(shareOfAnswers * 10) / 10}%, Visibility trend: +${Math.abs(trends.visibility.changePercent)}%, Sentiment: ${Math.round(sentimentScore * 100) / 100}`
+        });
+      }
+      
+      // HEURISTIC 5: Urgent Loss of Answers (Sharp SOA Drop)
+      if (trends.soa?.direction === 'down' && trends.soa.changePercent < -15) {
+        diagnostics.push({
+          type: 'coverage_gap',
+          severity: Math.abs(trends.soa.changePercent) > 25 ? 'high' : 'medium',
+          title: 'Urgent Loss of Answer Boxes',
+          description: `Sharp SOA decline of ${Math.abs(trends.soa.changePercent)}% indicates urgent action needed. You're losing answer box placements, likely due to content freshness or competitor improvements.`,
+          evidence: `SOA dropped from ${Math.round(trends.soa.previous * 10) / 10}% to ${Math.round(trends.soa.current * 10) / 10}%`
+        });
+      }
+      
+      // HEURISTIC 6: High Citations + Low Visibility = Content Structure Issue (Legacy)
       if (totalCitations > 50 && visibilityIndex !== undefined && visibilityIndex < 40) {
         diagnostics.push({
           type: 'content_structure',
@@ -1073,7 +1149,7 @@ class RecommendationService {
         });
       }
       
-      // Diagnostic 2: Low Citations + Low Visibility = Authority Gap
+      // HEURISTIC 7: Low Citations + Low Visibility = Authority Gap (Legacy)
       if (totalCitations < 30 && visibilityIndex !== undefined && visibilityIndex < 40) {
         diagnostics.push({
           type: 'authority_gap',
@@ -1084,7 +1160,7 @@ class RecommendationService {
         });
       }
       
-      // Diagnostic 3: High Visibility + Negative Sentiment = Reputation Risk
+      // HEURISTIC 8: High Visibility + Negative Sentiment = Reputation Risk (Legacy)
       if (visibilityIndex !== undefined && visibilityIndex > 50 && sentimentScore !== undefined && sentimentScore < 0) {
         diagnostics.push({
           type: 'reputation_risk',
@@ -1095,7 +1171,7 @@ class RecommendationService {
         });
       }
       
-      // Diagnostic 4: Declining Trends
+      // HEURISTIC 9: Declining Visibility Trend
       if (trends.visibility?.direction === 'down' && trends.visibility.changePercent < -10) {
         diagnostics.push({
           type: 'coverage_gap',
@@ -1106,6 +1182,7 @@ class RecommendationService {
         });
       }
       
+      // HEURISTIC 10: Sentiment Decline
       if (trends.sentiment?.direction === 'down' && trends.sentiment.changePercent < -15) {
         diagnostics.push({
           type: 'sentiment_issue',
@@ -1138,6 +1215,69 @@ class RecommendationService {
       console.error('❌ [RecommendationService] Error gathering context:', error);
       return null;
     }
+  }
+
+  /**
+   * Categorize a recommendation based on detected problems and source metrics
+   */
+  private categorizeRecommendation(
+    problem: DetectedProblem,
+    sourceMetrics: SourceMetrics[],
+    context: BrandContext
+  ): 'Priority Partnerships' | 'Reputation Management' | 'Growth Opportunities' | 'Monitor' {
+    const totalCitations = sourceMetrics.reduce((sum, s) => sum + s.citations, 0);
+    const avgSourceSoa = sourceMetrics.length > 0 
+      ? sourceMetrics.reduce((sum, s) => sum + s.soa, 0) / sourceMetrics.length 
+      : 0;
+    
+    // Priority Partnerships: High authority/citations + coverage gap
+    if ((problem.type === 'soa' || problem.type === 'coverage_gap' || problem.type === 'content_structure') &&
+        (totalCitations > 50 || (problem.citations && problem.citations > 20))) {
+      return 'Priority Partnerships';
+    }
+    
+    if (problem.type === 'authority_gap' && totalCitations < 30) {
+      return 'Priority Partnerships'; // Need to build partnerships
+    }
+    
+    // Reputation Management: Negative sentiment + high visibility/SOA
+    if (problem.type === 'sentiment' || problem.type === 'reputation_risk' || problem.type === 'sentiment_issue') {
+      if (context.visibilityIndex && context.visibilityIndex > 40) {
+        return 'Reputation Management';
+      }
+      if (context.shareOfAnswers && context.shareOfAnswers > 30 && 
+          context.sentimentScore && context.sentimentScore < 0) {
+        return 'Reputation Management';
+      }
+    }
+    
+    // Growth Opportunities: Emerging opportunities, mid-tier sources
+    if (problem.type === 'llm_specific' || problem.type === 'source_impact') {
+      if (problem.impactScore && problem.impactScore > 3 && problem.impactScore < 7) {
+        return 'Growth Opportunities';
+      }
+      if (context.trends?.visibility?.direction === 'up' && 
+          context.shareOfAnswers && context.shareOfAnswers < 35) {
+        return 'Growth Opportunities';
+      }
+    }
+    
+    // Monitor: Stable, low-risk sources (default for low-severity issues)
+    if (problem.severity === 'low') {
+      return 'Monitor';
+    }
+    
+    // Default categorization based on problem type
+    if (problem.type === 'visibility' && problem.severity === 'high') {
+      return 'Priority Partnerships';
+    }
+    
+    if (problem.type === 'sentiment' || problem.type === 'reputation_risk') {
+      return 'Reputation Management';
+    }
+    
+    // Default to Growth Opportunities for medium-severity issues
+    return 'Growth Opportunities';
   }
 
   /**
@@ -1183,10 +1323,11 @@ class RecommendationService {
 ## CRITICAL RULES - READ CAREFULLY
 1. Each recommendation MUST directly address one of the detected problems listed below.
 2. The "reason" field MUST reference the problem ID (e.g., "[P1]") and include the ACTUAL NUMBERS from the data.
-3. Every recommendation must explain: (a) what specific problem it solves, (b) why this action will help based on the data, and (c) which source + content pairing will move the metric.
-4. When a problem references a specific LLM or source, the recommendation must stay focused on that entity.
-5. Use the citation source metrics (domain, impact score, mention rate, SOA, sentiment, citations, visibility) to decide where to invest.
+3. Every recommendation must explain: (a) what specific problem it solves, (b) why this action will help based on the data, and (c) which CITATION SOURCE (domain) + content pairing will move the metric.
+4. **CRITICAL**: When a problem references a specific LLM (e.g., "Google AIO visibility is low"), the recommendation must target a CITATION SOURCE (domain) that can improve citations, which will then improve LLM performance. You CANNOT target an LLM directly - you must target citation sources (domains) that LLMs cite from.
+5. Use the citation source metrics (domain, impact score, mention rate, SOA, sentiment, citations, visibility) to decide where to invest. These are DOMAINS, not LLMs.
 6. Generate ONLY as many recommendations as there are addressable problems (max 10).
+7. **NEVER use LLM names as citation sources**. citationSource MUST be a domain (e.g., "reddit.com"), not an LLM name (e.g., "Google AIO").
 
 ## Brand Information
 - Brand Name: ${context.brandName}
@@ -1205,18 +1346,76 @@ ${context.trends && (context.trends.visibility?.direction === 'down' || context.
 ## Competitor Metrics
   ${competitorSummary}
 
-## Performance by AI Engine (LLM)
+## Performance by AI Engine (LLM) - FOR REFERENCE ONLY
   ${llmSummary}
+  
+⚠️ IMPORTANT: LLMs (like ChatGPT, Claude, Perplexity, Google AIO, etc.) are ANSWER ENGINES, NOT citation sources. 
+- LLMs generate answers and cite information FROM citation sources (domains).
+- You CANNOT "partner with" or "get backlinks from" an LLM.
+- LLM metrics show WHERE your brand appears in AI responses, but recommendations must target WHERE citations come FROM (domains).
 
-## Top Citation Sources (with metrics)
+## Top Citation Sources (with metrics) - USE THESE FOR RECOMMENDATIONS
   ${sourceSummary}
 
+⚠️ CRITICAL RULES FOR CITATION SOURCES:
+1. citationSource MUST be a DOMAIN (like "reddit.com", "techcrunch.com", "wikipedia.org"), NOT an LLM name.
+2. You MUST use ONLY the domains listed in "Top Citation Sources" above.
+3. Do NOT use LLM names (ChatGPT, Claude, Perplexity, Google AIO, Gemini, etc.) as citation sources.
+4. Do NOT invent or use sources from your training data.
+5. If a problem mentions an LLM, the recommendation should still target a citation source (domain) that can improve performance on that LLM.
+6. Every citationSource field MUST match exactly one of the domains from "Top Citation Sources" above.
+
+## Citation Category Strategy (CRITICAL - Tailor recommendations by category)
+Each recommendation will be categorized into one of four citation source strategies. Tailor your "action" and "reason" fields based on the category:
+
+1. **Priority Partnerships**: High-authority sources with coverage gaps
+   - Focus: Outreach, partnerships, co-created content, backlink acquisition
+   - Language: "Partner with [ACTUAL SOURCE FROM LIST]", "Secure backlink from [ACTUAL DOMAIN]", "Collaborate with [ACTUAL SOURCE] on [topic]"
+   - IMPORTANT: Replace [ACTUAL SOURCE] with a real domain from "Top Citation Sources" above. Do NOT use example sources like "TechCrunch" or "Vogue" unless they appear in the source list.
+
+2. **Reputation Management**: Negative sentiment + high visibility
+   - Focus: PR, official statements, FAQ pages, authoritative explainers
+   - Language: "Publish official FAQ", "Create authoritative content", "Address negative narratives", "Push positive content to [ACTUAL SOURCE]"
+   - IMPORTANT: Use only sources from "Top Citation Sources" above. Do NOT invent sources.
+
+3. **Growth Opportunities**: Emerging opportunities, mid-tier sources
+   - Focus: Topic-specific pages, FAQ optimization, schema markup, targeted outreach
+   - Language: "Create topic-specific page", "Optimize FAQ for [topic]", "Target [ACTUAL SOURCE] for [topic] coverage"
+   - IMPORTANT: Use only sources from "Top Citation Sources" above. Do NOT invent sources.
+
+4. **Monitor**: Stable, low-risk sources
+   - Focus: Light refresh, periodic updates, watch for trends
+   - Language: "Monitor [ACTUAL SOURCE]", "Refresh content periodically", "Track trends"
+   - IMPORTANT: Use only sources from "Top Citation Sources" above. Do NOT invent sources.
+
 ## Content Generation Strategy Guidance (be ultra-specific, topic-first)
-1. Use the citation source data above when identifying which source and content combo to recommend.
-2. Stay anchored to the topic in the detected problem. Name the topic explicitly and propose a concrete asset for it (e.g., "Create a collection page for vacation wear", "Write a blog on 'Comprehensive guide for summer essentials'", "Get a linen-pants-focused backlink from Vogue", "Contribute to r/fashion with trendy insights").
-3. Describe which sources should be prioritized ("focusSources") and what content pieces or themes should be produced ("contentFocus") — keep both tightly tied to the topic.
-4. Tie your recommendation back to the metrics in the source data (impact score, mention rate, SOA, sentiment, citations, visibility) and the detected problem you are solving.
-5. Craft a concise explanation (4-5 sentences) that explains why investing in that specific source + topic-focused content will move the targeted KPI. Avoid generic advice like "improve your content" — always specify the asset type, topic, and source.
+1. **MANDATORY - CITATION SOURCES ONLY**: 
+   - citationSource MUST be a DOMAIN (e.g., "reddit.com", "techcrunch.com"), NOT an LLM name.
+   - Use ONLY the domains listed in "Top Citation Sources" above.
+   - If a problem mentions an LLM (e.g., "Google AIO visibility is low"), you still need to target a CITATION SOURCE (domain) that can improve citations, which will then improve LLM performance.
+   - Example: If problem is "Google AIO visibility is low", recommend targeting a high-impact citation source like "reddit.com" or "wikipedia.org" (from the list), NOT "Google AIO" itself.
+
+2. **LLM-SPECIFIC PROBLEMS**: 
+   - When a problem references an LLM (e.g., "[P1] Google AIO visibility is 0.4% vs 0.5% average"), the recommendation should:
+     a) Acknowledge the LLM performance issue in the reason/explanation
+     b) Target a CITATION SOURCE (domain) that can improve citations
+     c) Explain how improving citations from that domain will improve LLM performance
+   - Example: "Partner with reddit.com to publish authoritative content on [topic]. Reddit has high citation volume (X citations) and improving your presence there will increase citations that Google AIO and other LLMs reference, thereby improving your visibility across all LLMs."
+
+3. Stay anchored to the topic in the detected problem. Name the topic explicitly and propose a concrete asset for it (e.g., "Create a collection page for vacation wear", "Write a blog on 'Comprehensive guide for summer essentials'").
+
+4. Describe which sources should be prioritized ("focusSources") - these MUST be DOMAINS from the "Top Citation Sources" list above, NOT LLM names. What content pieces or themes should be produced ("contentFocus") — keep both tightly tied to the topic.
+
+5. Tie your recommendation back to the metrics in the source data (impact score, mention rate, SOA, sentiment, citations, visibility) and the detected problem you are solving. Use the EXACT metrics from the source list.
+
+6. Craft a concise explanation (4-5 sentences) that explains why investing in that specific CITATION SOURCE (domain) + topic-focused content will move the targeted KPI. If the problem mentions an LLM, explain how improving citations from the domain will improve LLM performance. Avoid generic advice like "improve your content" — always specify the asset type, topic, and source (domain from the list above).
+
+7. **IMPORTANT**: Based on the problem type and source metrics, determine which citation category this recommendation belongs to and tailor the language accordingly.
+
+8. **CRITICAL VALIDATION**: Before submitting, verify that:
+   - Every citationSource is a DOMAIN (not an LLM name)
+   - Every citationSource appears in the "Top Citation Sources" list
+   - If a source doesn't exist in that list, choose the most relevant domain that does exist
 
 ## DETECTED PROBLEMS (${context.detectedProblems.length} issues found)
 ${problemsList}
@@ -1229,17 +1428,17 @@ For each detected problem above, generate ONE specific recommendation that:
 4. Ties the action to a citation source and a content focus, both explicitly linked to the topic in the problem.
 
 Respond with a JSON array. Each object must have:
-- action: Specific action to take (1-2 sentences, be specific to the problem).
-- reason: Reference problem ID + actual data + why this helps (e.g., "[P1] Your ChatGPT visibility is 32% vs 58% average. ChatGPT prioritizes structured content with clear headers...").
+- action: Specific action to take (1-2 sentences, be specific to the problem). Tailor language based on citation category (see above).
+- reason: Reference problem ID + actual data + why this helps. If problem mentions an LLM, explain how targeting the citation source (domain) will improve LLM performance (e.g., "[P1] Google AIO visibility is 0.4% vs 0.5% average. Targeting reddit.com (high citation volume) will increase authoritative citations that Google AIO references, improving visibility across all LLMs."). Include category-appropriate language.
 - explanation: A 4-5 sentence rationale that explains why investing in the cited source + content focus will improve the selected KPI.
-- citationSource: The primary citation source (domain) you recommend investing in.
-- impactScore: Impact score (from the source data) for that citation source.
-- mentionRate: Mention rate (%) for that source.
-- soa: Source-level SOA (%).
-- sentiment: Source-level sentiment score.
-- visibilityScore: Source-level visibility score.
-- citationCount: Number of citations for the source.
-- focusSources: What sources to prioritize (can be multiple, tied to data from the top citation sources).
+- citationSource: The primary citation source (DOMAIN, not LLM) you recommend investing in. MUST be one of the exact domains from "Top Citation Sources" above. Examples: "reddit.com", "techcrunch.com", "wikipedia.org". Do NOT use LLM names like "ChatGPT", "Claude", "Perplexity", "Google AIO". Do NOT make up sources.
+- impactScore: Impact score (from the source data) for that citation source. Use the exact value from the source list above.
+- mentionRate: Mention rate (%) for that source. Use the exact value from the source list above.
+- soa: Source-level SOA (%). Use the exact value from the source list above.
+- sentiment: Source-level sentiment score. Use the exact value from the source list above.
+- visibilityScore: Source-level visibility score. Use the exact value from the source list above.
+- citationCount: Number of citations for the source. Use the exact value from the source list above.
+- focusSources: What citation sources (DOMAINS, not LLMs) to prioritize. Can be multiple domains from "Top Citation Sources" list. Do NOT include LLM names.
 - contentFocus: What content types or topics to focus on when addressing the problem.
 - kpi: "Visibility Index", "SOA %", or "Sentiment Score".
 - expectedBoost: Realistic estimate (e.g., "+10-15%").
@@ -1248,6 +1447,7 @@ Respond with a JSON array. Each object must have:
 - confidence: 0-100 (how confident you are this will work).
 - priority: "High", "Medium", or "Low".
 - focusArea: "visibility", "soa", or "sentiment".
+- citationCategory: One of "Priority Partnerships", "Reputation Management", "Growth Opportunities", or "Monitor" (determine based on problem type and source metrics).
 
 RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
   }
@@ -1309,6 +1509,171 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
   }
 
   /**
+   * Check if a string is likely an LLM name (not a domain)
+   */
+  private isLLMName(source: string): boolean {
+    const llmNames = new Set([
+      'chatgpt', 'claude', 'perplexity', 'gemini', 'google aio', 'googleai', 'bing copilot', 
+      'bing', 'copilot', 'anthropic', 'openai', 'bard', 'llama', 'mistral',
+      'gpt-4', 'gpt-3', 'gpt3', 'gpt4', 'claude-3', 'claude3', 'aio'
+    ]);
+    
+    const normalized = source.toLowerCase().trim();
+    // Exact match
+    if (llmNames.has(normalized)) return true;
+    // Contains LLM-related keywords as standalone words
+    if (normalized.includes('llm') || normalized.includes('ai engine') || normalized.includes('language model')) return true;
+    // Check if it's a known LLM name pattern (e.g., "Google AIO", "Bing Copilot")
+    const llmPatterns = ['google aio', 'bing copilot', 'chat gpt', 'claude ai'];
+    return llmPatterns.some(pattern => normalized.includes(pattern));
+  }
+
+  /**
+   * Validate and correct citation sources to match actual brand data
+   * This ensures the LLM doesn't generate fake/generic sources
+   */
+  private validateAndCorrectCitationSources(
+    recommendations: Recommendation[],
+    context: BrandContext
+  ): Recommendation[] {
+    if (!context.sourceMetrics || context.sourceMetrics.length === 0) {
+      console.warn('⚠️ [RecommendationService] No source metrics available for validation');
+      return recommendations;
+    }
+
+    // Create a map of actual sources (normalized domain names)
+    const actualSourcesMap = new Map<string, SourceMetrics>();
+    context.sourceMetrics.forEach(source => {
+      const normalized = source.domain.toLowerCase().replace(/^www\./, '');
+      actualSourcesMap.set(normalized, source);
+    });
+
+    return recommendations.map(rec => {
+      // Normalize the citation source from LLM
+      const llmSource = rec.citationSource.toLowerCase().replace(/^www\./, '').trim();
+      
+      // Check if it's an LLM name (not a domain)
+      if (this.isLLMName(llmSource)) {
+        console.warn(`⚠️ [RecommendationService] LLM name "${rec.citationSource}" detected as citation source. Replacing with top citation source.`);
+        // Use the top citation source by impact score
+        const topSource = context.sourceMetrics!.sort((a, b) => b.impactScore - a.impactScore)[0];
+        return {
+          ...rec,
+          citationSource: topSource.domain,
+          impactScore: topSource.impactScore.toString(),
+          mentionRate: topSource.mentionRate.toString(),
+          soa: topSource.soa.toString(),
+          sentiment: topSource.sentiment.toString(),
+          visibilityScore: topSource.visibility.toString(),
+          citationCount: topSource.citations
+        };
+      }
+      
+      // Check if it matches an actual source
+      const matchedSource = actualSourcesMap.get(llmSource);
+      
+      if (matchedSource) {
+        // Source matches - use actual metrics from brand data
+        // Also clean focusSources if it contains LLM names
+        let cleanedFocusSources = rec.focusSources;
+        if (cleanedFocusSources && cleanedFocusSources !== 'N/A') {
+          const focusList = cleanedFocusSources.split(',').map(s => s.trim());
+          const validFocusSources = focusList
+            .filter(s => {
+              const normalized = s.toLowerCase().replace(/^www\./, '');
+              return !this.isLLMName(normalized) && actualSourcesMap.has(normalized);
+            })
+            .map(s => {
+              const normalized = s.toLowerCase().replace(/^www\./, '');
+              const matched = actualSourcesMap.get(normalized);
+              return matched ? matched.domain : s;
+            });
+          
+          if (validFocusSources.length > 0) {
+            cleanedFocusSources = validFocusSources.join(', ');
+          } else if (focusList.some(s => this.isLLMName(s.toLowerCase().replace(/^www\./, '')))) {
+            // If all focus sources were LLMs, use top citation sources
+            const topSources = context.sourceMetrics!.sort((a, b) => b.impactScore - a.impactScore).slice(0, 3);
+            cleanedFocusSources = topSources.map(s => s.domain).join(', ');
+          }
+        }
+        
+        return {
+          ...rec,
+          citationSource: matchedSource.domain, // Use the actual domain format
+          impactScore: matchedSource.impactScore.toString(),
+          mentionRate: matchedSource.mentionRate.toString(),
+          soa: matchedSource.soa.toString(),
+          sentiment: matchedSource.sentiment.toString(),
+          visibilityScore: matchedSource.visibility.toString(),
+          citationCount: matchedSource.citations,
+          focusSources: cleanedFocusSources || rec.focusSources
+        };
+      } else {
+        // Source doesn't match - find the closest match or use top source
+        console.warn(`⚠️ [RecommendationService] LLM generated source "${rec.citationSource}" not found in brand data. Finding best match...`);
+        
+        // Try to find a partial match
+        let bestMatch: SourceMetrics | null = null;
+        for (const [domain, source] of actualSourcesMap.entries()) {
+          if (domain.includes(llmSource) || llmSource.includes(domain)) {
+            bestMatch = source;
+            break;
+          }
+        }
+        
+        // If no partial match, use the top source by impact score
+        if (!bestMatch) {
+          bestMatch = context.sourceMetrics!.sort((a, b) => b.impactScore - a.impactScore)[0];
+          console.log(`📌 [RecommendationService] Using top source "${bestMatch.domain}" instead of "${rec.citationSource}"`);
+        }
+        
+        if (bestMatch) {
+          // Also clean focusSources if it contains LLM names
+          let cleanedFocusSources = rec.focusSources;
+          if (cleanedFocusSources && cleanedFocusSources !== 'N/A') {
+            const focusList = cleanedFocusSources.split(',').map(s => s.trim());
+            const validFocusSources = focusList
+              .filter(s => {
+                const normalized = s.toLowerCase().replace(/^www\./, '');
+                return !isLLMName(normalized) && actualSourcesMap.has(normalized);
+              })
+              .map(s => {
+                const normalized = s.toLowerCase().replace(/^www\./, '');
+                const matched = actualSourcesMap.get(normalized);
+                return matched ? matched.domain : s;
+              });
+            
+            if (validFocusSources.length > 0) {
+              cleanedFocusSources = validFocusSources.join(', ');
+            } else {
+              // If all focus sources were LLMs, use top citation sources
+              const topSources = context.sourceMetrics!.sort((a, b) => b.impactScore - a.impactScore).slice(0, 3);
+              cleanedFocusSources = topSources.map(s => s.domain).join(', ');
+            }
+          }
+          
+          return {
+            ...rec,
+            citationSource: bestMatch.domain,
+            impactScore: bestMatch.impactScore.toString(),
+            mentionRate: bestMatch.mentionRate.toString(),
+            soa: bestMatch.soa.toString(),
+            sentiment: bestMatch.sentiment.toString(),
+            visibilityScore: bestMatch.visibility.toString(),
+            citationCount: bestMatch.citations,
+            focusSources: cleanedFocusSources || rec.focusSources
+          };
+        }
+      }
+      
+      // Fallback: return as-is but log warning
+      console.warn(`⚠️ [RecommendationService] Could not validate source "${rec.citationSource}" - using LLM values`);
+      return rec;
+    });
+  }
+
+  /**
    * Enrich recommendations with trend data
    */
   private enrichRecommendationsWithTrends(
@@ -1339,6 +1704,33 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
       }
 
       return { ...rec, trend };
+    });
+  }
+
+  /**
+   * Assign citation categories to recommendations based on problems they address
+   */
+  private assignCategoriesToRecommendations(
+    recommendations: Recommendation[],
+    context: BrandContext
+  ): Recommendation[] {
+    return recommendations.map(rec => {
+      // Extract problem ID from reason (e.g., "[P1]")
+      const problemIdMatch = rec.reason.match(/\[P(\d+)\]/);
+      if (!problemIdMatch) {
+        // Default to Growth Opportunities if no problem reference
+        return { ...rec, citationCategory: 'Growth Opportunities' as const };
+      }
+
+      const problemIndex = parseInt(problemIdMatch[1], 10) - 1;
+      const problem = context.detectedProblems[problemIndex];
+
+      if (!problem) {
+        return { ...rec, citationCategory: 'Growth Opportunities' as const };
+      }
+
+      const category = this.categorizeRecommendation(problem, context.sourceMetrics || [], context);
+      return { ...rec, citationCategory: category };
     });
   }
 
@@ -1434,39 +1826,68 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
 
       // 2. Insert recommendations
       if (recommendations.length > 0) {
-        const recommendationsToInsert = recommendations.map((rec, index) => ({
-          generation_id: generationId,
-          brand_id: brandId,
-          customer_id: customerId,
-          action: rec.action,
-          reason: rec.reason,
-          explanation: rec.explanation,
-          citation_source: rec.citationSource,
-          impact_score: rec.impactScore,
-          mention_rate: rec.mentionRate,
-          soa: rec.soa,
-          sentiment: rec.sentiment,
-          visibility_score: rec.visibilityScore,
-          citation_count: rec.citationCount,
-          focus_sources: rec.focusSources,
-          content_focus: rec.contentFocus,
-          kpi: rec.kpi,
-          expected_boost: rec.expectedBoost,
-          effort: rec.effort,
-          timeline: rec.timeline,
-          confidence: rec.confidence,
-          priority: rec.priority,
-          focus_area: rec.focusArea,
-          trend_direction: rec.trend?.direction || null,
-          trend_change_percent: rec.trend?.changePercent || null,
-          calculated_score: rec.calculatedScore || null,
-          display_order: index
-        }));
+        // Build recommendations object, conditionally including citation_category
+        const recommendationsToInsert = recommendations.map((rec, index) => {
+          const baseRec = {
+            generation_id: generationId,
+            brand_id: brandId,
+            customer_id: customerId,
+            action: rec.action,
+            reason: rec.reason,
+            explanation: rec.explanation,
+            citation_source: rec.citationSource,
+            impact_score: rec.impactScore,
+            mention_rate: rec.mentionRate,
+            soa: rec.soa,
+            sentiment: rec.sentiment,
+            visibility_score: rec.visibilityScore,
+            citation_count: rec.citationCount,
+            focus_sources: rec.focusSources,
+            content_focus: rec.contentFocus,
+            kpi: rec.kpi,
+            expected_boost: rec.expectedBoost,
+            effort: rec.effort,
+            timeline: rec.timeline,
+            confidence: rec.confidence,
+            priority: rec.priority,
+            focus_area: rec.focusArea,
+            trend_direction: rec.trend?.direction || null,
+            trend_change_percent: rec.trend?.changePercent || null,
+            calculated_score: rec.calculatedScore || null,
+            display_order: index
+          };
+          
+          // Only include citation_category if the column exists (migration may not be applied yet)
+          // We'll try to insert it, and if it fails, we'll retry without it
+          if (rec.citationCategory) {
+            return { ...baseRec, citation_category: rec.citationCategory };
+          }
+          return baseRec;
+        });
 
-        const { error: recError, data: insertedRecs } = await supabaseAdmin
+        let { error: recError, data: insertedRecs } = await supabaseAdmin
           .from('recommendations')
           .insert(recommendationsToInsert)
           .select('id');
+
+        // If error is due to missing citation_category column, retry without it
+        if (recError && recError.message?.includes('citation_category')) {
+          console.warn('⚠️ [RecommendationService] citation_category column not found, retrying without it. Please run migration: 20251209000001_add_citation_category_to_recommendations.sql');
+          
+          // Remove citation_category from all records and retry
+          const recommendationsWithoutCategory = recommendationsToInsert.map(rec => {
+            const { citation_category, ...rest } = rec as any;
+            return rest;
+          });
+          
+          const retryResult = await supabaseAdmin
+            .from('recommendations')
+            .insert(recommendationsWithoutCategory)
+            .select('id');
+          
+          recError = retryResult.error;
+          insertedRecs = retryResult.data;
+        }
 
         if (recError) {
           console.error('❌ [RecommendationService] Error inserting recommendations:', recError);
@@ -1675,6 +2096,10 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
           'N/A'
         );
 
+        const citationCategory = this.normalizeCitationCategory(
+          rec.citationCategory || rec.citation_category
+        );
+
         const validRec: Recommendation = {
           action: rec.action.trim(),
           reason: rec.reason.trim(),
@@ -1694,7 +2119,8 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
           timeline: (rec.timeline || '2-4 weeks').trim(),
           confidence: this.normalizeConfidence(rec.confidence),
           priority: this.normalizePriority(rec.priority),
-          focusArea: this.normalizeFocusArea(rec.focusArea || rec.focus_area)
+          focusArea: this.normalizeFocusArea(rec.focusArea || rec.focus_area),
+          citationCategory
         };
 
         validRecommendations.push(validRec);
@@ -1750,6 +2176,18 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
     if (lower.includes('soa') || lower.includes('share')) return 'soa';
     if (lower.includes('sentiment')) return 'sentiment';
     return 'visibility';
+  }
+
+  private normalizeCitationCategory(
+    category: string | undefined
+  ): 'Priority Partnerships' | 'Reputation Management' | 'Growth Opportunities' | 'Monitor' | undefined {
+    if (!category) return undefined;
+    const lower = category.toLowerCase();
+    if (lower.includes('priority') || lower.includes('partnership')) return 'Priority Partnerships';
+    if (lower.includes('reputation') || lower.includes('management')) return 'Reputation Management';
+    if (lower.includes('growth') || lower.includes('opportunit')) return 'Growth Opportunities';
+    if (lower.includes('monitor')) return 'Monitor';
+    return undefined;
   }
 }
 

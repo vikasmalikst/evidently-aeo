@@ -86,7 +86,7 @@ export const RecommendedActions = ({ actionItems }: RecommendedActionsProps) => 
           ))}
         </div>
       ) : (
-        <EmptyState message="No tailored recommendations yet. Check back after more data is collected." />
+        <EmptyState message="No tailored nes yet. Check back after more data is collected." />
       )}
     </div>
   );

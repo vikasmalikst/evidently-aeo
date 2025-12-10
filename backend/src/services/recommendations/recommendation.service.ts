@@ -1636,7 +1636,7 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
             const validFocusSources = focusList
               .filter(s => {
                 const normalized = s.toLowerCase().replace(/^www\./, '');
-                return !isLLMName(normalized) && actualSourcesMap.has(normalized);
+                return !this.isLLMName(normalized) && actualSourcesMap.has(normalized);
               })
               .map(s => {
                 const normalized = s.toLowerCase().replace(/^www\./, '');

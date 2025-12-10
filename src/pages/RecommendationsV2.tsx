@@ -9,7 +9,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { generateRecommendations, fetchRecommendations, Recommendation, RecommendationsResponse } from '../api/recommendationsApi';
-import { IconSparkles, IconRefresh, IconChevronRight, IconChevronDown, IconTrendingUp, IconTrendingDown, IconMinus } from '@tabler/icons-react';
+import { IconSparkles, IconRefresh, IconChevronRight, IconChevronDown, IconTrendingUp, IconTrendingDown, IconMinus, IconAlertCircle } from '@tabler/icons-react';
 
 // ============================================================================
 // HELPER COMPONENTS

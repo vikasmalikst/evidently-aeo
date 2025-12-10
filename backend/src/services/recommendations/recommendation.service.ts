@@ -63,6 +63,17 @@ export interface RecommendationResponse {
 }
 
 /**
+ * Minimal shape of the Cerebras chat completion response we rely on
+ */
+type CerebrasChatResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+};
+
+/**
  * Detected problem from data analysis
  */
 interface DetectedProblem {
@@ -924,12 +935,14 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
 
       const data = await response.json();
       
-      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      const chatData = data as CerebrasChatResponse;
+
+      if (!chatData.choices?.[0]?.message?.content) {
         console.error('❌ [RecommendationService] Invalid response structure');
         return [];
       }
 
-      const content = data.choices[0].message.content;
+      const content = chatData.choices[0].message.content;
       console.log('📝 [RecommendationService] Response length:', content?.length || 0);
 
       return this.parseRecommendations(content);

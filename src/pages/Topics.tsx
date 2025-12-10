@@ -599,9 +599,6 @@ export const Topics = () => {
           onTopicClick={(topic) => {
             console.log('Topic clicked:', topic);
           }}
-          onCategoryFilter={(categoryId) => {
-            console.log('Category filtered:', categoryId);
-          }}
           onFiltersChange={updateFilters}
           availableModels={availableModels}
           currentCollectorType={filters.collectorType}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
@@ -8,6 +8,7 @@ import { ValueScoreTable } from '../components/SourcesR2/ValueScoreTable';
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { SourceRadar } from '../components/SourcesR2/SourceRadar';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
+import { fetchRecommendations, type Recommendation } from '../api/recommendationsApi';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -153,6 +154,8 @@ export const SearchSourcesR2 = () => {
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('current');
   const [activeNewZone, setActiveNewZone] = useState<string | null>(null);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
 
   const sourcesEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
@@ -320,6 +323,60 @@ export const SearchSourcesR2 = () => {
     });
   }, [displayedSources, sourceData]);
 
+  // Load recommendations when brand changes
+  useEffect(() => {
+    const loadRecommendations = async () => {
+      if (!selectedBrandId) {
+        setRecommendations([]);
+        return;
+      }
+
+      setRecommendationsLoading(true);
+      try {
+        const response = await fetchRecommendations({ brandId: selectedBrandId });
+        if (response.success && response.data?.recommendations) {
+          setRecommendations(response.data.recommendations);
+        } else {
+          setRecommendations([]);
+        }
+      } catch (err) {
+        console.error('Error loading recommendations:', err);
+        setRecommendations([]);
+      } finally {
+        setRecommendationsLoading(false);
+      }
+    };
+
+    loadRecommendations();
+  }, [selectedBrandId]);
+
+  // Map quadrant to citation category
+  const getCategoryFromQuadrant = (quadrant: string | null): Recommendation['citationCategory'] | null => {
+    if (!quadrant) return null;
+    const mapping: Record<string, Recommendation['citationCategory']> = {
+      priority: 'Priority Partnerships',
+      reputation: 'Reputation Management',
+      growth: 'Growth Opportunities',
+      monitor: 'Monitor',
+      marketLeaders: 'Priority Partnerships',
+      reputationRisks: 'Reputation Management',
+      growthBets: 'Growth Opportunities',
+      monitorImprove: 'Monitor'
+    };
+    return mapping[quadrant] || null;
+  };
+
+  // Filter recommendations by selected category
+  const filteredRecommendations = useMemo(() => {
+    const selectedCategory = viewMode === 'current' 
+      ? getCategoryFromQuadrant(activeQuadrant)
+      : getCategoryFromQuadrant(activeNewZone);
+    
+    if (!selectedCategory) return [];
+    
+    return recommendations.filter(rec => rec.citationCategory === selectedCategory);
+  }, [recommendations, activeQuadrant, activeNewZone, viewMode]);
+
   const isLoading = authLoading || brandsLoading || loading;
   const errorMessage = error
     ? typeof error === 'string'
@@ -435,6 +492,102 @@ export const SearchSourcesR2 = () => {
               <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>Top sources across visibility, SOA, sentiment, citations, topics</p>
               <SourceRadar sources={radarSources} maxItems={5} />
             </div>
+
+            {/* Recommended Actions Section */}
+            {(activeQuadrant || activeNewZone) && (
+              <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Recommended Actions</h3>
+                <p style={{ margin: '0 0 16px 0', fontSize: 12, color: '#64748b' }}>
+                  Actions tailored for {viewMode === 'current' 
+                    ? (activeQuadrant === 'priority' ? 'Priority Partnerships' :
+                       activeQuadrant === 'reputation' ? 'Reputation Management' :
+                       activeQuadrant === 'growth' ? 'Growth Opportunities' : 'Monitor')
+                    : (activeNewZone === 'marketLeaders' ? 'Market Leaders' :
+                       activeNewZone === 'reputationRisks' ? 'Reputation Risks' :
+                       activeNewZone === 'growthBets' ? 'Growth Bets' : 'Monitor & Improve')}
+                </p>
+                
+                {recommendationsLoading ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>Loading recommendations...</div>
+                ) : filteredRecommendations.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                    No specific recommendations for this category. Generate recommendations on the Recommendations page to see tailored actions.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {filteredRecommendations.slice(0, 5).map((rec, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          border: '1px solid #e5e7eb',
+                          borderRadius: 8,
+                          padding: 12,
+                          background: '#f9fafb',
+                          transition: 'border-color 160ms ease, box-shadow 160ms ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#0ea5e9';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(14,165,233,0.15)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = '#e5e7eb';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                          <div style={{ 
+                            minWidth: 24, 
+                            height: 24, 
+                            borderRadius: '50%', 
+                            background: '#0ea5e9', 
+                            color: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            flexShrink: 0
+                          }}>
+                            {idx + 1}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ marginBottom: 6 }}>
+                              <span style={{ 
+                                fontSize: 10, 
+                                fontWeight: 700, 
+                                textTransform: 'uppercase',
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: rec.citationCategory === 'Priority Partnerships' ? '#06c686' :
+                                          rec.citationCategory === 'Reputation Management' ? '#ef4444' :
+                                          rec.citationCategory === 'Growth Opportunities' ? '#0ea5e9' : '#94a3b8',
+                                color: '#fff',
+                                marginRight: 8
+                              }}>
+                                {rec.citationCategory === 'Priority Partnerships' ? 'Priority' :
+                                 rec.citationCategory === 'Reputation Management' ? 'Reputation' :
+                                 rec.citationCategory === 'Growth Opportunities' ? 'Growth' : 'Monitor'}
+                              </span>
+                            </div>
+                            <h4 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, color: '#0f172a', lineHeight: 1.4 }}>
+                              {rec.action}
+                            </h4>
+                            <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
+                              {rec.reason}
+                            </p>
+                            <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11, color: '#64748b' }}>
+                              <span>Effort: <strong>{rec.effort}</strong></span>
+                              <span>Timeline: <strong>{rec.timeline}</strong></span>
+                              <span>Expected: <strong style={{ color: '#06c686' }}>{rec.expectedBoost}</strong></span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

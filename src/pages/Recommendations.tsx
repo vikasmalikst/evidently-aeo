@@ -772,7 +772,24 @@ export const Recommendations = () => {
                         </div>
                       </td>
                       <td className="px-5 py-4 align-top">
-                        <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.action}</p>
+                        <div className="space-y-2">
+                          {rec.citationCategory && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${
+                              rec.citationCategory === 'Priority Partnerships' 
+                                ? 'bg-[#06c686] text-white'
+                                : rec.citationCategory === 'Reputation Management'
+                                ? 'bg-[#ef4444] text-white'
+                                : rec.citationCategory === 'Growth Opportunities'
+                                ? 'bg-[#0ea5e9] text-white'
+                                : 'bg-[#94a3b8] text-white'
+                            }`}>
+                              {rec.citationCategory === 'Priority Partnerships' ? 'Priority' :
+                               rec.citationCategory === 'Reputation Management' ? 'Reputation' :
+                               rec.citationCategory === 'Growth Opportunities' ? 'Growth' : 'Monitor'}
+                            </span>
+                          )}
+                          <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.action}</p>
+                        </div>
                       </td>
                       <td className="px-5 py-4 align-top">
                         <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.reason}</p>

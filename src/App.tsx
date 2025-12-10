@@ -8,6 +8,7 @@ import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
 import { Recommendations } from './pages/Recommendations';
+import { RecommendationsV2 } from './pages/RecommendationsV2';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
@@ -150,6 +151,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Recommendations />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/recommendations-v2"
+          element={
+            <ProtectedRoute>
+              <RecommendationsV2 />
             </ProtectedRoute>
           }
         />

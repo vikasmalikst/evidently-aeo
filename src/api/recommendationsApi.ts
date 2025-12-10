@@ -39,6 +39,7 @@ export interface Recommendation {
     changePercent: number;
   };
   calculatedScore?: number; // Scientific score for ranking
+  citationCategory?: 'Priority Partnerships' | 'Reputation Management' | 'Growth Opportunities' | 'Monitor';
 }
 
 /**

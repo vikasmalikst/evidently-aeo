@@ -34,6 +34,22 @@ export interface Recommendation {
   confidence: number;       // 0-100%
   priority: 'High' | 'Medium' | 'Low';  // Priority level
   focusArea: 'visibility' | 'soa' | 'sentiment';  // Which area this targets
+  trend?: {
+    direction: 'up' | 'down' | 'stable';
+    changePercent: number;
+  };
+  calculatedScore?: number; // Scientific score for ranking
+}
+
+/**
+ * Root cause diagnostic insight
+ */
+export interface DiagnosticInsight {
+  type: 'content_structure' | 'authority_gap' | 'reputation_risk' | 'coverage_gap' | 'sentiment_issue';
+  severity: 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  evidence: string;
 }
 
 /**
@@ -48,6 +64,12 @@ export interface RecommendationsResponse {
     brandName?: string;
     message?: string;
     problemsDetected?: number;  // Number of data problems detected
+    diagnostics?: DiagnosticInsight[];  // Root cause analysis
+    trends?: {
+      visibility: { current: number; previous: number; changePercent: number; direction: 'up' | 'down' | 'stable' };
+      soa: { current: number; previous: number; changePercent: number; direction: 'up' | 'down' | 'stable' };
+      sentiment: { current: number; previous: number; changePercent: number; direction: 'up' | 'down' | 'stable' };
+    };
   };
   error?: string;
 }
@@ -104,6 +126,56 @@ export async function generateRecommendations(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to generate recommendations'
+    };
+  }
+}
+
+/**
+ * Fetch the latest recommendations for a brand from the database
+ * 
+ * @param request - Optional request with brandId
+ * @returns RecommendationsResponse with persisted recommendations
+ * 
+ * @example
+ * ```ts
+ * // Fetch for specific brand
+ * const result = await fetchRecommendations({ brandId: 'abc-123' });
+ * 
+ * // Fetch for default (first) brand
+ * const result = await fetchRecommendations();
+ * ```
+ */
+export async function fetchRecommendations(
+  request: GenerateRecommendationsRequest = {}
+): Promise<RecommendationsResponse> {
+  try {
+    console.log('📥 [RecommendationsApi] Fetching recommendations...', request);
+
+    const params = new URLSearchParams();
+    if (request.brandId) {
+      params.append('brandId', request.brandId);
+    }
+
+    const url = `/recommendations${params.toString() ? `?${params.toString()}` : ''}`;
+    const response = await apiClient.request<RecommendationsResponse>(
+      url,
+      {
+        method: 'GET',
+      },
+      { requiresAuth: true }
+    );
+
+    console.log('✅ [RecommendationsApi] Response received:', {
+      success: response.success,
+      count: response.data?.recommendations?.length || 0
+    });
+
+    return response;
+  } catch (error) {
+    console.error('❌ [RecommendationsApi] Error fetching recommendations:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch recommendations'
     };
   }
 }

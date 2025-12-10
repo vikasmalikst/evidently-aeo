@@ -1,5 +1,5 @@
 /**
- * Recommendation Engine Service (Enhanced v2)
+ * Recommendation Engine Service (Enhanced v3 - Trend-Aware & Diagnostic-First)
  * 
  * Generates AI-powered, DATA-DRIVEN recommendations for improving brand visibility, SOA, and sentiment.
  * Uses Cerebras API with QWEN model.
@@ -7,14 +7,19 @@
  * KEY PRINCIPLES:
  * - Every recommendation MUST reference actual detected problems with real numbers
  * - NO generic advice - only recommendations that address specific data issues
- * - Analyzes: Overall metrics, Per-LLM performance, Citation source metrics, Topics
+ * - Trend-aware: Compares current period vs previous period to identify declining metrics
+ * - Diagnostic-first: Provides root cause analysis explaining WHY performance is where it is
+ * - Scientific scoring: Ranks recommendations by impact, confidence, effort, and trend urgency
+ * - Analyzes: Overall metrics, Per-LLM performance, Citation source metrics, Topics, Trends
  * - If no problems detected, returns empty array (no fallbacks)
  * 
  * Data Sources Analyzed:
  * 1. Overall brand metrics (visibility, SOA, sentiment) vs competitors
- * 2. LLM-specific performance (ChatGPT, Claude, Perplexity, Gemini, etc.)
- * 3. Citation source metrics (Impact Score, Mention Rate, SOA, Sentiment, Citations)
- * 4. Topic-level performance gaps
+ * 2. Trend analysis (current 30 days vs previous 30 days)
+ * 3. LLM-specific performance (ChatGPT, Claude, Perplexity, Gemini, etc.)
+ * 4. Citation source metrics (Impact Score, Mention Rate, SOA, Sentiment, Citations)
+ * 5. Topic-level performance gaps
+ * 6. Root cause diagnostics (high citations + low visibility, etc.)
  */
 
 import { getCerebrasKey, getCerebrasModel } from '../../utils/api-key-resolver';
@@ -47,6 +52,22 @@ export interface Recommendation {
   confidence: number;       // 0-100%
   priority: 'High' | 'Medium' | 'Low';
   focusArea: 'visibility' | 'soa' | 'sentiment';
+  trend?: {
+    direction: 'up' | 'down' | 'stable';
+    changePercent: number;  // e.g., -15.3 means 15.3% decrease
+  };
+  calculatedScore?: number; // Scientific score for ranking
+}
+
+/**
+ * Root cause diagnostic insight
+ */
+export interface DiagnosticInsight {
+  type: 'content_structure' | 'authority_gap' | 'reputation_risk' | 'coverage_gap' | 'sentiment_issue';
+  severity: 'high' | 'medium' | 'low';
+  title: string;            // e.g., "Content Structure Issue"
+  description: string;      // e.g., "High citation volume but low visibility suggests content structure/relevance gap"
+  evidence: string;         // Supporting data points
 }
 
 /**
@@ -60,6 +81,12 @@ export interface RecommendationResponse {
   brandId?: string;
   brandName?: string;
   problemsDetected?: number;
+  diagnostics?: DiagnosticInsight[];  // Root cause analysis
+  trends?: {
+    visibility: { current: number; previous: number; changePercent: number; direction: 'up' | 'down' | 'stable' };
+    soa: { current: number; previous: number; changePercent: number; direction: 'up' | 'down' | 'stable' };
+    sentiment: { current: number; previous: number; changePercent: number; direction: 'up' | 'down' | 'stable' };
+  };
 }
 
 /**
@@ -124,6 +151,16 @@ interface SourceMetrics {
 }
 
 /**
+ * Trend data for a metric
+ */
+interface TrendData {
+  current: number;
+  previous: number;
+  changePercent: number;
+  direction: 'up' | 'down' | 'stable';
+}
+
+/**
  * Brand context with detected problems
  */
 interface BrandContext {
@@ -131,10 +168,17 @@ interface BrandContext {
   brandName: string;
   industry?: string;
   
-  // Overall metrics
+  // Overall metrics (current period)
   visibilityIndex?: number;
   shareOfAnswers?: number;
   sentimentScore?: number;
+  
+  // Trend data (current vs previous period)
+  trends?: {
+    visibility?: TrendData;
+    soa?: TrendData;
+    sentiment?: TrendData;
+  };
   
   // Competitor comparison
   competitors?: Array<{
@@ -160,6 +204,9 @@ interface BrandContext {
   
   // The key output: detected problems
   detectedProblems: DetectedProblem[];
+  
+  // Root cause diagnostics
+  diagnostics?: DiagnosticInsight[];
 }
 
 // ============================================================================
@@ -178,6 +225,163 @@ class RecommendationService {
       console.warn('⚠️ [RecommendationService] CEREBRAS_API_KEY not configured');
     }
     console.log(`🤖 [RecommendationService] Initialized with model: ${this.cerebrasModel}`);
+  }
+
+  /**
+   * Get latest recommendations from database for a brand
+   */
+  async getLatestRecommendations(
+    brandId: string,
+    customerId: string
+  ): Promise<RecommendationResponse> {
+    try {
+      console.log(`📥 [RecommendationService] Fetching latest recommendations for brand: ${brandId}`);
+
+      // Get the latest generation for this brand
+      const { data: latestGeneration, error: genError } = await supabaseAdmin
+        .from('recommendation_generations')
+        .select('id, generated_at, problems_detected, recommendations_count, diagnostics_count')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .order('generated_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (genError || !latestGeneration) {
+        console.log('📭 [RecommendationService] No previous generations found');
+        return {
+          success: true,
+          recommendations: [],
+          message: 'No recommendations found. Generate new recommendations to get started.'
+        };
+      }
+
+      const generationId = latestGeneration.id;
+
+      // Get brand info
+      const { data: brand } = await supabaseAdmin
+        .from('brands')
+        .select('id, name')
+        .eq('id', brandId)
+        .single();
+
+      // Fetch recommendations
+      const { data: recommendationsData, error: recError } = await supabaseAdmin
+        .from('recommendations')
+        .select('*')
+        .eq('generation_id', generationId)
+        .order('display_order', { ascending: true });
+
+      if (recError) {
+        console.error('❌ [RecommendationService] Error fetching recommendations:', recError);
+        return {
+          success: false,
+          recommendations: [],
+          message: 'Failed to load recommendations from database.'
+        };
+      }
+
+      // Fetch diagnostics
+      const { data: diagnosticsData, error: diagError } = await supabaseAdmin
+        .from('recommendation_diagnostics')
+        .select('*')
+        .eq('generation_id', generationId)
+        .order('display_order', { ascending: true });
+
+      if (diagError) {
+        console.error('❌ [RecommendationService] Error fetching diagnostics:', diagError);
+      }
+
+      // Fetch trends
+      const { data: trendsData, error: trendsError } = await supabaseAdmin
+        .from('recommendation_trends')
+        .select('*')
+        .eq('generation_id', generationId);
+
+      if (trendsError) {
+        console.error('❌ [RecommendationService] Error fetching trends:', trendsError);
+      }
+
+      // Transform database records to Recommendation objects
+      const recommendations: Recommendation[] = (recommendationsData || []).map(rec => ({
+        action: rec.action,
+        reason: rec.reason,
+        explanation: rec.explanation,
+        citationSource: rec.citation_source,
+        impactScore: rec.impact_score || 'N/A',
+        mentionRate: rec.mention_rate || 'N/A',
+        soa: rec.soa || 'N/A',
+        sentiment: rec.sentiment || 'N/A',
+        visibilityScore: rec.visibility_score || 'N/A',
+        citationCount: rec.citation_count || 0,
+        focusSources: rec.focus_sources || 'N/A',
+        contentFocus: rec.content_focus || 'N/A',
+        kpi: rec.kpi,
+        expectedBoost: rec.expected_boost || 'TBD',
+        effort: rec.effort as 'Low' | 'Medium' | 'High',
+        timeline: rec.timeline || '2-4 weeks',
+        confidence: rec.confidence || 70,
+        priority: rec.priority as 'High' | 'Medium' | 'Low',
+        focusArea: rec.focus_area as 'visibility' | 'soa' | 'sentiment',
+        trend: rec.trend_direction ? {
+          direction: rec.trend_direction as 'up' | 'down' | 'stable',
+          changePercent: rec.trend_change_percent || 0
+        } : undefined,
+        calculatedScore: rec.calculated_score || undefined
+      }));
+
+      // Transform diagnostics
+      const diagnostics: DiagnosticInsight[] = (diagnosticsData || []).map(diag => ({
+        type: diag.diagnostic_type as DiagnosticInsight['type'],
+        severity: diag.severity as 'high' | 'medium' | 'low',
+        title: diag.title,
+        description: diag.description,
+        evidence: diag.evidence
+      }));
+
+      // Transform trends
+      const trends = trendsData && trendsData.length > 0 ? {
+        visibility: trendsData.find(t => t.metric_type === 'visibility') ? {
+          current: Number(trendsData.find(t => t.metric_type === 'visibility')?.current_value || 0),
+          previous: Number(trendsData.find(t => t.metric_type === 'visibility')?.previous_value || 0),
+          changePercent: Number(trendsData.find(t => t.metric_type === 'visibility')?.change_percent || 0),
+          direction: trendsData.find(t => t.metric_type === 'visibility')?.direction as 'up' | 'down' | 'stable' || 'stable'
+        } : undefined,
+        soa: trendsData.find(t => t.metric_type === 'soa') ? {
+          current: Number(trendsData.find(t => t.metric_type === 'soa')?.current_value || 0),
+          previous: Number(trendsData.find(t => t.metric_type === 'soa')?.previous_value || 0),
+          changePercent: Number(trendsData.find(t => t.metric_type === 'soa')?.change_percent || 0),
+          direction: trendsData.find(t => t.metric_type === 'soa')?.direction as 'up' | 'down' | 'stable' || 'stable'
+        } : undefined,
+        sentiment: trendsData.find(t => t.metric_type === 'sentiment') ? {
+          current: Number(trendsData.find(t => t.metric_type === 'sentiment')?.current_value || 0),
+          previous: Number(trendsData.find(t => t.metric_type === 'sentiment')?.previous_value || 0),
+          changePercent: Number(trendsData.find(t => t.metric_type === 'sentiment')?.change_percent || 0),
+          direction: trendsData.find(t => t.metric_type === 'sentiment')?.direction as 'up' | 'down' | 'stable' || 'stable'
+        } : undefined
+      } : undefined;
+
+      console.log(`✅ [RecommendationService] Loaded ${recommendations.length} recommendations from database`);
+
+      return {
+        success: true,
+        recommendations,
+        generatedAt: latestGeneration.generated_at,
+        brandId: brandId,
+        brandName: brand?.name || 'Unknown Brand',
+        problemsDetected: latestGeneration.problems_detected || 0,
+        diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
+        trends
+      };
+
+    } catch (error) {
+      console.error('❌ [RecommendationService] Error fetching recommendations:', error);
+      return {
+        success: false,
+        recommendations: [],
+        message: 'Failed to load recommendations from database.'
+      };
+    }
   }
 
   /**
@@ -229,7 +433,7 @@ class RecommendationService {
       const prompt = this.buildPrompt(context);
 
       // Step 3: Call Cerebras API
-      const recommendations = await this.callCerebrasAPI(prompt);
+      let recommendations = await this.callCerebrasAPI(prompt);
 
       if (!recommendations || recommendations.length === 0) {
         return {
@@ -239,11 +443,29 @@ class RecommendationService {
           generatedAt: new Date().toISOString(),
           brandId: context.brandId,
           brandName: context.brandName,
-          problemsDetected: context.detectedProblems.length
+          problemsDetected: context.detectedProblems.length,
+          diagnostics: context.diagnostics,
+          trends: context.trends ? {
+            visibility: context.trends.visibility || { current: 0, previous: 0, changePercent: 0, direction: 'stable' },
+            soa: context.trends.soa || { current: 0, previous: 0, changePercent: 0, direction: 'stable' },
+            sentiment: context.trends.sentiment || { current: 0, previous: 0, changePercent: 0, direction: 'stable' }
+          } : undefined
         };
       }
 
+      // Step 4: Add trend context and calculate scores for ranking
+      recommendations = this.enrichRecommendationsWithTrends(recommendations, context);
+      recommendations = this.rankRecommendations(recommendations);
+
       console.log(`✅ [RecommendationService] Generated ${recommendations.length} data-driven recommendations`);
+
+      // Step 5: Save to database
+      const generationId = await this.saveRecommendationsToDatabase(
+        brandId,
+        customerId,
+        recommendations,
+        context
+      );
 
       return {
         success: true,
@@ -251,7 +473,13 @@ class RecommendationService {
         generatedAt: new Date().toISOString(),
         brandId: context.brandId,
         brandName: context.brandName,
-        problemsDetected: context.detectedProblems.length
+        problemsDetected: context.detectedProblems.length,
+        diagnostics: context.diagnostics,
+        trends: context.trends ? {
+          visibility: context.trends.visibility || { current: 0, previous: 0, changePercent: 0, direction: 'stable' },
+          soa: context.trends.soa || { current: 0, previous: 0, changePercent: 0, direction: 'stable' },
+          sentiment: context.trends.sentiment || { current: 0, previous: 0, changePercent: 0, direction: 'stable' }
+        } : undefined
       };
 
     } catch (error) {
@@ -288,21 +516,39 @@ class RecommendationService {
       const detectedProblems: DetectedProblem[] = [];
       let problemCounter = 1;
 
-      // Date range: last 30 days
+      // Date ranges: Current period (last 30 days) and Previous period (days 31-60)
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const startDate = thirtyDaysAgo.toISOString().split('T')[0];
-      const endDate = new Date().toISOString().split('T')[0];
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+      
+      const currentStartDate = thirtyDaysAgo.toISOString().split('T')[0];
+      const currentEndDate = new Date().toISOString().split('T')[0];
+      const previousStartDate = sixtyDaysAgo.toISOString().split('T')[0];
+      const previousEndDate = thirtyDaysAgo.toISOString().split('T')[0];
+
+      // Helper function to calculate trend
+      const calculateTrend = (current: number | undefined, previous: number | undefined): TrendData | undefined => {
+        if (current === undefined || previous === undefined || previous === 0) return undefined;
+        const changePercent = ((current - previous) / previous) * 100;
+        const direction = Math.abs(changePercent) < 2 ? 'stable' : (changePercent > 0 ? 'up' : 'down');
+        return {
+          current,
+          previous,
+          changePercent: Math.round(changePercent * 10) / 10,
+          direction
+        };
+      };
 
       // ========================================
-      // 1. OVERALL BRAND METRICS
+      // 1. OVERALL BRAND METRICS (Current Period)
       // ========================================
       const { data: overallMetrics } = await supabaseAdmin
         .from('extracted_positions')
         .select('visibility_index, share_of_answers_brand, sentiment_score')
         .eq('brand_id', brandId)
-        .gte('created_at', startDate)
-        .lte('created_at', endDate);
+        .gte('created_at', currentStartDate)
+        .lte('created_at', currentEndDate);
 
       let visibilityIndex: number | undefined;
       let shareOfAnswers: number | undefined;
@@ -323,6 +569,43 @@ class RecommendationService {
           sentimentScore = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
         }
       }
+
+      // ========================================
+      // 1B. OVERALL BRAND METRICS (Previous Period) - For Trend Analysis
+      // ========================================
+      const { data: previousMetrics } = await supabaseAdmin
+        .from('extracted_positions')
+        .select('visibility_index, share_of_answers_brand, sentiment_score')
+        .eq('brand_id', brandId)
+        .gte('created_at', previousStartDate)
+        .lte('created_at', previousEndDate);
+
+      let prevVisibilityIndex: number | undefined;
+      let prevShareOfAnswers: number | undefined;
+      let prevSentimentScore: number | undefined;
+
+      if (previousMetrics && previousMetrics.length > 0) {
+        const validVis = previousMetrics.filter(m => m.visibility_index != null);
+        const validSoa = previousMetrics.filter(m => m.share_of_answers_brand != null);
+        const validSent = previousMetrics.filter(m => m.sentiment_score != null);
+
+        if (validVis.length > 0) {
+          prevVisibilityIndex = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+        }
+        if (validSoa.length > 0) {
+          prevShareOfAnswers = validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length;
+        }
+        if (validSent.length > 0) {
+          prevSentimentScore = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+        }
+      }
+
+      // Calculate trends
+      const trends = {
+        visibility: calculateTrend(visibilityIndex, prevVisibilityIndex),
+        soa: calculateTrend(shareOfAnswers, prevShareOfAnswers),
+        sentiment: calculateTrend(sentimentScore, prevSentimentScore)
+      };
 
       // Detect overall problems
       if (visibilityIndex !== undefined && visibilityIndex < 40) {
@@ -388,8 +671,8 @@ class RecommendationService {
             .from('extracted_positions')
             .select('visibility_index, share_of_answers_brand, sentiment_score')
             .eq('competitor_id', comp.id)
-            .gte('created_at', startDate)
-            .lte('created_at', endDate);
+            .gte('created_at', currentStartDate)
+            .lte('created_at', currentEndDate);
 
           let compVis: number | undefined;
           let compSoa: number | undefined;
@@ -458,8 +741,8 @@ class RecommendationService {
         .from('collector_results')
         .select('collector_type, id')
         .eq('brand_id', brandId)
-        .gte('created_at', startDate)
-        .lte('created_at', endDate);
+        .gte('created_at', currentStartDate)
+        .lte('created_at', currentEndDate);
 
       const llmMetrics: LLMMetrics[] = [];
       const llmGroups = new Map<string, string[]>();
@@ -594,7 +877,7 @@ class RecommendationService {
         .from('extracted_citations')
         .select('domain, collector_result_id')
         .eq('brand_id', brandId)
-        .gte('created_at', startDate);
+        .gte('created_at', currentStartDate);
 
       const sourceMetrics: SourceMetrics[] = [];
       const sourceMap = new Map<string, { domain: string; collectorIds: Set<string>; count: number }>();
@@ -618,7 +901,7 @@ class RecommendationService {
           .from('collector_results')
           .select('id', { count: 'exact', head: true })
           .eq('brand_id', brandId)
-          .gte('created_at', startDate);
+          .gte('created_at', currentStartDate);
 
         const totalCollectorResults = totalResults || 1;
 
@@ -770,7 +1053,70 @@ class RecommendationService {
       // Keep top 15 problems max
       const topProblems = detectedProblems.slice(0, 15);
 
-      console.log(`🔍 [RecommendationService] Detected ${topProblems.length} problems for ${brand.name}`);
+      // ========================================
+      // ROOT CAUSE DIAGNOSTICS
+      // ========================================
+      const diagnostics: DiagnosticInsight[] = [];
+      
+      // Calculate total citations
+      const totalCitations = sourceMetrics.reduce((sum, s) => sum + s.citations, 0);
+      const avgCitations = sourceMetrics.length > 0 ? totalCitations / sourceMetrics.length : 0;
+      
+      // Diagnostic 1: High Citations + Low Visibility = Content Structure Issue
+      if (totalCitations > 50 && visibilityIndex !== undefined && visibilityIndex < 40) {
+        diagnostics.push({
+          type: 'content_structure',
+          severity: visibilityIndex < 25 ? 'high' : 'medium',
+          title: 'Content Structure & Relevance Gap',
+          description: 'High citation volume but low visibility suggests content structure or relevance issues. Your content is being cited but not prominently featured in AI responses.',
+          evidence: `${totalCitations} total citations but visibility is only ${Math.round(visibilityIndex * 10) / 10}%`
+        });
+      }
+      
+      // Diagnostic 2: Low Citations + Low Visibility = Authority Gap
+      if (totalCitations < 30 && visibilityIndex !== undefined && visibilityIndex < 40) {
+        diagnostics.push({
+          type: 'authority_gap',
+          severity: 'high',
+          title: 'Authority & Coverage Gap',
+          description: 'Low citation volume combined with low visibility indicates an authority gap. You need more backlinks and digital PR to increase brand mentions.',
+          evidence: `Only ${totalCitations} citations with ${Math.round(visibilityIndex * 10) / 10}% visibility`
+        });
+      }
+      
+      // Diagnostic 3: High Visibility + Negative Sentiment = Reputation Risk
+      if (visibilityIndex !== undefined && visibilityIndex > 50 && sentimentScore !== undefined && sentimentScore < 0) {
+        diagnostics.push({
+          type: 'reputation_risk',
+          severity: sentimentScore < -0.2 ? 'high' : 'medium',
+          title: 'Brand Reputation Risk',
+          description: 'High visibility with negative sentiment indicates a reputation risk. Your brand is prominent but viewed unfavorably, requiring PR intervention.',
+          evidence: `${Math.round(visibilityIndex * 10) / 10}% visibility with ${Math.round(sentimentScore * 100) / 100} sentiment score`
+        });
+      }
+      
+      // Diagnostic 4: Declining Trends
+      if (trends.visibility?.direction === 'down' && trends.visibility.changePercent < -10) {
+        diagnostics.push({
+          type: 'coverage_gap',
+          severity: Math.abs(trends.visibility.changePercent) > 20 ? 'high' : 'medium',
+          title: 'Declining Visibility Trend',
+          description: `Visibility has declined ${Math.abs(trends.visibility.changePercent)}% compared to the previous period, indicating a coverage or content freshness gap.`,
+          evidence: `Visibility dropped from ${Math.round(trends.visibility.previous * 10) / 10}% to ${Math.round(trends.visibility.current * 10) / 10}%`
+        });
+      }
+      
+      if (trends.sentiment?.direction === 'down' && trends.sentiment.changePercent < -15) {
+        diagnostics.push({
+          type: 'sentiment_issue',
+          severity: Math.abs(trends.sentiment.changePercent) > 25 ? 'high' : 'medium',
+          title: 'Sentiment Decline',
+          description: `Sentiment has declined ${Math.abs(trends.sentiment.changePercent)}% compared to the previous period, suggesting negative brand perception is increasing.`,
+          evidence: `Sentiment dropped from ${Math.round(trends.sentiment.previous * 100) / 100} to ${Math.round(trends.sentiment.current * 100) / 100}`
+        });
+      }
+
+      console.log(`🔍 [RecommendationService] Detected ${topProblems.length} problems and ${diagnostics.length} root causes for ${brand.name}`);
 
       return {
         brandId: brand.id,
@@ -779,11 +1125,13 @@ class RecommendationService {
         visibilityIndex,
         shareOfAnswers,
         sentimentScore,
+        trends,
         competitors: competitorData,
         llmMetrics,
         sourceMetrics: sourceMetrics.slice(0, 10),
         topicMetrics,
-        detectedProblems: topProblems
+        detectedProblems: topProblems,
+        diagnostics
       };
 
     } catch (error) {
@@ -843,9 +1191,16 @@ class RecommendationService {
 ## Brand Information
 - Brand Name: ${context.brandName}
 - Industry: ${context.industry || 'Not specified'}
-- Overall Visibility: ${context.visibilityIndex !== undefined ? Math.round(context.visibilityIndex * 10) / 10 + '%' : 'N/A'}
-- Overall SOA: ${context.shareOfAnswers !== undefined ? Math.round(context.shareOfAnswers * 10) / 10 + '%' : 'N/A'}
-- Overall Sentiment: ${context.sentimentScore !== undefined ? Math.round(context.sentimentScore * 100) / 100 : 'N/A'}
+- Overall Visibility: ${context.visibilityIndex !== undefined ? Math.round(context.visibilityIndex * 10) / 10 + '%' : 'N/A'}${context.trends?.visibility ? ` (${context.trends.visibility.direction === 'down' ? '↓' : context.trends.visibility.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends.visibility.changePercent)}% vs previous period)` : ''}
+- Overall SOA: ${context.shareOfAnswers !== undefined ? Math.round(context.shareOfAnswers * 10) / 10 + '%' : 'N/A'}${context.trends?.soa ? ` (${context.trends.soa.direction === 'down' ? '↓' : context.trends.soa.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends.soa.changePercent)}% vs previous period)` : ''}
+- Overall Sentiment: ${context.sentimentScore !== undefined ? Math.round(context.sentimentScore * 100) / 100 : 'N/A'}${context.trends?.sentiment ? ` (${context.trends.sentiment.direction === 'down' ? '↓' : context.trends.sentiment.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends.sentiment.changePercent)}% vs previous period)` : ''}
+
+## Trend Analysis (Current Period vs Previous 30 Days)
+${context.trends?.visibility ? `- Visibility: ${context.trends.visibility.direction === 'down' ? 'DECLINING' : context.trends.visibility.direction === 'up' ? 'IMPROVING' : 'STABLE'} (${context.trends.visibility.changePercent > 0 ? '+' : ''}${context.trends.visibility.changePercent}% change from ${Math.round(context.trends.visibility.previous * 10) / 10}% to ${Math.round(context.trends.visibility.current * 10) / 10}%)` : '- Visibility: No trend data available'}
+${context.trends?.soa ? `- SOA: ${context.trends.soa.direction === 'down' ? 'DECLINING' : context.trends.soa.direction === 'up' ? 'IMPROVING' : 'STABLE'} (${context.trends.soa.changePercent > 0 ? '+' : ''}${context.trends.soa.changePercent}% change from ${Math.round(context.trends.soa.previous * 10) / 10}% to ${Math.round(context.trends.soa.current * 10) / 10}%)` : '- SOA: No trend data available'}
+${context.trends?.sentiment ? `- Sentiment: ${context.trends.sentiment.direction === 'down' ? 'DECLINING' : context.trends.sentiment.direction === 'up' ? 'IMPROVING' : 'STABLE'} (${context.trends.sentiment.changePercent > 0 ? '+' : ''}${context.trends.sentiment.changePercent}% change from ${Math.round(context.trends.sentiment.previous * 100) / 100} to ${Math.round(context.trends.sentiment.current * 100) / 100})` : '- Sentiment: No trend data available'}
+
+${context.trends && (context.trends.visibility?.direction === 'down' || context.trends.soa?.direction === 'down' || context.trends.sentiment?.direction === 'down') ? '⚠️ IMPORTANT: Declining trends indicate urgent action is needed. Prioritize recommendations that address declining metrics.' : ''}
 
 ## Competitor Metrics
   ${competitorSummary}
@@ -950,6 +1305,284 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
     } catch (error) {
       console.error('❌ [RecommendationService] Error calling API:', error);
       return [];
+    }
+  }
+
+  /**
+   * Enrich recommendations with trend data
+   */
+  private enrichRecommendationsWithTrends(
+    recommendations: Recommendation[],
+    context: BrandContext
+  ): Recommendation[] {
+    if (!context.trends) return recommendations;
+
+    return recommendations.map(rec => {
+      let trend: Recommendation['trend'] | undefined;
+
+      // Match trend based on focusArea
+      if (rec.focusArea === 'visibility' && context.trends.visibility) {
+        trend = {
+          direction: context.trends.visibility.direction,
+          changePercent: context.trends.visibility.changePercent
+        };
+      } else if (rec.focusArea === 'soa' && context.trends.soa) {
+        trend = {
+          direction: context.trends.soa.direction,
+          changePercent: context.trends.soa.changePercent
+        };
+      } else if (rec.focusArea === 'sentiment' && context.trends.sentiment) {
+        trend = {
+          direction: context.trends.sentiment.direction,
+          changePercent: context.trends.sentiment.changePercent
+        };
+      }
+
+      return { ...rec, trend };
+    });
+  }
+
+  /**
+   * Rank recommendations using scientific scoring formula
+   * Score = (Impact * 0.4) + (Confidence * 0.3) - (EffortPenalty * 0.2) + (TrendUrgency * 0.1)
+   */
+  private rankRecommendations(recommendations: Recommendation[]): Recommendation[] {
+    const effortPenaltyMap = { Low: 0.1, Medium: 0.5, High: 1.0 };
+
+    const scored = recommendations.map(rec => {
+      // Normalize impact score (assuming it's 0-10 scale, convert to 0-1)
+      const impactScoreNum = parseFloat(rec.impactScore) || 0;
+      const normalizedImpact = Math.min(1, impactScoreNum / 10);
+
+      // Normalize confidence (0-100 to 0-1)
+      const normalizedConfidence = rec.confidence / 100;
+
+      // Effort penalty
+      const effortPenalty = effortPenaltyMap[rec.effort];
+
+      // Trend urgency: bonus if metric is trending down
+      let trendUrgency = 0;
+      if (rec.trend?.direction === 'down' && rec.trend.changePercent < -5) {
+        // More urgent if declining more
+        trendUrgency = Math.min(1, Math.abs(rec.trend.changePercent) / 30);
+      }
+
+      // Calculate final score
+      const calculatedScore = 
+        (normalizedImpact * 0.4) +
+        (normalizedConfidence * 0.3) -
+        (effortPenalty * 0.2) +
+        (trendUrgency * 0.1);
+
+      return {
+        ...rec,
+        calculatedScore: Math.round(calculatedScore * 100) / 100
+      };
+    });
+
+    // Sort by score (highest first)
+    scored.sort((a, b) => (b.calculatedScore || 0) - (a.calculatedScore || 0));
+
+    return scored;
+  }
+
+  /**
+   * Save recommendations to database
+   */
+  private async saveRecommendationsToDatabase(
+    brandId: string,
+    customerId: string,
+    recommendations: Recommendation[],
+    context: BrandContext
+  ): Promise<string | null> {
+    try {
+      // Calculate date ranges for trend periods
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+      
+      const currentStartDate = thirtyDaysAgo.toISOString().split('T')[0];
+      const currentEndDate = new Date().toISOString().split('T')[0];
+      const previousStartDate = sixtyDaysAgo.toISOString().split('T')[0];
+      const previousEndDate = thirtyDaysAgo.toISOString().split('T')[0];
+
+      // 1. Create recommendation_generation record
+      const { data: generation, error: genError } = await supabaseAdmin
+        .from('recommendation_generations')
+        .insert({
+          brand_id: brandId,
+          customer_id: customerId,
+          problems_detected: context.detectedProblems.length,
+          recommendations_count: recommendations.length,
+          diagnostics_count: context.diagnostics?.length || 0,
+          status: recommendations.length > 0 ? 'completed' : 'partial',
+          metadata: {
+            brandName: context.brandName,
+            industry: context.industry
+          }
+        })
+        .select('id')
+        .single();
+
+      if (genError || !generation) {
+        console.error('❌ [RecommendationService] Error creating generation record:', genError);
+        return null;
+      }
+
+      const generationId = generation.id;
+
+      // 2. Insert recommendations
+      if (recommendations.length > 0) {
+        const recommendationsToInsert = recommendations.map((rec, index) => ({
+          generation_id: generationId,
+          brand_id: brandId,
+          customer_id: customerId,
+          action: rec.action,
+          reason: rec.reason,
+          explanation: rec.explanation,
+          citation_source: rec.citationSource,
+          impact_score: rec.impactScore,
+          mention_rate: rec.mentionRate,
+          soa: rec.soa,
+          sentiment: rec.sentiment,
+          visibility_score: rec.visibilityScore,
+          citation_count: rec.citationCount,
+          focus_sources: rec.focusSources,
+          content_focus: rec.contentFocus,
+          kpi: rec.kpi,
+          expected_boost: rec.expectedBoost,
+          effort: rec.effort,
+          timeline: rec.timeline,
+          confidence: rec.confidence,
+          priority: rec.priority,
+          focus_area: rec.focusArea,
+          trend_direction: rec.trend?.direction || null,
+          trend_change_percent: rec.trend?.changePercent || null,
+          calculated_score: rec.calculatedScore || null,
+          display_order: index
+        }));
+
+        const { error: recError, data: insertedRecs } = await supabaseAdmin
+          .from('recommendations')
+          .insert(recommendationsToInsert)
+          .select('id');
+
+        if (recError) {
+          console.error('❌ [RecommendationService] Error inserting recommendations:', recError);
+          throw new Error(`Failed to save recommendations: ${recError.message}`);
+        }
+        console.log(`💾 [RecommendationService] Saved ${insertedRecs?.length || 0} recommendations to database`);
+      }
+
+      // 3. Insert diagnostics
+      if (context.diagnostics && context.diagnostics.length > 0) {
+        const diagnosticsToInsert = context.diagnostics.map((diag, index) => ({
+          generation_id: generationId,
+          brand_id: brandId,
+          customer_id: customerId,
+          diagnostic_type: diag.type,
+          severity: diag.severity,
+          title: diag.title,
+          description: diag.description,
+          evidence: diag.evidence,
+          display_order: index
+        }));
+
+        const { error: diagError, data: insertedDiags } = await supabaseAdmin
+          .from('recommendation_diagnostics')
+          .insert(diagnosticsToInsert)
+          .select('id');
+
+        if (diagError) {
+          console.error('❌ [RecommendationService] Error inserting diagnostics:', diagError);
+          // Don't throw - diagnostics are optional
+        } else {
+          console.log(`💾 [RecommendationService] Saved ${insertedDiags?.length || 0} diagnostics to database`);
+        }
+      }
+
+      // 4. Insert trends
+      if (context.trends) {
+        const trendsToInsert = [];
+        
+        if (context.trends.visibility) {
+          trendsToInsert.push({
+            generation_id: generationId,
+            brand_id: brandId,
+            customer_id: customerId,
+            metric_type: 'visibility',
+            current_value: context.trends.visibility.current,
+            previous_value: context.trends.visibility.previous,
+            change_percent: context.trends.visibility.changePercent,
+            direction: context.trends.visibility.direction,
+            current_period_start: currentStartDate,
+            current_period_end: currentEndDate,
+            previous_period_start: previousStartDate,
+            previous_period_end: previousEndDate
+          });
+        }
+        
+        if (context.trends.soa) {
+          trendsToInsert.push({
+            generation_id: generationId,
+            brand_id: brandId,
+            customer_id: customerId,
+            metric_type: 'soa',
+            current_value: context.trends.soa.current,
+            previous_value: context.trends.soa.previous,
+            change_percent: context.trends.soa.changePercent,
+            direction: context.trends.soa.direction,
+            current_period_start: currentStartDate,
+            current_period_end: currentEndDate,
+            previous_period_start: previousStartDate,
+            previous_period_end: previousEndDate
+          });
+        }
+        
+        if (context.trends.sentiment) {
+          trendsToInsert.push({
+            generation_id: generationId,
+            brand_id: brandId,
+            customer_id: customerId,
+            metric_type: 'sentiment',
+            current_value: context.trends.sentiment.current,
+            previous_value: context.trends.sentiment.previous,
+            change_percent: context.trends.sentiment.changePercent,
+            direction: context.trends.sentiment.direction,
+            current_period_start: currentStartDate,
+            current_period_end: currentEndDate,
+            previous_period_start: previousStartDate,
+            previous_period_end: previousEndDate
+          });
+        }
+
+        if (trendsToInsert.length > 0) {
+          const { error: trendError, data: insertedTrends } = await supabaseAdmin
+            .from('recommendation_trends')
+            .insert(trendsToInsert)
+            .select('id');
+
+          if (trendError) {
+            console.error('❌ [RecommendationService] Error inserting trends:', trendError);
+            // Don't throw - trends are optional
+          } else {
+            console.log(`💾 [RecommendationService] Saved ${insertedTrends?.length || 0} trends to database`);
+          }
+        }
+      }
+
+      console.log(`💾 [RecommendationService] Successfully saved generation ${generationId} to database with ${recommendations.length} recommendations`);
+      return generationId;
+
+    } catch (error) {
+      console.error('❌ [RecommendationService] Error saving to database:', error);
+      // Log detailed error for debugging
+      if (error instanceof Error) {
+        console.error('Error details:', error.message, error.stack);
+      }
+      // Return null but don't fail the entire request - recommendations are still returned
+      return null;
     }
   }
 

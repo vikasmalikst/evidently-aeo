@@ -38,25 +38,38 @@ export const RecommendedActions = ({ actionItems }: RecommendedActionsProps) => 
 
   return (
     <div className="mt-6 pt-6 border-t border-[#e8e9ed]">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-[14px] font-semibold text-[#1a1d29]">
-          Recommended Actions
-        </h3>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1">
+            Top Priorities
+          </h3>
+          <p className="text-[11px] text-[#64748b]">Data-driven actions ranked by impact</p>
+        </div>
         {actionItems.length > 0 && (
           <span className="text-[11px] px-2 py-1 rounded-full bg-[#f4f5f9] text-[#475569] border border-[#e8e9ed]">
-            {actionItems.length} suggestions
+            {actionItems.length} action{actionItems.length !== 1 ? 's' : ''}
           </span>
         )}
       </div>
       {actionItems.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {actionItems.slice(0, 4).map((item: ActionItem) => (
+        <div className="space-y-3">
+          {actionItems.slice(0, 3).map((item: ActionItem, index: number) => (
             <div
               key={item.id}
-              className="flex items-start gap-3 p-4 bg-gradient-to-br from-white to-[#f8fafc] border border-[#e8e9ed] rounded-xl shadow-[0_4px_14px_rgba(20,20,20,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(20,20,20,0.08)]"
+              className={`flex items-start gap-3 p-4 bg-gradient-to-br from-white to-[#f8fafc] border rounded-xl shadow-[0_4px_14px_rgba(20,20,20,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(20,20,20,0.08)] ${
+                index === 0 
+                  ? 'border-[#0ea5e9] border-2 bg-gradient-to-br from-[#f0f9ff] to-white' 
+                  : 'border-[#e8e9ed]'
+              }`}
             >
-              <div className="h-8 w-8 rounded-full bg-[#e8fff4] text-[#06c686] flex items-center justify-center flex-shrink-0 mt-0.5">
-                <CheckCircle size={18} />
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 font-semibold text-[13px] ${
+                index === 0 
+                  ? 'bg-[#0ea5e9] text-white' 
+                  : index === 1
+                  ? 'bg-[#06c686] text-white'
+                  : 'bg-[#e8fff4] text-[#06c686]'
+              }`}>
+                {index === 0 ? '1' : index === 1 ? '2' : '3'}
               </div>
               <div className="flex-1 space-y-2">
                 <div className="flex items-start justify-between gap-2">
@@ -77,16 +90,18 @@ export const RecommendedActions = ({ actionItems }: RecommendedActionsProps) => 
                     {categoryChip[item.category].icon}
                     {categoryChip[item.category].label}
                   </span>
-                  <span className="text-[11px] text-[#94a3b8]">
-                    Tailored for this reporting window
-                  </span>
+                  {index === 0 && (
+                    <span className="text-[11px] text-[#0ea5e9] font-medium">
+                      ⭐ Top Priority
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <EmptyState message="No tailored nes yet. Check back after more data is collected." />
+        <EmptyState message="No tailored recommendations yet. Check back after more data is collected." />
       )}
     </div>
   );

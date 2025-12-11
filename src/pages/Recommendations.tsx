@@ -339,6 +339,11 @@ export const Recommendations = () => {
   const [sortBy, setSortBy] = useState<'score' | 'impact' | 'effort' | 'priority'>('score');
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
+  // Reset expanded row when sort order changes to avoid mismatched expansion
+  useEffect(() => {
+    setExpandedIndex(null);
+  }, [sortBy]);
+
   // Load recommendations from database on mount and when brand changes
   useEffect(() => {
     const loadRecommendations = async () => {

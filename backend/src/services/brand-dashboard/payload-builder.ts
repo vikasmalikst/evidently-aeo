@@ -530,16 +530,20 @@ export async function buildDashboardPayload(
       }
     }
 
-    if (isBrandRow || shareArray.length === 0) {
-      shareArray.push(brandShare)
-    }
-
-    if (isBrandRow || visibilityArray.length === 0) {
-      visibilityArray.push(brandVisibility)
-    }
-
-    if (hasBrandSentiment && (isBrandRow || sentimentArray.length === 0)) {
-      sentimentArray.push(brandSentimentValue)
+    // Only add brand values from brand rows (competitor_name is null)
+    // This ensures brand metrics are calculated only from actual brand data
+    if (isBrandRow) {
+      // Only include non-null, non-zero values for share and visibility
+      // This prevents averaging in 0 values when brand isn't mentioned
+      if (row.share_of_answers_brand !== null && row.share_of_answers_brand !== undefined) {
+        shareArray.push(brandShare)
+      }
+      if (row.visibility_index !== null && row.visibility_index !== undefined) {
+        visibilityArray.push(brandVisibility)
+      }
+      if (hasBrandSentiment) {
+        sentimentArray.push(brandSentimentValue)
+      }
     }
 
     if (isBrandRow) {
@@ -885,11 +889,13 @@ export async function buildDashboardPayload(
   // Calculate Share of Answers
   // When no filters are applied: use simple average of all share_of_answers_brand values
   // When filters are applied: use simple average of filtered share_of_answers_brand values
+  // Only include rows where the brand was actually mentioned (has_brand_presence = true)
+  // This ensures we don't average in 0 values from queries where the brand wasn't mentioned
   let shareOfAnswersPercentage = 0
   if (!filtersActive) {
-    // Simple average: collect all share_of_answers_brand values from brand rows and average them
+    // Simple average: collect all share_of_answers_brand values from brand rows where brand was mentioned
     const allBrandShareValues = positionRows
-      .filter(row => !row.competitor_name || row.competitor_name.trim().length === 0) // Only brand rows
+      .filter(row => (!row.competitor_name || row.competitor_name.trim().length === 0) && row.has_brand_presence === true) // Only brand rows with brand presence
       .map(row => toNumber(row.share_of_answers_brand))
       .filter(val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0)
     
@@ -897,11 +903,11 @@ export async function buildDashboardPayload(
       ? average(allBrandShareValues)
       : 0
     
-    console.log(`[Dashboard] SOA calculation: Simple average (no filters). ${allBrandShareValues.length} brand positions, avg=${shareOfAnswersPercentage.toFixed(2)}%`)
+    console.log(`[Dashboard] SOA calculation: Simple average (no filters). ${allBrandShareValues.length} brand positions with presence, avg=${shareOfAnswersPercentage.toFixed(2)}%`)
   } else {
-    // When filters are applied, still use simple average but only from filtered rows
+    // When filters are applied, still use simple average but only from filtered rows with brand presence
     const filteredBrandShareValues = positionRows
-      .filter(row => !row.competitor_name || row.competitor_name.trim().length === 0) // Only brand rows
+      .filter(row => (!row.competitor_name || row.competitor_name.trim().length === 0) && row.has_brand_presence === true) // Only brand rows with brand presence
       .map(row => toNumber(row.share_of_answers_brand))
       .filter(val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0)
     
@@ -909,7 +915,7 @@ export async function buildDashboardPayload(
       ? average(filteredBrandShareValues)
       : 0
     
-    console.log(`[Dashboard] SOA calculation: Simple average (filters applied). ${filteredBrandShareValues.length} filtered brand positions, avg=${shareOfAnswersPercentage.toFixed(2)}%`)
+    console.log(`[Dashboard] SOA calculation: Simple average (filters applied). ${filteredBrandShareValues.length} filtered brand positions with presence, avg=${shareOfAnswersPercentage.toFixed(2)}%`)
   }
 
   // Keep these for backward compatibility with other calculations (visibility, competitor comparisons, etc.)
@@ -923,7 +929,12 @@ export async function buildDashboardPayload(
   console.log(`[Dashboard] Brand share sum: ${brandShareSum}, Competitor share sum: ${competitorShareSum}, Total: ${totalShareUniverse}`)
   
   // Calculate Visibility Index (average prominence across queries)
-  const visibilityIndexPercentage = average(brandVisibilityValues) * 100 // Convert 0-1 scale to 0-100
+  // Only average visibility from queries where brand was actually mentioned
+  // Filter out 0 values that come from queries where brand wasn't mentioned
+  const nonZeroVisibilityValues = brandVisibilityValues.filter(v => v > 0)
+  const visibilityIndexPercentage = nonZeroVisibilityValues.length > 0
+    ? average(nonZeroVisibilityValues) * 100 // Convert 0-1 scale to 0-100
+    : 0
   
   // Display exact average sentiment in [-1, 1] (no normalization). average() returns 0 when empty.
   const sentimentScore = round(average(brandSentimentValues), 2)

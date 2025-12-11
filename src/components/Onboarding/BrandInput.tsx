@@ -5,6 +5,7 @@ import { Spinner } from './common/Spinner';
 import { fetchBrandIntel } from '../../api/onboardingApi';
 import { searchBrand } from '../../api/brandApi';
 import type { OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
+import { SafeLogo } from './common/SafeLogo';
 
 interface BrandInputProps {
   onSuccess: (brand: OnboardingBrand, competitors: OnboardingCompetitor[]) => void;
@@ -26,6 +27,7 @@ export const BrandInput = ({
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
+  const [logoDomain, setLogoDomain] = useState('');
   const [brandPreview, setBrandPreview] = useState<OnboardingBrand | null>(null);
 
   // Sync with external input if provided
@@ -54,8 +56,10 @@ export const BrandInput = ({
           .replace(/^(https?:\/\/)?(www\.)?/, '');
         const cleanDomain = domain.includes('.') ? domain.split('/')[0] : `${domain}.com`;
         setLogoUrl(`https://logo.clearbit.com/${cleanDomain}`);
+        setLogoDomain(cleanDomain);
       } else {
         setLogoUrl('');
+        setLogoDomain('');
       }
     }, 500);
 
@@ -204,15 +208,11 @@ export const BrandInput = ({
           >
             <div className="onboarding-input-with-logo">
               {logoUrl && (
-                <img
+                <SafeLogo
                   src={logoUrl}
+                  domain={logoDomain}
                   alt="Brand logo"
                   className="onboarding-input-logo"
-                  crossOrigin="anonymous"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                  }}
                 />
               )}
               <Input
@@ -231,15 +231,11 @@ export const BrandInput = ({
               className="onboarding-brand-header"
               style={{ margin: '24px auto 0', maxWidth: 520 }}
             >
-              <img
+              <SafeLogo
                 src={brandPreview.logo || logoUrl}
+                domain={brandPreview.domain || logoDomain}
                 alt={brandPreview.companyName}
                 className="onboarding-brand-header__logo"
-                crossOrigin="anonymous"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                }}
               />
               <div className="onboarding-brand-header__info">
                 <h3 className="onboarding-brand-header__name">{brandPreview.companyName}</h3>

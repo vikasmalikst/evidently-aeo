@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Spinner } from './common/Spinner';
 import { CheckCircle, Sparkles } from 'lucide-react';
+import { SafeLogo } from './common/SafeLogo';
 import type { OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 
 interface SummaryProps {
@@ -69,12 +70,13 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
         <div className="onboarding-summary__section">
           <h2 className="onboarding-summary__section-title">Your Brand</h2>
           <div className="onboarding-summary-brand">
-            {brand.logo && (
-              <img
+            {(brand.logo || brand.domain) && (
+              <SafeLogo
                 src={brand.logo}
+                domain={brand.domain}
                 alt={brand.companyName}
                 className="onboarding-summary-brand__logo"
-                crossOrigin="anonymous"
+                size={64}
               />
             )}
             <div className="onboarding-summary-brand__info">
@@ -103,16 +105,13 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
           <div className="onboarding-summary-competitors">
             {competitors.map((competitor) => (
               <div key={competitor.domain || competitor.name} className="onboarding-summary-competitor">
-                {competitor.logo && (
-                  <img
+                {(competitor.logo || competitor.domain) && (
+                  <SafeLogo
                     src={competitor.logo}
+                    domain={competitor.domain}
                     alt={competitor.name}
                     className="onboarding-summary-competitor__logo"
-                    crossOrigin="anonymous"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                    }}
+                    size={36}
                   />
                 )}
                 <span className="onboarding-summary-competitor__name">{competitor.name}</span>

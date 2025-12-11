@@ -1,22 +1,41 @@
 ---
+
 name: "Recommendation Engine V2: Precise, Category-Driven Actions"
+
 overview: ""
+
 todos:
+
   - id: b55a5255-7fd5-4090-b9ab-281bc830ab59
-    content: Create Supabase migration for citation_category column
-    status: completed
+
+content: Create Supabase migration for citation_category column
+
+status: completed
+
   - id: d409a4b3-f286-4e0d-9754-e1f596d8cb39
-    content: Implement new heuristics and categorization logic in recommendation.service.ts
-    status: completed
+
+content: Implement new heuristics and categorization logic in recommendation.service.ts
+
+status: completed
+
   - id: dff1d581-2be6-47b3-b4e0-2a4d040e7a40
-    content: Update LLM prompt to include category context
-    status: completed
+
+content: Update LLM prompt to include category context
+
+status: completed
+
   - id: 802194a6-44e0-440d-9a16-c8df47f37005
-    content: Update frontend Recommendation types and UI to show category
-    status: completed
+
+content: Update frontend Recommendation types and UI to show category
+
+status: completed
+
   - id: 2fd5538f-bb18-4b94-bbf3-d6502309c025
-    content: Integrate recommended actions into SearchSourcesR2.tsx (Citations Page)
-    status: completed
+
+content: Integrate recommended actions into SearchSourcesR2.tsx (Citations Page)
+
+status: completed
+
 ---
 
 # Recommendation Engine V2: Precise, Category-Driven Actions

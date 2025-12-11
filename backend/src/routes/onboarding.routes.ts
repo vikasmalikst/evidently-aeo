@@ -8,6 +8,33 @@ import { topicsQueryGenerationService } from '../services/topics-query-generatio
 
 const router = Router();
 
+// Request deduplication cache for topics endpoint
+const topicsRequestCache = new Map<string, Promise<any>>();
+// Request deduplication cache for prompts endpoint
+const promptsRequestCache = new Map<string, Promise<any>>();
+const DEDUP_WINDOW_MS = 5000; // 5 seconds
+
+function getTopicsRequestKey(req: Request): string {
+  const { brand_name, industry, brand_id, customer_id } = {
+    brand_name: req.body?.brand_name,
+    industry: req.body?.industry,
+    brand_id: req.body?.brand_id,
+    customer_id: (req as any).user?.customer_id
+  };
+  return `${customer_id || 'anon'}:${brand_id || 'no-id'}:${brand_name || 'no-name'}:${industry || 'no-industry'}`;
+}
+
+function getPromptsRequestKey(req: Request): string {
+  const { brand_name, topics, brand_id, customer_id } = {
+    brand_name: req.body?.brand_name,
+    topics: req.body?.topics,
+    brand_id: req.body?.brand_id,
+    customer_id: (req as any).user?.customer_id
+  };
+  const topicsKey = Array.isArray(topics) ? topics.sort().join(',') : 'no-topics';
+  return `${customer_id || 'anon'}:${brand_id || 'no-id'}:${brand_name || 'no-name'}:${topicsKey}`;
+}
+
 /**
  * POST /onboarding/brand-intel
  * Resolve brand information and suggested competitors for onboarding flow
@@ -173,16 +200,28 @@ router.post('/competitors', authenticateToken, async (req: Request, res: Respons
  * Generate topics for brand using trending keywords and AI categorization
  */
 router.post('/topics', authenticateToken, async (req: Request, res: Response) => {
-  try {
+  const requestKey = getTopicsRequestKey(req);
+  const existingRequest = topicsRequestCache.get(requestKey);
+
+  // If there's a pending request for the same parameters, wait for it and return the same result
+  if (existingRequest) {
+    console.log(`🔄 Duplicate topics request detected, reusing pending request for key: ${requestKey}`);
+    try {
+      const result = await existingRequest;
+      return res.json(result);
+    } catch (error) {
+      // If the existing request failed, remove it and continue with new request
+      topicsRequestCache.delete(requestKey);
+    }
+  }
+
+  // Create a new request promise
+  const requestPromise = (async () => {
     const { brand_name, industry, competitors = [], locale = 'en-US', country = 'US', brand_id, website_url } = req.body;
     const customer_id = req.user?.customer_id;
 
     if (!brand_name || typeof brand_name !== 'string') {
-      res.status(400).json({
-        success: false,
-        error: 'Brand name is required',
-      });
-      return;
+      throw { status: 400, message: 'Brand name is required' };
     }
 
     console.log(`🎯 Generating topics for ${brand_name} in ${industry || 'General'} industry`);
@@ -348,16 +387,41 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
 
     console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics using new service, ${Object.values(aiGenerated).flat().length} total AI topics, and found ${existingTopics.length} existing topics`);
 
-    res.json({
+    return {
       success: true,
       data: response
+    };
+  })();
+
+  // Store the promise in cache
+  topicsRequestCache.set(requestKey, requestPromise);
+
+  // Clean up cache after request completes (success or failure)
+  requestPromise
+    .then(() => {
+      setTimeout(() => topicsRequestCache.delete(requestKey), DEDUP_WINDOW_MS);
+    })
+    .catch(() => {
+      topicsRequestCache.delete(requestKey);
     });
-  } catch (error) {
-    console.error('❌ Failed to generate topics:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to generate topics'
-    });
+
+  // Handle the request
+  try {
+    const result = await requestPromise;
+    res.json(result);
+  } catch (error: any) {
+    if (error.status) {
+      res.status(error.status).json({
+        success: false,
+        error: error.message
+      });
+    } else {
+      console.error('❌ Failed to generate topics:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to generate topics'
+      });
+    }
   }
 });
 
@@ -366,33 +430,37 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
  * Generate prompts/queries for specific topics
  */
 router.post('/prompts', authenticateToken, async (req: Request, res: Response) => {
-  try {
+  const requestKey = getPromptsRequestKey(req);
+  const existingRequest = promptsRequestCache.get(requestKey);
+
+  // If there's a pending request for the same parameters, wait for it and return the same result
+  if (existingRequest) {
+    console.log(`🔄 Duplicate prompts request detected, reusing pending request for key: ${requestKey}`);
+    try {
+      const result = await existingRequest;
+      return res.json(result);
+    } catch (error) {
+      // If the existing request failed, remove it and continue with new request
+      promptsRequestCache.delete(requestKey);
+    }
+  }
+
+  // Create a new request promise
+  const requestPromise = (async () => {
     const { brand_name, industry, competitors = [], topics = [], locale = 'en-US', country = 'US', brand_id, website_url } = req.body;
 
     if (!brand_name || typeof brand_name !== 'string') {
-      res.status(400).json({
-        success: false,
-        error: 'Brand name is required',
-      });
-      return;
+      throw { status: 400, message: 'Brand name is required' };
     }
 
     if (!topics || !Array.isArray(topics) || topics.length === 0) {
-      res.status(400).json({
-        success: false,
-        error: 'At least one topic is required',
-      });
-      return;
+      throw { status: 400, message: 'At least one topic is required' };
     }
 
     // Get customer_id from authenticated user
     const customer_id = req.user?.customer_id;
     if (!customer_id) {
-      res.status(401).json({
-        success: false,
-        error: 'User not authenticated',
-      });
-      return;
+      throw { status: 401, message: 'User not authenticated' };
     }
 
     console.log(`🔍 Generating prompts for ${topics.length} topics for ${brand_name}`);
@@ -514,10 +582,12 @@ Generate queries that real users would type into Google. Make them specific, act
     let cerebrasFailed = false;
     let geminiFailed = false;
 
+    console.log('📝 Prompts generation prompt preview:', prompt.substring(0, 500) + '...');
+    
     // Try Cerebras first (primary)
     if (cerebrasApiKey && cerebrasApiKey !== 'your_cerebras_api_key_here') {
       try {
-        console.log('🧠 Attempting prompt generation with Cerebras (primary)...');
+        console.log('🧠 [PROMPTS FLOW] Step 1: Attempting prompt generation with Cerebras (primary)...');
         const response = await fetch('https://api.cerebras.ai/v1/completions', {
           method: 'POST',
           headers: {
@@ -544,7 +614,8 @@ Generate queries that real users would type into Google. Make them specific, act
                 const parsed = JSON.parse(jsonStr);
                 if (Array.isArray(parsed) && parsed.length > 0) {
                   generatedQueries = parsed;
-                  console.log(`✅ Successfully generated ${parsed.length} queries using Cerebras`);
+                  console.log(`✅ [PROMPTS FLOW] Step 1 SUCCESS: Generated ${parsed.length} queries using Cerebras`);
+                  console.log(`🔍 [PROMPTS FLOW] Cerebras response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
                 }
               } catch (parseError) {
                 console.error('❌ Failed to parse Cerebras JSON response:', parseError);
@@ -558,22 +629,22 @@ Generate queries that real users would type into Google. Make them specific, act
             cerebrasFailed = true;
           }
         } else {
-          console.error(`❌ Cerebras API error: ${response.status} ${response.statusText}`);
+          console.error(`❌ [PROMPTS FLOW] Step 1 FAILED: Cerebras API error: ${response.status} ${response.statusText}`);
           cerebrasFailed = true;
         }
       } catch (cerebrasError) {
-        console.error('❌ Cerebras API request failed:', cerebrasError);
+        console.error('❌ [PROMPTS FLOW] Step 1 FAILED: Cerebras API request failed:', cerebrasError);
         cerebrasFailed = true;
       }
     } else {
-      console.warn('⚠️ Cerebras API key not configured');
+      console.warn('⚠️ [PROMPTS FLOW] Step 1 SKIPPED: Cerebras API key not configured');
       cerebrasFailed = true;
     }
 
     // Fallback to Gemini if Cerebras failed
     if (generatedQueries.length === 0 && geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
       try {
-        console.log('🤖 Attempting prompt generation with Gemini (secondary)...');
+        console.log('🤖 [PROMPTS FLOW] Step 2: Attempting prompt generation with Gemini (fallback)...');
         const geminiModel = process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash-002';
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
@@ -606,7 +677,8 @@ Generate queries that real users would type into Google. Make them specific, act
                 const parsed = JSON.parse(jsonStr);
                 if (Array.isArray(parsed) && parsed.length > 0) {
                   generatedQueries = parsed;
-                  console.log(`✅ Successfully generated ${parsed.length} queries using Gemini`);
+                  console.log(`✅ [PROMPTS FLOW] Step 2 SUCCESS: Generated ${parsed.length} queries using Gemini`);
+                  console.log(`🔍 [PROMPTS FLOW] Gemini response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
                 }
               } catch (parseError) {
                 console.error('❌ Failed to parse Gemini JSON response:', parseError);
@@ -621,25 +693,23 @@ Generate queries that real users would type into Google. Make them specific, act
           }
         } else {
           const errorText = await response.text();
-          console.error(`❌ Gemini API error: ${response.status} ${errorText}`);
+          console.error(`❌ [PROMPTS FLOW] Step 2 FAILED: Gemini API error: ${response.status} ${errorText}`);
           geminiFailed = true;
         }
       } catch (geminiError) {
-        console.error('❌ Gemini API request failed:', geminiError);
+        console.error('❌ [PROMPTS FLOW] Step 2 FAILED: Gemini API request failed:', geminiError);
         geminiFailed = true;
       }
     } else if (generatedQueries.length === 0) {
-      console.warn('⚠️ Gemini API key not configured');
+      console.warn('⚠️ [PROMPTS FLOW] Step 2 SKIPPED: Gemini API key not configured');
       geminiFailed = true;
     }
 
-    // If both providers failed, return error
+    // If both providers failed, throw error
     if (generatedQueries.length === 0) {
-      console.error('❌ Prompt generation failed: Both Cerebras and Gemini failed');
-      return res.status(500).json({
-        success: false,
-        error: 'Prompt generation failed'
-      });
+      const errorMsg = 'Prompt generation failed: Both providers failed';
+      console.error(`❌ ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
     // Group queries by topic
@@ -661,16 +731,41 @@ Generate queries that real users would type into Google. Make them specific, act
 
     console.log(`✅ Generated ${generatedQueries.length} prompts for ${Object.keys(promptsByTopic).length} topics`);
 
-    res.json({
+    return {
       success: true,
       data: result
+    };
+  })();
+
+  // Store the promise in cache
+  promptsRequestCache.set(requestKey, requestPromise);
+
+  // Clean up cache after request completes (success or failure)
+  requestPromise
+    .then(() => {
+      setTimeout(() => promptsRequestCache.delete(requestKey), DEDUP_WINDOW_MS);
+    })
+    .catch(() => {
+      promptsRequestCache.delete(requestKey);
     });
-  } catch (error) {
-    console.error('❌ Failed to generate prompts:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to generate prompts'
-    });
+
+  // Handle the request
+  try {
+    const result = await requestPromise;
+    res.json(result);
+  } catch (error: any) {
+    if (error.status) {
+      res.status(error.status).json({
+        success: false,
+        error: error.message
+      });
+    } else {
+      console.error('❌ Failed to generate prompts:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to generate prompts'
+      });
+    }
   }
 });
 

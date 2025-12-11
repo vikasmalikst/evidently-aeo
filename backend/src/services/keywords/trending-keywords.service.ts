@@ -4,6 +4,7 @@
 
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { createClient } from '@supabase/supabase-js';
+import axios from 'axios';
 
 // Load environment variables
 loadEnvironment();
@@ -13,10 +14,12 @@ const supabaseUrl = getEnvVar('SUPABASE_URL');
 const supabaseServiceKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+type TrendingSource = 'cerebras' | 'openrouter' | 'gemini';
+
 interface TrendingKeyword {
   keyword: string;
   category: string;
-  source: 'gemini';
+  source: TrendingSource;
   trend_score: number;
   search_volume?: number;
   competition_level?: 'low' | 'medium' | 'high';
@@ -27,7 +30,7 @@ interface TrendingKeyword {
 interface TrendingPrompt {
   prompt: string;
   category: string;
-  source: 'gemini';
+  source: TrendingSource;
   last_updated: string;
 }
 
@@ -55,26 +58,89 @@ interface TrendingKeywordsRequest {
 export class TrendingKeywordsService {
   private geminiApiKey: string;
   private geminiModel: string;
+  private cerebrasApiKey: string;
+  private cerebrasModel: string;
+  private openRouterApiKey: string;
+  private openRouterModel: string;
+  private openRouterSiteUrl: string | undefined;
+  private openRouterSiteTitle: string | undefined;
 
   constructor() {
     this.geminiApiKey = getEnvVar('GOOGLE_GEMINI_API_KEY', '');
     // Allow overriding the model via env; default to a supported v1beta model
     this.geminiModel = getEnvVar('GOOGLE_GEMINI_MODEL', 'gemini-1.5-flash-002');
+    this.cerebrasApiKey = getEnvVar('CEREBRAS_API_KEY', '');
+    this.cerebrasModel = getEnvVar('CEREBRAS_MODEL', 'qwen-3-235b-a22b-instruct-2507');
+    this.openRouterApiKey = getEnvVar('OPENROUTER_API_KEY', '');
+    this.openRouterModel = "openai/gpt-oss-20b";
+    // this.openRouterSiteUrl = getEnvVar('OPENROUTER_SITE_URL', undefined);
+    // this.openRouterSiteTitle = getEnvVar('OPENROUTER_SITE_TITLE', undefined);
     console.log('🔧 Trending Keywords Service initialized with:');
     console.log(`  - Gemini: ${this.geminiApiKey ? '✅ Configured' : '❌ Not configured'}`);
     console.log(`  - Gemini Model: ${this.geminiModel}`);
+    console.log(`  - Cerebras: ${this.cerebrasApiKey ? '✅ Configured' : '❌ Not configured'}`);
+    console.log(`  - OpenRouter: ${this.openRouterApiKey ? '✅ Configured' : '❌ Not configured'}`);
+    console.log(`  - OpenRouter Model: ${this.openRouterModel}`);
   }
 
   async getTrendingKeywords(request: TrendingKeywordsRequest, brandId?: string, customerId?: string): Promise<TrendingKeywordsResponse> {
     const { brand, industry = '', competitors = [], locale = 'en-US', country = 'US', max_keywords = 50 } = request;
+    const prompt = this.buildTrendingPrompt(brand, industry, competitors, country);
 
-    if (!this.geminiApiKey) {
-      return this.failure('Gemini API key not configured');
+    let keywords: TrendingKeyword[] = [];
+    let prompts: TrendingPrompt[] = [];
+    let sourcesUsed: TrendingSource[] = [];
+    let lastError: unknown;
+
+    // Primary: Cerebras
+    if (this.cerebrasApiKey) {
+      try {
+        const result = await this.fetchFromCerebras(prompt);
+        keywords = result.keywords;
+        prompts = result.prompts;
+        sourcesUsed.push('cerebras');
+      } catch (error) {
+        this.logProviderError('Cerebras', error);
+        lastError = error;
+      }
+    } else {
+      console.warn('⚠️ CEREBRAS_API_KEY not configured. Skipping Cerebras for trending topics.');
     }
 
-    const { keywords, prompts } = await this.fetchFromGemini(brand, industry, competitors, locale, country);
+    // Fallback: OpenRouter
+    if ((!keywords || keywords.length === 0) && this.openRouterApiKey) {
+      try {
+        const result = await this.fetchFromOpenRouter(prompt);
+        keywords = result.keywords;
+        prompts = result.prompts;
+        sourcesUsed.push('openrouter');
+      } catch (error) {
+        this.logProviderError('OpenRouter', error);
+        lastError = lastError || error;
+      }
+    } else if (!this.openRouterApiKey) {
+      console.warn('⚠️ OPENROUTER_API_KEY not configured. Skipping OpenRouter fallback for trending topics.');
+    }
+
+    // Final fallback: Gemini (existing behavior)
+    if ((!keywords || keywords.length === 0) && this.geminiApiKey) {
+      try {
+        const result = await this.fetchFromGemini(prompt, brand, industry, competitors, locale, country);
+        keywords = result.keywords;
+        prompts = result.prompts;
+        sourcesUsed.push('gemini');
+      } catch (error) {
+        this.logProviderError('Gemini', error);
+        lastError = lastError || error;
+      }
+    } else if (!this.geminiApiKey && keywords.length === 0) {
+      console.warn('⚠️ GOOGLE_GEMINI_API_KEY not configured. No Gemini fallback available.');
+    }
+
     if (!keywords || !keywords.length) {
-      return this.failure('Gemini API failed to return keywords');
+      const message =
+        lastError instanceof Error ? lastError.message : 'No provider returned trending topics';
+      return this.failure(message);
     }
 
     const sorted = this.deduplicateKeywords(keywords)
@@ -92,7 +158,7 @@ export class TrendingKeywordsService {
         keywords: sorted,
         prompts: prompts || [],
         total_count: sorted.length,
-        sources_used: ['gemini'],
+        sources_used: sourcesUsed.length ? sourcesUsed : ['unknown'],
         generated_at: new Date().toISOString()
       }
     };
@@ -615,7 +681,39 @@ export class TrendingKeywordsService {
   /**
    * Fetch trending keywords from Google Gemini
    */
+  private buildTrendingPrompt(
+    brand: string,
+    industry: string,
+    competitors: string[],
+    country: string
+  ): string {
+    const competitorLine =
+      competitors.length > 0 ? `Consider competitors: ${competitors.slice(0, 3).join(', ')}.` : '';
+
+    return [
+      `You are an SEO and trends expert. Generate trending topics and search terms for the brand "${brand}" in the industry "${industry}" (country ${country}).`,
+      `Return strict JSON with two arrays: {"keywords": [{"keyword": string, "category": string}], "prompts": [{"prompt": string, "category": string}]}.`,
+      ``,
+      `Topics/keywords must focus on what is trending right now about the brand and its industry.`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `📋 KEYWORDS REQUIREMENTS (CRITICAL)`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `- Short search terms (1-4 words), no questions, no full sentences, no question marks.`,
+      `- Avoid verbs; keep to nouns/noun phrases users would search.`,
+      `- Categories: Trending, Comparison, Features, Pricing, Support, Alternatives, News.`,
+      ``,
+      `📋 PROMPTS REQUIREMENTS`,
+      `- Trending user questions or task prompts about the brand (8-12 items).`,
+      `- Use the same categories as keywords.`,
+      ``,
+      competitorLine,
+      ``,
+      `Respond ONLY with strict JSON. No prose.`
+    ].filter(Boolean).join('\n');
+  }
+
   private async fetchFromGemini(
+    prompt: string,
     brand: string,
     industry: string,
     competitors: string[],
@@ -627,44 +725,8 @@ export class TrendingKeywordsService {
         return { keywords: [], prompts: [] };
       }
 
-      console.log('🔍 Fetching from Google Gemini...');
-
-      const prompt = [
-        `You are an SEO trends expert. For brand "${brand}" in industry "${industry}" (country ${country}), return JSON with two arrays:`,
-        `{"keywords": [{"keyword": string, "category": string}], "prompts": [{"prompt": string, "category": string}]}.`,
-        ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📋 KEYWORDS REQUIREMENTS (CRITICAL - READ CAREFULLY)`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ``,
-        `Keywords are SHORT SEARCH TERMS that users type into search engines, NOT questions or full sentences.`,
-        ``,
-        `✅ CORRECT KEYWORD FORMAT:`,
-        `- 1-4 words maximum`,
-        `- No question words (what, how, why, when, where, who, which, explain, tell)`,
-        `- No question marks`,
-        `- No full sentences or verb phrases`,
-        `- Examples: "running shoes", "product reviews", "pricing plans", "customer support", "brand comparison"`,
-        ``,
-        `❌ FORBIDDEN KEYWORD FORMATS:`,
-        `- Questions: "What are running shoes?", "How to buy products?"`,
-        `- Full sentences: "Explain the benefits of Nike React foam"`,
-        `- Long phrases: "What are the latest Nike sneaker releases everyone is talking about?"`,
-        `- Task prompts: "Tell me about Nike's recent environmental initiatives"`,
-        ``,
-        `Generate 8-12 keywords with categories from: Trending, Comparison, Features, Pricing, Support, Alternatives, News.`,
-        ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📋 PROMPTS REQUIREMENTS`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ``,
-        `Prompts are trending user QUESTIONS or task prompts about the brand (8-12 items) with the same categories.`,
-        `These are full questions like "What are the latest Nike sneaker releases?" or "How do Nike running shoes compare to Adidas?"`,
-        ``,
-        competitors.length ? `Consider competitors: ${competitors.slice(0, 3).join(', ')}.` : '',
-        ``,
-        `Respond ONLY with strict JSON. No prose.`
-      ].filter(Boolean).join('\n');
+      console.log('🔍 Fetching trending topics from Google Gemini...');
+      console.log('📝 Trending topics prompt preview:', this.previewForLog(prompt));
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`, {
         method: 'POST',
@@ -689,6 +751,8 @@ export class TrendingKeywordsService {
 
       const data = await response.json() as any;
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      console.log('🔍 Gemini trending topics response preview:', this.previewForLog(text));
 
       // Use robust JSON extraction (same approach as brand intel service)
       let parsed: { keywords?: Array<{ keyword: string; category?: string }>; prompts?: Array<{ prompt: string; category?: string }> } = {};
@@ -776,6 +840,185 @@ export class TrendingKeywordsService {
       console.error('❌ Gemini fetch error:', error);
       throw error; // Re-throw the error instead of returning empty arrays
     }
+  }
+
+  private async fetchFromCerebras(prompt: string): Promise<{ keywords: TrendingKeyword[]; prompts: TrendingPrompt[] }> {
+    console.log('🚀 Fetching trending topics from Cerebras...');
+    console.log('📝 Trending topics prompt preview:', this.previewForLog(prompt));
+    
+    const response = await axios.post<any>(
+      'https://api.cerebras.ai/v1/chat/completions',
+      {
+        model: this.cerebrasModel,
+        messages: [
+          { role: 'system', content: 'You are an SEO trends expert. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.5,
+        max_tokens: 2000,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.cerebrasApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      }
+    );
+
+    const content = response.data?.choices?.[0]?.message?.content ?? '';
+    if (!content.trim()) {
+      throw new Error('No content in Cerebras response');
+    }
+
+    console.log('🔍 Cerebras trending topics response preview:', this.previewForLog(content));
+    const parsed = this.parseTrendingJson(content, 'cerebras');
+    return parsed;
+  }
+
+  private async fetchFromOpenRouter(prompt: string): Promise<{ keywords: TrendingKeyword[]; prompts: TrendingPrompt[] }> {
+    console.log('🌐 Fetching trending topics from OpenRouter...');
+    console.log('📝 Trending topics prompt preview:', this.previewForLog(prompt));
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.openRouterApiKey}`,
+      'Content-Type': 'application/json',
+    };
+
+    if (this.openRouterSiteUrl) {
+      headers['HTTP-Referer'] = this.openRouterSiteUrl;
+    }
+    if (this.openRouterSiteTitle) {
+      headers['X-Title'] = this.openRouterSiteTitle;
+    }
+
+    const response = await axios.post<any>(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: this.openRouterModel,
+        messages: [
+          { role: 'system', content: 'You are an SEO trends expert. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.5,
+        max_tokens: 2000,
+        reasoning: { enabled: true },
+        provider: { sort: 'throughput' }
+      },
+      {
+        headers,
+        timeout: 30000,
+      }
+    );
+
+    const content = response.data?.choices?.[0]?.message?.content ?? '';
+    if (!content.trim()) {
+      throw new Error('No content in OpenRouter response');
+    }
+
+    console.log('🔍 OpenRouter trending topics response preview:', this.previewForLog(content));
+    const parsed = this.parseTrendingJson(content, 'openrouter');
+    return parsed;
+  }
+
+  private parseTrendingJson(
+    content: string,
+    source: TrendingSource
+  ): { keywords: TrendingKeyword[]; prompts: TrendingPrompt[] } {
+    let jsonString = '';
+    const firstBrace = content.indexOf('{');
+    if (firstBrace !== -1) {
+      let braceCount = 0;
+      let jsonEnd = -1;
+      for (let i = firstBrace; i < content.length; i++) {
+        if (content[i] === '{') braceCount++;
+        else if (content[i] === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            jsonEnd = i + 1;
+            break;
+          }
+        }
+      }
+      if (jsonEnd !== -1) {
+        jsonString = content.substring(firstBrace, jsonEnd);
+      }
+    }
+
+    if (!jsonString) {
+      const match = content.match(/\{[\s\S]*\}/);
+      if (match) {
+        jsonString = match[0];
+      }
+    }
+
+    if (!jsonString) {
+      throw new Error('Could not extract JSON from LLM response');
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonString);
+    } catch (parseError) {
+      console.error('❌ JSON parse error:', parseError);
+      // Attempt cleanup
+      const cleaned = jsonString
+        .replace(/,\s*}/g, '}')
+        .replace(/,\s*]/g, ']')
+        .replace(/([{,]\s*)(\w+):/g, '$1"$2":');
+      parsed = JSON.parse(cleaned);
+    }
+
+    const now = new Date().toISOString();
+    const keywords: TrendingKeyword[] = (parsed.keywords || [])
+      .filter((k: any) => typeof k?.keyword === 'string' && k.keyword.trim().length >= 3 && this.isValidKeyword(k.keyword.trim(), ''))
+      .slice(0, 12)
+      .map((k: any) => ({
+        keyword: k.keyword.trim(),
+        category: (k.category || 'Trending').toString(),
+        source,
+        trend_score: 0.9,
+        search_volume: 40000,
+        competition_level: 'high',
+        related_queries: [],
+        last_updated: now
+      }));
+
+    const prompts: TrendingPrompt[] = (parsed.prompts || [])
+      .filter((p: any) => typeof p?.prompt === 'string' && p.prompt.trim().length >= 5)
+      .slice(0, 12)
+      .map((p: any) => ({
+        prompt: p.prompt.trim(),
+        category: (p.category || 'Trending').toString(),
+        source,
+        last_updated: now
+      }));
+
+    return { keywords, prompts };
+  }
+
+  private logProviderError(provider: 'OpenRouter' | 'Cerebras' | 'Gemini', error: unknown) {
+    if (typeof error !== 'object' || error === null) {
+      console.error(`❌ ${provider} error (non-object):`, error);
+      return;
+    }
+
+    const anyErr = error as any;
+    const status = anyErr?.response?.status;
+    const statusText = anyErr?.response?.statusText;
+    const errBody = anyErr?.response?.data?.error;
+    const message = anyErr?.message;
+
+    console.error(`❌ ${provider} API error`, {
+      status,
+      statusText,
+      message,
+      error: errBody,
+    });
+  }
+
+  private previewForLog(text: string, max: number = 800): string {
+    return text.length > max ? `${text.substring(0, max)}...` : text;
   }
 
   /**

@@ -121,21 +121,28 @@ export class CompetitorService {
           (item): item is CompetitorSuggestion =>
             item && typeof item.name === 'string' && item.name.trim().length > 0
         )
-        .map((item) => ({
-          name: item.name.trim(),
-          logo:
-            item.logo && item.logo.startsWith('http')
-              ? item.logo
-              : item.domain
-              ? `https://logo.clearbit.com/${stripProtocol(item.domain)}`
-              : '',
-          industry: item.industry || industry || 'General',
-          relevance: item.relevance || 'Direct Competitor',
-          domain: stripProtocol(item.domain || ''),
-          url: item.url || ensureHttps(item.domain || ''),
-          description: item.description || '',
-          source: 'cerebras-ai',
-        }))
+        .map((item) => {
+          const normalizedName = item.name.trim();
+          // Always synthesize a domain from the name if none provided
+          const fallbackDomain = `${normalizedName.toLowerCase().replace(/\s+/g, '')}.com`;
+          const domain = stripProtocol(item.domain || fallbackDomain);
+
+          return {
+            name: normalizedName,
+            logo:
+              item.logo && item.logo.startsWith('http')
+                ? item.logo
+                : domain
+                ? `https://logo.clearbit.com/${domain}`
+                : '',
+            industry: item.industry || industry || 'General',
+            relevance: item.relevance || 'Direct Competitor',
+            domain,
+            url: item.url || ensureHttps(domain),
+            description: item.description || '',
+            source: 'cerebras-ai',
+          };
+        })
         .slice(0, 12);
     } catch (error) {
       throw new Error(

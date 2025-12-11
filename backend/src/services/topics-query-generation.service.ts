@@ -52,27 +52,28 @@ class TopicsQueryGenerationService {
     const prompt = this.buildPrompt(request);
     let lastError: unknown;
 
-    // Prefer Cerebras when configured, otherwise fall back to OpenRouter GPT Nano
-    if (this.cerebrasApiKey) {
-      try {
-        return await this.generateWithCerebras(prompt, maxTopics);
-      } catch (error) {
-        console.error('❌ Cerebras topics generation failed, attempting OpenRouter fallback...', error);
-        lastError = error;
-      }
-    } else {
-      console.warn('⚠️ CEREBRAS_API_KEY is not configured. Using OpenRouter fallback if available.');
-    }
-
+    // Primary: OpenRouter
     if (this.openRouterApiKey) {
       try {
         return await this.generateWithOpenRouter(prompt, maxTopics);
       } catch (error) {
-        console.error('❌ OpenRouter topics generation failed.', error);
+        console.error('❌ OpenRouter topics generation failed, attempting Cerebras fallback...', error);
+        lastError = error;
+      }
+    } else {
+      console.warn('⚠️ OPENROUTER_API_KEY is not configured. Skipping primary provider.');
+    }
+
+    // Fallback: Cerebras
+    if (this.cerebrasApiKey) {
+      try {
+        return await this.generateWithCerebras(prompt, maxTopics);
+      } catch (error) {
+        console.error('❌ Cerebras topics generation failed.', error);
         lastError = lastError || error;
       }
     } else {
-      console.warn('⚠️ OPENROUTER_API_KEY is not configured. No fallback available.');
+      console.warn('⚠️ CEREBRAS_API_KEY is not configured. No fallback available.');
     }
 
     throw new Error(
@@ -222,10 +223,11 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
   }
 
   /**
-   * Call Cerebras to generate topics
+   * Call Cerebras as fallback provider
    */
   private async generateWithCerebras(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
-    console.log('🤖 Generating topics and queries with Cerebras...');
+    console.log('🤖 Generating topics and queries with Cerebras (fallback)...');
+    console.log('📝 Topics prompt preview:', this.previewForLog(prompt));
 
     const response = await axios.post<any>(
       'https://api.cerebras.ai/v1/chat/completions',
@@ -252,14 +254,16 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
       throw new Error('Empty response from Cerebras API');
     }
 
+    console.log('🔍 Cerebras topics response preview:', this.previewForLog(content));
     return this.processResponse(content, maxTopics);
   }
 
   /**
-   * Call OpenRouter GPT Nano as fallback provider
+   * Call OpenRouter as primary provider
    */
   private async generateWithOpenRouter(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
-    console.log('🌐 Generating topics and queries with OpenRouter GPT Nano fallback...');
+    console.log('🌐 Generating topics and queries with OpenRouter (primary)...');
+    console.log('📝 Topics prompt preview:', this.previewForLog(prompt));
 
     const response = await axios.post<any>(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -288,6 +292,7 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
       throw new Error('Empty response from OpenRouter API');
     }
 
+    console.log('🔍 OpenRouter topics response preview:', this.previewForLog(content));
     return this.processResponse(content, maxTopics);
   }
 
@@ -344,6 +349,10 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
     };
 
     return mapping[intentArchetype] || 'awareness';
+  }
+
+  private previewForLog(text: string, max: number = 800): string {
+    return text.length > max ? `${text.substring(0, max)}...` : text;
   }
 }
 

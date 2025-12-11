@@ -44,7 +44,7 @@ export class OnboardingIntelService {
     const companyName = clearbitService.buildCompanyName(matchedSuggestion, trimmedInput);
     let domain = clearbitService.buildDomain(matchedSuggestion, trimmedInput);
     let website = domain ? ensureHttps(domain) : '';
-    const logo =
+    let logo =
       matchedSuggestion?.logo ?? (domain ? `https://logo.clearbit.com/${domain}` : '');
 
     // Step 2: Generate brand intelligence using LLM
@@ -103,6 +103,16 @@ export class OnboardingIntelService {
     }
 
     // Step 5: Build brand object
+    // Ensure we have a domain and logo even if Clearbit/LLM miss
+    if (!domain) {
+      const fallbackDomain = `${companyName.toLowerCase().replace(/\s+/g, '')}.com`;
+      domain = fallbackDomain;
+      website = ensureHttps(fallbackDomain);
+    }
+    if (!logo && domain) {
+      logo = `https://logo.clearbit.com/${domain}`;
+    }
+
     const brand: BrandIntel = {
       verified: Boolean(domain),
       companyName,

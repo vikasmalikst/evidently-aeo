@@ -217,15 +217,31 @@ interface BrandContext {
 class RecommendationService {
   private cerebrasApiKey: string | null;
   private cerebrasModel: string;
+  private openaiApiKey: string | null;
+  private openaiModel: string;
 
   constructor() {
     this.cerebrasApiKey = getCerebrasKey();
     this.cerebrasModel = getCerebrasModel();
+    this.openaiApiKey = process.env.OPENAI_API_KEY || null;
+    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     
     if (!this.cerebrasApiKey) {
       console.warn('⚠️ [RecommendationService] CEREBRAS_API_KEY not configured');
     }
+    if (!this.openaiApiKey) {
+      console.warn('⚠️ [RecommendationService] OPENAI_API_KEY not configured (will only use Cerebras)');
+    }
     console.log(`🤖 [RecommendationService] Initialized with model: ${this.cerebrasModel}`);
+  }
+
+  /**
+   * Normalize a metric that may be in 0-1 or 0-100 to a 0-100 display scale (1 decimal)
+   */
+  private normalizePercent(value: number | null | undefined): number | null {
+    if (value === null || value === undefined) return null;
+    const scaled = value <= 1 ? value * 100 : value;
+    return Math.max(0, Math.min(100, Math.round(scaled * 10) / 10));
   }
 
   /**
@@ -395,8 +411,8 @@ class RecommendationService {
   ): Promise<RecommendationResponse> {
     console.log(`📊 [RecommendationService] Generating data-driven recommendations for brand: ${brandId}`);
 
-    if (!this.cerebrasApiKey) {
-      console.error('❌ [RecommendationService] CEREBRAS_API_KEY not configured');
+    if (!this.cerebrasApiKey && !this.openaiApiKey) {
+      console.error('❌ [RecommendationService] AI keys not configured (Cerebras/OpenAI)');
       return {
         success: false,
         recommendations: [],
@@ -433,9 +449,23 @@ class RecommendationService {
 
       // Step 2: Build prompt with detected problems
       const prompt = this.buildPrompt(context);
+      console.log('\n' + '='.repeat(80));
+      console.log('📝 [RecommendationService] PROMPT SENT TO LLM:');
+      console.log('='.repeat(80));
+      console.log(prompt);
+      console.log('='.repeat(80) + '\n');
 
-      // Step 3: Call Cerebras API
-      let recommendations = await this.callCerebrasAPI(prompt);
+      // Step 3: Call Cerebras API, fallback to OpenAI if needed
+      let recommendations: Recommendation[] = [];
+
+      if (this.cerebrasApiKey) {
+        recommendations = await this.callCerebrasAPI(prompt);
+      }
+
+      if ((!recommendations || recommendations.length === 0) && this.openaiApiKey) {
+        console.warn('⚠️ [RecommendationService] Cerebras returned no recommendations. Falling back to OpenAI.');
+        recommendations = await this.callOpenAIAPI(prompt);
+      }
 
       if (!recommendations || recommendations.length === 0) {
         return {
@@ -614,18 +644,25 @@ class RecommendationService {
       };
 
       // Detect overall problems
+      const toDisplayScore = (value: number | undefined | null) => {
+        if (value === null || value === undefined) return null;
+        // If stored as 0-1, scale to 0-100; otherwise keep as-is.
+        return value < 1 ? Math.round(value * 1000) / 10 : Math.round(value * 10) / 10;
+      };
+
       if (visibilityIndex !== undefined && visibilityIndex < 40) {
+        const visibilityDisplay = toDisplayScore(visibilityIndex);
         detectedProblems.push({
           id: `P${problemCounter++}`,
           type: 'visibility',
           severity: visibilityIndex < 25 ? 'high' : 'medium',
           category: 'overall',
           metric: 'Visibility Index',
-          currentValue: Math.round(visibilityIndex * 10) / 10,
+          currentValue: visibilityDisplay ?? visibilityIndex,
           benchmarkValue: 50,
           benchmarkSource: 'Recommended Threshold',
-          gap: `${Math.round(visibilityIndex - 50)}%`,
-          description: `Overall visibility index is ${Math.round(visibilityIndex * 10) / 10}%, which is below the recommended 50% threshold`
+          gap: visibilityDisplay !== null ? `${Math.round((visibilityDisplay - 50) * 10) / 10}` : `${Math.round((visibilityIndex - 50) * 10) / 10}`,
+          description: `Overall visibility index is ${visibilityDisplay ?? visibilityIndex}, which is below the recommended 50 threshold`
         });
       }
 
@@ -810,36 +847,40 @@ class RecommendationService {
         // Detect LLM-specific problems
         for (const llm of llmMetrics) {
           // Visibility gap vs average
-          if (llm.visibility !== null && avgLlmVis > 0 && llm.visibility < avgLlmVis - 15) {
+          const llmVisDisplay = this.normalizePercent(llm.visibility);
+          const avgVisDisplay = this.normalizePercent(avgLlmVis);
+          if (llmVisDisplay !== null && avgVisDisplay !== null && llm.visibility !== null && avgLlmVis > 0 && llm.visibility < avgLlmVis - 15) {
             detectedProblems.push({
               id: `P${problemCounter++}`,
               type: 'llm_specific',
               severity: (avgLlmVis - llm.visibility) > 25 ? 'high' : 'medium',
               category: 'llm',
               metric: 'Visibility Index',
-              currentValue: Math.round(llm.visibility * 10) / 10,
-              benchmarkValue: Math.round(avgLlmVis * 10) / 10,
+              currentValue: llmVisDisplay,
+              benchmarkValue: avgVisDisplay,
               benchmarkSource: 'Average across other LLMs',
-              gap: `${Math.round(llm.visibility - avgLlmVis)}%`,
+              gap: `${Math.round(llmVisDisplay - avgVisDisplay)}`,
               llm: llm.llm,
-              description: `${llm.llm} visibility is ${Math.round(llm.visibility * 10) / 10}% vs ${Math.round(avgLlmVis * 10) / 10}% average (${Math.round(avgLlmVis - llm.visibility)}% below)`
+              description: `${llm.llm} visibility is ${llmVisDisplay} vs ${avgVisDisplay} average (${Math.round(avgVisDisplay - llmVisDisplay)} below)`
             });
           }
 
           // SOA gap vs average
-          if (llm.soa !== null && avgLlmSoa > 0 && llm.soa < avgLlmSoa - 10) {
+          const llmSoaDisplay = this.normalizePercent(llm.soa);
+          const avgSoaDisplay = this.normalizePercent(avgLlmSoa);
+          if (llmSoaDisplay !== null && avgSoaDisplay !== null && llm.soa !== null && avgLlmSoa > 0 && llm.soa < avgLlmSoa - 10) {
             detectedProblems.push({
               id: `P${problemCounter++}`,
               type: 'llm_specific',
               severity: (avgLlmSoa - llm.soa) > 15 ? 'high' : 'medium',
               category: 'llm',
               metric: 'Share of Answers',
-              currentValue: Math.round(llm.soa * 10) / 10,
-              benchmarkValue: Math.round(avgLlmSoa * 10) / 10,
+              currentValue: llmSoaDisplay,
+              benchmarkValue: avgSoaDisplay,
               benchmarkSource: 'Average across other LLMs',
-              gap: `${Math.round(llm.soa - avgLlmSoa)}%`,
+              gap: `${Math.round(llmSoaDisplay - avgSoaDisplay)}`,
               llm: llm.llm,
-              description: `${llm.llm} SOA is ${Math.round(llm.soa * 10) / 10}% vs ${Math.round(avgLlmSoa * 10) / 10}% average (${Math.round(avgLlmSoa - llm.soa)}% below)`
+              description: `${llm.llm} SOA is ${llmSoaDisplay} vs ${avgSoaDisplay} average (${Math.round(avgSoaDisplay - llmSoaDisplay)} below)`
             });
           }
 
@@ -888,6 +929,8 @@ class RecommendationService {
       const sourceMetrics: SourceMetrics[] = [];
       const sourceMap = new Map<string, { domain: string; collectorIds: Set<string>; count: number }>();
 
+      console.log(`📊 [RecommendationService] Gathering source metrics: ${citations?.length || 0} citations found`);
+
       if (citations && citations.length > 0) {
         // Aggregate by domain
         for (const cit of citations) {
@@ -913,8 +956,6 @@ class RecommendationService {
 
         // Calculate metrics per source
         for (const [domain, sourceData] of sourceMap.entries()) {
-          if (sourceData.count < 3) continue; // Skip low-volume sources
-
           const collectorIds = Array.from(sourceData.collectorIds);
           
           // Get SOA and sentiment for results citing this source
@@ -964,68 +1005,79 @@ class RecommendationService {
           });
         }
 
-        // Sort by citations (most cited first)
-        sourceMetrics.sort((a, b) => b.citations - a.citations);
+        if (sourceMetrics.length === 0 && sourceMap.size > 0) {
+          console.warn(`⚠️ [RecommendationService] Sources found but metrics resolved to zero entries (check visibility/soa/sentiment data)`);
+        }
+        if (sourceMap.size === 0) {
+          console.warn(`⚠️ [RecommendationService] No sources found in citations data`);
+        }
+      } else {
+        console.warn(`⚠️ [RecommendationService] No citations found for brand ${brandId} in date range ${currentStartDate} to ${currentEndDate}`);
+      }
 
-        // Calculate averages for comparison
-        const avgSourceSoa = sourceMetrics.reduce((sum, s) => sum + s.soa, 0) / Math.max(sourceMetrics.length, 1);
-        const avgSourceSentiment = sourceMetrics.reduce((sum, s) => sum + s.sentiment, 0) / Math.max(sourceMetrics.length, 1);
+      // Sort by citations (most cited first)
+      sourceMetrics.sort((a, b) => b.citations - a.citations);
 
-        // Detect source-specific problems
-        for (const source of sourceMetrics.slice(0, 10)) { // Top 10 sources
-          // Low SOA on high-citation source
-          if (source.citations >= 10 && source.soa < avgSourceSoa - 10) {
-            detectedProblems.push({
-              id: `P${problemCounter++}`,
-              type: 'source_impact',
-              severity: source.citations >= 20 ? 'high' : 'medium',
-              category: 'source',
-              metric: 'Share of Answers',
-              currentValue: source.soa,
-              benchmarkValue: Math.round(avgSourceSoa * 10) / 10,
-              benchmarkSource: 'Average across sources',
-              gap: `${Math.round(source.soa - avgSourceSoa)}%`,
-              source: source.domain,
-              citations: source.citations,
-              impactScore: source.impactScore,
-              description: `On ${source.domain} (${source.citations} citations), SOA is ${source.soa}% vs ${Math.round(avgSourceSoa * 10) / 10}% average (${Math.round(avgSourceSoa - source.soa)}% below)`
-            });
-          }
+      console.log(`📊 [RecommendationService] Source metrics processed: ${sourceMetrics.length} sources (from ${sourceMap.size} domains found in citations)`);
 
-          // Negative sentiment on source
-          if (source.citations >= 5 && source.sentiment < 0) {
-            detectedProblems.push({
-              id: `P${problemCounter++}`,
-              type: 'sentiment',
-              severity: source.sentiment < -0.2 ? 'high' : 'medium',
-              category: 'source',
-              metric: 'Sentiment Score',
-              currentValue: source.sentiment,
-              benchmarkValue: Math.round(avgSourceSentiment * 100) / 100,
-              benchmarkSource: 'Average across sources',
-              source: source.domain,
-              citations: source.citations,
-              description: `Sentiment on ${source.domain} is ${source.sentiment} (negative) vs ${Math.round(avgSourceSentiment * 100) / 100} average (${source.citations} citations)`
-            });
-          }
+      // Calculate averages for comparison
+      const avgSourceSoaCurrent = sourceMetrics.reduce((sum, s) => sum + s.soa, 0) / Math.max(sourceMetrics.length, 1);
+      const avgSourceSentimentCurrent = sourceMetrics.reduce((sum, s) => sum + s.sentiment, 0) / Math.max(sourceMetrics.length, 1);
 
-          // Low impact score despite high citations
-          if (source.citations >= 15 && source.impactScore < 3) {
-            detectedProblems.push({
-              id: `P${problemCounter++}`,
-              type: 'source_impact',
-              severity: 'medium',
-              category: 'source',
-              metric: 'Impact Score',
-              currentValue: source.impactScore,
-              benchmarkValue: 5,
-              benchmarkSource: 'Target Impact Score',
-              source: source.domain,
-              citations: source.citations,
-              impactScore: source.impactScore,
-              description: `${source.domain} has ${source.citations} citations but low impact score (${source.impactScore}/10) - opportunity to improve brand presence`
-            });
-          }
+      // Detect source-specific problems
+      for (const source of sourceMetrics.slice(0, 10)) { // Top 10 sources
+        // Low SOA on high-citation source
+        if (source.citations >= 10 && source.soa < avgSourceSoaCurrent - 10) {
+          detectedProblems.push({
+            id: `P${problemCounter++}`,
+            type: 'source_impact',
+            severity: source.citations >= 20 ? 'high' : 'medium',
+            category: 'source',
+            metric: 'Share of Answers',
+            currentValue: source.soa,
+            benchmarkValue: Math.round(avgSourceSoaCurrent * 10) / 10,
+            benchmarkSource: 'Average across sources',
+            gap: `${Math.round(source.soa - avgSourceSoaCurrent)}%`,
+            source: source.domain,
+            citations: source.citations,
+            impactScore: source.impactScore,
+            description: `On ${source.domain} (${source.citations} citations), SOA is ${source.soa}% vs ${Math.round(avgSourceSoaCurrent * 10) / 10}% average (${Math.round(avgSourceSoaCurrent - source.soa)}% below)`
+          });
+        }
+
+        // Negative sentiment on source
+        if (source.citations >= 5 && source.sentiment < 0) {
+          detectedProblems.push({
+            id: `P${problemCounter++}`,
+            type: 'sentiment',
+            severity: source.sentiment < -0.2 ? 'high' : 'medium',
+            category: 'source',
+            metric: 'Sentiment Score',
+            currentValue: source.sentiment,
+            benchmarkValue: Math.round(avgSourceSentimentCurrent * 100) / 100,
+            benchmarkSource: 'Average across sources',
+            source: source.domain,
+            citations: source.citations,
+            description: `Sentiment on ${source.domain} is ${source.sentiment} (negative) vs ${Math.round(avgSourceSentimentCurrent * 100) / 100} average (${source.citations} citations)`
+          });
+        }
+
+        // Low impact score despite high citations
+        if (source.citations >= 15 && source.impactScore < 3) {
+          detectedProblems.push({
+            id: `P${problemCounter++}`,
+            type: 'source_impact',
+            severity: 'medium',
+            category: 'source',
+            metric: 'Impact Score',
+            currentValue: source.impactScore,
+            benchmarkValue: 5,
+            benchmarkSource: 'Target Impact Score',
+            source: source.domain,
+            citations: source.citations,
+            impactScore: source.impactScore,
+            description: `${source.domain} has ${source.citations} citations but low impact score (${source.impactScore}/10) - opportunity to improve brand presence`
+          });
         }
       }
 
@@ -1088,7 +1140,7 @@ class RecommendationService {
           severity: Math.abs(trends.soa.changePercent) > 30 ? 'high' : 'medium',
           title: 'Coverage Gap - Declining SOA',
           description: `SOA has declined ${Math.abs(trends.soa.changePercent)}% compared to the previous period. This suggests competitors are winning answer boxes, requiring urgent content structure improvements.`,
-          evidence: `SOA dropped from ${Math.round(trends.soa.previous * 10) / 10}% to ${Math.round(trends.soa.current * 10) / 10}%`
+          evidence: `SOA dropped from ${Math.round(trends.soa.previous * 10) / 10} to ${Math.round(trends.soa.current * 10) / 10}`
         });
       }
       
@@ -1145,7 +1197,7 @@ class RecommendationService {
           severity: visibilityIndex < 25 ? 'high' : 'medium',
           title: 'Content Structure & Relevance Gap',
           description: 'High citation volume but low visibility suggests content structure or relevance issues. Your content is being cited but not prominently featured in AI responses.',
-          evidence: `${totalCitations} total citations but visibility is only ${Math.round(visibilityIndex * 10) / 10}%`
+          evidence: `${totalCitations} total citations but visibility is only ${toDisplayScore(visibilityIndex) ?? Math.round(visibilityIndex * 10) / 10}`
         });
       }
       
@@ -1156,7 +1208,7 @@ class RecommendationService {
           severity: 'high',
           title: 'Authority & Coverage Gap',
           description: 'Low citation volume combined with low visibility indicates an authority gap. You need more backlinks and digital PR to increase brand mentions.',
-          evidence: `Only ${totalCitations} citations with ${Math.round(visibilityIndex * 10) / 10}% visibility`
+          evidence: `Only ${totalCitations} citations with ${toDisplayScore(visibilityIndex) ?? Math.round(visibilityIndex * 10) / 10} visibility`
         });
       }
       
@@ -1167,7 +1219,7 @@ class RecommendationService {
           severity: sentimentScore < -0.2 ? 'high' : 'medium',
           title: 'Brand Reputation Risk',
           description: 'High visibility with negative sentiment indicates a reputation risk. Your brand is prominent but viewed unfavorably, requiring PR intervention.',
-          evidence: `${Math.round(visibilityIndex * 10) / 10}% visibility with ${Math.round(sentimentScore * 100) / 100} sentiment score`
+          evidence: `${Math.round(visibilityIndex * 10) / 10} visibility with ${Math.round(((sentimentScore + 1) / 2) * 1000) / 10} sentiment score`
         });
       }
       
@@ -1178,7 +1230,7 @@ class RecommendationService {
           severity: Math.abs(trends.visibility.changePercent) > 20 ? 'high' : 'medium',
           title: 'Declining Visibility Trend',
           description: `Visibility has declined ${Math.abs(trends.visibility.changePercent)}% compared to the previous period, indicating a coverage or content freshness gap.`,
-          evidence: `Visibility dropped from ${Math.round(trends.visibility.previous * 10) / 10}% to ${Math.round(trends.visibility.current * 10) / 10}%`
+          evidence: `Visibility dropped from ${Math.round(trends.visibility.previous * 10) / 10} to ${Math.round(trends.visibility.current * 10) / 10}`
         });
       }
       
@@ -1284,6 +1336,29 @@ class RecommendationService {
    * Build prompt with detected problems requiring data-driven recommendations
    */
   private buildPrompt(context: BrandContext): string {
+    const normalizePercent = (value: number | null | undefined) => this.normalizePercent(value);
+    const clamp100 = (value: number) => Math.max(0, Math.min(100, value));
+    const normalizeSentiment100 = (value: number | null | undefined) =>
+      value === null || value === undefined ? null : clamp100(((value + 1) / 2) * 100);
+
+    const describeSentiment = (value: number | null) => {
+      if (value === null) return null;
+      if (value < 55) return 'negative';
+      if (value <= 65) return 'watch';
+      return 'good';
+    };
+    const describeSoa = (value: number | null) => {
+      if (value === null) return null;
+      if (value < 30) return 'low share';
+      if (value <= 50) return 'moderate share';
+      return 'strong share';
+    };
+    const describeVisibility = (value: number | null) => {
+      if (value === null) return null;
+      if (value < 40) return 'weak visibility';
+      if (value <= 70) return 'moderate visibility';
+      return 'strong visibility';
+    };
     // Format detected problems for the prompt
     const problemsList = context.detectedProblems.map(p => {
       let problemText = `[${p.id}] ${p.description}`;
@@ -1295,161 +1370,153 @@ class RecommendationService {
 
     // Format LLM metrics summary
     const llmSummary = context.llmMetrics && context.llmMetrics.length > 0
-      ? context.llmMetrics.map(l => 
-          `${l.llm}: Visibility ${l.visibility !== null ? Math.round(l.visibility * 10) / 10 + '%' : 'N/A'}, SOA ${l.soa !== null ? Math.round(l.soa * 10) / 10 + '%' : 'N/A'}, Sentiment ${l.sentiment !== null ? Math.round(l.sentiment * 100) / 100 : 'N/A'} (${l.responseCount} responses)`
-        ).join('\n  ')
+      ? context.llmMetrics.map(l => {
+          const visibility = normalizePercent(l.visibility);
+          const soa = normalizePercent(l.soa);
+          const sentiment = normalizeSentiment100(l.sentiment);
+          const parts: string[] = [l.llm];
+          if (visibility !== null) parts.push(`Visibility ${visibility}`);
+          if (soa !== null) parts.push(`SOA ${soa}`);
+          if (sentiment !== null) parts.push(`Sentiment ${Math.round(sentiment * 10) / 10}`);
+          parts.push(`(${l.responseCount} responses)`);
+          return parts.join(' | ');
+        }).join('\n  ')
       : 'No LLM-specific data available';
 
     // Format source metrics summary
     const sourceSummary = context.sourceMetrics && context.sourceMetrics.length > 0
-      ? context.sourceMetrics.slice(0, 8).map(s =>
-          `${s.domain}: ${s.citations} citations, Impact ${s.impactScore}/10, Mention Rate ${s.mentionRate}%, SOA ${s.soa}%, Sentiment ${s.sentiment}, Visibility ${s.visibility}%`
-        ).join('\n  ')
+      ? context.sourceMetrics.slice(0, 8).map(s => {
+          const visibility = normalizePercent(s.visibility);
+          const soa = normalizePercent(s.soa);
+          const sentiment = normalizeSentiment100(s.sentiment);
+          const parts: string[] = [`${s.domain}:`, `${s.citations} citations`, `Impact ${s.impactScore}/10`];
+          if (Number.isFinite(s.mentionRate)) parts.push(`Mention Rate ${Math.round(s.mentionRate * 10) / 10}`);
+          if (soa !== null) {
+            const band = describeSoa(soa);
+            parts.push(`SOA ${soa}${band ? ` (${band})` : ''}`);
+          }
+          if (sentiment !== null) {
+            const band = describeSentiment(sentiment);
+            parts.push(`Sentiment ${Math.round(sentiment * 10) / 10}${band ? ` (${band})` : ''}`);
+          }
+          if (visibility !== null) {
+            const band = describeVisibility(visibility);
+            parts.push(`Visibility ${visibility}${band ? ` (${band})` : ''}`);
+          }
+          return parts.join(', ');
+        }).join('\n  ')
       : 'No source data available';
 
     // Format competitor summary
     const competitorSummary = context.competitors && context.competitors.length > 0
       ? context.competitors.map(c => {
           const parts = [c.name];
-          if (c.visibilityIndex !== undefined) parts.push(`Vis: ${Math.round(c.visibilityIndex * 10) / 10}%`);
-          if (c.shareOfAnswers !== undefined) parts.push(`SOA: ${Math.round(c.shareOfAnswers * 10) / 10}%`);
-          if (c.sentimentScore !== undefined) parts.push(`Sent: ${Math.round(c.sentimentScore * 100) / 100}`);
+          const visibility = normalizePercent(c.visibilityIndex ?? null);
+          const soa = normalizePercent(c.shareOfAnswers ?? null);
+          const sentiment = normalizeSentiment100(c.sentimentScore ?? null);
+          if (visibility !== null) parts.push(`Vis: ${visibility}`);
+          if (soa !== null) parts.push(`SOA: ${soa}`);
+          if (sentiment !== null) parts.push(`Sent: ${Math.round(sentiment * 10) / 10}`);
           return parts.join(' | ');
         }).join('\n  ')
       : 'No competitor data';
 
-    return `You are a senior Brand/AEO (Answer Engine Optimization) expert. You have been given ACTUAL DATA about a brand's performance. Your task is to generate SPECIFIC, DATA-DRIVEN content generation strategies and recommendations that prioritize the highest-leverage citation sources.
+    // Brand metrics (skip items with null/undefined)
+    const brandLines: string[] = [];
+    const brandVisibility = normalizePercent(context.visibilityIndex ?? null);
+    if (brandVisibility !== null) {
+      const band = describeVisibility(brandVisibility);
+      const trend = context.trends?.visibility
+        ? ` (${context.trends.visibility.direction === 'down' ? '↓' : context.trends.visibility.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends.visibility.changePercent)}% vs prev)`
+        : '';
+      brandLines.push(`- Visibility: ${Math.round(brandVisibility * 10) / 10}${band ? ` (${band})` : ''}${trend}`);
+    }
 
-## CRITICAL RULES - READ CAREFULLY
-1. Each recommendation MUST directly address one of the detected problems listed below.
-2. The "reason" field MUST reference the problem ID (e.g., "[P1]") and include the ACTUAL NUMBERS from the data.
-3. Every recommendation must explain: (a) what specific problem it solves, (b) why this action will help based on the data, and (c) which CITATION SOURCE (domain) + content pairing will move the metric.
-4. **CRITICAL**: When a problem references a specific LLM (e.g., "Google AIO visibility is low"), the recommendation must target a CITATION SOURCE (domain) that can improve citations, which will then improve LLM performance. You CANNOT target an LLM directly - you must target citation sources (domains) that LLMs cite from.
-5. Use the citation source metrics (domain, impact score, mention rate, SOA, sentiment, citations, visibility) to decide where to invest. These are DOMAINS, not LLMs.
-6. Generate ONLY as many recommendations as there are addressable problems (max 10).
-7. **NEVER use LLM names as citation sources**. citationSource MUST be a domain (e.g., "reddit.com"), not an LLM name (e.g., "Google AIO").
+    const brandSoa = normalizePercent(context.shareOfAnswers ?? null);
+    if (brandSoa !== null) {
+      const band = describeSoa(brandSoa);
+      const trend = context.trends?.soa
+        ? ` (${context.trends.soa.direction === 'down' ? '↓' : context.trends.soa.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends.soa.changePercent)}% vs prev)`
+        : '';
+      brandLines.push(`- SOA: ${Math.round(brandSoa * 10) / 10}${band ? ` (${band})` : ''}${trend}`);
+    }
 
-## Brand Information
-- Brand Name: ${context.brandName}
+    const brandSentiment = normalizeSentiment100(context.sentimentScore ?? null);
+    if (brandSentiment !== null) {
+      const band = describeSentiment(brandSentiment);
+      const trend = context.trends?.sentiment
+        ? (() => {
+            const prev = normalizeSentiment100(context.trends!.sentiment.previous);
+            const curr = normalizeSentiment100(context.trends!.sentiment.current);
+            if (prev === null || curr === null) return '';
+            return ` (${context.trends!.sentiment.direction === 'down' ? '↓' : context.trends!.sentiment.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends!.sentiment.changePercent)} vs prev; ${Math.round(prev * 10) / 10} → ${Math.round(curr * 10) / 10})`;
+          })()
+        : '';
+      brandLines.push(`- Sentiment: ${Math.round(brandSentiment * 10) / 10}${band ? ` (${band})` : ''}${trend}`);
+    }
+
+    // Trends (skip missing)
+    const trendLines: string[] = [];
+    if (context.trends?.visibility) {
+      trendLines.push(`- Visibility: ${context.trends.visibility.direction} (${context.trends.visibility.changePercent > 0 ? '+' : ''}${context.trends.visibility.changePercent}% from ${Math.round(context.trends.visibility.previous * 10) / 10} to ${Math.round(context.trends.visibility.current * 10) / 10})`);
+    }
+    if (context.trends?.soa) {
+      trendLines.push(`- SOA: ${context.trends.soa.direction} (${context.trends.soa.changePercent > 0 ? '+' : ''}${context.trends.soa.changePercent}% from ${Math.round(context.trends.soa.previous * 10) / 10} to ${Math.round(context.trends.soa.current * 10) / 10})`);
+    }
+    if (context.trends?.sentiment) {
+      const prev = normalizeSentiment100(context.trends.sentiment.previous);
+      const curr = normalizeSentiment100(context.trends.sentiment.current);
+      if (prev !== null && curr !== null) {
+        trendLines.push(`- Sentiment: ${context.trends.sentiment.direction} (${context.trends.sentiment.changePercent > 0 ? '+' : ''}${context.trends.sentiment.changePercent}% from ${Math.round(prev * 10) / 10} to ${Math.round(curr * 10) / 10})`);
+      }
+    }
+
+    return `You are a Brand/AEO expert. Use the data below to create one recommendation per detected problem (max 10). Return ONLY a JSON array.
+
+RULES (short)
+- citationSource must be a domain from "Top Citation Sources" (never an LLM). If any source is missing/LLM, replace with the closest domain from that list before responding.
+- Use numeric scores as provided (0–100 scales). Do NOT add % signs. Only expectedBoost should use percent style like "+0.1-0.3%". confidence is integer 0-100. timeline is a range ("2-4 weeks", "4-6 weeks").
+- Sentiment banding (1–100): <55 negative, 55–65 watch, >65 good.
+- **CRITICAL**: Every "reason" field MUST start with the problem ID in brackets like "[P1]", "[P2]", etc. Example: "[P1] Visibility is 0.4% vs 0.5% avg. Targeting reddit.com will improve citations."
+- Each reason must reference the problem ID and real numbers; tie the action to a domain + content focus that moves the KPI.
+
+Brand
+- Name: ${context.brandName}
 - Industry: ${context.industry || 'Not specified'}
-- Overall Visibility: ${context.visibilityIndex !== undefined ? Math.round(context.visibilityIndex * 10) / 10 + '%' : 'N/A'}${context.trends?.visibility ? ` (${context.trends.visibility.direction === 'down' ? '↓' : context.trends.visibility.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends.visibility.changePercent)}% vs previous period)` : ''}
-- Overall SOA: ${context.shareOfAnswers !== undefined ? Math.round(context.shareOfAnswers * 10) / 10 + '%' : 'N/A'}${context.trends?.soa ? ` (${context.trends.soa.direction === 'down' ? '↓' : context.trends.soa.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends.soa.changePercent)}% vs previous period)` : ''}
-- Overall Sentiment: ${context.sentimentScore !== undefined ? Math.round(context.sentimentScore * 100) / 100 : 'N/A'}${context.trends?.sentiment ? ` (${context.trends.sentiment.direction === 'down' ? '↓' : context.trends.sentiment.direction === 'up' ? '↑' : '→'} ${Math.abs(context.trends.sentiment.changePercent)}% vs previous period)` : ''}
+${brandLines.join('\n')}
 
-## Trend Analysis (Current Period vs Previous 30 Days)
-${context.trends?.visibility ? `- Visibility: ${context.trends.visibility.direction === 'down' ? 'DECLINING' : context.trends.visibility.direction === 'up' ? 'IMPROVING' : 'STABLE'} (${context.trends.visibility.changePercent > 0 ? '+' : ''}${context.trends.visibility.changePercent}% change from ${Math.round(context.trends.visibility.previous * 10) / 10}% to ${Math.round(context.trends.visibility.current * 10) / 10}%)` : '- Visibility: No trend data available'}
-${context.trends?.soa ? `- SOA: ${context.trends.soa.direction === 'down' ? 'DECLINING' : context.trends.soa.direction === 'up' ? 'IMPROVING' : 'STABLE'} (${context.trends.soa.changePercent > 0 ? '+' : ''}${context.trends.soa.changePercent}% change from ${Math.round(context.trends.soa.previous * 10) / 10}% to ${Math.round(context.trends.soa.current * 10) / 10}%)` : '- SOA: No trend data available'}
-${context.trends?.sentiment ? `- Sentiment: ${context.trends.sentiment.direction === 'down' ? 'DECLINING' : context.trends.sentiment.direction === 'up' ? 'IMPROVING' : 'STABLE'} (${context.trends.sentiment.changePercent > 0 ? '+' : ''}${context.trends.sentiment.changePercent}% change from ${Math.round(context.trends.sentiment.previous * 100) / 100} to ${Math.round(context.trends.sentiment.current * 100) / 100})` : '- Sentiment: No trend data available'}
+Trends (30d vs prev)
+${trendLines.length > 0 ? trendLines.join('\n') : '- No trend data'}
 
-${context.trends && (context.trends.visibility?.direction === 'down' || context.trends.soa?.direction === 'down' || context.trends.sentiment?.direction === 'down') ? '⚠️ IMPORTANT: Declining trends indicate urgent action is needed. Prioritize recommendations that address declining metrics.' : ''}
-
-## Competitor Metrics
+Competitors
   ${competitorSummary}
 
-## Performance by AI Engine (LLM) - FOR REFERENCE ONLY
+LLM Performance (reference only; NOT sources)
   ${llmSummary}
-  
-⚠️ IMPORTANT: LLMs (like ChatGPT, Claude, Perplexity, Google AIO, etc.) are ANSWER ENGINES, NOT citation sources. 
-- LLMs generate answers and cite information FROM citation sources (domains).
-- You CANNOT "partner with" or "get backlinks from" an LLM.
-- LLM metrics show WHERE your brand appears in AI responses, but recommendations must target WHERE citations come FROM (domains).
 
-## Top Citation Sources (with metrics) - USE THESE FOR RECOMMENDATIONS
+Top Citation Sources (use only these domains)
   ${sourceSummary}
 
-⚠️ CRITICAL RULES FOR CITATION SOURCES:
-1. citationSource MUST be a DOMAIN (like "reddit.com", "techcrunch.com", "wikipedia.org"), NOT an LLM name.
-2. You MUST use ONLY the domains listed in "Top Citation Sources" above.
-3. Do NOT use LLM names (ChatGPT, Claude, Perplexity, Google AIO, Gemini, etc.) as citation sources.
-4. Do NOT invent or use sources from your training data.
-5. If a problem mentions an LLM, the recommendation should still target a citation source (domain) that can improve performance on that LLM.
-6. Every citationSource field MUST match exactly one of the domains from "Top Citation Sources" above.
-
-## Citation Category Strategy (CRITICAL - Tailor recommendations by category)
-Each recommendation will be categorized into one of four citation source strategies. Tailor your "action" and "reason" fields based on the category:
-
-1. **Priority Partnerships**: High-authority sources with coverage gaps
-   - Focus: Outreach, partnerships, co-created content, backlink acquisition
-   - Language: "Partner with [ACTUAL SOURCE FROM LIST]", "Secure backlink from [ACTUAL DOMAIN]", "Collaborate with [ACTUAL SOURCE] on [topic]"
-   - IMPORTANT: Replace [ACTUAL SOURCE] with a real domain from "Top Citation Sources" above. Do NOT use example sources like "TechCrunch" or "Vogue" unless they appear in the source list.
-
-2. **Reputation Management**: Negative sentiment + high visibility
-   - Focus: PR, official statements, FAQ pages, authoritative explainers
-   - Language: "Publish official FAQ", "Create authoritative content", "Address negative narratives", "Push positive content to [ACTUAL SOURCE]"
-   - IMPORTANT: Use only sources from "Top Citation Sources" above. Do NOT invent sources.
-
-3. **Growth Opportunities**: Emerging opportunities, mid-tier sources
-   - Focus: Topic-specific pages, FAQ optimization, schema markup, targeted outreach
-   - Language: "Create topic-specific page", "Optimize FAQ for [topic]", "Target [ACTUAL SOURCE] for [topic] coverage"
-   - IMPORTANT: Use only sources from "Top Citation Sources" above. Do NOT invent sources.
-
-4. **Monitor**: Stable, low-risk sources
-   - Focus: Light refresh, periodic updates, watch for trends
-   - Language: "Monitor [ACTUAL SOURCE]", "Refresh content periodically", "Track trends"
-   - IMPORTANT: Use only sources from "Top Citation Sources" above. Do NOT invent sources.
-
-## Content Generation Strategy Guidance (be ultra-specific, topic-first)
-1. **MANDATORY - CITATION SOURCES ONLY**: 
-   - citationSource MUST be a DOMAIN (e.g., "reddit.com", "techcrunch.com"), NOT an LLM name.
-   - Use ONLY the domains listed in "Top Citation Sources" above.
-   - If a problem mentions an LLM (e.g., "Google AIO visibility is low"), you still need to target a CITATION SOURCE (domain) that can improve citations, which will then improve LLM performance.
-   - Example: If problem is "Google AIO visibility is low", recommend targeting a high-impact citation source like "reddit.com" or "wikipedia.org" (from the list), NOT "Google AIO" itself.
-
-2. **LLM-SPECIFIC PROBLEMS**: 
-   - When a problem references an LLM (e.g., "[P1] Google AIO visibility is 0.4% vs 0.5% average"), the recommendation should:
-     a) Acknowledge the LLM performance issue in the reason/explanation
-     b) Target a CITATION SOURCE (domain) that can improve citations
-     c) Explain how improving citations from that domain will improve LLM performance
-   - Example: "Partner with reddit.com to publish authoritative content on [topic]. Reddit has high citation volume (X citations) and improving your presence there will increase citations that Google AIO and other LLMs reference, thereby improving your visibility across all LLMs."
-
-3. Stay anchored to the topic in the detected problem. Name the topic explicitly and propose a concrete asset for it (e.g., "Create a collection page for vacation wear", "Write a blog on 'Comprehensive guide for summer essentials'").
-
-4. Describe which sources should be prioritized ("focusSources") - these MUST be DOMAINS from the "Top Citation Sources" list above, NOT LLM names. What content pieces or themes should be produced ("contentFocus") — keep both tightly tied to the topic.
-
-5. Tie your recommendation back to the metrics in the source data (impact score, mention rate, SOA, sentiment, citations, visibility) and the detected problem you are solving. Use the EXACT metrics from the source list.
-
-6. Craft a concise explanation (4-5 sentences) that explains why investing in that specific CITATION SOURCE (domain) + topic-focused content will move the targeted KPI. If the problem mentions an LLM, explain how improving citations from the domain will improve LLM performance. Avoid generic advice like "improve your content" — always specify the asset type, topic, and source (domain from the list above).
-
-7. **IMPORTANT**: Based on the problem type and source metrics, determine which citation category this recommendation belongs to and tailor the language accordingly.
-
-8. **CRITICAL VALIDATION**: Before submitting, verify that:
-   - Every citationSource is a DOMAIN (not an LLM name)
-   - Every citationSource appears in the "Top Citation Sources" list
-   - If a source doesn't exist in that list, choose the most relevant domain that does exist
-
-## DETECTED PROBLEMS (${context.detectedProblems.length} issues found)
+Detected Problems (${context.detectedProblems.length})
 ${problemsList}
 
-## Your Task
-For each detected problem above, generate ONE specific recommendation that:
-1. References the problem ID in the reason (e.g., "[P1]").
-2. Includes actual numbers from the problem description.
-3. Explains WHY this action will improve the specific metric.
-4. Ties the action to a citation source and a content focus, both explicitly linked to the topic in the problem.
+Your Task (JSON objects need):
+- action
+- reason (MUST start with problem ID like "[P1]", "[P2]" - this is REQUIRED)
+- explanation (4-5 sentences)
+- citationSource (domain from Top Citation Sources)
+- impactScore, mentionRate, soa, sentiment, visibilityScore (0–100 scores), citationCount
+- focusSources (domains), contentFocus
+- kpi ("Visibility Index" | "SOA %" | "Sentiment Score")
+- expectedBoost (+0.1-0.3% style), effort (Low/Medium/High), timeline ("2-4 weeks" etc.), confidence (0-100 int), priority (High/Medium/Low), focusArea (visibility/soa/sentiment), citationCategory (Priority Partnerships | Reputation Management | Growth Opportunities | Monitor)
 
-Respond with a JSON array. Each object must have:
-- action: Specific action to take (1-2 sentences, be specific to the problem). Tailor language based on citation category (see above).
-- reason: Reference problem ID + actual data + why this helps. If problem mentions an LLM, explain how targeting the citation source (domain) will improve LLM performance (e.g., "[P1] Google AIO visibility is 0.4% vs 0.5% average. Targeting reddit.com (high citation volume) will increase authoritative citations that Google AIO references, improving visibility across all LLMs."). Include category-appropriate language.
-- explanation: A 4-5 sentence rationale that explains why investing in the cited source + content focus will improve the selected KPI.
-- citationSource: The primary citation source (DOMAIN, not LLM) you recommend investing in. MUST be one of the exact domains from "Top Citation Sources" above. Examples: "reddit.com", "techcrunch.com", "wikipedia.org". Do NOT use LLM names like "ChatGPT", "Claude", "Perplexity", "Google AIO". Do NOT make up sources.
-- impactScore: Impact score (from the source data) for that citation source. Use the exact value from the source list above.
-- mentionRate: Mention rate (%) for that source. Use the exact value from the source list above.
-- soa: Source-level SOA (%). Use the exact value from the source list above.
-- sentiment: Source-level sentiment score. Use the exact value from the source list above.
-- visibilityScore: Source-level visibility score. Use the exact value from the source list above.
-- citationCount: Number of citations for the source. Use the exact value from the source list above.
-- focusSources: What citation sources (DOMAINS, not LLMs) to prioritize. Can be multiple domains from "Top Citation Sources" list. Do NOT include LLM names.
-- contentFocus: What content types or topics to focus on when addressing the problem.
-- kpi: "Visibility Index", "SOA %", or "Sentiment Score".
-- expectedBoost: Realistic estimate (e.g., "+10-15%").
-- effort: "Low", "Medium", or "High".
-- timeline: Realistic timeline (e.g., "2-4 weeks").
-- confidence: 0-100 (how confident you are this will work).
-- priority: "High", "Medium", or "Low".
-- focusArea: "visibility", "soa", or "sentiment".
-- citationCategory: One of "Priority Partnerships", "Reputation Management", "Growth Opportunities", or "Monitor" (determine based on problem type and source metrics).
+VALID example (with problem ID):
+[{"action":"Partner with reddit.com on enterprise storage Q&A","reason":"[P1] Visibility is 0.4% vs 0.5% avg. Reddit has 220 citations, so targeting it will improve citations.","citationSource":"reddit.com"}]
+INVALID examples (will be rejected):
+[{"reason":"Visibility is low, need to improve"}]
+[{"citationSource":"Google AIO"}]
 
-RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
+Respond only with the JSON array.`;
   }
 
   /**
@@ -1504,6 +1571,69 @@ RESPOND ONLY WITH THE JSON ARRAY. No markdown, no explanation.`;
 
     } catch (error) {
       console.error('❌ [RecommendationService] Error calling API:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Call OpenAI API (fallback)
+   */
+  private async callOpenAIAPI(prompt: string): Promise<Recommendation[]> {
+    try {
+      if (!this.openaiApiKey) {
+        console.error('❌ [RecommendationService] OPENAI_API_KEY not configured');
+        return [];
+      }
+
+      console.log('🚀 [RecommendationService] Calling OpenAI API (fallback)...');
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: this.openaiModel,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a senior Brand/AEO expert. Generate data-driven recommendations based on actual metrics. Always reference specific problem IDs and include real numbers in your reasoning. Respond only with valid JSON arrays.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: 4000,
+          temperature: 0.5
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [RecommendationService] OpenAI API error:', response.status, errorText);
+        return [];
+      }
+
+      const data = await response.json();
+      type OpenAIChatResponse = {
+        choices?: { message?: { content?: string | null } }[];
+      };
+      const chatData = data as OpenAIChatResponse;
+
+      if (!chatData.choices?.[0]?.message?.content) {
+        console.error('❌ [RecommendationService] Invalid OpenAI response structure');
+        return [];
+      }
+
+      const content = chatData.choices[0].message.content;
+      console.log('📝 [RecommendationService] OpenAI response length:', content?.length || 0);
+
+      return this.parseRecommendations(content);
+
+    } catch (error) {
+      console.error('❌ [RecommendationService] Error calling OpenAI API:', error);
       return [];
     }
   }

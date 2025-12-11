@@ -4,6 +4,7 @@ import { Card } from './common/Card';
 import { Input } from './common/Input';
 import { Spinner } from './common/Spinner';
 import type { OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
+import { SafeLogo } from './common/SafeLogo';
 
 interface CompetitorGridProps {
   brand: OnboardingBrand;
@@ -141,7 +142,12 @@ export const CompetitorGrid = ({
     <div className="onboarding-competitor-grid-content">
       <div className="onboarding-brand-section-wrapper">
         <div className="onboarding-brand-header">
-          <img src={brand.logo} alt={brand.companyName} className="onboarding-brand-header__logo" crossOrigin="anonymous" />
+          <SafeLogo
+            src={brand.logo}
+            domain={brand.domain}
+            alt={brand.companyName}
+            className="onboarding-brand-header__logo"
+          />
           <div className="onboarding-brand-header__info">
             <h2 className="onboarding-brand-header__name">{brand.companyName}</h2>
             <p className="onboarding-brand-header__meta">
@@ -226,16 +232,12 @@ export const CompetitorGrid = ({
                 >
                   <X size={16} />
                 </button>
-                {competitor.logo && (
-                  <img
+                {(competitor.logo || competitor.domain) && (
+                  <SafeLogo
                     src={competitor.logo}
+                    domain={competitor.domain}
                     alt={competitor.name}
                     className="onboarding-competitor-card__logo"
-                    crossOrigin="anonymous"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                    }}
                   />
                 )}
                 <h3 className="onboarding-competitor-card__name">{competitor.name}</h3>

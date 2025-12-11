@@ -50,11 +50,9 @@ export const Dashboard = () => {
   const competitorEntries = dashboardData?.competitorVisibility ?? [];
   const brandLabel = selectedBrand?.name ?? dashboardData?.brandName ?? 'Your Brand';
 
-  const normalizeSentiment = (value: number | null | undefined) => {
-    if (value === null || value === undefined) {
-      return null;
-    }
-    return Math.max(0, Math.min(100, ((value + 1) / 2) * 100));
+  const toSentimentDisplay = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return null;
+    return value * 100; // keep same 1–100 scale as KPI card
   };
 
   const buildComparisons = (metric: 'visibility' | 'share' | 'sentiment' | 'brandPresence') => {
@@ -64,7 +62,7 @@ export const Dashboard = () => {
         : metric === 'share'
           ? shareMetric?.value ?? null
           : metric === 'sentiment'
-            ? normalizeSentiment(sentimentMetric?.value) ?? null
+            ? toSentimentDisplay(sentimentMetric?.value) ?? null
             : brandPresencePercentage ?? null;
 
     const competitorValues = competitorEntries
@@ -75,7 +73,7 @@ export const Dashboard = () => {
             : metric === 'share'
               ? entry.share
               : metric === 'sentiment'
-                ? normalizeSentiment(entry.sentiment)
+                ? toSentimentDisplay(entry.sentiment)
                 : entry.brandPresencePercentage;
 
         if (!Number.isFinite(value)) {
@@ -109,7 +107,7 @@ export const Dashboard = () => {
   const comparisonSuffix = {
     visibility: '',
     share: '%',
-    sentiment: '%',
+    sentiment: '',
     brandPresence: '%'
   };
 
@@ -126,8 +124,7 @@ export const Dashboard = () => {
         linkTo: '/search-visibility',
         comparisons: buildComparisons('visibility'),
         comparisonSuffix: comparisonSuffix.visibility,
-        description:
-          'Measures your brand\'s average prominence across all AI-generated answers. Higher scores indicate your brand appears more prominently in responses, calculated as the average position-weighted visibility across all queries.'
+        description: 'How often your brand shows up.'
       },
       {
         key: 'share-of-answers',
@@ -140,8 +137,7 @@ export const Dashboard = () => {
         linkTo: '/search-visibility?kpi=share',
         comparisons: buildComparisons('share'),
         comparisonSuffix: comparisonSuffix.share,
-        description:
-          'Represents your brand\'s share of the total answer space across all AI models. This metric shows what percentage of all mentions (your brand + competitors) belong to your brand, indicating your relative market presence.'
+        description: 'Share of results that mention your brand along with competitors.'
       },
       {
         key: 'sentiment-score',
@@ -154,8 +150,7 @@ export const Dashboard = () => {
         linkTo: '/search-visibility?kpi=sentiment',
         comparisons: buildComparisons('sentiment'),
         comparisonSuffix: comparisonSuffix.sentiment,
-        description:
-          'Average sentiment of how your brand is discussed in AI-generated answers. Scores range from -1 (very negative) to +1 (very positive), with 0 being neutral. This reflects overall brand perception across all queries.'
+        description: 'Sentiment (1–100): <55 negative, 55–65 watch, >65 good.'
       },
       {
         key: 'brand-presence',
@@ -168,8 +163,7 @@ export const Dashboard = () => {
         linkTo: '/search-visibility?kpi=brandPresence',
         comparisons: buildComparisons('brandPresence'),
         comparisonSuffix: comparisonSuffix.brandPresence,
-        description:
-          'Percentage of queries where your brand appears in AI-generated answers. Calculated as (queries with brand presence / total queries) × 100. Higher percentages indicate your brand is mentioned more frequently across different queries.'
+        description: 'How strongly your brand appears across sources.'
       }
     ],
     [

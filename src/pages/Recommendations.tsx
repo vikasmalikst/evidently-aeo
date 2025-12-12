@@ -335,7 +335,7 @@ export const Recommendations = () => {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [problemsDetected, setProblemsDetected] = useState<number>(0);
   const [diagnostics, setDiagnostics] = useState<DiagnosticInsight[]>([]);
-  const [trends, setTrends] = useState<RecommendationsResponse['data']['trends'] | undefined>(undefined);
+  const [trends, setTrends] = useState<NonNullable<RecommendationsResponse['data']>['trends'] | undefined>(undefined);
   const [sortBy, setSortBy] = useState<'score' | 'impact' | 'effort' | 'priority'>('score');
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 

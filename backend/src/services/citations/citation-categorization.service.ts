@@ -367,8 +367,12 @@ Respond with only the category name:`;
         temperature: 0.0, // Zero temperature for most deterministic output
         stop: ['\n', '.'] // Minimal stop tokens - just newline and period
       }),
-      // Add timeout to prevent hanging
-      signal: AbortSignal.timeout(30000) // 30 second timeout
+      // Add timeout to prevent hanging (using AbortController for compatibility)
+      signal: (() => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        return controller.signal;
+      })()
     });
 
     if (!response.ok) {
@@ -473,8 +477,12 @@ Respond with ONLY the category name.`;
           maxOutputTokens: 150 // Significantly increased to account for "thoughts" tokens (Gemini uses ~49 tokens for reasoning)
         }
       }),
-      // Add timeout to prevent hanging
-      signal: AbortSignal.timeout(30000) // 30 second timeout
+      // Add timeout to prevent hanging (using AbortController for compatibility)
+      signal: (() => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        return controller.signal;
+      })()
     });
 
     if (!response.ok) {

@@ -6,9 +6,13 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { citationCategorizationService } from './citation-categorization.service';
+import { consolidatedAnalysisService } from '../scoring/consolidated-analysis.service';
 
 // Load environment variables
 loadEnvironment();
+
+// Feature flag: Use consolidated analysis service
+const USE_CONSOLIDATED_ANALYSIS = process.env.USE_CONSOLIDATED_ANALYSIS === 'true';
 
 const supabaseUrl = getEnvVar('SUPABASE_URL');
 const supabaseServiceKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
@@ -435,6 +439,22 @@ export class CitationExtractionService {
           // Tuneable via env if needed later
           const PER_RESULT_CONCURRENCY = this.perResultConcurrency;
 
+          // Check if we have consolidated analysis result
+          let consolidatedCitations: Record<string, { category: string; pageName: string | null }> | null = null;
+          
+          if (USE_CONSOLIDATED_ANALYSIS) {
+            try {
+              // Try to get from cache (if position extraction already ran)
+              const cached = (consolidatedAnalysisService as any).cache.get(result.id);
+              if (cached?.citations) {
+                consolidatedCitations = cached.citations;
+                console.log(`📦 Using consolidated citation categorization for result ${result.id}`);
+              }
+            } catch (error) {
+              // Ignore errors, fall back to individual categorization
+            }
+          }
+
           const citationRows = await this.runWithConcurrency<string, {
             customer_id: string;
             brand_id: string;
@@ -451,6 +471,27 @@ export class CitationExtractionService {
             PER_RESULT_CONCURRENCY,
             async (url) => {
               try {
+                // Check consolidated result first
+                if (consolidatedCitations && consolidatedCitations[url]) {
+                  const cat = consolidatedCitations[url];
+                  return {
+                    customer_id: result.customer_id,
+                    brand_id: result.brand_id,
+                    query_id: result.query_id,
+                    execution_id: result.execution_id,
+                    collector_result_id: result.id,
+                    url,
+                    domain: citationCategorizationService.extractDomain(url),
+                    page_name: cat.pageName,
+                    category: cat.category,
+                    metadata: {
+                      categorization_confidence: 'high',
+                      categorization_source: 'consolidated_analysis',
+                    }
+                  };
+                }
+
+                // Fallback to individual categorization
                 // Small base delay between calls to smooth bursts
                 if (this.perCallBaseDelayMs > 0) {
                   await new Promise((r) => setTimeout(r, this.perCallBaseDelayMs));

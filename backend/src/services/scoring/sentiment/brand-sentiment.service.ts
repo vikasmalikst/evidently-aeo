@@ -1,7 +1,11 @@
 import dotenv from 'dotenv';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { consolidatedAnalysisService } from '../consolidated-analysis.service';
 
 dotenv.config();
+
+// Feature flag: Use consolidated analysis service
+const USE_CONSOLIDATED_ANALYSIS = process.env.USE_CONSOLIDATED_ANALYSIS === 'true';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -113,10 +117,41 @@ export class BrandSentimentService {
         }
 
         const brandName = rows[0]?.brand_name || 'Brand';
-        const sentiment = await this.analyzeSentimentWithOpenRouter(
-          collectorResult.raw_answer,
-          brandName,
-        );
+        
+        // Check if we have consolidated analysis result
+        let sentiment;
+        if (USE_CONSOLIDATED_ANALYSIS) {
+          try {
+            // Try to get from cache (if position extraction already ran)
+            const cached = (consolidatedAnalysisService as any).cache.get(collectorResultId);
+            if (cached?.sentiment?.brand) {
+              sentiment = {
+                label: cached.sentiment.brand.label,
+                score: cached.sentiment.brand.score,
+                positiveSentences: cached.sentiment.brand.positiveSentences || [],
+                negativeSentences: cached.sentiment.brand.negativeSentences || []
+              };
+              console.log(`📦 Using consolidated brand sentiment for collector_result ${collectorResultId}`);
+            } else {
+              // Fallback to individual analysis
+              sentiment = await this.analyzeSentimentWithOpenRouter(
+                collectorResult.raw_answer,
+                brandName,
+              );
+            }
+          } catch (error) {
+            console.warn(`⚠️ Failed to get consolidated sentiment, falling back:`, error instanceof Error ? error.message : error);
+            sentiment = await this.analyzeSentimentWithOpenRouter(
+              collectorResult.raw_answer,
+              brandName,
+            );
+          }
+        } else {
+          sentiment = await this.analyzeSentimentWithOpenRouter(
+            collectorResult.raw_answer,
+            brandName,
+          );
+        }
         for (const row of rows) {
           await this.updatePositionRowsSentiment([row.id], sentiment);
           processed++;

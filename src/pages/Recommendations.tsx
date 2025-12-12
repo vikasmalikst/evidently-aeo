@@ -116,6 +116,118 @@ const TrendIndicator = ({ direction, changePercent }: { direction: 'up' | 'down'
 };
 
 /**
+ * Compact bullet list item
+ */
+const BulletItem = ({ label, value }: { label: string; value?: string | number }) => {
+  if (value === undefined || value === null || value === '') return null;
+  return (
+    <li className="text-[13px] text-[#0f172a]">
+      <span className="font-semibold text-[#475569] mr-1">{label}:</span>
+      <span className="text-[#0f172a]">{value}</span>
+    </li>
+  );
+};
+
+/**
+ * Modern expandable row for a recommendation
+ */
+const ExpandableRecommendationRow = ({
+  rec,
+  index,
+  expanded,
+  onToggle
+}: {
+  rec: Recommendation;
+  index: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) => (
+  <div className="rounded-xl border border-[#e8e9ed] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)] overflow-hidden">
+    <button
+      onClick={onToggle}
+      className="w-full px-5 py-4 text-left flex items-start justify-between gap-4 hover:bg-[#f8fafc] transition-colors"
+      aria-expanded={expanded}
+    >
+      <div className="flex-1 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="h-7 w-7 inline-flex items-center justify-center rounded-lg bg-[#e6f6fb] text-[#0ea5e9] text-[12px] font-semibold border border-[#cfe9fb]">
+            {index + 1}
+          </span>
+          <span className="text-[15px] font-semibold text-[#0f172a] leading-snug break-words">
+            {rec.action}
+          </span>
+          <FocusAreaBadge area={rec.focusArea} />
+          <LevelBadge level={rec.priority} type="priority" />
+          <LevelBadge level={rec.effort} type="effort" />
+        </div>
+        <div className="flex flex-wrap gap-3 text-[12px] text-[#475569]">
+          <span className="font-semibold text-[#0f172a]">Source:</span> {rec.citationSource}
+          <span className="font-semibold text-[#0f172a]">KPI:</span> {rec.kpi}
+          <span className="font-semibold text-[#0f172a]">Expected:</span> {rec.expectedBoost}
+          <span className="font-semibold text-[#0f172a]">Timeline:</span> {rec.timeline}
+        </div>
+      </div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <ConfidenceBar value={rec.confidence} />
+        <span className="text-[12px] text-[#0ea5e9] font-semibold">
+          {expanded ? 'Hide details' : 'View details'}
+        </span>
+      </div>
+    </button>
+
+    {expanded && (
+      <div className="px-5 py-4 bg-[#f8fafc] border-t border-[#e2e8f0] grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Why this matters</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li className="text-[13px] text-[#0f172a]">{rec.reason}</li>
+            <li className="text-[13px] text-[#0f172a]">{rec.explanation}</li>
+          </ul>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Proof & metrics</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <BulletItem label="Target source" value={rec.citationSource} />
+            <BulletItem label="Impact score" value={rec.impactScore} />
+            <BulletItem label="Mentions" value={rec.mentionRate} />
+            <BulletItem label="Citations" value={rec.citationCount} />
+            <BulletItem label="SOA" value={rec.soa} />
+            <BulletItem label="Sentiment" value={rec.sentiment} />
+            <BulletItem label="Visibility" value={rec.visibilityScore} />
+          </ul>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Focus & plan</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <BulletItem label="Priority category" value={rec.citationCategory || 'Monitor'} />
+            <BulletItem label="Focus sources" value={rec.focusSources} />
+            <BulletItem label="Content angle" value={rec.contentFocus} />
+            <BulletItem label="Primary KPI" value={`${rec.kpi} (${rec.expectedBoost})`} />
+          </ul>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Timing & confidence</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <BulletItem label="Effort" value={rec.effort} />
+            <BulletItem label="Timeline" value={rec.timeline} />
+            <BulletItem label="Confidence" value={`${rec.confidence}%`} />
+            {rec.trend && (
+              <BulletItem
+                label="Trend"
+                value={`${rec.trend.direction === 'up' ? 'Improving' : rec.trend.direction === 'down' ? 'Declining' : 'Stable'} (${rec.trend.changePercent.toFixed(1)}%)`}
+              />
+            )}
+          </ul>
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+/**
  * Small stat pill for quick status context
  */
 const StatPill = ({
@@ -223,8 +335,14 @@ export const Recommendations = () => {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [problemsDetected, setProblemsDetected] = useState<number>(0);
   const [diagnostics, setDiagnostics] = useState<DiagnosticInsight[]>([]);
-  const [trends, setTrends] = useState<RecommendationsResponse['data']['trends'] | undefined>(undefined);
+  const [trends, setTrends] = useState<NonNullable<RecommendationsResponse['data']>['trends'] | undefined>(undefined);
   const [sortBy, setSortBy] = useState<'score' | 'impact' | 'effort' | 'priority'>('score');
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+  // Reset expanded row when sort order changes to avoid mismatched expansion
+  useEffect(() => {
+    setExpandedIndex(null);
+  }, [sortBy]);
 
   // Load recommendations from database on mount and when brand changes
   useEffect(() => {
@@ -536,23 +654,25 @@ export const Recommendations = () => {
             {/* Performance Diagnosis */}
             {diagnostics.length > 0 && (
               <div className="mb-5">
-                <h3 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wide mb-3">Root Cause Analysis</h3>
-                <div className="space-y-3">
+                <h3 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wide mb-3">Current Challenges</h3>
+                <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {diagnostics.map((diag, idx) => (
-                    <div key={idx} className="flex items-start gap-3 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                      <div className={`h-2 w-2 rounded-full mt-1.5 flex-shrink-0 ${
-                        diag.severity === 'high' ? 'bg-[#ef4444]' : 
-                        diag.severity === 'medium' ? 'bg-[#f59e0b]' : 
-                        'bg-[#06c686]'
-                      }`} />
-                      <div className="flex-1">
-                        <p className="text-[13px] font-semibold text-[#0f172a] mb-1">{diag.title}</p>
-                        <p className="text-[12px] text-[#475569] leading-relaxed mb-1">{diag.description}</p>
-                        <p className="text-[11px] text-[#64748b] italic">Evidence: {diag.evidence}</p>
+                    <li key={idx} className="p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] list-none">
+                      <div className="flex items-start gap-2 mb-1">
+                        <div className={`h-2 w-2 rounded-full mt-1.5 flex-shrink-0 ${
+                          diag.severity === 'high' ? 'bg-[#ef4444]' : 
+                          diag.severity === 'medium' ? 'bg-[#f59e0b]' : 
+                          'bg-[#06c686]'
+                        }`} />
+                        <p className="text-[13px] font-semibold text-[#0f172a]">{diag.title}</p>
                       </div>
-                    </div>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li className="text-[12px] text-[#475569] leading-relaxed">{diag.description}</li>
+                        <li className="text-[12px] text-[#64748b]">Evidence: {diag.evidence}</li>
+                      </ul>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             )}
 
@@ -642,232 +762,60 @@ export const Recommendations = () => {
             </p>
           </div>
         ) : (
-          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">
+          <div className="space-y-4">
             {/* Sorting Controls */}
-            <div className="px-5 py-3 bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center justify-between flex-wrap gap-3">
+            <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm px-5 py-3 flex items-center justify-between flex-wrap gap-3">
               <span className="text-[12px] text-[#64748b]">
                 {totalRecommendations} recommendation{totalRecommendations !== 1 ? 's' : ''} • Sorted by:
               </span>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setSortBy('score')}
-                    className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
-                      sortBy === 'score' 
-                        ? 'bg-[#0ea5e9] text-white shadow-sm' 
-                        : 'bg-white text-[#64748b] border border-[#e8e9ed] hover:bg-[#f8fafc]'
-                    }`}
-                    title="Sort by overall impact score (highest first)"
-                  >
-                    Highest Impact
-                  </button>
-                  <button
-                    onClick={() => setSortBy('effort')}
-                    className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
-                      sortBy === 'effort' 
-                        ? 'bg-[#06c686] text-white shadow-sm' 
-                        : 'bg-white text-[#64748b] border border-[#e8e9ed] hover:bg-[#f8fafc]'
-                    }`}
-                    title="Show low-effort recommendations first (quick wins)"
-                  >
-                    Quick Wins
-                  </button>
-                  <button
-                    onClick={() => setSortBy('priority')}
-                    className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
-                      sortBy === 'priority' 
-                        ? 'bg-[#ef4444] text-white shadow-sm' 
-                        : 'bg-white text-[#64748b] border border-[#e8e9ed] hover:bg-[#f8fafc]'
-                    }`}
-                    title="Show high-priority urgent fixes first"
-                  >
-                    Urgent Fixes
-                  </button>
-                </div>
-                {sortBy === 'effort' && (
-                  <span className="text-[11px] text-[#64748b]">
-                    Showing: <span className="font-semibold text-[#06c686]">Low effort</span> → Medium → High
-                    <span className="ml-2 text-[#94a3b8]">
-                      ({recommendations.filter(r => r.effort === 'Low').length} Low, {recommendations.filter(r => r.effort === 'Medium').length} Medium, {recommendations.filter(r => r.effort === 'High').length} High)
-                    </span>
-                  </span>
-                )}
-                {sortBy === 'priority' && (
-                  <span className="text-[11px] text-[#64748b]">
-                    Showing: <span className="font-semibold text-[#ef4444]">High priority</span> → Medium → Low
-                    <span className="ml-2 text-[#94a3b8]">
-                      ({recommendations.filter(r => r.priority === 'High').length} High, {recommendations.filter(r => r.priority === 'Medium').length} Medium, {recommendations.filter(r => r.priority === 'Low').length} Low)
-                    </span>
-                  </span>
-                )}
-                {sortBy === 'score' && (
-                  <span className="text-[11px] text-[#64748b]">
-                    Showing: <span className="font-semibold text-[#0ea5e9]">Highest impact</span> first (by calculated score)
-                  </span>
-                )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setSortBy('score')}
+                  className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
+                    sortBy === 'score' 
+                      ? 'bg-[#0ea5e9] text-white shadow-sm' 
+                      : 'bg-white text-[#64748b] border border-[#e8e9ed] hover:bg-[#f8fafc]'
+                  }`}
+                  title="Sort by overall impact score (highest first)"
+                >
+                  Highest Impact
+                </button>
+                <button
+                  onClick={() => setSortBy('effort')}
+                  className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
+                    sortBy === 'effort' 
+                      ? 'bg-[#06c686] text-white shadow-sm' 
+                      : 'bg-white text-[#64748b] border border-[#e8e9ed] hover:bg-[#f8fafc]'
+                  }`}
+                  title="Show low-effort recommendations first (quick wins)"
+                >
+                  Quick Wins
+                </button>
+                <button
+                  onClick={() => setSortBy('priority')}
+                  className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
+                    sortBy === 'priority' 
+                      ? 'bg-[#ef4444] text-white shadow-sm' 
+                      : 'bg-white text-[#64748b] border border-[#e8e9ed] hover:bg-[#f8fafc]'
+                  }`}
+                  title="Show high-priority urgent fixes first"
+                >
+                  Urgent Fixes
+                </button>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <colgroup>
-                  <col className="w-12" />
-                  <col className="min-w-[280px]" />
-                  <col className="min-w-[200px]" />
-                  <col className="min-w-[360px]" />
-                  <col className="w-[180px]" />
-                  <col className="w-[160px]" />
-                  <col className="min-w-[140px]" />
-                  <col className="min-w-[140px]" />
-                  <col className="min-w-[160px]" />
-                </colgroup>
-                <thead>
-                  <tr className="bg-[#f8fafc] border-b-2 border-[#e2e8f0]">
-                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">#</th>
-                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Action</th>
-                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Reason</th>
-                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Explanation</th>
-                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Source & Metrics</th>
-                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Focus</th>
-                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider">KPI / Boost</th>
-                    <th className={`text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider ${
-                      sortBy === 'effort' ? 'bg-[#ecfdf5] border-l-2 border-[#06c686]' : ''
-                    }`}>
-                      Effort / Timeline
-                      {sortBy === 'effort' && <span className="ml-1 text-[#06c686]">↓</span>}
-                    </th>
-                    <th className={`text-left px-5 py-3.5 text-[11px] font-semibold text-[#475569] uppercase tracking-wider ${
-                      sortBy === 'priority' ? 'bg-[#fef2f2] border-l-2 border-[#ef4444]' : ''
-                    }`}>
-                      Confidence / Priority / Area
-                      {sortBy === 'priority' && <span className="ml-1 text-[#ef4444]">↓</span>}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRecommendations.map((rec, index) => (
-                    <tr
-                      key={index}
-                      className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#f9fafb]'} border-b border-[#e8e9ed] hover:bg-[#f1f5f9] transition-colors`}
-                    >
-                      <td className="px-5 py-4 align-top">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[13px] text-[#64748b] font-medium">
-                            {index + 1}
-                          </span>
-                          {sortBy === 'effort' && index < 3 && rec.effort === 'Low' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#06c686] text-white font-semibold">
-                              Quick Win
-                            </span>
-                          )}
-                          {sortBy === 'priority' && index < 3 && rec.priority === 'High' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#ef4444] text-white font-semibold">
-                              Urgent
-                            </span>
-                          )}
-                          {sortBy === 'score' && index === 0 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#0ea5e9] text-white font-semibold">
-                              Top Impact
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 align-top">
-                        <div className="space-y-2">
-                          {rec.citationCategory && (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${
-                              rec.citationCategory === 'Priority Partnerships' 
-                                ? 'bg-[#06c686] text-white'
-                                : rec.citationCategory === 'Reputation Management'
-                                ? 'bg-[#ef4444] text-white'
-                                : rec.citationCategory === 'Growth Opportunities'
-                                ? 'bg-[#0ea5e9] text-white'
-                                : 'bg-[#94a3b8] text-white'
-                            }`}>
-                              {rec.citationCategory === 'Priority Partnerships' ? 'Priority' :
-                               rec.citationCategory === 'Reputation Management' ? 'Reputation' :
-                               rec.citationCategory === 'Growth Opportunities' ? 'Growth' : 'Monitor'}
-                            </span>
-                          )}
-                          <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.action}</p>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 align-top">
-                        <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.reason}</p>
-                      </td>
-                      <td className="px-5 py-4 align-top">
-                        <p className="text-[13px] text-[#1a1d29] font-medium leading-relaxed break-words">{rec.explanation}</p>
-                      </td>
-                      <td className="px-5 py-4 align-top">
-                        <p className="text-[13px] text-[#1a1d29] font-medium mb-1.5 break-words hyphens-auto">{rec.citationSource}</p>
-                        <div className="space-y-0.5">
-                          <p className="text-[12px] text-[#64748b] break-words">
-                            Impact: <span className="font-medium text-[#1a1d29]">{rec.impactScore}</span> • Mentions: <span className="font-medium text-[#1a1d29]">{rec.mentionRate}</span> • Citations: <span className="font-medium text-[#1a1d29]">{rec.citationCount}</span>
-                          </p>
-                          <p className="text-[12px] text-[#64748b] break-words">
-                            SOA: <span className="font-medium text-[#1a1d29]">{rec.soa}</span> • Sentiment: <span className="font-medium text-[#1a1d29]">{rec.sentiment}</span> • Visibility: <span className="font-medium text-[#1a1d29]">{rec.visibilityScore}</span>
-                            {rec.trend && (
-                              <span className="ml-2">
-                                <TrendIndicator direction={rec.trend.direction} changePercent={rec.trend.changePercent} />
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 align-top">
-                        <p className="text-[13px] text-[#1a1d29] font-medium mb-1.5">Sources:</p>
-                        <p className="text-[13px] text-[#64748b] leading-relaxed mb-2.5 break-words hyphens-auto">{rec.focusSources}</p>
-                        <p className="text-[13px] text-[#1a1d29] font-medium mb-1.5">Content:</p>
-                        <p className="text-[13px] text-[#64748b] leading-relaxed break-words hyphens-auto">{rec.contentFocus}</p>
-                      </td>
-                      <td className="px-5 py-4 align-top">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <p className="text-[13px] text-[#1a1d29] font-medium">{rec.kpi}</p>
-                          {rec.trend && rec.focusArea === 'visibility' && trends?.visibility && (
-                            <TrendIndicator direction={trends.visibility.direction} changePercent={trends.visibility.changePercent} />
-                          )}
-                          {rec.trend && rec.focusArea === 'soa' && trends?.soa && (
-                            <TrendIndicator direction={trends.soa.direction} changePercent={trends.soa.changePercent} />
-                          )}
-                          {rec.trend && rec.focusArea === 'sentiment' && trends?.sentiment && (
-                            <TrendIndicator direction={trends.sentiment.direction} changePercent={trends.sentiment.changePercent} />
-                          )}
-                        </div>
-                        <p className="text-[13px] text-[#06c686] font-semibold">{rec.expectedBoost}</p>
-                      </td>
-                      <td className={`px-5 py-4 align-top ${
-                        sortBy === 'effort' ? 'bg-[#f0fdf4]' : ''
-                      }`}>
-                        <div className="mb-2">
-                          <LevelBadge level={rec.effort} type="effort" />
-                        </div>
-                        <p className="text-[13px] text-[#64748b]">{rec.timeline}</p>
-                      </td>
-                      <td className={`px-5 py-4 align-top ${
-                        sortBy === 'priority' ? 'bg-[#fef2f2]' : ''
-                      }`}>
-                        <div className="space-y-2.5">
-                          <ConfidenceBar value={rec.confidence} />
-                          <div>
-                            <LevelBadge level={rec.priority} type="priority" />
-                          </div>
-                          <div>
-                            <FocusAreaBadge area={rec.focusArea} />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="px-5 py-3.5 bg-[#f8fafc] border-t border-[#e2e8f0] flex items-center justify-between flex-wrap gap-3">
-              <span className="text-[13px] text-[#64748b]">
-                Showing {totalRecommendations} recommendation{totalRecommendations !== 1 ? 's' : ''}
-                {problemsDetected > 0 && ` based on ${problemsDetected} detected issue${problemsDetected !== 1 ? 's' : ''}`}
-              </span>
-              <span className="text-[12px] text-[#94a3b8]">
-                Powered by Cerebras AI (QWEN) • Data-backed analysis
-              </span>
+
+            {/* Modern expandable list */}
+            <div className="space-y-3">
+              {sortedRecommendations.map((rec, index) => (
+                <ExpandableRecommendationRow
+                  key={`${rec.action}-${index}`}
+                  rec={rec}
+                  index={index}
+                  expanded={expandedIndex === index}
+                  onToggle={() => setExpandedIndex(expandedIndex === index ? null : index)}
+                />
+              ))}
             </div>
           </div>
         )}

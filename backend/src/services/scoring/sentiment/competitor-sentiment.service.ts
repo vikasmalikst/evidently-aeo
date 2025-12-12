@@ -1,7 +1,11 @@
 import dotenv from 'dotenv';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { consolidatedAnalysisService } from '../consolidated-analysis.service';
 
 dotenv.config();
+
+// Feature flag: Use consolidated analysis service
+const USE_CONSOLIDATED_ANALYSIS = process.env.USE_CONSOLIDATED_ANALYSIS === 'true';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -121,7 +125,49 @@ export class CompetitorSentimentService {
           continue;
         }
 
-        const sentimentMap = await this.analyzeCompetitorSentimentWithOpenRouter(collectorResult.raw_answer, competitorNames);
+        // Check if we have consolidated analysis result
+        let sentimentMap: Map<string, CompetitorSentimentAnalysis>;
+        
+        if (USE_CONSOLIDATED_ANALYSIS) {
+          try {
+            // Try to get from cache (if position extraction already ran)
+            const cached = (consolidatedAnalysisService as any).cache.get(collectorResultId);
+            if (cached?.sentiment?.competitors) {
+              // Build sentiment map from consolidated result
+              sentimentMap = new Map();
+              for (const compName of competitorNames) {
+                const compSentiment = cached.sentiment.competitors[compName];
+                if (compSentiment) {
+                  sentimentMap.set(compName, {
+                    entityName: compName,
+                    label: compSentiment.label,
+                    score: compSentiment.score,
+                    positiveSentences: compSentiment.positiveSentences || [],
+                    negativeSentences: compSentiment.negativeSentences || []
+                  });
+                } else {
+                  // Default if competitor not in consolidated result
+                  sentimentMap.set(compName, {
+                    entityName: compName,
+                    label: 'NEUTRAL',
+                    score: 0,
+                    positiveSentences: [],
+                    negativeSentences: []
+                  });
+                }
+              }
+              console.log(`📦 Using consolidated competitor sentiment for collector_result ${collectorResultId}`);
+            } else {
+              // Fallback to individual analysis
+              sentimentMap = await this.analyzeCompetitorSentimentWithOpenRouter(collectorResult.raw_answer, competitorNames);
+            }
+          } catch (error) {
+            console.warn(`⚠️ Failed to get consolidated sentiment, falling back:`, error instanceof Error ? error.message : error);
+            sentimentMap = await this.analyzeCompetitorSentimentWithOpenRouter(collectorResult.raw_answer, competitorNames);
+          }
+        } else {
+          sentimentMap = await this.analyzeCompetitorSentimentWithOpenRouter(collectorResult.raw_answer, competitorNames);
+        }
         for (const row of rows) {
           const competitorName = row.competitor_name!;
           const sentiment = sentimentMap.get(competitorName) || {

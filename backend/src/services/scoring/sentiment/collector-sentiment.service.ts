@@ -1,7 +1,11 @@
 import dotenv from 'dotenv';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { consolidatedAnalysisService } from '../consolidated-analysis.service';
 
 dotenv.config();
+
+// Feature flag: Use consolidated analysis service
+const USE_CONSOLIDATED_ANALYSIS = process.env.USE_CONSOLIDATED_ANALYSIS === 'true';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -149,7 +153,31 @@ export class CollectorSentimentService {
           continue;
         }
 
-        const sentiment = await this.analyzeSentiment(row.raw_answer);
+        // Check if we have consolidated analysis result
+        let sentiment;
+        if (USE_CONSOLIDATED_ANALYSIS) {
+          try {
+            // Try to get from cache (if position extraction already ran)
+            const cached = (consolidatedAnalysisService as any).cache.get(row.id);
+            if (cached?.sentiment?.brand) {
+              sentiment = {
+                label: cached.sentiment.brand.label,
+                score: cached.sentiment.brand.score,
+                positiveSentences: cached.sentiment.brand.positiveSentences || [],
+                negativeSentences: cached.sentiment.brand.negativeSentences || []
+              };
+              console.log(`📦 Using consolidated sentiment analysis for collector_result ${row.id}`);
+            } else {
+              // Fallback to individual analysis
+              sentiment = await this.analyzeSentiment(row.raw_answer);
+            }
+          } catch (error) {
+            console.warn(`⚠️ Failed to get consolidated sentiment, falling back:`, error instanceof Error ? error.message : error);
+            sentiment = await this.analyzeSentiment(row.raw_answer);
+          }
+        } else {
+          sentiment = await this.analyzeSentiment(row.raw_answer);
+        }
 
         // Get topic from generated_queries if query_id exists
         let topic: string | null = null;

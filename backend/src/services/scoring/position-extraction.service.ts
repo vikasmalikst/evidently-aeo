@@ -11,9 +11,13 @@
 import dotenv from 'dotenv';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import { consolidatedAnalysisService, ConsolidatedAnalysisOptions } from './consolidated-analysis.service';
 
 // Load environment variables
 dotenv.config();
+
+// Feature flag: Use consolidated analysis service
+const USE_CONSOLIDATED_ANALYSIS = process.env.USE_CONSOLIDATED_ANALYSIS === 'true';
 
 // ============================================================================
 // TYPES & SCHEMAS
@@ -37,6 +41,8 @@ const CollectorResultRow = z.object({
   created_at: z.string(),
   topic: z.string().nullable().optional(), // Topic column
   metadata: z.any().optional(),
+  citations: z.any().optional(), // Citations array (can be string[] or object[])
+  urls: z.any().optional(), // URLs array (can be string[] or object[])
 });
 
 const BrandRow = z.object({
@@ -249,13 +255,84 @@ export class PositionExtractionService {
 
     const parsedBrand = BrandRow.parse(brand);
 
-    // Get product names (with caching)
-    const productNames = await this.getProductNames(
-      parsedBrand.id,
-      parsedBrand.name,
-      parsedBrand.metadata,
-      result.raw_answer
+    // Normalize competitors array first (needed for both paths)
+    const normalizedCompetitors = result.competitors.map(comp => 
+      typeof comp === 'string' 
+        ? { competitor_name: comp }
+        : comp
     );
+
+    // Fetch competitor metadata (needed for both paths)
+    const { data: competitorMetadataRows } = await this.supabase
+      .from('brand_competitors')
+      .select('competitor_name, metadata')
+      .eq('brand_id', result.brand_id);
+
+    const competitorMetadataMap = new Map<string, any>();
+    (competitorMetadataRows || []).forEach((row) => {
+      competitorMetadataMap.set(row.competitor_name.toLowerCase(), row.metadata);
+    });
+
+    // Get product names (with caching or consolidated analysis)
+    let productNames: string[] = [];
+    let competitorProductsMap: Record<string, string[]> = {};
+
+    if (USE_CONSOLIDATED_ANALYSIS) {
+      // Use consolidated analysis service
+      try {
+        // Parse citations from result
+        let citations: string[] = [];
+        if (Array.isArray(result.citations)) {
+          citations = result.citations
+            .map(c => typeof c === 'string' ? c : (c.url || c))
+            .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
+        } else if (Array.isArray((result as any).urls)) {
+          citations = (result as any).urls
+            .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
+        }
+
+        // Get competitor names for consolidated service
+        const competitorNames = normalizedCompetitors.map(c => 
+          typeof c === 'string' ? c : c.competitor_name
+        ).filter(Boolean);
+
+        console.log(`🔄 Using consolidated analysis service for collector_result ${result.id}`);
+        const consolidated = await consolidatedAnalysisService.analyze({
+          brandName: parsedBrand.name,
+          brandMetadata: parsedBrand.metadata,
+          competitorNames,
+          competitorMetadata: competitorMetadataMap,
+          rawAnswer: result.raw_answer,
+          citations,
+          collectorResultId: result.id
+        });
+
+        productNames = consolidated.products.brand;
+        competitorProductsMap = consolidated.products.competitors;
+
+        // Cache brand products
+        this.productCache.set(parsedBrand.id, productNames);
+
+        console.log(`✅ Consolidated analysis: ${productNames.length} brand products, ${Object.keys(competitorProductsMap).length} competitors with products`);
+      } catch (error) {
+        console.warn(`⚠️ Consolidated analysis failed, falling back to individual extraction:`, error instanceof Error ? error.message : error);
+        // Fallback to individual extraction
+        productNames = await this.getProductNames(
+          parsedBrand.id,
+          parsedBrand.name,
+          parsedBrand.metadata,
+          result.raw_answer
+        );
+      }
+    } else {
+      // Use individual product extraction (original method)
+      productNames = await this.getProductNames(
+        parsedBrand.id,
+        parsedBrand.name,
+        parsedBrand.metadata,
+        result.raw_answer
+      );
+    }
 
     // Build position metadata with topic and product names
     const positionMetadata: Record<string, any> = {};
@@ -268,27 +345,15 @@ export class PositionExtractionService {
       positionMetadata.products = productNames;
     }
 
-    // Normalize competitors array (handle both string[] and object[] formats)
-    const normalizedCompetitors = result.competitors.map(comp => 
-      typeof comp === 'string' 
-        ? { competitor_name: comp }
-        : comp
-    );
-
-    // Fetch competitor metadata to enrich with product names
-    const { data: competitorMetadataRows } = await this.supabase
-      .from('brand_competitors')
-      .select('competitor_name, metadata')
-      .eq('brand_id', result.brand_id);
-
-    const competitorMetadataMap = new Map<string, any>();
-    (competitorMetadataRows || []).forEach((row) => {
-      competitorMetadataMap.set(row.competitor_name.toLowerCase(), row.metadata);
-    });
-
     const enrichedCompetitors = normalizedCompetitors.map((comp) => {
-      const metadata = competitorMetadataMap.get(comp.competitor_name.toLowerCase()) || null;
-      const productNames = this.extractProductNamesFromMetadata(metadata);
+      // Use products from consolidated analysis if available, otherwise from metadata
+      let productNames: string[] = [];
+      if (USE_CONSOLIDATED_ANALYSIS && competitorProductsMap[comp.competitor_name]) {
+        productNames = competitorProductsMap[comp.competitor_name];
+      } else {
+        const metadata = competitorMetadataMap.get(comp.competitor_name.toLowerCase()) || null;
+        productNames = this.extractProductNamesFromMetadata(metadata);
+      }
       return {
         competitor_name: comp.competitor_name,
         productNames,

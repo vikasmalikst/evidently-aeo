@@ -57,6 +57,19 @@ export interface ConsolidatedAnalysisResult {
   };
 }
 
+interface ClaudeAPIResponse {
+  id: string;
+  type: string;
+  role: string;
+  content: Array<{
+    type: string;
+    text: string;
+  }>;
+  model: string;
+  stop_reason?: string;
+  stop_sequence?: string | null;
+}
+
 // ============================================================================
 // SERVICE
 // ============================================================================
@@ -370,7 +383,7 @@ Respond with ONLY valid JSON in this exact structure:
       throw new Error(`Claude API error: ${response.status} ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as ClaudeAPIResponse;
     
     // Extract JSON from response
     const content = data.content[0].text;

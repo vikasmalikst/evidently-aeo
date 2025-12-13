@@ -20,69 +20,14 @@ export type CitationCategory =
 
 interface CategorizationResult {
   category: CitationCategory;
-  confidence?: 'high' | 'medium' | 'low'; // Confidence level (high = hardcoded, medium/low = AI)
-  source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default'; // Where the categorization came from
+  confidence?: 'high' | 'medium' | 'low'; // Confidence level
+  source?: 'database_cache' | 'ai'; // Where the categorization came from
 }
 
-interface DomainCategoryMapping {
-  domain: string | RegExp;
-  category: CitationCategory;
-  pageName?: string; // Optional predefined page name
-}
-
-// Domain patterns for categorization
-const DOMAIN_CATEGORIES: DomainCategoryMapping[] = [
-  // Social Platforms
-  { domain: /reddit\.com/i, category: 'Social', pageName: 'Reddit' },
-  { domain: /twitter\.com/i, category: 'Social', pageName: 'Twitter' },
-  // { domain: /x\.com/i, category: 'Social', pageName: 'X (Twitter)' }, <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-  { domain: /facebook\.com/i, category: 'Social', pageName: 'Facebook' },
-  { domain: /linkedin\.com/i, category: 'Social', pageName: 'LinkedIn' },
-  { domain: /instagram\.com/i, category: 'Social', pageName: 'Instagram' },
-  { domain: /tiktok\.com/i, category: 'Social', pageName: 'TikTok' },
-  { domain: /youtube\.com/i, category: 'Social', pageName: 'YouTube' },
-  { domain: /pinterest\.com/i, category: 'Social', pageName: 'Pinterest' },
-  
-  // Editorial/News
-  { domain: /techcrunch\.com/i, category: 'Editorial', pageName: 'TechCrunch' },
-  { domain: /forbes\.com/i, category: 'Editorial', pageName: 'Forbes' },
-  { domain: /medium\.com/i, category: 'Editorial', pageName: 'Medium' },
-  { domain: /wired\.com/i, category: 'Editorial', pageName: 'Wired' },
-  { domain: /theverge\.com/i, category: 'Editorial', pageName: 'The Verge' },
-  { domain: /bbc\.com/i, category: 'Editorial', pageName: 'BBC' },
-  { domain: /cnn\.com/i, category: 'Editorial', pageName: 'CNN' },
-  { domain: /nytimes\.com/i, category: 'Editorial', pageName: 'New York Times' },
-  { domain: /wsj\.com/i, category: 'Editorial', pageName: 'Wall Street Journal' },
-  { domain: /reuters\.com/i, category: 'Editorial', pageName: 'Reuters' },
-  { domain: /bloomberg\.com/i, category: 'Editorial', pageName: 'Bloomberg' },
-  { domain: /guardian\.com/i, category: 'Editorial', pageName: 'The Guardian' },
-  { domain: /vogue\.co\.uk/i, category: 'Editorial', pageName: 'Vogue' },
-  { domain: /teenvogue\.com/i, category: 'Editorial', pageName: 'Teen Vogue' },
-  
-  // Reference/Knowledge
-  { domain: /wikipedia\.org/i, category: 'Reference', pageName: 'Wikipedia' },
-  { domain: /wikidata\.org/i, category: 'Reference', pageName: 'Wikidata' },
-  { domain: /stackoverflow\.com/i, category: 'Reference', pageName: 'Stack Overflow' },
-  { domain: /github\.com/i, category: 'Reference', pageName: 'GitHub' },
-  { domain: /quora\.com/i, category: 'Reference', pageName: 'Quora' },
-  
-  // Corporate/Business
-  { domain: /g2\.com/i, category: 'Corporate', pageName: 'G2' },
-  { domain: /capterra\.com/i, category: 'Corporate', pageName: 'Capterra' },
-  { domain: /trustpilot\.com/i, category: 'Corporate', pageName: 'Trustpilot' },
-  
-  // Institutional/Educational
-  { domain: /\.edu/i, category: 'Institutional', pageName: undefined }, // Generic .edu
-  { domain: /\.gov/i, category: 'Institutional', pageName: undefined }, // Generic .gov
-  { domain: /archive\./i, category: 'Institutional', pageName: 'Archive' },
-  { domain: /scholar\.google\.com/i, category: 'Institutional', pageName: 'Google Scholar' },
-  { domain: /pubmed\.ncbi\.nlm\.nih\.gov/i, category: 'Institutional', pageName: 'PubMed' },
-  
-  // UGC/Review Sites
-  { domain: /amazon\.com/i, category: 'UGC', pageName: 'Amazon' },
-  { domain: /yelp\.com/i, category: 'UGC', pageName: 'Yelp' },
-  { domain: /tripadvisor\.com/i, category: 'UGC', pageName: 'TripAdvisor' },
-];
+// Note: Hardcoded domain patterns have been removed
+// Categorization now uses only:
+// 1. Database cache (citation_categories table)
+// 2. AI categorization (Cerebras/Gemini)
 
 export class CitationCategorizationService {
   private supabase: SupabaseClient | null = null;
@@ -119,21 +64,12 @@ export class CitationCategorizationService {
   /**
    * Extract page/company name from URL
    * Attempts to extract a readable name from the domain
+   * Can also check database cache for predefined page names
    */
   extractPageName(url: string, domain: string): string | null {
-    // First check if we have a predefined name
-    for (const mapping of DOMAIN_CATEGORIES) {
-      if (mapping.pageName) {
-        if (mapping.domain instanceof RegExp) {
-          if (mapping.domain.test(url)) {
-            return mapping.pageName;
-          }
-        } else if (domain.toLowerCase().includes(mapping.domain.toLowerCase())) {
-          return mapping.pageName;
-        }
-      }
-    }
-
+    // Try to get page name from database cache first
+    // (This will be called after categorization, so cache should be populated)
+    
     // Otherwise, generate from domain
     // Remove common TLDs and extract main part
     const domainWithoutTld = domain.replace(/\.(com|org|net|edu|gov|co|io|uk|us)$/i, '');
@@ -149,7 +85,7 @@ export class CitationCategorizationService {
 
   /**
    * Categorize a citation based on its domain
-   * Uses database cache first, then hardcoded patterns, then AI if needed
+   * Uses database cache first, then AI if needed (no hardcoded fallbacks)
    */
   async categorize(
     url: string, 
@@ -169,45 +105,7 @@ export class CitationCategorizationService {
       };
     }
 
-    // Second, try hardcoded domain patterns (fast and reliable)
-    for (const mapping of DOMAIN_CATEGORIES) {
-      if (mapping.domain instanceof RegExp) {
-        if (mapping.domain.test(url) || mapping.domain.test(domain)) {
-          const result = {
-            category: mapping.category,
-            confidence: 'high' as const,
-            source: 'hardcoded' as const
-          };
-          // Store in database cache for future use
-          await this.storeCategoryInCache(url, domain, mapping.category, null, customerId, brandId);
-          return result;
-        }
-      } else if (domain.toLowerCase().includes(mapping.domain.toLowerCase())) {
-        const result = {
-          category: mapping.category,
-          confidence: 'high' as const,
-          source: 'hardcoded' as const
-        };
-        // Store in database cache for future use
-        await this.storeCategoryInCache(url, domain, mapping.category, null, customerId, brandId);
-        return result;
-      }
-    }
-
-    // Third, try simple domain-based heuristics
-    const simpleCategory = this.categorizeByDomainHeuristics(domain);
-    if (simpleCategory) {
-      const result = {
-        category: simpleCategory,
-        confidence: 'medium' as const,
-        source: 'simple_domain_matching' as const
-      };
-      // Store in database cache for future use
-      await this.storeCategoryInCache(url, domain, simpleCategory, null, customerId, brandId);
-      return result;
-    }
-
-    // Finally, try AI categorization if enabled
+    // If not in cache, use AI categorization
     if (useAI) {
       try {
         const aiCategory = await this.categorizeWithAI(url, domain);
@@ -222,46 +120,15 @@ export class CitationCategorizationService {
         return result;
       } catch (error) {
         console.error(`❌ AI categorization failed for ${domain}:`, error instanceof Error ? error.message : error);
-        // Fall back to default category instead of throwing
-        console.warn(`⚠️ Using default 'Corporate' category for ${domain} due to AI failure`);
-        const result = {
-          category: 'Corporate' as const, // Default fallback
-          confidence: 'low' as const,
-          source: 'fallback_default' as const
-        };
-        // Store default in cache to avoid repeated failures
-        await this.storeCategoryInCache(url, domain, 'Corporate', null, customerId, brandId);
-        return result;
+        // Throw error instead of using fallback - let caller handle it
+        throw new Error(`Failed to categorize citation: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    // If AI is disabled and no pattern matched, use default
-    const result = {
-      category: 'Corporate' as const,
-      confidence: 'low' as const,
-      source: 'fallback_default' as const
-    };
-    // Store default in cache
-    await this.storeCategoryInCache(url, domain, 'Corporate', null, customerId, brandId);
-    return result;
+    // If AI is disabled and not in cache, throw error
+    throw new Error(`Citation not in database cache and AI categorization is disabled for ${domain}`);
   }
 
-  /**
-   * Simple domain-based heuristics for categorization (no AI needed)
-   */
-  private categorizeByDomainHeuristics(domain: string): CitationCategory | null {
-    const lowerDomain = domain.toLowerCase();
-    
-    // Check for common patterns
-    if (lowerDomain.endsWith('.edu')) return 'Institutional';
-    if (lowerDomain.endsWith('.gov') || lowerDomain.endsWith('.gov.uk') || lowerDomain.endsWith('.gov.au')) return 'Institutional';
-    if (lowerDomain.includes('university') || lowerDomain.includes('edu')) return 'Institutional';
-    if (lowerDomain.includes('news') || lowerDomain.includes('blog') || lowerDomain.includes('media')) return 'Editorial';
-    if (lowerDomain.includes('wiki')) return 'Reference';
-    if (lowerDomain.includes('review') || lowerDomain.includes('rating')) return 'UGC';
-    
-    return null; // No match found
-  }
 
   /**
    * Retry wrapper with exponential backoff for rate limiting
@@ -610,7 +477,7 @@ Respond with ONLY the category name.`;
 
   /**
    * Process a citation URL and return all extracted information
-   * Uses database cache first, then hardcoded patterns, then AI for categorization if domain is unknown
+   * Uses database cache first, then AI for categorization if domain is unknown
    */
   async processCitation(
     url: string, 
@@ -623,7 +490,7 @@ Respond with ONLY the category name.`;
     pageName: string | null;
     category: CitationCategory;
     confidence?: 'high' | 'medium' | 'low';
-    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default' | 'database_cache';
+    source?: 'database_cache' | 'ai';
   }> {
     const domain = this.extractDomain(url);
     const categorizationResult = await this.categorize(url, useAI, customerId, brandId);

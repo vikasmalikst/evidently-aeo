@@ -26,7 +26,7 @@ export class CitationExtractionService {
     pageName: string | null;
     category: string;
     confidence?: 'high' | 'medium' | 'low';
-    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default';
+    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default' | 'database_cache';
   }> = new Map();
   // Tunables (can be overridden via env)
   private readonly perResultConcurrency =

@@ -72,6 +72,7 @@ export class ConsolidatedScoringService {
       .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata, citations, urls, topic')
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
+      .not('raw_answer', 'is', null) // Only process results with raw_answer
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -85,7 +86,7 @@ export class ConsolidatedScoringService {
       throw new Error(`Failed to fetch collector results: ${fetchError.message}`);
     }
 
-    if (!collectorResults || collectorResults.length === 0) {
+    if (!collectorResults || !Array.isArray(collectorResults) || collectorResults.length === 0) {
       console.log('✅ No collector results found to process');
       return result;
     }
@@ -93,6 +94,10 @@ export class ConsolidatedScoringService {
     // Check which results already have positions (to avoid reprocessing)
     const processedCollectorResults = new Set<number>();
     for (const cr of collectorResults) {
+      if (!cr || !cr.id) {
+        continue;
+      }
+      
       const { data: existing } = await this.supabase
         .from('extracted_positions')
         .select('id')
@@ -105,7 +110,7 @@ export class ConsolidatedScoringService {
       }
     }
 
-    const resultsToProcess = collectorResults.filter(r => !processedCollectorResults.has(r.id));
+    const resultsToProcess = collectorResults.filter(r => r && r.id && !processedCollectorResults.has(r.id) && r.raw_answer);
 
     if (resultsToProcess.length === 0) {
       console.log('✅ All collector results already processed');
@@ -117,10 +122,22 @@ export class ConsolidatedScoringService {
     // Step 1: Run consolidated analysis for all results (stores citations, caches products & sentiment)
     const analysisResults = new Map<number, any>();
     for (const collectorResult of resultsToProcess) {
+      if (!collectorResult || !collectorResult.id) {
+        continue;
+      }
+      
       try {
+        // Validate required fields
+        if (!collectorResult.raw_answer || collectorResult.raw_answer.trim().length === 0) {
+          console.warn(`⚠️ Skipping collector_result ${collectorResult.id}: no raw_answer`);
+          continue;
+        }
+
         const analysis = await this.runConsolidatedAnalysis(collectorResult, brandId, customerId);
-        analysisResults.set(collectorResult.id, analysis);
-        result.processed++;
+        if (analysis) {
+          analysisResults.set(collectorResult.id, analysis);
+          result.processed++;
+        }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         result.errors.push({
@@ -154,11 +171,17 @@ export class ConsolidatedScoringService {
 
     // Step 3: Store sentiment in extracted_positions (now that positions exist)
     for (const collectorResult of resultsToProcess) {
+      if (!collectorResult || !collectorResult.id) {
+        continue;
+      }
+      
       const analysis = analysisResults.get(collectorResult.id);
-      if (analysis) {
+      if (analysis && analysis.sentiment) {
         try {
           // Get competitor names from the analysis
-          const competitorNames = Object.keys(analysis.sentiment.competitors || {});
+          const competitorNames = analysis.sentiment.competitors 
+            ? Object.keys(analysis.sentiment.competitors) 
+            : [];
           await this.storeSentiment(collectorResult, analysis, competitorNames);
           result.sentimentsProcessed++;
         } catch (error) {
@@ -192,14 +215,19 @@ export class ConsolidatedScoringService {
     console.log(`\n📊 Processing collector_result ${collectorResultId}...`);
 
     // Get brand metadata
-    const { data: brand } = await this.supabase
+    const { data: brand, error: brandError } = await this.supabase
       .from('brands')
       .select('id, name, metadata')
       .eq('id', brandId)
       .single();
 
-    if (!brand) {
-      throw new Error(`Brand not found: ${brandId}`);
+    if (brandError || !brand) {
+      throw new Error(`Brand not found: ${brandId} - ${brandError?.message || 'Unknown error'}`);
+    }
+
+    // Ensure brand name exists
+    if (!brand.name) {
+      throw new Error(`Brand name is missing for brand ${brandId}`);
     }
 
     // Get competitor metadata
@@ -213,44 +241,56 @@ export class ConsolidatedScoringService {
       competitorMetadataMap.set(row.competitor_name.toLowerCase(), row.metadata);
     });
 
-    // Normalize competitors
-    const competitors = collectorResult.competitors || [];
+    // Normalize competitors - ensure it's an array
+    const competitors = Array.isArray(collectorResult.competitors) ? collectorResult.competitors : [];
     const normalizedCompetitors = competitors.map((comp: any) =>
       typeof comp === 'string' ? { competitor_name: comp } : comp
     );
     const competitorNames = normalizedCompetitors
-      .map((c: any) => c.competitor_name)
-      .filter(Boolean);
+      .map((c: any) => c && c.competitor_name ? c.competitor_name : null)
+      .filter((name): name is string => Boolean(name));
 
-    // Extract citations
+    // Extract citations - ensure we always have an array
     let citations: string[] = [];
-    if (Array.isArray(collectorResult.citations)) {
-      citations = collectorResult.citations
-        .map((c: any) => (typeof c === 'string' ? c : c.url || c))
-        .filter((url: any): url is string => typeof url === 'string' && url.startsWith('http'));
-    } else if (Array.isArray(collectorResult.urls)) {
-      citations = collectorResult.urls.filter((url: any): url is string =>
-        typeof url === 'string' && url.startsWith('http')
-      );
+    if (collectorResult.citations) {
+      if (Array.isArray(collectorResult.citations)) {
+        citations = collectorResult.citations
+          .map((c: any) => (typeof c === 'string' ? c : c.url || c))
+          .filter((url: any): url is string => typeof url === 'string' && url.startsWith('http'));
+      }
+    }
+    if (citations.length === 0 && collectorResult.urls) {
+      if (Array.isArray(collectorResult.urls)) {
+        citations = collectorResult.urls.filter((url: any): url is string =>
+          typeof url === 'string' && url.startsWith('http')
+        );
+      }
+    }
+
+    // Ensure raw_answer is not null
+    const rawAnswer = collectorResult.raw_answer || '';
+    
+    if (!rawAnswer || rawAnswer.trim().length === 0) {
+      throw new Error(`Collector result ${collectorResultId} has no raw_answer`);
     }
 
     // Call consolidated analysis
     const analysis = await consolidatedAnalysisService.analyze({
-      brandName: brand.name,
-      brandMetadata: { ...brand.metadata, customer_id: customerId, brand_id: brandId },
-      competitorNames,
+      brandName: brand.name || 'Brand',
+      brandMetadata: { ...(brand.metadata || {}), customer_id: customerId, brand_id: brandId },
+      competitorNames: competitorNames || [],
       competitorMetadata: competitorMetadataMap,
-      rawAnswer: collectorResult.raw_answer,
-      citations,
+      rawAnswer: rawAnswer,
+      citations: citations || [],
       collectorResultId,
       customerId,
       brandId,
     });
 
     console.log(`   ✅ Consolidated analysis complete`);
-    console.log(`      Products: ${analysis.products.brand.length} brand, ${Object.keys(analysis.products.competitors).length} competitors`);
-    console.log(`      Citations: ${Object.keys(analysis.citations).length}`);
-    console.log(`      Sentiment: Brand ${analysis.sentiment.brand.label} (${analysis.sentiment.brand.score})`);
+    console.log(`      Products: ${(analysis.products?.brand?.length || 0)} brand, ${Object.keys(analysis.products?.competitors || {}).length} competitors`);
+    console.log(`      Citations: ${Object.keys(analysis.citations || {}).length}`);
+    console.log(`      Sentiment: Brand ${analysis.sentiment?.brand?.label || 'NEUTRAL'} (${analysis.sentiment?.brand?.score || 60})`);
 
     // Store citations with categories
     await this.storeCitations(collectorResult, analysis, brandId, customerId);
@@ -270,6 +310,12 @@ export class ConsolidatedScoringService {
     analysis: any,
     competitorNames: string[]
   ): Promise<void> {
+    // Validate analysis has sentiment data
+    if (!analysis || !analysis.sentiment) {
+      console.warn(`   ⚠️ No sentiment data in analysis for collector_result ${collectorResult.id}`);
+      return;
+    }
+
     // Get all position rows for this collector result
     const { data: positionRows, error } = await this.supabase
       .from('extracted_positions')
@@ -286,44 +332,48 @@ export class ConsolidatedScoringService {
     }
 
     // Update brand sentiment (rows without competitor_name)
-    const brandRows = positionRows.filter(row => !row.competitor_name || row.competitor_name.trim() === '');
-    if (brandRows.length > 0) {
-      const brandIds = brandRows.map(r => r.id);
-      const { error: updateError } = await this.supabase
-        .from('extracted_positions')
-        .update({
-          sentiment_label: analysis.sentiment.brand.label,
-          sentiment_score: analysis.sentiment.brand.score,
-        })
-        .in('id', brandIds);
-
-      if (updateError) {
-        throw new Error(`Failed to update brand sentiment: ${updateError.message}`);
-      }
-      console.log(`   ✅ Updated brand sentiment for ${brandIds.length} rows`);
-    }
-
-    // Update competitor sentiment
-    for (const compName of competitorNames) {
-      const compRows = positionRows.filter(
-        row => row.competitor_name && row.competitor_name.toLowerCase() === compName.toLowerCase()
-      );
-
-      if (compRows.length > 0 && analysis.sentiment.competitors[compName]) {
-        const compSentiment = analysis.sentiment.competitors[compName];
-        const compIds = compRows.map(r => r.id);
+    if (analysis.sentiment.brand) {
+      const brandRows = positionRows.filter(row => !row.competitor_name || row.competitor_name.trim() === '');
+      if (brandRows.length > 0) {
+        const brandIds = brandRows.map(r => r.id);
         const { error: updateError } = await this.supabase
           .from('extracted_positions')
           .update({
-            sentiment_label_competitor: compSentiment.label,
-            sentiment_score_competitor: compSentiment.score,
+            sentiment_label: analysis.sentiment.brand.label || 'NEUTRAL',
+            sentiment_score: analysis.sentiment.brand.score || 60,
           })
-          .in('id', compIds);
+          .in('id', brandIds);
 
         if (updateError) {
-          console.warn(`   ⚠️ Failed to update competitor sentiment for ${compName}: ${updateError.message}`);
-        } else {
-          console.log(`   ✅ Updated competitor sentiment for ${compName} (${compIds.length} rows)`);
+          throw new Error(`Failed to update brand sentiment: ${updateError.message}`);
+        }
+        console.log(`   ✅ Updated brand sentiment for ${brandIds.length} rows`);
+      }
+    }
+
+    // Update competitor sentiment
+    if (analysis.sentiment.competitors && competitorNames && competitorNames.length > 0) {
+      for (const compName of competitorNames) {
+        const compRows = positionRows.filter(
+          row => row.competitor_name && row.competitor_name.toLowerCase() === compName.toLowerCase()
+        );
+
+        if (compRows.length > 0 && analysis.sentiment.competitors[compName]) {
+          const compSentiment = analysis.sentiment.competitors[compName];
+          const compIds = compRows.map(r => r.id);
+          const { error: updateError } = await this.supabase
+            .from('extracted_positions')
+            .update({
+              sentiment_label_competitor: compSentiment.label || 'NEUTRAL',
+              sentiment_score_competitor: compSentiment.score || 60,
+            })
+            .in('id', compIds);
+
+          if (updateError) {
+            console.warn(`   ⚠️ Failed to update competitor sentiment for ${compName}: ${updateError.message}`);
+          } else {
+            console.log(`   ✅ Updated competitor sentiment for ${compName} (${compIds.length} rows)`);
+          }
         }
       }
     }
@@ -338,32 +388,43 @@ export class ConsolidatedScoringService {
     brandId: string,
     customerId: string
   ): Promise<void> {
-    const citationsToInsert = Object.entries(analysis.citations).map(([url, cat]: [string, any]) => {
-      // Extract domain from URL
-      let domain = '';
-      try {
-        const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-        domain = urlObj.hostname.replace(/^www\./, '').toLowerCase();
-      } catch {
-        const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
-        domain = match ? match[1].toLowerCase() : url.toLowerCase();
-      }
+    // Ensure citations object exists
+    if (!analysis.citations || typeof analysis.citations !== 'object') {
+      console.log(`   ⚠️ No citations to store for collector_result ${collectorResult.id}`);
+      return;
+    }
 
-      return {
-        customer_id: customerId,
-        brand_id: brandId,
-        query_id: collectorResult.query_id,
-        execution_id: collectorResult.execution_id,
-        collector_result_id: collectorResult.id,
-        url: url,
-        domain: domain,
-        page_name: cat.pageName || null,
-        category: cat.category,
-        metadata: {
-          categorization_source: 'consolidated_analysis',
-        },
-      };
-    });
+    const citationsToInsert = Object.entries(analysis.citations)
+      .filter(([url, cat]: [string, any]) => {
+        // Filter out invalid entries
+        return url && typeof url === 'string' && cat && cat.category;
+      })
+      .map(([url, cat]: [string, any]) => {
+        // Extract domain from URL
+        let domain = '';
+        try {
+          const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+          domain = urlObj.hostname.replace(/^www\./, '').toLowerCase();
+        } catch {
+          const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
+          domain = match ? match[1].toLowerCase() : url.toLowerCase();
+        }
+
+        return {
+          customer_id: customerId,
+          brand_id: brandId,
+          query_id: collectorResult.query_id,
+          execution_id: collectorResult.execution_id,
+          collector_result_id: collectorResult.id,
+          url: url,
+          domain: domain,
+          page_name: cat.pageName || null,
+          category: cat.category,
+          metadata: {
+            categorization_source: 'consolidated_analysis',
+          },
+        };
+      });
 
     if (citationsToInsert.length === 0) {
       return;

@@ -209,8 +209,8 @@ async function testConsolidatedAnalysis() {
 
       console.log(`\n💭 Sentiment:`);
       console.log(`   Brand: ${analysis.sentiment.brand.label} (${analysis.sentiment.brand.score.toFixed(2)})`);
-      console.log(`   - Positive sentences: ${analysis.sentiment.brand.positiveSentences.length}`);
-      console.log(`   - Negative sentences: ${analysis.sentiment.brand.negativeSentences.length}`);
+      // Note: positiveSentences and negativeSentences are not part of the ConsolidatedAnalysisResult type
+      // They may be available in other sentiment analysis results but not in consolidated analysis
       if (Object.keys(analysis.sentiment.competitors).length > 0) {
         console.log(`   Competitors:`);
         for (const compName in analysis.sentiment.competitors) {

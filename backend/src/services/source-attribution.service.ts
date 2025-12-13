@@ -1253,6 +1253,272 @@ export class SourceAttributionService {
       throw new DatabaseError(error instanceof Error ? error.message : 'Unknown error in competitor source attribution')
     }
   }
+
+  /**
+   * Get daily Impact Score trends for top sources over the last 7 days
+   */
+  async getImpactScoreTrends(
+    brandId: string,
+    customerId: string,
+    days: number = 7
+  ): Promise<{
+    dates: string[]
+    sources: Array<{
+      name: string
+      data: number[]
+    }>
+  }> {
+    try {
+      // Calculate date range (last N days)
+      const endDate = new Date()
+      endDate.setUTCHours(23, 59, 59, 999)
+      const startDate = new Date(endDate)
+      startDate.setUTCDate(startDate.getUTCDate() - (days - 1))
+      startDate.setUTCHours(0, 0, 0, 0)
+
+      const startIso = startDate.toISOString()
+      const endIso = endDate.toISOString()
+
+      // Fetch citations grouped by day and domain
+      const { data: citationsData, error: citationsError } = await supabaseAdmin
+        .from('citations')
+        .select(`
+          domain,
+          usage_count,
+          collector_result_id,
+          query_id,
+          created_at
+        `)
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .gte('created_at', startIso)
+        .lte('created_at', endIso)
+
+      if (citationsError) {
+        throw new DatabaseError(`Failed to fetch citations: ${citationsError.message}`)
+      }
+
+      if (!citationsData || citationsData.length === 0) {
+        return { dates: [], sources: [] }
+      }
+
+      // Get collector result IDs
+      const collectorResultIds = Array.from(new Set(
+        citationsData.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
+      ))
+
+      // Fetch extracted_positions for share, sentiment, visibility
+      const { data: positionsData } = await supabaseAdmin
+        .from('extracted_positions')
+        .select(`
+          collector_result_id,
+          share_of_answers_brand,
+          sentiment_score,
+          visibility_index,
+          competitor_name,
+          processed_at
+        `)
+        .in('collector_result_id', collectorResultIds)
+        .eq('brand_id', brandId)
+        .gte('processed_at', startIso)
+        .lte('processed_at', endIso)
+
+      // Fetch queries for topics
+      const queryIds = Array.from(new Set(
+        citationsData.map(c => c.query_id).filter((id): id is string => typeof id === 'string')
+      ))
+
+      const { data: queriesData } = await supabaseAdmin
+        .from('generated_queries')
+        .select('id, topic, metadata')
+        .in('id', queryIds)
+
+      // Create maps for quick lookup
+      const queryMap = new Map(queriesData?.map(q => [q.id, q]) || [])
+
+      // Group positions by collector_result_id and date
+      const positionsByCollectorAndDate = new Map<string, Array<typeof positionsData[0]>>()
+      if (positionsData) {
+        for (const pos of positionsData) {
+          if (!pos.collector_result_id || !pos.processed_at) continue
+          const date = new Date(pos.processed_at).toISOString().split('T')[0]
+          const key = `${pos.collector_result_id}_${date}`
+          if (!positionsByCollectorAndDate.has(key)) {
+            positionsByCollectorAndDate.set(key, [])
+          }
+          positionsByCollectorAndDate.get(key)!.push(pos)
+        }
+      }
+
+      // Generate date labels
+      const dates: string[] = []
+      const current = new Date(startDate)
+      while (current <= endDate) {
+        dates.push(current.toISOString().split('T')[0])
+        current.setUTCDate(current.getUTCDate() + 1)
+      }
+
+      // Group citations by domain and date
+      const citationsByDomainAndDate = new Map<string, Map<string, typeof citationsData>>()
+      
+      for (const citation of citationsData) {
+        if (!citation.domain || !citation.created_at) continue
+        const domain = citation.domain.toLowerCase().trim()
+        const date = new Date(citation.created_at).toISOString().split('T')[0]
+        
+        if (!citationsByDomainAndDate.has(domain)) {
+          citationsByDomainAndDate.set(domain, new Map())
+        }
+        const domainMap = citationsByDomainAndDate.get(domain)!
+        if (!domainMap.has(date)) {
+          domainMap.set(date, [])
+        }
+        domainMap.get(date)!.push(citation)
+      }
+
+      // Calculate Impact Score for each domain and date
+      const impactScoresByDomain = new Map<string, number[]>()
+      
+      // Get max values for normalization (across all days)
+      const allDomains = Array.from(citationsByDomainAndDate.keys())
+      const allCitations = citationsData.map(c => c.usage_count || 1)
+      const maxCitations = Math.max(...allCitations, 1)
+      
+      // Count topics per domain (across all days)
+      const topicsByDomain = new Map<string, Set<string>>()
+      for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
+        const topics = new Set<string>()
+        for (const citations of dateMap.values()) {
+          for (const citation of citations) {
+            if (citation.query_id) {
+              const query = queryMap.get(citation.query_id)
+              if (query?.topic) {
+                topics.add(query.topic)
+              }
+            }
+          }
+        }
+        topicsByDomain.set(domain, topics)
+      }
+      const maxTopics = Math.max(...Array.from(topicsByDomain.values()).map(t => t.size), 1)
+
+      // Calculate Impact Score for each day
+      for (const date of dates) {
+        for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
+          const dayCitations = dateMap.get(date) || []
+          if (dayCitations.length === 0) {
+            // No data for this day, use 0 or previous day's value
+            if (!impactScoresByDomain.has(domain)) {
+              impactScoresByDomain.set(domain, [])
+            }
+            const scores = impactScoresByDomain.get(domain)!
+            scores.push(scores.length > 0 ? scores[scores.length - 1] : 0)
+            continue
+          }
+
+          // Aggregate metrics for this domain on this day
+          const collectorIds = Array.from(new Set(
+            dayCitations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
+          ))
+
+          const shareValues: number[] = []
+          const sentimentValues: number[] = []
+          const visibilityValues: number[] = []
+          let totalCitations = 0
+          const dayTopics = new Set<string>()
+
+          for (const citation of dayCitations) {
+            totalCitations += citation.usage_count || 1
+            
+            if (citation.query_id) {
+              const query = queryMap.get(citation.query_id)
+              if (query?.topic) {
+                dayTopics.add(query.topic)
+              }
+            }
+
+            if (citation.collector_result_id) {
+              const key = `${citation.collector_result_id}_${date}`
+              const positions = positionsByCollectorAndDate.get(key) || []
+              
+              for (const pos of positions) {
+                const isBrandRow = !pos.competitor_name || 
+                  (typeof pos.competitor_name === 'string' && pos.competitor_name.trim().length === 0)
+                
+                if (isBrandRow) {
+                  if (pos.share_of_answers_brand !== null) {
+                    shareValues.push(toNumber(pos.share_of_answers_brand))
+                  }
+                  if (pos.sentiment_score !== null) {
+                    sentimentValues.push(toNumber(pos.sentiment_score))
+                  }
+                  if (pos.visibility_index !== null) {
+                    visibilityValues.push(toNumber(pos.visibility_index) * 100)
+                  }
+                }
+              }
+            }
+          }
+
+          // Calculate averages
+          const avgShare = shareValues.length > 0 ? average(shareValues) : 0
+          const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
+          const avgVisibility = visibilityValues.length > 0 ? average(visibilityValues) : 0
+
+          // Calculate Impact Score (same formula as in getSourceAttribution)
+          const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
+          const normalizedSOA = Math.min(100, Math.max(0, avgShare))
+          const normalizedSentiment = Math.min(100, Math.max(0, ((avgSentiment + 1) / 2) * 100))
+          const normalizedCitations = maxCitations > 0 ? Math.min(100, (totalCitations / maxCitations) * 100) : 0
+          const normalizedTopics = maxTopics > 0 ? Math.min(100, (dayTopics.size / maxTopics) * 100) : 0
+
+          const impactScore = round(
+            (normalizedVisibility * 0.2) +
+            (normalizedSOA * 0.2) +
+            (normalizedSentiment * 0.2) +
+            (normalizedCitations * 0.2) +
+            (normalizedTopics * 0.2),
+            1
+          )
+
+          if (!impactScoresByDomain.has(domain)) {
+            impactScoresByDomain.set(domain, [])
+          }
+          impactScoresByDomain.get(domain)!.push(impactScore)
+        }
+      }
+
+      // Get top 10 domains by average Impact Score
+      const domainAverages = Array.from(impactScoresByDomain.entries())
+        .map(([domain, scores]) => ({
+          domain,
+          scores,
+          average: scores.length > 0 ? average(scores) : 0
+        }))
+        .sort((a, b) => b.average - a.average)
+        .slice(0, 10)
+
+      // Format response
+      const sources = domainAverages.map(({ domain, scores }) => ({
+        name: domain,
+        data: scores
+      }))
+
+      // Format dates for display
+      const formattedDates = dates.map(date => {
+        const d = new Date(date)
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      })
+
+      return {
+        dates: formattedDates,
+        sources
+      }
+    } catch (error) {
+      console.error('[ImpactScoreTrends] Error:', error)
+      throw new DatabaseError(error instanceof Error ? error.message : 'Unknown error in Impact Score trends')
+    }
+  }
 }
 
 export const sourceAttributionService = new SourceAttributionService()

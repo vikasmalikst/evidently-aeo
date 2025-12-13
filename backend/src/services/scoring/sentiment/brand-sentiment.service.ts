@@ -190,7 +190,7 @@ ${text}
 Respond with ONLY valid JSON in this exact format:
 {
   "label": "POSITIVE|NEGATIVE|NEUTRAL",
-  "score": -1.0 to 1.0
+  "score": 1 to 100
  
 }`;
 

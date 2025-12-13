@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import type { EnhancedSource } from '../components/SourcesR2/EnhancedQuadrantMatrix';
 import { ValueScoreTable } from '../components/SourcesR2/ValueScoreTable';
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
-import { SourceRadar } from '../components/SourcesR2/SourceRadar';
+import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrendsChart';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 import { fetchRecommendations, type Recommendation } from '../api/recommendationsApi';
 
@@ -308,20 +308,66 @@ export const SearchSourcesR2 = () => {
 
   const displayedSources = viewMode === 'current' ? filteredSources : filteredNewSources;
 
-  const radarSources = useMemo(() => {
-    if (!sourceData.length) return [];
-    return displayedSources.map((s) => {
-      const src = sourceData.find((sd) => sd.name === s.name);
-      return {
-        name: s.name,
-        mentionRate: s.mentionRate,
-        soa: s.soa,
-        sentiment: s.sentiment,
-        citations: s.citations,
-        topicsCount: src ? src.topics.length : 0
-      };
-    });
-  }, [displayedSources, sourceData]);
+  // Fetch Impact Score trends data (last 7 days, daily)
+  const trendsEndpoint = useMemo(() => {
+    if (!selectedBrandId) return null;
+    return `/brands/${selectedBrandId}/sources/impact-score-trends?days=7`;
+  }, [selectedBrandId]);
+
+  const { 
+    data: trendsResponse, 
+    loading: trendsLoading, 
+    error: trendsError 
+  } = useCachedData<ApiResponse<{
+    dates: string[];
+    sources: Array<{
+      name: string;
+      data: number[];
+    }>;
+  }>>(
+    trendsEndpoint,
+    {},
+    { requiresAuth: true },
+    { enabled: !authLoading && !brandsLoading && !!trendsEndpoint, refetchOnMount: false }
+  );
+
+  // Prepare data for Impact Score trends chart
+  const impactScoreTrendsData = useMemo(() => {
+    if (!trendsResponse?.success || !trendsResponse.data) {
+      // Fallback to current sources if trends data not available
+      if (!enhancedSources.length) return [];
+      return enhancedSources
+        .sort((a, b) => b.valueScore - a.valueScore)
+        .slice(0, 10)
+        .map((s) => ({
+          name: s.name,
+          valueScore: s.valueScore
+        }));
+    }
+
+    // Use real trends data from API
+    return trendsResponse.data.sources.map((source) => ({
+      name: source.name,
+      valueScore: source.data[source.data.length - 1] || 0, // Current value (last day)
+      trendData: source.data // Historical data
+    }));
+  }, [trendsResponse, enhancedSources]);
+
+  // Use dates from API response, or generate fallback
+  const trendDates = useMemo(() => {
+    if (trendsResponse?.success && trendsResponse.data?.dates) {
+      return trendsResponse.data.dates;
+    }
+    // Fallback: generate last 7 days
+    const dates: string[] = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      dates.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    }
+    return dates;
+  }, [trendsResponse]);
 
   // Load recommendations when brand changes
   useEffect(() => {
@@ -488,9 +534,19 @@ export const SearchSourcesR2 = () => {
           <>
             <ValueScoreTable sources={displayedSources} />
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Source Performance Radar</h3>
-              <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>Top sources across visibility, SOA, sentiment, citations, topics</p>
-              <SourceRadar sources={radarSources} maxItems={5} />
+              <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Impact Score Trends</h3>
+              <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>Top 10 sources by Impact score - Daily trends for the last 7 days</p>
+              {trendsLoading ? (
+                <div style={{ padding: 24, color: '#94a3b8', textAlign: 'center' }}>
+                  Loading trends data...
+                </div>
+              ) : trendsError ? (
+                <div style={{ padding: 24, color: '#ef4444', textAlign: 'center' }}>
+                  Error loading trends data. Please try again.
+                </div>
+              ) : (
+                <ImpactScoreTrendsChart sources={impactScoreTrendsData} dates={trendDates} maxSources={10} />
+              )}
             </div>
 
             {/* Recommended Actions Section */}

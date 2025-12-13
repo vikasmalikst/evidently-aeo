@@ -2,7 +2,13 @@
  * Citation Categorization Service
  * Maps domains to citation categories using LLM-based categorization
  * All categorizations are done via AI (Cerebras as primary, Gemini as secondary)
+ * Now includes database caching to avoid redundant API calls
  */
+
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export type CitationCategory = 
   | 'Editorial' 
@@ -79,6 +85,23 @@ const DOMAIN_CATEGORIES: DomainCategoryMapping[] = [
 ];
 
 export class CitationCategorizationService {
+  private supabase: SupabaseClient | null = null;
+
+  constructor() {
+    // Initialize Supabase client for database cache
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (supabaseUrl && supabaseServiceKey) {
+      this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+        db: { schema: 'public' },
+      });
+    } else {
+      console.warn('⚠️ Supabase credentials not found - citation category caching will be disabled');
+    }
+  }
+
   /**
    * Extract domain from URL
    */
@@ -126,67 +149,101 @@ export class CitationCategorizationService {
 
   /**
    * Categorize a citation based on its domain
-   * Uses hardcoded patterns first, then falls back to AI if needed
+   * Uses database cache first, then hardcoded patterns, then AI if needed
    */
-  async categorize(url: string, useAI: boolean = true): Promise<CategorizationResult> {
+  async categorize(
+    url: string, 
+    useAI: boolean = true,
+    customerId?: string,
+    brandId?: string
+  ): Promise<CategorizationResult> {
     const domain = this.extractDomain(url);
 
-    // First, try hardcoded domain patterns (fast and reliable)
+    // First, check database cache
+    const cached = await this.getCachedCategory(domain, customerId, brandId);
+    if (cached) {
+      return {
+        category: cached.category,
+        confidence: 'high',
+        source: 'database_cache'
+      };
+    }
+
+    // Second, try hardcoded domain patterns (fast and reliable)
     for (const mapping of DOMAIN_CATEGORIES) {
       if (mapping.domain instanceof RegExp) {
         if (mapping.domain.test(url) || mapping.domain.test(domain)) {
-          return {
+          const result = {
             category: mapping.category,
-            confidence: 'high',
-            source: 'hardcoded'
+            confidence: 'high' as const,
+            source: 'hardcoded' as const
           };
+          // Store in database cache for future use
+          await this.storeCategoryInCache(url, domain, mapping.category, null, customerId, brandId);
+          return result;
         }
       } else if (domain.toLowerCase().includes(mapping.domain.toLowerCase())) {
-        return {
+        const result = {
           category: mapping.category,
-          confidence: 'high',
-          source: 'hardcoded'
+          confidence: 'high' as const,
+          source: 'hardcoded' as const
         };
+        // Store in database cache for future use
+        await this.storeCategoryInCache(url, domain, mapping.category, null, customerId, brandId);
+        return result;
       }
     }
 
-    // If no hardcoded match, try simple domain-based heuristics
+    // Third, try simple domain-based heuristics
     const simpleCategory = this.categorizeByDomainHeuristics(domain);
     if (simpleCategory) {
-      return {
+      const result = {
         category: simpleCategory,
-        confidence: 'medium',
-        source: 'simple_domain_matching'
+        confidence: 'medium' as const,
+        source: 'simple_domain_matching' as const
       };
+      // Store in database cache for future use
+      await this.storeCategoryInCache(url, domain, simpleCategory, null, customerId, brandId);
+      return result;
     }
 
     // Finally, try AI categorization if enabled
     if (useAI) {
       try {
         const aiCategory = await this.categorizeWithAI(url, domain);
-        return {
+        const pageName = this.extractPageName(url, domain);
+        const result = {
           category: aiCategory,
-          confidence: 'high',
-          source: 'ai'
+          confidence: 'high' as const,
+          source: 'ai' as const
         };
+        // Store in database cache for future use
+        await this.storeCategoryInCache(url, domain, aiCategory, pageName, customerId, brandId);
+        return result;
       } catch (error) {
         console.error(`❌ AI categorization failed for ${domain}:`, error instanceof Error ? error.message : error);
         // Fall back to default category instead of throwing
         console.warn(`⚠️ Using default 'Corporate' category for ${domain} due to AI failure`);
-        return {
-          category: 'Corporate', // Default fallback
-          confidence: 'low',
-          source: 'fallback_default'
+        const result = {
+          category: 'Corporate' as const, // Default fallback
+          confidence: 'low' as const,
+          source: 'fallback_default' as const
         };
+        // Store default in cache to avoid repeated failures
+        await this.storeCategoryInCache(url, domain, 'Corporate', null, customerId, brandId);
+        return result;
       }
     }
 
     // If AI is disabled and no pattern matched, use default
-    return {
-      category: 'Corporate',
-      confidence: 'low',
-      source: 'fallback_default'
+    const result = {
+      category: 'Corporate' as const,
+      confidence: 'low' as const,
+      source: 'fallback_default' as const
     };
+    // Store default in cache
+    await this.storeCategoryInCache(url, domain, 'Corporate', null, customerId, brandId);
+    return result;
   }
 
   /**
@@ -553,19 +610,33 @@ Respond with ONLY the category name.`;
 
   /**
    * Process a citation URL and return all extracted information
-   * Uses AI for categorization if domain is unknown
+   * Uses database cache first, then hardcoded patterns, then AI for categorization if domain is unknown
    */
-  async processCitation(url: string, useAI: boolean = true): Promise<{
+  async processCitation(
+    url: string, 
+    useAI: boolean = true,
+    customerId?: string,
+    brandId?: string
+  ): Promise<{
     url: string;
     domain: string;
     pageName: string | null;
     category: CitationCategory;
     confidence?: 'high' | 'medium' | 'low';
-    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default';
+    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default' | 'database_cache';
   }> {
     const domain = this.extractDomain(url);
-    const pageName = this.extractPageName(url, domain);
-    const categorizationResult = await this.categorize(url, useAI);
+    const categorizationResult = await this.categorize(url, useAI, customerId, brandId);
+    
+    // Get page name (from cache if available, otherwise extract)
+    let pageName = this.extractPageName(url, domain);
+    if (categorizationResult.source === 'database_cache') {
+      // Try to get page name from cache
+      const cached = await this.getCachedCategory(domain, customerId, brandId);
+      if (cached?.pageName) {
+        pageName = cached.pageName;
+      }
+    }
 
     return {
       url,
@@ -588,6 +659,96 @@ Respond with ONLY the category name.`;
     category: CitationCategory;
   } {
     throw new Error('Synchronous citation categorization is no longer supported. Use processCitation() with AI instead.');
+  }
+
+  /**
+   * Get cached category from database
+   */
+  private async getCachedCategory(
+    domain: string,
+    customerId?: string,
+    brandId?: string
+  ): Promise<{ category: CitationCategory; pageName: string | null } | null> {
+    if (!this.supabase) {
+      return null;
+    }
+
+    try {
+      let query = this.supabase
+        .from('citation_categories')
+        .select('category, page_name')
+        .eq('domain', domain.toLowerCase())
+        .limit(1);
+
+      // Optionally filter by customer_id and brand_id if provided
+      // Note: We prioritize domain match first (most common case)
+      const { data, error } = await query.maybeSingle();
+
+      if (error) {
+        // Table might not exist yet, ignore error
+        if (error.code !== 'PGRST116') {
+          console.warn(`⚠️ Error fetching cached category for ${domain}:`, error.message);
+        }
+        return null;
+      }
+
+      if (data) {
+        return {
+          category: data.category as CitationCategory,
+          pageName: data.page_name,
+        };
+      }
+    } catch (error) {
+      // Table might not exist yet, ignore error
+      console.warn(`⚠️ Error checking citation category cache:`, error instanceof Error ? error.message : error);
+    }
+
+    return null;
+  }
+
+  /**
+   * Store category in database cache
+   */
+  private async storeCategoryInCache(
+    url: string,
+    domain: string,
+    category: CitationCategory,
+    pageName: string | null,
+    customerId?: string,
+    brandId?: string
+  ): Promise<void> {
+    if (!this.supabase) {
+      return;
+    }
+
+    try {
+      const { error } = await this.supabase
+        .from('citation_categories')
+        .upsert(
+          {
+            customer_id: customerId || null,
+            brand_id: brandId || null,
+            cited_url: url,
+            domain: domain.toLowerCase(),
+            category: category,
+            page_name: pageName || null,
+          },
+          {
+            onConflict: 'domain',
+            ignoreDuplicates: false, // Update if exists
+          }
+        );
+
+      if (error) {
+        // Table might not exist yet, ignore error
+        if (error.code !== 'PGRST116') {
+          console.warn(`⚠️ Error storing citation category in cache:`, error.message);
+        }
+      }
+    } catch (error) {
+      // Table might not exist yet, ignore error
+      console.warn(`⚠️ Error storing citation category:`, error instanceof Error ? error.message : error);
+    }
   }
 }
 

@@ -3,8 +3,6 @@ import { StackedRacingChart } from './StackedRacingChart';
 import { LLMVisibilityTable } from './LLMVisibilityTable';
 import { EmptyState } from './EmptyState';
 import { InfoTooltip } from './InfoTooltip';
-import { DateRangeSelector } from './DateRangeSelector';
-import { RecommendedActions } from './RecommendedActions';
 import type { LLMVisibilitySliceUI } from '../types';
 
 interface KeyInsightsProps {
@@ -52,53 +50,36 @@ export const KeyInsights = ({ dashboardData, startDate, endDate, onStartDateChan
 
   const hasSourceData = sourceSlices.length > 0;
   const hasLlmData = llmSlices.length > 0;
-  const actionItems = dashboardData?.actionItems ?? [];
 
   return (
-    <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 mb-6">
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="text-[18px] font-semibold text-[#1a1d29]">
-          Key Insights & Recommendations
-        </h2>
-        <DateRangeSelector
-          startDate={startDate}
-          endDate={endDate}
-          onStartDateChange={onStartDateChange}
-          onEndDateChange={onEndDateChange}
-        />
+    <>
+      <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-[18px] font-semibold text-[#1a1d29]">Source Type Distribution</h2>
+          <InfoTooltip description="Shows the breakdown of citation sources by category (Editorial, Corporate, Reference, UGC, Social, Institutional). This helps you understand where your brand is being cited across different types of content sources in AI-generated answers. Click on any bar to see the top 5 sources for that source type." />
+        </div>
+        {hasSourceData ? (
+          <StackedRacingChart 
+            data={sourceSlices} 
+            topSourcesByType={dashboardData?.topSourcesByType}
+          />
+        ) : (
+          <EmptyState message="No source distribution data available for this period." />
+        )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
-          <div className="flex items-center gap-2 mb-4">
-            <h3 className="text-[14px] font-semibold text-[#1a1d29]">Source Type Distribution</h3>
-            <InfoTooltip description="Shows the breakdown of citation sources by category (Editorial, Corporate, Reference, UGC, Social, Institutional). This helps you understand where your brand is being cited across different types of content sources in AI-generated answers. Click on any bar to see the top 5 sources for that source type." />
-          </div>
-          {hasSourceData ? (
-            <StackedRacingChart 
-              data={sourceSlices} 
-              topSourcesByType={dashboardData?.topSourcesByType}
-            />
-          ) : (
-            <EmptyState message="No source distribution data available for this period." />
-          )}
+      <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-[18px] font-semibold text-[#1a1d29]">LLM Visibility (7 Days)</h2>
+          <InfoTooltip description="Displays your brand's visibility score and brand presence percentage across different AI models (ChatGPT, Gemini, Claude, etc.) over the last 7 days. Visibility score measures prominence, while brand presence shows the percentage of queries where your brand appears." />
         </div>
-
-        <div className="p-4 rounded-lg border bg-white border-[#e8e9ed]">
-          <div className="flex items-center gap-2 mb-4">
-            <h3 className="text-[14px] font-semibold text-[#1a1d29]">LLM Visibility (7 Days)</h3>
-            <InfoTooltip description="Displays your brand's visibility score and brand presence percentage across different AI models (ChatGPT, Gemini, Claude, etc.) over the last 7 days. Visibility score measures prominence, while brand presence shows the percentage of queries where your brand appears." />
-          </div>
-          {hasLlmData ? (
-            <LLMVisibilityTable llmSlices={llmSlices} />
-          ) : (
-            <EmptyState message="No LLM visibility data available for this period." />
-          )}
-        </div>
+        {hasLlmData ? (
+          <LLMVisibilityTable llmSlices={llmSlices} />
+        ) : (
+          <EmptyState message="No LLM visibility data available for this period." />
+        )}
       </div>
-
-      <RecommendedActions actionItems={actionItems} />
-    </div>
+    </>
   );
 };
 

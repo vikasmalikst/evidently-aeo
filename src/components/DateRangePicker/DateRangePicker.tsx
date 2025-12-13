@@ -85,7 +85,7 @@ export const DateRangePicker = ({
   }, [endDate]);
 
   return (
-    <div className={`flex flex-col gap-2 ${className}`}>
+    <div className={`flex ${showComparisonInfo ? 'flex-col' : 'flex-row'} gap-2 ${className}`}>
       <div className="flex items-center gap-3">
         <label className="text-[13px] text-[#64748b] font-medium">Date Range:</label>
         <input

@@ -9,11 +9,16 @@ import {
 } from 'lucide-react';
 import { useDashboardData } from './hooks/useDashboardData';
 import { getBrandData, formatMetricValue, computeTrend, formatNumber } from './utils';
-import { KeyInsights } from './components/KeyInsights';
 import { MetricCard } from './components/MetricCard';
 import { TopBrandSources } from './components/TopBrandSources';
 import { TopTopics } from './components/TopTopics';
-import type { DashboardScoreMetric } from './types';
+import { RecommendedActions } from './components/RecommendedActions';
+import { DateRangeSelector } from './components/DateRangeSelector';
+import { StackedRacingChart } from './components/StackedRacingChart';
+import { LLMVisibilityTable } from './components/LLMVisibilityTable';
+import { EmptyState } from './components/EmptyState';
+import { InfoTooltip } from './components/InfoTooltip';
+import type { DashboardScoreMetric, LLMVisibilitySliceUI } from './types';
 
 export const Dashboard = () => {
   const {
@@ -234,39 +239,40 @@ export const Dashboard = () => {
           <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
             AI Visibility Dashboard
           </h1>
-          <div className="flex flex-wrap items-center gap-4">
-            <p className="text-[15px] text-[#393e51]">
-              {overviewSubtitle}
-            </p>
-            {brands.length > 1 && selectedBrandId && (
-              <div className="flex items-center gap-2">
-                <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
-                  Brand
-                </label>
-                <select
-                  id="brand-selector"
-                  value={selectedBrandId}
-                  onChange={(event) => selectBrand(event.target.value)}
-                  className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
-                >
-                  {brands.map((brandOption) => (
-                    <option key={brandOption.id} value={brandOption.id}>
-                      {brandOption.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-4">
+              <p className="text-[15px] text-[#393e51]">
+                {overviewSubtitle}
+              </p>
+              {brands.length > 1 && selectedBrandId && (
+                <div className="flex items-center gap-2">
+                  <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
+                    Brand
+                  </label>
+                  <select
+                    id="brand-selector"
+                    value={selectedBrandId}
+                    onChange={(event) => selectBrand(event.target.value)}
+                    className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
+                  >
+                    {brands.map((brandOption) => (
+                      <option key={brandOption.id} value={brandOption.id}>
+                        {brandOption.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <DateRangeSelector
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+              showComparisonInfo={false}
+            />
           </div>
         </div>
-
-        <KeyInsights
-          dashboardData={dashboardData}
-          startDate={startDate}
-          endDate={endDate}
-          onStartDateChange={setStartDate}
-          onEndDateChange={setEndDate}
-        />
 
         <div className="grid grid-cols-4 gap-5 mb-6">
           {metricCards.map(({ key, ...cardProps }) => (
@@ -275,8 +281,76 @@ export const Dashboard = () => {
         </div>
 
         <div className="grid grid-cols-2 gap-5 mb-6">
+          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-[18px] font-semibold text-[#1a1d29]">Source Type Distribution</h2>
+              <InfoTooltip description="Shows the breakdown of citation sources by category (Editorial, Corporate, Reference, UGC, Social, Institutional). This helps you understand where your brand is being cited across different types of content sources in AI-generated answers. Click on any bar to see the top 5 sources for that source type." />
+            </div>
+            {(() => {
+              const sourceSlices = (dashboardData?.sourceDistribution ?? [])
+                .map((slice): { type: string; percentage: number; color: string } => ({
+                  type: slice.label,
+                  percentage: slice.percentage,
+                  color: slice.color || '#64748b'
+                }))
+                .filter((slice) => Number.isFinite(slice.percentage) && slice.percentage >= 0);
+              const hasSourceData = sourceSlices.length > 0;
+              return hasSourceData ? (
+                <StackedRacingChart 
+                  data={sourceSlices} 
+                  topSourcesByType={dashboardData?.topSourcesByType}
+                />
+              ) : (
+                <EmptyState message="No source distribution data available for this period." />
+              );
+            })()}
+          </div>
+
+          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-[18px] font-semibold text-[#1a1d29]">LLM Visibility (7 Days)</h2>
+              <InfoTooltip description="Displays your brand's visibility score and brand presence percentage across different AI models (ChatGPT, Gemini, Claude, etc.) over the last 7 days. Visibility score measures prominence, while brand presence shows the percentage of queries where your brand appears." />
+            </div>
+            {(() => {
+              const llmSlices: LLMVisibilitySliceUI[] = (dashboardData?.llmVisibility ?? [])
+                .map((slice): LLMVisibilitySliceUI => {
+                  const totalQueries = slice.totalQueries ?? 0;
+                  const brandPresenceCount = slice.brandPresenceCount ?? 0;
+                  const totalCollectorResults = slice.totalCollectorResults ?? totalQueries;
+                  const brandPresencePercentage = totalCollectorResults > 0 
+                    ? Math.min(100, Math.round((brandPresenceCount / totalCollectorResults) * 100))
+                    : 0;
+                  
+                  return {
+                    provider: slice.provider,
+                    share: slice.shareOfSearch ?? slice.share,
+                    shareOfSearch: slice.shareOfSearch ?? slice.share,
+                    visibility: slice.visibility ?? 0,
+                    delta: slice.delta ?? 0,
+                    brandPresenceCount: brandPresencePercentage,
+                    color: slice.color || '#64748b',
+                    topTopic: slice.topTopic ?? null,
+                    topTopics: slice.topTopics
+                  };
+                })
+                .filter((slice) => Number.isFinite(slice.visibility ?? 0) && (slice.visibility ?? 0) >= 0);
+              const hasLlmData = llmSlices.length > 0;
+              return hasLlmData ? (
+                <LLMVisibilityTable llmSlices={llmSlices} />
+              ) : (
+                <EmptyState message="No LLM visibility data available for this period." />
+              );
+            })()}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-5 mb-6">
           <TopBrandSources brandPages={brandPages} />
           <TopTopics topTopics={topTopics} />
+        </div>
+
+        <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 mb-6">
+          <RecommendedActions actionItems={dashboardData?.actionItems ?? []} />
         </div>
       </div>
 

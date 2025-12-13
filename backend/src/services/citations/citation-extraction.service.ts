@@ -26,7 +26,7 @@ export class CitationExtractionService {
     pageName: string | null;
     category: string;
     confidence?: 'high' | 'medium' | 'low';
-    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default';
+    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default' | 'database_cache';
   }> = new Map();
   // Tunables (can be overridden via env)
   private readonly perResultConcurrency =
@@ -123,13 +123,17 @@ export class CitationExtractionService {
   /**
    * Categorize with per-domain cache + retries
    */
-  private async categorizeWithCache(url: string): Promise<{
+  private async categorizeWithCache(
+    url: string,
+    customerId?: string,
+    brandId?: string
+  ): Promise<{
     url: string;
     domain: string;
     pageName: string | null;
     category: string;
     confidence?: 'high' | 'medium' | 'low';
-    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default';
+    source?: 'hardcoded' | 'ai' | 'simple_domain_matching' | 'fallback_default' | 'database_cache';
   }> {
     // Extract domain using the same categorization service helper to maximize cache hits
     const domain = citationCategorizationService.extractDomain(url);
@@ -144,8 +148,9 @@ export class CitationExtractionService {
           source: cached.source
         };
     }
+    // Pass customer_id and brand_id to enable database caching
     const processed = await this.withBackoff(
-      () => citationCategorizationService.processCitation(url, true),
+      () => citationCategorizationService.processCitation(url, true, customerId, brandId),
       { retries: 5, baseMs: 700, maxMs: 20000 }
     );
     this.domainCategorizationCache.set(processed.domain, {
@@ -496,7 +501,7 @@ export class CitationExtractionService {
                 if (this.perCallBaseDelayMs > 0) {
                   await new Promise((r) => setTimeout(r, this.perCallBaseDelayMs));
                 }
-                const processed = await this.categorizeWithCache(url);
+                const processed = await this.categorizeWithCache(url, result.customer_id, result.brand_id);
                 return {
                   customer_id: result.customer_id,
                   brand_id: result.brand_id,
@@ -694,7 +699,7 @@ export class CitationExtractionService {
     // Process citations (using AI for unknown domains)
     const citationRows = await Promise.all(
       urlList.map(async (url) => {
-        const processed = await citationCategorizationService.processCitation(url, true);
+        const processed = await citationCategorizationService.processCitation(url, true, result.customer_id, result.brand_id);
           
           return {
             customer_id: result.customer_id,

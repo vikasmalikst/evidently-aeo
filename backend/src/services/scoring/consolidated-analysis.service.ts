@@ -28,6 +28,8 @@ export interface ConsolidatedAnalysisOptions {
   rawAnswer: string;
   citations: string[]; // Array of citation URLs
   collectorResultId?: number; // For caching
+  customerId?: string; // For database caching
+  brandId?: string; // For database caching
 }
 
 export interface ConsolidatedAnalysisResult {
@@ -42,15 +44,11 @@ export interface ConsolidatedAnalysisResult {
   sentiment: {
     brand: {
       label: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
-      score: number; // -1.0 to 1.0
-      positiveSentences: string[];
-      negativeSentences: string[];
+      score: number; // 1-100 scale: <55 = negative, 55-65 = neutral, >65 = positive
     };
     competitors: Record<string, {
       label: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
-      score: number; // -1.0 to 1.0
-      positiveSentences: string[];
-      negativeSentences: string[];
+      score: number; // 1-100 scale: <55 = negative, 55-65 = neutral, >65 = positive
     }>;
   };
 }
@@ -98,11 +96,75 @@ export class ConsolidatedAnalysisService {
     }
 
     try {
-      // Build prompt
-      const prompt = this.buildPrompt(options);
+      // Normalize inputs to ensure they're never null
+      const citations = Array.isArray(options.citations) ? options.citations : [];
+      const competitorNames = Array.isArray(options.competitorNames) ? options.competitorNames : [];
+      const rawAnswer = options.rawAnswer || '';
+      const brandName = options.brandName || 'Brand';
 
-      // Call OpenRouter API
+      // Check database cache for citation categorizations first
+      const customerId = options.customerId || options.brandMetadata?.customer_id;
+      const brandId = options.brandId || options.brandMetadata?.brand_id;
+      const cachedCitations = await this.getCachedCitationCategories(
+        citations,
+        customerId,
+        brandId
+      );
+
+      // Separate citations into cached and uncached
+      const uncachedCitations = citations.filter(
+        url => !cachedCitations.has(this.extractDomain(url))
+      );
+
+      // Build prompt (only include uncached citations in LLM call)
+      const prompt = this.buildPrompt({
+        ...options,
+        citations: uncachedCitations,
+        competitorNames: competitorNames,
+        rawAnswer: rawAnswer,
+        brandName: brandName,
+      });
+
+      // Call OpenRouter API (only for uncached citations)
       const result = await this.callOpenRouterAPI(prompt);
+
+      // Merge cached citations with LLM results
+      const mergedCitations: ConsolidatedAnalysisResult['citations'] = {};
+      
+      // Valid category type guard
+      const isValidCategory = (cat: string): cat is 'Editorial' | 'Corporate' | 'Reference' | 'UGC' | 'Social' | 'Institutional' => {
+        return ['Editorial', 'Corporate', 'Reference', 'UGC', 'Social', 'Institutional'].includes(cat);
+      };
+      
+      // Add cached citations
+      for (const [domain, cached] of cachedCitations.entries()) {
+        // Find the URL that matches this domain
+        const matchingUrl = citations.find(url => this.extractDomain(url) === domain);
+        if (matchingUrl && isValidCategory(cached.category)) {
+          mergedCitations[matchingUrl] = {
+            category: cached.category,
+            pageName: cached.pageName,
+          };
+        }
+      }
+
+      // Add LLM results for uncached citations
+      for (const [url, categorization] of Object.entries(result.citations)) {
+        mergedCitations[url] = categorization;
+      }
+
+      // Store new categorizations in database
+      if (uncachedCitations.length > 0) {
+        await this.storeCitationCategories(
+          uncachedCitations,
+          result.citations,
+          customerId,
+          brandId
+        );
+      }
+
+      // Update result with merged citations
+      result.citations = mergedCitations;
 
       // Cache result
       if (options.collectorResultId) {
@@ -133,22 +195,27 @@ export class ConsolidatedAnalysisService {
           .join('\n')
       : 'No competitor metadata provided';
 
-    const citationsList = options.citations.length > 0
-      ? options.citations.map((url, i) => `${i + 1}. ${url}`).join('\n')
+    const citations = Array.isArray(options.citations) ? options.citations : [];
+    const competitorNames = Array.isArray(options.competitorNames) ? options.competitorNames : [];
+    const rawAnswer = options.rawAnswer || '';
+    const brandName = options.brandName || 'Brand';
+
+    const citationsList = citations.length > 0
+      ? citations.map((url, i) => `${i + 1}. ${url}`).join('\n')
       : 'No citations provided';
 
     // Truncate answer text to 50,000 characters to stay within token limits
     const maxAnswerLength = 50000;
-    const truncatedAnswer = options.rawAnswer.length > maxAnswerLength
-      ? options.rawAnswer.substring(0, maxAnswerLength) + '\n\n[Text truncated to 50,000 characters]'
-      : options.rawAnswer;
+    const truncatedAnswer = rawAnswer.length > maxAnswerLength
+      ? rawAnswer.substring(0, maxAnswerLength) + '\n\n[Text truncated to 50,000 characters]'
+      : rawAnswer;
 
     return `You are an AI assistant analyzing a brand intelligence query response. Perform the following tasks:
 
 ## TASK 1: Product Extraction
 
 ### Brand Products
-Extract official products sold by the brand "${options.brandName}".
+Extract official products sold by the brand "${brandName}".
 
 **Brand Context:**
 ${brandMetadataStr}
@@ -191,19 +258,20 @@ ${citationsList}
 ## TASK 3: Sentiment Analysis
 
 ### Brand Sentiment
-Analyze the overall sentiment toward "${options.brandName}" in the answer.
+Analyze the overall sentiment toward "${brandName}" in the answer.
 
 ### Competitor Sentiment
 Analyze the sentiment toward each competitor separately.
 
-**Competitors:** ${options.competitorNames.join(', ')}
+**Competitors:** ${competitorNames.length > 0 ? competitorNames.join(', ') : 'No competitors'}
 
 **Requirements:**
-1. Overall sentiment label: POSITIVE, NEGATIVE, or NEUTRAL
-2. Sentiment score: -1.0 (very negative) to 1.0 (very positive)
-3. Extract positive sentences (sentences with positive sentiment)
-4. Extract negative sentences (sentences with negative sentiment)
-5. For competitors, analyze sentiment specifically about each competitor
+1. Overall sentiment label: POSITIVE, NEGATIVE, or NEUTRAL (determined by score range below)
+2. Sentiment score: Integer from 1 to 100, where:
+   - 1-54: Negative sentiment (bad)
+   - 55-65: Neutral sentiment
+   - 66-100: Positive sentiment (good)
+3. For competitors, analyze sentiment specifically about each competitor
 
 ## Answer Text to Analyze:
 ${truncatedAnswer}
@@ -235,22 +303,16 @@ Respond with ONLY valid JSON in this exact structure:
   "sentiment": {
     "brand": {
       "label": "POSITIVE|NEGATIVE|NEUTRAL",
-      "score": -1.0 to 1.0,
-      "positiveSentences": ["sentence 1", "sentence 2"],
-      "negativeSentences": ["sentence 1", "sentence 2"]
+      "score": 1 to 100
     },
     "competitors": {
       "Competitor1": {
         "label": "POSITIVE|NEGATIVE|NEUTRAL",
-        "score": -1.0 to 1.0,
-        "positiveSentences": ["sentence 1"],
-        "negativeSentences": ["sentence 1"]
+        "score": 1 to 100
       },
       "Competitor2": {
         "label": "POSITIVE|NEGATIVE|NEUTRAL",
-        "score": -1.0 to 1.0,
-        "positiveSentences": [],
-        "negativeSentences": []
+        "score": 1 to 100
       }
     }
   }
@@ -280,7 +342,7 @@ Respond with ONLY valid JSON in this exact structure:
       method: 'POST',
       headers,
       body: JSON.stringify({
-        model: 'openai/gpt-4o-mini', // Good balance of cost and quality
+        model: 'openai/gpt-oss-20b', // Good balance of cost and quality
         messages: [
           {
             role: 'system',
@@ -322,8 +384,16 @@ Respond with ONLY valid JSON in this exact structure:
       const { done, value } = await reader.read();
       if (done) break;
 
+      if (!value) {
+        continue;
+      }
+
       const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n').filter(line => line.trim() !== '');
+      if (!chunk) {
+        continue;
+      }
+
+      const lines = chunk.split('\n').filter(line => line && line.trim() !== '');
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
@@ -335,7 +405,7 @@ Respond with ONLY valid JSON in this exact structure:
             
             // Extract content
             const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
+            if (content && typeof content === 'string') {
               fullResponse += content;
             }
 
@@ -351,7 +421,7 @@ Respond with ONLY valid JSON in this exact structure:
       }
     }
 
-    if (!fullResponse || fullResponse.trim().length === 0) {
+    if (!fullResponse || (typeof fullResponse === 'string' && fullResponse.trim().length === 0)) {
       throw new Error('Empty response from OpenRouter API');
     }
 
@@ -361,7 +431,11 @@ Respond with ONLY valid JSON in this exact structure:
     }
 
     // Extract JSON from response (handle markdown code blocks)
-    let jsonStr = fullResponse.trim();
+    let jsonStr = typeof fullResponse === 'string' ? fullResponse.trim() : String(fullResponse).trim();
+    
+    if (!jsonStr || jsonStr.length === 0) {
+      throw new Error('Empty response from OpenRouter API');
+    }
     
     // Remove markdown code blocks if present
     if (jsonStr.includes('```json')) {
@@ -372,12 +446,18 @@ Respond with ONLY valid JSON in this exact structure:
 
     // Find JSON object
     const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error('⚠️ No JSON found in response. Response preview:', fullResponse.substring(0, 500));
+    if (!jsonMatch || !jsonMatch[0]) {
+      console.error('⚠️ No JSON found in response. Response preview:', jsonStr.substring(0, 500));
       throw new Error('No JSON found in OpenRouter response');
     }
 
-    const result = JSON.parse(jsonMatch[0]) as ConsolidatedAnalysisResult;
+    let result: ConsolidatedAnalysisResult;
+    try {
+      result = JSON.parse(jsonMatch[0]) as ConsolidatedAnalysisResult;
+    } catch (parseError) {
+      console.error('⚠️ Failed to parse JSON. Response preview:', jsonStr.substring(0, 500));
+      throw new Error(`Failed to parse JSON from OpenRouter response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+    }
     
     // Validate and normalize result
     return this.validateAndNormalize(result);
@@ -387,63 +467,113 @@ Respond with ONLY valid JSON in this exact structure:
    * Validate and normalize the result
    */
   private validateAndNormalize(result: ConsolidatedAnalysisResult): ConsolidatedAnalysisResult {
-    // Ensure all required fields exist
+    // Ensure all required fields exist and are not null
+    if (!result) {
+      result = {
+        products: { brand: [], competitors: {} },
+        citations: {},
+        sentiment: { brand: { label: 'NEUTRAL', score: 60 }, competitors: {} }
+      };
+    }
+
     if (!result.products) {
       result.products = { brand: [], competitors: {} };
     }
-    if (!result.products.brand) {
+    if (!result.products.brand || !Array.isArray(result.products.brand)) {
       result.products.brand = [];
     }
-    if (!result.products.competitors) {
+    if (!result.products.competitors || typeof result.products.competitors !== 'object') {
       result.products.competitors = {};
     }
-    if (!result.citations) {
+    if (!result.citations || typeof result.citations !== 'object') {
       result.citations = {};
     }
     if (!result.sentiment) {
       result.sentiment = {
-        brand: { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] },
+        brand: { label: 'NEUTRAL', score: 60 }, // 60 is neutral (middle of 55-65 range)
         competitors: {}
       };
     }
     if (!result.sentiment.brand) {
-      result.sentiment.brand = { label: 'NEUTRAL', score: 0, positiveSentences: [], negativeSentences: [] };
+      result.sentiment.brand = { label: 'NEUTRAL', score: 60 };
     }
-    if (!result.sentiment.competitors) {
+    if (!result.sentiment.competitors || typeof result.sentiment.competitors !== 'object') {
       result.sentiment.competitors = {};
     }
 
-    // Normalize sentiment scores
-    result.sentiment.brand.score = Math.max(-1, Math.min(1, result.sentiment.brand.score || 0));
-    for (const compName in result.sentiment.competitors) {
-      result.sentiment.competitors[compName].score = Math.max(-1, Math.min(1, result.sentiment.competitors[compName].score || 0));
+    // Normalize sentiment scores to 1-100 scale and determine label based on score
+    const normalizeScore = (score: number): { score: number; label: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' } => {
+      // If score is in -1 to 1 range, convert to 1-100
+      let normalizedScore: number;
+      if (score >= -1 && score <= 1 && score !== 0) {
+        // Convert -1 to 1 scale to 1-100 scale
+        // -1 -> 1, 0 -> 60, 1 -> 100
+        normalizedScore = Math.round(((score + 1) / 2) * 99) + 1;
+      } else {
+        // Already in 1-100 range or outside both ranges, clamp to 1-100
+        normalizedScore = Math.max(1, Math.min(100, Math.round(score)));
+      }
+
+      // Determine label based on score range
+      let label: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
+      if (normalizedScore < 55) {
+        label = 'NEGATIVE';
+      } else if (normalizedScore > 65) {
+        label = 'POSITIVE';
+      } else {
+        label = 'NEUTRAL';
+      }
+
+      return { score: normalizedScore, label };
+    };
+
+    // Normalize brand sentiment
+    if (result.sentiment.brand) {
+      const brandNormalized = normalizeScore(result.sentiment.brand.score || 60);
+      result.sentiment.brand.score = brandNormalized.score;
+      result.sentiment.brand.label = brandNormalized.label;
+    }
+
+    // Normalize competitor sentiments
+    if (result.sentiment.competitors) {
+      for (const compName in result.sentiment.competitors) {
+        const compSentiment = result.sentiment.competitors[compName];
+        if (compSentiment) {
+          const compNormalized = normalizeScore(compSentiment.score || 60);
+          compSentiment.score = compNormalized.score;
+          compSentiment.label = compNormalized.label;
+        }
+      }
     }
 
     // Ensure arrays are arrays and strings are strings
     result.products.brand = Array.isArray(result.products.brand) 
       ? result.products.brand.filter(p => typeof p === 'string')
       : [];
-    result.sentiment.brand.positiveSentences = Array.isArray(result.sentiment.brand.positiveSentences) 
-      ? result.sentiment.brand.positiveSentences.filter(s => typeof s === 'string')
-      : [];
-    result.sentiment.brand.negativeSentences = Array.isArray(result.sentiment.brand.negativeSentences) 
-      ? result.sentiment.brand.negativeSentences.filter(s => typeof s === 'string')
-      : [];
 
     // Normalize competitor data
-    for (const compName in result.products.competitors) {
-      if (!Array.isArray(result.products.competitors[compName])) {
-        result.products.competitors[compName] = [];
+    if (result.products.competitors) {
+      for (const compName in result.products.competitors) {
+        if (!Array.isArray(result.products.competitors[compName])) {
+          result.products.competitors[compName] = [];
+        }
+        result.products.competitors[compName] = result.products.competitors[compName].filter(p => typeof p === 'string');
       }
-      result.products.competitors[compName] = result.products.competitors[compName].filter(p => typeof p === 'string');
     }
 
-    for (const compName in result.sentiment.competitors) {
-      const compSentiment = result.sentiment.competitors[compName];
-      if (!compSentiment.positiveSentences) compSentiment.positiveSentences = [];
-      if (!compSentiment.negativeSentences) compSentiment.negativeSentences = [];
-      compSentiment.positiveSentences = compSentiment.positiveSentences.filter(s => typeof s === 'string');
-      compSentiment.negativeSentences = compSentiment.negativeSentences.filter(s => typeof s === 'string');
+    // Ensure competitor sentiment objects have required fields
+    if (result.sentiment.competitors) {
+      for (const compName in result.sentiment.competitors) {
+        const compSentiment = result.sentiment.competitors[compName];
+        if (compSentiment) {
+          if (!compSentiment.label) {
+            compSentiment.label = 'NEUTRAL';
+          }
+          if (typeof compSentiment.score !== 'number') {
+            compSentiment.score = 60;
+          }
+        }
+      }
     }
 
     return result;
@@ -461,6 +591,154 @@ Respond with ONLY valid JSON in this exact structure:
    */
   clearAllCache(): void {
     this.cache.clear();
+  }
+
+  /**
+   * Extract domain from URL
+   */
+  private extractDomain(url: string): string {
+    if (!url || typeof url !== 'string') {
+      return '';
+    }
+    
+    try {
+      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+      return urlObj.hostname.replace(/^www\./, '').toLowerCase();
+    } catch (error) {
+      // If URL parsing fails, try to extract domain manually
+      const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
+      return match ? match[1].toLowerCase() : url.toLowerCase();
+    }
+  }
+
+  /**
+   * Get cached citation categories from database
+   * Returns a Map of domain -> { category, pageName }
+   */
+  private async getCachedCitationCategories(
+    citations: string[],
+    customerId?: string,
+    brandId?: string
+  ): Promise<Map<string, { category: string; pageName: string | null }>> {
+    const cached = new Map<string, { category: string; pageName: string | null }>();
+
+    // Ensure citations is an array
+    const citationsArray = Array.isArray(citations) ? citations : [];
+    
+    if (citationsArray.length === 0) {
+      return cached;
+    }
+
+    // Extract unique domains from citations
+    const domains = [...new Set(citationsArray.map(url => this.extractDomain(url)))];
+    
+    if (domains.length === 0) {
+      return cached;
+    }
+
+    try {
+      // Query database for cached categories by domain
+      let query = this.supabase
+        .from('citation_categories')
+        .select('domain, category, page_name')
+        .in('domain', domains);
+
+      // Optionally filter by customer_id and brand_id if provided
+      // Note: We check by domain first (most common case), then by customer/brand if needed
+      const { data, error } = await query;
+
+      if (error) {
+        console.warn(`⚠️ Error fetching cached citation categories:`, error.message);
+        return cached;
+      }
+
+      if (data && Array.isArray(data) && data.length > 0) {
+        for (const row of data) {
+          if (row && row.domain && row.category) {
+            cached.set(row.domain.toLowerCase(), {
+              category: row.category,
+              pageName: row.page_name || null,
+            });
+          }
+        }
+        console.log(`📦 Found ${cached.size} cached citation categories in database`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Error checking citation category cache:`, error instanceof Error ? error.message : error);
+    }
+
+    return cached;
+  }
+
+  /**
+   * Store citation categories in database cache
+   */
+  private async storeCitationCategories(
+    citations: string[],
+    categorizations: Record<string, { category: string; pageName: string | null }>,
+    customerId?: string,
+    brandId?: string
+  ): Promise<void> {
+    // Ensure citations is an array
+    const citationsArray = Array.isArray(citations) ? citations : [];
+    
+    if (citationsArray.length === 0) {
+      return;
+    }
+
+    // Ensure categorizations is an object
+    if (!categorizations || typeof categorizations !== 'object') {
+      return;
+    }
+
+    try {
+      const rowsToInsert = citationsArray
+        .map(url => {
+          if (!url || typeof url !== 'string') {
+            return null;
+          }
+          
+          const categorization = categorizations[url];
+          if (!categorization || !categorization.category) {
+            return null;
+          }
+
+          const domain = this.extractDomain(url);
+          if (!domain) {
+            return null;
+          }
+
+          return {
+            customer_id: customerId || null,
+            brand_id: brandId || null,
+            cited_url: url,
+            domain: domain,
+            category: categorization.category,
+            page_name: categorization.pageName || null,
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => row !== null);
+
+      if (rowsToInsert.length === 0) {
+        return;
+      }
+
+      // Use upsert to avoid duplicates (on conflict with domain, update)
+      const { error } = await this.supabase
+        .from('citation_categories')
+        .upsert(rowsToInsert, {
+          onConflict: 'domain',
+          ignoreDuplicates: false, // Update if exists
+        });
+
+      if (error) {
+        console.warn(`⚠️ Error storing citation categories in cache:`, error.message);
+      } else {
+        console.log(`✅ Stored ${rowsToInsert.length} citation categories in database cache`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Error storing citation categories:`, error instanceof Error ? error.message : error);
+    }
   }
 }
 

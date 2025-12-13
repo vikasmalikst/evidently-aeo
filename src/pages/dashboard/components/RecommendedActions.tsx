@@ -37,7 +37,7 @@ export const RecommendedActions = ({ actionItems }: RecommendedActionsProps) => 
   };
 
   return (
-    <div className="mt-6 pt-6 border-t border-[#e8e9ed]">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-[14px] font-semibold text-[#1a1d29] mb-1">

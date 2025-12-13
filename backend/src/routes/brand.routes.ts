@@ -713,6 +713,32 @@ router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Res
 });
 
 /**
+ * GET /brands/:brandId/sources/impact-score-trends
+ * Get daily Impact Score trends for top 10 sources over the last 7 days
+ */
+router.get('/:brandId/sources/impact-score-trends', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const days = req.query.days ? parseInt(req.query.days as string, 10) : 7;
+    
+    const trends = await sourceAttributionService.getImpactScoreTrends(
+      brandId,
+      customerId,
+      days
+    );
+    
+    res.json({ success: true, data: trends });
+  } catch (error) {
+    console.error('Error fetching Impact Score trends:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch Impact Score trends'
+    });
+  }
+});
+
+/**
  * GET /brands/:brandId/topic-configuration/current
  * Get current topic configuration for a brand
  */

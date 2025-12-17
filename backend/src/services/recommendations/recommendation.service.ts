@@ -33,6 +33,7 @@ import { supabaseAdmin } from '../../config/database';
  * Single recommendation from the LLM
  */
 export interface Recommendation {
+  id?: string;              // Database id (present when loaded from DB)
   action: string;           // What to do
   reason: string;           // Short rationale that references a detected problem
   explanation: string;      // Longer rationale (4-5 sentences) explaining the recommendation
@@ -321,6 +322,7 @@ class RecommendationService {
 
       // Transform database records to Recommendation objects
       const recommendations: Recommendation[] = (recommendationsData || []).map(rec => ({
+        id: rec.id,
         action: rec.action,
         reason: rec.reason,
         explanation: rec.explanation,
@@ -502,6 +504,26 @@ class RecommendationService {
         recommendations,
         context
       );
+
+      // If persisted successfully, hydrate DB ids for immediate frontend actions
+      if (generationId) {
+        try {
+          const { data: ids } = await supabaseAdmin
+            .from('recommendations')
+            .select('id, display_order')
+            .eq('generation_id', generationId)
+            .order('display_order', { ascending: true });
+
+          if (ids && ids.length > 0) {
+            recommendations = recommendations.map((rec, idx) => ({
+              ...rec,
+              id: ids[idx]?.id
+            }));
+          }
+        } catch (e) {
+          console.warn('⚠️ [RecommendationService] Failed to hydrate recommendation ids:', e);
+        }
+      }
 
       return {
         success: true,

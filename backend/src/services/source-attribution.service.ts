@@ -108,14 +108,8 @@ export class SourceAttributionService {
       stepTimings['cache_lookup'] = Date.now() - cacheStartTime;
       
       if (cached) {
-        const ageMs = sourceAttributionCacheService.getAgeMs(cached.computed_at)
-        const ageMinutes = ageMs ? (ageMs / 60000).toFixed(1) : 'unknown'
-        const totalTime = Date.now() - serviceStartTime;
-        console.log(`[SourceAttribution] ✅ Cache HIT - returning cached data (age: ${ageMinutes}min, lookup: ${stepTimings['cache_lookup']}ms, total: ${totalTime}ms)`)
         return cached.payload
       }
-      
-      console.log(`[SourceAttribution] ❌ Cache MISS (lookup: ${stepTimings['cache_lookup']}ms) - computing fresh data...`)
 
       // Step 3: Get brand domain for comparison
       const brandDomainStartTime = Date.now();
@@ -153,8 +147,6 @@ export class SourceAttributionService {
         throw new DatabaseError(`Failed to fetch citations: ${citationsError.message}`)
       }
 
-      console.log(`[SourceAttribution] 📊 Found ${citationsData?.length || 0} citations (query: ${stepTimings['citations_query']}ms)`)
-
       if (!citationsData || citationsData.length === 0) {
         // Return empty response if no citations found
         return {
@@ -183,8 +175,6 @@ export class SourceAttributionService {
       ))
       stepTimings['ids_extraction'] = Date.now() - idsExtractionStartTime;
 
-      console.log(`[SourceAttribution] 🔑 Extracted ${queryIdsFromCitations.length} unique queries and ${collectorResultIds.length} collector results (${stepTimings['ids_extraction']}ms)`)
-
       // Step 6: Fetch queries for prompts and topics
       const queriesStartTime = Date.now();
       let queries: Array<{ id: string; query_text: string; topic?: string | null; metadata?: any }> = []
@@ -201,7 +191,6 @@ export class SourceAttributionService {
         }
       }
       stepTimings['queries_query'] = Date.now() - queriesStartTime;
-      console.log(`[SourceAttribution] 📝 Fetched ${queries.length} queries (${stepTimings['queries_query']}ms)`)
 
       // Step 7: Fetch collector results
       const collectorResultsStartTime = Date.now();
@@ -226,9 +215,7 @@ export class SourceAttributionService {
           console.warn('[SourceAttribution] Failed to fetch collector results:', collectorError)
         } else {
           collectorResults = collectorResultsData || []
-          const resultsWithQuestions = collectorResults.filter(cr => cr.question).length
           stepTimings['collector_results_query'] = Date.now() - collectorResultsStartTime;
-          console.log(`[SourceAttribution] 📋 Fetched ${collectorResults.length} collector results, ${resultsWithQuestions} have questions (${stepTimings['collector_results_query']}ms)`)
         }
       }
 
@@ -296,7 +283,6 @@ export class SourceAttributionService {
         } else {
           extractedPositions = positionsData || []
           stepTimings['extracted_positions_query'] = Date.now() - positionsStartTime;
-          console.log(`[SourceAttribution] 📊 Found ${extractedPositions.length} extracted positions (${stepTimings['extracted_positions_query']}ms)`)
         }
       }
 
@@ -304,11 +290,9 @@ export class SourceAttributionService {
       const collectorResultMap = new Map(
         collectorResults.map(cr => [cr.id, cr])
       )
-      console.log(`[SourceAttribution] Created collectorResultMap with ${collectorResultMap.size} entries`)
       const queryMap = new Map(
         queries.map(q => [q.id, q])
       )
-      console.log(`[SourceAttribution] Created queryMap with ${queryMap.size} entries`)
       
       // Create maps for share of answer, mention counts, and visibility by collector_result_id
       // Multiple positions can exist per collector_result_id, so we'll average them
@@ -393,15 +377,12 @@ export class SourceAttributionService {
       }
       
       const calculationsStartTime = Date.now();
-      console.log(`[SourceAttribution] 🧮 Calculated average share of answer for ${avgShareByCollectorResult.size} collector results`)
       
       // Calculate average sentiment per collector result (from extracted_positions)
       const avgSentimentByCollectorResult = new Map<number, number>()
       for (const [collectorId, sentimentValues] of sentimentValuesByCollectorResult.entries()) {
         avgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
       }
-      console.log(`[SourceAttribution] 🧮 Calculated average sentiment for ${avgSentimentByCollectorResult.size} collector results`)
-      console.log(`[SourceAttribution] 🏷️  Mapped topics for ${collectorResultTopicMap.size} collector results`)
       stepTimings['calculations'] = Date.now() - calculationsStartTime;
 
       // Step 9: Aggregate sources by domain
@@ -423,10 +404,10 @@ export class SourceAttributionService {
           queryIds: Set<string>
           pages: Set<string>
           prompts: Set<string> // Questions from collector_results
+          processedCollectorResultIds: Set<number> // Track which collector_result_ids we've already processed for sentiment
         }
       >()
 
-      console.log(`[SourceAttribution] 🔄 Starting aggregation of ${citationsData.length} citations...`)
       for (const citation of citationsData) {
         // Use domain from citations table (it's already there)
         const domain = citation.domain || (citation.url ? (() => {
@@ -458,7 +439,8 @@ export class SourceAttributionService {
             topics: new Set<string>(),
             queryIds: new Set<string>(),
             pages: new Set<string>(),
-            prompts: new Set<string>()
+            prompts: new Set<string>(),
+            processedCollectorResultIds: new Set<number>() // Track which collector_result_ids we've already processed for sentiment
           })
         }
 
@@ -505,10 +487,15 @@ export class SourceAttributionService {
             aggregate.shareValues.push(avgShare)
           }
 
-          // Always add sentiment if we have it from collector_results, even if extracted_positions row is missing
-          const avgSentiment = avgSentimentByCollectorResult.get(citation.collector_result_id)
-          if (avgSentiment !== undefined) {
-            aggregate.sentimentValues.push(avgSentiment)
+          // Collect all raw sentiment values for this source (not averages) for simple average calculation
+          // Only add sentiment values once per collector_result_id to avoid duplicates
+          if (!aggregate.processedCollectorResultIds.has(citation.collector_result_id)) {
+            const rawSentimentValues = sentimentValuesByCollectorResult.get(citation.collector_result_id)
+            if (rawSentimentValues && rawSentimentValues.length > 0) {
+              // Add all raw sentiment values, not the average
+              aggregate.sentimentValues.push(...rawSentimentValues)
+              aggregate.processedCollectorResultIds.add(citation.collector_result_id)
+            }
           }
 
           // Add visibility from extracted_positions
@@ -548,14 +535,10 @@ export class SourceAttributionService {
       }
 
       stepTimings['aggregation'] = Date.now() - aggregationStartTime;
-      console.log(`[SourceAttribution] ✅ Aggregated ${sourceAggregates.size} unique sources (${stepTimings['aggregation']}ms)`)
       
       // Debug: Check prompts per source
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         if (aggregate.prompts.size === 0) {
-          console.warn(`[SourceAttribution] Source ${sourceKey} has NO prompts (collectorResultIds: ${aggregate.collectorResultIds.size})`)
-        } else {
-          console.log(`[SourceAttribution] Source ${sourceKey} has ${aggregate.prompts.size} prompts`)
         }
       }
 
@@ -578,9 +561,6 @@ export class SourceAttributionService {
       const previousEnd = new Date(previousDay)
       previousEnd.setUTCHours(23, 59, 59, 999)
 
-      console.log(`[SourceAttribution] 📊 Calculating day-over-day change...`)
-      console.log(`[SourceAttribution] Current period: ${normalizedRange.startDate.toISOString()} to ${normalizedRange.endDate.toISOString()}`)
-      console.log(`[SourceAttribution] Comparing: Most recent day (${currentDay.toISOString()}) vs Previous day (${previousStart.toISOString()} to ${previousEnd.toISOString()})`)
       const { data: previousCitations } = await supabaseAdmin
         .from('citations')
         .select('domain, usage_count, collector_result_id')
@@ -684,7 +664,6 @@ export class SourceAttributionService {
       }
 
       stepTimings['previous_period'] = Date.now() - previousPeriodStartTime;
-      console.log(`[SourceAttribution] ✅ Previous period data processed (${stepTimings['previous_period']}ms)`)
 
       // Step 11: Get total responses count for mention rate calculation
       const totalResponsesStartTime = Date.now();
@@ -697,16 +676,17 @@ export class SourceAttributionService {
 
       const totalResponsesCount = totalResponses || 1 // Avoid division by zero
       stepTimings['total_responses'] = Date.now() - totalResponsesStartTime;
-      console.log(`[SourceAttribution] 📊 Total collector results: ${totalResponsesCount} (${stepTimings['total_responses']}ms)`)
 
       // Step 12: Convert aggregates to source data
       const conversionStartTime = Date.now();
       const sources: SourceAttributionData[] = []
-      
-      console.log(`[SourceAttribution] 🔄 Converting ${sourceAggregates.size} aggregates to source data...`)
       // Calculate max values for normalization in Value score
       const maxCitations = Math.max(...Array.from(sourceAggregates.values()).map(a => a.citations), 1)
       const maxTopics = Math.max(...Array.from(sourceAggregates.values()).map(a => a.topics.size), 1)
+      // Calculate max sentiment from all sentiment values (use new sentiment range without fixed normalization)
+      const allSentimentValues = Array.from(sourceAggregates.values())
+        .flatMap(a => a.sentimentValues.length > 0 ? [average(a.sentimentValues)] : [])
+      const maxSentiment = allSentimentValues.length > 0 ? Math.max(...allSentimentValues, 1) : 1
 
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         // Share of Answer: Average across all collector results where this source is cited
@@ -728,13 +708,14 @@ export class SourceAttributionService {
         // Normalize all components to 0-100 scale, then weight them
         // Visibility (0-100): avgVisibility is already 0-100
         // SOA (0-100): avgShare is already 0-100
-        // Sentiment (-1 to 1): normalize to 0-100 scale: (sentiment + 1) / 2 * 100
+        // Sentiment: Use new sentiment range - normalize relative to max sentiment in dataset (no fixed range normalization)
         // Citations: normalize to 0-100: (citations / maxCitations) * 100
         // Topics: normalize to 0-100: (topics.size / maxTopics) * 100
         // Equal weighting: 20% each
         const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
         const normalizedSOA = Math.min(100, Math.max(0, avgShare))
-        const normalizedSentiment = Math.min(100, Math.max(0, ((avgSentiment + 1) / 2) * 100)) // Convert -1 to 1 scale to 0-100
+        // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed -1 to 1 normalization)
+        const normalizedSentiment = maxSentiment > 0 ? Math.min(100, Math.max(0, (avgSentiment / maxSentiment) * 100)) : 0
         const normalizedCitations = maxCitations > 0 ? Math.min(100, (aggregate.citations / maxCitations) * 100) : 0
         const normalizedTopics = maxTopics > 0 ? Math.min(100, (aggregate.topics.size / maxTopics) * 100) : 0
         
@@ -789,7 +770,6 @@ export class SourceAttributionService {
           prompts: (() => {
             const promptsFromCollector = Array.from(aggregate.prompts)
             if (promptsFromCollector.length > 0) {
-              console.log(`[SourceAttribution] Using ${promptsFromCollector.length} prompts from collector_results for ${aggregate.domain}`)
               return promptsFromCollector
             }
             const promptsFromQueries = Array.from(aggregate.queryIds).map(qId => {
@@ -797,10 +777,8 @@ export class SourceAttributionService {
               return query?.query_text || ''
             }).filter(Boolean)
             if (promptsFromQueries.length > 0) {
-              console.log(`[SourceAttribution] Using ${promptsFromQueries.length} prompts from generated_queries for ${aggregate.domain}`)
               return promptsFromQueries
             }
-            console.warn(`[SourceAttribution] No prompts found for ${aggregate.domain} (collectorResultIds: ${aggregate.collectorResultIds.size}, queryIds: ${aggregate.queryIds.size})`)
             return []
           })(),
           pages: Array.from(aggregate.pages)
@@ -811,7 +789,6 @@ export class SourceAttributionService {
       sources.sort((a, b) => (b.value || 0) - (a.value || 0) || b.mentionRate - a.mentionRate)
       
       stepTimings['conversion'] = Date.now() - conversionStartTime;
-      console.log(`[SourceAttribution] ✅ Converted to ${sources.length} sources (${stepTimings['conversion']}ms)`)
 
       // Calculate overall metrics
       const overallMentionRate = sources.length > 0
@@ -885,8 +862,6 @@ export class SourceAttributionService {
     const stepTimings: Record<string, number> = {};
     
     try {
-      console.log(`\n[CompetitorSourceAttribution] 🚀 Starting for competitor "${competitorName}"`);
-      
       // Step 1: Resolve brand
       const brandStartTime = Date.now();
       const { data: brand, error: brandError } = await supabaseAdmin
@@ -921,7 +896,6 @@ export class SourceAttributionService {
       const startIso = normalizedRange.startIso
       const endIso = normalizedRange.endIso
 
-      console.log(`[CompetitorSourceAttribution] Date range: ${startIso} to ${endIso}`)
 
       // Step 2: Fetch extracted_positions for this competitor
       const positionsStartTime = Date.now();
@@ -949,7 +923,6 @@ export class SourceAttributionService {
         throw new DatabaseError(`Failed to fetch positions: ${positionsError.message}`)
       }
 
-      console.log(`[CompetitorSourceAttribution] 📊 Found ${positionsData?.length || 0} position rows (query: ${stepTimings['positions_query']}ms)`)
 
       if (!positionsData || positionsData.length === 0) {
         // Return empty response if no positions found
@@ -969,7 +942,6 @@ export class SourceAttributionService {
         positionsData.map(p => p.collector_result_id).filter((id): id is number => typeof id === 'number')
       ))
 
-      console.log(`[CompetitorSourceAttribution] 🔑 Extracted ${collectorResultIds.length} unique collector results`)
 
       // Step 4: Fetch citations for these collector results
       const citationsStartTime = Date.now();
@@ -994,7 +966,6 @@ export class SourceAttributionService {
         throw new DatabaseError(`Failed to fetch citations: ${citationsError.message}`)
       }
 
-      console.log(`[CompetitorSourceAttribution] 📊 Found ${citationsData?.length || 0} citations (query: ${stepTimings['citations_query']}ms)`)
 
       if (!citationsData || citationsData.length === 0) {
         return {
@@ -1035,7 +1006,6 @@ export class SourceAttributionService {
       }
       stepTimings['collector_results_query'] = Date.now() - collectorResultsStartTime;
 
-      console.log(`[CompetitorSourceAttribution] 📝 Fetched ${queries.length} queries, ${collectorResults.length} collector results`)
 
       // Create lookup maps
       const queryMap = new Map(queries.map(q => [q.id, q]))
@@ -1080,7 +1050,6 @@ export class SourceAttributionService {
         avgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
       }
 
-      console.log(`[CompetitorSourceAttribution] 🧮 Calculated metrics for ${avgShareByCollectorResult.size} collector results`)
 
       // Step 6: Aggregate sources by domain
       const aggregationStartTime = Date.now();
@@ -1176,7 +1145,6 @@ export class SourceAttributionService {
       }
 
       stepTimings['aggregation'] = Date.now() - aggregationStartTime;
-      console.log(`[CompetitorSourceAttribution] ✅ Aggregated ${sourceAggregates.size} unique sources (${stepTimings['aggregation']}ms)`)
 
       // Step 7: Get total responses count for mention rate
       const totalResponsesStartTime = Date.now();
@@ -1189,7 +1157,6 @@ export class SourceAttributionService {
 
       const totalResponsesCount = totalResponses || 1
       stepTimings['total_responses'] = Date.now() - totalResponsesStartTime;
-      console.log(`[CompetitorSourceAttribution] 📊 Total responses: ${totalResponsesCount}`)
 
       // Step 8: Convert aggregates to source data
       const sources: SourceAttributionData[] = []
@@ -1245,7 +1212,6 @@ export class SourceAttributionService {
       }
 
       const totalTime = Date.now() - serviceStartTime;
-      console.log(`[CompetitorSourceAttribution] ✅ Completed in ${totalTime}ms\n`)
 
       return payload
     } catch (error) {
@@ -1401,6 +1367,28 @@ export class SourceAttributionService {
         topicsByDomain.set(domain, topics)
       }
       const maxTopics = Math.max(...Array.from(topicsByDomain.values()).map(t => t.size), 1)
+      
+      // Calculate max sentiment across all days and domains (use new sentiment range without fixed normalization)
+      const allSentimentValuesForTrends: number[] = []
+      for (const date of dates) {
+        for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
+          const dayCitations = dateMap.get(date) || []
+          for (const citation of dayCitations) {
+            if (citation.collector_result_id) {
+              const key = `${citation.collector_result_id}_${date}`
+              const positions = positionsByCollectorAndDate.get(key) || []
+              for (const pos of positions) {
+                const isBrandRow = !pos.competitor_name || 
+                  (typeof pos.competitor_name === 'string' && pos.competitor_name.trim().length === 0)
+                if (isBrandRow && pos.sentiment_score !== null) {
+                  allSentimentValuesForTrends.push(toNumber(pos.sentiment_score))
+                }
+              }
+            }
+          }
+        }
+      }
+      const maxSentiment = allSentimentValuesForTrends.length > 0 ? Math.max(...allSentimentValuesForTrends, 1) : 1
 
       // Calculate Impact Score for each day
       for (const date of dates) {
@@ -1468,7 +1456,8 @@ export class SourceAttributionService {
           // Calculate Impact Score (same formula as in getSourceAttribution)
           const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
           const normalizedSOA = Math.min(100, Math.max(0, avgShare))
-          const normalizedSentiment = Math.min(100, Math.max(0, ((avgSentiment + 1) / 2) * 100))
+          // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed -1 to 1 normalization)
+          const normalizedSentiment = maxSentiment > 0 ? Math.min(100, Math.max(0, (avgSentiment / maxSentiment) * 100)) : 0
           const normalizedCitations = maxCitations > 0 ? Math.min(100, (totalCitations / maxCitations) * 100) : 0
           const normalizedTopics = maxTopics > 0 ? Math.min(100, (dayTopics.size / maxTopics) * 100) : 0
 

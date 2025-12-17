@@ -237,9 +237,11 @@ export const SearchVisibility = () => {
     if (activeTab === 'competitive' && llmFilters.length > 0) {
       params.append('collectors', llmFilters.map((v) => v.toLowerCase()).join(','));
     }
-    // Add skipCache to bypass cached data and get fresh calculation with updated SOA logic
-    // This ensures we get the corrected competitor SOA calculation
-    params.append('skipCache', 'true');
+    // Only bypass cache when explicitly refreshing
+    if (reloadToken > 0) {
+      params.set('skipCache', 'true');
+      params.set('cacheBust', String(reloadToken));
+    }
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     perfLog('SearchVisibility: Endpoint computation', endpointStart);
     return endpoint;
@@ -378,9 +380,6 @@ export const SearchVisibility = () => {
 
     // Create brand summary model for competitive view
     const brandSummary = response.data.brandSummary;
-    console.log('[SearchVisibility] brandSummary from API:', brandSummary);
-    console.log('[SearchVisibility] llmModels count:', llmModels.length);
-    console.log('[SearchVisibility] selectedBrand:', selectedBrand);
     
     // Calculate brand summary from llmVisibility if brandSummary is not available
     const calculateBrandSummary = () => {

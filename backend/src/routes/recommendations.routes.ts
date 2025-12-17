@@ -9,9 +9,96 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { recommendationService } from '../services/recommendations/recommendation.service';
+import { recommendationContentService } from '../services/recommendations/recommendation-content.service';
 import { brandService } from '../services/brand.service';
 
 const router = express.Router();
+
+/**
+ * GET /api/recommendations/:recommendationId/content
+ *
+ * Fetch latest generated content draft for a recommendation (if any).
+ */
+router.get('/:recommendationId/content', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    const { recommendationId } = req.params;
+    const latest = await recommendationContentService.getLatestContent(recommendationId, customerId);
+    return res.json({ success: true, data: latest ? { content: latest } : null });
+  } catch (error) {
+    console.error('❌ [Recommendations Content GET] Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch recommendation content.' });
+  }
+});
+
+/**
+ * POST /api/recommendations/:recommendationId/content
+ *
+ * Generate a content draft for a recommendation and persist it.
+ * Uses Cerebras as primary provider and OpenRouter as fallback.
+ */
+router.post('/:recommendationId/content', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    const { recommendationId } = req.params;
+    const { contentType } = req.body || {};
+    const result = await recommendationContentService.generateContent(recommendationId, customerId, { contentType });
+
+    if (!result?.record) {
+      return res.status(500).json({ success: false, error: 'Failed to generate content.' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        content: result.record,
+        providerUsed: result.providerUsed,
+        modelUsed: result.modelUsed
+      }
+    });
+  } catch (error) {
+    console.error('❌ [Recommendations Content POST] Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to generate content.' });
+  }
+});
+
+/**
+ * PATCH /api/recommendations/content/:contentId
+ *
+ * Update content status (accepted/rejected).
+ */
+router.patch('/content/:contentId', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    const { contentId } = req.params;
+    const { status } = req.body || {};
+    if (status !== 'accepted' && status !== 'rejected') {
+      return res.status(400).json({ success: false, error: 'Invalid status. Use accepted or rejected.' });
+    }
+
+    const updated = await recommendationContentService.updateStatus(contentId, customerId, status);
+    if (!updated) {
+      return res.status(500).json({ success: false, error: 'Failed to update content status.' });
+    }
+
+    return res.json({ success: true, data: { content: updated } });
+  } catch (error) {
+    console.error('❌ [Recommendations Content PATCH] Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update content status.' });
+  }
+});
 
 /**
  * POST /api/recommendations

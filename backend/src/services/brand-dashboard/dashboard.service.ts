@@ -77,15 +77,7 @@ export class DashboardService {
 
       const normalizedRange = normalizeDateRange(dateRange)
       
-      console.log(`[Dashboard] Looking up cache for brand ${brand.id}, range ${normalizedRange.startIso} → ${normalizedRange.endIso}`)
-      
       const shouldUseCache = !effectiveSkipCache
-      if (effectiveSkipCache) {
-        console.log('[Dashboard] skipCache requested - bypassing snapshot lookup')
-        if (hasCollectorFilter) {
-          console.log('[Dashboard] Collector filter provided - bypassing cache to ensure fresh data')
-        }
-      }
 
       // Try to get cached dashboard, but don't let cache errors block the request
       let cached: DashboardSnapshotRow | null = null
@@ -93,19 +85,13 @@ export class DashboardService {
         try {
           cached = await dashboardCacheService.getCachedDashboard(brand.id, customerId, normalizedRange)
           if (cached) {
-            console.log(`[Dashboard] Cache lookup found snapshot (computed at: ${cached.computed_at})`)
             // Validate that cached payload has data
             if (cached.payload && typeof cached.payload === 'object') {
               const payload = cached.payload as BrandDashboardPayload
-              if (Array.isArray(payload.llmVisibility) && payload.llmVisibility.length > 0) {
-                console.log(`[Dashboard] Cached payload has ${payload.llmVisibility.length} LLM models`)
-              } else {
-                console.log(`[Dashboard] Cached payload has empty llmVisibility array - will recompute`)
+              if (!Array.isArray(payload.llmVisibility) || payload.llmVisibility.length === 0) {
                 cached = null
               }
             }
-          } else {
-            console.log(`[Dashboard] Cache lookup returned null (no cached snapshot found)`)
           }
         } catch (cacheError) {
           console.warn('[Dashboard] Cache lookup error (will recompute):', cacheError)
@@ -116,9 +102,6 @@ export class DashboardService {
       const cachedAgeMs = dashboardCacheService.getAgeMs(cached?.computed_at ?? null)
 
       if (shouldUseCache && cached && dashboardCacheService.isCacheValid(cached.computed_at)) {
-        console.log(
-          `[Dashboard] ✅ Serving cached snapshot for brand ${brand.id} range ${normalizedRange.startIso} → ${normalizedRange.endIso} (age ${cachedAgeMs ?? 0}ms)`
-        )
         // Ensure totalBrandRows exists for backward compatibility
         const payload: BrandDashboardPayload = { ...cached.payload } as BrandDashboardPayload
         
@@ -219,45 +202,26 @@ export class DashboardService {
             brandPresencePercentage: Math.round(totalBrandPresence * 10) / 10,
             topTopics
           }
-          console.log('[Dashboard] ✅ Calculated brandSummary from cached data')
         }
         
-        console.log(`[Dashboard] ✅ Cached payload: ${payload.llmVisibility.length} LLM models, ${payload.competitorVisibility.length} competitors`)
-        console.log(`[Dashboard] Cached llmVisibility providers:`, payload.llmVisibility.map((s: any) => s.provider))
-        console.log(`[Dashboard] Cached brandSummary:`, payload.brandSummary)
         return payload
       }
 
-      if (shouldUseCache && cached) {
-        console.log(
-          `[Dashboard] ♻️ Snapshot stale for brand ${brand.id} range ${normalizedRange.startIso} → ${normalizedRange.endIso} (age ${cachedAgeMs ?? 'unknown'}ms) - recomputing`
-        )
-      } else if (!shouldUseCache) {
-        console.log('[Dashboard] Cache disabled for this request - computing full payload')
-      } else {
-        console.log(
-          `[Dashboard] ❌ No snapshot for brand ${brand.id} range ${normalizedRange.startIso} → ${normalizedRange.endIso} - computing full payload`
-        )
-      }
 
       const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange, collectors)
       
       // Ensure required fields exist with proper defaults
       if (!payload.llmVisibility) {
-        console.warn('[Dashboard] ⚠️ Payload missing llmVisibility - initializing empty array')
         payload.llmVisibility = []
       }
       if (!Array.isArray(payload.llmVisibility)) {
-        console.warn('[Dashboard] ⚠️ Payload llmVisibility is not an array - converting to array')
         payload.llmVisibility = []
       }
       
       if (!payload.competitorVisibility) {
-        console.warn('[Dashboard] ⚠️ Payload missing competitorVisibility - initializing empty array')
         payload.competitorVisibility = []
       }
       if (!Array.isArray(payload.competitorVisibility)) {
-        console.warn('[Dashboard] ⚠️ Payload competitorVisibility is not an array - converting to array')
         payload.competitorVisibility = []
       }
       
@@ -272,9 +236,6 @@ export class DashboardService {
         topTopics: slice.topTopics ?? [],
         topTopic: slice.topTopic ?? slice.topTopics?.[0]?.topic ?? null
       }))
-      
-      console.log(`[Dashboard] ✅ Computed payload: ${payload.llmVisibility.length} LLM models, ${payload.competitorVisibility.length} competitors`)
-      console.log(`[Dashboard] Computed llmVisibility providers:`, payload.llmVisibility.map((s: any) => s.provider))
       
       const hasMeaningfulData =
         (payload.totalBrandRows ?? 0) > 0 ||
@@ -294,13 +255,7 @@ export class DashboardService {
           dashboardCacheService.upsertDashboardSnapshot(brand.id, customerId, payload, normalizedRange).catch((error) => {
             console.warn('[Dashboard] Failed to cache dashboard (non-blocking):', error)
           })
-        } else if (!hasMeaningfulData) {
-          console.log('[Dashboard] ⏭ Cache bypassed because payload lacks visibility data')
-        } else {
-          console.warn('[Dashboard] ⚠️ Skipping cache - invalid payload structure')
         }
-      } else {
-        console.log('[Dashboard] ⏭ Cache bypassed because collector filter was used')
       }
       
       return payload

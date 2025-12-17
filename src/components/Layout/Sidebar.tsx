@@ -39,23 +39,33 @@ export const Sidebar = () => {
   const getPrefetchEndpoint = (path: string): string | null => {
     if (!selectedBrandId) return null;
     
+    // Normalize dates to avoid cache misses due to changing timestamps.
+    // This prevents hammering the backend with unique URLs on every hover.
     const end = new Date();
+    end.setUTCHours(23, 59, 59, 999);
     const start = new Date(end);
+    start.setUTCHours(0, 0, 0, 0);
+    const toDateOnly = (d: Date) => d.toISOString().split('T')[0];
     
     switch (path) {
       case '/':
         start.setDate(start.getDate() - 29);
-        return `/brands/${selectedBrandId}/dashboard?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`;
+        return `/brands/${selectedBrandId}/dashboard?startDate=${toDateOnly(start)}&endDate=${toDateOnly(end)}`;
       case '/search-visibility':
         start.setDate(start.getDate() - 6);
+        // SearchVisibility uses ISO timestamps; keep them stable (midnight -> end-of-day)
         return `/brands/${selectedBrandId}/dashboard?startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
       case '/search-sources':
         start.setDate(start.getDate() - 30);
-        return `/brands/${selectedBrandId}/sources?startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
+        // SearchSources uses date-only params
+        return `/brands/${selectedBrandId}/sources?startDate=${toDateOnly(start)}&endDate=${toDateOnly(end)}`;
       case '/topics':
-        return `/brands/${selectedBrandId}/topics`;
+        // Match Topics page default range so prefetch warms the correct cache key
+        start.setDate(start.getDate() - 29);
+        return `/brands/${selectedBrandId}/topics?startDate=${toDateOnly(start)}&endDate=${toDateOnly(end)}`;
       case '/prompts':
         start.setDate(start.getDate() - 30);
+        // Prompts uses ISO timestamps (page normalizes to day bounds)
         return `/brands/${selectedBrandId}/prompts?startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
       default:
         return null;
@@ -63,6 +73,11 @@ export const Sidebar = () => {
   };
 
   const handleNavHover = (path: string) => {
+    // Prefetch-on-hover can overwhelm local dev backend and make pages appear “stuck”.
+    // Disable it in dev completely. (Production build is unaffected.)
+    if (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.DEV) {
+      return;
+    }
     const endpoint = getPrefetchEndpoint(path);
     if (endpoint) {
       prefetchNow(endpoint, {}, { requiresAuth: true });

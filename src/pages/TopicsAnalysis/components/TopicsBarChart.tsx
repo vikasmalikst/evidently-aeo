@@ -19,11 +19,14 @@ const BOTTOM_AXIS_LINE_HEIGHT = 13;
 export const TopicsBarChart = ({ 
   topics, 
   onBarClick,
-  competitors = [],
+  competitors: _competitors = [],
   selectedCompetitor: _selectedCompetitor, // kept for future filtering logic
 }: TopicsBarChartProps) => {
-  // Always show comparison (brand + avg competitor + industry line) when competitors are available
-  const showComparison = competitors.length > 0;
+  // IMPORTANT:
+  // Do NOT tie comparison mode to competitor-list loading.
+  // Competitors are fetched separately and arrive later, which caused the chart to “reload”
+  // (single bars -> grouped bars) even when topic data was cached.
+  // Instead, base comparison mode on whether topic data actually has industry averages.
   
   // Helper function to resolve CSS variable at runtime
   const getCSSVariable = (variableName: string): string => {
@@ -75,6 +78,8 @@ export const TopicsBarChart = ({
       topic.industryAvgSoA > 0
     );
   }, [sortedTopics]);
+
+  const showComparison = hasIndustryData;
 
 
   // Chart keys: brand, avgIndustry (only show comparison if competitor data exists)

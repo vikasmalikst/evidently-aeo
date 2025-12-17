@@ -150,7 +150,7 @@ function App() {
           path="/recommendations"
           element={
             <ProtectedRoute>
-              <Recommendations />
+              <RecommendationsV2 />
             </ProtectedRoute>
           }
         />
@@ -158,7 +158,15 @@ function App() {
           path="/recommendations-v2"
           element={
             <ProtectedRoute>
-              <RecommendationsV2 />
+              <Navigate to="/recommendations" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/recommendations-v1"
+          element={
+            <ProtectedRoute>
+              <Recommendations />
             </ProtectedRoute>
           }
         />

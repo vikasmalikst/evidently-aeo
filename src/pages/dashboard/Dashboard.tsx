@@ -57,7 +57,7 @@ export const Dashboard = () => {
 
   const toSentimentDisplay = (value: number | null | undefined) => {
     if (value === null || value === undefined) return null;
-    return value * 100; // keep same 1–100 scale as KPI card
+    return value; // values are already in 1-100 range
   };
 
   const buildComparisons = (metric: 'visibility' | 'share' | 'sentiment' | 'brandPresence') => {
@@ -147,7 +147,7 @@ export const Dashboard = () => {
       {
         key: 'sentiment-score',
         title: 'Sentiment Score',
-        value: sentimentMetric ? formatNumber(sentimentMetric.value * 100, 0) : '—',
+        value: sentimentMetric ? formatNumber(sentimentMetric.value, 0) : '—',
         subtitle: '',
         trend: computeTrend(sentimentMetric?.delta),
         icon: <MessageSquare size={20} />,

@@ -22,6 +22,16 @@ interface RefreshResponse {
 class ApiClient {
   private refreshingPromise: Promise<void> | null = null;
 
+  private isAbortError(error: unknown): boolean {
+    // In browsers, aborts can surface as DOMException (not always instanceof Error)
+    // or as an Error-like object with name/message.
+    if (!error || (typeof error !== 'object' && typeof error !== 'function')) return false;
+    const anyErr = error as any;
+    const name = typeof anyErr.name === 'string' ? anyErr.name : '';
+    const message = typeof anyErr.message === 'string' ? anyErr.message : '';
+    return name === 'AbortError' || message.toLowerCase().includes('aborted');
+  }
+
   get baseUrl(): string {
     return API_BASE_URL;
   }
@@ -63,10 +73,13 @@ class ApiClient {
    * Generic API request wrapper with automatic token injection and refresh
    */
   async request<T>(endpoint: string, options: RequestInit = {}, config: RequestConfig = {}): Promise<T> {
+    const requestStart = performance.now();
     const { requiresAuth = true, retry = true } = config;
     const headers = new Headers(options.headers as HeadersInit | undefined);
     const method = (options.method || 'GET').toUpperCase();
     const hasPayload = options.body !== undefined && options.body !== null;
+    const slowApiLogEnabled =
+      typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_LOG_SLOW_API === 'true';
 
     if (!headers.has('Content-Type') && method !== 'GET' && hasPayload) {
       headers.set('Content-Type', 'application/json');
@@ -80,18 +93,71 @@ class ApiClient {
         headers.set('Authorization', `Bearer ${accessToken}`);
       }
     }
+    
+    // Log slow requests (>5 seconds) for debugging
+    const logSlowRequest = (duration: number, status?: number) => {
+      // Avoid noisy warnings by default; enable explicitly via VITE_LOG_SLOW_API=true
+      if (slowApiLogEnabled && duration > 5000) {
+        console.warn(`⚠️ Slow API request: ${endpoint} took ${duration.toFixed(2)}ms${status ? ` (status: ${status})` : ''}`);
+      }
+    };
+
+    // Add timeout to prevent hanging requests (30 seconds default)
+    const timeoutMs = 30000; // 30 seconds
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort();
+    }, timeoutMs);
+    
+    // Merge abort signals if provided
+    let finalSignal: AbortSignal;
+    if (options.signal) {
+      // If caller provided a signal, create a merged controller
+      const mergedController = new AbortController();
+      const abort = () => mergedController.abort();
+      // If already aborted, preserve semantics: fetch should abort immediately
+      if (options.signal.aborted) {
+        clearTimeout(timeoutId);
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      }
+      options.signal.addEventListener('abort', abort, { once: true });
+      timeoutController.signal.addEventListener('abort', abort, { once: true });
+      finalSignal = mergedController.signal;
+    } else {
+      finalSignal = timeoutController.signal;
+    }
 
     let response: Response;
     try {
       response = await fetch(url, {
         ...options,
         headers,
+        signal: finalSignal,
       });
+      clearTimeout(timeoutId);
+      const fetchDuration = performance.now() - requestStart;
+      logSlowRequest(fetchDuration, response.status);
     } catch (error) {
+      clearTimeout(timeoutId);
+      const errorDuration = performance.now() - requestStart;
+      
+      // Handle timeout/abort errors
+      if (this.isAbortError(error)) {
+        // Check if timeout occurred (timeoutController aborted but caller signal didn't)
+        if (timeoutController.signal.aborted && !options.signal?.aborted) {
+          // Timeout occurred
+          console.error(`❌ Request timeout: ${endpoint} timed out after ${timeoutMs}ms (actual: ${errorDuration.toFixed(2)}ms)`);
+          throw new Error(`Request to ${endpoint} timed out after ${timeoutMs}ms. The server may be slow or unresponsive.`);
+        }
+        // Otherwise it was a user-initiated abort, rethrow as-is
+        throw error;
+      }
+      
       // Handle network errors (server not running, CORS, etc.)
       if (error instanceof TypeError && error.message.includes('fetch')) {
         const port = this.baseUrl.includes('3001') ? '3001' : '3000';
         const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
+        console.error(`❌ Network error: ${endpoint} failed after ${errorDuration.toFixed(2)}ms`);
         throw new Error(
           `Unable to connect to backend server at ${url}. ` +
           `Please ensure: 1) Backend is running on port ${port}, ` +
@@ -99,6 +165,7 @@ class ApiClient {
           `3) No firewall or network issues are blocking the connection.`
         );
       }
+      console.error(`❌ Request error: ${endpoint} failed after ${errorDuration.toFixed(2)}ms:`, error);
       throw error;
     }
 
@@ -111,15 +178,22 @@ class ApiClient {
     }
 
     if (!response.ok) {
+      const errorDuration = performance.now() - requestStart;
+      logSlowRequest(errorDuration, response.status);
       throw await this.buildError(response);
     }
 
     const contentType = response.headers.get('content-type');
+    let result: T;
     if (contentType && contentType.includes('application/json')) {
-      return response.json() as Promise<T>;
+      result = await response.json() as T;
+    } else {
+      result = {} as T;
     }
-
-    return {} as T;
+    const totalDuration = performance.now() - requestStart;
+    logSlowRequest(totalDuration, response.status);
+    
+    return result;
   }
 
   private async tryRefreshToken(): Promise<boolean> {

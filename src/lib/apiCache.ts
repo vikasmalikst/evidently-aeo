@@ -15,6 +15,15 @@ const cacheDebugLog = (...args: any[]) => {
   }
 };
 
+function isAbortError(error: unknown): boolean {
+  // Abort can be DOMException in browsers (not always instanceof Error)
+  if (!error || (typeof error !== 'object' && typeof error !== 'function')) return false;
+  const anyErr = error as any;
+  const name = typeof anyErr.name === 'string' ? anyErr.name : '';
+  const message = typeof anyErr.message === 'string' ? anyErr.message : '';
+  return name === 'AbortError' || message.toLowerCase().includes('aborted');
+}
+
 interface CacheStrategy {
   ttl: number; // Time to live in milliseconds
   staleTime: number; // Time after which data is considered stale
@@ -26,44 +35,58 @@ interface CacheStrategy {
 const CACHE_STRATEGIES: Record<string, CacheStrategy> = {
   // Brands endpoint - cache for longer since it doesn't change often
   '/brands': {
-    ttl: 5 * 60 * 1000, // 5 minutes
+    ttl: 60 * 60 * 1000, // 60 minutes
     staleTime: 12 * 60 * 60 * 1000, // 12 hours
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
     persist: true,
   },
   // Dashboard endpoints
   '/dashboard': {
-    ttl: 2 * 60 * 1000, // 2 minutes
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    maxAge: 10 * 60 * 1000, // 10 minutes
+    ttl: 5 * 60 * 1000, // 5 minutes
+    staleTime: 30 * 60 * 1000, // 30 minutes
+    maxAge: 6 * 60 * 60 * 1000, // 6 hours
     persist: true,
   },
   // Visibility endpoints
   '/visibility': {
-    ttl: 1 * 60 * 1000, // 1 minute
-    staleTime: 3 * 60 * 1000, // 3 minutes
-    maxAge: 5 * 60 * 1000, // 5 minutes
+    ttl: 10 * 60 * 1000, // 10 minutes
+    staleTime: 60 * 60 * 1000, // 60 minutes
+    maxAge: 12 * 60 * 60 * 1000, // 12 hours
     persist: true,
   },
   // Sources endpoints
   '/sources': {
-    ttl: 2 * 60 * 1000, // 2 minutes
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    maxAge: 10 * 60 * 1000, // 10 minutes
+    ttl: 10 * 60 * 1000, // 10 minutes
+    staleTime: 60 * 60 * 1000, // 60 minutes
+    maxAge: 12 * 60 * 60 * 1000, // 12 hours
     persist: true,
   },
   // Topics endpoints
   '/topics': {
-    ttl: 5 * 60 * 1000, // 5 minutes
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    maxAge: 30 * 60 * 1000, // 30 minutes
+    ttl: 15 * 60 * 1000, // 15 minutes
+    staleTime: 60 * 60 * 1000, // 60 minutes
+    maxAge: 12 * 60 * 60 * 1000, // 12 hours
     persist: true,
   },
   // Prompts endpoints
   '/prompts': {
-    ttl: 1 * 60 * 1000, // 1 minute
-    staleTime: 3 * 60 * 1000, // 3 minutes
-    maxAge: 5 * 60 * 1000, // 5 minutes
+    ttl: 5 * 60 * 1000, // 5 minutes
+    staleTime: 30 * 60 * 1000, // 30 minutes
+    maxAge: 6 * 60 * 60 * 1000, // 6 hours
+    persist: true,
+  },
+  // Recommendations endpoints (read-heavy; safe to cache briefly)
+  '/recommendations': {
+    ttl: 10 * 60 * 1000, // 10 minutes
+    staleTime: 60 * 60 * 1000, // 60 minutes
+    maxAge: 12 * 60 * 60 * 1000, // 12 hours
+    persist: true,
+  },
+  // Competitors are relatively static and shared across multiple pages
+  '/competitors': {
+    ttl: 60 * 60 * 1000, // 60 minutes
+    staleTime: 12 * 60 * 60 * 1000, // 12 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
     persist: true,
   },
   // Default strategy
@@ -138,13 +161,18 @@ function getCacheStrategy(endpoint: string): CacheStrategy {
   if (endpoint === '/brands' || endpoint.startsWith('/brands?')) {
     return CACHE_STRATEGIES['/brands'];
   }
-  
-  // Then check for pattern matches
-  for (const [pattern, strategy] of Object.entries(CACHE_STRATEGIES)) {
-    if (pattern !== 'default' && endpoint.includes(pattern)) {
-      return strategy;
-    }
-  }
+
+  // IMPORTANT:
+  // Many API routes are under /brands/:id/..., so `endpoint.includes('/brands')` would
+  // incorrectly select the /brands strategy for everything and can cause cache churn/evictions.
+  // Keep matching explicit and ordered from most specific to least.
+  if (endpoint.includes('/dashboard')) return CACHE_STRATEGIES['/dashboard'];
+  if (endpoint.includes('/visibility')) return CACHE_STRATEGIES['/visibility'];
+  if (endpoint.includes('/sources')) return CACHE_STRATEGIES['/sources'];
+  if (endpoint.includes('/topics')) return CACHE_STRATEGIES['/topics'];
+  if (endpoint.includes('/prompts')) return CACHE_STRATEGIES['/prompts'];
+  if (endpoint.includes('/competitors')) return CACHE_STRATEGIES['/competitors'];
+  if (endpoint.includes('/recommendations')) return CACHE_STRATEGIES['/recommendations'];
   
   return CACHE_STRATEGIES.default;
 }
@@ -231,7 +259,7 @@ export async function cachedRequest<T>(
       .catch(error => {
         const bgRefreshTime = performance.now() - bgRefreshStart;
         // Ignore AbortError in background refresh
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (isAbortError(error)) {
           cacheDebugLog(`[apiCache] Background refresh aborted at`, performance.now(), `- Duration: ${bgRefreshTime.toFixed(2)}ms`);
           return;
         }
@@ -286,7 +314,7 @@ export async function cachedRequest<T>(
   } catch (error) {
     const apiRequestTime = performance.now() - apiRequestStart;
     // Ignore AbortError - it's expected when requests are cancelled
-    if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted'))) {
+    if (isAbortError(error)) {
       // If we have stale data, return it even on abort
       if (cachedData && !isExpired) {
         cacheDebugLog(`[apiCache] Request aborted, returning stale cache at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms`);

@@ -133,10 +133,10 @@ export class VisibilityService {
           .slice(0, 5)
 
         // Calculate average sentiment for this collector
+        // All scores are now in 1-100 format, simple average - return in 1-100 range
         const sentimentValues = aggregate.sentimentValues || []
-        const sentiment = sentimentValues.length > 0
-          ? round(average(sentimentValues), 2)
-          : null
+        const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
+        const sentiment = avgSentiment > 0 ? round(avgSentiment, 2) : null
         
         // Get time-series data for this collector
         const timeSeries = timeSeriesData?.get(collectorType)
@@ -221,13 +221,6 @@ export class VisibilityService {
           ? round(average(validShareValues))
           : 0
         
-        // Debug logging to verify calculation matches SQL query
-        if (competitorName.toLowerCase().includes('samsung')) {
-          console.log(`[Visibility] Competitor "${competitorName}": ${validShareValues.length} valid SOA values (out of ${aggregate.shareValues.length} total), average=${share.toFixed(2)}%`)
-          if (validShareValues.length > 0 && validShareValues.length <= 10) {
-            console.log(`[Visibility] Samsung SOA values: [${validShareValues.slice(0, 10).map(v => v.toFixed(2)).join(', ')}${validShareValues.length > 10 ? '...' : ''}]`)
-          }
-        }
         
         const avgVisibilityRaw = aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
         const visibility = round(Math.min(1, Math.max(0, avgVisibilityRaw)) * 100)
@@ -289,10 +282,10 @@ export class VisibilityService {
           .slice(0, 5)
 
         // Calculate average sentiment for this competitor
+        // All scores are now in 1-100 format, simple average - return in 1-100 range
         const sentimentValues = aggregate.sentimentValues || []
-        const sentiment = sentimentValues.length > 0
-          ? round(average(sentimentValues), 2)
-          : null
+        const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
+        const sentiment = avgSentiment > 0 ? round(avgSentiment, 2) : null
 
         // Get time-series data for this competitor
         const timeSeries = competitorTimeSeriesData?.get(competitorName)
@@ -367,8 +360,9 @@ export class VisibilityService {
       
       const brandShare = brandShareArray.length > 0 ? average(brandShareArray) : 0
       const brandVisibility = brandVisibilityArray.length > 0 ? average(brandVisibilityArray) : 0
-      const brandSentiment =
-        brandSentimentArray.length > 0 ? round(average(brandSentimentArray), 2) : null // Raw sentiment -1 to 1 scale
+      // All scores are now in 1-100 format, simple average - return in 1-100 range
+      const avgBrandSentiment = brandSentimentArray.length > 0 ? average(brandSentimentArray) : 0
+      const brandSentiment = avgBrandSentiment > 0 ? round(avgBrandSentiment, 2) : null
 
       const competitors = Array.from(competitorAggregates.entries())
         .map(([competitorName, aggregate]) => {
@@ -378,8 +372,9 @@ export class VisibilityService {
           }
           const avgShare = stats.shareSum / Math.max(1, stats.count)
           const avgVisibility = stats.visibilitySum / Math.max(1, stats.count)
-          const sentiment =
-            stats.sentimentValues.length > 0 ? round(average(stats.sentimentValues), 2) : null // Raw sentiment -1 to 1 scale
+          // All scores are now in 1-100 format, simple average - return in 1-100 range
+          const avgSentiment = stats.sentimentValues.length > 0 ? average(stats.sentimentValues) : 0
+          const sentiment = avgSentiment > 0 ? round(avgSentiment, 2) : null
           return {
             competitor: competitorName,
             share: round(avgShare),

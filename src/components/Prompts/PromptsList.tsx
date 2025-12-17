@@ -127,7 +127,7 @@ export const PromptsList = memo(({
                     </td>
                     <td className="px-2 py-2 w-32 text-center">
                       <span className="text-sm font-medium text-[var(--text-caption)]">
-                        {topic.sentimentScore !== null ? `${Math.round(topic.sentimentScore * 100)}` : '—'}
+                        {topic.sentimentScore !== null ? `${Math.round(topic.sentimentScore)}` : '—'}
                       </span>
                     </td>
                   </tr>
@@ -176,7 +176,7 @@ export const PromptsList = memo(({
                           </td>
                           <td className="px-2 py-3 w-32 text-center">
                             <span className="text-sm font-medium text-[var(--text-caption)]">
-                              {prompt.sentimentScore !== null ? `${Math.round(prompt.sentimentScore * 100)}` : '—'}
+                              {prompt.sentimentScore !== null ? `${Math.round(prompt.sentimentScore)}` : '—'}
                             </span>
                           </td>
                         </tr>

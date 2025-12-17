@@ -8,12 +8,36 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
-import { generateRecommendations, fetchRecommendations, Recommendation, RecommendationsResponse } from '../api/recommendationsApi';
-import { IconSparkles, IconRefresh, IconChevronRight, IconChevronDown, IconTrendingUp, IconTrendingDown, IconMinus, IconAlertCircle } from '@tabler/icons-react';
+import { generateRecommendations, fetchRecommendations, Recommendation } from '../api/recommendationsApi';
+import { IconSparkles, IconChevronRight, IconChevronDown, IconTrendingUp, IconTrendingDown, IconMinus, IconAlertCircle } from '@tabler/icons-react';
+import { RecommendationContentModal } from './Recommendations/components/RecommendationContentModal';
 
 // ============================================================================
 // HELPER COMPONENTS
 // ============================================================================
+
+const formatInt = (value: unknown): string => {
+  if (value === null || value === undefined || value === '') return '—';
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return String(Math.round(num));
+};
+
+const sanitizeMetricText = (text: string, rec: Recommendation): string => {
+  const replaceMetric = (input: string, labelRegex: RegExp, replacement: string) => {
+    // Replace the first numeric token after a metric label (optionally followed by %)
+    return input.replace(
+      new RegExp(`(${labelRegex.source}[^0-9]{0,25})(\\d+(?:\\.\\d+)?)\\s*%?`, 'ig'),
+      `$1${replacement}`
+    );
+  };
+
+  let out = text;
+  out = replaceMetric(out, /visibility/, formatInt(rec.visibilityScore));
+  out = replaceMetric(out, /soa/, formatInt(rec.soa));
+  out = replaceMetric(out, /sentiment/, formatInt(rec.sentiment));
+  return out;
+};
 
 const LevelBadge = ({ 
   level, 
@@ -92,22 +116,22 @@ const TrendIndicator = ({ direction, changePercent }: { direction: 'up' | 'down'
   return (
     <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${color}`}>
       <Icon size={12} />
-      <span>{Math.abs(changePercent).toFixed(1)}%</span>
+      <span>{Math.round(Math.abs(changePercent))}%</span>
     </span>
   );
 };
 
 const CategoryBadge = ({ category }: { category: Recommendation['citationCategory'] }) => {
-  if (!category) return null;
-
   const config = {
     'Priority Partnerships': { label: 'Priority', color: 'bg-[#06c686] text-white' },
     'Reputation Management': { label: 'Reputation', color: 'bg-[#ef4444] text-white' },
     'Growth Opportunities': { label: 'Growth', color: 'bg-[#0ea5e9] text-white' },
-    'Monitor': { label: 'Monitor', color: 'bg-[#94a3b8] text-white' }
+    'Monitor': { label: 'Monitor', color: 'bg-[#94a3b8] text-white' },
+    'Uncategorized': { label: 'Uncategorized', color: 'bg-[#94a3b8] text-white' }
   };
 
-  const { label, color } = config[category] || { label: category, color: 'bg-[#94a3b8] text-white' };
+  const safeCategory = category || 'Uncategorized';
+  const { label, color } = config[safeCategory] || { label: safeCategory, color: 'bg-[#94a3b8] text-white' };
 
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${color}`}>
@@ -125,9 +149,10 @@ interface RecommendationRowProps {
   index: number;
   isExpanded: boolean;
   onToggle: () => void;
+  onGenerateContent: (rec: Recommendation) => void;
 }
 
-const RecommendationRow = ({ recommendation, index, isExpanded, onToggle }: RecommendationRowProps) => {
+const RecommendationRow = ({ recommendation, index, isExpanded, onToggle, onGenerateContent }: RecommendationRowProps) => {
   const rec = recommendation;
 
   return (
@@ -168,11 +193,15 @@ const RecommendationRow = ({ recommendation, index, isExpanded, onToggle }: Reco
         {/* Key Metrics */}
         <td className="px-4 py-4 w-[200px]">
           <div className="space-y-1.5">
-            {rec.calculatedScore !== undefined && (
-              <div className="text-[12px] text-[#64748b]">
-                Impact: <span className="font-semibold text-[#1a1d29]">{rec.calculatedScore.toFixed(2)}</span>
-              </div>
-            )}
+            <div className="text-[12px] text-[#64748b]">
+              Impact Score: <span className="font-semibold text-[#1a1d29]">{formatInt(rec.impactScore)}</span>
+            </div>
+            <div className="text-[12px] text-[#64748b]">
+              Visibility: <span className="font-semibold text-[#1a1d29]">{formatInt(rec.visibilityScore)}</span>
+            </div>
+            <div className="text-[12px] text-[#64748b]">
+              Citations: <span className="font-semibold text-[#1a1d29]">{formatInt(rec.citationCount)}</span>
+            </div>
             <div className="text-[12px] text-[#64748b]">
               Boost: <span className="font-semibold text-[#06c686]">{rec.expectedBoost}</span>
             </div>
@@ -206,7 +235,19 @@ const RecommendationRow = ({ recommendation, index, isExpanded, onToggle }: Reco
             <div className="space-y-6">
               {/* Full Action Text */}
               <div>
-                <h4 className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Action</h4>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <h4 className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Action</h4>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onGenerateContent(rec);
+                    }}
+                    className="px-3 py-1.5 rounded-md text-[12px] font-semibold bg-[#0ea5e9] text-white hover:bg-[#0d8cc7] transition-colors"
+                    title="Generate a short content draft for this recommendation"
+                  >
+                    Generate Content
+                  </button>
+                </div>
                 <p className="text-[13px] text-[#1a1d29] leading-relaxed">{rec.action}</p>
               </div>
 
@@ -214,11 +255,11 @@ const RecommendationRow = ({ recommendation, index, isExpanded, onToggle }: Reco
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h4 className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Reason</h4>
-                  <p className="text-[13px] text-[#1a1d29] leading-relaxed">{rec.reason}</p>
+                  <p className="text-[13px] text-[#1a1d29] leading-relaxed">{sanitizeMetricText(rec.reason, rec)}</p>
                 </div>
                 <div>
                   <h4 className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Explanation</h4>
-                  <p className="text-[13px] text-[#64748b] leading-relaxed">{rec.explanation}</p>
+                  <p className="text-[13px] text-[#64748b] leading-relaxed">{sanitizeMetricText(rec.explanation, rec)}</p>
                 </div>
               </div>
 
@@ -232,27 +273,27 @@ const RecommendationRow = ({ recommendation, index, isExpanded, onToggle }: Reco
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Impact Score</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{rec.impactScore}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.impactScore)}</p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Mention Rate</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{rec.mentionRate}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.mentionRate)}</p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Citations</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{rec.citationCount}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.citationCount)}</p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">SOA</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{rec.soa}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.soa)}</p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Sentiment</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{rec.sentiment}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.sentiment)}</p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Visibility</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{rec.visibilityScore}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.visibilityScore)}</p>
                   </div>
                   {rec.trend && (
                     <div>
@@ -324,7 +365,8 @@ const CategoryFilterTabs = ({ selectedCategory, onSelect, counts }: CategoryFilt
     { key: 'Priority Partnerships', label: 'Priority Partnerships', color: '#06c686' },
     { key: 'Reputation Management', label: 'Reputation Management', color: '#ef4444' },
     { key: 'Growth Opportunities', label: 'Growth Opportunities', color: '#0ea5e9' },
-    { key: 'Monitor', label: 'Monitor', color: '#94a3b8' }
+    { key: 'Monitor', label: 'Monitor', color: '#94a3b8' },
+    { key: 'Uncategorized', label: 'Uncategorized', color: '#94a3b8' }
   ];
 
   return (
@@ -383,18 +425,38 @@ export const RecommendationsV2 = () => {
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [selectedCategory, setSelectedCategory] = useState<string | 'all'>('all');
+  const [selectedFocusArea, setSelectedFocusArea] = useState<'all' | Recommendation['focusArea']>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'impact' | 'effort' | 'priority' | 'timeline'>('impact');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [contentModalOpen, setContentModalOpen] = useState(false);
+  const [contentModalRec, setContentModalRec] = useState<Recommendation | null>(null);
 
   // Load recommendations from database on mount and when brand changes
   useEffect(() => {
     const loadRecommendations = async () => {
       if (!selectedBrandId) {
+        // Clear stale UI when brand is not selected/available
+        setRecommendations([]);
+        setGeneratedAt(null);
+        setExpandedRows(new Set());
+        setSelectedCategory('all');
+        setSelectedFocusArea('all');
+        setSearchQuery('');
+        setError(null);
         setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
+      // Clear previous brand's data immediately to avoid showing stale results
+      setRecommendations([]);
+      setGeneratedAt(null);
+      setExpandedRows(new Set());
+      setSelectedCategory('all');
+      setSelectedFocusArea('all');
+      setSearchQuery('');
+      setError(null);
       try {
         console.log('📥 [RecommendationsV2] Loading recommendations from database for brand:', selectedBrandId);
         const response = await fetchRecommendations({ brandId: selectedBrandId });
@@ -418,6 +480,11 @@ export const RecommendationsV2 = () => {
 
     loadRecommendations();
   }, [selectedBrandId]);
+
+  // Avoid “wrong row expanded” when sorting/filtering changes
+  useEffect(() => {
+    setExpandedRows(new Set());
+  }, [selectedCategory, selectedFocusArea, searchQuery, sortBy, sortDirection]);
 
   // Toggle row expansion
   const toggleRow = (index: number) => {
@@ -448,7 +515,39 @@ export const RecommendationsV2 = () => {
 
     // Filter by category
     if (selectedCategory !== 'all') {
-      filtered = filtered.filter(rec => rec.citationCategory === selectedCategory);
+      if (selectedCategory === 'Uncategorized') {
+        filtered = filtered.filter((rec) => !rec.citationCategory);
+      } else {
+        filtered = filtered.filter(rec => rec.citationCategory === selectedCategory);
+      }
+    }
+
+    // Filter by focus area
+    if (selectedFocusArea !== 'all') {
+      filtered = filtered.filter((rec) => rec.focusArea === selectedFocusArea);
+    }
+
+    // Search across key text fields
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter((rec) => {
+        const haystack = [
+          rec.action,
+          rec.reason,
+          rec.explanation,
+          rec.citationSource,
+          rec.focusSources,
+          rec.contentFocus,
+          rec.kpi,
+          rec.timeline,
+          rec.expectedBoost,
+          rec.citationCategory
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(q);
+      });
     }
 
     // Sort
@@ -456,29 +555,31 @@ export const RecommendationsV2 = () => {
       let comparison = 0;
 
       if (sortBy === 'impact') {
-        comparison = (b.calculatedScore || 0) - (a.calculatedScore || 0);
+        // Base: ascending; direction applied below
+        comparison = (a.calculatedScore || 0) - (b.calculatedScore || 0);
       } else if (sortBy === 'effort') {
         const effortOrder = { Low: 0, Medium: 1, High: 2 };
         comparison = effortOrder[a.effort] - effortOrder[b.effort];
         if (comparison === 0) {
-          comparison = (b.calculatedScore || 0) - (a.calculatedScore || 0);
+          comparison = (a.calculatedScore || 0) - (b.calculatedScore || 0);
         }
       } else if (sortBy === 'priority') {
         const priorityOrder = { High: 0, Medium: 1, Low: 2 };
         comparison = priorityOrder[a.priority] - priorityOrder[b.priority];
         if (comparison === 0) {
-          comparison = (b.calculatedScore || 0) - (a.calculatedScore || 0);
+          comparison = (a.calculatedScore || 0) - (b.calculatedScore || 0);
         }
       } else if (sortBy === 'timeline') {
         // Simple comparison - could be enhanced with date parsing
         comparison = a.timeline.localeCompare(b.timeline);
       }
 
+      // Apply direction (desc means reverse the ascending comparison)
       return sortDirection === 'desc' ? -comparison : comparison;
     });
 
     return sorted;
-  }, [recommendations, selectedCategory, sortBy, sortDirection]);
+  }, [recommendations, selectedCategory, selectedFocusArea, searchQuery, sortBy, sortDirection]);
 
   // Handle generate recommendations
   const handleGenerate = async () => {
@@ -548,16 +649,18 @@ export const RecommendationsV2 = () => {
   }
 
   // Error state for brands
-  if (brandsError) {
+  if (brandsError || brands.length === 0) {
     return (
       <Layout>
         <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
           <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6">
             <div className="flex items-center gap-3 text-[#ef4444] mb-4">
               <IconAlertCircle size={20} />
-              <p className="text-[14px] font-medium">Error loading brands</p>
+              <p className="text-[14px] font-medium">Unable to load brands</p>
             </div>
-            <p className="text-[13px] text-[#64748b]">{brandsError}</p>
+            <p className="text-[13px] text-[#64748b]">
+              {brandsError || 'No brands found. Please complete brand onboarding first.'}
+            </p>
           </div>
         </div>
       </Layout>
@@ -567,6 +670,14 @@ export const RecommendationsV2 = () => {
   return (
     <Layout>
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+        <RecommendationContentModal
+          isOpen={contentModalOpen}
+          onClose={() => {
+            setContentModalOpen(false);
+            setContentModalRec(null);
+          }}
+          recommendation={contentModalRec}
+        />
         {/* Header */}
         <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
@@ -610,6 +721,13 @@ export const RecommendationsV2 = () => {
             </div>
           </div>
 
+          {/* Lightweight brand context when only one brand exists */}
+          {brands.length === 1 && selectedBrand && (
+            <div className="text-[12px] text-[#64748b]">
+              Brand: <span className="font-medium text-[#1a1d29]">{selectedBrand.name}</span>
+            </div>
+          )}
+
           {/* Category Filters */}
           <div className="mb-4">
             <CategoryFilterTabs
@@ -617,6 +735,31 @@ export const RecommendationsV2 = () => {
               onSelect={setSelectedCategory}
               counts={categoryCounts}
             />
+          </div>
+
+          {/* Search & Focus Area Filters */}
+          <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
+            <div className="flex-1">
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search recommendations (action, source, KPI, etc.)"
+                className="w-full px-3 py-2 border border-[#e8e9ed] rounded-md text-[13px] text-[#1a1d29] bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5e9] focus:border-transparent"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-[#64748b]">Focus:</span>
+              <select
+                value={selectedFocusArea}
+                onChange={(e) => setSelectedFocusArea(e.target.value as any)}
+                className="px-3 py-2 border border-[#e8e9ed] rounded-md text-[13px] text-[#1a1d29] bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5e9] focus:border-transparent"
+              >
+                <option value="all">All</option>
+                <option value="visibility">Visibility</option>
+                <option value="soa">SOA</option>
+                <option value="sentiment">Sentiment</option>
+              </select>
+            </div>
           </div>
 
           {/* Sort Options */}
@@ -656,8 +799,8 @@ export const RecommendationsV2 = () => {
           {filteredAndSortedRecommendations.length === 0 ? (
             <div className="p-12 text-center">
               <p className="text-[14px] text-[#64748b] mb-2">
-                {selectedCategory !== 'all'
-                  ? 'No recommendations in this category. Try another filter.'
+                {searchQuery.trim() || selectedCategory !== 'all' || selectedFocusArea !== 'all'
+                  ? 'No matching recommendations. Try clearing filters or adjusting your search.'
                   : 'No recommendations generated yet. Click "Generate Recommendations" to get started.'}
               </p>
             </div>
@@ -678,11 +821,15 @@ export const RecommendationsV2 = () => {
                 <tbody>
                   {filteredAndSortedRecommendations.map((rec, index) => (
                     <RecommendationRow
-                      key={index}
+                      key={rec.id || index}
                       recommendation={rec}
                       index={index}
                       isExpanded={expandedRows.has(index)}
                       onToggle={() => toggleRow(index)}
+                      onGenerateContent={(r) => {
+                        setContentModalRec(r);
+                        setContentModalOpen(true);
+                      }}
                     />
                   ))}
                 </tbody>

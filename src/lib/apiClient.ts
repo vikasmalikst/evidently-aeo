@@ -1,4 +1,30 @@
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, '') || 'http://localhost:3000/api';
+// Auto-detect backend URL based on current origin, with fallback to env variable or localhost
+const getApiBaseUrl = (): string => {
+  // If explicitly set in env, use that
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL.replace(/\/$/, '');
+  }
+  
+  // Auto-detect based on current origin
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    
+    // If accessing via domain, use domain API
+    if (origin.includes('evidentlyaeo.com')) {
+      return `${origin}/api`;
+    }
+    
+    // If accessing via IP, use IP API
+    if (origin.includes('85.239.244.166')) {
+      return `${origin}/api`;
+    }
+  }
+  
+  // Default fallback to localhost for development
+  return 'http://localhost:3000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';

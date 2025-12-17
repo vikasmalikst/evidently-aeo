@@ -18,7 +18,7 @@ export const TopBrandSources = ({ brandPages }: TopBrandSourcesProps) => {
           <h2 className="text-[18px] font-semibold text-[#1a1d29]">
             Top Citations Sources
           </h2>
-          <InfoTooltip description="Lists the web pages and sources where your brand is most frequently cited in AI-generated answers. Impact Score reflects how prominently your brand appears, helping you identify high-value content partnerships and citation opportunities." />
+          <InfoTooltip description="Top URLs and domains used by LLMs while answering brand specific questions." />
         </div>
         <Link
           to="/search-sources"
@@ -88,7 +88,7 @@ export const TopBrandSources = ({ brandPages }: TopBrandSourcesProps) => {
                       <span className="text-[11px] text-[#64748b] uppercase tracking-wide">
                         Impact
                       </span>
-                      <InfoTooltip description="Composite score based on Visibility, SOA, Sentiment, Citations and Topics. Each component is normalized to 0-100 and weighted equally (20% each). This score helps identify high-value sources for your brand." />
+                      <InfoTooltip description="Represents high value domains and urls. The score can also be used to identify potential partnership opportunities. " />
                     </div>
                     <div className="flex items-baseline justify-center gap-1">
                       <span className="text-[16px] font-bold text-[#1a1d29]">

@@ -129,7 +129,7 @@ export const Dashboard = () => {
         linkTo: '/search-visibility',
         comparisons: buildComparisons('visibility'),
         comparisonSuffix: comparisonSuffix.visibility,
-        description: 'How often your brand shows up.'
+        description: 'How prominent is your brand in LLM answers.(based on number of appearances and positions)'
       },
       {
         key: 'share-of-answers',
@@ -142,7 +142,7 @@ export const Dashboard = () => {
         linkTo: '/search-visibility?kpi=share',
         comparisons: buildComparisons('share'),
         comparisonSuffix: comparisonSuffix.share,
-        description: 'Share of results that mention your brand along with competitors.'
+        description: '% of time you brand appeaars compared to your defined competitors. '
       },
       {
         key: 'sentiment-score',
@@ -155,7 +155,7 @@ export const Dashboard = () => {
         linkTo: '/search-visibility?kpi=sentiment',
         comparisons: buildComparisons('sentiment'),
         comparisonSuffix: comparisonSuffix.sentiment,
-        description: 'Sentiment (1–100): <55 negative, 55–65 watch, >65 good.'
+        description: 'Tone of the answers cited by LLMs from Brand\'s perspective (scaled 1-100)'
       },
       {
         key: 'brand-presence',
@@ -168,7 +168,7 @@ export const Dashboard = () => {
         linkTo: '/search-visibility?kpi=brandPresence',
         comparisons: buildComparisons('brandPresence'),
         comparisonSuffix: comparisonSuffix.brandPresence,
-        description: 'How strongly your brand appears across sources.'
+        description: '% of Answers that mention your brand\'s name in the answers.'
       }
     ],
     [

@@ -789,12 +789,40 @@ router.post('/brands/:brandId/collect-data-now', async (req: Request, res: Respo
 
     console.log(`[Admin] Immediate data collection requested for brand ${brandId}, customer ${customer_id}`);
 
+    // Determine which collectors to use
+    let collectorsToUse = collectors;
+    
+    // If collectors not explicitly provided, fetch brand's selected collectors from onboarding
+    if (!collectorsToUse || collectorsToUse.length === 0) {
+      try {
+        const { data: brand, error: brandError } = await supabase
+          .from('brands')
+          .select('ai_models')
+          .eq('id', brandId)
+          .single();
+
+        if (brandError) {
+          console.warn(`[Admin] Failed to fetch brand ai_models: ${brandError.message}, using default collectors`);
+        } else if (brand?.ai_models && Array.isArray(brand.ai_models) && brand.ai_models.length > 0) {
+          // Map the brand's selected AI models to collector names
+          collectorsToUse = mapAIModelsToCollectors(brand.ai_models);
+          console.log(`[Admin] Using brand's selected collectors: ${collectorsToUse.join(', ')} (from ai_models: ${brand.ai_models.join(', ')})`);
+        } else {
+          console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+        }
+      } catch (error) {
+        console.warn(`[Admin] Error fetching brand ai_models: ${error instanceof Error ? error.message : String(error)}, using default collectors`);
+      }
+    } else {
+      console.log(`[Admin] Using explicitly provided collectors: ${collectorsToUse.join(', ')}`);
+    }
+
     // Execute data collection immediately
     const result = await dataCollectionJobService.executeDataCollection(
       brandId,
       customer_id,
       {
-        collectors,
+        collectors: collectorsToUse,
         locale,
         country,
       }
@@ -860,6 +888,51 @@ router.post('/brands/:brandId/score-now', async (req: Request, res: Response) =>
 });
 
 /**
+ * Helper function to map AI model names to collector names
+ * Matches the logic in brand.service.ts
+ */
+function mapAIModelsToCollectors(aiModels: string[]): string[] {
+  if (!aiModels || aiModels.length === 0) {
+    // Default to common collectors if none selected
+    return ['chatgpt', 'google_aio', 'perplexity', 'claude'];
+  }
+
+  const modelToCollectorMap: Record<string, string> = {
+    'chatgpt': 'chatgpt',
+    'openai': 'chatgpt',
+    'gpt-4': 'chatgpt',
+    'gpt-3.5': 'chatgpt',
+    'google_aio': 'google_aio',
+    'google-ai': 'google_aio',
+    'google': 'google_aio',
+    'perplexity': 'perplexity',
+    'claude': 'claude',
+    'anthropic': 'claude',
+    'deepseek': 'deepseek',
+    'baidu': 'baidu',
+    'bing': 'bing',
+    'bing_copilot': 'bing_copilot',
+    'copilot': 'bing_copilot',
+    'microsoft-copilot': 'bing_copilot',
+    'gemini': 'gemini',
+    'google-gemini': 'gemini',
+    'grok': 'grok',
+    'x-ai': 'grok',
+    'mistral': 'mistral'
+  };
+
+  const collectors = aiModels
+    .map(model => {
+      const normalizedModel = model.toLowerCase().trim();
+      return modelToCollectorMap[normalizedModel] || null;
+    })
+    .filter((collector): collector is string => collector !== null);
+
+  // Remove duplicates
+  return [...new Set(collectors)];
+}
+
+/**
  * POST /api/admin/brands/:brandId/collect-and-score-now
  * Immediately trigger data collection followed by scoring (no schedule needed)
  * Returns immediately and runs the work in the background to avoid timeout issues
@@ -898,14 +971,42 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
       };
 
       try {
-        // Step 1: Execute data collection
+        // Step 1: Determine which collectors to use
+        let collectorsToUse = collectors;
+        
+        // If collectors not explicitly provided, fetch brand's selected collectors from onboarding
+        if (!collectorsToUse || collectorsToUse.length === 0) {
+          try {
+            const { data: brand, error: brandError } = await supabase
+              .from('brands')
+              .select('ai_models')
+              .eq('id', brandId)
+              .single();
+
+            if (brandError) {
+              console.warn(`[Admin] Failed to fetch brand ai_models: ${brandError.message}, using default collectors`);
+            } else if (brand?.ai_models && Array.isArray(brand.ai_models) && brand.ai_models.length > 0) {
+              // Map the brand's selected AI models to collector names
+              collectorsToUse = mapAIModelsToCollectors(brand.ai_models);
+              console.log(`[Admin] Using brand's selected collectors: ${collectorsToUse.join(', ')} (from ai_models: ${brand.ai_models.join(', ')})`);
+            } else {
+              console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+            }
+          } catch (error) {
+            console.warn(`[Admin] Error fetching brand ai_models: ${error instanceof Error ? error.message : String(error)}, using default collectors`);
+          }
+        } else {
+          console.log(`[Admin] Using explicitly provided collectors: ${collectorsToUse.join(', ')}`);
+        }
+
+        // Step 2: Execute data collection
         try {
           console.log(`[Admin] Step 1: Starting data collection for brand ${brandId}, customer ${customer_id}...`);
           const collectionResult = await dataCollectionJobService.executeDataCollection(
             brandId,
             customer_id,
             {
-              collectors,
+              collectors: collectorsToUse,
               locale,
               country,
             }

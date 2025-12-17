@@ -1226,7 +1226,9 @@ export class SourceAttributionService {
   async getImpactScoreTrends(
     brandId: string,
     customerId: string,
-    days: number = 7
+    days: number = 7,
+    selectedSources?: string[],
+    metric: 'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' = 'impactScore'
   ): Promise<{
     dates: string[]
     sources: Array<{
@@ -1235,6 +1237,11 @@ export class SourceAttributionService {
     }>
   }> {
     try {
+      const selectedSet =
+        selectedSources && selectedSources.length
+          ? new Set(selectedSources.map((s) => s.toLowerCase().trim()).filter((s) => s.length > 0))
+          : null
+
       // Calculate date range (last N days)
       const endDate = new Date()
       endDate.setUTCHours(23, 59, 59, 999)
@@ -1279,6 +1286,7 @@ export class SourceAttributionService {
         .select(`
           collector_result_id,
           share_of_answers_brand,
+          total_brand_mentions,
           sentiment_score,
           visibility_index,
           competitor_name,
@@ -1330,6 +1338,7 @@ export class SourceAttributionService {
       for (const citation of citationsData) {
         if (!citation.domain || !citation.created_at) continue
         const domain = citation.domain.toLowerCase().trim()
+        if (selectedSet && !selectedSet.has(domain)) continue
         const date = new Date(citation.created_at).toISOString().split('T')[0]
         
         if (!citationsByDomainAndDate.has(domain)) {
@@ -1340,6 +1349,15 @@ export class SourceAttributionService {
           domainMap.set(date, [])
         }
         domainMap.get(date)!.push(citation)
+      }
+
+      // Total citations per day across ALL domains (not just selected)
+      const totalCitationsByDate = new Map<string, number>()
+      for (const citation of citationsData) {
+        if (!citation.created_at) continue
+        const date = new Date(citation.created_at).toISOString().split('T')[0]
+        const prev = totalCitationsByDate.get(date) || 0
+        totalCitationsByDate.set(date, prev + (citation.usage_count || 1))
       }
 
       // Calculate Impact Score for each domain and date
@@ -1453,7 +1471,7 @@ export class SourceAttributionService {
           const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
           const avgVisibility = visibilityValues.length > 0 ? average(visibilityValues) : 0
 
-          // Calculate Impact Score (same formula as in getSourceAttribution)
+          // Calculate common normalized metrics (0-100)
           const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
           const normalizedSOA = Math.min(100, Math.max(0, avgShare))
           // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed -1 to 1 normalization)
@@ -1461,37 +1479,69 @@ export class SourceAttributionService {
           const normalizedCitations = maxCitations > 0 ? Math.min(100, (totalCitations / maxCitations) * 100) : 0
           const normalizedTopics = maxTopics > 0 ? Math.min(100, (dayTopics.size / maxTopics) * 100) : 0
 
+          const mentionDenom = totalCitationsByDate.get(date) || 0
+          const mentionRate = mentionDenom > 0 ? Math.min(100, (totalCitations / mentionDenom) * 100) : 0
+
           const impactScore = round(
             (normalizedVisibility * 0.2) +
-            (normalizedSOA * 0.2) +
-            (normalizedSentiment * 0.2) +
-            (normalizedCitations * 0.2) +
-            (normalizedTopics * 0.2),
+              (normalizedSOA * 0.2) +
+              (normalizedSentiment * 0.2) +
+              (normalizedCitations * 0.2) +
+              (normalizedTopics * 0.2),
             1
           )
+
+          const metricValue = (() => {
+            switch (metric) {
+              case 'mentionRate':
+                return round(mentionRate, 1)
+              case 'soa':
+                return round(normalizedSOA, 1)
+              case 'sentiment':
+                return round(normalizedSentiment, 1)
+              case 'citations':
+                return round(normalizedCitations, 1)
+              case 'impactScore':
+              default:
+                return impactScore
+            }
+          })()
 
           if (!impactScoresByDomain.has(domain)) {
             impactScoresByDomain.set(domain, [])
           }
-          impactScoresByDomain.get(domain)!.push(impactScore)
+          impactScoresByDomain.get(domain)!.push(metricValue)
         }
       }
 
-      // Get top 10 domains by average Impact Score
-      const domainAverages = Array.from(impactScoresByDomain.entries())
-        .map(([domain, scores]) => ({
-          domain,
-          scores,
-          average: scores.length > 0 ? average(scores) : 0
-        }))
-        .sort((a, b) => b.average - a.average)
-        .slice(0, 10)
+      let sources: Array<{ name: string; data: number[] }> = []
+      if (selectedSet && selectedSources && selectedSources.length) {
+        // Preserve requested order (max 10) and fill missing with zeros.
+        const requested = selectedSources
+          .map((s) => s.toLowerCase().trim())
+          .filter((s) => s.length > 0)
+          .slice(0, 10)
 
-      // Format response
-      const sources = domainAverages.map(({ domain, scores }) => ({
-        name: domain,
-        data: scores
-      }))
+        sources = requested.map((domain) => ({
+          name: domain,
+          data: impactScoresByDomain.get(domain) ?? Array(dates.length).fill(0)
+        }))
+      } else {
+        // Default: top 10 domains by average Impact Score
+        const domainAverages = Array.from(impactScoresByDomain.entries())
+          .map(([domain, scores]) => ({
+            domain,
+            scores,
+            average: scores.length > 0 ? average(scores) : 0
+          }))
+          .sort((a, b) => b.average - a.average)
+          .slice(0, 10)
+
+        sources = domainAverages.map(({ domain, scores }) => ({
+          name: domain,
+          data: scores
+        }))
+      }
 
       // Format dates for display
       const formattedDates = dates.map(date => {

@@ -713,18 +713,37 @@ router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Res
 
 /**
  * GET /brands/:brandId/sources/impact-score-trends
- * Get daily Impact Score trends for top 10 sources over the last 7 days
+ * Get daily Impact Score trends for sources over the last N days.
+ *
+ * - Default: returns top 10 sources by avg Impact Score
+ * - Optional: pass `sources` (comma-separated) to fetch trends for a custom set (max 10)
+ * - Optional: pass `metric` in {impactScore, mentionRate, soa, sentiment, citations}
  */
 router.get('/:brandId/sources/impact-score-trends', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
     const days = req.query.days ? parseInt(req.query.days as string, 10) : 7;
+
+    const sourcesParam = typeof req.query.sources === 'string' ? req.query.sources : '';
+    const selectedSources =
+      sourcesParam
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .slice(0, 10);
+
+    const metricRaw = typeof req.query.metric === 'string' ? req.query.metric : 'impactScore';
+    const metric = (metricRaw || 'impactScore').toString();
+    const allowedMetrics = new Set(['impactScore', 'mentionRate', 'soa', 'sentiment', 'citations']);
+    const safeMetric = allowedMetrics.has(metric) ? metric : 'impactScore';
     
     const trends = await sourceAttributionService.getImpactScoreTrends(
       brandId,
       customerId,
-      days
+      days,
+      selectedSources.length ? selectedSources : undefined,
+      safeMetric as any
     );
     
     res.json({ success: true, data: trends });

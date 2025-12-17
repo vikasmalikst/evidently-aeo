@@ -24,6 +24,7 @@ interface ImpactScoreTrendsChartProps {
   sources: ImpactScoreTrendSource[];
   dates?: string[]; // Date labels for the x-axis
   maxSources?: number;
+  yAxisLabel?: string;
 }
 
 const palette = ['#06b6d4', '#498cf9', '#ac59fb', '#fa8a40', '#f155a2', '#0d7c96', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
@@ -31,7 +32,8 @@ const palette = ['#06b6d4', '#498cf9', '#ac59fb', '#fa8a40', '#f155a2', '#0d7c96
 export const ImpactScoreTrendsChart = ({ 
   sources, 
   dates, 
-  maxSources = 10 
+  maxSources = 10,
+  yAxisLabel = 'Impact Score'
 }: ImpactScoreTrendsChartProps) => {
   const chartRef = useRef<any>(null);
   
@@ -128,6 +130,7 @@ export const ImpactScoreTrendsChart = ({
         },
         y: {
           beginAtZero: true,
+          max: 110,
           grid: {
             color: '#e2e8f0',
             display: true
@@ -141,7 +144,7 @@ export const ImpactScoreTrendsChart = ({
           },
           title: {
             display: true,
-            text: 'Impact Score',
+            text: yAxisLabel,
             color: '#64748b',
             font: {
               size: 12,
@@ -156,7 +159,7 @@ export const ImpactScoreTrendsChart = ({
         intersect: false
       }
     };
-  }, []);
+  }, [yAxisLabel]);
 
   // Handle chart resize
   useChartResize(chartRef, topSources.length > 0);

@@ -160,6 +160,7 @@ export const SearchSourcesR2 = () => {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [selectedTrendSources, setSelectedTrendSources] = useState<string[]>([]);
+  const [trendMetric, setTrendMetric] = useState<'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations'>('impactScore');
 
   const sourcesEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
@@ -336,12 +337,12 @@ export const SearchSourcesR2 = () => {
   // Fetch Impact Score trends data (last 7 days, daily)
   const trendsEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
-    const params = new URLSearchParams({ days: '7' });
+    const params = new URLSearchParams({ days: '7', metric: trendMetric });
     if (selectedTrendSources.length > 0) {
       params.set('sources', selectedTrendSources.slice(0, 10).join(','));
     }
     return `/brands/${selectedBrandId}/sources/impact-score-trends?${params.toString()}`;
-  }, [selectedBrandId, selectedTrendSources]);
+  }, [selectedBrandId, selectedTrendSources, trendMetric]);
 
   const { 
     data: trendsResponse, 
@@ -409,6 +410,22 @@ export const SearchSourcesR2 = () => {
     }
     return dates;
   }, [trendsResponse]);
+
+  const trendMetricLabel = useMemo(() => {
+    switch (trendMetric) {
+      case 'mentionRate':
+        return 'Mention Rate (%)';
+      case 'soa':
+        return 'SOA (%)';
+      case 'sentiment':
+        return 'Sentiment';
+      case 'citations':
+        return 'Citations (normalized)';
+      case 'impactScore':
+      default:
+        return 'Impact Score';
+    }
+  }, [trendMetric]);
 
   // Load recommendations when brand changes
   useEffect(() => {
@@ -583,8 +600,37 @@ export const SearchSourcesR2 = () => {
               }}
             />
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Impact Score Trends</h3>
-              <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>Top 10 sources by Impact score - Daily trends for the last 7 days</p>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Impact Score Trends</h3>
+                  <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>
+                    Top 10 sources - Daily trends for the last 7 days
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>Metric</span>
+                  <select
+                    value={trendMetric}
+                    onChange={(e) => setTrendMetric(e.target.value as any)}
+                    style={{
+                      height: 34,
+                      padding: '0 10px',
+                      borderRadius: 8,
+                      border: '1px solid #e5e7eb',
+                      background: '#fff',
+                      color: '#0f172a',
+                      fontSize: 12,
+                      fontWeight: 700
+                    }}
+                  >
+                    <option value="impactScore">Impact Score</option>
+                    <option value="mentionRate">Mention Rate</option>
+                    <option value="soa">SOA</option>
+                    <option value="sentiment">Sentiment</option>
+                    <option value="citations">Citations</option>
+                  </select>
+                </div>
+              </div>
               {trendsLoading ? (
                 <div style={{ padding: 24, color: '#94a3b8', textAlign: 'center' }}>
                   Loading trends data...
@@ -594,7 +640,7 @@ export const SearchSourcesR2 = () => {
                   Error loading trends data. Please try again.
                 </div>
               ) : (
-                <ImpactScoreTrendsChart sources={impactScoreTrendsData} dates={trendDates} maxSources={10} />
+                <ImpactScoreTrendsChart sources={impactScoreTrendsData} dates={trendDates} maxSources={10} yAxisLabel={trendMetricLabel} />
               )}
             </div>
 

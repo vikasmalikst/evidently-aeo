@@ -1227,7 +1227,8 @@ export class SourceAttributionService {
     brandId: string,
     customerId: string,
     days: number = 7,
-    selectedSources?: string[]
+    selectedSources?: string[],
+    metric: 'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' = 'impactScore'
   ): Promise<{
     dates: string[]
     sources: Array<{
@@ -1285,6 +1286,7 @@ export class SourceAttributionService {
         .select(`
           collector_result_id,
           share_of_answers_brand,
+          total_brand_mentions,
           sentiment_score,
           visibility_index,
           competitor_name,
@@ -1347,6 +1349,15 @@ export class SourceAttributionService {
           domainMap.set(date, [])
         }
         domainMap.get(date)!.push(citation)
+      }
+
+      // Total citations per day across ALL domains (not just selected)
+      const totalCitationsByDate = new Map<string, number>()
+      for (const citation of citationsData) {
+        if (!citation.created_at) continue
+        const date = new Date(citation.created_at).toISOString().split('T')[0]
+        const prev = totalCitationsByDate.get(date) || 0
+        totalCitationsByDate.set(date, prev + (citation.usage_count || 1))
       }
 
       // Calculate Impact Score for each domain and date
@@ -1460,7 +1471,7 @@ export class SourceAttributionService {
           const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
           const avgVisibility = visibilityValues.length > 0 ? average(visibilityValues) : 0
 
-          // Calculate Impact Score (same formula as in getSourceAttribution)
+          // Calculate common normalized metrics (0-100)
           const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
           const normalizedSOA = Math.min(100, Math.max(0, avgShare))
           // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed -1 to 1 normalization)
@@ -1468,19 +1479,38 @@ export class SourceAttributionService {
           const normalizedCitations = maxCitations > 0 ? Math.min(100, (totalCitations / maxCitations) * 100) : 0
           const normalizedTopics = maxTopics > 0 ? Math.min(100, (dayTopics.size / maxTopics) * 100) : 0
 
+          const mentionDenom = totalCitationsByDate.get(date) || 0
+          const mentionRate = mentionDenom > 0 ? Math.min(100, (totalCitations / mentionDenom) * 100) : 0
+
           const impactScore = round(
             (normalizedVisibility * 0.2) +
-            (normalizedSOA * 0.2) +
-            (normalizedSentiment * 0.2) +
-            (normalizedCitations * 0.2) +
-            (normalizedTopics * 0.2),
+              (normalizedSOA * 0.2) +
+              (normalizedSentiment * 0.2) +
+              (normalizedCitations * 0.2) +
+              (normalizedTopics * 0.2),
             1
           )
+
+          const metricValue = (() => {
+            switch (metric) {
+              case 'mentionRate':
+                return round(mentionRate, 1)
+              case 'soa':
+                return round(normalizedSOA, 1)
+              case 'sentiment':
+                return round(normalizedSentiment, 1)
+              case 'citations':
+                return round(normalizedCitations, 1)
+              case 'impactScore':
+              default:
+                return impactScore
+            }
+          })()
 
           if (!impactScoresByDomain.has(domain)) {
             impactScoresByDomain.set(domain, [])
           }
-          impactScoresByDomain.get(domain)!.push(impactScore)
+          impactScoresByDomain.get(domain)!.push(metricValue)
         }
       }
 

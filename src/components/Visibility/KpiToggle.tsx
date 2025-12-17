@@ -5,6 +5,7 @@ type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence';
 interface KpiToggleProps {
   metricType: MetricType;
   onChange: (value: MetricType) => void;
+  allowedMetricTypes?: MetricType[];
 }
 
 const KPI_OPTIONS: Array<{
@@ -39,14 +40,16 @@ const KPI_OPTIONS: Array<{
   }
 ];
 
-export const KpiToggle = ({ metricType, onChange }: KpiToggleProps) => {
+export const KpiToggle = ({ metricType, onChange, allowedMetricTypes }: KpiToggleProps) => {
+  const options = KPI_OPTIONS.filter((opt) => !allowedMetricTypes || allowedMetricTypes.includes(opt.id));
+
   return (
     <div className="flex flex-col gap-3">
       <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
         Select KPI
       </div>
       <div className="flex items-center gap-0 border-b border-[#e3e7f3]">
-        {KPI_OPTIONS.map(({ id, label, Icon }) => {
+        {options.map(({ id, label, Icon }) => {
           const isActive = metricType === id;
           return (
             <button

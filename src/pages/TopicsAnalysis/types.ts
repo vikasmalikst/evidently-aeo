@@ -23,6 +23,8 @@ export interface Topic {
   category: string;
   soA: number; // Share of Answer (0-5x scale)
   currentSoA?: number; // Latest SoA percentage (0-100) - for charts
+  currentVisibility?: number | null; // Visibility score (0-100) for the selected period
+  currentSentiment?: number | null; // Sentiment score (0-100) for the selected period
   visibilityTrend?: number[]; // 12-week historical [w1, w2, ..., w12] - for line chart
   trend: Trend;
   searchVolume: number | null; // null if missing
@@ -30,6 +32,8 @@ export interface Topic {
   sources: TopicSource[];
   collectorType?: string; // AI model/collector type (chatgpt, claude, etc.)
   industryAvgSoA?: number | null; // Industry average SOA (0-5x scale)
+  industryAvgVisibility?: number | null; // Industry average visibility (0-100)
+  industryAvgSentiment?: number | null; // Industry average sentiment (0-100)
   industryTrend?: Trend; // Industry trend
   industryBrandCount?: number; // Number of brands in industry average
 }

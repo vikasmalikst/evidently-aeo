@@ -18,6 +18,7 @@ interface TopicDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   topic: Topic | null;
+  metricType?: 'share' | 'visibility' | 'sentiment';
 }
 
 // Get trend icon and color
@@ -64,25 +65,34 @@ const getSentimentColor = (sentiment: string): string => {
   }
 };
 
-export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalProps) => {
+export const TopicDetailModal = ({ isOpen, onClose, topic, metricType = 'share' }: TopicDetailModalProps) => {
   if (!isOpen || !topic) return null;
 
-  const currentSoA = topic.currentSoA ?? (topic.soA * 20);
-  const currentSoAScale = topic.soA;
+  const metricLabel = metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+  const valueSuffix = metricType === 'share' ? '%' : '';
+  const currentValue =
+    metricType === 'visibility'
+      ? (topic.currentVisibility ?? 0)
+      : metricType === 'sentiment'
+        ? (topic.currentSentiment ?? 0)
+        : (topic.currentSoA ?? (topic.soA * 20));
   
-  // Calculate previous period SoA from visibilityTrend (first value) or estimate from trend
-  const previousSoA = topic.visibilityTrend && topic.visibilityTrend.length > 0
+  // Best-effort trend series (we only have a 12-slot array; for share/sentiment it may be synthetic)
+  const previousValue = topic.visibilityTrend && topic.visibilityTrend.length > 0
     ? topic.visibilityTrend[0]
-    : currentSoA - (topic.trend.delta * 20);
+    : currentValue - (topic.trend.delta * 20);
   
-  const soAChange = currentSoA - previousSoA;
-  const soAChangePercent = previousSoA > 0 ? ((soAChange / previousSoA) * 100) : 0;
+  const valueChange = currentValue - previousValue;
+  const valueChangePercent = previousValue > 0 ? ((valueChange / previousValue) * 100) : 0;
   
-  // Use real competitor average SOA from backend (stored as multiplier 0-5x, convert to percentage 0-100)
-  const avgIndustrySoA = topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
-    ? (topic.industryAvgSoA * 20) // Convert multiplier (0-5x) to percentage (0-100)
-    : null;
-  const avgIndustrySoAScale = avgIndustrySoA !== null ? (avgIndustrySoA / 20) : null;
+  const avgIndustryValue =
+    metricType === 'visibility'
+      ? topic.industryAvgVisibility ?? null
+      : metricType === 'sentiment'
+        ? topic.industryAvgSentiment ?? null
+        : (topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
+            ? topic.industryAvgSoA * 20
+            : null);
   
   const trendDisplay = getTrendDisplay(topic.trend.direction, topic.trend.delta);
   const TrendIcon = trendDisplay.icon;
@@ -91,8 +101,8 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
   const trendChartData = topic.visibilityTrend && topic.visibilityTrend.length === 12
     ? topic.visibilityTrend
     : Array.from({ length: 12 }, (_, i) => {
-        const baseValue = previousSoA;
-        const trend = soAChange / 11;
+        const baseValue = previousValue;
+        const trend = valueChange / 11;
         return Math.max(0, Math.min(100, baseValue + (trend * i)));
       });
 
@@ -100,7 +110,7 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
     labels: Array.from({ length: 12 }, (_, i) => `Week ${i + 1}`),
     datasets: [
       {
-        label: 'Share of Answer (%)',
+        label: metricType === 'share' ? 'Share of Answer (%)' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score',
         data: trendChartData,
         borderColor: '#498cf9',
         backgroundColor: 'rgba(73, 140, 249, 0.1)',
@@ -132,7 +142,7 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
         caretSize: 0,
         callbacks: {
           label: (context: any) => {
-            return `${context.parsed.y.toFixed(1)}%`;
+            return `${context.parsed.y.toFixed(1)}${valueSuffix}`;
           },
         },
       },
@@ -157,7 +167,7 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
         },
         ticks: {
           color: '#393e51',
-          callback: (value: any) => `${value}%`,
+          callback: (value: any) => `${value}${valueSuffix}`,
           font: {
             size: 11,
           },
@@ -213,25 +223,25 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {/* Key Metrics Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-            {/* Current SoA */}
+            {/* Current KPI */}
             <div className="bg-[var(--bg-secondary)] rounded-lg p-4">
-              <div className="text-xs text-[var(--text-caption)] mb-1">Current SoA</div>
+              <div className="text-xs text-[var(--text-caption)] mb-1">{metricLabel}</div>
               <div className="flex items-baseline gap-2">
                 <span
                   className="text-2xl font-bold"
-                  style={{ color: getSoAColor(currentSoAScale) }}
+                  style={{ color: metricType === 'share' ? getSoAColor(topic.soA) : 'var(--text-headings)' }}
                 >
-                  {currentSoA.toFixed(1)}%
+                  {Number(currentValue).toFixed(1)}{valueSuffix}
                 </span>
               </div>
             </div>
 
-            {/* Previous SoA */}
+            {/* Previous Period */}
             <div className="bg-[var(--bg-secondary)] rounded-lg p-4">
               <div className="text-xs text-[var(--text-caption)] mb-1">Previous Period</div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-[var(--text-body)]">
-                  {previousSoA.toFixed(1)}%
+                  {Number(previousValue).toFixed(1)}{valueSuffix}
                 </span>
               </div>
             </div>
@@ -248,20 +258,20 @@ export const TopicDetailModal = ({ isOpen, onClose, topic }: TopicDetailModalPro
                   className="text-2xl font-bold"
                   style={{ color: trendDisplay.color }}
                 >
-                  {soAChange >= 0 ? '+' : ''}{soAChange.toFixed(1)}%
+                  {valueChange >= 0 ? '+' : ''}{valueChange.toFixed(1)}{valueSuffix}
                 </span>
               </div>
               <div className="text-xs text-[var(--text-caption)] mt-1">
-                {soAChangePercent >= 0 ? '+' : ''}{soAChangePercent.toFixed(1)}% vs previous
+                {valueChangePercent >= 0 ? '+' : ''}{valueChangePercent.toFixed(1)}% vs previous
               </div>
             </div>
 
-            {/* Competitor SoA */}
+            {/* Competitor KPI */}
             <div className="bg-[var(--bg-secondary)] rounded-lg p-4">
-              <div className="text-xs text-[var(--text-caption)] mb-1">Competitor SoA</div>
+              <div className="text-xs text-[var(--text-caption)] mb-1">Competitor {metricLabel}</div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-[var(--text-body)]">
-                  {avgIndustrySoA !== null ? `${avgIndustrySoA.toFixed(1)}%` : '—'}
+                  {avgIndustryValue !== null ? `${avgIndustryValue.toFixed(1)}${valueSuffix}` : '—'}
                 </span>
               </div>
             </div>

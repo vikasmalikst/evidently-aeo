@@ -331,8 +331,8 @@ export const SearchVisibility = () => {
       const visibilityValue = slice.visibility ?? 0;
       const shareValue = slice.shareOfSearch ?? slice.share ?? 0;
       const sentimentValue = slice.sentiment ?? null;
-      // Convert sentiment from -1 to 1 scale to 0-100 scale for display
-      const sentimentDisplayValue = sentimentValue !== null ? ((sentimentValue + 1) / 2) * 100 : null;
+      // Sentiment values are already in 1-100 format from database, use directly
+      const sentimentDisplayValue = sentimentValue !== null ? sentimentValue : null;
       const brandPresenceSeries = (slice.timeSeries as any)?.brandPresencePercentage ?? (slice.timeSeries as any)?.brandPresence;
       const brandPresenceData = Array.isArray(brandPresenceSeries) && brandPresenceSeries.length > 0
         ? brandPresenceSeries.map((value: number) => Math.round(value))
@@ -364,7 +364,7 @@ export const SearchVisibility = () => {
           ? slice.timeSeries.share
           : buildTimeseries(shareValue),
         sentimentData: slice.timeSeries?.sentiment && slice.timeSeries.sentiment.length > 0
-          ? slice.timeSeries.sentiment.map((s: number | null) => s !== null ? ((s + 1) / 2) * 100 : null)
+          ? slice.timeSeries.sentiment.map((s: number | null) => s !== null ? s : null)
           : (sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined),
         brandPresenceData,
         topTopics: (slice.topTopics ?? []).map(topic => ({
@@ -451,8 +451,9 @@ export const SearchVisibility = () => {
     const brandVisibilityValue = brandData.visibility ?? 0;
     const brandShareValue = brandData.share ?? 0;
     // Get brand sentiment from response (if available)
+    // Sentiment values are already in 1-100 format from database, use directly
     const brandSentimentRaw = (response.data as any)?.sentimentScore ?? null;
-    const brandSentimentDisplay = brandSentimentRaw !== null ? ((brandSentimentRaw + 1) / 2) * 100 : null;
+    const brandSentimentDisplay = brandSentimentRaw !== null ? brandSentimentRaw : null;
     
     // Aggregate time-series from all LLM models for brand summary
     let brandTimeSeries: { dates: string[], visibility: number[], share: number[], sentiment: (number | null)[], brandPresence: number[] } | undefined
@@ -538,7 +539,8 @@ export const SearchVisibility = () => {
       const competitorVisibilityValue = entry.visibility ?? 0;
       const competitorShareValue = entry.share ?? 0;
       const competitorSentimentRaw = entry.sentiment ?? null;
-      const competitorSentimentDisplay = competitorSentimentRaw !== null ? ((competitorSentimentRaw + 1) / 2) * 100 : null;
+      // Sentiment values are already in 1-100 format from database, use directly
+      const competitorSentimentDisplay = competitorSentimentRaw !== null ? competitorSentimentRaw : null;
       const competitorBrandPresenceSeries = (entry.timeSeries as any)?.brandPresencePercentage ?? (entry.timeSeries as any)?.brandPresence;
       const competitorBrandPresenceData = Array.isArray(competitorBrandPresenceSeries) && competitorBrandPresenceSeries.length > 0
         ? competitorBrandPresenceSeries.map((value: number) => Math.round(value))
@@ -566,7 +568,7 @@ export const SearchVisibility = () => {
           ? entry.timeSeries.share
           : buildTimeseries(competitorShareValue),
         sentimentData: entry.timeSeries?.sentiment && entry.timeSeries.sentiment.length > 0
-          ? entry.timeSeries.sentiment.map((s: number | null) => s !== null ? ((s + 1) / 2) * 100 : null)
+          ? entry.timeSeries.sentiment.map((s: number | null) => s !== null ? s : null)
           : (competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined),
         brandPresenceData: competitorBrandPresenceData,
         topTopics: entry.topTopics?.map(topic => ({

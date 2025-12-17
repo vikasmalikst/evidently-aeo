@@ -24,32 +24,34 @@ interface CompactMetricsPodsProps {
     };
   };
   topics?: Topic[]; // Topics array for gap calculation
+  metricType?: 'share' | 'visibility' | 'sentiment';
   onPodClick?: (podId: PodId) => void;
 }
 
-// Calculate gap count: topics where Brand SOA < Competitor Avg SOA
-const getGapCount = (topics: Topic[]): number => {
+const getGapCount = (topics: Topic[], metricType: 'share' | 'visibility' | 'sentiment'): number => {
   if (!topics || topics.length === 0) {
     return 0;
   }
   
-  // Count topics where brand's SOA is less than competitor average SOA
-  // Even if the difference is very small, it's still a gap
+  // Count topics where brand metric is less than competitor average for the selected KPI.
   return topics.filter(topic => {
-    const brandSoA = topic.currentSoA || (topic.soA * 20); // Brand SOA in percentage (0-100)
-    
-    // industryAvgSoA is stored as multiplier (0-5x), convert to percentage (0-100)
-    // Note: This represents competitor average SOA (calculated from competitor SOA values only)
-    const industryAvgSoA = topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
-      ? (topic.industryAvgSoA * 20) // Convert multiplier to percentage
-      : null;
-    
-    // If competitor average exists and brand SOA is less than it (even slightly), it's a gap
-    if (industryAvgSoA !== null && brandSoA < industryAvgSoA) {
-      return true;
+    if (metricType === 'visibility') {
+      const brandValue = topic.currentVisibility ?? null;
+      const competitorValue = topic.industryAvgVisibility ?? null;
+      return brandValue !== null && competitorValue !== null && brandValue < competitorValue;
     }
-    
-    return false;
+    if (metricType === 'sentiment') {
+      const brandValue = topic.currentSentiment ?? null;
+      const competitorValue = topic.industryAvgSentiment ?? null;
+      return brandValue !== null && competitorValue !== null && brandValue < competitorValue;
+    }
+    // share
+    const brandSoA = topic.currentSoA || (topic.soA * 20); // Brand SOA in percentage (0-100)
+    const industryAvgSoA =
+      topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
+        ? (topic.industryAvgSoA * 20) // Convert multiplier to percentage
+        : null;
+    return industryAvgSoA !== null && brandSoA < industryAvgSoA;
   }).length;
 };
 
@@ -281,30 +283,40 @@ export const CompactMetricsPods = ({
   portfolio,
   performance,
   topics = [],
+  metricType = 'share',
   onPodClick,
 }: CompactMetricsPodsProps) => {
   const lastAnalyzed = useMemo(() => formatDate(portfolio.lastUpdated), [portfolio.lastUpdated]);
   const gapCount = useMemo(
-    () => getGapCount(topics),
-    [topics]
+    () => getGapCount(topics, metricType),
+    [topics, metricType]
   );
-  const avgSoADelta = performance.avgSoADelta;
+
+  const metricLabel = metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment';
+  const metricTooltipLabel =
+    metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+
+  // Compute the average value for the selected metric from the loaded topics.
+  // This avoids extra API calls and keeps KPI pods consistent with the selection.
+  const avgMetricValue = useMemo(() => {
+    if (!topics || topics.length === 0) return 0;
+    const values = topics
+      .map((t) => {
+        if (metricType === 'visibility') return t.currentVisibility ?? null;
+        if (metricType === 'sentiment') return t.currentSentiment ?? null;
+        return (t.currentSoA ?? (t.soA * 20)) as number;
+      })
+      .filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
+    if (values.length === 0) return 0;
+    return values.reduce((sum, v) => sum + v, 0) / values.length;
+  }, [topics, metricType]);
+
+  const avgSoADelta = metricType === 'share' ? performance.avgSoADelta : undefined;
   const hasAvgSoADelta = avgSoADelta !== undefined && avgSoADelta !== null;
-  const currentAvgSoAPercentage = (performance.avgSoA || 0) * 20;
-  const previousAvgSoAPercentage = hasAvgSoADelta ? currentAvgSoAPercentage - avgSoADelta : null;
-  const trendingDirection = hasAvgSoADelta
-    ? avgSoADelta > 0
-      ? 'up'
-      : avgSoADelta < 0
-        ? 'down'
-        : 'neutral'
-    : 'neutral';
+  // Placeholder for future: trend direction could be shown as an indicator
   const trendingPrimaryValue = hasAvgSoADelta
     ? `${avgSoADelta > 0 ? '+' : ''}${avgSoADelta.toFixed(1)}%`
     : 'No delta yet';
-  const trendingSecondary = hasAvgSoADelta && previousAvgSoAPercentage !== null
-    ? `${currentAvgSoAPercentage.toFixed(1)}% current vs ${previousAvgSoAPercentage.toFixed(1)}% previous`
-    : 'Need previous period to compare';
 
   return (
     <div
@@ -333,11 +345,15 @@ export const CompactMetricsPods = ({
       <MetricPod
         podId="performance"
         icon={<PieChart size={20} />}
-        primaryValue={`${(performance.avgSoA * 20).toFixed(1)}%`}
-        label="Avg SOA"
+        primaryValue={metricType === 'share' ? `${avgMetricValue.toFixed(1)}%` : avgMetricValue.toFixed(1)}
+        label={`Avg ${metricLabel}`}
         secondary=""
         changeIndicator={undefined}
-        tooltip={`Your average Share of Answer is ${(performance.avgSoA * 20).toFixed(1)}%${performance.avgSoADelta !== undefined && performance.avgSoADelta !== null ? ` (${performance.avgSoADelta > 0 ? '+' : ''}${performance.avgSoADelta.toFixed(1)}% from previous period)` : ''}`}
+        tooltip={`Your average ${metricTooltipLabel} is ${metricType === 'share' ? `${avgMetricValue.toFixed(1)}%` : avgMetricValue.toFixed(1)}${
+          metricType === 'share' && performance.avgSoADelta !== undefined && performance.avgSoADelta !== null
+            ? ` (${performance.avgSoADelta > 0 ? '+' : ''}${performance.avgSoADelta.toFixed(1)}% from previous period)`
+            : ''
+        }`}
         borderColor="#00bcdc"
         iconColor="#00bcdc"
         onPodClick={onPodClick}
@@ -353,8 +369,10 @@ export const CompactMetricsPods = ({
         changeIndicator={undefined}
         tooltip={
           hasAvgSoADelta
-            ? `Avg SOA is ${currentAvgSoAPercentage.toFixed(1)}%, ${trendingPrimaryValue} vs previous period${previousAvgSoAPercentage !== null ? ` (${previousAvgSoAPercentage.toFixed(1)}%)` : ''}.`
-            : 'Avg SOA change will appear after a previous period is available.'
+            ? `Avg ${metricLabel} change is ${trendingPrimaryValue} vs previous period.`
+            : metricType === 'share'
+              ? 'Avg SoA change will appear after a previous period is available.'
+              : `Trending is only available for SoA right now.`
         }
         borderColor="#06c686"
         iconColor="#06c686"
@@ -368,7 +386,7 @@ export const CompactMetricsPods = ({
         primaryValue={gapCount.toString()}
         label="Gaps"
         secondary="Gaps"
-        tooltip={`${gapCount} topics where your SOA is below competitor average. These are high-value opportunities to gain share. [View gaps]`}
+        tooltip={`${gapCount} topics where your ${metricTooltipLabel} is below competitor average. These are high-value opportunities. [View gaps]`}
         borderColor="#f94343"
         iconColor="#f94343"
         onPodClick={onPodClick}

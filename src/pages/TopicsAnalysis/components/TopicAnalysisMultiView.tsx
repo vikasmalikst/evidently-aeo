@@ -11,12 +11,14 @@ import type { Competitor } from '../utils/competitorColors';
 import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 
 export type ChartType = 'racing-bar' | 'bar' | 'line';
+export type TopicsMetricType = 'share' | 'visibility' | 'sentiment';
 
 interface TopicAnalysisMultiViewProps {
   topics: Topic[];
   isLoading?: boolean;
   onTopicClick?: (topic: Topic) => void;
   defaultChartType?: ChartType;
+  metricType?: TopicsMetricType;
   categories?: string[];
   selectedCategory?: string;
   onCategoryChange?: (category: string) => void;
@@ -40,11 +42,12 @@ export const TopicAnalysisMultiView = ({
   isLoading = false,
   onTopicClick,
   defaultChartType = 'racing-bar',
-  categories = [],
+  metricType = 'share',
+  categories: _categories = [],
   selectedCategory: externalSelectedCategory,
-  onCategoryChange,
-  selectedDateRange,
-  selectedCountry,
+  onCategoryChange: _onCategoryChange,
+  selectedDateRange: _selectedDateRange,
+  selectedCountry: _selectedCountry,
   competitors = [],
   managedCompetitors = [],
   selectedCompetitors = new Set(),
@@ -60,19 +63,23 @@ export const TopicAnalysisMultiView = ({
   const [chartType, setChartType] = useState<ChartType>(defaultChartType);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [internalSelectedCategory, setInternalSelectedCategory] = useState<string>('all');
+  const [internalSelectedCategory] = useState<string>('all');
   
   const selectedCategory = externalSelectedCategory ?? internalSelectedCategory;
-  
-  const handleCategoryChange = useCallback((category: string) => {
-    if (onCategoryChange) {
-      onCategoryChange(category);
-    } else {
-      setInternalSelectedCategory(category);
-    }
-  }, [onCategoryChange]);
+  void _onCategoryChange;
 
-  // Prepare topics data - ensure currentSoA is set (no limit, show all selected topics)
+  const getMetricValue = useCallback((topic: Topic): number => {
+    if (metricType === 'visibility') {
+      return Math.max(0, Math.min(100, topic.currentVisibility ?? 0));
+    }
+    if (metricType === 'sentiment') {
+      return Math.max(0, Math.min(100, topic.currentSentiment ?? 0));
+    }
+    // share
+    return Math.max(0, Math.min(100, topic.currentSoA ?? (topic.soA * 20)));
+  }, [metricType]);
+
+  // Prepare topics data - ensure current values are present (no limit, show all selected topics)
   // Also filter by category if one is selected
   const preparedTopics = useMemo(() => {
     let filtered = [...topics];
@@ -85,10 +92,11 @@ export const TopicAnalysisMultiView = ({
     return filtered
       .map(topic => ({
         ...topic,
-        currentSoA: topic.currentSoA ?? (topic.soA * 20), // Convert 0-5x to 0-100%
+        // Keep SoA for share view; charts will use metricType to pick the right number.
+        currentSoA: topic.currentSoA ?? (topic.soA * 20),
       }))
-      .sort((a, b) => (b.currentSoA ?? 0) - (a.currentSoA ?? 0));
-  }, [topics, selectedCategory]);
+      .sort((a, b) => getMetricValue(b) - getMetricValue(a));
+  }, [topics, selectedCategory, getMetricValue]);
 
   const handleChartTypeChange = useCallback((type: ChartType) => {
     setChartType(type);
@@ -206,6 +214,7 @@ export const TopicAnalysisMultiView = ({
               competitors={competitors}
               brandFavicon={brandFavicon}
               brandName={brandName}
+              metricType={metricType}
             />
           )}
           {chartType === 'bar' && (
@@ -214,12 +223,14 @@ export const TopicAnalysisMultiView = ({
               onBarClick={handleTopicClick}
               competitors={competitors}
               selectedCompetitor={selectedCompetitor}
+              metricType={metricType}
             />
           )}
           {chartType === 'line' && (
             <TopicsAreaChart
               topics={preparedTopics}
               onBarClick={handleTopicClick}
+              metricType={metricType}
             />
           )}
         </div>
@@ -230,6 +241,7 @@ export const TopicAnalysisMultiView = ({
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         topic={selectedTopic}
+        metricType={metricType}
       />
     </div>
   );

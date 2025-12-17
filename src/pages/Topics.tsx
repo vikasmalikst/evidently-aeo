@@ -33,6 +33,8 @@ interface BackendTopic {
   availableModels?: string[]; // Available models for this topic (from collector_type)
   topSources?: Array<{ name: string; url: string; type: string; citations: number }>;
   industryAvgSoA?: number | null; // Competitor average SOA (0-100 percentage) - calculated from competitor SOA only
+  industryAvgVisibility?: number | null; // Competitor average visibility (0-100)
+  industryAvgSentiment?: number | null; // Competitor average sentiment (-1..1, or already normalized by backend)
   industryAvgSoATrend?: { direction: 'up' | 'down' | 'neutral'; delta: number } | null;
   industryBrandCount?: number; // Number of brands in competitor average calculation
 }
@@ -42,6 +44,24 @@ interface TopicsApiResponse {
   availableModels?: string[];
   avgSoADelta?: number; // Change from previous period (percentage points)
 }
+
+const toVisibilityScore0To100 = (value: number | null | undefined): number | null => {
+  if (value === null || value === undefined || Number.isNaN(value)) return null;
+  // visibility often arrives as 0..1; convert to 0..100
+  if (value >= 0 && value <= 1) {
+    return Math.max(0, Math.min(100, value * 100));
+  }
+  return Math.max(0, Math.min(100, value));
+};
+
+const toSentimentScore0To100 = (value: number | null | undefined): number | null => {
+  if (value === null || value === undefined || Number.isNaN(value)) return null;
+  // sentiment often arrives as -1..1; convert to 0..100
+  if (value >= -1 && value <= 1) {
+    return Math.max(0, Math.min(100, ((value + 1) / 2) * 100));
+  }
+  return Math.max(0, Math.min(100, value));
+};
 
 function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<string, number>): TopicsAnalysisData {
   const totalSearchVolume = 0;
@@ -61,6 +81,9 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
         if (sentimentScore >= 0.1) sentiment = 'positive';
         else if (sentimentScore <= -0.1) sentiment = 'negative';
       }
+
+      const currentVisibility = toVisibilityScore0To100(t.avgVisibility);
+      const currentSentiment = toSentimentScore0To100(t.avgSentiment);
       
       // Transform topSources from backend format to TopicSource format
       const sources: TopicSource[] = (t.topSources || []).map(source => ({
@@ -75,6 +98,9 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
       const industryAvgSoA = t.industryAvgSoA !== null && t.industryAvgSoA !== undefined
         ? (t.industryAvgSoA / 20) // Convert percentage (0-100) to multiplier (0-5x)
         : null;
+
+      const industryAvgVisibility = toVisibilityScore0To100(t.industryAvgVisibility);
+      const industryAvgSentiment = toSentimentScore0To100(t.industryAvgSentiment);
       
       // Debug logging for competitor SOA
       
@@ -94,6 +120,8 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
         category: t.category || 'uncategorized',
         soA: soAMultiplier, // Keep for internal calculations
         currentSoA: soAPercentage, // Percentage (0-100) for display
+        currentVisibility,
+        currentSentiment,
         visibilityTrend: Array(12).fill(t.avgVisibility || 0),
         trend: { direction: trendDirection, delta: topicDelta },
         searchVolume: null,
@@ -103,6 +131,8 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
         priority: t.priority || 999,
         // Competitor average data (calculated from competitor SOA values only)
         industryAvgSoA: industryAvgSoA,
+        industryAvgVisibility,
+        industryAvgSentiment,
         industryTrend: industryTrend,
         industryBrandCount: t.industryBrandCount || 0
       };

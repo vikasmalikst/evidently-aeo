@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { getLLMIcon } from '../../components/Visibility/LLMIcons';
+import { KpiToggle } from '../../components/Visibility/KpiToggle';
 import { Layout } from '../../components/Layout/Layout';
 import { CompactMetricsPods } from './components/CompactMetricsPods';
 import { TopicsRankedTable } from './components/TopicsRankedTable';
@@ -7,12 +8,13 @@ import { TopicAnalysisMultiView } from './components/TopicAnalysisMultiView';
 import { TopicDetailModal } from './components/TopicDetailModal';
 import { ChartTitle } from './components/ChartTitle';
 import { DateRangePicker } from '../../components/DateRangePicker/DateRangePicker';
-import { CompetitorFilter } from './components/CompetitorFilter';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { getActiveCompetitors, type ManagedCompetitor } from '../../api/competitorManagementApi';
 import type { Competitor } from './utils/competitorColors';
 import type { TopicsAnalysisData, Topic } from './types';
 import type { PodId } from './components/CompactMetricsPods';
+
+type TopicsMetricType = 'share' | 'visibility' | 'sentiment';
 
 interface TopicsAnalysisPageProps {
   data: TopicsAnalysisData;
@@ -77,6 +79,7 @@ export const TopicsAnalysisPage = ({
   isLoadingCompetitors: externalIsLoadingCompetitors = false,
 }: TopicsAnalysisPageProps) => {
   const { selectedBrand, selectedBrandId } = useManualBrandDashboard();
+  const [metricType, setMetricType] = useState<TopicsMetricType>('share');
 
   // Extract unique categories from topics
   const uniqueCategories = useMemo(() => {
@@ -453,6 +456,11 @@ export const TopicsAnalysisPage = ({
   // Check if we have real data - only show if we have actual SOA or source data
   // Don't show anything if all data is null/empty
   const brandName = selectedBrand?.name || 'Your Brand';
+  const chartBaseTitle = metricType === 'share'
+    ? 'Topics Share of Answer'
+    : metricType === 'visibility'
+      ? 'Topics Visibility Score'
+      : 'Topics Sentiment Score';
 
   return (
     <Layout>
@@ -476,12 +484,21 @@ export const TopicsAnalysisPage = ({
         </div>
 
 
+        <div style={{ marginBottom: '16px' }}>
+          <KpiToggle
+            metricType={metricType}
+            onChange={(value) => setMetricType(value as TopicsMetricType)}
+            allowedMetricTypes={['share', 'visibility', 'sentiment']}
+          />
+        </div>
+
         {/* Section 1: Compact Metrics Pods */}
         <div style={{ marginBottom: '24px', gap: '24px' }}>
           <CompactMetricsPods
             portfolio={data.portfolio}
             performance={data.performance}
             topics={data.topics}
+            metricType={metricType}
             onPodClick={(podId: PodId) => {
               // Handle pod clicks - could filter table or scroll to section
               if (podId === 'gaps') {
@@ -512,7 +529,7 @@ export const TopicsAnalysisPage = ({
             <ChartTitle
               category={selectedCategory}
               dateRange={dateRangeLabel}
-              baseTitle="Topics Share of Answer"
+              baseTitle={chartBaseTitle}
               selectedModel={selectedModel}
               aiModels={[]}
             />
@@ -549,9 +566,7 @@ export const TopicsAnalysisPage = ({
                       type="button"
                       onClick={() =>
                         setSelectedModels((prev) =>
-                          prev.includes(model)
-                            ? prev.filter((m) => m !== model)
-                            : [...prev, model]
+                          prev.includes(model) ? prev.filter((m) => m !== model) : [...prev, model]
                         )
                       }
                       className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${
@@ -569,8 +584,6 @@ export const TopicsAnalysisPage = ({
                   );
                 })}
               </div>
-
-
             </div>
           </div>
 
@@ -580,6 +593,7 @@ export const TopicsAnalysisPage = ({
             isLoading={isLoading}
             onTopicClick={handleTopicClick}
             defaultChartType="racing-bar"
+            metricType={metricType}
             categories={uniqueCategories}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
@@ -609,6 +623,7 @@ export const TopicsAnalysisPage = ({
               selectedTopics,
               onSelectedTopicsChange: setSelectedTopics,
               selectedCategory,
+              metricType,
               competitors,
               brandFavicon,
               selectedModel,
@@ -623,6 +638,7 @@ export const TopicsAnalysisPage = ({
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         topic={selectedTopic}
+        metricType={metricType}
       />
     </Layout>
   );

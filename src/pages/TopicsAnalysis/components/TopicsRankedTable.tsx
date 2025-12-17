@@ -10,6 +10,7 @@ interface TopicsRankedTableProps {
   onSelectedTopicsChange?: (selectedTopics: Set<string>) => void;
   selectedCategory?: string;
   brandFavicon?: string;
+  metricType?: 'share' | 'visibility' | 'sentiment';
 }
 
 // Get competitor average SOA for a topic (from backend data)
@@ -46,7 +47,8 @@ export const TopicsRankedTable = ({
   selectedTopics: externalSelectedTopics,
   onSelectedTopicsChange,
   selectedCategory: externalSelectedCategory,
-  brandFavicon
+  brandFavicon,
+  metricType = 'share'
 }: TopicsRankedTableProps) => {
 
   // Model functions removed - topics are now distinct, not grouped by model
@@ -119,8 +121,16 @@ export const TopicsRankedTable = ({
           bVal = b.name.toLowerCase();
           break;
         case 'soA':
-          aVal = a.soA;
-          bVal = b.soA;
+          if (metricType === 'visibility') {
+            aVal = a.currentVisibility ?? 0;
+            bVal = b.currentVisibility ?? 0;
+          } else if (metricType === 'sentiment') {
+            aVal = a.currentSentiment ?? 0;
+            bVal = b.currentSentiment ?? 0;
+          } else {
+            aVal = a.soA;
+            bVal = b.soA;
+          }
           break;
         case 'trend':
           aVal = a.trend.delta;
@@ -144,7 +154,26 @@ export const TopicsRankedTable = ({
     });
 
     return filtered;
-  }, [topics, selectedCategory, sortState]);
+  }, [topics, selectedCategory, sortState, metricType]);
+
+  const metricHeaderLabel = metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment';
+  const metricTooltipLabel =
+    metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+  const competitorHeaderLabel =
+    metricType === 'share' ? 'Competitor SoA' : metricType === 'visibility' ? 'Competitor Visibility' : 'Competitor Sentiment';
+  const formatMetricValue = (topic: Topic): string => {
+    if (metricType === 'visibility') return topic.currentVisibility !== null && topic.currentVisibility !== undefined ? topic.currentVisibility.toFixed(1) : '—';
+    if (metricType === 'sentiment') return topic.currentSentiment !== null && topic.currentSentiment !== undefined ? topic.currentSentiment.toFixed(1) : '—';
+    const value = (topic.currentSoA || topic.soA * 20) as number;
+    return value > 0 ? value.toFixed(1) + '%' : '—';
+  };
+
+  const formatCompetitorValue = (topic: Topic): string => {
+    if (metricType === 'visibility') return topic.industryAvgVisibility !== null && topic.industryAvgVisibility !== undefined ? topic.industryAvgVisibility.toFixed(1) : '—';
+    if (metricType === 'sentiment') return topic.industryAvgSentiment !== null && topic.industryAvgSentiment !== undefined ? topic.industryAvgSentiment.toFixed(1) : '—';
+    const avgCompetitorSoA = getAvgCompetitorSoA(topic);
+    return avgCompetitorSoA > 0 ? (avgCompetitorSoA * 20).toFixed(1) + '%' : '—';
+  };
 
   const SortButton = ({ column, children }: { column: SortColumn; children: React.ReactNode }) => {
     const isActive = sortState.column === column;
@@ -222,12 +251,12 @@ export const TopicsRankedTable = ({
                         }}
                       />
                     )}
-                    <SortButton column="soA">SoA</SortButton>
+                    <SortButton column="soA">{metricHeaderLabel}</SortButton>
                   </div>
                 </th>
                 <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[140px]">
                   <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide">
-                    Competitor SoA
+                    {competitorHeaderLabel}
                   </span>
                 </th>
                 <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[150px]">
@@ -258,7 +287,7 @@ export const TopicsRankedTable = ({
                     className="transition-colors cursor-pointer hover:bg-[var(--bg-secondary)]/50"
                     role="button"
                     tabIndex={0}
-                    aria-label={`Topic: ${topic.name}, SoA: ${(topic.currentSoA || topic.soA * 20).toFixed(1)}%, Rank: ${topic.rank}`}
+                    aria-label={`Topic: ${topic.name}, ${metricTooltipLabel}: ${formatMetricValue(topic)}, Rank: ${topic.rank}`}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
@@ -289,51 +318,62 @@ export const TopicsRankedTable = ({
                       </div>
                     </td>
                     <td className="px-3 sm:px-4 lg:px-5 py-4">
-                      {(() => {
-                        const soAColor = getSoAColor(topic.soA);
-                        return topic.soA > 0 ? (
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: soAColor }}
-                              title={getSoATooltip(topic.soA)}
-                            ></span>
-                            <span className="text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
-                              {(topic.currentSoA || topic.soA * 20).toFixed(1)}%
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-[var(--text-caption)]" title="Share of Answer data not yet available">
-                            —
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-3 sm:px-4 lg:px-5 py-4">
-                      {(() => {
-                        const avgCompetitorSoA = getAvgCompetitorSoA(topic);
-                        
-                        // Show competitor average as a single percentage value if available
-                        if (avgCompetitorSoA > 0) {
-                          const competitorSoAColor = getSoAColor(avgCompetitorSoA);
-                          return (
-                            <span 
-                              className="text-sm font-semibold whitespace-nowrap" 
-                              style={{ color: competitorSoAColor }}
-                              title={`Competitor average: ${(avgCompetitorSoA * 20).toFixed(1)}%`}
-                            >
-                              {(avgCompetitorSoA * 20).toFixed(1)}%
-                            </span>
-                          );
-                        } else {
-                          // No competitor data available
-                          return (
-                            <span className="text-sm text-[var(--text-caption)]" title="Competitor average data not available (no competitors tracking same topics)">
+                      {metricType === 'share' ? (
+                        (() => {
+                          const soAColor = getSoAColor(topic.soA);
+                          return topic.soA > 0 ? (
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: soAColor }}
+                                title={getSoATooltip(topic.soA)}
+                              ></span>
+                              <span className="text-sm font-semibold whitespace-nowrap" style={{ color: soAColor }}>
+                                {(topic.currentSoA || topic.soA * 20).toFixed(1)}%
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-[var(--text-caption)]" title="Share of Answer data not yet available">
                               —
                             </span>
                           );
-                        }
-                      })()}
+                        })()
+                      ) : (
+                        <span className="text-sm font-semibold whitespace-nowrap" title={metricTooltipLabel}>
+                          {formatMetricValue(topic)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
+                      {metricType === 'share' ? (
+                        (() => {
+                          const avgCompetitorSoA = getAvgCompetitorSoA(topic);
+                          if (avgCompetitorSoA > 0) {
+                            const competitorSoAColor = getSoAColor(avgCompetitorSoA);
+                            return (
+                              <span
+                                className="text-sm font-semibold whitespace-nowrap"
+                                style={{ color: competitorSoAColor }}
+                                title={`Competitor average: ${(avgCompetitorSoA * 20).toFixed(1)}%`}
+                              >
+                                {(avgCompetitorSoA * 20).toFixed(1)}%
+                              </span>
+                            );
+                          }
+                          return (
+                            <span
+                              className="text-sm text-[var(--text-caption)]"
+                              title="Competitor average data not available (no competitors tracking same topics)"
+                            >
+                              —
+                            </span>
+                          );
+                        })()
+                      ) : (
+                        <span className="text-sm font-semibold whitespace-nowrap" title={competitorHeaderLabel}>
+                          {formatCompetitorValue(topic)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 sm:px-4 lg:px-5 py-4">
                       {topic.sources.length > 0 ? (() => {

@@ -11,15 +11,17 @@ interface TopicsRacingBarChartProps {
   competitors?: Competitor[];
   brandFavicon?: string;
   brandName?: string;
+  metricType?: 'share' | 'visibility' | 'sentiment';
 }
 
 export const TopicsRacingBarChart = ({ 
   topics, 
   onBarClick, 
   stackData = false,
-  competitors = [],
+  competitors: _competitors = [],
   brandFavicon: _brandFavicon, // Unused - removed from legend
-  brandName = 'Brand'
+  brandName = 'Brand',
+  metricType = 'share'
 }: TopicsRacingBarChartProps) => {
   // IMPORTANT:
   // Competitors load asynchronously; tying comparison mode to `competitors.length`
@@ -49,6 +51,20 @@ export const TopicsRacingBarChart = ({
   // Avg Industry color (neutral 400)
   const AVG_INDUSTRY_COLOR = '#8b90a7'; // neutral-400
 
+  const getMetricValue = (topic: Topic): number => {
+    if (metricType === 'visibility') {
+      return Math.max(0, Math.min(100, topic.currentVisibility ?? 0));
+    }
+    if (metricType === 'sentiment') {
+      return Math.max(0, Math.min(100, topic.currentSentiment ?? 0));
+    }
+    return Math.max(0, Math.min(100, topic.currentSoA ?? (topic.soA * 20)));
+  };
+
+  const metricLabel =
+    metricType === 'share' ? 'Share of Answer (SoA)' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+  const formatValue = (value: number) => (metricType === 'share' ? `${value.toFixed(1)}%` : value.toFixed(1));
+
   // Sort topics by SoA descending (largest to smallest) for left to right display
   // Convert SoA (0-5x scale) to percentage (0-100) for display
   const sortedTopics = useMemo(() => {
@@ -57,8 +73,8 @@ export const TopicsRacingBarChart = ({
         ...topic,
         currentSoA: topic.currentSoA ?? (topic.soA * 20) // Convert 0-5x to 0-100%
       }))
-      .sort((a, b) => (b.currentSoA ?? 0) - (a.currentSoA ?? 0));
-  }, [topics]);
+      .sort((a, b) => getMetricValue(b) - getMetricValue(a));
+  }, [topics, metricType]);
 
   // Transform data for Nivo Bar chart
   // Store topic mapping separately for click handler
@@ -73,12 +89,19 @@ export const TopicsRacingBarChart = ({
   // Use real competitor average SOA from backend (stored as multiplier 0-5x, convert to percentage 0-100)
   // Only show comparison if at least one topic has competitor data
   const hasIndustryData = useMemo(() => {
-    return sortedTopics.some(topic => 
-      topic.industryAvgSoA !== null && 
-      topic.industryAvgSoA !== undefined && 
-      topic.industryAvgSoA > 0
+    if (metricType === 'share') {
+      return sortedTopics.some(
+        (topic) => topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
+      );
+    }
+    if (metricType === 'visibility') {
+      return sortedTopics.some((topic) => topic.industryAvgVisibility !== null && topic.industryAvgVisibility !== undefined);
+    }
+    return sortedTopics.some(
+      (topic) =>
+        topic.industryAvgSentiment !== null && topic.industryAvgSentiment !== undefined
     );
-  }, [sortedTopics]);
+  }, [sortedTopics, metricType]);
 
   const showComparison = hasIndustryData;
 
@@ -86,24 +109,6 @@ export const TopicsRacingBarChart = ({
   const isStacked = stackData && showComparison;
   const isGrouped = !stackData && showComparison;
 
-  // Calculate average competitor SoA across all topics for the horizontal marker line
-  const avgIndustrySoA = useMemo(() => {
-    if (!hasIndustryData || sortedTopics.length === 0) return 0;
-    const topicsWithIndustryData = sortedTopics.filter(topic => 
-      topic.industryAvgSoA !== null && 
-      topic.industryAvgSoA !== undefined && 
-      topic.industryAvgSoA > 0
-    );
-    if (topicsWithIndustryData.length === 0) return 0;
-    
-    const sum = topicsWithIndustryData.reduce((acc, topic) => {
-      // Convert multiplier (0-5x) to percentage (0-100)
-      const industrySoAPercentage = (topic.industryAvgSoA || 0) * 20;
-      return acc + industrySoAPercentage;
-    }, 0);
-    return sum / topicsWithIndustryData.length;
-  }, [sortedTopics, hasIndustryData]);
-  
   // Chart keys: brand, avgIndustry (only show comparison if competitor data exists)
   const chartKeys = useMemo(() => {
     if (showComparison && hasIndustryData) {
@@ -117,7 +122,7 @@ export const TopicsRacingBarChart = ({
       // Single value per topic (no comparison)
       return [...sortedTopics].reverse().map((topic) => ({
         topic: topic.name,
-        value: topic.currentSoA ?? 0,
+        value: getMetricValue(topic),
         soA: topic.soA, // Include SoA metric (0-5x scale)
       }));
     } else {
@@ -129,20 +134,24 @@ export const TopicsRacingBarChart = ({
         };
         
         // Add brand performance
-        data['brand'] = topic.currentSoA ?? 0;
+        data['brand'] = getMetricValue(topic);
         
-        // Add avg competitor SoA from backend (convert multiplier to percentage)
-        // Only show if competitor data exists for this topic
-        if (topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0) {
-          data['avgIndustry'] = (topic.industryAvgSoA * 20); // Convert multiplier (0-5x) to percentage (0-100)
+        // Add avg competitor metric (topic already has competitor averages mapped)
+        if (metricType === 'share') {
+          data['avgIndustry'] =
+            topic.industryAvgSoA !== null && topic.industryAvgSoA !== undefined && topic.industryAvgSoA > 0
+              ? topic.industryAvgSoA * 20
+              : 0;
+        } else if (metricType === 'visibility') {
+          data['avgIndustry'] = topic.industryAvgVisibility ?? 0;
         } else {
-          data['avgIndustry'] = 0; // No data for this topic
+          data['avgIndustry'] = topic.industryAvgSentiment ?? 0;
         }
         
         return data;
       });
     }
-  }, [sortedTopics, showComparison, hasIndustryData]);
+  }, [sortedTopics, showComparison, hasIndustryData, metricType]);
 
   // Calculate dynamic height based on number of topics
   // Balance between expanding height and reducing bar size
@@ -193,9 +202,9 @@ export const TopicsRacingBarChart = ({
             tickSize: 5,
             tickPadding: 8,
             tickRotation: 0,
-            format: (value: number) => `${value}%`,
+            format: (value: number) => (metricType === 'share' ? `${value}%` : `${value}`),
             tickValues: [0, 20, 40, 60, 80, 100], // Keep major ticks at 20% intervals
-            legend: 'Share of Answer (SoA)',
+            legend: metricLabel,
             legendPosition: 'middle',
             legendOffset: 40,
           }}
@@ -308,10 +317,20 @@ export const TopicsRacingBarChart = ({
             
             if (showComparison && key) {
               if (key === 'brand') {
-                label = `${brandName} SoA`;
+                label =
+                  metricType === 'share'
+                    ? `${brandName} SoA`
+                    : metricType === 'visibility'
+                      ? `${brandName} Visibility`
+                      : `${brandName} Sentiment`;
                 barColor = BRAND_COLOR; // Data viz 02 (blue) for brand
               } else if (key === 'avgIndustry') {
-                label = 'Competitor SoA';
+                label =
+                  metricType === 'share'
+                    ? 'Competitor SoA'
+                    : metricType === 'visibility'
+                      ? 'Competitor Visibility'
+                      : 'Competitor Sentiment';
                 barColor = AVG_INDUSTRY_COLOR;
               }
             }
@@ -415,7 +434,7 @@ export const TopicsRacingBarChart = ({
                       color: '#ffffff',
                       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                     }}>
-                      {topic.name}: {value.toFixed(1)}%
+                      {topic.name}: {formatValue(value)}
                     </div>
                   </div>
                   <div style={{ 
@@ -425,7 +444,7 @@ export const TopicsRacingBarChart = ({
                     paddingLeft: '16px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                   }}>
-                    SoA: {value.toFixed(1)}%
+                    {metricLabel}: {formatValue(value)}
                   </div>
                   <div style={{ 
                     fontSize: '11px', 
@@ -462,9 +481,8 @@ export const TopicsRacingBarChart = ({
                     const topic = topicMap.get(topicName);
                     if (!topic) return null;
                     
-                    // Get the SoA value as percentage
-                    const soAValue = topic.currentSoA ?? (topic.soA * 20);
-                    const xPosition = xScale(soAValue) + 8; // Position to the right of the bar
+                    const metricValue = getMetricValue(topic);
+                    const xPosition = xScale(metricValue) + 8; // Position to the right of the bar
                     const yPosition = yScale(bar.data.topic) + (yScale.bandwidth() / 2);
                     
                     return (
@@ -481,7 +499,7 @@ export const TopicsRacingBarChart = ({
                           fontWeight: 500,
                         }}
                       >
-                        {soAValue.toFixed(1)}%
+                        {formatValue(metricValue)}
                       </text>
                     );
                   })}
@@ -507,11 +525,11 @@ export const TopicsRacingBarChart = ({
               }}
             />
             <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              {brandName} SoA
+              {brandName} {metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment'}
             </span>
           </div>
           
-          {/* Competitor SoA - Bar */}
+          {/* Competitor metric - Bar */}
           <div className="flex items-center gap-1.5">
             <div
               style={{
@@ -523,7 +541,7 @@ export const TopicsRacingBarChart = ({
               }}
             />
             <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              Competitor SoA
+              Competitor {metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment'}
             </span>
           </div>
           

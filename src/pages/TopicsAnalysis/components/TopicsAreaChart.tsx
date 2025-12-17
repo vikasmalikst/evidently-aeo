@@ -17,6 +17,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, 
 interface TopicsAreaChartProps {
   topics: Topic[];
   onBarClick?: (topic: Topic) => void;
+  metricType?: 'share' | 'visibility' | 'sentiment';
 }
 
 const getSoAColor = (soA: number): string => {
@@ -26,7 +27,7 @@ const getSoAColor = (soA: number): string => {
   return '#1a1d29';
 };
 
-export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) => {
+export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: TopicsAreaChartProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const chartRef = useRef<any>(null);
 
@@ -46,9 +47,23 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
         ...topic,
         currentSoA: topic.currentSoA ?? (topic.soA * 20) // Convert 0-5x to 0-100%
       }))
-      .sort((a, b) => (b.currentSoA ?? 0) - (a.currentSoA ?? 0))
+      .sort((a, b) => {
+        const aVal =
+          metricType === 'visibility'
+            ? (a.currentVisibility ?? 0)
+            : metricType === 'sentiment'
+              ? (a.currentSentiment ?? 0)
+              : (a.currentSoA ?? 0);
+        const bVal =
+          metricType === 'visibility'
+            ? (b.currentVisibility ?? 0)
+            : metricType === 'sentiment'
+              ? (b.currentSentiment ?? 0)
+              : (b.currentSoA ?? 0);
+        return (bVal ?? 0) - (aVal ?? 0);
+      })
       .slice(0, 10); // Show first 10 selected topics
-  }, [topics]);
+  }, [topics, metricType]);
 
   // Helper function to wrap topic names into multiple lines
   const wrapTopicName = (name: string, maxLineLength: number = 18): string => {
@@ -89,6 +104,13 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
   };
 
   const chartData = useMemo(() => {
+    const metricLabel =
+      metricType === 'share' ? 'Share of Answer (SoA)' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+    const values = sortedTopics.map((t) => {
+      if (metricType === 'visibility') return Math.max(0, Math.min(100, t.currentVisibility ?? 0));
+      if (metricType === 'sentiment') return Math.max(0, Math.min(100, t.currentSentiment ?? 0));
+      return Math.max(0, Math.min(100, t.currentSoA ?? 0));
+    });
     return {
       labels: sortedTopics.map((t) => {
         // Wrap topic names to multiple lines for better visibility
@@ -96,8 +118,8 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
       }),
       datasets: [
         {
-          label: 'Share of Answer (SoA)',
-          data: sortedTopics.map((t) => t.currentSoA ?? 0),
+          label: metricLabel,
+          data: values,
           borderColor: '#00bcdc',
           backgroundColor: 'rgba(0, 188, 220, 0.15)',
           fill: true,
@@ -113,9 +135,11 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
         },
       ],
     };
-  }, [sortedTopics]);
+  }, [sortedTopics, metricType]);
 
   const options = useMemo(() => {
+    const metricLabel =
+      metricType === 'share' ? 'Share of Answer (SoA)' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
     return {
       indexAxis: 'x' as const,
       responsive: true,
@@ -162,7 +186,8 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
           displayColors: false,
           callbacks: {
             label: function(context: any) {
-              return `Share of Answer (SoA): ${context.parsed.y.toFixed(2)}%`;
+              const suffix = metricType === 'share' ? '%' : '';
+              return `${metricLabel}: ${context.parsed.y.toFixed(2)}${suffix}`;
             }
           },
         },
@@ -196,7 +221,7 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
           beginAtZero: true,
           title: {
             display: true,
-            text: 'Share of Answer (SoA)',
+            text: metricLabel,
             color: 'var(--chart-label)',
             font: {
               size: isMobile ? 11 : 13,
@@ -223,14 +248,14 @@ export const TopicsAreaChart = ({ topics, onBarClick }: TopicsAreaChartProps) =>
             },
             padding: 8,
             callback: function(value: any) {
-              return value + '%';
+              return metricType === 'share' ? value + '%' : value;
             },
           },
           max: 100,
         },
       },
     };
-  }, [sortedTopics, onBarClick, isMobile]);
+  }, [sortedTopics, onBarClick, isMobile, metricType]);
 
   return (
     <div className="p-3 sm:p-4 lg:p-6">

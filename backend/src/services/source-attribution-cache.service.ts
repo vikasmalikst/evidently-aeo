@@ -30,25 +30,21 @@ export class SourceAttributionCacheService {
     try {
       // Validate that the payload has the expected structure
       if (!payload || typeof payload !== 'object') {
-        console.log('[SourceAttribution] ⚠️ Cached payload is not an object - treating as invalid')
         return false
       }
 
       // Ensure required top-level fields exist
       if (!('sources' in payload) || !('overallMentionRate' in payload) || !('dateRange' in payload)) {
-        console.log('[SourceAttribution] ⚠️ Cached payload missing required fields - treating as invalid')
         return false
       }
 
       // Ensure sources is an array
       if (!Array.isArray(payload.sources)) {
-        console.log('[SourceAttribution] ⚠️ Cached payload sources is not an array - treating as invalid')
         return false
       }
 
       // Validate dateRange structure
       if (!payload.dateRange || typeof payload.dateRange !== 'object' || !('start' in payload.dateRange) || !('end' in payload.dateRange)) {
-        console.log('[SourceAttribution] ⚠️ Cached payload dateRange is invalid - treating as invalid')
         return false
       }
 
@@ -85,33 +81,20 @@ export class SourceAttributionCacheService {
       }
 
       if (!data) {
-        const totalTime = Date.now() - cacheLookupStart
-        console.log(`[SourceAttribution] ⚠️ No cached snapshot found (query: ${queryTime}ms, total: ${totalTime}ms)`)
         return null
       }
 
-      const validationStart = Date.now()
       const payload = data.payload as SourceAttributionResponse
 
       // Validate cached payload structure - if invalid, treat as missing
       if (!this.isValidCachedPayload(payload)) {
-        const totalTime = Date.now() - cacheLookupStart
-        console.log(`[SourceAttribution] ⚠️ Cached payload structure invalid (query: ${queryTime}ms, validation: ${Date.now() - validationStart}ms, total: ${totalTime}ms) - will recompute`)
         return null
       }
 
       // Check if cache is still valid (within TTL)
-      const ageMs = this.getSnapshotAgeMs(data.computed_at)
       if (!this.isCacheValid(data.computed_at)) {
-        const totalTime = Date.now() - cacheLookupStart
-        const ageMinutes = ageMs ? (ageMs / 60000).toFixed(1) : 'unknown'
-        console.log(`[SourceAttribution] ⏰ Cache expired (age: ${ageMinutes}min, TTL: 5min, query: ${queryTime}ms, total: ${totalTime}ms) - will recompute`)
         return null
       }
-
-      const totalTime = Date.now() - cacheLookupStart
-      const validationTime = Date.now() - validationStart
-      console.log(`[SourceAttribution] ✅ Cache HIT (query: ${queryTime}ms, validation: ${validationTime}ms, total: ${totalTime}ms) - ${payload.sources?.length ?? 0} sources`)
       return {
         payload,
         computed_at: data.computed_at
@@ -148,8 +131,6 @@ export class SourceAttributionCacheService {
 
     if (error) {
       console.warn('[SourceAttribution] Failed to upsert snapshot:', error)
-    } else {
-      console.log(`[SourceAttribution] ✅ Cached snapshot for brand ${brandId}, range ${startIso} → ${endIso}`)
     }
   }
 

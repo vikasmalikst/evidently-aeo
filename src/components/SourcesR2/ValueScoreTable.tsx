@@ -48,7 +48,7 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
       valueScore: getRange(sources.map((s) => s.valueScore)),
       mentionRate: getRange(sources.map((s) => s.mentionRate)),
       soa: getRange(sources.map((s) => s.soa)),
-      sentiment: getRange(sources.map((s) => s.sentiment * 100)),
+      sentiment: getRange(sources.map((s) => s.sentiment)), // Use raw sentiment values, no multiplication
       citations: getRange(sources.map((s) => s.citations))
     };
   }, [sources]);
@@ -220,18 +220,17 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
                   );
                 })()}
                 {(() => {
-                  const { style, textColor } = heatmapStyle('sentiment', s.sentiment * 100);
-                  const sentimentColor = s.sentiment >= 0 ? '#047857' : '#b91c1c';
+                  const { style, textColor } = heatmapStyle('sentiment', s.sentiment);
                   return (
                 <td
                   style={{
                     padding: '10px 8px',
                     textAlign: 'right',
-                    color: textColor || sentimentColor,
+                    color: textColor || '#0f172a',
                     ...style
                   }}
                 >
-                  {Math.round(s.sentiment * 100)}
+                  {Math.round(s.sentiment)}
                 </td>
                   );
                 })()}

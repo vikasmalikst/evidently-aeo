@@ -7,7 +7,6 @@ import { ResponseViewer } from '../components/Prompts/ResponseViewer';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { PromptAnalyticsPayload, PromptEntry } from '../types/prompts';
-import { getVersionHistory } from '../api/promptManagementApi';
 
 // Performance logging
 const perfLog = (label: string, startTime: number) => {
@@ -43,42 +42,7 @@ export const Prompts = () => {
   const defaultDateRange = getDefaultDateRange();
   const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
   const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
-  const [currentVersion, setCurrentVersion] = useState<number | null>(null);
   const { brands, selectedBrandId, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
-
-  // Fetch current version to filter prompts by current version
-  // This is a separate API call, but it doesn't block the main prompts fetch
-  useEffect(() => {
-    if (!selectedBrandId || brandsLoading) {
-      setCurrentVersion(null);
-      return;
-    }
-
-    let isMounted = true;
-
-    const fetchCurrentVersion = async () => {
-      try {
-        const versionData = await getVersionHistory(selectedBrandId);
-        // Only update if component is still mounted and brand hasn't changed
-        if (isMounted) {
-          setCurrentVersion(versionData.currentVersion);
-        }
-      } catch (error) {
-        console.error('Error fetching current version:', error);
-        // If version fetch fails, continue without version filter
-        // This allows the prompts to load without version filtering
-        if (isMounted) {
-          setCurrentVersion(null);
-        }
-      }
-    };
-
-    fetchCurrentVersion();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedBrandId, brandsLoading]);
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
@@ -104,16 +68,13 @@ export const Prompts = () => {
     // When "All" is selected (empty array), don't pass collectors parameter
     // Backend will return data aggregated across all collectors
 
-    // Add current version parameter to filter prompts by current version
-    // Backend should return only prompts from the current version
-    if (currentVersion !== null) {
-      params.set('version', currentVersion.toString());
-    }
+    // IMPORTANT (perf):
+    // Keep the endpoint stable on mount to maximize cache hits and avoid double-fetches.
 
     const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
     perfLog('Prompts: Endpoint computation', endpointStart);
     return endpoint;
-  }, [selectedBrandId, startDate, endDate, brandsLoading, currentVersion, selectedLLMs]);
+  }, [selectedBrandId, startDate, endDate, brandsLoading, selectedLLMs]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());

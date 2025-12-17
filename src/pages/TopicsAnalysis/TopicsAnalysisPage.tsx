@@ -110,12 +110,10 @@ export const TopicsAnalysisPage = ({
   // Initialize with props if available, otherwise use defaults
   const [startDate, setStartDate] = useState<string>(() => {
     const initial = currentStartDate || defaultStart;
-    console.log('📅 Initializing startDate:', initial);
     return initial;
   });
   const [endDate, setEndDate] = useState<string>(() => {
     const initial = currentEndDate || defaultEnd;
-    console.log('📅 Initializing endDate:', initial);
     return initial;
   });
 
@@ -125,21 +123,17 @@ export const TopicsAnalysisPage = ({
       isInitialMount.current = false;
       // On initial mount, always sync from parent if available
       if (currentStartDate && currentStartDate !== startDate) {
-        console.log('📅 Syncing startDate from parent on mount:', currentStartDate);
         setStartDate(currentStartDate);
       }
       if (currentEndDate && currentEndDate !== endDate) {
-        console.log('📅 Syncing endDate from parent on mount:', currentEndDate);
         setEndDate(currentEndDate);
       }
     } else if (!isUserChangingDates.current) {
       // After mount, only sync if not user-initiated
       if (currentStartDate && currentStartDate !== startDate) {
-        console.log('📅 Syncing startDate from parent:', currentStartDate);
         setStartDate(currentStartDate);
       }
       if (currentEndDate && currentEndDate !== endDate) {
-        console.log('📅 Syncing endDate from parent:', currentEndDate);
         setEndDate(currentEndDate);
       }
     }
@@ -149,7 +143,6 @@ export const TopicsAnalysisPage = ({
   // DateRangePicker already handles date adjustment logic, so we just update state
   const handleStartDateChange = useCallback((date: string) => {
     if (!date) return;
-    console.log('📅 Start date changed:', date, 'Current endDate:', endDate);
     isUserChangingDates.current = true;
     setStartDate(date);
     // Reset flag after debounce completes to allow parent sync
@@ -160,7 +153,6 @@ export const TopicsAnalysisPage = ({
 
   const handleEndDateChange = useCallback((date: string) => {
     if (!date) return;
-    console.log('📅 End date changed:', date, 'Current startDate:', startDate);
     isUserChangingDates.current = true;
     setEndDate(date);
     // Reset flag after debounce completes to allow parent sync
@@ -348,7 +340,6 @@ export const TopicsAnalysisPage = ({
   const dateRangeLabel = useMemo(() => {
     if (!startDate || !endDate) return 'Select date range';
     const label = `${formatDateLabel(startDate)} - ${formatDateLabel(endDate)}`;
-    console.log('📅 Date range label updated:', label, { startDate, endDate });
     return label;
   }, [startDate, endDate, formatDateLabel]);
 
@@ -380,7 +371,6 @@ export const TopicsAnalysisPage = ({
         endDate: endDate || undefined,
         collectorType: collectorType || undefined,
       });
-      console.log('🔍 Sending filters (debounced):', { startDate, endDate, collectorType });
     }, 300);
     
     // Cleanup on unmount or when dependencies change
@@ -496,9 +486,7 @@ export const TopicsAnalysisPage = ({
               // Handle pod clicks - could filter table or scroll to section
               if (podId === 'gaps') {
                 // Filter table to show gaps
-                console.log('Filter to gaps');
               } else if (podId === 'momentum') {
-                console.log('View Avg SOA change vs previous period');
               }
             }}
           />
@@ -607,7 +595,6 @@ export const TopicsAnalysisPage = ({
             isLoadingCompetitors={isLoadingCompetitors || isLoading || isRefreshing}
             onExport={() => {
               // Export functionality - can be implemented later
-              console.log('Export chart data...', { chartType: 'racing-bar', selectedCategory, selectedDateRange });
             }}
           />
         </div>

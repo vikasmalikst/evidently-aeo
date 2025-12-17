@@ -21,12 +21,12 @@ export const TopicsRacingBarChart = ({
   brandFavicon: _brandFavicon, // Unused - removed from legend
   brandName = 'Brand'
 }: TopicsRacingBarChartProps) => {
-  // Always show brand, avg competitor SoA when competitors are available
-  const showComparison = competitors.length > 0;
+  // IMPORTANT:
+  // Competitors load asynchronously; tying comparison mode to `competitors.length`
+  // causes a visual “reload” even when topic data is cached. Base comparison on
+  // whether topic data actually has industry averages.
   
-  // Determine if bars should be stacked or grouped
-  const isStacked = stackData && showComparison;
-  const isGrouped = !stackData && showComparison;
+  // Determine if bars should be stacked or grouped (computed after showComparison is defined)
   
   // Helper function to resolve CSS variable at runtime
   const getCSSVariable = (variableName: string): string => {
@@ -79,6 +79,12 @@ export const TopicsRacingBarChart = ({
       topic.industryAvgSoA > 0
     );
   }, [sortedTopics]);
+
+  const showComparison = hasIndustryData;
+
+  // Determine if bars should be stacked or grouped
+  const isStacked = stackData && showComparison;
+  const isGrouped = !stackData && showComparison;
 
   // Calculate average competitor SoA across all topics for the horizontal marker line
   const avgIndustrySoA = useMemo(() => {

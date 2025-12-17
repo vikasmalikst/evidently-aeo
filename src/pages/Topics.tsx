@@ -77,11 +77,6 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
         : null;
       
       // Debug logging for competitor SOA
-      if (industryAvgSoA !== null) {
-        console.log(`📊 Topic "${t.topic_name}": Competitor Avg SOA = ${t.industryAvgSoA}% (${industryAvgSoA.toFixed(2)}x multiplier), Brand SOA = ${soAPercentage}%`);
-      } else if (t.industryAvgSoA === null || t.industryAvgSoA === undefined) {
-        console.log(`⚠️ Topic "${t.topic_name}": No competitor Avg SOA data (null/undefined)`);
-      }
       
       // Use competitor trend if available, otherwise default to neutral
       const industryTrend = t.industryAvgSoATrend || { direction: 'neutral' as const, delta: 0 };
@@ -358,9 +353,8 @@ export const Topics = () => {
     const queryString = params.toString();
     const endpoint = `/brands/${selectedBrandId}/topics${queryString ? `?${queryString}` : ''}`;
     
-    // Only log if endpoint actually changed
+    // Only update ref if endpoint actually changed
     if (endpoint !== lastEndpointRef.current) {
-      console.log('🔗 Topics endpoint built:', { endpoint, filters, queryString, previous: lastEndpointRef.current });
       lastEndpointRef.current = endpoint;
     }
     return endpoint;
@@ -378,7 +372,9 @@ export const Topics = () => {
     { requiresAuth: true },
     { 
       enabled: !brandsLoading && !!topicsEndpoint, 
-      refetchOnMount: true
+      // Avoid forcing a refetch on every mount; rely on cache for fast navigation.
+      // Users can change filters (or add an explicit refresh) to revalidate.
+      refetchOnMount: false
     }
   );
 
@@ -386,13 +382,6 @@ export const Topics = () => {
   useEffect(() => {
     if (response?.success && response.availableModels) {
       setAvailableModels(response.availableModels);
-      console.log('📊 Available models from backend:', response.availableModels);
-    } else {
-      console.log('⚠️ No available models in response:', {
-        success: response?.success,
-        hasAvailableModels: !!response?.availableModels,
-        availableModels: response?.availableModels
-      });
     }
   }, [response]);
   
@@ -430,14 +419,6 @@ export const Topics = () => {
   // Transform and process data
   const topicsData = useMemo(() => {
     if (!response?.success || !response.data) {
-      console.log('📊 Topics API Response:', { 
-        success: response?.success, 
-        hasData: !!response?.data,
-        dataLength: response?.data ? (Array.isArray(response.data) ? response.data.length : 0) : 0,
-        availableModels: response?.availableModels || [],
-        error: response?.error,
-        message: response?.message 
-      });
       return null;
     }
     
@@ -497,30 +478,8 @@ export const Topics = () => {
         
         // Calculate delta (percentage points difference)
         avgSoADelta = currentAvgSoA - previousAvgSoA;
-        
-        console.log('📊 Calculated avgSoADelta from previous period:', {
-          currentAvgSoA: currentAvgSoA.toFixed(2),
-          previousAvgSoA: previousAvgSoA.toFixed(2),
-          delta: avgSoADelta.toFixed(2),
-          currentTopicsCount: topicsArray.length,
-          previousTopicsCount: previousTopicsArray.length,
-          topicDeltas: Array.from(topicDeltaMap.entries()).map(([name, delta]) => ({ name, delta: delta.toFixed(2) }))
-        });
       }
       
-      console.log('📊 Transforming topics data:', { 
-        backendTopicsCount: topicsArray.length,
-        availableModels: response?.availableModels || [],
-        avgSoADelta,
-        topicDeltaMapSize: topicDeltaMap.size,
-        backendTopics: topicsArray.map((t: BackendTopic) => ({ 
-          id: t.id, 
-          topic_name: t.topic_name, 
-          totalQueries: t.totalQueries,
-          is_active: t.is_active,
-          availableModels: t.availableModels
-        }))
-      });
       const transformed = transformTopicsData(topicsArray, topicDeltaMap);
       
       // Set avgSoADelta from API response or calculated value
@@ -528,11 +487,6 @@ export const Topics = () => {
         transformed.performance.avgSoADelta = avgSoADelta;
       }
       
-      console.log('📊 Transformed topics:', { 
-        topicsCount: transformed.topics.length,
-        avgSoADelta: transformed.performance.avgSoADelta,
-        topics: transformed.topics.map(t => ({ id: t.id, name: t.name }))
-      });
       return transformed;
     } catch (err) {
       console.error('Error transforming topics:', err);

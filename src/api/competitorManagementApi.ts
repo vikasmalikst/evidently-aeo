@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from '../lib/apiClient';
+import { cachedRequest, invalidateCache } from '../lib/apiCache';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -69,7 +70,7 @@ export interface VersionHistoryResponse {
 export async function getActiveCompetitors(
   brandId: string
 ): Promise<ManageCompetitorsResponse> {
-  const response = await apiClient.request<ApiResponse<ManageCompetitorsResponse>>(
+  const response = await cachedRequest<ApiResponse<ManageCompetitorsResponse>>(
     `/brands/${brandId}/competitors`,
     { method: 'GET' },
     { requiresAuth: true }
@@ -97,6 +98,7 @@ export async function addCompetitor(
     },
     { requiresAuth: true }
   );
+  invalidateCache(/\/competitors/);
 
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Failed to add competitor');
@@ -117,6 +119,7 @@ export async function removeCompetitor(
     { method: 'DELETE' },
     { requiresAuth: true }
   );
+  invalidateCache(/\/competitors/);
 
   if (!response.success) {
     throw new Error(response.error || 'Failed to remove competitor');
@@ -139,6 +142,7 @@ export async function updateCompetitor(
     },
     { requiresAuth: true }
   );
+  invalidateCache(/\/competitors/);
 
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Failed to update competitor');
@@ -163,6 +167,7 @@ export async function bulkUpdateCompetitors(
     },
     { requiresAuth: true }
   );
+  invalidateCache(/\/competitors/);
 
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Failed to update competitors');

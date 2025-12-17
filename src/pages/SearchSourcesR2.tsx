@@ -87,14 +87,15 @@ const classifyNewZone = (
   return 'monitorImprove';
 };
 
-const valueScoreForSource = (src: SourceData, maxCitations: number, maxTopics: number): number => {
-  const sentimentPct = ((src.sentiment + 1) / 2) * 100; // -1..1 -> 0..100
+const valueScoreForSource = (src: SourceData, maxCitations: number, maxTopics: number, maxSentiment: number): number => {
+  // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed range normalization)
+  const sentimentNorm = maxSentiment > 0 ? Math.min(100, (src.sentiment / maxSentiment) * 100) : 0;
   const citationsNorm = maxCitations > 0 ? (src.citations / maxCitations) * 100 : 0;
   const topicsNorm = maxTopics > 0 ? (src.topics.length / maxTopics) * 100 : 0;
   return (
     src.mentionRate * 0.3 +
     src.soa * 0.3 +
-    sentimentPct * 0.2 +
+    sentimentNorm * 0.2 +
     citationsNorm * 0.1 +
     topicsNorm * 0.1
   );
@@ -113,11 +114,13 @@ const classifyQuadrant = (
     compositeMedian: number;
     compositeTopQuartile: number;
   },
-  maxCitations: number
+  maxCitations: number,
+  maxSentiment: number
 ): EnhancedSource['quadrant'] => {
   const mentionNorm = mention / 100;
   const soaNorm = soa / 100;
-  const sentimentNorm = (sentiment + 1) / 2; // -1..1 -> 0..1
+  // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed range normalization)
+  const sentimentNorm = maxSentiment > 0 ? Math.min(1, sentiment / maxSentiment) : 0;
   const citationsNorm = maxCitations > 0 ? citations / maxCitations : 0;
 
   const compositeScore =
@@ -180,15 +183,18 @@ export const SearchSourcesR2 = () => {
 
     const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
     const maxTopics = Math.max(...sourceData.map((s) => s.topics.length), 1);
+    const maxSentiment = Math.max(...sourceData.map((s) => s.sentiment), 1);
     const mentionMedian = median(sourceData.map((s) => s.mentionRate));
     const soaMedian = median(sourceData.map((s) => s.soa));
-    const sentimentMedian = median(sourceData.map((s) => (s.sentiment + 1) / 2));
+    // Use raw sentiment values for median calculation (no normalization)
+    const sentimentMedian = median(sourceData.map((s) => maxSentiment > 0 ? s.sentiment / maxSentiment : 0));
     const citationsMedian = median(sourceData.map((s) => (maxCitations > 0 ? s.citations / maxCitations : 0)));
 
     const compositeScores = sourceData.map((s) => {
       const mentionNorm = s.mentionRate / 100;
       const soaNorm = s.soa / 100;
-      const sentimentNorm = (s.sentiment + 1) / 2;
+      // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed range normalization)
+      const sentimentNorm = maxSentiment > 0 ? Math.min(1, s.sentiment / maxSentiment) : 0;
       const citationsNorm = maxCitations > 0 ? s.citations / maxCitations : 0;
       return (
         mentionNorm * 0.35 +
@@ -202,7 +208,7 @@ export const SearchSourcesR2 = () => {
     const compositeTopQuartile = percentile(compositeScores, 75);
 
     return sourceData.map((s) => {
-      const valueScore = valueScoreForSource(s, maxCitations, maxTopics);
+      const valueScore = valueScoreForSource(s, maxCitations, maxTopics, maxSentiment);
       return {
         name: s.name,
         type: s.type,
@@ -218,7 +224,7 @@ export const SearchSourcesR2 = () => {
           citationsMedian,
           compositeMedian,
           compositeTopQuartile
-        }, maxCitations)
+        }, maxCitations, maxSentiment)
       };
     });
   }, [sourceData]);
@@ -227,8 +233,10 @@ export const SearchSourcesR2 = () => {
     if (!sourceData.length) return [];
 
     const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
+    const maxSentiment = Math.max(...sourceData.map((s) => s.sentiment), 1);
 
-    const sentimentPcts = sourceData.map((s) => ((s.sentiment + 1) / 2) * 100);
+    // Use raw sentiment values, normalize relative to max sentiment in dataset (no fixed range normalization)
+    const sentimentPcts = sourceData.map((s) => maxSentiment > 0 ? Math.min(100, (s.sentiment / maxSentiment) * 100) : 0);
     const citationPcts = sourceData.map((s) => (maxCitations > 0 ? Math.min(100, (s.citations / maxCitations) * 100) : 0));
     const mentionPcts = sourceData.map((s) => s.mentionRate);
     const soaPcts = sourceData.map((s) => s.soa);

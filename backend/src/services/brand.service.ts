@@ -1313,6 +1313,7 @@ export class BrandService {
     country?: string,
     competitorNames?: string[] // Optional: filter by specific competitor names (lowercase)
   ): Promise<{ topics: any[]; availableModels: string[] }> {
+    const overallStart = performance.now();
     try {
       console.log(`🎯 Fetching topics WITH analytics (only topics with collector_results) for brand ${brandId}`);
       
@@ -1325,6 +1326,7 @@ export class BrandService {
       console.log(`📅 Date range: ${startIso} to ${endIso}`);
       
       // Step 1: Try to get queries from generated_queries (optional - topics might be in metadata only)
+      const step1Start = performance.now();
       let queries: any[] = [];
       let queryToTopicMap = new Map<string, { topic: string; intent: string }>();
       
@@ -1336,8 +1338,9 @@ export class BrandService {
           .eq('customer_id', customerId)
           .not('topic', 'is', null);
         
+        const step1Time = performance.now() - step1Start;
         if (queriesError) {
-          console.warn('⚠️ Warning: Could not fetch queries (will use metadata only):', queriesError.message);
+          console.warn(`⚠️ Warning: Could not fetch queries (will use metadata only) [${step1Time.toFixed(2)}ms]:`, queriesError.message);
           // Continue - we can still get topics from metadata
         } else if (queriesData) {
           queries = queriesData;
@@ -1346,10 +1349,11 @@ export class BrandService {
               queryToTopicMap.set(q.id, { topic: q.topic.trim(), intent: q.intent || 'awareness' });
             }
           });
-          console.log(`📋 Found ${queries.length} queries in generated_queries`);
+          console.log(`📋 Found ${queries.length} queries in generated_queries [${step1Time.toFixed(2)}ms]`);
         }
       } catch (error) {
-        console.warn('⚠️ Warning: Error fetching queries, continuing with metadata extraction:', error);
+        const step1Time = performance.now() - step1Start;
+        console.warn(`⚠️ Warning: Error fetching queries, continuing with metadata extraction [${step1Time.toFixed(2)}ms]:`, error);
         // Continue - we can still get topics from metadata
       }
       
@@ -1387,6 +1391,8 @@ export class BrandService {
         console.log(`🔍 Filtering by collector_type(s): ${mappedCollectorTypes.join(', ')} (from input: ${collectorType})`);
       }
       
+      // Step 2: Get collector_results
+      const step2Start = performance.now();
       let collectorResults: any[] = [];
       let crToQueryMap = new Map<string, string>();
       
@@ -1409,23 +1415,29 @@ export class BrandService {
           }
           
           const { data: crData, error: crError } = await crQuery;
+          const step2Time = performance.now() - step2Start;
           
           if (crError) {
-            console.warn('⚠️ Warning: Could not fetch collector_results (will query positions directly):', crError.message);
+            console.warn(`⚠️ Warning: Could not fetch collector_results (will query positions directly) [${step2Time.toFixed(2)}ms]:`, crError.message);
           } else if (crData) {
             collectorResults = crData;
             collectorResults.forEach(cr => {
               crToQueryMap.set(cr.id, cr.query_id);
             });
-            console.log(`📋 Found ${collectorResults.length} collector_results${mappedCollectorTypes.length > 0 ? ` for collector_type(s): ${mappedCollectorTypes.join(', ')}` : ''}`);
+            console.log(`📋 Found ${collectorResults.length} collector_results${mappedCollectorTypes.length > 0 ? ` for collector_type(s): ${mappedCollectorTypes.join(', ')}` : ''} [${step2Time.toFixed(2)}ms]`);
           }
         } catch (error) {
-          console.warn('⚠️ Warning: Error fetching collector_results, continuing with direct position query:', error);
+          const step2Time = performance.now() - step2Start;
+          console.warn(`⚠️ Warning: Error fetching collector_results, continuing with direct position query [${step2Time.toFixed(2)}ms]:`, error);
         }
+      } else {
+        const step2Time = performance.now() - step2Start;
+        console.log(`⏭️ Skipped collector_results fetch (no queries) [${step2Time.toFixed(2)}ms]`);
       }
       
       // Get distinct collector_types (models) available for this brand in the date range
       // Do this BEFORE filtering so we always return all available models, not just the filtered one
+      const step2bStart = performance.now();
       const { data: distinctCollectors } = await supabaseAdmin
         .from('extracted_positions')
         .select('collector_type')
@@ -1443,11 +1455,13 @@ export class BrandService {
           }
         });
       }
-      console.log(`📊 Available models (before filtering): ${Array.from(availableModels).join(', ')}`);
+      const step2bTime = performance.now() - step2bStart;
+      console.log(`📊 Available models (before filtering): ${Array.from(availableModels).join(', ')} [${step2bTime.toFixed(2)}ms]`);
       
       // Step 3: Get extracted_positions for this brand
       // Include topic column and metadata to extract topic_name from there, and collector_type for filtering
       // If we have collector_result_ids, filter by them; otherwise get all positions for this brand
+      const step3Start = performance.now();
       let positions: any[] = [];
       let positionsQuery = supabaseAdmin
         .from('extracted_positions')
@@ -1490,20 +1504,22 @@ export class BrandService {
         }
         
         const { data: posData, error: positionsError } = await positionsQueryFiltered;
+        const step3Time = performance.now() - step3Start;
         
         if (positionsError) {
-          console.error('❌ Error fetching extracted_positions:', positionsError);
+          console.error(`❌ Error fetching extracted_positions [${step3Time.toFixed(2)}ms]:`, positionsError);
           throw new DatabaseError('Failed to fetch positions');
         }
         positions = posData || [];
-        console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorTypes.length > 0 ? ` (for collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''}`);
+        console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorTypes.length > 0 ? ` (for collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''} [${step3Time.toFixed(2)}ms]`);
       } else {
         // If no collector_results, get positions directly by brand_id (with collector_type filter if provided)
         console.log('⚠️ No collector_results found, querying positions directly by brand_id');
         const { data: posData, error: positionsError } = await positionsQuery;
+        const step3Time = performance.now() - step3Start;
         
         if (positionsError) {
-          console.error('❌ Error fetching extracted_positions:', positionsError);
+          console.error(`❌ Error fetching extracted_positions [${step3Time.toFixed(2)}ms]:`, positionsError);
           throw new DatabaseError('Failed to fetch positions');
         }
         positions = posData || [];
@@ -1518,6 +1534,7 @@ export class BrandService {
       
       // Step 4: Group analytics by topic (distinct topics only, not by collector_type)
       // Priority: 1) metadata.topic_name, 2) generated_queries.topic
+      const step4Start = performance.now();
       const topicMap = new Map<string, {
         topicName: string;
         intent: string;
@@ -1721,9 +1738,12 @@ export class BrandService {
         if (a.priority !== b.priority) return a.priority - b.priority;
         return (b.avgShareOfAnswer || 0) - (a.avgShareOfAnswer || 0);
       });
+      const step4Time = performance.now() - step4Start;
+      console.log(`📊 Step 4: Grouped ${topicsWithAnalytics.length} topics from ${positions.length} positions [${step4Time.toFixed(2)}ms]`);
       
       // Step 6: Fetch top citation sources per topic
       // Pass the filtered positions so citations are also filtered by collector_type
+      const step6Start = performance.now();
       const topicSourcesMap = await this.getTopSourcesPerTopic(
         brandId,
         customerId,
@@ -1732,8 +1752,11 @@ export class BrandService {
         endIso,
         positions // Pass filtered positions to ensure citations are also filtered by collector_type
       );
+      const step6Time = performance.now() - step6Start;
+      console.log(`📊 Step 6: Fetched top sources for ${topicSourcesMap.size} topics [${step6Time.toFixed(2)}ms]`);
       
       // Step 7: Calculate competitor average SOA per topic (only competitor SOA, not brand SOA)
+      const step7Start = performance.now();
       const industryAvgSoAMap = await this.getIndustryAvgSoAPerTopic(
         brandId,
         customerId,
@@ -1742,6 +1765,8 @@ export class BrandService {
         endIso,
         competitorNames
       );
+      const step7Time = performance.now() - step7Start;
+      console.log(`📊 Step 7: Calculated competitor averages for ${industryAvgSoAMap.size} topics [${step7Time.toFixed(2)}ms]`);
       
       // Add top sources and competitor average SOA to each topic
       topicsWithAnalytics.forEach(topic => {
@@ -1772,12 +1797,14 @@ export class BrandService {
         availableModels: Array.from(availableModels)
       };
       
-      console.log(`✅ Returned ${topicsWithAnalytics.length} distinct topics with analytics data`);
+      const overallTime = performance.now() - overallStart;
+      console.log(`✅ Returned ${topicsWithAnalytics.length} distinct topics with analytics data [TOTAL: ${overallTime.toFixed(2)}ms]`);
       console.log(`📊 Available models: ${Array.from(availableModels).join(', ')}`);
       return response;
       
     } catch (error) {
-      console.error('❌ Error in getBrandTopicsWithAnalytics:', error);
+      const overallTime = performance.now() - overallStart;
+      console.error(`❌ Error in getBrandTopicsWithAnalytics [${overallTime.toFixed(2)}ms]:`, error);
       throw error;
     }
   }
@@ -1793,17 +1820,31 @@ export class BrandService {
     endIso: string,
     competitorNames?: string[] // Optional: filter by specific competitor names (lowercase)
   ): Promise<Map<string, { avgSoA: number; trend: { direction: 'up' | 'down' | 'neutral'; delta: number }; brandCount: number; competitorSoA?: Map<string, number> }>> {
+    const funcStart = performance.now();
     try {
       if (topicNames.length === 0) {
         return new Map();
       }
 
+      // Filter at the DB level by the topics we care about.
+      // In our data, `extracted_positions.topic` is populated (see topic extraction summary logs),
+      // so this drastically reduces the rows scanned vs querying the entire customer/date-range.
+      const topicFilterValues = Array.from(
+        new Set(
+          topicNames
+            .map((t) => (typeof t === 'string' ? t.trim() : ''))
+            .filter(Boolean)
+        )
+      );
+
       // Get current brand name to exclude it when it appears as a competitor
+      const brandQueryStart = performance.now();
       const { data: currentBrand, error: brandError } = await supabaseAdmin
         .from('brands')
         .select('name')
         .eq('id', currentBrandId)
         .single();
+      const brandQueryTime = performance.now() - brandQueryStart;
       
       const currentBrandName = currentBrand?.name?.toLowerCase().trim() || null;
 
@@ -1814,7 +1855,8 @@ export class BrandService {
       // Get all extracted_positions for all brands in the date range
       // Note: We only use competitor SOA values (share_of_answers_competitor column)
       // This gives us the average SOA of competitors only, excluding brand SOA values
-      const { data: positions, error: positionsError } = await supabaseAdmin
+      const positionsQueryStart = performance.now();
+      let positionsQuery = supabaseAdmin
         .from('extracted_positions')
         .select(`
           topic,
@@ -1827,24 +1869,34 @@ export class BrandService {
         .eq('customer_id', customerId)
         // Exclude rows where current brand appears as the competitor (we want competitor SOA, not our brand's SOA)
         .gte('processed_at', startIso)
-        .lte('processed_at', endIso);
+        .lte('processed_at', endIso)
+        .not('share_of_answers_competitor', 'is', null);
+
+      // Apply topic filter when we have values; fallback to old behavior otherwise.
+      if (topicFilterValues.length > 0) {
+        positionsQuery = positionsQuery.in('topic', topicFilterValues).not('topic', 'is', null);
+      }
+
+      const { data: positions, error: positionsError } = await positionsQuery;
+      const positionsQueryTime = performance.now() - positionsQueryStart;
 
       if (positionsError) {
-        console.error('⚠️ Error fetching industry positions:', positionsError);
+        console.error(`⚠️ Error fetching industry positions [${positionsQueryTime.toFixed(2)}ms]:`, positionsError);
         return new Map();
       }
 
       if (!positions || positions.length === 0) {
-        console.log('ℹ️ No competitor data found for comparison');
+        console.log(`ℹ️ No competitor data found for comparison [brand query: ${brandQueryTime.toFixed(2)}ms, positions query: ${positionsQueryTime.toFixed(2)}ms]`);
         console.log(`   - Looking for topics: ${normalizedTopicNames.join(', ')}`);
         console.log(`   - Date range: ${startIso} to ${endIso}`);
         console.log(`   - Using only competitor SOA values (excluding brand SOA)`);
         return new Map();
       }
 
-      console.log(`📊 Found ${positions.length} competitor positions for comparison`);
+      console.log(`📊 Found ${positions.length} competitor positions for comparison [brand query: ${brandQueryTime.toFixed(2)}ms, positions query: ${positionsQueryTime.toFixed(2)}ms]`);
 
       // Group by normalized topic name and calculate averages
+      const groupingStart = performance.now();
       const topicDataMap = new Map<string, { soaValues: number[]; brandIds: Set<string>; timestamps: Date[]; competitorSoAMap?: Map<string, number[]> }>();
 
       positions.forEach(pos => {
@@ -2000,7 +2052,9 @@ export class BrandService {
         });
       });
 
-      console.log(`📊 Calculated competitor averages for ${result.size} topics`);
+      const groupingTime = performance.now() - groupingStart;
+      const funcTime = performance.now() - funcStart;
+      console.log(`📊 Calculated competitor averages for ${result.size} topics [grouping: ${groupingTime.toFixed(2)}ms, total: ${funcTime.toFixed(2)}ms]`);
       if (result.size > 0) {
         result.forEach((data, topic) => {
           const topicData = topicDataMap.get(topic);
@@ -2015,7 +2069,8 @@ export class BrandService {
       return result;
 
     } catch (error) {
-      console.error('⚠️ Error in getIndustryAvgSoAPerTopic:', error);
+      const funcTime = performance.now() - funcStart;
+      console.error(`⚠️ Error in getIndustryAvgSoAPerTopic [${funcTime.toFixed(2)}ms]:`, error);
       return new Map();
     }
   }
@@ -2032,6 +2087,7 @@ export class BrandService {
     endIso: string,
     positions: any[] // Pass already-filtered positions to ensure citations are also filtered by collector_type
   ): Promise<Map<string, Array<{ name: string; url: string; type: string; citations: number }>>> {
+    const funcStart = performance.now();
     try {
       // Get set of normalized topic names we care about
       const validTopicNames = new Set(Array.from(topicMap.keys()));
@@ -2047,6 +2103,7 @@ export class BrandService {
 
       // Fetch citations ONLY for the filtered collector_result_ids
       // This ensures citations are also filtered by collector_type
+      const citationsQueryStart = performance.now();
       const { data: citations, error: citationsError } = await supabaseAdmin
         .from('citations')
         .select(`
@@ -2061,9 +2118,10 @@ export class BrandService {
         .gte('created_at', startIso)
         .lte('created_at', endIso)
         .in('collector_result_id', collectorResultIds); // Filter by collector_result_ids (already filtered by collector_type)
+      const citationsQueryTime = performance.now() - citationsQueryStart;
 
       if (citationsError) {
-        console.error('⚠️ Error fetching citations for topics:', citationsError);
+        console.error(`⚠️ Error fetching citations for topics [${citationsQueryTime.toFixed(2)}ms]:`, citationsError);
         return new Map(); // Return empty map on error
       }
 
@@ -2137,6 +2195,7 @@ export class BrandService {
       });
 
       // Convert to final format: top 3 sources per topic, sorted by citations
+      const processingStart = performance.now();
       const result = new Map<string, Array<{ name: string; url: string; type: string; citations: number }>>();
 
       topicSourcesMap.forEach((domainMap, topicName) => {
@@ -2146,9 +2205,13 @@ export class BrandService {
         result.set(topicName, sources);
       });
 
+      const processingTime = performance.now() - processingStart;
+      const funcTime = performance.now() - funcStart;
+      console.log(`📊 getTopSourcesPerTopic: processed ${citations.length} citations into ${result.size} topics [query: ${citationsQueryTime.toFixed(2)}ms, processing: ${processingTime.toFixed(2)}ms, total: ${funcTime.toFixed(2)}ms]`);
       return result;
     } catch (error) {
-      console.error('⚠️ Error in getTopSourcesPerTopic:', error);
+      const funcTime = performance.now() - funcStart;
+      console.error(`⚠️ Error in getTopSourcesPerTopic [${funcTime.toFixed(2)}ms]:`, error);
       return new Map();
     }
   }

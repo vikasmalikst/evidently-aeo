@@ -57,6 +57,56 @@ export const normalizeSentiment = (values: number[]): number => {
   return Math.min(100, Math.max(0, normalized))
 }
 
+/**
+ * Normalizes a single sentiment value to 0-1 range for dashboard display.
+ * Handles both old format (-1 to 1) and new format (0-100).
+ * 
+ * @param value - Sentiment value in either old format (-1 to 1) or new format (0-100)
+ * @returns Normalized value in 0-1 range (dashboard will multiply by 100 to display as 0-100)
+ */
+export const normalizeSentimentValue = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+  
+  // Detect format: if value is between -1 and 1 (inclusive), it's old format
+  // Otherwise, assume it's new format (0-100)
+  if (value >= -1 && value <= 1) {
+    // Old format (-1 to 1): convert to new format (0-100), then to dashboard format (0-1)
+    // Conversion: (old_value + 1) * 50 = new_value (0-100)
+    // Then: new_value / 100 = dashboard_value (0-1)
+    const newFormatValue = (value + 1) * 50
+    return Math.max(0, Math.min(1, newFormatValue / 100))
+  } else {
+    // New format (0-100): convert directly to dashboard format (0-1)
+    return Math.max(0, Math.min(1, value / 100))
+  }
+}
+
+/**
+ * Normalizes an array of sentiment values to 0-1 range for dashboard display.
+ * Handles mixed arrays containing both old format (-1 to 1) and new format (0-100) values.
+ * 
+ * @param values - Array of sentiment values in either old format (-1 to 1) or new format (0-100)
+ * @returns Average normalized value in 0-1 range
+ */
+export const normalizeSentimentValues = (values: number[]): number => {
+  if (!values.length) {
+    return 0
+  }
+  
+  // Normalize each value individually (handles mixed formats)
+  const normalizedValues = values
+    .filter(v => v !== null && v !== undefined && Number.isFinite(v))
+    .map(normalizeSentimentValue)
+  
+  if (!normalizedValues.length) {
+    return 0
+  }
+  
+  return average(normalizedValues)
+}
+
 export const truncateLabel = (label: string, maxLength = 52): string => {
   if (label.length <= maxLength) {
     return label

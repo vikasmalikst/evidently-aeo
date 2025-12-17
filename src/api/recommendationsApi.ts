@@ -6,6 +6,7 @@
  */
 
 import { apiClient } from '../lib/apiClient';
+import { cachedRequest, invalidateCache } from '../lib/apiCache';
 
 // ============================================================================
 // TYPES
@@ -15,6 +16,7 @@ import { apiClient } from '../lib/apiClient';
  * Single recommendation from the LLM
  */
 export interface Recommendation {
+  id?: string;              // DB id (available after persisted fetch)
   action: string;           // What to do
   reason: string;           // Short rationale: investing in a source/content combo toward a KPI
   explanation: string;      // Longer, 4-5 sentence rationale behind the recommendation
@@ -82,6 +84,90 @@ export interface GenerateRecommendationsRequest {
   brandId?: string;  // Optional - uses first brand if not provided
 }
 
+export interface RecommendationGeneratedContent {
+  id: string;
+  recommendation_id: string;
+  generation_id: string;
+  brand_id: string;
+  customer_id: string;
+  status: 'generated' | 'accepted' | 'rejected';
+  content_type: string;
+  content: string;
+  model_provider: 'cerebras' | 'openrouter';
+  model_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchRecommendationContentLatest(recommendationId: string): Promise<{
+  success: boolean;
+  data?: { content: RecommendationGeneratedContent } | null;
+  error?: string;
+}> {
+  try {
+    const response = await cachedRequest<{
+      success: boolean;
+      data?: { content: RecommendationGeneratedContent } | null;
+      error?: string;
+    }>(`/recommendations/${recommendationId}/content`, { method: 'GET' }, { requiresAuth: true });
+    return response;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch recommendation content'
+    };
+  }
+}
+
+export async function generateRecommendationContent(recommendationId: string, contentType: string = 'draft'): Promise<{
+  success: boolean;
+  data?: { content: RecommendationGeneratedContent; providerUsed?: string; modelUsed?: string };
+  error?: string;
+}> {
+  try {
+    const response = await apiClient.request<{
+      success: boolean;
+      data?: { content: RecommendationGeneratedContent; providerUsed?: string; modelUsed?: string };
+      error?: string;
+    }>(
+      `/recommendations/${recommendationId}/content`,
+      { method: 'POST', body: JSON.stringify({ contentType }) },
+      { requiresAuth: true }
+    );
+    invalidateCache(new RegExp(`^/recommendations/${recommendationId}/content`));
+    return response;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to generate recommendation content'
+    };
+  }
+}
+
+export async function updateRecommendationContentStatus(contentId: string, status: 'accepted' | 'rejected'): Promise<{
+  success: boolean;
+  data?: { content: RecommendationGeneratedContent };
+  error?: string;
+}> {
+  try {
+    const response = await apiClient.request<{
+      success: boolean;
+      data?: { content: RecommendationGeneratedContent };
+      error?: string;
+    }>(
+      `/recommendations/content/${contentId}`,
+      { method: 'PATCH', body: JSON.stringify({ status }) },
+      { requiresAuth: true }
+    );
+    return response;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update content status'
+    };
+  }
+}
+
 // ============================================================================
 // API FUNCTIONS
 // ============================================================================
@@ -115,6 +201,9 @@ export async function generateRecommendations(
       },
       { requiresAuth: true }
     );
+
+    // Ensure subsequent reads return the latest recommendations
+    invalidateCache(/^\/recommendations/);
 
     console.log('✅ [RecommendationsApi] Response received:', {
       success: response.success,
@@ -158,11 +247,9 @@ export async function fetchRecommendations(
     }
 
     const url = `/recommendations${params.toString() ? `?${params.toString()}` : ''}`;
-    const response = await apiClient.request<RecommendationsResponse>(
+    const response = await cachedRequest<RecommendationsResponse>(
       url,
-      {
-        method: 'GET',
-      },
+      { method: 'GET' },
       { requiresAuth: true }
     );
 

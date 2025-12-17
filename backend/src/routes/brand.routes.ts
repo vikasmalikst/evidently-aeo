@@ -377,7 +377,6 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
       }
     }
 
-    console.log(`[Dashboard Route] brandId=${brandId}, customerId=${customerId}, user=${req.user?.email}`);
 
     if (!brandId) {
       res.status(400).json({ success: false, error: 'Brand ID is required' });

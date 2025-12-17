@@ -248,69 +248,6 @@ const StatPill = ({
   </div>
 );
 
-/**
- * Card view for each recommendation (more scannable than a wide table)
- */
-const RecommendationCard = ({ rec, index }: { rec: Recommendation; index: number }) => (
-  <div className="rounded-xl border border-[#e8e9ed] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)] overflow-hidden">
-    <div className="px-5 py-4 flex flex-col gap-3 border-b border-[#e8e9ed] bg-gradient-to-br from-[#f8fafc] to-white">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div className="h-9 w-9 rounded-full bg-[#e8f7ff] text-[#0284c7] flex items-center justify-center font-semibold text-[13px] border border-[#cfe9fb]">
-            {index + 1}
-          </div>
-          <div className="space-y-1">
-            <p className="text-[14px] font-semibold text-[#0f172a] leading-snug">{rec.action}</p>
-            <p className="text-[12px] text-[#64748b]">
-              KPI: <span className="font-semibold text-[#0f172a]">{rec.kpi}</span> • Expected boost{' '}
-              <span className="font-semibold text-[#06c686]">{rec.expectedBoost}</span>
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <FocusAreaBadge area={rec.focusArea} />
-          <LevelBadge level={rec.priority} type="priority" />
-          <LevelBadge level={rec.effort} type="effort" />
-        </div>
-      </div>
-      <div className="grid md:grid-cols-3 gap-4">
-        <div className="space-y-2">
-          <p className="text-[12px] font-semibold text-[#0f172a]">Why this matters</p>
-          <p className="text-[12px] text-[#1e293b] leading-relaxed">{rec.reason}</p>
-          <p className="text-[12px] text-[#475569] leading-relaxed">{rec.explanation}</p>
-        </div>
-        <div className="space-y-2">
-          <p className="text-[12px] font-semibold text-[#0f172a]">Source & metrics</p>
-          <p className="text-[13px] text-[#0f172a] font-semibold">{rec.citationSource}</p>
-          <p className="text-[11px] text-[#64748b]">
-            Impact: {rec.impactScore} • Mentions: {rec.mentionRate} • Citations: {rec.citationCount}
-          </p>
-          <p className="text-[11px] text-[#64748b]">
-            SOA: {rec.soa} • Sentiment: {rec.sentiment} • Visibility: {rec.visibilityScore}
-          </p>
-        </div>
-        <div className="space-y-2">
-          <p className="text-[12px] font-semibold text-[#0f172a]">Where to focus</p>
-          <p className="text-[12px] text-[#0f172a] font-semibold leading-relaxed">Sources: {rec.focusSources}</p>
-          <p className="text-[12px] text-[#475569] leading-relaxed">Content: {rec.contentFocus}</p>
-          <div className="flex items-center gap-3 flex-wrap">
-            <ConfidenceBar value={rec.confidence} />
-            <span className="text-[12px] text-[#475569] whitespace-nowrap">{rec.timeline}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div className="px-5 py-3 bg-[#f8fafc] border-t border-[#e8e9ed] text-[12px] text-[#64748b] flex items-center justify-between flex-wrap gap-3">
-      <span>
-        Confidence-backed priority for <span className="text-[#0f172a] font-semibold">{rec.focusArea}</span> improvements
-      </span>
-      <span className="text-[11px] text-[#94a3b8]">
-        Visibility • SOA • Sentiment coverage
-      </span>
-    </div>
-  </div>
-);
-
 // ============================================================================
 // MAIN PAGE COMPONENT
 // ============================================================================

@@ -242,9 +242,19 @@ class CacheManager {
    */
   registerPendingRequest<T>(key: CacheKey, promise: Promise<T>): Promise<T> {
     this.pendingRequests.set(key, promise);
-    promise.finally(() => {
-      this.pendingRequests.delete(key);
-    });
+    // IMPORTANT:
+    // Do not use `promise.finally(...)` without handling the returned promise.
+    // In dev this can surface as "Uncaught (in promise) AbortError" when requests
+    // are aborted (React StrictMode mount/unmount), because the promise returned
+    // by `.finally()` can reject and become an unhandled rejection.
+    promise.then(
+      () => {
+        this.pendingRequests.delete(key);
+      },
+      () => {
+        this.pendingRequests.delete(key);
+      }
+    );
     return promise;
   }
 

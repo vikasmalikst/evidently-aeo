@@ -78,6 +78,14 @@ export class OpenRouterCollectorService {
         maxTokens: 1024,
         temperature: 0.7,
         topP: 0.9
+      },
+      content: {
+        model: 'anthropic/claude-3.5-haiku',
+        systemPrompt: 'You are a senior content strategist. Write clear, brand-safe marketing content that is factual, structured, and ready to ship. Do not use web search unless explicitly requested.',
+        enableWebSearch: false,
+        maxTokens: 900,
+        temperature: 0.6,
+        topP: 0.9
       }
     };
 

@@ -142,14 +142,18 @@ export const useDashboardData = () => {
     const params = new URLSearchParams({
       startDate,
       endDate,
-      skipCache: 'true'
     });
+    // Only bypass cache when we explicitly need freshest data.
+    // Default behavior should leverage client cache for fast navigation.
+    if (isDataCollectionInProgress || reloadKey > 0) {
+      params.set('skipCache', 'true');
+    }
     if (reloadKey > 0) {
       params.set('cacheBust', String(reloadKey));
     }
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     return endpoint;
-  }, [selectedBrandId, startDate, endDate, reloadKey]);
+  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress]);
 
   const dataFetchStart = useRef(performance.now());
   const {

@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { cachedRequest, prefetchRequest } from '../lib/apiCache';
 import { cacheManager } from '../lib/cacheManager';
+import { authService } from '../lib/auth';
 
 const cacheDebugEnabled =
   typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_CACHE_DEBUG === 'true';
@@ -14,6 +15,68 @@ const cacheDebugLog = (...args: any[]) => {
     console.log(...args);
   }
 };
+
+function isAbortError(err: unknown): boolean {
+  // Abort can be DOMException in browsers (not always instanceof Error)
+  if (!err || (typeof err !== 'object' && typeof err !== 'function')) return false;
+  const anyErr = err as any;
+  const name = typeof anyErr.name === 'string' ? anyErr.name : '';
+  const message = typeof anyErr.message === 'string' ? anyErr.message : '';
+  return name === 'AbortError' || message.toLowerCase().includes('aborted');
+}
+
+/**
+ * Generate cache key matching apiCache's logic (includes customer_id for customer-specific endpoints)
+ */
+function generateCacheKeyForHook(endpoint: string, params?: Record<string, string>): string {
+  const baseKey = endpoint.split('?')[0];
+  
+  // Customer-specific endpoints that need customer_id in cache key (same as apiCache)
+  const customerSpecificEndpoints = [
+    '/brands',
+    '/dashboard',
+    '/sources',
+    '/topics',
+    '/prompts',
+    '/keywords',
+    '/visibility'
+  ];
+  
+  const isCustomerSpecific = customerSpecificEndpoints.some(pattern => 
+    baseKey === pattern || baseKey.startsWith(pattern + '/')
+  );
+  
+  // Get customer_id from auth service for customer-specific endpoints
+  let customerId: string | null = null;
+  if (isCustomerSpecific) {
+    try {
+      const user = authService.getStoredUser();
+      customerId = user?.customerId || null;
+    } catch (error) {
+      // Ignore errors - will fall back to key without customer_id
+    }
+  }
+  
+  // Build cache key with customer_id if applicable
+  const keyParts: string[] = [baseKey];
+  
+  if (customerId) {
+    keyParts.push(`customer=${customerId}`);
+  }
+  
+  // Normalize params for consistent keys
+  if (params) {
+    const sortedKeys = Object.keys(params).sort();
+    if (sortedKeys.length > 0) {
+      const normalizedParams = sortedKeys
+        .map(key => `${key}=${String(params[key])}`)
+        .join('&');
+      keyParts.push(normalizedParams);
+    }
+  }
+  
+  return keyParts.length > 1 ? keyParts.join('?') : baseKey;
+}
 
 interface UseCachedDataOptions {
   enabled?: boolean; // Whether to fetch (default: true)
@@ -53,15 +116,11 @@ export function useCachedData<T>(
       url.searchParams.forEach((value, key) => {
         params[key] = value;
       });
-      const baseKey = endpoint.split('?')[0];
-      const normalizedParams = params ? Object.keys(params)
-        .sort()
-        .map(key => `${key}=${String(params[key])}`)
-        .join('&') : '';
-      const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
+      // Use same cache key generation logic as apiCache (includes customer_id)
+      const cacheKey = generateCacheKeyForHook(endpoint, params);
       const cached = cacheManager.get<T>(cacheKey);
       if (cached) {
-        cacheDebugLog(`[useCachedData] ✅ Initial state from cache for: ${endpoint}`);
+        cacheDebugLog(`[useCachedData] ✅ Initial state from cache for: ${endpoint} (key: ${cacheKey})`);
         return cached;
       }
     } catch (e) {
@@ -78,18 +137,14 @@ export function useCachedData<T>(
       url.searchParams.forEach((value, key) => {
         params[key] = value;
       });
-      const baseKey = endpoint.split('?')[0];
-      const normalizedParams = params ? Object.keys(params)
-        .sort()
-        .map(key => `${key}=${String(params[key])}`)
-        .join('&') : '';
-      const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
+      // Use same cache key generation logic as apiCache (includes customer_id)
+      const cacheKey = generateCacheKeyForHook(endpoint, params);
       const cached = cacheManager.get<T>(cacheKey);
       // If we have cached data (even if stale), set loading to false so we can show it immediately
       // The background refresh will happen in useEffect
       if (cached) {
         const isFresh = cacheManager.isFresh(cacheKey);
-        cacheDebugLog(`[useCachedData] ✅ Initial loading false (${isFresh ? 'fresh' : 'stale'} cache) for: ${endpoint}`);
+        cacheDebugLog(`[useCachedData] ✅ Initial loading false (${isFresh ? 'fresh' : 'stale'} cache) for: ${endpoint} (key: ${cacheKey})`);
         return false;
       }
     } catch (e) {
@@ -107,12 +162,8 @@ export function useCachedData<T>(
       url.searchParams.forEach((value, key) => {
         params[key] = value;
       });
-      const baseKey = endpoint.split('?')[0];
-      const normalizedParams = params ? Object.keys(params)
-        .sort()
-        .map(key => `${key}=${String(params[key])}`)
-        .join('&') : '';
-      const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
+      // Use same cache key generation logic as apiCache (includes customer_id)
+      const cacheKey = generateCacheKeyForHook(endpoint, params);
       return cacheManager.isStale(cacheKey);
     } catch (e) {
       return false;
@@ -182,7 +233,7 @@ export function useCachedData<T>(
     } catch (err) {
       const errorDuration = performance.now() - fetchStart;
       // Ignore AbortError - it's expected when requests are cancelled
-      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+      if (isAbortError(err)) {
         // Check if this was a cleanup abort (expected) or an unexpected abort
         const isCleanupAbort = (abortControllerRef.current as any)?._isCleanupAbort;
         if (isCleanupAbort) {
@@ -234,12 +285,8 @@ export function useCachedData<T>(
       url.searchParams.forEach((value, key) => {
         params[key] = value;
       });
-      const baseKey = endpoint.split('?')[0];
-      const normalizedParams = params ? Object.keys(params)
-        .sort()
-        .map(key => `${key}=${String(params[key])}`)
-        .join('&') : '';
-      const cacheKey = normalizedParams ? `${baseKey}?${normalizedParams}` : baseKey;
+      // Use same cache key generation logic as apiCache (includes customer_id)
+      const cacheKey = generateCacheKeyForHook(endpoint, params);
       
       cacheDebugLog(`[useCachedData] Checking cache for key: ${cacheKey} at`, performance.now());
       const cached = cacheManager.get<T>(cacheKey);
@@ -274,7 +321,7 @@ export function useCachedData<T>(
     const showLoading = !hasCache || refetchOnMount;
     fetchData(showLoading).catch((err) => {
       // Silently ignore abort errors - they're expected during cleanup
-      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+      if (isAbortError(err)) {
         return;
       }
       // Only log non-abort errors
@@ -306,7 +353,7 @@ export function useCachedData<T>(
       intervalRef.current = window.setInterval(() => {
         fetchData(false).catch((err) => {
           // Silently ignore abort errors - they're expected during cleanup
-          if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+          if (isAbortError(err)) {
             return;
           }
           // Only log non-abort errors

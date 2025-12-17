@@ -24,6 +24,51 @@ const MAX_RUNS_PER_TICK = Number(process.env.JOB_WORKER_BATCH ?? 5);
 
 let isProcessing = false;
 
+/**
+ * Helper function to map AI model names to collector names
+ * Matches the logic in brand.service.ts and admin.routes.ts
+ */
+function mapAIModelsToCollectors(aiModels: string[]): string[] {
+  if (!aiModels || aiModels.length === 0) {
+    // Default to common collectors if none selected
+    return ['chatgpt', 'google_aio', 'perplexity', 'claude'];
+  }
+
+  const modelToCollectorMap: Record<string, string> = {
+    'chatgpt': 'chatgpt',
+    'openai': 'chatgpt',
+    'gpt-4': 'chatgpt',
+    'gpt-3.5': 'chatgpt',
+    'google_aio': 'google_aio',
+    'google-ai': 'google_aio',
+    'google': 'google_aio',
+    'perplexity': 'perplexity',
+    'claude': 'claude',
+    'anthropic': 'claude',
+    'deepseek': 'deepseek',
+    'baidu': 'baidu',
+    'bing': 'bing',
+    'bing_copilot': 'bing_copilot',
+    'copilot': 'bing_copilot',
+    'microsoft-copilot': 'bing_copilot',
+    'gemini': 'gemini',
+    'google-gemini': 'gemini',
+    'grok': 'grok',
+    'x-ai': 'grok',
+    'mistral': 'mistral'
+  };
+
+  const collectors = aiModels
+    .map(model => {
+      const normalizedModel = model.toLowerCase().trim();
+      return modelToCollectorMap[normalizedModel] || null;
+    })
+    .filter((collector): collector is string => collector !== null);
+
+  // Remove duplicates
+  return [...new Set(collectors)];
+}
+
 interface JobRun {
   id: string;
   scheduled_job_id: string;
@@ -118,9 +163,34 @@ async function processSingleRun(run: JobRun): Promise<void> {
         console.log(`[Worker] Executing data collection for brand ${run.brand_id}...`);
         
         const since = scheduleRow.last_run_at || undefined;
-        const collectors = scheduleRow.metadata?.collectors || undefined;
+        let collectors = scheduleRow.metadata?.collectors || undefined;
         const locale = scheduleRow.metadata?.locale || undefined;
         const country = scheduleRow.metadata?.country || undefined;
+
+        // If collectors not explicitly provided in metadata, fetch brand's selected collectors from onboarding
+        if (!collectors || collectors.length === 0) {
+          try {
+            const { data: brand, error: brandError } = await supabase
+              .from('brands')
+              .select('ai_models')
+              .eq('id', run.brand_id)
+              .single();
+
+            if (brandError) {
+              console.warn(`[Worker] Failed to fetch brand ai_models for ${run.brand_id}: ${brandError.message}, using default collectors`);
+            } else if (brand?.ai_models && Array.isArray(brand.ai_models) && brand.ai_models.length > 0) {
+              // Map the brand's selected AI models to collector names
+              collectors = mapAIModelsToCollectors(brand.ai_models);
+              console.log(`[Worker] Using brand's selected collectors: ${collectors.join(', ')} (from ai_models: ${brand.ai_models.join(', ')})`);
+            } else {
+              console.log(`[Worker] Brand ${run.brand_id} has no ai_models selected, using default collectors`);
+            }
+          } catch (error) {
+            console.warn(`[Worker] Error fetching brand ai_models for ${run.brand_id}: ${error instanceof Error ? error.message : String(error)}, using default collectors`);
+          }
+        } else {
+          console.log(`[Worker] Using collectors from job metadata: ${Array.isArray(collectors) ? collectors.join(', ') : collectors}`);
+        }
 
         const collectionResult = await dataCollectionJobService.executeDataCollection(
           run.brand_id,

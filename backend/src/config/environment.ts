@@ -54,6 +54,10 @@ export const config = {
       'http://85.239.244.166', // VPS IP address (HTTP)
       'http://85.239.244.166:80', // VPS IP address with port
       'https://85.239.244.166', // VPS IP address (HTTPS)
+      'http://evidentlyaeo.com', // Domain (HTTP)
+      'https://evidentlyaeo.com', // Domain (HTTPS)
+      'http://www.evidentlyaeo.com', // Domain with www (HTTP)
+      'https://www.evidentlyaeo.com', // Domain with www (HTTPS)
     ],
     credentials: true,
   },

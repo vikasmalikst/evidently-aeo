@@ -13,6 +13,23 @@ export interface ValueScoreSource {
 
 interface ValueScoreTableProps {
   sources: ValueScoreSource[];
+  /**
+   * Optional cap on visible rows (useful for compact widgets).
+   * If omitted, all rows are rendered.
+   */
+  maxRows?: number;
+  /**
+   * Max height for the table viewport; enables vertical scrolling.
+   */
+  maxHeight?: number | string;
+  /**
+   * Optional selection UI for controlling the Impact Score Trends chart.
+   */
+  trendSelection?: {
+    selectedNames: Set<string>;
+    maxSelected: number;
+    onToggle: (name: string) => void;
+  };
 }
 
 type SortKey = 'name' | 'type' | 'valueScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' | 'quadrant';
@@ -33,7 +50,7 @@ const zoneStyles: Record<
   monitorImprove: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor & Improve' }
 };
 
-export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
+export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection }: ValueScoreTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('valueScore');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -111,10 +128,29 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
       }
       return (Number(aVal) - Number(bVal)) * dir;
     });
-    return list.slice(0, 12);
+    return list;
   }, [sources, sortKey, sortDir]);
 
   const sortIndicator = (key: SortKey) => (sortKey === key ? (sortDir === 'asc' ? '↑' : '↓') : '');
+
+  const displayedSources = useMemo(() => {
+    if (!maxRows || maxRows <= 0) return sortedSources;
+    return sortedSources.slice(0, maxRows);
+  }, [sortedSources, maxRows]);
+
+  const headerCellBase: React.CSSProperties = {
+    padding: '10px 8px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    position: 'sticky',
+    top: 0,
+    zIndex: 2,
+    background: '#f8fafc',
+    color: '#475569',
+    boxShadow: 'inset 0 -1px 0 #e5e7eb'
+  };
+
+  const selectedCount = trendSelection ? trendSelection.selectedNames.size : 0;
 
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, height: '100%', boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
@@ -123,7 +159,12 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
           <h3 style={{ margin: 0, fontSize: 16, color: '#1a1d29', fontWeight: 700 }}>Top Sources</h3>
           <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Composite score based on Visibility, SOA, Sentiment, Citations and Topics</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {trendSelection && (
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>
+              Trends: {selectedCount}/{trendSelection.maxSelected}
+            </span>
+          )}
           <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Heatmap</span>
           <div
             aria-hidden
@@ -138,39 +179,67 @@ export const ValueScoreTable = ({ sources }: ValueScoreTableProps) => {
           />
         </div>
       </div>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            <tr style={{ background: '#f8fafc', color: '#475569' }}>
-              <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('name')}>
+            <tr>
+              {trendSelection && (
+                <th
+                  style={{
+                    ...headerCellBase,
+                    textAlign: 'center',
+                    width: 44,
+                    cursor: 'default'
+                  }}
+                >
+                  {/* Checkbox column */}
+                </th>
+              )}
+              <th style={{ ...headerCellBase, textAlign: 'left' }} onClick={() => toggleSort('name')}>
                 Source {sortIndicator('name')}
               </th>
-              <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('type')}>
+              <th style={{ ...headerCellBase, textAlign: 'left' }} onClick={() => toggleSort('type')}>
                 Type {sortIndicator('type')}
               </th>
-              <th style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('valueScore')}>
+              <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('valueScore')}>
                 Impact Score {sortIndicator('valueScore')}
               </th>
-              <th style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('mentionRate')}>
+              <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('mentionRate')}>
                 Mention % {sortIndicator('mentionRate')}
               </th>
-              <th style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('soa')}>
+              <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('soa')}>
                 SOA % {sortIndicator('soa')}
               </th>
-              <th style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('sentiment')}>
+              <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('sentiment')}>
                 Sentiment {sortIndicator('sentiment')}
               </th>
-              <th style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('citations')}>
+              <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('citations')}>
                 Citations {sortIndicator('citations')}
               </th>
-              <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 700, cursor: 'pointer' }} onClick={() => toggleSort('quadrant')}>
+              <th style={{ ...headerCellBase, textAlign: 'center' }} onClick={() => toggleSort('quadrant')}>
                 Category {sortIndicator('quadrant')}
               </th>
             </tr>
           </thead>
           <tbody>
-            {sortedSources.map((s) => (
+            {displayedSources.map((s) => (
               <tr key={s.name} style={{ borderTop: '1px solid #e5e7eb' }}>
+                {trendSelection && (() => {
+                  const isChecked = trendSelection.selectedNames.has(s.name);
+                  const isAtLimit = !isChecked && trendSelection.selectedNames.size >= trendSelection.maxSelected;
+                  return (
+                    <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={isAtLimit}
+                        onChange={() => trendSelection.onToggle(s.name)}
+                        aria-label={`Toggle ${s.name} in Impact Score Trends`}
+                        style={{ cursor: isAtLimit ? 'not-allowed' : 'pointer' }}
+                      />
+                    </td>
+                  );
+                })()}
                 <td style={{ padding: '10px 8px', color: '#0f172a', fontWeight: 600 }}>{s.name}</td>
                 <td style={{ padding: '10px 8px', color: '#475569' }}>{s.type}</td>
                 {(() => {

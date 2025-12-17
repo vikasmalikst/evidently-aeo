@@ -1226,7 +1226,8 @@ export class SourceAttributionService {
   async getImpactScoreTrends(
     brandId: string,
     customerId: string,
-    days: number = 7
+    days: number = 7,
+    selectedSources?: string[]
   ): Promise<{
     dates: string[]
     sources: Array<{
@@ -1235,6 +1236,11 @@ export class SourceAttributionService {
     }>
   }> {
     try {
+      const selectedSet =
+        selectedSources && selectedSources.length
+          ? new Set(selectedSources.map((s) => s.toLowerCase().trim()).filter((s) => s.length > 0))
+          : null
+
       // Calculate date range (last N days)
       const endDate = new Date()
       endDate.setUTCHours(23, 59, 59, 999)
@@ -1330,6 +1336,7 @@ export class SourceAttributionService {
       for (const citation of citationsData) {
         if (!citation.domain || !citation.created_at) continue
         const domain = citation.domain.toLowerCase().trim()
+        if (selectedSet && !selectedSet.has(domain)) continue
         const date = new Date(citation.created_at).toISOString().split('T')[0]
         
         if (!citationsByDomainAndDate.has(domain)) {
@@ -1477,21 +1484,34 @@ export class SourceAttributionService {
         }
       }
 
-      // Get top 10 domains by average Impact Score
-      const domainAverages = Array.from(impactScoresByDomain.entries())
-        .map(([domain, scores]) => ({
-          domain,
-          scores,
-          average: scores.length > 0 ? average(scores) : 0
-        }))
-        .sort((a, b) => b.average - a.average)
-        .slice(0, 10)
+      let sources: Array<{ name: string; data: number[] }> = []
+      if (selectedSet && selectedSources && selectedSources.length) {
+        // Preserve requested order (max 10) and fill missing with zeros.
+        const requested = selectedSources
+          .map((s) => s.toLowerCase().trim())
+          .filter((s) => s.length > 0)
+          .slice(0, 10)
 
-      // Format response
-      const sources = domainAverages.map(({ domain, scores }) => ({
-        name: domain,
-        data: scores
-      }))
+        sources = requested.map((domain) => ({
+          name: domain,
+          data: impactScoresByDomain.get(domain) ?? Array(dates.length).fill(0)
+        }))
+      } else {
+        // Default: top 10 domains by average Impact Score
+        const domainAverages = Array.from(impactScoresByDomain.entries())
+          .map(([domain, scores]) => ({
+            domain,
+            scores,
+            average: scores.length > 0 ? average(scores) : 0
+          }))
+          .sort((a, b) => b.average - a.average)
+          .slice(0, 10)
+
+        sources = domainAverages.map(({ domain, scores }) => ({
+          name: domain,
+          data: scores
+        }))
+      }
 
       // Format dates for display
       const formattedDates = dates.map(date => {

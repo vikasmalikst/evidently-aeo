@@ -1484,10 +1484,10 @@ export class SourceAttributionService {
 
           const impactScore = round(
             (normalizedVisibility * 0.2) +
-              (normalizedSOA * 0.2) +
-              (normalizedSentiment * 0.2) +
-              (normalizedCitations * 0.2) +
-              (normalizedTopics * 0.2),
+            (normalizedSOA * 0.2) +
+            (normalizedSentiment * 0.2) +
+            (normalizedCitations * 0.2) +
+            (normalizedTopics * 0.2),
             1
           )
 
@@ -1528,19 +1528,19 @@ export class SourceAttributionService {
         }))
       } else {
         // Default: top 10 domains by average Impact Score
-        const domainAverages = Array.from(impactScoresByDomain.entries())
-          .map(([domain, scores]) => ({
-            domain,
-            scores,
-            average: scores.length > 0 ? average(scores) : 0
-          }))
-          .sort((a, b) => b.average - a.average)
-          .slice(0, 10)
+      const domainAverages = Array.from(impactScoresByDomain.entries())
+        .map(([domain, scores]) => ({
+          domain,
+          scores,
+          average: scores.length > 0 ? average(scores) : 0
+        }))
+        .sort((a, b) => b.average - a.average)
+        .slice(0, 10)
 
         sources = domainAverages.map(({ domain, scores }) => ({
-          name: domain,
-          data: scores
-        }))
+        name: domain,
+        data: scores
+      }))
       }
 
       // Format dates for display

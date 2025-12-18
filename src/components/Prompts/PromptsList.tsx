@@ -101,11 +101,11 @@ export const PromptsList = memo(({
 
               return (
                 <>
-                  <tr key={topic.id} className="border-b border-[var(--border-default)]">
+                  <tr key={topic.id} className="border-b border-[var(--border-default)] bg-blue-50">
                     <td className="px-4 py-2">
                       <button
                         onClick={() => toggleTopic(topic.id)}
-                        className="w-full flex items-center gap-2 hover:bg-[var(--bg-secondary)] transition-colors text-left"
+                        className="w-full flex items-center gap-2 hover:bg-blue-100 transition-colors text-left"
                       >
                         {isExpanded ? (
                           <ChevronDown size={16} className="text-[var(--text-caption)]" />

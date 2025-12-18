@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import type { Topic, SortColumn, SortState } from '../types';
+import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 
 interface TopicsRankedTableProps {
   topics: Topic[];
@@ -11,6 +12,8 @@ interface TopicsRankedTableProps {
   selectedCategory?: string;
   brandFavicon?: string;
   metricType?: 'share' | 'visibility' | 'sentiment';
+  competitors?: ManagedCompetitor[];
+  selectedCompetitors?: Set<string>;
 }
 
 // Get competitor average SOA for a topic (from backend data)
@@ -48,7 +51,9 @@ export const TopicsRankedTable = ({
   onSelectedTopicsChange,
   selectedCategory: externalSelectedCategory,
   brandFavicon,
-  metricType = 'share'
+  metricType = 'share',
+  competitors = [],
+  selectedCompetitors = new Set(),
 }: TopicsRankedTableProps) => {
 
   // Model functions removed - topics are now distinct, not grouped by model
@@ -159,8 +164,32 @@ export const TopicsRankedTable = ({
   const metricHeaderLabel = metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment';
   const metricTooltipLabel =
     metricType === 'share' ? 'Share of Answer' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
-  const competitorHeaderLabel =
-    metricType === 'share' ? 'Competitor SoA' : metricType === 'visibility' ? 'Competitor Visibility' : 'Competitor Sentiment';
+  
+  // Determine competitor label based on selection
+  const competitorHeaderLabel = useMemo(() => {
+    if (!competitors.length || !selectedCompetitors.size) {
+      return metricType === 'share' ? 'Competitor SoA' : metricType === 'visibility' ? 'Competitor Visibility' : 'Competitor Sentiment';
+    }
+    
+    // Check if all competitors are selected
+    const isAllSelected = selectedCompetitors.size === competitors.length && 
+      competitors.every(c => selectedCompetitors.has(c.name.toLowerCase()));
+    
+    if (isAllSelected || selectedCompetitors.size > 1) {
+      // All competitors or multiple selected - show "Avg Competitor SOA"
+      return metricType === 'share' ? 'Avg Competitor SoA' : metricType === 'visibility' ? 'Avg Competitor Visibility' : 'Avg Competitor Sentiment';
+    } else {
+      // Single competitor selected - show competitor name
+      const selectedKey = Array.from(selectedCompetitors)[0];
+      const selectedCompetitor = competitors.find(c => c.name.toLowerCase() === selectedKey);
+      const competitorName = selectedCompetitor?.name || 'Competitor';
+      return metricType === 'share' 
+        ? `${competitorName} SoA` 
+        : metricType === 'visibility' 
+          ? `${competitorName} Visibility` 
+          : `${competitorName} Sentiment`;
+    }
+  }, [competitors, selectedCompetitors, metricType]);
   const formatMetricValue = (topic: Topic): string => {
     if (metricType === 'visibility') return topic.currentVisibility !== null && topic.currentVisibility !== undefined ? topic.currentVisibility.toFixed(1) : '—';
     if (metricType === 'sentiment') return topic.currentSentiment !== null && topic.currentSentiment !== undefined ? topic.currentSentiment.toFixed(1) : '—';

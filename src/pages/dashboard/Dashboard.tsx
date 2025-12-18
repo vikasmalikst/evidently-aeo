@@ -147,7 +147,7 @@ export const Dashboard = () => {
       {
         key: 'sentiment-score',
         title: 'Sentiment Score',
-        value: sentimentMetric ? formatNumber(sentimentMetric.value, 0) : '—',
+        value: sentimentMetric ? formatNumber(sentimentMetric.value, 1) : '—',
         subtitle: '',
         trend: computeTrend(sentimentMetric?.delta),
         icon: <MessageSquare size={20} />,

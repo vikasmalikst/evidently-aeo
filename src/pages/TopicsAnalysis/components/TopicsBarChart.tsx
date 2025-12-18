@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ResponsiveBar } from '@nivo/bar';
 import type { Topic } from '../types';
 import type { Competitor } from '../utils/competitorColors';
+import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 import { wrapLabelText } from '../utils/text';
 
 interface TopicsBarChartProps {
@@ -9,6 +10,8 @@ interface TopicsBarChartProps {
   onBarClick?: (topic: Topic) => void;
   competitors?: Competitor[];
   selectedCompetitor?: string;
+  managedCompetitors?: ManagedCompetitor[];
+  selectedCompetitors?: Set<string>;
   metricType?: 'share' | 'visibility' | 'sentiment';
 }
 
@@ -22,6 +25,8 @@ export const TopicsBarChart = ({
   onBarClick,
   competitors: _competitors = [],
   selectedCompetitor: _selectedCompetitor, // kept for future filtering logic
+  managedCompetitors = [],
+  selectedCompetitors = new Set(),
   metricType = 'share',
 }: TopicsBarChartProps) => {
   // IMPORTANT:
@@ -104,6 +109,31 @@ export const TopicsBarChart = ({
 
   const showComparison = hasIndustryData;
 
+  // Determine competitor label based on selection
+  const competitorLabel = useMemo(() => {
+    if (!managedCompetitors.length || !selectedCompetitors.size) {
+      return metricType === 'share' ? 'Competitor SoA' : metricType === 'visibility' ? 'Competitor Visibility' : 'Competitor Sentiment';
+    }
+    
+    // Check if all competitors are selected
+    const isAllSelected = selectedCompetitors.size === managedCompetitors.length && 
+      managedCompetitors.every(c => selectedCompetitors.has(c.name.toLowerCase()));
+    
+    if (isAllSelected || selectedCompetitors.size > 1) {
+      // All competitors or multiple selected - show "Avg Competitor SOA"
+      return metricType === 'share' ? 'Avg Competitor SoA' : metricType === 'visibility' ? 'Avg Competitor Visibility' : 'Avg Competitor Sentiment';
+    } else {
+      // Single competitor selected - show competitor name
+      const selectedKey = Array.from(selectedCompetitors)[0];
+      const selectedCompetitor = managedCompetitors.find(c => c.name.toLowerCase() === selectedKey);
+      const competitorName = selectedCompetitor?.name || 'Competitor';
+      return metricType === 'share' 
+        ? `${competitorName} SoA` 
+        : metricType === 'visibility' 
+          ? `${competitorName} Visibility` 
+          : `${competitorName} Sentiment`;
+    }
+  }, [managedCompetitors, selectedCompetitors, metricType]);
 
   // Chart keys: brand, avgIndustry (only show comparison if competitor data exists)
   const chartKeys = useMemo(() => {
@@ -341,11 +371,7 @@ export const TopicsBarChart = ({
                 label = metricType === 'share' ? 'Brand SoA' : metricType === 'visibility' ? 'Brand Visibility' : 'Brand Sentiment';
                 barColor = BRAND_COLOR; // Data viz 02 (blue) for brand
               } else if (key === 'avgIndustry') {
-                label = metricType === 'share'
-                  ? 'Competitor SoA'
-                  : metricType === 'visibility'
-                    ? 'Competitor Visibility'
-                    : 'Competitor Sentiment';
+                label = competitorLabel;
                 barColor = AVG_INDUSTRY_COLOR;
               }
             }
@@ -523,11 +549,7 @@ export const TopicsBarChart = ({
               }}
             />
             <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              {metricType === 'share'
-                ? 'Competitor SoA'
-                : metricType === 'visibility'
-                  ? 'Competitor Visibility'
-                  : 'Competitor Sentiment'}
+              {competitorLabel}
             </span>
           </div>
           

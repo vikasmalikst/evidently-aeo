@@ -333,14 +333,10 @@ export const SearchVisibility = () => {
       const sentimentValue = slice.sentiment ?? null;
       // Sentiment values are already in 1-100 format from database, use directly
       const sentimentDisplayValue = sentimentValue !== null ? sentimentValue : null;
-      const brandPresenceSeries = (slice.timeSeries as any)?.brandPresencePercentage ?? (slice.timeSeries as any)?.brandPresence;
+      const brandPresenceSeries = (slice.timeSeries as any)?.brandPresence ?? (slice.timeSeries as any)?.brandPresencePercentage ?? (slice.timeSeries as any)?.brandPresence;
       const brandPresenceData = Array.isArray(brandPresenceSeries) && brandPresenceSeries.length > 0
         ? brandPresenceSeries.map((value: number) => Math.round(value))
-        : (slice.timeSeries?.share && slice.timeSeries.share.length > 0
-          ? slice.timeSeries.share.map((value: number) => Math.round(value))
-          : (slice.timeSeries?.visibility && slice.timeSeries.visibility.length > 0
-            ? slice.timeSeries.visibility.map((value: number) => Math.round(value))
-            : buildTimeseries(brandPresencePercentage)));
+        : buildTimeseries(brandPresencePercentage);
       
       return {
         id: normalizeId(slice.provider),
@@ -544,11 +540,7 @@ export const SearchVisibility = () => {
       const competitorBrandPresenceSeries = (entry.timeSeries as any)?.brandPresencePercentage ?? (entry.timeSeries as any)?.brandPresence;
       const competitorBrandPresenceData = Array.isArray(competitorBrandPresenceSeries) && competitorBrandPresenceSeries.length > 0
         ? competitorBrandPresenceSeries.map((value: number) => Math.round(value))
-        : (entry.timeSeries?.share && entry.timeSeries.share.length > 0
-          ? entry.timeSeries.share.map((value: number) => Math.round(value))
-          : (entry.timeSeries?.visibility && entry.timeSeries.visibility.length > 0
-            ? entry.timeSeries.visibility.map((value: number) => Math.round(value))
-            : buildTimeseries(Math.round(entry.brandPresencePercentage ?? 0))));
+        : buildTimeseries(Math.round(entry.brandPresencePercentage ?? 0));
       
       return {
         id: normalizeId(entry.competitor),
@@ -621,7 +613,8 @@ export const SearchVisibility = () => {
       if (stillValid.length > 0) {
         return stillValid;
       }
-      return availableModels.slice(0, 5).map((model) => model.id);
+      // Select all available models by default, regardless of their values
+      return availableModels.map((model) => model.id);
     });
   }, [activeTab, currentModels]);
 

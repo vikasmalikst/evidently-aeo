@@ -207,7 +207,7 @@ export const VisibilityTable = memo(({
                     <td className="px-4 py-3 border-b border-[var(--border-default)]">
                       {model.sentiment !== null && model.sentiment !== undefined ? (
                         <span className="text-sm font-semibold text-[var(--text-body)]">
-                          {Math.round(model.sentiment)}
+                          {model.sentiment.toFixed(1).replace(/\.0$/, '')}
                         </span>
                       ) : (
                         <span className="text-sm text-[var(--text-caption)]">—</span>
@@ -296,7 +296,7 @@ export const VisibilityTable = memo(({
                               <p className="text-sm text-[var(--text-body)] mt-1">
                                 Sentiment Score:{' '}
                                 <span className="font-semibold">
-                                  {Math.round(model.sentiment)}
+                                  {model.sentiment.toFixed(1).replace(/\.0$/, '')}
                                 </span>
                               </p>
                             )}

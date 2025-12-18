@@ -6,11 +6,14 @@
  */
 
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { generateRecommendations, fetchRecommendations, Recommendation } from '../api/recommendationsApi';
-import { IconSparkles, IconChevronRight, IconChevronDown, IconTrendingUp, IconTrendingDown, IconMinus, IconAlertCircle } from '@tabler/icons-react';
+import { IconSparkles, IconChevronRight, IconChevronDown, IconTrendingUp, IconTrendingDown, IconMinus, IconAlertCircle, IconExternalLink } from '@tabler/icons-react';
 import { RecommendationContentModal } from './Recommendations/components/RecommendationContentModal';
+import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
+import { useCachedData } from '../hooks/useCachedData';
 
 // ============================================================================
 // HELPER COMPONENTS
@@ -21,6 +24,74 @@ const formatInt = (value: unknown): string => {
   const num = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(num)) return '—';
   return String(Math.round(num));
+};
+
+const formatFixed1 = (value: unknown): string => {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return num.toFixed(1);
+};
+
+const normalizeDomain = (value: string | null | undefined): string => {
+  if (!value) return '';
+  const raw = value.trim().toLowerCase();
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      return new URL(raw).hostname.replace(/^www\./, '');
+    } catch {
+      return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+    }
+  }
+  return raw.replace(/^www\./, '').split('/')[0];
+};
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+interface SourceData {
+  name: string;
+  url: string;
+  type: 'brand' | 'editorial' | 'corporate' | 'reference' | 'ugc' | 'institutional';
+  mentionRate: number;
+  mentionChange: number;
+  soa: number;
+  soaChange: number;
+  sentiment: number;
+  sentimentChange: number;
+  citations: number;
+  topics: string[];
+  prompts: string[];
+  pages: string[];
+  visibility?: number;
+  value?: number;
+}
+
+interface SourceAttributionResponse {
+  sources: SourceData[];
+  overallMentionRate: number;
+  overallMentionChange: number;
+  avgSentiment: number;
+  avgSentimentChange: number;
+  totalSources: number;
+  dateRange: { start: string; end: string };
+}
+
+const valueScoreForSource = (src: SourceData, maxCitations: number, maxTopics: number, maxSentiment: number): number => {
+  const sentimentNorm = maxSentiment > 0 ? Math.min(100, (src.sentiment / maxSentiment) * 100) : 0;
+  const citationsNorm = maxCitations > 0 ? (src.citations / maxCitations) * 100 : 0;
+  const topicsNorm = maxTopics > 0 ? (src.topics.length / maxTopics) * 100 : 0;
+  return (
+    src.mentionRate * 0.3 +
+    src.soa * 0.3 +
+    sentimentNorm * 0.2 +
+    citationsNorm * 0.1 +
+    topicsNorm * 0.1
+  );
 };
 
 const sanitizeMetricText = (text: string, rec: Recommendation): string => {
@@ -150,10 +221,17 @@ interface RecommendationRowProps {
   isExpanded: boolean;
   onToggle: () => void;
   onGenerateContent: (rec: Recommendation) => void;
+  liveSourceByDomain: Map<string, { source: SourceData; valueScore: number }>;
+  startDate: string;
+  endDate: string;
+  onSelectForForecast: (recommendationId: string, selected: boolean) => void;
+  isSelectedForForecast: boolean;
 }
 
-const RecommendationRow = ({ recommendation, index, isExpanded, onToggle, onGenerateContent }: RecommendationRowProps) => {
+const RecommendationRow = ({ recommendation, index, isExpanded, onToggle, onGenerateContent, liveSourceByDomain, startDate, endDate, onSelectForForecast, isSelectedForForecast }: RecommendationRowProps) => {
   const rec = recommendation;
+  const live = liveSourceByDomain.get(normalizeDomain(rec.citationSource));
+  const navigate = useNavigate();
 
   return (
     <>
@@ -194,13 +272,34 @@ const RecommendationRow = ({ recommendation, index, isExpanded, onToggle, onGene
         <td className="px-4 py-4 w-[200px]">
           <div className="space-y-1.5">
             <div className="text-[12px] text-[#64748b]">
-              Impact Score: <span className="font-semibold text-[#1a1d29]">{formatInt(rec.impactScore)}</span>
+              Impact Score:{' '}
+              <span className="font-semibold text-[#1a1d29]">
+                {live ? formatFixed1(live.valueScore) : formatFixed1(Number(rec.impactScore))}
+              </span>
             </div>
             <div className="text-[12px] text-[#64748b]">
-              Visibility: <span className="font-semibold text-[#1a1d29]">{formatInt(rec.visibilityScore)}</span>
+              Mention %:{' '}
+              <span className="font-semibold text-[#1a1d29]">
+                {live ? `${formatFixed1(live.source.mentionRate)}%` : `${formatFixed1(Number(rec.mentionRate))}%`}
+              </span>
             </div>
             <div className="text-[12px] text-[#64748b]">
-              Citations: <span className="font-semibold text-[#1a1d29]">{formatInt(rec.citationCount)}</span>
+              SOA %:{' '}
+              <span className="font-semibold text-[#1a1d29]">
+                {live ? `${formatFixed1(live.source.soa)}%` : `${formatFixed1(Number(rec.soa))}%`}
+              </span>
+            </div>
+            <div className="text-[12px] text-[#64748b]">
+              Sentiment:{' '}
+              <span className="font-semibold text-[#1a1d29]">
+                {live ? Math.round(live.source.sentiment) : formatInt(rec.sentiment)}
+              </span>
+            </div>
+            <div className="text-[12px] text-[#64748b]">
+              Citations:{' '}
+              <span className="font-semibold text-[#1a1d29]">
+                {live ? live.source.citations : rec.citationCount}
+              </span>
             </div>
             <div className="text-[12px] text-[#64748b]">
               Boost: <span className="font-semibold text-[#06c686]">{rec.expectedBoost}</span>
@@ -235,18 +334,33 @@ const RecommendationRow = ({ recommendation, index, isExpanded, onToggle, onGene
             <div className="space-y-6">
               {/* Full Action Text */}
               <div>
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <h4 className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Action</h4>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onGenerateContent(rec);
-                    }}
-                    className="px-3 py-1.5 rounded-md text-[12px] font-semibold bg-[#0ea5e9] text-white hover:bg-[#0d8cc7] transition-colors"
-                    title="Generate a short content draft for this recommendation"
-                  >
-                    Generate Content
-                  </button>
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                  <h4 className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Action</h4>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isSelectedForForecast}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          onSelectForForecast(rec.id || '', e.target.checked);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 rounded border-[#cbd5e1] text-[#0ea5e9] focus:ring-2 focus:ring-[#0ea5e9]"
+                      />
+                      <span className="text-[11px] text-[#64748b] font-medium">Include in Forecast</span>
+                    </label>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onGenerateContent(rec);
+                      }}
+                      className="px-3 py-1.5 rounded-md text-[12px] font-semibold bg-[#0ea5e9] text-white hover:bg-[#0d8cc7] transition-colors"
+                      title="Generate a short content draft for this recommendation"
+                    >
+                      Generate Content
+                    </button>
+                  </div>
                 </div>
                 <p className="text-[13px] text-[#1a1d29] leading-relaxed">{rec.action}</p>
               </div>
@@ -265,7 +379,21 @@ const RecommendationRow = ({ recommendation, index, isExpanded, onToggle, onGene
 
               {/* Source & Metrics Details */}
               <div className="border-t border-[#e2e8f0] pt-4">
-                <h4 className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-3">Source & Metrics</h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Source & Metrics</h4>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const params = new URLSearchParams({ startDate, endDate, highlightSource: rec.citationSource });
+                      navigate(`/search-sources?${params.toString()}`);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-[#0ea5e9] hover:bg-[#e6f6fb] transition-colors border border-[#bae6fd]"
+                    title="View this source on Sources page with same date range"
+                  >
+                    <IconExternalLink size={12} />
+                    View on Sources
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Citation Source</p>
@@ -273,28 +401,38 @@ const RecommendationRow = ({ recommendation, index, isExpanded, onToggle, onGene
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Impact Score</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.impactScore)}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">
+                      {live ? formatFixed1(live.valueScore) : formatFixed1(Number(rec.impactScore))}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Mention Rate</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.mentionRate)}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">
+                      {live ? `${formatFixed1(live.source.mentionRate)}%` : `${formatFixed1(Number(rec.mentionRate))}%`}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Citations</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.citationCount)}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">{live ? live.source.citations : rec.citationCount}</p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">SOA</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.soa)}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">
+                      {live ? `${formatFixed1(live.source.soa)}%` : `${formatFixed1(Number(rec.soa))}%`}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[11px] text-[#64748b] mb-1">Sentiment</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.sentiment)}</p>
+                    <p className="text-[13px] font-medium text-[#1a1d29]">
+                      {live ? Math.round(live.source.sentiment) : formatInt(rec.sentiment)}
+                    </p>
                   </div>
-                  <div>
-                    <p className="text-[11px] text-[#64748b] mb-1">Visibility</p>
-                    <p className="text-[13px] font-medium text-[#1a1d29]">{formatInt(rec.visibilityScore)}</p>
-                  </div>
+                  {live?.source.visibility !== undefined && (
+                    <div>
+                      <p className="text-[11px] text-[#64748b] mb-1">Visibility</p>
+                      <p className="text-[13px] font-medium text-[#1a1d29]">{formatFixed1(live.source.visibility)}</p>
+                    </div>
+                  )}
                   {rec.trend && (
                     <div>
                       <p className="text-[11px] text-[#64748b] mb-1">Trend</p>
@@ -431,6 +569,46 @@ export const RecommendationsV2 = () => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [contentModalOpen, setContentModalOpen] = useState(false);
   const [contentModalRec, setContentModalRec] = useState<Recommendation | null>(null);
+  const [selectedForForecast, setSelectedForForecast] = useState<Set<string>>(new Set());
+  const [startDate, setStartDate] = useState<string>(() => {
+    const end = new Date();
+    end.setUTCHours(23, 59, 59, 999);
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - 29);
+    start.setUTCHours(0, 0, 0, 0);
+    return start.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
+  const sourcesEndpoint = useMemo(() => {
+    if (!selectedBrandId) return null;
+    const params = new URLSearchParams({ startDate, endDate });
+    return `/brands/${selectedBrandId}/sources?${params.toString()}`;
+  }, [selectedBrandId, startDate, endDate]);
+
+  const { data: sourcesResponse } = useCachedData<ApiResponse<SourceAttributionResponse>>(
+    sourcesEndpoint,
+    {},
+    { requiresAuth: true },
+    { enabled: !!sourcesEndpoint && !!selectedBrandId && !brandsLoading, refetchOnMount: false }
+  );
+
+  const sourceData: SourceData[] =
+    sourcesResponse?.success && sourcesResponse.data ? sourcesResponse.data.sources : [];
+
+  const liveSourceByDomain = useMemo(() => {
+    const map = new Map<string, { source: SourceData; valueScore: number }>();
+    if (!sourceData.length) return map;
+    const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
+    const maxTopics = Math.max(...sourceData.map((s) => s.topics.length), 1);
+    const maxSentiment = Math.max(...sourceData.map((s) => s.sentiment), 1);
+    for (const s of sourceData) {
+      const key = normalizeDomain(s.name) || normalizeDomain(s.url);
+      if (!key) continue;
+      map.set(key, { source: s, valueScore: valueScoreForSource(s, maxCitations, maxTopics, maxSentiment) });
+    }
+    return map;
+  }, [sourceData]);
 
   // Load recommendations from database on mount and when brand changes
   useEffect(() => {
@@ -762,6 +940,21 @@ export const RecommendationsV2 = () => {
             </div>
           </div>
 
+          {/* Source Metrics Date Range (matches Sources page) */}
+          <div className="mb-4">
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+              showComparisonInfo={false}
+              className=""
+            />
+            <div className="mt-1 text-[11px] text-[#64748b]">
+              Recommendation actions are persisted snapshots, but the source metrics shown below are pulled live from the Sources endpoint for this date range.
+            </div>
+          </div>
+
           {/* Sort Options */}
           <div className="flex items-center gap-2 text-[12px] text-[#64748b]">
             <span>Sort by:</span>
@@ -793,6 +986,81 @@ export const RecommendationsV2 = () => {
             <p className="text-[13px] text-[#991b1b]">{error}</p>
           </div>
         )}
+
+        {/* Impact Forecasting (Scenario Planner) */}
+        {selectedForForecast.size > 0 && (() => {
+          const selectedRecs = filteredAndSortedRecommendations.filter(r => r.id && selectedForForecast.has(r.id));
+          const parseBoost = (boost: string): { min: number; max: number } => {
+            const match = boost.match(/([+-]?[\d.]+)\s*-\s*([+-]?[\d.]+)/);
+            if (match) {
+              return { min: parseFloat(match[1]), max: parseFloat(match[2]) };
+            }
+            const single = boost.match(/([+-]?[\d.]+)/);
+            if (single) {
+              const val = parseFloat(single[1]);
+              return { min: val, max: val };
+            }
+            return { min: 0, max: 0 };
+          };
+          const boosts = selectedRecs.map(r => parseBoost(r.expectedBoost || '0'));
+          const totalMin = boosts.reduce((sum, b) => sum + b.min, 0);
+          const totalMax = boosts.reduce((sum, b) => sum + b.max, 0);
+          const avgEffort = selectedRecs.reduce((sum, r) => {
+            const effortVal = r.effort === 'Low' ? 1 : r.effort === 'Medium' ? 2 : 3;
+            return sum + effortVal;
+          }, 0) / selectedRecs.length;
+          const effortLabel = avgEffort <= 1.3 ? 'Low' : avgEffort <= 2.3 ? 'Medium' : 'High';
+          const kpis = [...new Set(selectedRecs.map(r => r.kpi))];
+          
+          return (
+            <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[13px] font-semibold text-[#1a1d29]">Impact Forecast</h3>
+                  <span className="px-2 py-0.5 bg-[#e6f6fb] text-[#0ea5e9] rounded text-[10px] font-medium">
+                    {selectedRecs.length} selected
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedForForecast(new Set())}
+                  className="text-[11px] text-[#64748b] hover:text-[#1a1d29] transition-colors font-medium"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#64748b]">Impact:</span>
+                  <span className="text-[13px] font-semibold text-[#1a1d29]">
+                    {totalMin > 0 ? '+' : ''}{totalMin.toFixed(1)}% - {totalMax > 0 ? '+' : ''}{totalMax.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#64748b]">Effort:</span>
+                  <span className={`text-[12px] font-semibold ${
+                    effortLabel === 'Low' ? 'text-[#06c686]' : 
+                    effortLabel === 'Medium' ? 'text-[#f59e0b]' : 
+                    'text-[#ef4444]'
+                  }`}>
+                    {effortLabel}
+                  </span>
+                </div>
+                {kpis.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[#64748b]">KPIs:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {kpis.map(kpi => (
+                        <span key={kpi} className="px-1.5 py-0.5 bg-[#f1f5f9] text-[#475569] rounded text-[10px] font-medium">
+                          {kpi}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Table */}
         <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">
@@ -830,6 +1098,21 @@ export const RecommendationsV2 = () => {
                         setContentModalRec(r);
                         setContentModalOpen(true);
                       }}
+                      liveSourceByDomain={liveSourceByDomain}
+                      startDate={startDate}
+                      endDate={endDate}
+                      onSelectForForecast={(recId, selected) => {
+                        setSelectedForForecast(prev => {
+                          const next = new Set(prev);
+                          if (selected) {
+                            next.add(recId);
+                          } else {
+                            next.delete(recId);
+                          }
+                          return next;
+                        });
+                      }}
+                      isSelectedForForecast={rec.id ? selectedForForecast.has(rec.id) : false}
                     />
                   ))}
                 </tbody>

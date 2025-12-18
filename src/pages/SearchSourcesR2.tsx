@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
@@ -142,10 +143,32 @@ const classifyQuadrant = (
   return 'monitor';
 };
 
+const normalizeDomain = (value: string | null | undefined): string => {
+  if (!value) return '';
+  const raw = value.trim().toLowerCase();
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      return new URL(raw).hostname.replace(/^www\./, '');
+    } catch {
+      return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+    }
+  }
+  return raw.replace(/^www\./, '').split('/')[0];
+};
+
 export const SearchSourcesR2 = () => {
+  const [searchParams] = useSearchParams();
   const authLoading = useAuthStore((state) => state.isLoading);
   const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
+  
+  // Read date range from URL params if available
+  const urlStartDate = searchParams.get('startDate');
+  const urlEndDate = searchParams.get('endDate');
+  const highlightSource = searchParams.get('highlightSource');
+  
   const [startDate, setStartDate] = useState<string>(() => {
+    if (urlStartDate) return urlStartDate;
     const end = new Date();
     end.setUTCHours(23, 59, 59, 999);
     const start = new Date(end);
@@ -153,7 +176,7 @@ export const SearchSourcesR2 = () => {
     start.setUTCHours(0, 0, 0, 0);
     return start.toISOString().split('T')[0];
   });
-  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState<string>(() => urlEndDate || new Date().toISOString().split('T')[0]);
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('current');
   const [activeNewZone, setActiveNewZone] = useState<string | null>(null);
@@ -161,6 +184,21 @@ export const SearchSourcesR2 = () => {
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [selectedTrendSources, setSelectedTrendSources] = useState<string[]>([]);
   const [trendMetric, setTrendMetric] = useState<'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations'>('impactScore');
+  const [sourceSearchQuery, setSourceSearchQuery] = useState<string>(() => highlightSource || '');
+
+  // Update date range from URL params and auto-search for highlighted source
+  useEffect(() => {
+    if (urlStartDate && urlStartDate !== startDate) {
+      setStartDate(urlStartDate);
+    }
+    if (urlEndDate && urlEndDate !== endDate) {
+      setEndDate(urlEndDate);
+    }
+    // Auto-populate search with highlighted source
+    if (highlightSource && !sourceSearchQuery) {
+      setSourceSearchQuery(highlightSource);
+    }
+  }, [urlStartDate, urlEndDate, startDate, endDate, highlightSource, sourceSearchQuery]);
 
   const sourcesEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
@@ -316,7 +354,36 @@ export const SearchSourcesR2 = () => {
     );
   }, [newZoneSources]);
 
-  const displayedSources = viewMode === 'current' ? filteredSources : filteredNewSources;
+  const searchFilteredSources = useMemo(() => {
+    const base = viewMode === 'current' ? filteredSources : filteredNewSources;
+    if (!sourceSearchQuery.trim()) return base;
+    const q = sourceSearchQuery.trim().toLowerCase();
+    const filtered = base.filter((s) => {
+      const nameMatch = s.name.toLowerCase().includes(q);
+      const urlMatch = sourceData.find((src) => src.name === s.name)?.url?.toLowerCase().includes(q);
+      return nameMatch || urlMatch;
+    });
+    
+    // If we have a highlighted source, prioritize it at the top
+    if (highlightSource) {
+      const highlighted = filtered.find((s) => {
+        const normalizedName = normalizeDomain(s.name);
+        const normalizedHighlight = normalizeDomain(highlightSource);
+        return normalizedName === normalizedHighlight ||
+               s.name.toLowerCase().includes(highlightSource.toLowerCase()) ||
+               highlightSource.toLowerCase().includes(s.name.toLowerCase());
+      });
+      
+      if (highlighted) {
+        const others = filtered.filter(s => s.name !== highlighted.name);
+        return [highlighted, ...others];
+      }
+    }
+    
+    return filtered;
+  }, [filteredSources, filteredNewSources, viewMode, sourceSearchQuery, sourceData, highlightSource]);
+
+  const displayedSources = searchFilteredSources;
 
   // Initialize default trends selection (top 10 by Impact score) when sources load / brand changes
   useEffect(() => {
@@ -590,6 +657,56 @@ export const SearchSourcesR2 = () => {
           </div>
         ) : (
           <>
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 8px 18px rgba(15,23,42,0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <input
+                  type="text"
+                  value={sourceSearchQuery}
+                  onChange={(e) => setSourceSearchQuery(e.target.value)}
+                  placeholder="Search sources by domain or name..."
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border: '1px solid #e5e7eb',
+                    background: '#fff',
+                    color: '#0f172a',
+                    fontSize: 13,
+                    outline: 'none',
+                    transition: 'border-color 160ms ease'
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = '#0ea5e9';
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = '#e5e7eb';
+                  }}
+                />
+                {sourceSearchQuery && (
+                  <button
+                    onClick={() => setSourceSearchQuery('')}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      border: '1px solid #e5e7eb',
+                      background: '#f8fafc',
+                      color: '#64748b',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'background 160ms ease'
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {sourceSearchQuery && (
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
+                  {displayedSources.length} source{displayedSources.length !== 1 ? 's' : ''} matching "{sourceSearchQuery}"
+                </div>
+              )}
+            </div>
             <ValueScoreTable
               sources={displayedSources}
               maxHeight="520px"
@@ -598,6 +715,7 @@ export const SearchSourcesR2 = () => {
                 maxSelected: 10,
                 onToggle: toggleTrendSource
               }}
+              highlightedSourceName={highlightSource}
             />
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>

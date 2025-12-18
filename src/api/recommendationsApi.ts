@@ -290,3 +290,93 @@ export async function checkRecommendationsHealth(): Promise<{
   }
 }
 
+// ============================================================================
+// ACTION STATUS TRACKING
+// ============================================================================
+
+export type RecommendationStatus = 'not_started' | 'in_progress' | 'completed' | 'dismissed';
+
+/**
+ * Get the current status of a recommendation
+ */
+export async function getRecommendationStatus(recommendationId: string): Promise<{
+  success: boolean;
+  data?: { status: RecommendationStatus };
+  error?: string;
+}> {
+  try {
+    const response = await cachedRequest<{
+      success: boolean;
+      data?: { status: RecommendationStatus };
+      error?: string;
+    }>(`/recommendations/${recommendationId}/status`, { method: 'GET' }, { requiresAuth: true });
+    return response;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch recommendation status'
+    };
+  }
+}
+
+/**
+ * Update the status of a recommendation
+ */
+export async function updateRecommendationStatus(
+  recommendationId: string,
+  status: RecommendationStatus,
+  notes?: string
+): Promise<{
+  success: boolean;
+  data?: { action: unknown; status: RecommendationStatus };
+  error?: string;
+}> {
+  try {
+    const response = await apiClient.request<{
+      success: boolean;
+      data?: { action: unknown; status: RecommendationStatus };
+      error?: string;
+    }>(
+      `/recommendations/${recommendationId}/status`,
+      { method: 'PATCH', body: JSON.stringify({ status, notes }) },
+      { requiresAuth: true }
+    );
+    // Invalidate status cache
+    invalidateCache(new RegExp(`^/recommendations/${recommendationId}/status`));
+    invalidateCache(/^\/recommendations\/statuses/);
+    return response;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update recommendation status'
+    };
+  }
+}
+
+/**
+ * Get statuses for multiple recommendations in batch
+ */
+export async function getRecommendationStatuses(recommendationIds: string[]): Promise<{
+  success: boolean;
+  data?: { statuses: Record<string, RecommendationStatus> };
+  error?: string;
+}> {
+  try {
+    const response = await apiClient.request<{
+      success: boolean;
+      data?: { statuses: Record<string, RecommendationStatus> };
+      error?: string;
+    }>(
+      '/recommendations/statuses',
+      { method: 'POST', body: JSON.stringify({ recommendationIds }) },
+      { requiresAuth: true }
+    );
+    return response;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch recommendation statuses'
+    };
+  }
+}
+

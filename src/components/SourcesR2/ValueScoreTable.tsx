@@ -30,6 +30,10 @@ interface ValueScoreTableProps {
     maxSelected: number;
     onToggle: (name: string) => void;
   };
+  /**
+   * Optional source name to highlight (e.g., from deep link)
+   */
+  highlightedSourceName?: string | null;
 }
 
 type SortKey = 'name' | 'type' | 'valueScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' | 'quadrant';
@@ -50,7 +54,21 @@ const zoneStyles: Record<
   monitorImprove: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor & Improve' }
 };
 
-export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection }: ValueScoreTableProps) => {
+const normalizeDomain = (value: string | null | undefined): string => {
+  if (!value) return '';
+  const raw = value.trim().toLowerCase();
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      return new URL(raw).hostname.replace(/^www\./, '');
+    } catch {
+      return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+    }
+  }
+  return raw.replace(/^www\./, '').split('/')[0];
+};
+
+export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection, highlightedSourceName }: ValueScoreTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('valueScore');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -222,8 +240,23 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
             </tr>
           </thead>
           <tbody>
-            {displayedSources.map((s) => (
-              <tr key={s.name} style={{ borderTop: '1px solid #e5e7eb' }}>
+            {displayedSources.map((s) => {
+              const isHighlighted = highlightedSourceName && (
+                normalizeDomain(s.name) === normalizeDomain(highlightedSourceName) ||
+                s.name.toLowerCase().includes(highlightedSourceName.toLowerCase()) ||
+                highlightedSourceName.toLowerCase().includes(s.name.toLowerCase())
+              );
+              
+              return (
+              <tr 
+                key={s.name} 
+                style={{ 
+                  borderTop: '1px solid #e5e7eb',
+                  backgroundColor: isHighlighted ? '#fef3c7' : undefined,
+                  borderLeft: isHighlighted ? '4px solid #f59e0b' : undefined,
+                  transition: 'background-color 0.3s ease, border-left 0.3s ease'
+                }}
+              >
                 {trendSelection && (() => {
                   const isChecked = trendSelection.selectedNames.has(s.name);
                   const isAtLimit = !isChecked && trendSelection.selectedNames.size >= trendSelection.maxSelected;
@@ -334,7 +367,8 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                   </span>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

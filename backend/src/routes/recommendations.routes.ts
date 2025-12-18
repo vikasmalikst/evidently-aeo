@@ -10,7 +10,9 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { recommendationService } from '../services/recommendations/recommendation.service';
 import { recommendationContentService } from '../services/recommendations/recommendation-content.service';
+import * as recommendationActionsService from '../services/recommendations/recommendation-actions.service';
 import { brandService } from '../services/brand.service';
+import { supabaseAdmin } from '../config/supabase';
 
 const router = express.Router();
 
@@ -278,6 +280,142 @@ router.get('/', authenticateToken, async (req, res) => {
       success: false,
       error: 'Failed to fetch recommendations. Please try again later.'
     });
+  }
+});
+
+/**
+ * GET /api/recommendations/:recommendationId/status
+ * 
+ * Get the current status of a recommendation.
+ */
+router.get('/:recommendationId/status', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    const { recommendationId } = req.params;
+    const status = await recommendationActionsService.getRecommendationStatus(recommendationId, customerId);
+
+    return res.json({ success: true, data: { status } });
+  } catch (error) {
+    console.error('❌ [Recommendations Status GET] Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch recommendation status.' });
+  }
+});
+
+/**
+ * PATCH /api/recommendations/:recommendationId/status
+ * 
+ * Update the status of a recommendation.
+ * 
+ * Request body:
+ *   - status: 'not_started' | 'in_progress' | 'completed' | 'dismissed'
+ *   - notes (optional): Additional notes
+ */
+router.patch('/:recommendationId/status', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    const { recommendationId } = req.params;
+    const { status, notes } = req.body || {};
+
+    if (!status || !['not_started', 'in_progress', 'completed', 'dismissed'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid status. Must be one of: not_started, in_progress, completed, dismissed'
+      });
+    }
+
+    // Get brand_id from the recommendation
+    const recommendations = await recommendationService.getLatestRecommendations('', customerId);
+    const recommendation = recommendations.recommendations?.find((r) => r.id === recommendationId);
+    
+    if (!recommendation) {
+      // Try to get brand_id from recommendation directly
+      const { data: recData } = await supabaseAdmin
+        .from('recommendations')
+        .select('brand_id')
+        .eq('id', recommendationId)
+        .eq('customer_id', customerId)
+        .single();
+
+      if (!recData) {
+        return res.status(404).json({ success: false, error: 'Recommendation not found' });
+      }
+
+      const action = await recommendationActionsService.updateRecommendationStatus(
+        recommendationId,
+        customerId,
+        recData.brand_id,
+        status,
+        req.user?.id,
+        notes
+      );
+
+      if (!action) {
+        return res.status(500).json({ success: false, error: 'Failed to update recommendation status.' });
+      }
+
+      return res.json({ success: true, data: { action, status } });
+    }
+
+    // If status is 'not_started', we don't need to create an action (it's the default)
+    if (status === 'not_started') {
+      return res.json({ success: true, data: { status: 'not_started' } });
+    }
+
+    const action = await recommendationActionsService.updateRecommendationStatus(
+      recommendationId,
+      customerId,
+      recommendations.brandId || '',
+      status,
+      req.user?.id,
+      notes
+    );
+
+    if (!action) {
+      return res.status(500).json({ success: false, error: 'Failed to update recommendation status.' });
+    }
+
+    return res.json({ success: true, data: { action, status } });
+  } catch (error) {
+    console.error('❌ [Recommendations Status PATCH] Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update recommendation status.' });
+  }
+});
+
+/**
+ * POST /api/recommendations/statuses
+ * 
+ * Get statuses for multiple recommendations in batch.
+ * 
+ * Request body:
+ *   - recommendationIds: string[]
+ */
+router.post('/statuses', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    if (!customerId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    const { recommendationIds } = req.body || {};
+    if (!Array.isArray(recommendationIds)) {
+      return res.status(400).json({ success: false, error: 'recommendationIds must be an array' });
+    }
+
+    const statusMap = await recommendationActionsService.getRecommendationStatuses(recommendationIds, customerId);
+    const statuses = Object.fromEntries(statusMap);
+
+    return res.json({ success: true, data: { statuses } });
+  } catch (error) {
+    console.error('❌ [Recommendations Statuses POST] Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch recommendation statuses.' });
   }
 });
 

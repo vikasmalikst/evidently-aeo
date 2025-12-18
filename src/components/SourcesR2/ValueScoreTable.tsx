@@ -29,6 +29,7 @@ interface ValueScoreTableProps {
     selectedNames: Set<string>;
     maxSelected: number;
     onToggle: (name: string) => void;
+    onDeselectAll?: () => void;
   };
   /**
    * Optional source name to highlight (e.g., from deep link)
@@ -138,6 +139,16 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   const sortedSources = useMemo(() => {
     const list = [...sources];
     list.sort((a, b) => {
+      // First, prioritize selected sources (if trendSelection is active)
+      if (trendSelection) {
+        const aSelected = trendSelection.selectedNames.has(a.name);
+        const bSelected = trendSelection.selectedNames.has(b.name);
+        if (aSelected && !bSelected) return -1;
+        if (!aSelected && bSelected) return 1;
+        // Both selected or both unselected - continue with normal sort
+      }
+      
+      // Normal sort logic
       const dir = sortDir === 'asc' ? 1 : -1;
       const aVal = (a as any)[sortKey];
       const bVal = (b as any)[sortKey];
@@ -147,7 +158,7 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
       return (Number(aVal) - Number(bVal)) * dir;
     });
     return list;
-  }, [sources, sortKey, sortDir]);
+  }, [sources, sortKey, sortDir, trendSelection]);
 
   const sortIndicator = (key: SortKey) => (sortKey === key ? (sortDir === 'asc' ? '↑' : '↓') : '');
 
@@ -179,9 +190,38 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {trendSelection && (
-            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>
-              Trends: {selectedCount}/{trendSelection.maxSelected}
-            </span>
+            <>
+              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>
+                Trends: {selectedCount}/{trendSelection.maxSelected}
+              </span>
+              {selectedCount > 0 && trendSelection.onDeselectAll && (
+                <button
+                  onClick={trendSelection.onDeselectAll}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #e5e7eb',
+                    background: '#fff',
+                    color: '#64748b',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'background 160ms ease, border-color 160ms ease',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#fff';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }}
+                >
+                  Deselect All
+                </button>
+              )}
+            </>
           )}
           <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Heatmap</span>
           <div

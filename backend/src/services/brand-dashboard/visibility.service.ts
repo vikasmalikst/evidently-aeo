@@ -62,6 +62,7 @@ export class VisibilityService {
       visibility: number[]
       share: number[]
       sentiment: (number | null)[]
+      brandPresence: number[]
     }>,
     filtersActive: boolean = false
   ): LlmVisibilitySlice[] {
@@ -168,7 +169,8 @@ export class VisibilityService {
             dates: timeSeries.dates,
             visibility: timeSeries.visibility,
             share: timeSeries.share,
-            sentiment: timeSeries.sentiment
+            sentiment: timeSeries.sentiment,
+            brandPresence: timeSeries.brandPresence
           } : undefined
         }
       })

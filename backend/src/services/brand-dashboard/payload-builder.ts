@@ -1882,6 +1882,8 @@ export async function buildDashboardPayload(
     visibilityValues: number[]
     shareValues: number[]
     sentimentValues: number[]
+    collectorResultsWithBrandPresence: Set<number>
+    uniqueCollectorResults: Set<number>
   }>>()
 
   // Calculate time-series data: group by day and competitor name (for competitive visibility)
@@ -1897,12 +1899,16 @@ export async function buildDashboardPayload(
       visibilityValues: number[]
       shareValues: number[]
       sentimentValues: number[]
+      collectorResultsWithBrandPresence: Set<number>
+      uniqueCollectorResults: Set<number>
     }>()
     allDates.forEach(date => {
       dailyData.set(date, {
         visibilityValues: [],
         shareValues: [],
-        sentimentValues: []
+        sentimentValues: [],
+        collectorResultsWithBrandPresence: new Set<number>(),
+        uniqueCollectorResults: new Set<number>()
       })
     })
     timeSeriesByCollector.set(collectorType, dailyData)
@@ -1926,8 +1932,11 @@ export async function buildDashboardPayload(
   })
 
   // Group positionRows by date, collector type, and competitor
+  // Use processed_at if available and valid (matches query filtering), otherwise fall back to created_at
   positionRows.forEach(row => {
-    const date = extractDate(row.created_at)
+    // Prefer processed_at if it exists and is not null, otherwise use created_at
+    const timestamp = (row.processed_at && row.processed_at.trim() !== '') ? row.processed_at : row.created_at
+    const date = extractDate(timestamp)
     if (!date || !allDates.includes(date)) return
 
     const collectorType = row.collector_type
@@ -1955,6 +1964,14 @@ export async function buildDashboardPayload(
           dayData.shareValues.push(brandShare)
           if (brandSentiment !== null) {
             dayData.sentimentValues.push(brandSentiment)
+          }
+          // Track brand presence: use unique collector results (not row count)
+          // Multiple rows can exist per collector result (e.g., multiple topics)
+          if (typeof row.collector_result_id === 'number' && Number.isFinite(row.collector_result_id)) {
+            dayData.uniqueCollectorResults.add(row.collector_result_id)
+            if (row.has_brand_presence === true) {
+              dayData.collectorResultsWithBrandPresence.add(row.collector_result_id)
+            }
           }
         }
       }
@@ -1998,6 +2015,7 @@ export async function buildDashboardPayload(
     visibility: number[]
     share: number[]
     sentiment: (number | null)[]
+    brandPresence: number[]
   }>()
 
   timeSeriesByCollector.forEach((dailyData, collectorType) => {
@@ -2005,6 +2023,7 @@ export async function buildDashboardPayload(
     const visibility: number[] = []
     const share: number[] = []
     const sentiment: (number | null)[] = []
+    const brandPresence: number[] = []
 
     // Carry-forward behavior:
     // If there is no data collected for a given day, keep the previous day's value
@@ -2012,6 +2031,7 @@ export async function buildDashboardPayload(
     let lastVisibility = 0
     let lastShare = 0
     let lastSentiment: number | null = null
+    let lastBrandPresence = 0
 
     allDates.forEach(date => {
       const dayData = dailyData.get(date)
@@ -2032,10 +2052,18 @@ export async function buildDashboardPayload(
         const hasSentiment = dayData.sentimentValues.length > 0
         const avgSentiment = hasSentiment ? average(dayData.sentimentValues) : 0
         const normalizedSentiment = hasSentiment ? round(avgSentiment, 2) : lastSentiment
+        // Calculate brand presence percentage: (unique collector results with presence / total unique collector results) * 100
+        const totalCollectorResults = dayData.uniqueCollectorResults.size
+        const collectorResultsWithPresence = dayData.collectorResultsWithBrandPresence.size
+        const hasBrandPresenceData = totalCollectorResults > 0
+        const brandPresencePercentage = hasBrandPresenceData
+          ? round((collectorResultsWithPresence / totalCollectorResults) * 100)
+          : lastBrandPresence
 
         visibility.push(avgVisibility)
         share.push(avgShare)
         sentiment.push(normalizedSentiment)
+        brandPresence.push(brandPresencePercentage)
 
         // Update carry-forward values (only update sentiment when we have a value)
         lastVisibility = avgVisibility
@@ -2043,10 +2071,11 @@ export async function buildDashboardPayload(
         if (normalizedSentiment !== null) {
           lastSentiment = normalizedSentiment
         }
+        lastBrandPresence = brandPresencePercentage
       }
     })
 
-    timeSeriesData.set(collectorType, { dates, visibility, share, sentiment })
+    timeSeriesData.set(collectorType, { dates, visibility, share, sentiment, brandPresence })
   })
 
   // Calculate daily averages for each competitor

@@ -42,8 +42,6 @@ interface SourceAttributionResponse {
   avgSentimentChange: number;
 }
 
-type ViewMode = 'current' | 'newZones';
-
 const median = (nums: number[]): number => {
   if (!nums.length) return 0;
   const sorted = [...nums].sort((a, b) => a - b);
@@ -56,36 +54,6 @@ const percentile = (nums: number[], p: number): number => {
   const sorted = [...nums].sort((a, b) => a - b);
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
   return sorted[idx];
-};
-
-type NewZone = 'marketLeaders' | 'reputationRisks' | 'growthBets' | 'monitorImprove';
-
-const classifyNewZone = (
-  mentionPct: number,
-  soaPct: number,
-  sentimentPct: number,
-  citationsPct: number,
-  score: number,
-  cutoffs: {
-    scoreP75: number;
-    scoreMedian: number;
-    mentionMedian: number;
-    soaMedian: number;
-  }
-): NewZone => {
-  if (score >= cutoffs.scoreP75 && sentimentPct >= 50 && citationsPct >= 25) {
-    return 'marketLeaders';
-  }
-
-  if ((mentionPct >= cutoffs.mentionMedian || soaPct >= cutoffs.soaMedian) && (sentimentPct < 50 || citationsPct < 20) && score < cutoffs.scoreP75) {
-    return 'reputationRisks';
-  }
-
-  if (score >= cutoffs.scoreMedian && score < cutoffs.scoreP75 && (sentimentPct >= 55 || citationsPct >= 30) && mentionPct < cutoffs.mentionMedian) {
-    return 'growthBets';
-  }
-
-  return 'monitorImprove';
 };
 
 const valueScoreForSource = (src: SourceData, maxCitations: number, maxTopics: number, maxSentiment: number): number => {
@@ -178,13 +146,12 @@ export const SearchSourcesR2 = () => {
   });
   const [endDate, setEndDate] = useState<string>(() => urlEndDate || new Date().toISOString().split('T')[0]);
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('current');
-  const [activeNewZone, setActiveNewZone] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [selectedTrendSources, setSelectedTrendSources] = useState<string[]>([]);
   const [trendMetric, setTrendMetric] = useState<'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations'>('impactScore');
   const [sourceSearchQuery, setSourceSearchQuery] = useState<string>(() => highlightSource || '');
+  const [hasInitializedTrendSelection, setHasInitializedTrendSelection] = useState(false);
 
   // Update date range from URL params and auto-search for highlighted source
   useEffect(() => {
@@ -269,56 +236,6 @@ export const SearchSourcesR2 = () => {
     });
   }, [sourceData]);
 
-  const newZoneSources = useMemo(() => {
-    if (!sourceData.length) return [];
-
-    const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
-    const maxSentiment = Math.max(...sourceData.map((s) => s.sentiment), 1);
-
-    // Use raw sentiment values, normalize relative to max sentiment in dataset (no fixed range normalization)
-    const sentimentPcts = sourceData.map((s) => maxSentiment > 0 ? Math.min(100, (s.sentiment / maxSentiment) * 100) : 0);
-    const citationPcts = sourceData.map((s) => (maxCitations > 0 ? Math.min(100, (s.citations / maxCitations) * 100) : 0));
-    const mentionPcts = sourceData.map((s) => s.mentionRate);
-    const soaPcts = sourceData.map((s) => s.soa);
-
-    const compositeScores = sourceData.map((s, idx) => {
-      const sentimentPct = sentimentPcts[idx];
-      const citationsPct = citationPcts[idx];
-      return s.mentionRate * 0.35 + s.soa * 0.35 + sentimentPct * 0.2 + citationsPct * 0.1;
-    });
-
-    const scoreP75 = percentile(compositeScores, 75);
-    const scoreMedian = median(compositeScores);
-    const mentionMedian = median(mentionPcts);
-    const soaMedian = median(soaPcts);
-
-    const mapped = sourceData.map((s, idx) => {
-      const sentimentPct = sentimentPcts[idx];
-      const citationsPct = citationPcts[idx];
-      const score = compositeScores[idx];
-      const zone = classifyNewZone(
-        s.mentionRate,
-        s.soa,
-        sentimentPct,
-        citationsPct,
-        score,
-        { scoreP75, scoreMedian, mentionMedian, soaMedian }
-      );
-
-      return {
-        name: s.name,
-        type: s.type,
-        mentionRate: s.mentionRate,
-        soa: s.soa,
-        sentiment: s.sentiment,
-        citations: s.citations,
-        valueScore: score,
-        quadrant: zone as NewZone
-      };
-    });
-    return mapped;
-  }, [sourceData]);
-
   const filteredSources = useMemo(() => {
     if (!activeQuadrant) return enhancedSources;
     return enhancedSources.filter((s) => s.quadrant === activeQuadrant);
@@ -334,28 +251,8 @@ export const SearchSourcesR2 = () => {
     );
   }, [enhancedSources]);
 
-  const filteredNewSources = useMemo(() => {
-    if (!activeNewZone) return newZoneSources;
-    return newZoneSources.filter((s) => s.quadrant === activeNewZone);
-  }, [newZoneSources, activeNewZone]);
-
-  const newZoneCounts = useMemo(() => {
-    return newZoneSources.reduce(
-      (acc, s) => {
-        acc[s.quadrant] = (acc[s.quadrant] || 0) + 1;
-        return acc;
-      },
-      {
-        marketLeaders: 0,
-        reputationRisks: 0,
-        growthBets: 0,
-        monitorImprove: 0
-      } as Record<NewZone, number>
-    );
-  }, [newZoneSources]);
-
   const searchFilteredSources = useMemo(() => {
-    const base = viewMode === 'current' ? filteredSources : filteredNewSources;
+    const base = filteredSources;
     if (!sourceSearchQuery.trim()) return base;
     const q = sourceSearchQuery.trim().toLowerCase();
     const filtered = base.filter((s) => {
@@ -381,7 +278,7 @@ export const SearchSourcesR2 = () => {
     }
     
     return filtered;
-  }, [filteredSources, filteredNewSources, viewMode, sourceSearchQuery, sourceData, highlightSource]);
+  }, [filteredSources, sourceSearchQuery, sourceData, highlightSource]);
 
   const displayedSources = searchFilteredSources;
 
@@ -389,9 +286,10 @@ export const SearchSourcesR2 = () => {
   useEffect(() => {
     if (!selectedBrandId) {
       setSelectedTrendSources([]);
+      setHasInitializedTrendSelection(false);
       return;
     }
-    if (selectedTrendSources.length > 0) return;
+    if (hasInitializedTrendSelection) return;
     if (!enhancedSources.length) return;
 
     const top10 = [...enhancedSources]
@@ -399,7 +297,8 @@ export const SearchSourcesR2 = () => {
       .slice(0, 10)
       .map((s) => s.name);
     setSelectedTrendSources(top10);
-  }, [selectedBrandId, enhancedSources, selectedTrendSources.length]);
+    setHasInitializedTrendSelection(true);
+  }, [selectedBrandId, enhancedSources, hasInitializedTrendSelection]);
 
   // Fetch Impact Score trends data (last 7 days, daily)
   const trendsEndpoint = useMemo(() => {
@@ -460,6 +359,10 @@ export const SearchSourcesR2 = () => {
       if (prev.length >= 10) return prev; // hard limit
       return [...prev, name];
     });
+  };
+  const deselectAllTrendSources = () => {
+    setSelectedTrendSources([]);
+    setHasInitializedTrendSelection(true); // Mark as initialized so useEffect doesn't re-select
   };
 
   // Use dates from API response, or generate fallback
@@ -528,25 +431,19 @@ export const SearchSourcesR2 = () => {
       priority: 'Priority Partnerships',
       reputation: 'Reputation Management',
       growth: 'Growth Opportunities',
-      monitor: 'Monitor',
-      marketLeaders: 'Priority Partnerships',
-      reputationRisks: 'Reputation Management',
-      growthBets: 'Growth Opportunities',
-      monitorImprove: 'Monitor'
+      monitor: 'Monitor'
     };
     return mapping[quadrant] || null;
   };
 
   // Filter recommendations by selected category
   const filteredRecommendations = useMemo(() => {
-    const selectedCategory = viewMode === 'current' 
-      ? getCategoryFromQuadrant(activeQuadrant)
-      : getCategoryFromQuadrant(activeNewZone);
+    const selectedCategory = getCategoryFromQuadrant(activeQuadrant);
     
     if (!selectedCategory) return [];
     
     return recommendations.filter(rec => rec.citationCategory === selectedCategory);
-  }, [recommendations, activeQuadrant, activeNewZone, viewMode]);
+  }, [recommendations, activeQuadrant]);
 
   const isLoading = authLoading || brandsLoading || loading;
   const errorMessage = error
@@ -564,34 +461,6 @@ export const SearchSourcesR2 = () => {
             <p style={{ margin: 0, color: '#475569' }}>Understand how your sources perform across visibility, share of answer, sentiment, and citations.</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: 4, display: 'flex', gap: 4 }}>
-              {(['current', 'newZones'] as ViewMode[]).map((mode) => {
-                const isActive = viewMode === mode;
-                return (
-                  <button
-                    key={mode}
-                    onClick={() => {
-                      setViewMode(mode);
-                      setActiveQuadrant(null);
-                      setActiveNewZone(null);
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: 'none',
-                      background: isActive ? '#0ea5e9' : 'transparent',
-                      color: isActive ? '#fff' : '#0f172a',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      transition: 'background 160ms ease, color 160ms ease',
-                      boxShadow: isActive ? '0 6px 14px rgba(14,165,233,0.35)' : 'none'
-                    }}
-                  >
-                    {mode === 'current' ? 'Current View' : 'New Zone View'}
-                  </button>
-                );
-              })}
-            </div>
             <DateRangePicker
               startDate={startDate}
               endDate={endDate}
@@ -610,41 +479,11 @@ export const SearchSourcesR2 = () => {
         )}
 
         <SummaryCards
-          counts={viewMode === 'current' ? quadrantCounts : newZoneCounts}
-          active={viewMode === 'current' ? activeQuadrant : activeNewZone}
+          counts={quadrantCounts}
+          active={activeQuadrant}
           onSelect={(key) => {
-            if (viewMode === 'current') {
-              setActiveQuadrant(key as EnhancedSource['quadrant'] | null);
-            } else {
-              setActiveNewZone(key);
-            }
+            setActiveQuadrant(key as EnhancedSource['quadrant'] | null);
           }}
-          cardMetaOverride={
-            viewMode === 'current'
-              ? undefined
-              : {
-                  marketLeaders: {
-                    label: 'Market Leaders',
-                    color: '#0ea5e9',
-                    description: 'High visibility and quality; protect and expand benchmarks.'
-                  },
-                  reputationRisks: {
-                    label: 'Reputation Risks',
-                    color: '#f97373',
-                    description: 'Visible but sentiment/authority weak—fix quality and credibility.'
-                  },
-                  growthBets: {
-                    label: 'Growth Bets',
-                    color: '#6366f1',
-                    description: 'Quality signals present; visibility low—invest to grow.'
-                  },
-                  monitorImprove: {
-                    label: 'Monitor & Improve',
-                    color: '#cbd5e1',
-                    description: 'Low signals overall—monitor closely and improve fundamentals.'
-                  }
-                }
-          }
         />
 
         {isLoading ? (
@@ -713,7 +552,8 @@ export const SearchSourcesR2 = () => {
               trendSelection={{
                 selectedNames: trendSelectedSet,
                 maxSelected: 10,
-                onToggle: toggleTrendSource
+                onToggle: toggleTrendSource,
+                onDeselectAll: deselectAllTrendSources
               }}
               highlightedSourceName={highlightSource}
             />
@@ -763,17 +603,13 @@ export const SearchSourcesR2 = () => {
             </div>
 
             {/* Recommended Actions Section */}
-            {(activeQuadrant || activeNewZone) && (
+            {activeQuadrant && (
               <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Recommended Actions</h3>
                 <p style={{ margin: '0 0 16px 0', fontSize: 12, color: '#64748b' }}>
-                  Actions tailored for {viewMode === 'current' 
-                    ? (activeQuadrant === 'priority' ? 'Priority Partnerships' :
+                  Actions tailored for {activeQuadrant === 'priority' ? 'Priority Partnerships' :
                        activeQuadrant === 'reputation' ? 'Reputation Management' :
-                       activeQuadrant === 'growth' ? 'Growth Opportunities' : 'Monitor')
-                    : (activeNewZone === 'marketLeaders' ? 'Market Leaders' :
-                       activeNewZone === 'reputationRisks' ? 'Reputation Risks' :
-                       activeNewZone === 'growthBets' ? 'Growth Bets' : 'Monitor & Improve')}
+                       activeQuadrant === 'growth' ? 'Growth Opportunities' : 'Monitor'}
                 </p>
                 
                 {recommendationsLoading ? (

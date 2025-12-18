@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ResponsiveBar } from '@nivo/bar';
 import type { Topic } from '../types';
 import type { Competitor } from '../utils/competitorColors';
+import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 import { wrapLabelText } from '../utils/text';
 
 interface TopicsRacingBarChartProps {
@@ -11,6 +12,8 @@ interface TopicsRacingBarChartProps {
   competitors?: Competitor[];
   brandFavicon?: string;
   brandName?: string;
+  managedCompetitors?: ManagedCompetitor[];
+  selectedCompetitors?: Set<string>;
   metricType?: 'share' | 'visibility' | 'sentiment';
 }
 
@@ -21,6 +24,8 @@ export const TopicsRacingBarChart = ({
   competitors: _competitors = [],
   brandFavicon: _brandFavicon, // Unused - removed from legend
   brandName = 'Brand',
+  managedCompetitors = [],
+  selectedCompetitors = new Set(),
   metricType = 'share'
 }: TopicsRacingBarChartProps) => {
   // IMPORTANT:
@@ -104,6 +109,32 @@ export const TopicsRacingBarChart = ({
   }, [sortedTopics, metricType]);
 
   const showComparison = hasIndustryData;
+
+  // Determine competitor label based on selection
+  const competitorLabel = useMemo(() => {
+    if (!managedCompetitors.length || !selectedCompetitors.size) {
+      return metricType === 'share' ? 'Competitor SoA' : metricType === 'visibility' ? 'Competitor Visibility' : 'Competitor Sentiment';
+    }
+    
+    // Check if all competitors are selected
+    const isAllSelected = selectedCompetitors.size === managedCompetitors.length && 
+      managedCompetitors.every(c => selectedCompetitors.has(c.name.toLowerCase()));
+    
+    if (isAllSelected || selectedCompetitors.size > 1) {
+      // All competitors or multiple selected - show "Avg Competitor SOA"
+      return metricType === 'share' ? 'Avg Competitor SoA' : metricType === 'visibility' ? 'Avg Competitor Visibility' : 'Avg Competitor Sentiment';
+    } else {
+      // Single competitor selected - show competitor name
+      const selectedKey = Array.from(selectedCompetitors)[0];
+      const selectedCompetitor = managedCompetitors.find(c => c.name.toLowerCase() === selectedKey);
+      const competitorName = selectedCompetitor?.name || 'Competitor';
+      return metricType === 'share' 
+        ? `${competitorName} SoA` 
+        : metricType === 'visibility' 
+          ? `${competitorName} Visibility` 
+          : `${competitorName} Sentiment`;
+    }
+  }, [managedCompetitors, selectedCompetitors, metricType]);
 
   // Determine if bars should be stacked or grouped
   const isStacked = stackData && showComparison;
@@ -325,12 +356,7 @@ export const TopicsRacingBarChart = ({
                       : `${brandName} Sentiment`;
                 barColor = BRAND_COLOR; // Data viz 02 (blue) for brand
               } else if (key === 'avgIndustry') {
-                label =
-                  metricType === 'share'
-                    ? 'Competitor SoA'
-                    : metricType === 'visibility'
-                      ? 'Competitor Visibility'
-                      : 'Competitor Sentiment';
+                label = competitorLabel;
                 barColor = AVG_INDUSTRY_COLOR;
               }
             }
@@ -541,7 +567,7 @@ export const TopicsRacingBarChart = ({
               }}
             />
             <span style={{ fontSize: '11px', color: chartLabelColor || '#393e51', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
-              Competitor {metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment'}
+              {competitorLabel}
             </span>
           </div>
           

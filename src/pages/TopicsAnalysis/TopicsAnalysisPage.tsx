@@ -472,15 +472,32 @@ export const TopicsAnalysisPage = ({
             padding: '24px',
             borderRadius: '8px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            position: 'relative',
+            minHeight: '80px'
           }}
         >
-          <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-            Topics Analysis {brandName && `— ${brandName}`}
-          </h1>
-          <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
-            Monitor your brand's presence across AI search engines by topic
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', height: '100%' }}>
+            <div style={{ flex: 1 }}>
+              <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
+                Topics Analysis {brandName && `— ${brandName}`}
+              </h1>
+              <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
+                Monitor your brand's presence across AI search engines by topic
+              </p>
+            </div>
+            <div style={{ flexShrink: 0, alignSelf: 'flex-end', marginBottom: '-24px', paddingBottom: '24px' }}>
+              <DateRangePicker
+                key={`${startDate}-${endDate}`}
+                startDate={startDate}
+                endDate={endDate}
+                onStartDateChange={handleStartDateChange}
+                onEndDateChange={handleEndDateChange}
+                showComparisonInfo={false}
+                className="flex-shrink-0"
+              />
+            </div>
+          </div>
         </div>
 
 
@@ -534,18 +551,8 @@ export const TopicsAnalysisPage = ({
               aiModels={[]}
             />
 
-            {/* Right: Dropdowns (Date, Models, Competitors) - left to right order */}
+            {/* Right: Dropdowns (Models, Competitors) - left to right order */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <DateRangePicker
-                key={`${startDate}-${endDate}`}
-                startDate={startDate}
-                endDate={endDate}
-                onStartDateChange={handleStartDateChange}
-                onEndDateChange={handleEndDateChange}
-                showComparisonInfo={false}
-                className="flex-shrink-0"
-              />
-
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -625,6 +632,7 @@ export const TopicsAnalysisPage = ({
               selectedCategory,
               metricType,
               competitors,
+              selectedCompetitors,
               brandFavicon,
               selectedModel,
               aiModels: [],

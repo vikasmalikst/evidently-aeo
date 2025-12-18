@@ -43,16 +43,10 @@ const zoneStyles: Record<
   string,
   { bg: string; text: string; label?: string }
 > = {
-  // Legacy quadrants
   priority: { bg: '#06c686', text: '#fff', label: 'Priority Partnerships' },
   reputation: { bg: '#f97373', text: '#fff', label: 'Reputation Management' },
   growth: { bg: '#498cf9', text: '#fff', label: 'Growth Opportunities' },
-  monitor: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor' },
-  // New zone view
-  marketLeaders: { bg: '#0ea5e9', text: '#fff', label: 'Market Leaders' },
-  reputationRisks: { bg: '#f97373', text: '#fff', label: 'Reputation Risks' },
-  growthBets: { bg: '#6366f1', text: '#fff', label: 'Growth Bets' },
-  monitorImprove: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor & Improve' }
+  monitor: { bg: '#cbd5e1', text: '#0f172a', label: 'Monitor' }
 };
 
 const normalizeDomain = (value: string | null | undefined): string => {

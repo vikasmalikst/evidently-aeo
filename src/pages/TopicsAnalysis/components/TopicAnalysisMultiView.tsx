@@ -214,6 +214,8 @@ export const TopicAnalysisMultiView = ({
               competitors={competitors}
               brandFavicon={brandFavicon}
               brandName={brandName}
+              managedCompetitors={managedCompetitors}
+              selectedCompetitors={selectedCompetitors}
               metricType={metricType}
             />
           )}
@@ -223,6 +225,8 @@ export const TopicAnalysisMultiView = ({
               onBarClick={handleTopicClick}
               competitors={competitors}
               selectedCompetitor={selectedCompetitor}
+              managedCompetitors={managedCompetitors}
+              selectedCompetitors={selectedCompetitors}
               metricType={metricType}
             />
           )}

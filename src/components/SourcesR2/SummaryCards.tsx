@@ -8,7 +8,6 @@ interface SummaryCardsProps {
   counts: Record<string, number>;
   active?: string | null;
   onSelect?: (quadrant: string | null) => void;
-  cardMetaOverride?: Record<string, SummaryCardMeta>;
 }
 
 const defaultCardMeta: Record<string, SummaryCardMeta> = {
@@ -18,8 +17,8 @@ const defaultCardMeta: Record<string, SummaryCardMeta> = {
   monitor: { label: 'Monitor', color: '#cbd5e1' }
 };
 
-export const SummaryCards = ({ counts, active = null, onSelect, cardMetaOverride }: SummaryCardsProps) => {
-  const cardMeta = cardMetaOverride ?? defaultCardMeta;
+export const SummaryCards = ({ counts, active = null, onSelect }: SummaryCardsProps) => {
+  const cardMeta = defaultCardMeta;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>

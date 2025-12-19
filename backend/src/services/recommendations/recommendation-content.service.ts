@@ -147,7 +147,7 @@ Your content should help the customer's brand improve the targeted KPI by execut
 
     const instructions = `You are a senior marketing consultant and AEO strategist.
 
-Return ONLY valid JSON (no markdown, no prose outside JSON).
+CRITICAL: You MUST return ONLY valid JSON. Do NOT include markdown code blocks, do NOT include any text before or after the JSON, do NOT include explanations. Return ONLY the raw JSON object starting with { and ending with }.
 
 GOAL:
 - The user wants something they can ACTUALLY do: either (A) content they can post directly on the target source, or (B) a collaboration pitch they can send to the target source to get placement.
@@ -193,35 +193,35 @@ Populate recommendationId with the provided recommendation id. Content type: ${c
 
     const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${instructions}`;
 
-    // Call providers
+    // Call providers - OpenRouter as primary, Cerebras as fallback
     let content: string | null = null;
     let providerUsed: RecommendationContentProvider | undefined;
     let modelUsed: string | undefined;
 
-    if (this.cerebrasApiKey) {
+    // Try OpenRouter first (primary)
+    try {
+      const or = await openRouterCollectorService.executeQuery({
+        collectorType: 'content',
+        prompt,
+        maxTokens: 900,
+        temperature: 0.6,
+        topP: 0.9,
+        enableWebSearch: false
+      });
+      content = or.response;
+      providerUsed = 'openrouter';
+      modelUsed = or.model_used;
+    } catch (e) {
+      console.error('❌ [RecommendationContentService] OpenRouter failed, trying Cerebras fallback:', e);
+    }
+
+    // Fallback to Cerebras if OpenRouter failed
+    if (!content && this.cerebrasApiKey) {
       const result = await this.callCerebras(prompt);
       if (result?.content) {
         content = result.content;
         providerUsed = 'cerebras';
         modelUsed = result.model;
-      }
-    }
-
-    if (!content) {
-      try {
-        const or = await openRouterCollectorService.executeQuery({
-          collectorType: 'content',
-          prompt,
-          maxTokens: 900,
-          temperature: 0.6,
-          topP: 0.9,
-          enableWebSearch: false
-        });
-        content = or.response;
-        providerUsed = 'openrouter';
-        modelUsed = or.model_used;
-      } catch (e) {
-        console.error('❌ [RecommendationContentService] OpenRouter fallback failed:', e);
       }
     }
 
@@ -314,59 +314,129 @@ Populate recommendationId with the provided recommendation id. Content type: ${c
   }
 
   private parseGeneratedContentJson(raw: string): GeneratedContentJson | null {
+    if (!raw || typeof raw !== 'string') return null;
+
+    // Strategy 1: Try direct JSON parse
+    try {
+      const parsed = JSON.parse(raw.trim());
+      if (this.isValidGeneratedContent(parsed)) {
+        return this.normalizeGeneratedContent(parsed);
+      }
+    } catch {
+      // Continue to next strategy
+    }
+
+    // Strategy 2: Extract JSON from markdown code blocks
     try {
       let cleaned = raw.trim();
-      if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-      if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-      if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-      cleaned = cleaned.trim();
+      
+      // Remove markdown code blocks
+      const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonBlockMatch) {
+        cleaned = jsonBlockMatch[1].trim();
+      } else {
+        // Try removing just the markers
+        if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+        if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+        if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+        cleaned = cleaned.trim();
+      }
 
-      const parsed = JSON.parse(cleaned) as Partial<GeneratedContentJson>;
-
-      // Minimal validation + normalization
-      if (!parsed || typeof parsed !== 'object') return null;
-      if (parsed.version !== '1.0') return null;
-      if (!parsed.recommendationId || !parsed.brandName) return null;
-      if (!parsed.targetSource?.domain || !parsed.targetSource?.mode || !parsed.whatToPublishOrSend?.readyToPaste) return null;
-
-      // Ensure arrays exist
-      const keyPoints = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
-      const h2 = Array.isArray(parsed.seoAeo?.h2) ? parsed.seoAeo!.h2 : [];
-      const faq = Array.isArray(parsed.seoAeo?.faq) ? parsed.seoAeo!.faq : [];
-      const requiredInputs = Array.isArray(parsed.requiredInputs) ? parsed.requiredInputs : [];
-      const complianceNotes = Array.isArray(parsed.complianceNotes) ? parsed.complianceNotes : [];
-
-      return {
-        version: '1.0',
-        recommendationId: String(parsed.recommendationId),
-        brandName: String(parsed.brandName),
-        targetSource: {
-          domain: String(parsed.targetSource.domain),
-          mode: parsed.targetSource.mode === 'pitch_collaboration' ? 'pitch_collaboration' : 'post_on_source',
-          rationale: String(parsed.targetSource.rationale || '')
-        },
-        deliverable: {
-          type: (parsed.deliverable?.type as any) || 'other',
-          placement: String(parsed.deliverable?.placement || '')
-        },
-        whatToPublishOrSend: {
-          ...(parsed.whatToPublishOrSend?.subjectLine ? { subjectLine: String(parsed.whatToPublishOrSend.subjectLine) } : {}),
-          readyToPaste: String(parsed.whatToPublishOrSend.readyToPaste),
-          cta: String(parsed.whatToPublishOrSend.cta || '')
-        },
-        keyPoints: keyPoints.map(String).slice(0, 6),
-        seoAeo: {
-          h1: String(parsed.seoAeo?.h1 || ''),
-          h2: h2.map(String).slice(0, 8),
-          faq: faq.map(String).slice(0, 8),
-          snippetSummary: String(parsed.seoAeo?.snippetSummary || '')
-        },
-        requiredInputs: requiredInputs.map(String).slice(0, 12),
-        complianceNotes: complianceNotes.map(String).slice(0, 12)
-      };
+      const parsed = JSON.parse(cleaned);
+      if (this.isValidGeneratedContent(parsed)) {
+        return this.normalizeGeneratedContent(parsed);
+      }
     } catch {
-      return null;
+      // Continue to next strategy
     }
+
+    // Strategy 3: Extract JSON object from text (find first { ... } block)
+    try {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (this.isValidGeneratedContent(parsed)) {
+          return this.normalizeGeneratedContent(parsed);
+        }
+      }
+    } catch {
+      // Continue to next strategy
+    }
+
+    // Strategy 4: Try to fix common JSON issues (trailing commas, unquoted keys)
+    try {
+      let cleaned = raw.trim();
+      
+      // Remove markdown code blocks first
+      const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonBlockMatch) {
+        cleaned = jsonBlockMatch[1].trim();
+      }
+      
+      // Try to fix trailing commas in arrays/objects
+      cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
+      
+      // Try to quote unquoted keys (basic attempt)
+      cleaned = cleaned.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+      
+      const parsed = JSON.parse(cleaned);
+      if (this.isValidGeneratedContent(parsed)) {
+        return this.normalizeGeneratedContent(parsed);
+      }
+    } catch {
+      // All strategies failed
+    }
+
+    // Log the raw response for debugging (first 500 chars)
+    console.warn('⚠️ [RecommendationContentService] Failed to parse JSON. Raw response (first 500 chars):', raw.substring(0, 500));
+    return null;
+  }
+
+  private isValidGeneratedContent(parsed: any): boolean {
+    if (!parsed || typeof parsed !== 'object') return false;
+    if (parsed.version !== '1.0') return false;
+    if (!parsed.recommendationId || !parsed.brandName) return false;
+    if (!parsed.targetSource?.domain || !parsed.targetSource?.mode) return false;
+    if (!parsed.whatToPublishOrSend?.readyToPaste) return false;
+    return true;
+  }
+
+  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJson>): GeneratedContentJson {
+    // Ensure arrays exist
+    const keyPoints = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
+    const h2 = Array.isArray(parsed.seoAeo?.h2) ? parsed.seoAeo!.h2 : [];
+    const faq = Array.isArray(parsed.seoAeo?.faq) ? parsed.seoAeo!.faq : [];
+    const requiredInputs = Array.isArray(parsed.requiredInputs) ? parsed.requiredInputs : [];
+    const complianceNotes = Array.isArray(parsed.complianceNotes) ? parsed.complianceNotes : [];
+
+    return {
+      version: '1.0',
+      recommendationId: String(parsed.recommendationId),
+      brandName: String(parsed.brandName),
+      targetSource: {
+        domain: String(parsed.targetSource?.domain || ''),
+        mode: parsed.targetSource?.mode === 'pitch_collaboration' ? 'pitch_collaboration' : 'post_on_source',
+        rationale: String(parsed.targetSource?.rationale || '')
+      },
+      deliverable: {
+        type: (parsed.deliverable?.type as any) || 'other',
+        placement: String(parsed.deliverable?.placement || '')
+      },
+      whatToPublishOrSend: {
+        ...(parsed.whatToPublishOrSend?.subjectLine ? { subjectLine: String(parsed.whatToPublishOrSend.subjectLine) } : {}),
+        readyToPaste: String(parsed.whatToPublishOrSend?.readyToPaste || ''),
+        cta: String(parsed.whatToPublishOrSend?.cta || '')
+      },
+      keyPoints: keyPoints.map(String).slice(0, 6),
+      seoAeo: {
+        h1: String(parsed.seoAeo?.h1 || ''),
+        h2: h2.map(String).slice(0, 8),
+        faq: faq.map(String).slice(0, 8),
+        snippetSummary: String(parsed.seoAeo?.snippetSummary || '')
+      },
+      requiredInputs: requiredInputs.map(String).slice(0, 12),
+      complianceNotes: complianceNotes.map(String).slice(0, 12)
+    };
   }
 }
 

@@ -35,7 +35,7 @@ type CerebrasChatResponse = {
   choices?: Array<{ message?: { content?: string } }>;
 };
 
-type GeneratedContentJson = {
+type GeneratedContentJsonV1 = {
   version: '1.0';
   recommendationId: string;
   brandName: string;
@@ -60,9 +60,82 @@ type GeneratedContentJson = {
     faq: string[];
     snippetSummary: string;
   };
-  requiredInputs: string[]; // what the marketer needs to fill in / verify
+  requiredInputs: string[];
   complianceNotes: string[];
 };
+
+type GeneratedContentJsonV2 = {
+  version: '2.0';
+  recommendationId: string;
+  brandName: string;
+  targetSource: {
+    domain: string;
+    sourceType: 'youtube' | 'article_site' | 'collaboration_target' | 'other';
+    mode: 'post_on_source' | 'pitch_collaboration';
+    rationale: string;
+  };
+  collaborationEmail?: {
+    subjectLine: string;
+    emailBody: string;
+    cta: string;
+  };
+  publishableContent: {
+    type: 'article' | 'video_script' | 'faq' | 'other';
+    title: string;
+    content: string;
+    metadata?: {
+      // For articles
+      h1?: string;
+      h2?: string[];
+      faq?: string[];
+      snippetSummary?: string;
+      // For video scripts
+      estimatedDuration?: string;
+      scenes?: Array<{
+        start: string;
+        end: string;
+        type: string;
+        content: string;
+      }>;
+      keyVisuals?: string[];
+      onScreenText?: string[];
+    };
+  };
+  keyPoints: string[];
+  requiredInputs: string[];
+  complianceNotes: string[];
+};
+
+type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2;
+
+// Source detection utility
+function detectSourceType(domain: string): 'youtube' | 'article_site' | 'collaboration_target' | 'other' {
+  const domainLower = domain.toLowerCase().trim();
+  
+  // YouTube detection
+  const youtubeDomains = ['youtube.com', 'youtu.be', 'm.youtube.com', 'www.youtube.com'];
+  if (youtubeDomains.some(d => domainLower.includes(d))) {
+    return 'youtube';
+  }
+  
+  // Known editorial/article sites
+  const articleSitePatterns = [
+    'techcrunch', 'forbes', 'wired', 'theverge', 'engadget', 'ars-technica',
+    'healthline', 'webmd', 'mayoclinic', 'nih.gov', 'medicalnewstoday',
+    'medium', 'dev.to', 'hashnode', 'smashingmagazine', 'css-tricks',
+    'wikipedia', 'britannica', 'encyclopedia',
+    'nytimes', 'wsj', 'theguardian', 'bbc', 'cnn', 'reuters',
+    'hbr', 'harvard', 'stanford', 'mit.edu',
+    'reddit', 'quora', 'stackoverflow', 'stackexchange'
+  ];
+  
+  if (articleSitePatterns.some(pattern => domainLower.includes(pattern))) {
+    return 'article_site';
+  }
+  
+  // Default to other (will be determined by mode)
+  return 'other';
+}
 
 class RecommendationContentService {
   private cerebrasApiKey: string | null;
@@ -145,51 +218,96 @@ Your content should help the customer's brand improve the targeted KPI by execut
 
     const recommendationContext = `Brand\n- Name: ${brand?.name || 'Unknown'}\n- Industry: ${brand?.industry || 'Unknown'}\n- Summary: ${brand?.summary || 'N/A'}\n\nRecommendation\n- Action: ${rec.action}\n- KPI: ${rec.kpi}\n- Focus area: ${rec.focus_area}\n- Priority: ${rec.priority}\n- Effort: ${rec.effort}\n- Timeline: ${rec.timeline}\n- Expected boost: ${rec.expected_boost || 'TBD'}\n\nEvidence & metrics\n- Citation source: ${rec.citation_source}\n- Impact score: ${rec.impact_score}\n- Mention rate: ${rec.mention_rate}\n- Visibility: ${rec.visibility_score}\n- SOA: ${rec.soa}\n- Sentiment: ${rec.sentiment}\n- Citations: ${rec.citation_count}\n\nFocus\n- Focus sources: ${rec.focus_sources}\n- Content focus: ${rec.content_focus}\n\nReason\n${rec.reason}\n\nExplanation\n${rec.explanation}`;
 
+    // Detect source type
+    const detectedSourceType = detectSourceType(rec.citation_source || '');
+    const isYouTube = detectedSourceType === 'youtube';
+    const isArticleSite = detectedSourceType === 'article_site';
+    
+    // Determine mode (for external sites, prefer collaboration; for owned/YouTube, prefer post_on_source)
+    const preferredMode = (isYouTube || rec.citation_source?.includes(brand?.name?.toLowerCase() || '')) 
+      ? 'post_on_source' 
+      : 'pitch_collaboration';
+
+    // Build source type description
+    const sourceTypeDesc = isYouTube 
+      ? 'YOUTUBE - Generate a video script'
+      : isArticleSite 
+        ? 'ARTICLE SITE - Generate article content'
+        : 'OTHER - Generate appropriate content type';
+
+    // Build content type
+    const contentTypeValue = isYouTube ? 'video_script' : isArticleSite ? 'article' : 'other';
+
+    // Build content description
+    const contentDesc = isYouTube
+      ? 'Structured video script with timing: [Scene 1: Hook 0:00-0:15] Opening hook... [Scene 2: Introduction 0:15-0:45] Introduction... [Scene 3: Main Content 0:45-4:00] Main content... [Scene 4: CTA 4:00-4:30] Call-to-action...'
+      : isArticleSite
+        ? 'Full article content ready to publish. Include: Compelling introduction, Well-structured body with clear sections, Conclusion. Keep it 600-800 words, citation-friendly, authoritative.'
+        : 'Content ready to publish, formatted appropriately for the target source';
+
+    // Build metadata template
+    const metadataTemplate = isYouTube
+      ? '"estimatedDuration": "<e.g., 4:30>", "scenes": [{"start": "0:00", "end": "0:15", "type": "hook", "content": "<hook>"}], "keyVisuals": ["<visual 1>"], "onScreenText": ["<text 1>"]'
+      : isArticleSite
+        ? '"h1": "<main heading>", "h2": ["<subheading 1>", "<subheading 2>"], "faq": ["<FAQ 1>"], "snippetSummary": "<summary>"'
+        : '';
+
+    // Build collaboration email section
+    const collaborationEmailSection = preferredMode === 'pitch_collaboration'
+      ? '"collaborationEmail": {"subjectLine": "<compelling subject>", "emailBody": "<professional email body, 200-300 words>", "cta": "<clear call-to-action>"},'
+      : '';
+
+    // Build content constraints
+    const contentConstraints = isYouTube
+      ? 'Video script must be engaging, visual, and include clear timing/scenes.'
+      : isArticleSite
+        ? 'Article must be authoritative, well-researched, and citation-friendly with proper structure.'
+        : '';
+
     const instructions = `You are a senior marketing consultant and AEO strategist.
 
 CRITICAL: You MUST return ONLY valid JSON. Do NOT include markdown code blocks, do NOT include any text before or after the JSON, do NOT include explanations. Return ONLY the raw JSON object starting with { and ending with }.
 
-GOAL:
-- The user wants something they can ACTUALLY do: either (A) content they can post directly on the target source, or (B) a collaboration pitch they can send to the target source to get placement.
-- Prefer (B) when the target source is an external editorial site (like WebMD, Healthline, etc.). Prefer (A) when the target source is brand-owned or realistically controllable.
+SOURCE TYPE: ${sourceTypeDesc}
 
-STRICT FORMAT (must match exactly):
+GOAL:
+- Generate TWO separate sections: (1) Collaboration Email (for pitching/outreach) and (2) Publishable Content (ready to publish/post)
+- For YouTube: Generate video script with scenes and timing
+- For article sites: Generate full article with H1/H2/FAQ structure
+- For collaboration targets: Generate professional email pitch + article content
+
+STRICT FORMAT v2.0 (must match exactly):
 {
-  "version": "1.0",
-  "recommendationId": "<string>",
-  "brandName": "<string>",
+  "version": "2.0",
+  "recommendationId": "${rec.id}",
+  "brandName": "${brand?.name || 'Brand'}",
   "targetSource": {
-    "domain": "<string>",
-    "mode": "post_on_source" | "pitch_collaboration",
-    "rationale": "<1-2 sentences explaining why this mode is best>"
+    "domain": "${rec.citation_source || ''}",
+    "sourceType": "${detectedSourceType}",
+    "mode": "${preferredMode}",
+    "rationale": "<1-2 sentences explaining mode selection>"
   },
-  "deliverable": {
-    "type": "guest_article" | "expert_quote" | "faq" | "product_page_update" | "press_pitch" | "other",
-    "placement": "<where this goes, e.g. 'Healthline guest post', 'Email pitch to WebMD editor', 'Brand site FAQ page'>"
-  },
-  "whatToPublishOrSend": {
-    "subjectLine": "<required if mode=pitch_collaboration, otherwise omit>",
-    "readyToPaste": "<the exact copy the user should paste/send. Keep it concise, max ~350 words. No placeholders in the main body unless unavoidable.>",
-    "cta": "<single sentence: the next action to take>"
+  ${collaborationEmailSection}
+  "publishableContent": {
+    "type": "${contentTypeValue}",
+    "title": "<compelling title for the content>",
+    "content": "${contentDesc}",
+    "metadata": {
+      ${metadataTemplate}
+    }
   },
   "keyPoints": ["<bullet 1>", "<bullet 2>", "<bullet 3>"],
-  "seoAeo": {
-    "h1": "<string>",
-    "h2": ["<string>", "<string>", "<string>"],
-    "faq": ["<question 1>", "<question 2>"],
-    "snippetSummary": "<1-2 sentences, snippet-worthy>"
-  },
-  "requiredInputs": ["<facts/links the marketer must verify or add, e.g. clinical study URLs, certification proof>"],
-  "complianceNotes": ["<brand-safe constraints, no medical claims, etc.>"]
+  "requiredInputs": ["<facts/links the marketer must verify or add>"],
+  "complianceNotes": ["<brand-safe constraints>"]
 }
 
 CONSTRAINTS:
-- Do NOT invent clinical studies, certifications, or regulatory claims. If needed, put them under requiredInputs.
+- Do NOT invent clinical studies, certifications, or regulatory claims. Put them under requiredInputs if needed.
 - Do NOT promise outcomes; speak in probabilities.
 - Do NOT mention internal tool/provider names.
 - Keep content aligned to the recommendation, KPI, focus area, and citation source.
-
-Populate recommendationId with the provided recommendation id. Content type: ${contentType}`;
+${contentConstraints ? `- ${contentConstraints}` : ''}
+- Collaboration email should be professional, concise, and value-focused.`;
 
     const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${instructions}`;
 
@@ -203,7 +321,7 @@ Populate recommendationId with the provided recommendation id. Content type: ${c
       const or = await openRouterCollectorService.executeQuery({
         collectorType: 'content',
         prompt,
-        maxTokens: 900,
+        maxTokens: 2000, // Increased from 900 to handle v2.0 format with multiple sections
         temperature: 0.6,
         topP: 0.9,
         enableWebSearch: false
@@ -251,7 +369,7 @@ Populate recommendationId with the provided recommendation id. Content type: ${c
           source: rec.citation_source,
           kpi: rec.kpi,
           focus_area: rec.focus_area,
-          format: parsed ? 'json_v1' : 'raw_text',
+          format: parsed ? (parsed.version === '2.0' ? 'json_v2' : 'json_v1') : 'raw_text',
           raw_response: parsed ? content : undefined
         },
         created_at: now,
@@ -291,7 +409,7 @@ Populate recommendationId with the provided recommendation id. Content type: ${c
             },
             { role: 'user', content: prompt }
           ],
-          max_tokens: 900,
+          max_tokens: 2000, // Increased to handle v2.0 format with multiple sections
           temperature: 0.6
         })
       });
@@ -363,7 +481,7 @@ Populate recommendationId with the provided recommendation id. Content type: ${c
       // Continue to next strategy
     }
 
-    // Strategy 4: Try to fix common JSON issues (trailing commas, unquoted keys)
+    // Strategy 4: Fix incomplete/truncated JSON (missing closing braces/quotes)
     try {
       let cleaned = raw.trim();
       
@@ -371,72 +489,329 @@ Populate recommendationId with the provided recommendation id. Content type: ${c
       const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
       if (jsonBlockMatch) {
         cleaned = jsonBlockMatch[1].trim();
+      } else {
+        // Extract JSON object (find first {, keep everything after)
+        const jsonMatch = cleaned.match(/\{[\s\S]*/);
+        if (jsonMatch) {
+          cleaned = jsonMatch[0];
+        }
       }
       
-      // Try to fix trailing commas in arrays/objects
-      cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
+      // Count opening vs closing braces/brackets
+      const openBraces = (cleaned.match(/\{/g) || []).length;
+      const closeBraces = (cleaned.match(/\}/g) || []).length;
+      const openBrackets = (cleaned.match(/\[/g) || []).length;
+      const closeBrackets = (cleaned.match(/\]/g) || []).length;
       
-      // Try to quote unquoted keys (basic attempt)
-      cleaned = cleaned.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+      let fixed = cleaned;
       
-      const parsed = JSON.parse(cleaned);
-      if (this.isValidGeneratedContent(parsed)) {
-        return this.normalizeGeneratedContent(parsed);
+      // Fix incomplete strings - find fields that have opening quotes but no closing quotes
+      // Find pattern like: "fieldName": "incomplete value... (no closing quote)
+      // We'll find the last incomplete string and close it properly
+      
+      // Look for field patterns that end without a closing quote before the string ends
+      // Pattern: "fieldName": "value... (end of string)
+      const incompleteFieldPattern = /"([^"]+)":\s*"([^"]*)$/;
+      const incompleteMatch = fixed.match(incompleteFieldPattern);
+      
+      if (incompleteMatch) {
+        // We have an incomplete field - close it
+        const fieldName = incompleteMatch[1];
+        const incompleteValue = incompleteMatch[2];
+        
+        // Find the position where this field starts
+        const fieldKey = `"${fieldName}": "`;
+        const fieldStartPos = fixed.lastIndexOf(fieldKey);
+        
+        if (fieldStartPos >= 0) {
+          // Extract everything before the incomplete field
+          const beforeField = fixed.substring(0, fieldStartPos + fieldKey.length);
+          // The incomplete value starts after the field key
+          // We need to properly escape and close it
+          const valueToClose = incompleteValue
+            .replace(/\\/g, '\\\\')  // Escape backslashes first
+            .replace(/"/g, '\\"')    // Escape quotes
+            .replace(/\n/g, '\\n');  // Escape newlines
+          
+          // Reconstruct with properly closed string
+          fixed = beforeField + valueToClose + '"';
+        }
+      }
+      
+      // Add missing closing brackets/braces
+      const missingBrackets = openBrackets - closeBrackets;
+      const missingBraces = openBraces - closeBraces;
+      
+      if (missingBrackets > 0) {
+        fixed += ']'.repeat(missingBrackets);
+      }
+      if (missingBraces > 0) {
+        fixed += '}'.repeat(missingBraces);
+      }
+      
+      // Try to fix trailing commas
+      fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+      
+      try {
+        const parsed = JSON.parse(fixed);
+        if (this.isValidGeneratedContent(parsed)) {
+          return this.normalizeGeneratedContent(parsed);
+        }
+      } catch (parseErr) {
+        // If still fails, try Strategy 5
       }
     } catch {
-      // All strategies failed
+      // Continue to next strategy
     }
 
-    // Log the raw response for debugging (first 500 chars)
-    console.warn('⚠️ [RecommendationContentService] Failed to parse JSON. Raw response (first 500 chars):', raw.substring(0, 500));
+    // Strategy 5: More aggressive truncation recovery - try to reconstruct from partial structure
+    try {
+      let cleaned = raw.trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*/);
+      if (!jsonMatch) return null;
+      
+      cleaned = jsonMatch[0];
+      
+      // Try to extract what we can and construct a minimal valid structure
+      const versionMatch = cleaned.match(/"version"\s*:\s*"([^"]+)"/);
+      const version = versionMatch ? versionMatch[1] : '2.0';
+      
+      const recIdMatch = cleaned.match(/"recommendationId"\s*:\s*"([^"]+)"/);
+      const recId = recIdMatch ? recIdMatch[1] : '';
+      
+      const brandMatch = cleaned.match(/"brandName"\s*:\s*"([^"]+)"/);
+      const brandName = brandMatch ? brandMatch[1] : '';
+      
+      const domainMatch = cleaned.match(/"domain"\s*:\s*"([^"]+)"/);
+      const domain = domainMatch ? domainMatch[1] : '';
+      
+      const modeMatch = cleaned.match(/"mode"\s*:\s*"([^"]+)"/);
+      const mode = modeMatch ? modeMatch[1] : 'post_on_source';
+      
+      const sourceTypeMatch = cleaned.match(/"sourceType"\s*:\s*"([^"]+)"/);
+      const sourceType = sourceTypeMatch ? sourceTypeMatch[1] : 'other';
+      
+      // Try to extract email subject if present
+      const emailSubjectMatch = cleaned.match(/"subjectLine"\s*:\s*"([^"]+)"/);
+      const emailSubject = emailSubjectMatch ? emailSubjectMatch[1] : '';
+      
+      // Helper function to extract string value (complete or incomplete)
+      const extractStringValue = (fieldName: string): string => {
+        const fieldPattern = new RegExp(`"${fieldName}"\\s*:\\s*"`);
+        const match = cleaned.match(fieldPattern);
+        if (!match) return '';
+        
+        const startPos = match.index! + match[0].length;
+        let pos = startPos;
+        let foundClosing = false;
+        
+        // Look for the closing quote (handle escaped characters)
+        while (pos < cleaned.length) {
+          if (cleaned[pos] === '\\' && pos + 1 < cleaned.length) {
+            pos += 2; // Skip escaped character (\\, \", \n, etc.)
+          } else if (cleaned[pos] === '"') {
+            foundClosing = true;
+            break;
+          } else {
+            pos++;
+          }
+        }
+        
+        // Extract the value (even if incomplete)
+        const value = cleaned.substring(startPos, foundClosing ? pos : cleaned.length);
+        
+        // Unescape the value
+        return value
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\t/g, '\t')
+          .replace(/\\r/g, '\r')
+          .replace(/\\\\/g, '\\');
+      };
+      
+      // Extract email body (might be incomplete)
+      const emailBody = extractStringValue('emailBody');
+      
+      // Try to extract content title and body
+      const contentTitleMatch = cleaned.match(/"title"\s*:\s*"([^"]+)"/);
+      const contentTitle = contentTitleMatch ? contentTitleMatch[1] : '';
+      
+      // Extract content body (might be incomplete)
+      const content = extractStringValue('content');
+      
+      const contentTypeMatch = cleaned.match(/"type"\s*:\s*"([^"]+)"/);
+      const contentType = contentTypeMatch ? contentTypeMatch[1] : 'other';
+      
+      // Only proceed if we have minimum required fields (content can be empty if truncated, we'll handle it)
+      if (recId && brandName && domain) {
+        const reconstructed: any = {
+          version,
+          recommendationId: recId,
+          brandName,
+          targetSource: {
+            domain,
+            sourceType,
+            mode,
+            rationale: 'Content generated from partial response'
+          },
+          publishableContent: {
+            type: contentType,
+            title: contentTitle || 'Generated Content',
+            content: content || (emailBody ? 'Content was truncated. Please see collaboration email above or regenerate.' : 'Content was truncated, please regenerate.')
+          },
+          keyPoints: [],
+          requiredInputs: [],
+          complianceNotes: []
+        };
+        
+        // Add collaboration email if we have subject (body can be partial/truncated)
+        if (emailSubject) {
+          reconstructed.collaborationEmail = {
+            subjectLine: emailSubject,
+            emailBody: emailBody || 'Email body was truncated. Please regenerate or contact us directly.',
+            cta: emailBody ? 'Please contact us to discuss further.' : 'Please regenerate content to get the complete email body.'
+          };
+        }
+        
+        // Try to extract keyPoints if present
+        const keyPointsMatch = cleaned.match(/"keyPoints"\s*:\s*\[(.*?)\]/s);
+        if (keyPointsMatch) {
+          try {
+            const keyPointsStr = '[' + keyPointsMatch[1] + ']';
+            reconstructed.keyPoints = JSON.parse(keyPointsStr);
+          } catch {
+            // Ignore if can't parse
+          }
+        }
+        
+        if (this.isValidGeneratedContent(reconstructed)) {
+          console.log('✅ [RecommendationContentService] Successfully reconstructed JSON from partial response');
+          return this.normalizeGeneratedContent(reconstructed);
+        }
+      }
+    } catch (err) {
+      console.error('❌ [RecommendationContentService] Error in truncation recovery:', err);
+    }
+
+    // Log the raw response for debugging (first 1000 chars)
+    console.warn('⚠️ [RecommendationContentService] Failed to parse JSON. Raw response (first 1000 chars):', raw.substring(0, 1000));
     return null;
   }
 
   private isValidGeneratedContent(parsed: any): boolean {
     if (!parsed || typeof parsed !== 'object') return false;
-    if (parsed.version !== '1.0') return false;
+    
+    // Check version
+    const version = parsed.version;
+    if (version !== '1.0' && version !== '2.0') return false;
+    
+    // Common required fields
     if (!parsed.recommendationId || !parsed.brandName) return false;
     if (!parsed.targetSource?.domain || !parsed.targetSource?.mode) return false;
-    if (!parsed.whatToPublishOrSend?.readyToPaste) return false;
-    return true;
+    
+    // Version-specific validation
+    if (version === '1.0') {
+      return !!parsed.whatToPublishOrSend?.readyToPaste;
+    } else if (version === '2.0') {
+      // v2.0 requires publishableContent
+      if (!parsed.publishableContent?.content || !parsed.publishableContent?.type) return false;
+      // Collaboration email is optional even for collaboration mode
+      return true;
+    }
+    
+    return false;
   }
 
-  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJson>): GeneratedContentJson {
-    // Ensure arrays exist
+  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2>): GeneratedContentJson {
+    const version = parsed.version || '1.0';
+    
+    // Handle v1.0 format (backward compatibility)
+    if (version === '1.0') {
+      const keyPoints = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
+      const h2 = Array.isArray((parsed as any).seoAeo?.h2) ? (parsed as any).seoAeo.h2 : [];
+      const faq = Array.isArray((parsed as any).seoAeo?.faq) ? (parsed as any).seoAeo.faq : [];
+      const requiredInputs = Array.isArray(parsed.requiredInputs) ? parsed.requiredInputs : [];
+      const complianceNotes = Array.isArray(parsed.complianceNotes) ? parsed.complianceNotes : [];
+
+      return {
+        version: '1.0',
+        recommendationId: String(parsed.recommendationId || ''),
+        brandName: String(parsed.brandName || ''),
+        targetSource: {
+          domain: String((parsed as any).targetSource?.domain || ''),
+          mode: (parsed as any).targetSource?.mode === 'pitch_collaboration' ? 'pitch_collaboration' : 'post_on_source',
+          rationale: String((parsed as any).targetSource?.rationale || '')
+        },
+        deliverable: {
+          type: ((parsed as any).deliverable?.type as any) || 'other',
+          placement: String((parsed as any).deliverable?.placement || '')
+        },
+        whatToPublishOrSend: {
+          ...((parsed as any).whatToPublishOrSend?.subjectLine ? { subjectLine: String((parsed as any).whatToPublishOrSend.subjectLine) } : {}),
+          readyToPaste: String((parsed as any).whatToPublishOrSend?.readyToPaste || ''),
+          cta: String((parsed as any).whatToPublishOrSend?.cta || '')
+        },
+        keyPoints: keyPoints.map(String).slice(0, 6),
+        seoAeo: {
+          h1: String((parsed as any).seoAeo?.h1 || ''),
+          h2: h2.map(String).slice(0, 8),
+          faq: faq.map(String).slice(0, 8),
+          snippetSummary: String((parsed as any).seoAeo?.snippetSummary || '')
+        },
+        requiredInputs: requiredInputs.map(String).slice(0, 12),
+        complianceNotes: complianceNotes.map(String).slice(0, 12)
+      } as GeneratedContentJsonV1;
+    }
+    
+    // Handle v2.0 format
     const keyPoints = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
-    const h2 = Array.isArray(parsed.seoAeo?.h2) ? parsed.seoAeo!.h2 : [];
-    const faq = Array.isArray(parsed.seoAeo?.faq) ? parsed.seoAeo!.faq : [];
     const requiredInputs = Array.isArray(parsed.requiredInputs) ? parsed.requiredInputs : [];
     const complianceNotes = Array.isArray(parsed.complianceNotes) ? parsed.complianceNotes : [];
-
-    return {
-      version: '1.0',
-      recommendationId: String(parsed.recommendationId),
-      brandName: String(parsed.brandName),
+    
+    const v2Parsed = parsed as Partial<GeneratedContentJsonV2>;
+    const publishableContent = v2Parsed.publishableContent || {} as any;
+    const metadata = publishableContent.metadata || {};
+    
+    const normalized: GeneratedContentJsonV2 = {
+      version: '2.0',
+      recommendationId: String(parsed.recommendationId || ''),
+      brandName: String(parsed.brandName || ''),
       targetSource: {
-        domain: String(parsed.targetSource?.domain || ''),
-        mode: parsed.targetSource?.mode === 'pitch_collaboration' ? 'pitch_collaboration' : 'post_on_source',
-        rationale: String(parsed.targetSource?.rationale || '')
+        domain: String(v2Parsed.targetSource?.domain || ''),
+        sourceType: v2Parsed.targetSource?.sourceType || 'other',
+        mode: v2Parsed.targetSource?.mode === 'pitch_collaboration' ? 'pitch_collaboration' : 'post_on_source',
+        rationale: String(v2Parsed.targetSource?.rationale || '')
       },
-      deliverable: {
-        type: (parsed.deliverable?.type as any) || 'other',
-        placement: String(parsed.deliverable?.placement || '')
-      },
-      whatToPublishOrSend: {
-        ...(parsed.whatToPublishOrSend?.subjectLine ? { subjectLine: String(parsed.whatToPublishOrSend.subjectLine) } : {}),
-        readyToPaste: String(parsed.whatToPublishOrSend?.readyToPaste || ''),
-        cta: String(parsed.whatToPublishOrSend?.cta || '')
+      publishableContent: {
+        type: (publishableContent.type as any) || 'other',
+        title: String(publishableContent.title || ''),
+        content: String(publishableContent.content || ''),
+        metadata: Object.keys(metadata).length > 0 ? {
+          ...(metadata.h1 ? { h1: String(metadata.h1) } : {}),
+          ...(Array.isArray(metadata.h2) ? { h2: metadata.h2.map(String).slice(0, 8) } : {}),
+          ...(Array.isArray(metadata.faq) ? { faq: metadata.faq.map(String).slice(0, 8) } : {}),
+          ...(metadata.snippetSummary ? { snippetSummary: String(metadata.snippetSummary) } : {}),
+          ...(metadata.estimatedDuration ? { estimatedDuration: String(metadata.estimatedDuration) } : {}),
+          ...(Array.isArray(metadata.scenes) ? { scenes: metadata.scenes.slice(0, 20) } : {}),
+          ...(Array.isArray(metadata.keyVisuals) ? { keyVisuals: metadata.keyVisuals.map(String).slice(0, 10) } : {}),
+          ...(Array.isArray(metadata.onScreenText) ? { onScreenText: metadata.onScreenText.map(String).slice(0, 10) } : {})
+        } : undefined
       },
       keyPoints: keyPoints.map(String).slice(0, 6),
-      seoAeo: {
-        h1: String(parsed.seoAeo?.h1 || ''),
-        h2: h2.map(String).slice(0, 8),
-        faq: faq.map(String).slice(0, 8),
-        snippetSummary: String(parsed.seoAeo?.snippetSummary || '')
-      },
       requiredInputs: requiredInputs.map(String).slice(0, 12),
       complianceNotes: complianceNotes.map(String).slice(0, 12)
     };
+    
+    // Add collaborationEmail if present
+    if (v2Parsed.collaborationEmail) {
+      normalized.collaborationEmail = {
+        subjectLine: String(v2Parsed.collaborationEmail.subjectLine || ''),
+        emailBody: String(v2Parsed.collaborationEmail.emailBody || ''),
+        cta: String(v2Parsed.collaborationEmail.cta || '')
+      };
+    }
+    
+    return normalized;
   }
 }
 

@@ -9,6 +9,7 @@ import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
 import { Recommendations } from './pages/Recommendations';
 import { RecommendationsV2 } from './pages/RecommendationsV2';
+import { RecommendationsV3 } from './pages/RecommendationsV3';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
@@ -167,6 +168,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Recommendations />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/recommendations-v3"
+          element={
+            <ProtectedRoute>
+              <RecommendationsV3 />
             </ProtectedRoute>
           }
         />

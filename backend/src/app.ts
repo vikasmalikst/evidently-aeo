@@ -21,6 +21,7 @@ import onboardingRoutes from './routes/onboarding.routes';
 import promptManagementRoutes from './routes/prompt-management.routes';
 import adminRoutes from './routes/admin.routes';
 import recommendationsRoutes from './routes/recommendations.routes';
+import recommendationsV3Routes from './routes/recommendations-v3.routes';
 // TEMPORARY: User management routes commented out
 // import userManagementRoutes from './routes/user-management.routes';
 
@@ -117,6 +118,7 @@ app.use('/api/citations', citationCategorizationRoutes);
 app.use('/api', promptManagementRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/recommendations', recommendationsRoutes);
+app.use('/api/recommendations-v3', recommendationsV3Routes);
 // TEMPORARY: User management routes commented out
 // app.use('/api/users', userManagementRoutes);
 

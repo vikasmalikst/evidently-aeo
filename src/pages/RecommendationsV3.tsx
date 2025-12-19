@@ -8,7 +8,7 @@
  * Step 4: Results Tracking - View KPI improvements (before/after)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import {
@@ -27,7 +27,7 @@ import {
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
-import { IconSparkles, IconAlertCircle, IconTrendingUp, IconTrendingDown } from '@tabler/icons-react';
+import { IconSparkles, IconAlertCircle, IconTrendingUp, IconTrendingDown, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 
 export const RecommendationsV3 = () => {
   const {
@@ -45,6 +45,7 @@ export const RecommendationsV3 = () => {
   const [recommendations, setRecommendations] = useState<RecommendationV3[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set()); // For Step 3: selected for completion
+  const [expandedSections, setExpandedSections] = useState<Map<string, { email: boolean; content: boolean }>>(new Map()); // For Step 3: track collapsed/expanded sections
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,13 +53,28 @@ export const RecommendationsV3 = () => {
 
   // Track if we're manually loading data to prevent useEffect from interfering
   const [isManuallyLoading, setIsManuallyLoading] = useState(false);
+  // Use ref to track manual navigation (synchronous, avoids state batching issues)
+  const isManuallyNavigatingRef = useRef(false);
+  // Track the last step that was manually loaded to prevent useEffect from reloading it
+  const lastManuallyLoadedStepRef = useRef<number | null>(null);
   
   useEffect(() => {
     if (!generationId || !selectedBrandId) return;
     
     // Skip loading if we're manually loading data (prevents race conditions)
-    if (isManuallyLoading) {
+    // Check both state and ref for reliability
+    if (isManuallyLoading || isManuallyNavigatingRef.current) {
       console.log('⏭️ [RecommendationsV3] Skipping loadStepData - manual load in progress');
+      return;
+    }
+    
+    // Skip if we just manually loaded this exact step (prevents double loading)
+    if (lastManuallyLoadedStepRef.current === currentStep) {
+      console.log(`⏭️ [RecommendationsV3] Skipping loadStepData - Step ${currentStep} was just manually loaded`);
+      // Clear the ref after a brief delay to allow normal loading on subsequent changes
+      setTimeout(() => {
+        lastManuallyLoadedStepRef.current = null;
+      }, 2000);
       return;
     }
 
@@ -121,6 +137,16 @@ export const RecommendationsV3 = () => {
           
           // For Step 3, load content for each recommendation
           if (currentStep === 3) {
+            // Initialize all recommendations to have expanded sections by default
+            const newExpandedSections = new Map(expandedSections);
+            recommendationsWithIds.forEach(rec => {
+              if (rec.id && !newExpandedSections.has(rec.id)) {
+                // Default to both sections expanded
+                newExpandedSections.set(rec.id, { email: true, content: true });
+              }
+            });
+            setExpandedSections(newExpandedSections);
+            
             const contentPromises = recommendationsWithIds
               .filter(r => r.id && r.isContentGenerated)
               .map(async (rec) => {
@@ -181,7 +207,7 @@ export const RecommendationsV3 = () => {
 
     loadStepData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generationId, currentStep, selectedBrandId, isManuallyLoading]);
+  }, [generationId, currentStep, selectedBrandId]);
 
   // Load latest generation on mount or when brand changes (if no generationId)
   useEffect(() => {
@@ -240,8 +266,11 @@ export const RecommendationsV3 = () => {
                 console.log(`✅ [RecommendationsV3] Set step to ${hasCompleted ? 4 : hasContentGenerated ? 3 : hasApproved ? 2 : 1}, loadStepData will load step-specific recommendations`);
                 setError(null); // Clear any previous errors on successful load
                 
-                // Clear manual loading flag after a short delay to allow step to be set
-                setTimeout(() => setIsManuallyLoading(false), 200);
+                // Clear manual loading flags after a short delay to allow step to be set
+                setTimeout(() => {
+                  setIsManuallyLoading(false);
+                  isManuallyNavigatingRef.current = false;
+                }, 200);
               }
             }
           }
@@ -341,7 +370,8 @@ export const RecommendationsV3 = () => {
           console.log('✅ [RecommendationsV3] Setting generationId:', genId);
           setGenerationId(genId);
           
-          // Set manual loading flag to prevent useEffect from interfering
+          // Set manual loading flags to prevent useEffect from interfering
+          isManuallyNavigatingRef.current = true;
           setIsManuallyLoading(true);
           
           // ALWAYS fetch from database to ensure we have the latest data with proper IDs
@@ -407,8 +437,11 @@ export const RecommendationsV3 = () => {
             }
           }
           
-          // Clear manual loading flag after a short delay to allow state to settle
-          setTimeout(() => setIsManuallyLoading(false), 100);
+          // Clear manual loading flags after a short delay to allow state to settle
+          setTimeout(() => {
+            setIsManuallyLoading(false);
+            isManuallyNavigatingRef.current = false;
+          }, 100);
         } else {
           // No generationId received
           console.error('❌ [RecommendationsV3] Generation completed but no generationId received');
@@ -569,7 +602,8 @@ export const RecommendationsV3 = () => {
       if (response.success) {
         setSelectedIds(new Set());
         
-        // Set manual loading flag to prevent useEffect from interfering
+        // Set manual loading flags (both state and ref) to prevent useEffect from interfering
+        isManuallyNavigatingRef.current = true;
         setIsManuallyLoading(true);
         
         // Longer delay to ensure database transaction is fully committed
@@ -649,11 +683,15 @@ export const RecommendationsV3 = () => {
           }
         }
         
-          // Clear manual loading flag after state has settled
+          // Mark Step 2 as manually loaded to prevent useEffect from reloading
+          lastManuallyLoadedStepRef.current = 2;
+          
+          // Clear manual loading flags after state has settled
           setTimeout(() => {
             setIsManuallyLoading(false);
-            console.log('✅ [RecommendationsV3] Manual loading flag cleared, useEffect can now run');
-          }, 500);
+            isManuallyNavigatingRef.current = false;
+            console.log('✅ [RecommendationsV3] Manual loading flags cleared');
+          }, 300);
       } else {
         console.error('❌ [RecommendationsV3] Approval failed:', response.error);
         setError(response.error || 'Failed to approve recommendations');
@@ -754,7 +792,8 @@ export const RecommendationsV3 = () => {
           }
         }
         
-        // Set manual loading flag
+        // Set manual loading flags to prevent useEffect from interfering
+        isManuallyNavigatingRef.current = true;
         setIsManuallyLoading(true);
         
         // Move to step 3 to show all generated content
@@ -763,12 +802,28 @@ export const RecommendationsV3 = () => {
           await new Promise(resolve => setTimeout(resolve, 300));
           
           // Load step 3 data to ensure we have all content
+          // Mark Step 3 as manually loaded to prevent useEffect from reloading
+          setIsManuallyLoading(true);
+          isManuallyNavigatingRef.current = true;
+          lastManuallyLoadedStepRef.current = 3;
+          
           const step3Response = await getRecommendationsByStepV3(generationId, 3);
           if (step3Response.success && step3Response.data) {
-            setRecommendations(step3Response.data.recommendations);
+            const step3Recs = step3Response.data.recommendations;
+            setRecommendations(step3Recs);
+            
+            // Initialize all recommendations to have expanded sections by default
+            const newExpandedSections = new Map(expandedSections);
+            step3Recs.forEach(rec => {
+              if (rec.id && !newExpandedSections.has(rec.id)) {
+                // Default to both sections expanded
+                newExpandedSections.set(rec.id, { email: true, content: true });
+              }
+            });
+            setExpandedSections(newExpandedSections);
             
             // Load content for all recommendations (with better error handling)
-            const contentPromises = step3Response.data.recommendations.map(async (rec: RecommendationV3) => {
+            const contentPromises = step3Recs.map(async (rec: RecommendationV3) => {
               if (rec.id) {
                 try {
                   // First check if we already have it from the bulk response
@@ -824,8 +879,11 @@ export const RecommendationsV3 = () => {
           }
         }
         
-        // Clear manual loading flag
-        setTimeout(() => setIsManuallyLoading(false), 100);
+        // Clear manual loading flags
+        setTimeout(() => {
+          setIsManuallyLoading(false);
+          isManuallyNavigatingRef.current = false;
+        }, 300);
         
         if (failed > 0) {
           // Show warning but don't treat as error if some succeeded
@@ -855,13 +913,22 @@ export const RecommendationsV3 = () => {
           console.log(`⚠️ [RecommendationsV3] Partial success: ${response.data.successful} succeeded, loading Step 3 anyway...`);
           // Try to load step 3 to show what was generated
           try {
+            lastManuallyLoadedStepRef.current = 3;
+            isManuallyNavigatingRef.current = true;
+            setIsManuallyLoading(true);
             const step3Response = await getRecommendationsByStepV3(generationId, 3);
             if (step3Response.success && step3Response.data && step3Response.data.recommendations.length > 0) {
               setRecommendations(step3Response.data.recommendations);
               setCurrentStep(3);
             }
+            setTimeout(() => {
+              setIsManuallyLoading(false);
+              isManuallyNavigatingRef.current = false;
+            }, 300);
           } catch (loadErr) {
             console.error('Error loading step 3 after partial failure:', loadErr);
+            setIsManuallyLoading(false);
+            isManuallyNavigatingRef.current = false;
           }
         }
       }
@@ -873,13 +940,22 @@ export const RecommendationsV3 = () => {
         // Try to load step 3 anyway in case some content was generated
         if (generationId) {
           try {
+            lastManuallyLoadedStepRef.current = 3;
+            isManuallyNavigatingRef.current = true;
+            setIsManuallyLoading(true);
             const step3Response = await getRecommendationsByStepV3(generationId, 3);
             if (step3Response.success && step3Response.data && step3Response.data.recommendations.length > 0) {
               setRecommendations(step3Response.data.recommendations);
               setCurrentStep(3);
             }
+            setTimeout(() => {
+              setIsManuallyLoading(false);
+              isManuallyNavigatingRef.current = false;
+            }, 300);
           } catch (loadErr) {
             console.error('Error loading step 3 after timeout:', loadErr);
+            setIsManuallyLoading(false);
+            isManuallyNavigatingRef.current = false;
           }
         }
       } else {
@@ -979,7 +1055,8 @@ export const RecommendationsV3 = () => {
         }
       }
 
-      // Set manual loading flag
+      // Set manual loading flags to prevent useEffect from interfering
+      isManuallyNavigatingRef.current = true;
       setIsManuallyLoading(true);
       
       // Clear completed selections
@@ -1005,8 +1082,14 @@ export const RecommendationsV3 = () => {
         }
       }
       
-      // Clear manual loading flag
-      setTimeout(() => setIsManuallyLoading(false), 100);
+      // Mark Step 4 as manually loaded to prevent useEffect from reloading
+      lastManuallyLoadedStepRef.current = 4;
+      
+      // Clear manual loading flags
+      setTimeout(() => {
+        setIsManuallyLoading(false);
+        isManuallyNavigatingRef.current = false;
+      }, 300);
     } catch (err: any) {
       console.error('Error proceeding to results:', err);
       setError(err.message || 'Failed to complete recommendations');
@@ -1123,7 +1206,96 @@ export const RecommendationsV3 = () => {
             <div className="mb-6">
               <StepIndicator
                 currentStep={currentStep}
-                onStepClick={(step) => setCurrentStep(step)}
+                onStepClick={async (step) => {
+                  // Set ref immediately (synchronous) to prevent useEffect from running
+                  isManuallyNavigatingRef.current = true;
+                  // Also set state flag
+                  setIsManuallyLoading(true);
+                  // Mark this step as manually loaded
+                  lastManuallyLoadedStepRef.current = step;
+                  
+                  try {
+                    setIsLoading(true);
+                    setError(null);
+                    console.log(`📥 [RecommendationsV3] Manual step navigation to Step ${step}`);
+                    const response = await getRecommendationsByStepV3(generationId, step);
+                    if (response.success && response.data) {
+                      const recommendationsWithIds = response.data.recommendations
+                        .filter(rec => rec.id && rec.id.length > 10)
+                        .map(rec => ({ ...rec, id: rec.id! }));
+                      
+                      console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${step}`);
+                      if (step === 2) {
+                        console.log(`📊 [RecommendationsV3] Step 2 recommendations (should all be approved):`, 
+                          recommendationsWithIds.map(r => ({ 
+                            id: r.id, 
+                            action: r.action?.substring(0, 40), 
+                            isApproved: r.isApproved,
+                            isContentGenerated: r.isContentGenerated 
+                          })));
+                      }
+                      
+                      setRecommendations(recommendationsWithIds);
+                      setError(null);
+                      
+                      // Load content for Step 3
+                      if (step === 3) {
+                        // Initialize all recommendations to have expanded sections by default
+                        const newExpandedSections = new Map(expandedSections);
+                        recommendationsWithIds.forEach(rec => {
+                          if (rec.id && !newExpandedSections.has(rec.id)) {
+                            // Default to both sections expanded
+                            newExpandedSections.set(rec.id, { email: true, content: true });
+                          }
+                        });
+                        setExpandedSections(newExpandedSections);
+                        
+                        const contentPromises = recommendationsWithIds
+                          .filter(r => r.id && r.isContentGenerated)
+                          .map(async (rec) => {
+                            try {
+                              const contentResponse = await fetchRecommendationContentLatest(rec.id!);
+                              if (contentResponse.success && contentResponse.data?.content) {
+                                return { id: rec.id, content: contentResponse.data.content };
+                              }
+                            } catch (err) {
+                              console.error(`Error loading content for ${rec.id}:`, err);
+                            }
+                            return null;
+                          });
+                        
+                        const contentResults = await Promise.all(contentPromises);
+                        const newContentMap = new Map(contentMap);
+                        contentResults.forEach(result => {
+                          if (result) {
+                            newContentMap.set(result.id!, result.content);
+                          }
+                        });
+                        setContentMap(newContentMap);
+                      }
+                      
+                      // Update step AFTER data is loaded (prevents useEffect from running)
+                      setCurrentStep(step);
+                    } else {
+                      setRecommendations([]);
+                      setCurrentStep(step);
+                      if (response.error && !response.error.includes('not found') && !response.error.includes('No recommendations')) {
+                        setError(response.error);
+                      }
+                    }
+                  } catch (err: any) {
+                    console.error('Error loading step data:', err);
+                    setError(err.message || 'Failed to load recommendations');
+                    setCurrentStep(step);
+                  } finally {
+                    setIsLoading(false);
+                    // Clear flags after a brief delay to ensure useEffect doesn't interfere
+                    setTimeout(() => {
+                      setIsManuallyLoading(false);
+                      isManuallyNavigatingRef.current = false;
+                    }, 300);
+                  }
+                }}
               />
             </div>
           )}
@@ -1325,7 +1497,213 @@ export const RecommendationsV3 = () => {
                               }
                             }
                             
-                            // Extract readyToPaste using multiple strategies
+                            // Handle v2.0 format (new structure with separate sections)
+                            if (parsedContent && parsedContent.version === '2.0') {
+                              const v2Content = parsedContent as any;
+                              const collaborationEmail = v2Content.collaborationEmail;
+                              const publishableContent = v2Content.publishableContent;
+                              const sourceType = v2Content.targetSource?.sourceType || 'other';
+                              
+                              // Get expanded state for this recommendation (default to both expanded)
+                              const sectionState = expandedSections.get(rec.id || '') || { email: true, content: true };
+                              const isEmailExpanded = sectionState.email;
+                              const isContentExpanded = sectionState.content;
+                              
+                              // Toggle function for email section
+                              const toggleEmail = () => {
+                                setExpandedSections(prev => {
+                                  const next = new Map(prev);
+                                  const current = next.get(rec.id || '') || { email: true, content: true };
+                                  next.set(rec.id || '', { ...current, email: !current.email });
+                                  return next;
+                                });
+                              };
+                              
+                              // Toggle function for content section
+                              const toggleContent = () => {
+                                setExpandedSections(prev => {
+                                  const next = new Map(prev);
+                                  const current = next.get(rec.id || '') || { email: true, content: true };
+                                  next.set(rec.id || '', { ...current, content: !current.content });
+                                  return next;
+                                });
+                              };
+                              
+                              return (
+                                <div className="space-y-6">
+                                  {/* Collaboration Email Section - Collapsible */}
+                                  {collaborationEmail && collaborationEmail.emailBody && (
+                                    <div className="bg-gradient-to-br from-[#fef3c7] to-[#fde68a] rounded-lg border border-[#fbbf24] shadow-sm overflow-hidden">
+                                      {/* Header - Clickable to toggle */}
+                                      <div 
+                                        onClick={toggleEmail}
+                                        className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#fde68a]/50 transition-colors border-b border-[#f59e0b]"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          {isEmailExpanded ? (
+                                            <IconChevronUp size={18} className="text-[#92400e]" />
+                                          ) : (
+                                            <IconChevronDown size={18} className="text-[#92400e]" />
+                                          )}
+                                          <div className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]"></div>
+                                          <h4 className="text-[13px] font-semibold text-[#92400e] uppercase tracking-wider">Collaboration Email</h4>
+                                        </div>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation(); // Prevent toggle when clicking copy
+                                            const emailText = `Subject: ${collaborationEmail.subjectLine || ''}\n\n${collaborationEmail.emailBody || ''}\n\n${collaborationEmail.cta || ''}`;
+                                            navigator.clipboard.writeText(emailText);
+                                          }}
+                                          className="px-3 py-1.5 bg-[#f59e0b] text-white rounded text-[11px] font-medium hover:bg-[#d97706] transition-colors flex items-center gap-1.5"
+                                        >
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                          </svg>
+                                          Copy Email
+                                        </button>
+                                      </div>
+                                      
+                                      {/* Content - Collapsible */}
+                                      {isEmailExpanded && (
+                                        <div className="p-6">
+                                          {collaborationEmail.subjectLine && (
+                                            <div className="mb-3">
+                                              <div className="text-[11px] font-semibold text-[#92400e] mb-1">Subject Line:</div>
+                                              <div className="text-[14px] font-semibold text-[#78350f]">{collaborationEmail.subjectLine}</div>
+                                            </div>
+                                          )}
+                                          <div className="mb-3">
+                                            <div className="text-[11px] font-semibold text-[#92400e] mb-2">Email Body:</div>
+                                            <div className="text-[14px] text-[#78350f] leading-relaxed whitespace-pre-wrap font-sans">
+                                              {collaborationEmail.emailBody}
+                                            </div>
+                                          </div>
+                                          {collaborationEmail.cta && (
+                                            <div className="pt-3 border-t border-[#f59e0b]">
+                                              <div className="text-[11px] font-semibold text-[#92400e] mb-1">Call to Action:</div>
+                                              <div className="text-[14px] text-[#78350f] font-medium">{collaborationEmail.cta}</div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Publishable Content Section - Collapsible */}
+                                  {publishableContent && publishableContent.content && (
+                                    <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+                                      {/* Header - Clickable to toggle */}
+                                      <div 
+                                        onClick={toggleContent}
+                                        className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#f8fafc] transition-colors border-b border-[#e2e8f0]"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          {isContentExpanded ? (
+                                            <IconChevronUp size={18} className="text-[#475569]" />
+                                          ) : (
+                                            <IconChevronDown size={18} className="text-[#475569]" />
+                                          )}
+                                          <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
+                                          <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
+                                            {publishableContent.type === 'video_script' ? 'Video Script' : 
+                                             publishableContent.type === 'article' ? 'Article Content' : 
+                                             'Publishable Content'}
+                                          </h4>
+                                          {sourceType === 'youtube' && (
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#ff0000] text-white">YouTube</span>
+                                          )}
+                                          {publishableContent.type === 'article' && (
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white">Article</span>
+                                          )}
+                                        </div>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation(); // Prevent toggle when clicking copy
+                                            navigator.clipboard.writeText(publishableContent.content || '');
+                                          }}
+                                          className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
+                                        >
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                          </svg>
+                                          Copy Content
+                                        </button>
+                                      </div>
+                                      
+                                      {/* Content - Collapsible */}
+                                      {isContentExpanded && (
+                                        <div className="p-6">
+                                          {publishableContent.title && (
+                                            <div className="mb-4">
+                                              <h5 className="text-[16px] font-semibold text-[#1a1d29]">{publishableContent.title}</h5>
+                                            </div>
+                                          )}
+                                          
+                                          {/* Video Script Metadata */}
+                                          {publishableContent.type === 'video_script' && publishableContent.metadata && (
+                                            <div className="mb-4 p-3 bg-[#f0f9ff] rounded border border-[#bae6fd]">
+                                              {publishableContent.metadata.estimatedDuration && (
+                                                <div className="text-[12px] text-[#0369a1] mb-2">
+                                                  <span className="font-semibold">Duration:</span> {publishableContent.metadata.estimatedDuration}
+                                                </div>
+                                              )}
+                                              {publishableContent.metadata.scenes && publishableContent.metadata.scenes.length > 0 && (
+                                                <div className="text-[12px] text-[#0369a1] mb-2">
+                                                  <span className="font-semibold">Scenes:</span> {publishableContent.metadata.scenes.length}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                          
+                                          {/* Article Metadata (H1, H2, FAQ) */}
+                                          {publishableContent.type === 'article' && publishableContent.metadata && (
+                                            <div className="mb-4 space-y-3">
+                                              {publishableContent.metadata.h1 && (
+                                                <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                  <div className="text-[11px] font-semibold text-[#166534] mb-1">H1:</div>
+                                                  <div className="text-[14px] font-semibold text-[#166534]">{publishableContent.metadata.h1}</div>
+                                                </div>
+                                              )}
+                                              {publishableContent.metadata.h2 && publishableContent.metadata.h2.length > 0 && (
+                                                <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                  <div className="text-[11px] font-semibold text-[#166534] mb-2">H2 Headings:</div>
+                                                  <ul className="list-disc list-inside space-y-1">
+                                                    {publishableContent.metadata.h2.map((h2: string, idx: number) => (
+                                                      <li key={idx} className="text-[13px] text-[#166534]">{h2}</li>
+                                                    ))}
+                                                  </ul>
+                                                </div>
+                                              )}
+                                              {publishableContent.metadata.faq && publishableContent.metadata.faq.length > 0 && (
+                                                <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                  <div className="text-[11px] font-semibold text-[#166534] mb-2">FAQ Questions:</div>
+                                                  <ul className="list-disc list-inside space-y-1">
+                                                    {publishableContent.metadata.faq.map((faq: string, idx: number) => (
+                                                      <li key={idx} className="text-[13px] text-[#166534]">{faq}</li>
+                                                    ))}
+                                                  </ul>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                          
+                                          {/* Main Content */}
+                                          <div className="prose prose-sm max-w-none">
+                                            <div className={`text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans ${
+                                              publishableContent.type === 'video_script' ? 'font-mono' : ''
+                                            }`}>
+                                              {publishableContent.content}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            
+                            // Handle v1.0 format (backward compatibility)
                             let readyToPasteText: string | null = null;
                             
                             // Strategy 1: Check structured format (version 1.0)
@@ -1349,7 +1727,7 @@ export const RecommendationsV3 = () => {
                             }
                             
                             if (readyToPasteText && readyToPasteText.trim()) {
-                              // Display readyToPaste content in a polished format
+                              // Display readyToPaste content in a polished format (v1.0)
                               return (
                                 <div className="relative">
                                   {/* Content Card */}
@@ -1369,7 +1747,6 @@ export const RecommendationsV3 = () => {
                                   <button
                                     onClick={() => {
                                       navigator.clipboard.writeText(readyToPasteText || '');
-                                      // You could add a toast notification here
                                     }}
                                     className="mt-4 px-4 py-2 bg-[#00bcdc] text-white rounded-lg text-[12px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-2 shadow-sm"
                                   >
@@ -1381,7 +1758,7 @@ export const RecommendationsV3 = () => {
                                 </div>
                               );
                             } else {
-                              // Fallback: display raw content or JSON (but try to extract readyToPaste if possible)
+                              // Fallback: display raw content or JSON
                               const fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
                               return (
                                 <div className="bg-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6">
@@ -1423,8 +1800,9 @@ export const RecommendationsV3 = () => {
                   {recommendations.map((rec) => {
                     const hasAfterValue = rec.kpiAfterValue !== null && rec.kpiAfterValue !== undefined;
                     const hasBeforeValue = rec.kpiBeforeValue !== null && rec.kpiBeforeValue !== undefined;
-                    const improvement = hasAfterValue && hasBeforeValue && rec.kpiBeforeValue !== 0
-                      ? ((rec.kpiAfterValue! - rec.kpiBeforeValue) / rec.kpiBeforeValue) * 100
+                    const beforeValue = hasBeforeValue ? rec.kpiBeforeValue! : null;
+                    const improvement = hasAfterValue && beforeValue !== null && beforeValue !== 0
+                      ? ((rec.kpiAfterValue! - beforeValue) / beforeValue) * 100
                       : null;
 
                     return (

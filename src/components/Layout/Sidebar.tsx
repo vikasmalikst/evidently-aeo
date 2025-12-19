@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconLayoutDashboard, IconTargetArrow, IconBulb } from '@tabler/icons-react';
+import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconLayoutDashboard, IconTargetArrow, IconBulb, IconSparkles } from '@tabler/icons-react';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../lib/auth';
 import { useManualBrandDashboard } from '../../manual-dashboard';
@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { icon: IconForms, label: 'Prompts', path: '/prompts' },
   { icon: IconKey, label: 'Keywords', path: '/keywords' },
   { icon: IconBulb, label: 'Recommendations', path: '/recommendations' },
+  { icon: IconSparkles, label: 'Recommendations V3', path: '/recommendations-v3' },
 ];
 
 export const Sidebar = () => {

@@ -15,6 +15,7 @@ import { Settings } from './pages/Settings';
 import { ManagePrompts } from './pages/ManagePrompts';
 import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
+import { GA4Analytics } from './pages/GA4Analytics';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
@@ -173,6 +174,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Navigate to="/settings/manage-prompts" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analytics"
+          element={
+            <ProtectedRoute>
+              <GA4Analytics />
             </ProtectedRoute>
           }
         />

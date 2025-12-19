@@ -150,3 +150,7 @@ To verify the quadrants are correct:
 
 
 
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes

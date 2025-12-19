@@ -40,6 +40,7 @@
   "author": "AnswerIntel Team",
   "license": "MIT",
   "dependencies": {
+    "@google-analytics/data": "^4.7.0",
     "@supabase/supabase-js": "^2.38.0",
     "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",

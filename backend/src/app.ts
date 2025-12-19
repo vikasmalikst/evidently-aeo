@@ -20,6 +20,8 @@ import citationCategorizationRoutes from './routes/citation-categorization.route
 import onboardingRoutes from './routes/onboarding.routes';
 import promptManagementRoutes from './routes/prompt-management.routes';
 import adminRoutes from './routes/admin.routes';
+import recommendationsRoutes from './routes/recommendations.routes';
+import analyticsRoutes from './routes/analytics.routes';
 // TEMPORARY: User management routes commented out
 // import userManagementRoutes from './routes/user-management.routes';
 
@@ -115,6 +117,8 @@ app.use('/api/keywords', keywordGenerationRoutes);
 app.use('/api/citations', citationCategorizationRoutes);
 app.use('/api', promptManagementRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/recommendations', recommendationsRoutes);
+app.use('/api/brands', analyticsRoutes);
 // TEMPORARY: User management routes commented out
 // app.use('/api/users', userManagementRoutes);
 
@@ -134,6 +138,8 @@ app.get('/', (_req, res) => {
         keywords: '/api/keywords',
         citations: '/api/citations',
         admin: '/api/admin',
+        recommendations: '/api/recommendations',
+        analytics: '/api/brands/:brandId/analytics',
         // TEMPORARY: User management routes commented out
         // users: '/api/users'
       }

@@ -1,7 +1,7 @@
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { useNavigate } from 'react-router-dom';
-import { IconForms, IconChevronRight, IconUsers } from '@tabler/icons-react';
+import { IconForms, IconChevronRight, IconUsers, IconChartBar } from '@tabler/icons-react';
 
 export const Settings = () => {
   const navigate = useNavigate();
@@ -20,6 +20,13 @@ export const Settings = () => {
       description: 'Add, remove, or update competitors to track their performance alongside your brand',
       icon: IconUsers,
       path: '/settings/manage-competitors',
+    },
+    {
+      id: 'ga4-analytics',
+      title: 'Google Analytics 4',
+      description: 'Connect your GA4 property to view analytics data directly in your dashboard',
+      icon: IconChartBar,
+      path: '/analytics',
     },
   ];
 

@@ -1796,87 +1796,181 @@ export const RecommendationsV3 = () => {
             {currentStep === 4 && (
               <div>
                 <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-6">Step 4: Results Tracking</h2>
-                <div className="space-y-6">
-                  {recommendations.map((rec) => {
-                    const hasAfterValue = rec.kpiAfterValue !== null && rec.kpiAfterValue !== undefined;
-                    const hasBeforeValue = rec.kpiBeforeValue !== null && rec.kpiBeforeValue !== undefined;
-                    const beforeValue = hasBeforeValue ? rec.kpiBeforeValue! : null;
-                    const improvement = hasAfterValue && beforeValue !== null && beforeValue !== 0
-                      ? ((rec.kpiAfterValue! - beforeValue) / beforeValue) * 100
-                      : null;
+                <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed]">
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                            Recommendation Action
+                          </th>
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                            Domain/Source
+                          </th>
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                            KPI
+                          </th>
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                            Current Source KPI Value
+                          </th>
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                            Before Action KPI Value
+                          </th>
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                            After Action KPI Value
+                          </th>
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                            Change
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#e8e9ed]">
+                        {recommendations.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-6 py-12 text-center text-[14px] text-[#64748b]">
+                              No completed recommendations found. Complete recommendations in Step 3 to see results here.
+                            </td>
+                          </tr>
+                        ) : (
+                          recommendations.map((rec) => {
+                            const hasAfterValue = rec.kpiAfterValue !== null && rec.kpiAfterValue !== undefined;
+                            const hasBeforeValue = rec.kpiBeforeValue !== null && rec.kpiBeforeValue !== undefined;
+                            const beforeValue = hasBeforeValue ? rec.kpiBeforeValue! : null;
+                            const improvement = hasAfterValue && beforeValue !== null && beforeValue !== 0
+                              ? ((rec.kpiAfterValue! - beforeValue) / beforeValue) * 100
+                              : null;
 
-                    return (
-                      <div key={rec.id} className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden">
-                        {/* Header */}
-                        <div className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4">
-                          <h3 className="text-[16px] font-semibold text-[#1a1d29] mb-2 leading-tight">{rec.action}</h3>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
-                              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                              </svg>
-                              {rec.citationSource}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        {/* Results */}
-                        <div className="p-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Current Result */}
-                            <div className="p-5 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-lg border border-[#e2e8f0] shadow-sm">
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="w-2 h-2 rounded-full bg-[#00bcdc]"></div>
-                                <div className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wide">
-                                  Current Result
-                                </div>
-                              </div>
-                              <div className="text-[24px] font-bold text-[#1a1d29] mb-2">
-                                {hasBeforeValue
-                                  ? rec.kpiBeforeValue!.toFixed(2)
-                                  : 'N/A'}
-                              </div>
-                              <div className="text-[12px] text-[#64748b] font-medium">KPI: {rec.kpi || 'N/A'}</div>
-                            </div>
-                            
-                            {/* Improved Result */}
-                            <div className="p-5 bg-gradient-to-br from-[#f0fdf4] to-[#dcfce7] rounded-lg border border-[#bbf7d0] shadow-sm">
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
-                                <div className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wide">
-                                  Improved Result
-                                </div>
-                              </div>
-                              {hasAfterValue ? (
-                                <>
-                                  <div className="text-[24px] font-bold text-[#06c686] mb-2">
-                                    {rec.kpiAfterValue!.toFixed(2)}
+                            // Get current source KPI value based on KPI name and available fields
+                            const getCurrentSourceKPIValue = (): string | null => {
+                              const kpiName = (rec.kpi || '').toLowerCase();
+                              
+                              // Map KPI name to the corresponding field
+                              if (kpiName.includes('visibility')) {
+                                return rec.visibilityScore || null;
+                              } else if (kpiName.includes('soa') || kpiName.includes('share')) {
+                                return rec.soa || null;
+                              } else if (kpiName.includes('sentiment')) {
+                                return rec.sentiment || null;
+                              } else if (kpiName.includes('mention')) {
+                                return rec.mentionRate || null;
+                              }
+                              
+                              // Fallback: try to find any available metric
+                              return rec.visibilityScore || rec.soa || rec.sentiment || rec.mentionRate || null;
+                            };
+
+                            const currentSourceValue = getCurrentSourceKPIValue();
+                            const parsedCurrentValue = currentSourceValue ? parseFloat(currentSourceValue) : null;
+
+                            return (
+                              <tr key={rec.id} className="hover:bg-[#f9f9fb] transition-colors">
+                                {/* Recommendation Action */}
+                                <td className="px-6 py-4">
+                                  <div className="text-[14px] font-medium text-[#1a1d29] leading-snug">
+                                    {rec.action || 'N/A'}
                                   </div>
-                                  {improvement !== null && (
-                                    <div className="flex items-center gap-2 mt-2">
-                                      {improvement > 0 ? (
-                                        <IconTrendingUp size={18} className="text-[#06c686]" />
-                                      ) : (
-                                        <IconTrendingDown size={18} className="text-[#ef4444]" />
-                                      )}
-                                      <span className={`text-[13px] font-semibold ${improvement > 0 ? 'text-[#06c686]' : 'text-[#ef4444]'}`}>
-                                        {improvement > 0 ? '+' : ''}{improvement.toFixed(1)}%
+                                </td>
+                                
+                                {/* Domain/Source */}
+                                <td className="px-6 py-4">
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
+                                    <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                                    </svg>
+                                    {rec.citationSource || 'N/A'}
+                                  </span>
+                                </td>
+                                
+                                {/* KPI Name */}
+                                <td className="px-6 py-4">
+                                  <div className="text-[13px] text-[#475569] font-medium">
+                                    {rec.kpi || 'N/A'}
+                                  </div>
+                                </td>
+                                
+                                {/* Current Source KPI Value */}
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    {parsedCurrentValue !== null && !isNaN(parsedCurrentValue) ? (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-[#3b82f6]"></div>
+                                        <span className="text-[14px] font-semibold text-[#1a1d29]">
+                                          {parsedCurrentValue.toFixed(2)}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[13px] text-[#94a3b8] italic">N/A</span>
+                                    )}
+                                  </div>
+                                </td>
+                                
+                                {/* Before Action KPI Value */}
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    {hasBeforeValue ? (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-[#00bcdc]"></div>
+                                        <span className="text-[14px] font-semibold text-[#1a1d29]">
+                                          {rec.kpiBeforeValue!.toFixed(2)}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[13px] text-[#94a3b8] italic">N/A</span>
+                                    )}
+                                  </div>
+                                </td>
+                                
+                                {/* After Action KPI Value */}
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    {hasAfterValue ? (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
+                                        <span className="text-[14px] font-semibold text-[#06c686]">
+                                          {rec.kpiAfterValue!.toFixed(2)}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[13px] text-[#94a3b8] italic">
+                                        Will be collected on next collection
                                       </span>
+                                    )}
+                                  </div>
+                                </td>
+                                
+                                {/* Change */}
+                                <td className="px-6 py-4">
+                                  {improvement !== null ? (
+                                    <div className="flex items-center gap-2">
+                                      {improvement > 0 ? (
+                                        <>
+                                          <IconTrendingUp size={18} className="text-[#06c686]" />
+                                          <span className="text-[13px] font-semibold text-[#06c686]">
+                                            +{improvement.toFixed(1)}%
+                                          </span>
+                                        </>
+                                      ) : improvement < 0 ? (
+                                        <>
+                                          <IconTrendingDown size={18} className="text-[#ef4444]" />
+                                          <span className="text-[13px] font-semibold text-[#ef4444]">
+                                            {improvement.toFixed(1)}%
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-[13px] text-[#64748b]">No change</span>
+                                      )}
                                     </div>
+                                  ) : (
+                                    <span className="text-[13px] text-[#94a3b8]">—</span>
                                   )}
-                                  <div className="text-[12px] text-[#64748b] mt-2">KPI: {rec.kpi || 'N/A'}</div>
-                                </>
-                              ) : (
-                                <div className="text-[14px] text-[#64748b] italic">
-                                  Results will be collected tomorrow
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}

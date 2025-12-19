@@ -241,7 +241,7 @@ class RecommendationV3Service {
       const calculateTrend = (current: number | undefined, previous: number | undefined) => {
         if (current === undefined || previous === undefined || previous === 0) return undefined;
         const changePercent = ((current - previous) / previous) * 100;
-        const direction = Math.abs(changePercent) < 2 ? 'stable' : (changePercent > 0 ? 'up' : 'down');
+        const direction: 'up' | 'down' | 'stable' = Math.abs(changePercent) < 2 ? 'stable' : (changePercent > 0 ? 'up' : 'down');
         return {
           current,
           previous,

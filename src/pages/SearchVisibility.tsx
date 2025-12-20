@@ -716,27 +716,15 @@ export const SearchVisibility = () => {
           >
             <div className="border-b border-[#e7ecff] bg-white p-6">
               <div className="flex flex-col gap-6">
-                <KpiToggle metricType={metricType} onChange={setMetricType} />
-                <div className="flex flex-col gap-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
-                    View Mode
-                  </div>
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="flex items-center bg-white">
-                      <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
-                    </div>
-                    <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm pt-1">
-                      {activeTab === 'brand'
-                        ? 'Focus on how each collector sees your brand.'
-                        : 'Benchmark the selected KPI against competitors.'}
-                    </p>
-                  </div>
+                {/* KPI Toggle and LLM Selectors Row - KPI on left, LLM selectors on right */}
+                <div className="flex items-start justify-between gap-4">
+                  <KpiToggle metricType={metricType} onChange={setMetricType} />
                   {activeTab === 'competitive' && llmOptions.filter((o) => o.value !== 'all').length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8690a8]">
+                    <div className="flex flex-col gap-2 flex-shrink-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8690a8] text-right">
                         LLM Filter
-                      </span>
-                      <div className="flex flex-wrap items-center gap-2">
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 justify-end">
                         <button
                           type="button"
                           onClick={() => setLlmFilters([])}
@@ -780,6 +768,22 @@ export const SearchVisibility = () => {
                       </div>
                     </div>
                   )}
+                </div>
+                {/* View Mode Section */}
+                <div className="flex flex-col gap-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
+                    View Mode
+                  </div>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-center bg-white">
+                      <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                    </div>
+                    <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm pt-1">
+                      {activeTab === 'brand'
+                        ? 'Focus on how each collector sees your brand.'
+                        : 'Benchmark the selected KPI against competitors.'}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

@@ -6,7 +6,6 @@ import { CompactMetricsPods } from './components/CompactMetricsPods';
 import { TopicsRankedTable } from './components/TopicsRankedTable';
 import { TopicAnalysisMultiView } from './components/TopicAnalysisMultiView';
 import { TopicDetailModal } from './components/TopicDetailModal';
-import { ChartTitle } from './components/ChartTitle';
 import { DateRangePicker } from '../../components/DateRangePicker/DateRangePicker';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { getActiveCompetitors, type ManagedCompetitor } from '../../api/competitorManagementApi';
@@ -501,12 +500,52 @@ export const TopicsAnalysisPage = ({
         </div>
 
 
-        <div style={{ marginBottom: '16px' }}>
+        <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
           <KpiToggle
             metricType={metricType}
             onChange={(value) => setMetricType(value as TopicsMetricType)}
             allowedMetricTypes={['share', 'visibility', 'sentiment']}
           />
+          
+          {/* LLM Selector/Filter Icons - aligned to the right */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedModels([])}
+              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
+                selectedModels.length === 0
+                  ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
+                  : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
+              }`}
+            >
+              All
+            </button>
+            {availableModels.map((model) => {
+              const isActive = selectedModels.includes(model);
+              return (
+                <button
+                  key={model}
+                  type="button"
+                  onClick={() =>
+                    setSelectedModels((prev) =>
+                      prev.includes(model) ? prev.filter((m) => m !== model) : [...prev, model]
+                    )
+                  }
+                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${
+                    isActive
+                      ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
+                      : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
+                  }`}
+                  title={model}
+                  aria-label={`Filter by ${model}`}
+                >
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
+                    {getLLMIcon(model)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Section 1: Compact Metrics Pods */}
@@ -526,74 +565,8 @@ export const TopicsAnalysisPage = ({
           />
         </div>
 
-        {/* Section 2: Chart Header with Title and Filters */}
+        {/* Section 2: Multi-View Chart */}
         <div style={{ marginBottom: '24px' }}>
-          <div
-            style={{
-              backgroundColor: '#ffffff',
-              padding: '20px 24px',
-              borderRadius: '8px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '16px'
-            }}
-          >
-            {/* Left: Heading and Subtitle */}
-            <ChartTitle
-              category={selectedCategory}
-              dateRange={dateRangeLabel}
-              baseTitle={chartBaseTitle}
-              selectedModel={selectedModel}
-              aiModels={[]}
-            />
-
-            {/* Right: Dropdowns (Models, Competitors) - left to right order */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedModels([])}
-                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
-                    selectedModels.length === 0
-                      ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
-                      : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
-                  }`}
-                >
-                  All
-                </button>
-                {availableModels.map((model) => {
-                  const isActive = selectedModels.includes(model);
-                  return (
-                    <button
-                      key={model}
-                      type="button"
-                      onClick={() =>
-                        setSelectedModels((prev) =>
-                          prev.includes(model) ? prev.filter((m) => m !== model) : [...prev, model]
-                        )
-                      }
-                      className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${
-                        isActive
-                          ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
-                          : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-                      }`}
-                      title={model}
-                      aria-label={`Filter by ${model}`}
-                    >
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
-                        {getLLMIcon(model)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
           {/* Multi-View Chart */}
           <TopicAnalysisMultiView
             topics={selectedTopicsData}

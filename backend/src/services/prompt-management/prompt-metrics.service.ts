@@ -39,6 +39,8 @@ export class PromptMetricsService {
     let avgVisibility: number | null = null
     let avgSentiment: number | null = null
 
+    console.log(`🔍 [Prompt Metrics] calculateAndStoreMetrics called - queryIds: ${queryIds.length}, feature flag: ${process.env.USE_OPTIMIZED_PROMPT_METRICS === 'true'}`);
+
     if (queryIds.length > 0) {
       // Feature flag: Use optimized query (new schema) vs legacy (extracted_positions)
       const USE_OPTIMIZED_PROMPT_METRICS = process.env.USE_OPTIMIZED_PROMPT_METRICS === 'true'
@@ -88,6 +90,7 @@ export class PromptMetricsService {
           }
         }
       } else {
+        console.log('   📋 [Prompt Metrics] Using legacy query (extracted_positions - 2 queries)');
         // LEGACY: Query extracted_positions (2 separate queries)
         // Fetch visibility scores
         const { data: visibilityData } = await supabaseAdmin

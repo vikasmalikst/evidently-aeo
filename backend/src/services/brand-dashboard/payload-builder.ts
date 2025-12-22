@@ -2052,8 +2052,12 @@ export async function buildDashboardPayload(
   Array.from(positionRowCollectorTypes).forEach(collectorType => {
     const successful = successfulMatchesByCollector.get(collectorType) || 0
     const mismatched = dateMismatchesByCollector.get(collectorType) || 0
-    console.log(`   - ${collectorType}: ${successful} matched, ${mismatched} date mismatches`)
+    const status = successful > 0 ? '✅' : '❌'
+    console.log(`   ${status} ${collectorType}: ${successful} matched, ${mismatched} date mismatches`)
   })
+  
+  // Log date range being used for this request
+  console.log(`[TimeSeries] Date range for this request: ${allDates[0]} to ${allDates[allDates.length - 1]} (${allDates.length} days)`)
 
   // Calculate daily averages for each collector
   const timeSeriesData = new Map<string, {

@@ -78,6 +78,32 @@ USE_OPTIMIZED_PROMPT_METRICS=false
 - 10-15x faster
 - Fetches both visibility and sentiment in one go
 
+### Keywords Analytics Service
+
+**`USE_OPTIMIZED_KEYWORDS_QUERY`** (default: `false`)
+
+Controls whether keywords analytics uses the optimized new schema or the legacy `extracted_positions` table.
+
+- `true`: Query `metric_facts` + `brand_metrics` (optimized)
+- `false`: Query `extracted_positions` (legacy, current behavior)
+
+**Usage:**
+```bash
+# Enable optimization
+USE_OPTIMIZED_KEYWORDS_QUERY=true
+
+# Disable (default)
+USE_OPTIMIZED_KEYWORDS_QUERY=false
+```
+
+**Impact:** MEDIUM (keywords page)  
+**Risk:** LOW (simple brand presence check)
+
+**Benefits:**
+- Direct JOIN on indexed tables
+- 10-15x faster
+- Simpler query structure
+
 ---
 
 ## Migration Status
@@ -87,9 +113,9 @@ USE_OPTIMIZED_PROMPT_METRICS=false
 | Position Extraction | `USE_OPTIMIZED_POSITION_CHECK` | ✅ Implemented | ⏳ Testing |
 | Sentiment Services | `USE_OPTIMIZED_SENTIMENT_QUERY` | ✅ Implemented | ⏳ Testing |
 | Prompt Metrics | `USE_OPTIMIZED_PROMPT_METRICS` | ✅ Implemented | ⏳ Testing |
-| Keywords Analytics | TBD | ⏳ Pending | - |
-| Source Attribution | TBD | ⏳ Pending | - |
-| Brand Topics | TBD | ⏳ Pending | - |
+| Keywords Analytics | `USE_OPTIMIZED_KEYWORDS_QUERY` | ✅ Implemented | ⏳ Testing |
+| Source Attribution | TBD | ⏳ Pending (Phase 3.3) | - |
+| Brand Topics | TBD | ⏳ Pending (Phase 3.4) | - |
 
 ---
 

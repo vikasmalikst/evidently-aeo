@@ -122,26 +122,77 @@ export const keywordsAnalyticsService = {
 
       const filteredCollectorIdList = validCollectorIds.size > 0 ? Array.from(validCollectorIds) : collectorIdList;
 
-      // 3) Pull brand presence from extracted_positions for valid collector_result_ids
-      // Filter by collector_type directly from extracted_positions if provided
-      // Volume should only count positions where competitor_name is null (brand positions only)
-      let positionsQuery = supabaseAdmin
-        .from('extracted_positions')
-        .select('collector_result_id, has_brand_presence, created_at, collector_type, competitor_name')
-        .in('collector_result_id', filteredCollectorIdList)
-        .is('competitor_name', null); // Only count brand positions for volume
+      // 3) Pull brand presence from positions table for valid collector_result_ids
+      // Filter by collector_type if provided
+      // Volume should only count brand positions (not competitor positions)
+      
+      // Feature flag: Use optimized query (new schema) vs legacy (extracted_positions)
+      const USE_OPTIMIZED_KEYWORDS_QUERY = process.env.USE_OPTIMIZED_KEYWORDS_QUERY === 'true'
+      
+      let positionRows: any[] | null = null
+      let positionsError: any = null
 
-      // Filter by collector_type from extracted_positions if provided
-      if (mappedCollectorType) {
-        positionsQuery = positionsQuery.eq('collector_type', mappedCollectorType);
+      if (USE_OPTIMIZED_KEYWORDS_QUERY) {
+        // OPTIMIZED: Query metric_facts + brand_metrics
+        let query = supabaseAdmin
+          .from('metric_facts')
+          .select(`
+            collector_result_id,
+            created_at,
+            collector_type,
+            brand_metrics!inner(
+              has_brand_presence
+            )
+          `)
+          .in('collector_result_id', filteredCollectorIdList)
+
+        // Filter by collector_type if provided
+        if (mappedCollectorType) {
+          query = query.eq('collector_type', mappedCollectorType)
+        }
+
+        if (startDate) query = query.gte('created_at', startDate)
+        if (endDate) query = query.lte('created_at', endDate)
+
+        const { data, error } = await query
+        positionsError = error
+
+        // Transform to match old format
+        if (data) {
+          positionRows = data.map(d => {
+            const bm = Array.isArray(d.brand_metrics) ? d.brand_metrics[0] : d.brand_metrics
+            return {
+              collector_result_id: d.collector_result_id,
+              has_brand_presence: bm?.has_brand_presence || false,
+              created_at: d.created_at,
+              collector_type: d.collector_type,
+              competitor_name: null, // Brand rows always have null competitor_name
+            }
+          })
+        }
+      } else {
+        // LEGACY: Query extracted_positions
+        let positionsQuery = supabaseAdmin
+          .from('extracted_positions')
+          .select('collector_result_id, has_brand_presence, created_at, collector_type, competitor_name')
+          .in('collector_result_id', filteredCollectorIdList)
+          .is('competitor_name', null) // Only count brand positions for volume
+
+        // Filter by collector_type from extracted_positions if provided
+        if (mappedCollectorType) {
+          positionsQuery = positionsQuery.eq('collector_type', mappedCollectorType)
+        }
+
+        if (startDate) positionsQuery = positionsQuery.gte('created_at', startDate)
+        if (endDate) positionsQuery = positionsQuery.lte('created_at', endDate)
+
+        const { data, error } = await positionsQuery
+        positionRows = data
+        positionsError = error
       }
 
-      if (startDate) positionsQuery = positionsQuery.gte('created_at', startDate);
-      if (endDate) positionsQuery = positionsQuery.lte('created_at', endDate);
-
-      const { data: positionRows, error: positionsError } = await positionsQuery;
       if (positionsError) {
-        throw new Error(`Failed to fetch positions for keywords: ${positionsError.message}`);
+        throw new Error(`Failed to fetch positions for keywords (${USE_OPTIMIZED_KEYWORDS_QUERY ? 'optimized' : 'legacy'}): ${positionsError.message}`)
       }
 
       for (const row of positionRows ?? []) {

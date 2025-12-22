@@ -162,10 +162,10 @@ export async function buildDashboardPayload(
       }
 
       // Create maps for lookups
-      const brandMetricsMap = new Map((brandMetrics || []).map(bm => [bm.metric_fact_id, bm]))
-      const brandSentimentMap = new Map((brandSentiment || []).map(bs => [bs.metric_fact_id, bs]))
-      const competitorMetricsMap = new Map<number, any[]>()
-      const competitorSentimentMap = new Map<string, any>() // key: "metric_fact_id:competitor_id"
+      const brandMetricsMap = new Map((brandMetrics || []).map(bm => [bm.metric_fact_id, bm]));
+      const brandSentimentMap = new Map((brandSentiment || []).map(bs => [bs.metric_fact_id, bs]));
+      const competitorMetricsMap = new Map<number, any[]>();
+      const competitorSentimentMap = new Map<string, any>(); // key: "metric_fact_id:competitor_id"
 
       // Group competitor metrics by metric_fact_id
       (competitorMetrics || []).forEach(cm => {

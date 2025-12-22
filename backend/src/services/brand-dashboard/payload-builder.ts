@@ -161,14 +161,28 @@ export async function buildDashboardPayload(
         console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentError)
       }
 
+      // Defensive: Ensure all data is arrays
+      const brandMetricsArray = Array.isArray(brandMetrics) ? brandMetrics : [];
+      const brandSentimentArray = Array.isArray(brandSentiment) ? brandSentiment : [];
+      const competitorMetricsArray = Array.isArray(competitorMetrics) ? competitorMetrics : [];
+      const competitorSentimentArray = Array.isArray(competitorSentiment) ? competitorSentiment : [];
+
+      // Debug logging
+      console.log('[Dashboard] Data types:', {
+        brandMetrics: Array.isArray(brandMetrics) ? 'array' : typeof brandMetrics,
+        brandSentiment: Array.isArray(brandSentiment) ? 'array' : typeof brandSentiment,
+        competitorMetrics: Array.isArray(competitorMetrics) ? 'array' : typeof competitorMetrics,
+        competitorSentiment: Array.isArray(competitorSentiment) ? 'array' : typeof competitorSentiment,
+      });
+
       // Create maps for lookups
-      const brandMetricsMap = new Map((brandMetrics || []).map(bm => [bm.metric_fact_id, bm]));
-      const brandSentimentMap = new Map((brandSentiment || []).map(bs => [bs.metric_fact_id, bs]));
+      const brandMetricsMap = new Map(brandMetricsArray.map(bm => [bm.metric_fact_id, bm]));
+      const brandSentimentMap = new Map(brandSentimentArray.map(bs => [bs.metric_fact_id, bs]));
       const competitorMetricsMap = new Map<number, any[]>();
       const competitorSentimentMap = new Map<string, any>(); // key: "metric_fact_id:competitor_id"
 
       // Group competitor metrics by metric_fact_id
-      (competitorMetrics || []).forEach(cm => {
+      competitorMetricsArray.forEach(cm => {
         if (!competitorMetricsMap.has(cm.metric_fact_id)) {
           competitorMetricsMap.set(cm.metric_fact_id, [])
         }
@@ -176,7 +190,7 @@ export async function buildDashboardPayload(
       })
 
       // Index competitor sentiment
-      (competitorSentiment || []).forEach(cs => {
+      competitorSentimentArray.forEach(cs => {
         const key = `${cs.metric_fact_id}:${cs.competitor_id}`
         competitorSentimentMap.set(key, cs)
       })

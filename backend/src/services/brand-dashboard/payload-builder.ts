@@ -2129,7 +2129,8 @@ export async function buildDashboardPayload(
     // This prevents frontend from falling back to flat lines when historical data exists
     if (dates.length > 0) {
       const hasData = visibility.some(v => v > 0) || share.some(s => s > 0)
-      console.log(`[TimeSeries] Collector ${collectorType}: ${dates.length} dates, hasData=${hasData}, visibility=[${visibility.slice(0, 3).join(', ')}...], share=[${share.slice(0, 3).join(', ')}...]`)
+      // Show FULL arrays for collectors to diagnose zero values
+      console.log(`[TimeSeries] Collector ${collectorType}: ${dates.length} dates, hasData=${hasData}, visibility=[${visibility.join(', ')}], share=[${share.join(', ')}]`)
       timeSeriesData.set(collectorType, { dates, visibility, share, sentiment, brandPresence })
     } else {
       console.warn(`[TimeSeries] Collector ${collectorType} has NO dates in time-series (position rows might be missing)`)

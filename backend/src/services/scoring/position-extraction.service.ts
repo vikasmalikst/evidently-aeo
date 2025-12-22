@@ -202,13 +202,45 @@ export class PositionExtractionService {
     console.log(`   🔍 [Position Extraction] Checking which results already have positions...`);
     const processedCollectorResults = new Set<number>();
 
+    // Feature flag: Use optimized query (metric_facts) vs legacy (extracted_positions)
+    const USE_OPTIMIZED_POSITION_CHECK = process.env.USE_OPTIMIZED_POSITION_CHECK === 'true';
+    
+    if (USE_OPTIMIZED_POSITION_CHECK) {
+      console.log(`   ⚡ [Position Extraction] Using optimized existence check (metric_facts)`);
+    } else {
+      console.log(`   📋 [Position Extraction] Using legacy existence check (extracted_positions)`);
+    }
+
     for (const result of allResults) {
-      const { data: existing, error: checkError } = await this.supabase
-        .from('extracted_positions')
-        .select('id')
-        .eq('collector_result_id', result.id)
-        .limit(1)
-        .maybeSingle();
+      const startTime = Date.now();
+      let existing = null;
+      let checkError = null;
+
+      if (USE_OPTIMIZED_POSITION_CHECK) {
+        // OPTIMIZED: Query metric_facts table (new schema)
+        const { data, error } = await this.supabase
+          .from('metric_facts')
+          .select('id')
+          .eq('collector_result_id', result.id)
+          .limit(1)
+          .maybeSingle();
+        
+        existing = data;
+        checkError = error;
+      } else {
+        // LEGACY: Query extracted_positions table (old schema / compat view)
+        const { data, error } = await this.supabase
+          .from('extracted_positions')
+          .select('id')
+          .eq('collector_result_id', result.id)
+          .limit(1)
+          .maybeSingle();
+        
+        existing = data;
+        checkError = error;
+      }
+
+      const duration = Date.now() - startTime;
       
       if (checkError) {
         console.error(`   ❌ [Position Extraction] Error checking existing positions for collector_result ${result.id}:`, checkError.message);
@@ -216,7 +248,7 @@ export class PositionExtractionService {
       
       if (existing) {
         processedCollectorResults.add(result.id);
-        console.log(`   ℹ️ [Position Extraction] Collector_result ${result.id} already has positions, will skip`);
+        console.log(`   ℹ️ [Position Extraction] Collector_result ${result.id} already has positions (${USE_OPTIMIZED_POSITION_CHECK ? 'optimized' : 'legacy'}, ${duration}ms), will skip`);
       }
     }
 

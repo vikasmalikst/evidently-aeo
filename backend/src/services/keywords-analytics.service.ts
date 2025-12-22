@@ -24,6 +24,10 @@ export const keywordsAnalyticsService = {
     collectorType?: string;
   }): Promise<KeywordAnalyticsPayload> {
     const { brandId, customerId, startDate, endDate, collectorType } = params;
+    
+    // Check feature flag status
+    const USE_OPTIMIZED_KEYWORDS_QUERY = process.env.USE_OPTIMIZED_KEYWORDS_QUERY === 'true';
+    console.log(`🔍 [Keywords Analytics] Feature flag USE_OPTIMIZED_KEYWORDS_QUERY: ${USE_OPTIMIZED_KEYWORDS_QUERY}`);
 
     // Map collector type if provided (for filtering)
     let mappedCollectorType: string | undefined = undefined;
@@ -57,6 +61,8 @@ export const keywordsAnalyticsService = {
       throw new Error(`Failed to fetch keywords: ${keywordError.message}`);
     }
 
+    console.log(`📊 [Keywords Analytics] Found ${keywordRows?.length || 0} keyword rows`);
+
     const keywordToCollectorIds = new Map<string, Set<number>>();
     const collectorIds = new Set<number>();
 
@@ -70,6 +76,8 @@ export const keywordsAnalyticsService = {
     }
 
     const collectorIdList = Array.from(collectorIds.values());
+    console.log(`📊 [Keywords Analytics] Found ${collectorIdList.length} unique collector_result_ids`);
+    
     const brandPresenceByCollector = new Map<number, { brand: number; total: number; type: string | null }>();
 
     if (collectorIdList.length > 0) {
@@ -126,9 +134,6 @@ export const keywordsAnalyticsService = {
       // Filter by collector_type if provided
       // Volume should only count brand positions (not competitor positions)
       
-      // Feature flag: Use optimized query (new schema) vs legacy (extracted_positions)
-      const USE_OPTIMIZED_KEYWORDS_QUERY = process.env.USE_OPTIMIZED_KEYWORDS_QUERY === 'true'
-      
       let positionRows: any[] | null = null
       let positionsError: any = null
 
@@ -172,6 +177,7 @@ export const keywordsAnalyticsService = {
           })
         }
       } else {
+        console.log('   📋 [Keywords Analytics] Using legacy query (extracted_positions)');
         // LEGACY: Query extracted_positions
         let positionsQuery = supabaseAdmin
           .from('extracted_positions')
@@ -195,6 +201,8 @@ export const keywordsAnalyticsService = {
       if (positionsError) {
         throw new Error(`Failed to fetch positions for keywords (${USE_OPTIMIZED_KEYWORDS_QUERY ? 'optimized' : 'legacy'}): ${positionsError.message}`)
       }
+
+      console.log(`📊 [Keywords Analytics] Found ${positionRows?.length || 0} position rows (${USE_OPTIMIZED_KEYWORDS_QUERY ? 'optimized' : 'legacy'} query)`);
 
       for (const row of positionRows ?? []) {
         const id = typeof row.collector_result_id === 'number' ? row.collector_result_id : null;

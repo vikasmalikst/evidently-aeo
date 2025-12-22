@@ -109,7 +109,7 @@ COMMENT ON COLUMN public.brand_metrics.share_of_answers IS
 CREATE TABLE IF NOT EXISTS public.competitor_metrics (
   id BIGSERIAL PRIMARY KEY,
   metric_fact_id BIGINT NOT NULL REFERENCES public.metric_facts(id) ON DELETE CASCADE,
-  competitor_id INTEGER NOT NULL REFERENCES public.brand_competitors(id) ON DELETE CASCADE,
+  competitor_id UUID NOT NULL REFERENCES public.brand_competitors(id) ON DELETE CASCADE,
   visibility_index NUMERIC(5,2),
   share_of_answers NUMERIC(5,2),
   competitor_positions INTEGER[],
@@ -136,7 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_competitor_metrics_share
 COMMENT ON TABLE public.competitor_metrics IS 
   'Competitor-specific visibility and position metrics. One row per competitor per result.';
 COMMENT ON COLUMN public.competitor_metrics.competitor_id IS 
-  'Foreign key to brand_competitors. Uses integer ID instead of text name for efficiency.';
+  'Foreign key to brand_competitors. Uses UUID ID instead of text name for efficiency.';
 
 -- ============================================================================
 -- 4. CREATE BRAND SENTIMENT TABLE
@@ -176,7 +176,7 @@ COMMENT ON COLUMN public.brand_sentiment.sentiment_score IS
 CREATE TABLE IF NOT EXISTS public.competitor_sentiment (
   id BIGSERIAL PRIMARY KEY,
   metric_fact_id BIGINT NOT NULL REFERENCES public.metric_facts(id) ON DELETE CASCADE,
-  competitor_id INTEGER NOT NULL REFERENCES public.brand_competitors(id) ON DELETE CASCADE,
+  competitor_id UUID NOT NULL REFERENCES public.brand_competitors(id) ON DELETE CASCADE,
   sentiment_label TEXT CHECK (sentiment_label IN ('POSITIVE', 'NEGATIVE', 'NEUTRAL')),
   sentiment_score NUMERIC(5,2),
   positive_sentences JSONB DEFAULT '[]'::jsonb,

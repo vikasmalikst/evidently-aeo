@@ -18,8 +18,12 @@
 
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
-dotenv.config();
+// Load .env from backend directory
+const envPath = path.resolve(__dirname, '../../.env');
+console.log(`📁 Loading .env from: ${envPath}`);
+dotenv.config({ path: envPath });
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -27,6 +31,9 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error('❌ Missing Supabase credentials');
   console.error('   Required: VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+  console.error(`   Attempted to load from: ${envPath}`);
+  console.error(`   VITE_SUPABASE_URL found: ${!!supabaseUrl}`);
+  console.error(`   SUPABASE_SERVICE_ROLE_KEY found: ${!!supabaseServiceKey}`);
   process.exit(1);
 }
 

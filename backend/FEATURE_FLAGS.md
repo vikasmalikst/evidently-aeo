@@ -52,6 +52,32 @@ USE_OPTIMIZED_SENTIMENT_QUERY=false
 
 **Note:** These services are deprecated. New data uses consolidated analysis which writes directly to the new schema (`brand_sentiment` and `competitor_sentiment` tables).
 
+### Prompt Metrics Service
+
+**`USE_OPTIMIZED_PROMPT_METRICS`** (default: `false`)
+
+Controls whether prompt metrics calculations use the optimized new schema or the legacy `extracted_positions` table.
+
+- `true`: Query `metric_facts` + `brand_metrics` + `brand_sentiment` (optimized, single query)
+- `false`: Query `extracted_positions` (legacy, 2 separate queries)
+
+**Usage:**
+```bash
+# Enable optimization
+USE_OPTIMIZED_PROMPT_METRICS=true
+
+# Disable (default)
+USE_OPTIMIZED_PROMPT_METRICS=false
+```
+
+**Impact:** MEDIUM (prompt metrics page)  
+**Risk:** LOW (simple aggregations)
+
+**Benefits:**
+- Single query vs 2 separate queries
+- 10-15x faster
+- Fetches both visibility and sentiment in one go
+
 ---
 
 ## Migration Status
@@ -60,7 +86,7 @@ USE_OPTIMIZED_SENTIMENT_QUERY=false
 |---------|------|--------|---------|
 | Position Extraction | `USE_OPTIMIZED_POSITION_CHECK` | ✅ Implemented | ⏳ Testing |
 | Sentiment Services | `USE_OPTIMIZED_SENTIMENT_QUERY` | ✅ Implemented | ⏳ Testing |
-| Prompt Metrics | TBD | ⏳ Pending | - |
+| Prompt Metrics | `USE_OPTIMIZED_PROMPT_METRICS` | ✅ Implemented | ⏳ Testing |
 | Keywords Analytics | TBD | ⏳ Pending | - |
 | Source Attribution | TBD | ⏳ Pending | - |
 | Brand Topics | TBD | ⏳ Pending | - |

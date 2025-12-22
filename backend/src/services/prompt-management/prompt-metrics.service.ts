@@ -40,40 +40,89 @@ export class PromptMetricsService {
     let avgSentiment: number | null = null
 
     if (queryIds.length > 0) {
-      // Fetch visibility scores
-      const { data: visibilityData } = await supabaseAdmin
-        .from('extracted_positions')
-        .select('visibility_index')
-        .in('query_id', queryIds)
-        .eq('brand_id', brandId)
-        .eq('customer_id', customerId)
-        .is('competitor_name', null) // Only brand metrics
+      // Feature flag: Use optimized query (new schema) vs legacy (extracted_positions)
+      const USE_OPTIMIZED_PROMPT_METRICS = process.env.USE_OPTIMIZED_PROMPT_METRICS === 'true'
 
-      const visibilityScores = visibilityData
-        ?.map(v => typeof v.visibility_index === 'number' ? v.visibility_index : null)
-        .filter((v): v is number => v !== null) || []
+      if (USE_OPTIMIZED_PROMPT_METRICS) {
+        // OPTIMIZED: Query metric_facts + brand_metrics + brand_sentiment (single query for both metrics)
+        const { data: metricsData } = await supabaseAdmin
+          .from('metric_facts')
+          .select(`
+            brand_metrics!inner(
+              visibility_index
+            ),
+            brand_sentiment(
+              sentiment_score
+            )
+          `)
+          .in('query_id', queryIds)
+          .eq('brand_id', brandId)
+          .eq('customer_id', customerId)
 
-      if (visibilityScores.length > 0) {
-        const avg = visibilityScores.reduce((sum, v) => sum + v, 0) / visibilityScores.length
-        avgVisibility = roundToPrecision(avg * 100, 2) // Convert to 0-100 scale
-      }
+        if (metricsData) {
+          // Calculate average visibility
+          const visibilityScores = metricsData
+            .map(d => {
+              const bm = Array.isArray(d.brand_metrics) ? d.brand_metrics[0] : d.brand_metrics
+              return typeof bm?.visibility_index === 'number' ? bm.visibility_index : null
+            })
+            .filter((v): v is number => v !== null)
 
-      // Fetch sentiment scores
-      const { data: sentimentData } = await supabaseAdmin
-        .from('extracted_positions')
-        .select('sentiment_score')
-        .in('query_id', queryIds)
-        .eq('brand_id', brandId)
-        .eq('customer_id', customerId)
-        .is('competitor_name', null) // Only brand metrics
+          if (visibilityScores.length > 0) {
+            const avg = visibilityScores.reduce((sum, v) => sum + v, 0) / visibilityScores.length
+            avgVisibility = roundToPrecision(avg * 100, 2) // Convert to 0-100 scale
+          }
 
-      const sentimentScores = sentimentData
-        ?.map(s => typeof s.sentiment_score === 'number' ? s.sentiment_score : null)
-        .filter((s): s is number => s !== null) || []
+          // Calculate average sentiment
+          const sentimentScores = metricsData
+            .map(d => {
+              const bs = Array.isArray(d.brand_sentiment) ? d.brand_sentiment[0] : d.brand_sentiment
+              return typeof bs?.sentiment_score === 'number' ? bs.sentiment_score : null
+            })
+            .filter((s): s is number => s !== null)
 
-      if (sentimentScores.length > 0) {
-        const avg = sentimentScores.reduce((sum, s) => sum + s, 0) / sentimentScores.length
-        avgSentiment = roundToPrecision(avg, 2)
+          if (sentimentScores.length > 0) {
+            const avg = sentimentScores.reduce((sum, s) => sum + s, 0) / sentimentScores.length
+            avgSentiment = roundToPrecision(avg, 2)
+          }
+        }
+      } else {
+        // LEGACY: Query extracted_positions (2 separate queries)
+        // Fetch visibility scores
+        const { data: visibilityData } = await supabaseAdmin
+          .from('extracted_positions')
+          .select('visibility_index')
+          .in('query_id', queryIds)
+          .eq('brand_id', brandId)
+          .eq('customer_id', customerId)
+          .is('competitor_name', null) // Only brand metrics
+
+        const visibilityScores = visibilityData
+          ?.map(v => typeof v.visibility_index === 'number' ? v.visibility_index : null)
+          .filter((v): v is number => v !== null) || []
+
+        if (visibilityScores.length > 0) {
+          const avg = visibilityScores.reduce((sum, v) => sum + v, 0) / visibilityScores.length
+          avgVisibility = roundToPrecision(avg * 100, 2) // Convert to 0-100 scale
+        }
+
+        // Fetch sentiment scores
+        const { data: sentimentData } = await supabaseAdmin
+          .from('extracted_positions')
+          .select('sentiment_score')
+          .in('query_id', queryIds)
+          .eq('brand_id', brandId)
+          .eq('customer_id', customerId)
+          .is('competitor_name', null) // Only brand metrics
+
+        const sentimentScores = sentimentData
+          ?.map(s => typeof s.sentiment_score === 'number' ? s.sentiment_score : null)
+          .filter((s): s is number => s !== null) || []
+
+        if (sentimentScores.length > 0) {
+          const avg = sentimentScores.reduce((sum, s) => sum + s, 0) / sentimentScores.length
+          avgSentiment = roundToPrecision(avg, 2)
+        }
       }
     }
 

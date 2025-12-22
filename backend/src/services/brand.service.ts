@@ -1506,8 +1506,12 @@ export class BrandService {
         }
       }
       
-      if (collectorResults.length > 0) {
+      if (collectorResults.length > 0 && collectorResults.length <= 100) {
+        // Only use .in() filtering for small result sets (<=100 IDs)
+        // Larger sets can cause 502 Bad Gateway timeouts from Supabase/nginx
         const collectorResultIds = collectorResults.map(cr => cr.id);
+        console.log(`🔍 Using .in() filter with ${collectorResultIds.length} collector_result IDs`);
+        
         // Filter positions by collector_result_ids AND collector_type to ensure data consistency
         let positionsQueryFiltered = supabaseAdmin
           .from('extracted_positions')
@@ -1538,6 +1542,19 @@ export class BrandService {
         }
         positions = posData || [];
         console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorTypes.length > 0 ? ` (for collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''} [${step3Time.toFixed(2)}ms]`);
+      } else if (collectorResults.length > 100) {
+        // For large result sets (>100), query directly by brand_id + date range + collector_type
+        // to avoid 502 Bad Gateway timeout from large .in() clauses
+        console.log(`⚠️ Large collector_results set (${collectorResults.length} IDs), querying directly by brand_id + date range to avoid timeout`);
+        const { data: posData, error: positionsError } = await positionsQuery;
+        const step3Time = performance.now() - step3Start;
+        
+        if (positionsError) {
+          console.error(`❌ Error fetching extracted_positions [${step3Time.toFixed(2)}ms]:`, positionsError);
+          throw new Error(`Failed to fetch positions: ${positionsError.message || positionsError}`);
+        }
+        positions = posData || [];
+        console.log(`📊 Found ${positions.length} positions after querying directly (avoided large .in() clause)${mappedCollectorTypes.length > 0 ? ` (filtered by collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''} [${step3Time.toFixed(2)}ms]`);
       } else {
         // If no collector_results, get positions directly by brand_id (with collector_type filter if provided)
         console.log('⚠️ No collector_results found, querying positions directly by brand_id');

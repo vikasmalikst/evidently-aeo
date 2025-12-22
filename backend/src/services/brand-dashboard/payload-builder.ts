@@ -65,28 +65,198 @@ export async function buildDashboardPayload(
     return result
   })()
 
+  /**
+   * Fetch positions from NEW OPTIMIZED SCHEMA
+   * Joins metric_facts, brand_metrics, competitor_metrics, brand_sentiment, competitor_sentiment
+   * Returns data in extracted_positions format for backwards compatibility
+   */
   const fetchPositions = async (
     includeCustomer: boolean,
     useProcessedAt: boolean
   ) => {
-    const query = supabaseAdmin
-      .from('extracted_positions')
-      .select(
-        'brand_name, query_id, collector_result_id, collector_type, competitor_name, visibility_index, visibility_index_competitor, share_of_answers_brand, share_of_answers_competitor, sentiment_score, sentiment_label, sentiment_score_competitor, sentiment_label_competitor, total_brand_mentions, competitor_mentions, processed_at, created_at, brand_positions, competitor_positions, has_brand_presence, topic, metadata'
-      )
-      .eq('brand_id', brand.id)
-      .order(useProcessedAt ? 'processed_at' : 'created_at', { ascending: true })
+    try {
+      // Fetch metric_facts with brand info from collector_results
+      let metricFactsQuery = supabaseAdmin
+        .from('metric_facts')
+        .select(`
+          id,
+          collector_result_id,
+          brand_id,
+          customer_id,
+          query_id,
+          collector_type,
+          topic,
+          processed_at,
+          created_at,
+          collector_results!inner(brand)
+        `)
+        .eq('brand_id', brand.id)
 
-    const lowerBoundColumn = useProcessedAt ? 'processed_at' : 'created_at'
+      const lowerBoundColumn = useProcessedAt ? 'processed_at' : 'created_at'
+      
+      metricFactsQuery = metricFactsQuery
+        .gte(lowerBoundColumn, startIsoBound)
+        .lte(lowerBoundColumn, endIsoBound)
+        .order(lowerBoundColumn, { ascending: true })
 
-    query.gte(lowerBoundColumn, startIsoBound)
-    query.lte(lowerBoundColumn, endIsoBound)
+      if (includeCustomer && customerId) {
+        metricFactsQuery = metricFactsQuery.eq('customer_id', customerId)
+      }
 
-    if (includeCustomer && customerId) {
-      query.eq('customer_id', customerId)
+      const { data: metricFacts, error: metricFactsError } = await metricFactsQuery
+
+      if (metricFactsError) {
+        return { data: null, error: metricFactsError }
+      }
+
+      if (!metricFacts || metricFacts.length === 0) {
+        return { data: [], error: null }
+      }
+
+      const metricFactIds = metricFacts.map(mf => mf.id)
+
+      // Fetch brand_metrics
+      const { data: brandMetrics, error: brandMetricsError } = await supabaseAdmin
+        .from('brand_metrics')
+        .select('*')
+        .in('metric_fact_id', metricFactIds)
+
+      if (brandMetricsError) {
+        console.error('[Dashboard] Error fetching brand_metrics:', brandMetricsError)
+      }
+
+      // Fetch competitor_metrics with competitor info
+      const { data: competitorMetrics, error: competitorMetricsError } = await supabaseAdmin
+        .from('competitor_metrics')
+        .select(`
+          *,
+          brand_competitors!inner(competitor_name)
+        `)
+        .in('metric_fact_id', metricFactIds)
+
+      if (competitorMetricsError) {
+        console.error('[Dashboard] Error fetching competitor_metrics:', competitorMetricsError)
+      }
+
+      // Fetch brand_sentiment
+      const { data: brandSentiment, error: brandSentimentError } = await supabaseAdmin
+        .from('brand_sentiment')
+        .select('*')
+        .in('metric_fact_id', metricFactIds)
+
+      if (brandSentimentError) {
+        console.error('[Dashboard] Error fetching brand_sentiment:', brandSentimentError)
+      }
+
+      // Fetch competitor_sentiment with competitor info
+      const { data: competitorSentiment, error: competitorSentimentError} = await supabaseAdmin
+        .from('competitor_sentiment')
+        .select(`
+          *,
+          brand_competitors!inner(competitor_name)
+        `)
+        .in('metric_fact_id', metricFactIds)
+
+      if (competitorSentimentError) {
+        console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentError)
+      }
+
+      // Create maps for lookups
+      const brandMetricsMap = new Map((brandMetrics || []).map(bm => [bm.metric_fact_id, bm]))
+      const brandSentimentMap = new Map((brandSentiment || []).map(bs => [bs.metric_fact_id, bs]))
+      const competitorMetricsMap = new Map<number, any[]>()
+      const competitorSentimentMap = new Map<string, any>() // key: "metric_fact_id:competitor_id"
+
+      // Group competitor metrics by metric_fact_id
+      (competitorMetrics || []).forEach(cm => {
+        if (!competitorMetricsMap.has(cm.metric_fact_id)) {
+          competitorMetricsMap.set(cm.metric_fact_id, [])
+        }
+        competitorMetricsMap.get(cm.metric_fact_id)!.push(cm)
+      })
+
+      // Index competitor sentiment
+      (competitorSentiment || []).forEach(cs => {
+        const key = `${cs.metric_fact_id}:${cs.competitor_id}`
+        competitorSentimentMap.set(key, cs)
+      })
+
+      // Transform to extracted_positions format
+      const positionRows: any[] = []
+
+      for (const mf of metricFacts) {
+        const brandName = (mf.collector_results as any)?.brand || brand.name
+        const bm = brandMetricsMap.get(mf.id)
+        const bs = brandSentimentMap.get(mf.id)
+        const competitorMetricsList = competitorMetricsMap.get(mf.id) || []
+
+        // Create brand row (competitor_name = null)
+        positionRows.push({
+          brand_name: brandName,
+          query_id: mf.query_id,
+          collector_result_id: mf.collector_result_id,
+          collector_type: mf.collector_type,
+          competitor_name: null,
+          visibility_index: bm?.visibility_index || null,
+          visibility_index_competitor: null,
+          share_of_answers_brand: bm?.share_of_answers || null,
+          share_of_answers_competitor: null,
+          sentiment_score: bs?.sentiment_score || null,
+          sentiment_label: bs?.sentiment_label || null,
+          sentiment_score_competitor: null,
+          sentiment_label_competitor: null,
+          total_brand_mentions: bm?.total_brand_mentions || 0,
+          competitor_mentions: null,
+          processed_at: mf.processed_at,
+          created_at: mf.created_at,
+          brand_positions: bm?.brand_positions || [],
+          competitor_positions: null,
+          has_brand_presence: bm?.has_brand_presence || false,
+          topic: mf.topic,
+          metadata: null,
+        })
+
+        // Create competitor rows
+        for (const cm of competitorMetricsList) {
+          const competitorName = (cm.brand_competitors as any)?.competitor_name
+          const csKey = `${mf.id}:${cm.competitor_id}`
+          const cs = competitorSentimentMap.get(csKey)
+
+          positionRows.push({
+            brand_name: brandName,
+            query_id: mf.query_id,
+            collector_result_id: mf.collector_result_id,
+            collector_type: mf.collector_type,
+            competitor_name: competitorName,
+            visibility_index: null,
+            visibility_index_competitor: cm.visibility_index || null,
+            share_of_answers_brand: null,
+            share_of_answers_competitor: cm.share_of_answers || null,
+            sentiment_score: null,
+            sentiment_label: null,
+            sentiment_score_competitor: cs?.sentiment_score || null,
+            sentiment_label_competitor: cs?.sentiment_label || null,
+            total_brand_mentions: null,
+            competitor_mentions: cm.competitor_mentions || 0,
+            processed_at: mf.processed_at,
+            created_at: mf.created_at,
+            brand_positions: null,
+            competitor_positions: cm.competitor_positions || [],
+            has_brand_presence: null,
+            topic: mf.topic,
+            metadata: null,
+          })
+        }
+      }
+
+      return { data: positionRows, error: null }
+    } catch (error) {
+      console.error('[Dashboard] Error in fetchPositions:', error)
+      return {
+        data: null,
+        error: { message: error instanceof Error ? error.message : String(error) }
+      }
     }
-
-    return query
   }
 
   const positionsPromise = (async () => {

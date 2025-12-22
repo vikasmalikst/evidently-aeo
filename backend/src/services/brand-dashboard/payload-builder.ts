@@ -1912,6 +1912,7 @@ export async function buildDashboardPayload(
       })
     })
     timeSeriesByCollector.set(collectorType, dailyData)
+    console.log(`[TimeSeries] Initialized time-series for collector: ${collectorType} with ${allDates.length} dates`)
   })
 
   // Initialize time-series structure for all competitors and dates
@@ -2075,7 +2076,15 @@ export async function buildDashboardPayload(
       }
     })
 
-    timeSeriesData.set(collectorType, { dates, visibility, share, sentiment, brandPresence })
+    // Only include timeSeries if there's actual data (not all empty arrays)
+    // This prevents frontend from falling back to flat lines when historical data exists
+    if (dates.length > 0) {
+      const hasData = visibility.some(v => v > 0) || share.some(s => s > 0)
+      console.log(`[TimeSeries] Collector ${collectorType}: ${dates.length} dates, hasData=${hasData}, visibility=[${visibility.slice(0, 3).join(', ')}...], share=[${share.slice(0, 3).join(', ')}...]`)
+      timeSeriesData.set(collectorType, { dates, visibility, share, sentiment, brandPresence })
+    } else {
+      console.warn(`[TimeSeries] Collector ${collectorType} has NO dates in time-series (position rows might be missing)`)
+    }
   })
 
   // Calculate daily averages for each competitor
@@ -2132,7 +2141,10 @@ export async function buildDashboardPayload(
       }
     })
 
-    competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment })
+    // Only include timeSeries if there's actual data (not all empty arrays)
+    if (dates.length > 0) {
+      competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment })
+    }
   })
   
   const llmVisibility = visibilityService.calculateLlmVisibility(

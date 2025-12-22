@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import React, { useState, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { getLLMIcon } from './LLMIcons';
@@ -138,9 +138,8 @@ export const VisibilityTable = memo(({
               const expanded = expandedRow === model.id;
 
               return (
-                <>
+                <React.Fragment key={model.id}>
                   <tr
-                    key={model.id}
                     className={`transition-colors cursor-pointer ${
                       model.isBrand ? 'bg-[#f0f9ff] hover:bg-[#e0f2fe]' : ''
                     }`}
@@ -305,7 +304,7 @@ export const VisibilityTable = memo(({
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               );
             })}
           </tbody>

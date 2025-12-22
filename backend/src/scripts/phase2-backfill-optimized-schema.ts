@@ -167,7 +167,7 @@ async function isAlreadyMigrated(collectorResultId: number): Promise<boolean> {
 }
 
 /**
- * Process a batch of extracted_positions rows
+ * Process a batch of extracted_positions rows using BULK INSERTS
  */
 async function processBatch(positions: ExtractedPosition[], stats: Stats): Promise<void> {
   // Group by collector_result_id (since we have 1 brand row + N competitor rows per result)
@@ -179,166 +179,224 @@ async function processBatch(positions: ExtractedPosition[], stats: Stats): Promi
     groupedByCollectorResult.set(pos.collector_result_id, existing);
   }
 
-  console.log(`   📦 Processing ${groupedByCollectorResult.size} collector_results (${positions.length} rows)`);
+  console.log(`   📦 Processing ${groupedByCollectorResult.size} collector_results (${positions.length} rows) with BULK inserts`);
 
+  // Arrays to collect all rows for bulk insert
+  const metricFactsToInsert: MetricFact[] = [];
+  const collectorResultIdsToProcess: number[] = [];
+  const brandRowsMap = new Map<number, ExtractedPosition>();
+  const competitorRowsMap = new Map<number, ExtractedPosition[]>();
+
+  // Phase 1: Prepare metric_facts data and validate
   for (const [collectorResultId, rows] of groupedByCollectorResult.entries()) {
-    try {
-      // Check if already migrated
-      if (await isAlreadyMigrated(collectorResultId)) {
-        console.log(`   ⏭️  Skipping collector_result ${collectorResultId} (already migrated)`);
-        stats.skipped++;
-        continue;
-      }
+    // Check if already migrated
+    if (await isAlreadyMigrated(collectorResultId)) {
+      stats.skipped++;
+      continue;
+    }
 
-      // Separate brand row from competitor rows
-      const brandRow = rows.find(r => r.competitor_name === null);
-      const competitorRows = rows.filter(r => r.competitor_name !== null);
+    // Separate brand row from competitor rows
+    const brandRow = rows.find(r => r.competitor_name === null);
+    const competitorRows = rows.filter(r => r.competitor_name !== null);
 
-      if (!brandRow) {
-        console.warn(`   ⚠️ No brand row found for collector_result ${collectorResultId}, skipping`);
-        stats.skipped++;
-        continue;
-      }
+    if (!brandRow) {
+      console.warn(`   ⚠️ No brand row found for collector_result ${collectorResultId}, skipping`);
+      stats.skipped++;
+      continue;
+    }
 
-      // 1. Create metric_fact
-      const metricFact: MetricFact = {
-        collector_result_id: collectorResultId,
-        brand_id: brandRow.brand_id,
-        customer_id: brandRow.customer_id,
-        query_id: brandRow.query_id,
-        collector_type: brandRow.collector_type,
-        topic: brandRow.topic,
-        processed_at: brandRow.processed_at,
-      };
+    // Prepare metric_fact
+    const metricFact: MetricFact = {
+      collector_result_id: collectorResultId,
+      brand_id: brandRow.brand_id,
+      customer_id: brandRow.customer_id,
+      query_id: brandRow.query_id,
+      collector_type: brandRow.collector_type,
+      topic: brandRow.topic,
+      processed_at: brandRow.processed_at,
+    };
 
-      if (DRY_RUN) {
-        console.log(`   🔍 [DRY RUN] Would create metric_fact for collector_result ${collectorResultId}`);
-        stats.metricFactsCreated++;
-      } else {
-        const { data: metricFactData, error: metricFactError } = await supabase
-          .from('metric_facts')
-          .insert(metricFact)
-          .select('id')
-          .single();
+    metricFactsToInsert.push(metricFact);
+    collectorResultIdsToProcess.push(collectorResultId);
+    brandRowsMap.set(collectorResultId, brandRow);
+    competitorRowsMap.set(collectorResultId, competitorRows);
+  }
 
-        if (metricFactError || !metricFactData) {
-          console.error(`   ❌ Failed to create metric_fact for collector_result ${collectorResultId}:`, metricFactError);
-          stats.errors++;
-          continue;
+  if (metricFactsToInsert.length === 0) {
+    console.log(`   ⏭️  All items in this batch already migrated`);
+    return;
+  }
+
+  console.log(`   🚀 Bulk inserting ${metricFactsToInsert.length} metric_facts...`);
+
+  if (DRY_RUN) {
+    console.log(`   🔍 [DRY RUN] Would bulk insert ${metricFactsToInsert.length} metric_facts`);
+    stats.metricFactsCreated += metricFactsToInsert.length;
+    stats.totalProcessed += metricFactsToInsert.length;
+    return;
+  }
+
+  // Phase 2: Bulk insert metric_facts
+  const { data: insertedMetricFacts, error: metricFactsError } = await supabase
+    .from('metric_facts')
+    .insert(metricFactsToInsert)
+    .select('id, collector_result_id');
+
+  if (metricFactsError || !insertedMetricFacts) {
+    console.error(`   ❌ Failed to bulk insert metric_facts:`, metricFactsError);
+    stats.errors += metricFactsToInsert.length;
+    return;
+  }
+
+  console.log(`   ✅ Inserted ${insertedMetricFacts.length} metric_facts`);
+  stats.metricFactsCreated += insertedMetricFacts.length;
+  stats.totalProcessed += insertedMetricFacts.length;
+
+  // Create a map of collector_result_id to metric_fact_id
+  const metricFactIdMap = new Map<number, number>();
+  for (const mf of insertedMetricFacts) {
+    metricFactIdMap.set(mf.collector_result_id, mf.id);
+  }
+
+  // Phase 3: Prepare all other tables' data
+  const brandMetricsToInsert: BrandMetrics[] = [];
+  const brandSentimentsToInsert: BrandSentiment[] = [];
+  const competitorMetricsToInsert: CompetitorMetrics[] = [];
+  const competitorSentimentsToInsert: CompetitorSentiment[] = [];
+
+  // Cache for competitor IDs to avoid repeated lookups
+  const competitorIdCache = new Map<string, string>();
+
+  for (const collectorResultId of collectorResultIdsToProcess) {
+    const metricFactId = metricFactIdMap.get(collectorResultId);
+    if (!metricFactId) continue;
+
+    const brandRow = brandRowsMap.get(collectorResultId)!;
+    const competitorRows = competitorRowsMap.get(collectorResultId) || [];
+
+    // Brand metrics
+    brandMetricsToInsert.push({
+      metric_fact_id: metricFactId,
+      visibility_index: brandRow.visibility_index,
+      share_of_answers: brandRow.share_of_answers_brand,
+      brand_first_position: brandRow.brand_first_position,
+      brand_positions: brandRow.brand_positions || [],
+      total_brand_mentions: brandRow.total_brand_mentions || 0,
+      total_word_count: brandRow.total_word_count || 0,
+      has_brand_presence: brandRow.has_brand_presence || false,
+    });
+
+    // Brand sentiment (if exists)
+    if (brandRow.sentiment_label && brandRow.sentiment_score != null) {
+      brandSentimentsToInsert.push({
+        metric_fact_id: metricFactId,
+        sentiment_label: brandRow.sentiment_label,
+        sentiment_score: brandRow.sentiment_score,
+        positive_sentences: brandRow.sentiment_positive_sentences || [],
+        negative_sentences: brandRow.sentiment_negative_sentences || [],
+      });
+    }
+
+    // Competitor metrics and sentiments
+    for (const compRow of competitorRows) {
+      if (!compRow.competitor_name) continue;
+
+      const cacheKey = `${brandRow.brand_id}:${compRow.competitor_name}`;
+      let competitorId = competitorIdCache.get(cacheKey);
+      
+      if (!competitorId) {
+        competitorId = await getCompetitorId(brandRow.brand_id, compRow.competitor_name);
+        if (competitorId) {
+          competitorIdCache.set(cacheKey, competitorId);
         }
+      }
 
-        const metricFactId = metricFactData.id;
-        stats.metricFactsCreated++;
+      if (!competitorId) continue;
 
-        // 2. Create brand_metrics
-        const brandMetrics: BrandMetrics = {
+      competitorMetricsToInsert.push({
+        metric_fact_id: metricFactId,
+        competitor_id: competitorId,
+        visibility_index: compRow.visibility_index_competitor,
+        share_of_answers: compRow.share_of_answers_competitor,
+        competitor_positions: compRow.competitor_positions || [],
+        competitor_mentions: compRow.competitor_mentions || 0,
+      });
+
+      if (compRow.sentiment_label_competitor && compRow.sentiment_score_competitor != null) {
+        competitorSentimentsToInsert.push({
           metric_fact_id: metricFactId,
-          visibility_index: brandRow.visibility_index,
-          share_of_answers: brandRow.share_of_answers_brand,
-          brand_first_position: brandRow.brand_first_position,
-          brand_positions: brandRow.brand_positions || [],
-          total_brand_mentions: brandRow.total_brand_mentions || 0,
-          total_word_count: brandRow.total_word_count || 0,
-          has_brand_presence: brandRow.has_brand_presence || false,
-        };
-
-        const { error: brandMetricsError } = await supabase
-          .from('brand_metrics')
-          .insert(brandMetrics);
-
-        if (brandMetricsError) {
-          console.error(`   ❌ Failed to create brand_metrics for metric_fact ${metricFactId}:`, brandMetricsError);
-          stats.errors++;
-        } else {
-          stats.brandMetricsCreated++;
-        }
-
-        // 3. Create brand_sentiment (if exists)
-        if (brandRow.sentiment_label && brandRow.sentiment_score != null) {
-          const brandSentiment: BrandSentiment = {
-            metric_fact_id: metricFactId,
-            sentiment_label: brandRow.sentiment_label,
-            sentiment_score: brandRow.sentiment_score,
-            positive_sentences: brandRow.sentiment_positive_sentences || [],
-            negative_sentences: brandRow.sentiment_negative_sentences || [],
-          };
-
-          const { error: brandSentimentError } = await supabase
-            .from('brand_sentiment')
-            .insert(brandSentiment);
-
-          if (brandSentimentError) {
-            console.error(`   ❌ Failed to create brand_sentiment for metric_fact ${metricFactId}:`, brandSentimentError);
-            stats.errors++;
-          } else {
-            stats.brandSentimentsCreated++;
-          }
-        }
-
-        // 4. Create competitor_metrics and competitor_sentiment for each competitor
-        for (const compRow of competitorRows) {
-          if (!compRow.competitor_name) continue;
-
-          const competitorId = await getCompetitorId(brandRow.brand_id, compRow.competitor_name);
-          if (!competitorId) {
-            console.warn(`   ⚠️ Skipping competitor ${compRow.competitor_name} (not found in brand_competitors)`);
-            continue;
-          }
-
-          // Create competitor_metrics
-          const competitorMetrics: CompetitorMetrics = {
-            metric_fact_id: metricFactId,
-            competitor_id: competitorId,
-            visibility_index: compRow.visibility_index_competitor,
-            share_of_answers: compRow.share_of_answers_competitor,
-            competitor_positions: compRow.competitor_positions || [],
-            competitor_mentions: compRow.competitor_mentions || 0,
-          };
-
-          const { error: compMetricsError } = await supabase
-            .from('competitor_metrics')
-            .insert(competitorMetrics);
-
-          if (compMetricsError) {
-            console.error(`   ❌ Failed to create competitor_metrics for ${compRow.competitor_name}:`, compMetricsError);
-            stats.errors++;
-          } else {
-            stats.competitorMetricsCreated++;
-          }
-
-          // Create competitor_sentiment (if exists)
-          if (compRow.sentiment_label_competitor && compRow.sentiment_score_competitor != null) {
-            const competitorSentiment: CompetitorSentiment = {
-              metric_fact_id: metricFactId,
-              competitor_id: competitorId,
-              sentiment_label: compRow.sentiment_label_competitor,
-              sentiment_score: compRow.sentiment_score_competitor,
-              positive_sentences: compRow.sentiment_positive_sentences_competitor || [],
-              negative_sentences: compRow.sentiment_negative_sentences_competitor || [],
-            };
-
-            const { error: compSentimentError } = await supabase
-              .from('competitor_sentiment')
-              .insert(competitorSentiment);
-
-            if (compSentimentError) {
-              console.error(`   ❌ Failed to create competitor_sentiment for ${compRow.competitor_name}:`, compSentimentError);
-              stats.errors++;
-            } else {
-              stats.competitorSentimentsCreated++;
-            }
-          }
-        }
-
-        console.log(`   ✅ Migrated collector_result ${collectorResultId} (1 brand + ${competitorRows.length} competitors)`);
+          competitor_id: competitorId,
+          sentiment_label: compRow.sentiment_label_competitor,
+          sentiment_score: compRow.sentiment_score_competitor,
+          positive_sentences: compRow.sentiment_positive_sentences_competitor || [],
+          negative_sentences: compRow.sentiment_negative_sentences_competitor || [],
+        });
       }
-
-      stats.totalProcessed++;
-    } catch (error) {
-      console.error(`   ❌ Error processing collector_result ${collectorResultId}:`, error);
-      stats.errors++;
     }
   }
+
+  // Phase 4: Bulk insert all other tables
+  console.log(`   🚀 Bulk inserting ${brandMetricsToInsert.length} brand_metrics...`);
+  if (brandMetricsToInsert.length > 0) {
+    const { error: brandMetricsError } = await supabase
+      .from('brand_metrics')
+      .insert(brandMetricsToInsert);
+
+    if (brandMetricsError) {
+      console.error(`   ❌ Failed to bulk insert brand_metrics:`, brandMetricsError);
+      stats.errors += brandMetricsToInsert.length;
+    } else {
+      console.log(`   ✅ Inserted ${brandMetricsToInsert.length} brand_metrics`);
+      stats.brandMetricsCreated += brandMetricsToInsert.length;
+    }
+  }
+
+  if (brandSentimentsToInsert.length > 0) {
+    console.log(`   🚀 Bulk inserting ${brandSentimentsToInsert.length} brand_sentiments...`);
+    const { error: brandSentimentsError } = await supabase
+      .from('brand_sentiment')
+      .insert(brandSentimentsToInsert);
+
+    if (brandSentimentsError) {
+      console.error(`   ❌ Failed to bulk insert brand_sentiments:`, brandSentimentsError);
+      stats.errors += brandSentimentsToInsert.length;
+    } else {
+      console.log(`   ✅ Inserted ${brandSentimentsToInsert.length} brand_sentiments`);
+      stats.brandSentimentsCreated += brandSentimentsToInsert.length;
+    }
+  }
+
+  if (competitorMetricsToInsert.length > 0) {
+    console.log(`   🚀 Bulk inserting ${competitorMetricsToInsert.length} competitor_metrics...`);
+    const { error: compMetricsError } = await supabase
+      .from('competitor_metrics')
+      .insert(competitorMetricsToInsert);
+
+    if (compMetricsError) {
+      console.error(`   ❌ Failed to bulk insert competitor_metrics:`, compMetricsError);
+      stats.errors += competitorMetricsToInsert.length;
+    } else {
+      console.log(`   ✅ Inserted ${competitorMetricsToInsert.length} competitor_metrics`);
+      stats.competitorMetricsCreated += competitorMetricsToInsert.length;
+    }
+  }
+
+  if (competitorSentimentsToInsert.length > 0) {
+    console.log(`   🚀 Bulk inserting ${competitorSentimentsToInsert.length} competitor_sentiments...`);
+    const { error: compSentimentsError } = await supabase
+      .from('competitor_sentiment')
+      .insert(competitorSentimentsToInsert);
+
+    if (compSentimentsError) {
+      console.error(`   ❌ Failed to bulk insert competitor_sentiments:`, compSentimentsError);
+      stats.errors += competitorSentimentsToInsert.length;
+    } else {
+      console.log(`   ✅ Inserted ${competitorSentimentsToInsert.length} competitor_sentiments`);
+      stats.competitorSentimentsCreated += competitorSentimentsToInsert.length;
+    }
+  }
+
+  console.log(`   ✅ Batch complete: processed ${collectorResultIdsToProcess.length} collector_results`);
 }
 
 /**

@@ -1934,14 +1934,28 @@ export async function buildDashboardPayload(
 
   // Group positionRows by date, collector type, and competitor
   // Use processed_at if available and valid (matches query filtering), otherwise fall back to created_at
+  
+  // Track collector types seen in position rows for debugging
+  const positionRowCollectorTypes = new Set<string>()
+  let skippedRowsCount = 0
+  let processedBrandRowsCount = 0
+  
   positionRows.forEach(row => {
     // Prefer processed_at if it exists and is not null, otherwise use created_at
     const timestamp = (row.processed_at && row.processed_at.trim() !== '') ? row.processed_at : row.created_at
     const date = extractDate(timestamp)
-    if (!date || !allDates.includes(date)) return
+    if (!date || !allDates.includes(date)) {
+      skippedRowsCount++
+      return
+    }
 
     const collectorType = row.collector_type
-    if (!collectorType) return
+    if (!collectorType) {
+      skippedRowsCount++
+      return
+    }
+    
+    positionRowCollectorTypes.add(collectorType)
 
     const isBrandRow = !row.competitor_name || row.competitor_name.trim().length === 0
     const competitorName = row.competitor_name?.trim()
@@ -1950,6 +1964,7 @@ export async function buildDashboardPayload(
     if (isBrandRow) {
       const dailyData = timeSeriesByCollector.get(collectorType)
       if (dailyData) {
+        processedBrandRowsCount++
         const dayData = dailyData.get(date)
         if (dayData) {
           const brandVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index) ?? 0))
@@ -2006,9 +2021,22 @@ export async function buildDashboardPayload(
             dayData.sentimentValues.push(competitorSentiment)
           }
         }
+      } else {
+        // Collector type in row doesn't match any initialized collector
+        skippedRowsCount++
+        if (processedBrandRowsCount === 0) {
+          console.warn(`[TimeSeries] Brand row with collector_type='${collectorType}' not found in timeSeriesByCollector map. Available keys: ${Array.from(timeSeriesByCollector.keys()).join(', ')}`)
+        }
       }
     }
   })
+  
+  console.log(`[TimeSeries] Position rows processing summary:`)
+  console.log(`   - Total position rows: ${positionRows.length}`)
+  console.log(`   - Processed brand rows: ${processedBrandRowsCount}`)
+  console.log(`   - Skipped rows: ${skippedRowsCount}`)
+  console.log(`   - Collector types in position rows: ${Array.from(positionRowCollectorTypes).join(', ')}`)
+  console.log(`   - Collector types in timeSeriesByCollector: ${Array.from(timeSeriesByCollector.keys()).join(', ')}`)
 
   // Calculate daily averages for each collector
   const timeSeriesData = new Map<string, {

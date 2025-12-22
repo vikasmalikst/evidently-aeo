@@ -88,23 +88,22 @@ interface MetricFact {
 
 interface BrandMetrics {
   metric_fact_id: number;
-  visibility_index: number;
-  share_of_answers: number;
-  total_mentions: number;
-  product_mentions: number;
-  first_position: number | null;
-  has_presence: boolean;
+  visibility_index: number | null;
+  share_of_answers: number | null;
+  brand_first_position: number | null;
+  brand_positions: number[];
+  total_brand_mentions: number;
+  total_word_count: number;
+  has_brand_presence: boolean;
 }
 
 interface CompetitorMetrics {
   metric_fact_id: number;
   competitor_id: string;
-  visibility_index: number;
-  share_of_answers: number;
-  total_mentions: number;
-  product_mentions: number;
-  first_position: number | null;
-  has_presence: boolean;
+  visibility_index: number | null;
+  share_of_answers: number | null;
+  competitor_positions: number[];
+  competitor_mentions: number;
 }
 
 interface BrandSentiment {
@@ -234,12 +233,13 @@ async function processBatch(positions: ExtractedPosition[], stats: Stats): Promi
         // 2. Create brand_metrics
         const brandMetrics: BrandMetrics = {
           metric_fact_id: metricFactId,
-          visibility_index: brandRow.visibility_index || 0,
-          share_of_answers: brandRow.share_of_answers_brand || 0,
-          total_mentions: brandRow.total_brand_mentions || 0,
-          product_mentions: brandRow.total_brand_mentions || 0, // Approximate
-          first_position: brandRow.brand_first_position,
-          has_presence: brandRow.has_brand_presence,
+          visibility_index: brandRow.visibility_index,
+          share_of_answers: brandRow.share_of_answers_brand,
+          brand_first_position: brandRow.brand_first_position,
+          brand_positions: brandRow.brand_positions || [],
+          total_brand_mentions: brandRow.total_brand_mentions || 0,
+          total_word_count: brandRow.total_word_count || 0,
+          has_brand_presence: brandRow.has_brand_presence || false,
         };
 
         const { error: brandMetricsError } = await supabase
@@ -289,12 +289,10 @@ async function processBatch(positions: ExtractedPosition[], stats: Stats): Promi
           const competitorMetrics: CompetitorMetrics = {
             metric_fact_id: metricFactId,
             competitor_id: competitorId,
-            visibility_index: compRow.visibility_index_competitor || 0,
-            share_of_answers: compRow.share_of_answers_competitor || 0,
-            total_mentions: compRow.competitor_mentions || 0,
-            product_mentions: compRow.competitor_mentions || 0, // Approximate
-            first_position: compRow.competitor_positions?.[0] || null,
-            has_presence: (compRow.competitor_mentions || 0) > 0,
+            visibility_index: compRow.visibility_index_competitor,
+            share_of_answers: compRow.share_of_answers_competitor,
+            competitor_positions: compRow.competitor_positions || [],
+            competitor_mentions: compRow.competitor_mentions || 0,
           };
 
           const { error: compMetricsError } = await supabase

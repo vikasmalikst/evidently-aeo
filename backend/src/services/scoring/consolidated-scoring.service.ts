@@ -748,7 +748,8 @@ export class ConsolidatedScoringService {
 
 
   /**
-   * Store sentiment in extracted_positions table
+   * Store sentiment in NEW OPTIMIZED SCHEMA
+   * Writes to: brand_sentiment, competitor_sentiment
    */
   private async storeSentiment(
     collectorResult: any,
@@ -763,91 +764,132 @@ export class ConsolidatedScoringService {
       return;
     }
 
-    console.log(`   🔍 [storeSentiment] Looking for position rows for collector_result ${collectorResultId}...`);
+    console.log(`   🔍 [storeSentiment] Looking for metric_fact for collector_result ${collectorResultId}...`);
 
-    // Get all position rows for this collector result
-    const { data: positionRows, error } = await this.supabase
-      .from('extracted_positions')
-      .select('id, competitor_name')
-      .eq('collector_result_id', collectorResultId);
+    // Get metric_fact for this collector_result
+    const { data: metricFact, error: metricFactError } = await this.supabase
+      .from('metric_facts')
+      .select('id, brand_id')
+      .eq('collector_result_id', collectorResultId)
+      .single();
 
-    if (error) {
-      console.error(`   ❌ [storeSentiment] Database error fetching position rows for collector_result ${collectorResultId}:`, error.message);
-      throw new Error(`Failed to fetch position rows: ${error.message}`);
-    }
-
-    if (!positionRows || positionRows.length === 0) {
-      console.warn(`   ⚠️ [storeSentiment] No position rows found for collector_result ${collectorResultId}`);
-      console.warn(`      This means position extraction did not create rows for this collector_result`);
-      console.warn(`      Check if position extraction processed collector_result ${collectorResultId}`);
+    if (metricFactError || !metricFact) {
+      console.error(`   ❌ [storeSentiment] No metric_fact found for collector_result ${collectorResultId}:`, metricFactError?.message);
+      console.error(`      This means position extraction did not create a metric_fact for this collector_result`);
+      console.error(`      Check if position extraction processed collector_result ${collectorResultId}`);
       return;
     }
 
-    console.log(`   ✅ [storeSentiment] Found ${positionRows.length} position rows for collector_result ${collectorResultId}`);
+    const metricFactId = metricFact.id;
+    console.log(`   ✅ [storeSentiment] Found metric_fact (id: ${metricFactId}) for collector_result ${collectorResultId}`);
 
-    // Update brand sentiment (rows without competitor_name)
+    // Upsert brand sentiment
     if (analysis.sentiment.brand) {
-      const brandRows = positionRows.filter(row => !row.competitor_name || row.competitor_name.trim() === '');
-      if (brandRows.length > 0) {
-        const brandIds = brandRows.map(r => r.id);
-        const { error: updateError } = await this.supabase
-          .from('extracted_positions')
-          .update({
-            sentiment_label: analysis.sentiment.brand.label || 'NEUTRAL',
-            sentiment_score: analysis.sentiment.brand.score || 60,
-          })
-          .in('id', brandIds);
+      const brandSentiment = {
+        metric_fact_id: metricFactId,
+        sentiment_label: analysis.sentiment.brand.label || 'NEUTRAL',
+        sentiment_score: analysis.sentiment.brand.score || 60,
+        positive_sentences: analysis.sentiment.brand.positive_sentences || [],
+        negative_sentences: analysis.sentiment.brand.negative_sentences || [],
+      };
 
-        if (updateError) {
-          throw new Error(`Failed to update brand sentiment: ${updateError.message}`);
-        }
-        console.log(`   ✅ Updated brand sentiment for ${brandIds.length} rows`);
+      console.log(`   💾 [storeSentiment] Upserting brand sentiment: ${brandSentiment.sentiment_label} (${brandSentiment.sentiment_score})`);
+      
+      const { error: brandSentimentError } = await this.supabase
+        .from('brand_sentiment')
+        .upsert(brandSentiment, {
+          onConflict: 'metric_fact_id',
+          ignoreDuplicates: false,
+        });
+
+      if (brandSentimentError) {
+        console.error(`   ❌ [storeSentiment] Failed to upsert brand sentiment:`, brandSentimentError.message);
+        throw new Error(`Failed to save brand sentiment: ${brandSentimentError.message}`);
       }
+      
+      console.log(`   ✅ [storeSentiment] Brand sentiment saved`);
     }
 
-    // Update competitor sentiment
+    // Upsert competitor sentiment
     if (analysis.sentiment.competitors && competitorNames && competitorNames.length > 0) {
-      console.log(`   📝 [storeSentiment] Processing ${competitorNames.length} competitors: ${competitorNames.join(', ')}`);
+      console.log(`   📝 [storeSentiment] Processing sentiment for ${competitorNames.length} competitors: ${competitorNames.join(', ')}`);
       
+      // Get competitor IDs from brand_competitors table
+      const { data: competitorData, error: compFetchError } = await this.supabase
+        .from('brand_competitors')
+        .select('id, competitor_name')
+        .eq('brand_id', metricFact.brand_id)
+        .in('competitor_name', competitorNames);
+
+      if (compFetchError) {
+        console.error(`   ❌ [storeSentiment] Failed to fetch competitor IDs:`, compFetchError.message);
+        throw new Error(`Failed to fetch competitor IDs: ${compFetchError.message}`);
+      }
+
+      // Create a map of competitor_name -> competitor_id
+      const competitorIdMap = new Map<string, string>();
+      (competitorData || []).forEach(comp => {
+        competitorIdMap.set(comp.competitor_name, comp.id);
+      });
+      
+      // Delete existing competitor_sentiment for this metric_fact (for idempotency)
+      console.log(`   🗑️ [storeSentiment] Deleting existing competitor_sentiment...`);
+      const { error: deleteCompError } = await this.supabase
+        .from('competitor_sentiment')
+        .delete()
+        .eq('metric_fact_id', metricFactId);
+
+      if (deleteCompError) {
+        console.warn(`   ⚠️ [storeSentiment] Warning deleting competitor_sentiment:`, deleteCompError.message);
+        // Don't throw - might not exist
+      }
+
+      // Build competitor_sentiment rows
+      const competitorSentimentRows = [];
       for (const compName of competitorNames) {
-        const compRows = positionRows.filter(
-          row => row.competitor_name && row.competitor_name.toLowerCase() === compName.toLowerCase()
-        );
-
-        console.log(`   🔍 [storeSentiment] Found ${compRows.length} position rows for competitor "${compName}"`);
-
-        if (compRows.length > 0 && analysis.sentiment.competitors[compName]) {
-          const compSentiment = analysis.sentiment.competitors[compName];
-          const compIds = compRows.map(r => r.id);
-          const competitorSentiment = {
-            sentiment_label_competitor: compSentiment.label || 'NEUTRAL',
-            sentiment_score_competitor: compSentiment.score || 60,
-          };
-          
-          console.log(`   💾 [storeSentiment] Updating competitor "${compName}" sentiment: ${competitorSentiment.sentiment_label_competitor} (${competitorSentiment.sentiment_score_competitor}) for ${compIds.length} rows`);
-          
-          const { error: updateError } = await this.supabase
-            .from('extracted_positions')
-            .update(competitorSentiment)
-            .in('id', compIds);
-
-          if (updateError) {
-            console.error(`   ❌ [storeSentiment] Failed to update competitor "${compName}" sentiment:`, updateError.message);
-          } else {
-            console.log(`   ✅ [storeSentiment] Updated competitor "${compName}" sentiment for ${compIds.length} rows`);
-          }
-        } else {
-          if (compRows.length === 0) {
-            console.warn(`   ⚠️ [storeSentiment] No position rows found for competitor "${compName}"`);
-          }
-          if (!analysis.sentiment.competitors[compName]) {
-            console.warn(`   ⚠️ [storeSentiment] No sentiment data for competitor "${compName}"`);
-          }
+        const competitorId = competitorIdMap.get(compName);
+        if (!competitorId) {
+          console.warn(`   ⚠️ [storeSentiment] Competitor "${compName}" not found in brand_competitors table`);
+          continue;
         }
+
+        const compSentiment = analysis.sentiment.competitors[compName];
+        if (!compSentiment) {
+          console.warn(`   ⚠️ [storeSentiment] No sentiment data for competitor "${compName}"`);
+          continue;
+        }
+
+        competitorSentimentRows.push({
+          metric_fact_id: metricFactId,
+          competitor_id: competitorId,
+          sentiment_label: compSentiment.label || 'NEUTRAL',
+          sentiment_score: compSentiment.score || 60,
+          positive_sentences: compSentiment.positive_sentences || [],
+          negative_sentences: compSentiment.negative_sentences || [],
+        });
+
+        console.log(`   📝 [storeSentiment] Prepared competitor "${compName}" sentiment: ${compSentiment.label} (${compSentiment.score})`);
+      }
+
+      if (competitorSentimentRows.length > 0) {
+        console.log(`   💾 [storeSentiment] Inserting ${competitorSentimentRows.length} competitor_sentiment rows...`);
+        
+        const { error: compSentimentError } = await this.supabase
+          .from('competitor_sentiment')
+          .insert(competitorSentimentRows);
+
+        if (compSentimentError) {
+          console.error(`   ❌ [storeSentiment] Failed to insert competitor_sentiment:`, compSentimentError.message);
+          throw new Error(`Failed to save competitor sentiment: ${compSentimentError.message}`);
+        }
+
+        console.log(`   ✅ [storeSentiment] Inserted ${competitorSentimentRows.length} competitor_sentiment rows`);
       }
     } else {
       console.log(`   ℹ️ [storeSentiment] No competitor sentiment to process (competitors: ${competitorNames.length})`);
     }
+    
+    console.log(`   ✅ [storeSentiment] Successfully saved sentiment to optimized schema (metric_fact_id: ${metricFactId})`);
   }
 
   /**

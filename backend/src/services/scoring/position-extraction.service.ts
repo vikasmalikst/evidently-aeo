@@ -990,50 +990,144 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
   }
 
   /**
-   * Save extracted positions to database
+   * Save extracted positions to NEW OPTIMIZED SCHEMA
+   * Writes to: metric_facts, brand_metrics, competitor_metrics
    */
   private async savePositions(payload: PositionExtractionPayload): Promise<void> {
     const collectorResultId = payload.brandRow.collector_result_id;
-    const rows = [
-      payload.brandRow,
-      ...payload.competitorRows,
-    ];
+    const brandRow = payload.brandRow;
 
-    console.log(`   💾 [savePositions] Saving ${rows.length} position rows for collector_result ${collectorResultId}`);
-    console.log(`      - Brand row: ${payload.brandRow.brand_name || 'N/A'}`);
-    console.log(`      - Competitor rows: ${payload.competitorRows.length} (${payload.competitorRows.map(r => r.competitor_name).join(', ')})`);
+    console.log(`   💾 [savePositions] Saving to OPTIMIZED SCHEMA for collector_result ${collectorResultId}`);
+    console.log(`      - Brand: ${brandRow.brand_name || 'N/A'}`);
+    console.log(`      - Competitors: ${payload.competitorRows.length} (${payload.competitorRows.map(r => r.competitor_name).join(', ')})`);
 
-    // Ensure idempotency by deleting existing rows for this collector result
-    console.log(`   🗑️ [savePositions] Deleting existing positions for collector_result ${collectorResultId}...`);
-    const { error: deleteError } = await this.supabase
-      .from('extracted_positions')
+    // Step 1: Create or update metric_fact (core reference table)
+    const metricFact = {
+      collector_result_id: collectorResultId,
+      brand_id: brandRow.brand_id,
+      customer_id: brandRow.customer_id,
+      query_id: brandRow.query_id,
+      collector_type: brandRow.collector_type,
+      topic: brandRow.topic || null,
+      processed_at: brandRow.processed_at,
+    };
+
+    console.log(`   🚀 [savePositions] Upserting metric_fact...`);
+    const { data: metricFactData, error: metricFactError } = await this.supabase
+      .from('metric_facts')
+      .upsert(metricFact, {
+        onConflict: 'collector_result_id',
+        ignoreDuplicates: false,
+      })
+      .select('id')
+      .single();
+
+    if (metricFactError || !metricFactData) {
+      console.error(`   ❌ [savePositions] Failed to upsert metric_fact:`, metricFactError);
+      throw new Error(`Failed to create metric_fact: ${metricFactError?.message}`);
+    }
+
+    const metricFactId = metricFactData.id;
+    console.log(`   ✅ [savePositions] Metric fact created/updated (id: ${metricFactId})`);
+
+    // Step 2: Create or update brand_metrics
+    const brandMetrics = {
+      metric_fact_id: metricFactId,
+      visibility_index: brandRow.visibility_index,
+      share_of_answers: brandRow.share_of_answers_brand,
+      brand_first_position: brandRow.brand_first_position,
+      brand_positions: brandRow.brand_positions || [],
+      total_brand_mentions: brandRow.total_brand_mentions || 0,
+      total_word_count: brandRow.total_word_count || 0,
+      has_brand_presence: brandRow.has_brand_presence || false,
+    };
+
+    console.log(`   🚀 [savePositions] Upserting brand_metrics...`);
+    const { error: brandMetricsError } = await this.supabase
+      .from('brand_metrics')
+      .upsert(brandMetrics, {
+        onConflict: 'metric_fact_id',
+        ignoreDuplicates: false,
+      });
+
+    if (brandMetricsError) {
+      console.error(`   ❌ [savePositions] Failed to upsert brand_metrics:`, brandMetricsError);
+      throw new Error(`Failed to save brand_metrics: ${brandMetricsError.message}`);
+    }
+
+    console.log(`   ✅ [savePositions] Brand metrics saved`);
+
+    // Step 3: Delete existing competitor_metrics for this metric_fact (for idempotency)
+    console.log(`   🗑️ [savePositions] Deleting existing competitor_metrics...`);
+    const { error: deleteCompError } = await this.supabase
+      .from('competitor_metrics')
       .delete()
-      .eq('collector_result_id', collectorResultId);
+      .eq('metric_fact_id', metricFactId);
 
-    if (deleteError) {
-      console.error(`   ❌ [savePositions] Failed to delete existing positions:`, deleteError.message);
-      throw new Error(`Failed to reset existing positions: ${deleteError.message}`);
-    }
-    console.log(`   ✅ [savePositions] Deleted existing positions (if any) for collector_result ${collectorResultId}`);
-
-    console.log(`   💾 [savePositions] Inserting ${rows.length} new position rows...`);
-    const { data: insertedData, error: insertError } = await this.supabase
-      .from('extracted_positions')
-      .insert(rows)
-      .select('id, collector_result_id');
-
-    if (insertError) {
-      console.error(`   ❌ [savePositions] Failed to insert positions:`, insertError.message);
-      console.error(`   ❌ [savePositions] Insert error details:`, JSON.stringify(insertError, null, 2));
-      throw new Error(`Failed to save positions: ${insertError.message}`);
+    if (deleteCompError) {
+      console.warn(`   ⚠️ [savePositions] Warning deleting competitor_metrics:`, deleteCompError.message);
+      // Don't throw - might not exist
     }
 
-    if (insertedData && insertedData.length > 0) {
-      console.log(`   ✅ [savePositions] Successfully inserted ${insertedData.length} position rows for collector_result ${collectorResultId}`);
-      console.log(`   📋 [savePositions] Inserted position IDs: ${insertedData.map(r => r.id).slice(0, 10).join(', ')}${insertedData.length > 10 ? '...' : ''}`);
-    } else {
-      console.warn(`   ⚠️ [savePositions] Insert succeeded but no data returned for collector_result ${collectorResultId}`);
+    // Step 4: Create competitor_metrics for each competitor
+    if (payload.competitorRows.length > 0) {
+      console.log(`   🚀 [savePositions] Inserting ${payload.competitorRows.length} competitor_metrics...`);
+
+      // Get competitor IDs from brand_competitors table
+      const competitorNames = payload.competitorRows.map(r => r.competitor_name).filter(Boolean) as string[];
+      const { data: competitorData, error: compFetchError } = await this.supabase
+        .from('brand_competitors')
+        .select('id, competitor_name')
+        .eq('brand_id', brandRow.brand_id)
+        .in('competitor_name', competitorNames);
+
+      if (compFetchError) {
+        console.error(`   ❌ [savePositions] Failed to fetch competitor IDs:`, compFetchError);
+        throw new Error(`Failed to fetch competitor IDs: ${compFetchError.message}`);
+      }
+
+      // Create a map of competitor_name -> competitor_id
+      const competitorIdMap = new Map<string, string>();
+      (competitorData || []).forEach(comp => {
+        competitorIdMap.set(comp.competitor_name, comp.id);
+      });
+
+      // Build competitor_metrics rows
+      const competitorMetricsRows = [];
+      for (const compRow of payload.competitorRows) {
+        if (!compRow.competitor_name) continue;
+
+        const competitorId = competitorIdMap.get(compRow.competitor_name);
+        if (!competitorId) {
+          console.warn(`   ⚠️ [savePositions] Competitor "${compRow.competitor_name}" not found in brand_competitors table`);
+          continue;
+        }
+
+        competitorMetricsRows.push({
+          metric_fact_id: metricFactId,
+          competitor_id: competitorId,
+          visibility_index: compRow.visibility_index_competitor,
+          share_of_answers: compRow.share_of_answers_competitor,
+          competitor_positions: compRow.competitor_positions || [],
+          competitor_mentions: compRow.competitor_mentions || 0,
+        });
+      }
+
+      if (competitorMetricsRows.length > 0) {
+        const { error: compMetricsError } = await this.supabase
+          .from('competitor_metrics')
+          .insert(competitorMetricsRows);
+
+        if (compMetricsError) {
+          console.error(`   ❌ [savePositions] Failed to insert competitor_metrics:`, compMetricsError);
+          throw new Error(`Failed to save competitor_metrics: ${compMetricsError.message}`);
+        }
+
+        console.log(`   ✅ [savePositions] Inserted ${competitorMetricsRows.length} competitor_metrics`);
+      }
     }
+
+    console.log(`   ✅ [savePositions] Successfully saved to optimized schema (metric_fact_id: ${metricFactId})`);
 
     // Update collector_results.metadata with product names if available
     if (payload.productNames && payload.productNames.length > 0) {
@@ -1046,6 +1140,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
           .single();
 
         if (fetchError) {
+          console.warn(`   ⚠️ [savePositions] Could not fetch collector_results metadata:`, fetchError.message);
         } else {
           // Merge product names into existing metadata
           const currentMetadata = currentResult?.metadata || {};
@@ -1062,10 +1157,11 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
             .eq('id', payload.brandRow.collector_result_id);
 
           if (updateError) {
-          } else {
+            console.warn(`   ⚠️ [savePositions] Could not update collector_results metadata:`, updateError.message);
           }
         }
       } catch (error) {
+        console.warn(`   ⚠️ [savePositions] Error updating metadata:`, error);
       }
     }
   }

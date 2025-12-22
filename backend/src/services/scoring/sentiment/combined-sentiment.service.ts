@@ -68,25 +68,104 @@ export class CombinedSentimentService {
     if (options.since) console.log(`   ▶ since: ${options.since}`);
     console.log('   ▶ limit:', limit, '\n');
 
-    let query = this.supabase
-      .from('extracted_positions')
-      .select('id, collector_result_id, brand_name, competitor_name, sentiment_score, sentiment_label, brand_id, customer_id, processed_at, total_brand_mentions')
-      .is('sentiment_score', null)
-      .not('collector_result_id', 'is', null)
-      .gt('total_brand_mentions', 0)
-      .order('processed_at', { ascending: false })
-      .limit(limit * 10);
+    // Feature flag: Use optimized query (new schema) vs legacy (extracted_positions)
+    const USE_OPTIMIZED_SENTIMENT_QUERY = process.env.USE_OPTIMIZED_SENTIMENT_QUERY === 'true';
+    
+    let positionRows: any[] = [];
+    let error: any = null;
 
-    if (options.customerId) query = query.eq('customer_id', options.customerId);
-    if (options.brandIds?.length) query = query.in('brand_id', options.brandIds);
-    if (options.since) query = query.gte('processed_at', options.since);
+    if (USE_OPTIMIZED_SENTIMENT_QUERY) {
+      console.log('   ⚡ Using optimized sentiment query (new schema)');
+      
+      // OPTIMIZED: Query metric_facts + brand_metrics for rows without sentiment
+      let query = this.supabase
+        .from('metric_facts')
+        .select(`
+          id,
+          collector_result_id,
+          brand_id,
+          customer_id,
+          processed_at,
+          brand_metrics!inner(
+            total_brand_mentions
+          ),
+          collector_results!inner(brand)
+        `)
+        .not('collector_result_id', 'is', null)
+        .order('processed_at', { ascending: false })
+        .limit(limit * 10);
 
-    const { data: positionRows, error } = await query;
+      if (options.customerId) query = query.eq('customer_id', options.customerId);
+      if (options.brandIds?.length) query = query.in('brand_id', options.brandIds);
+      if (options.since) query = query.gte('processed_at', options.since);
+
+      const { data, error: queryError } = await query;
+      error = queryError;
+
+      // Check if brand_sentiment exists for each row
+      if (data && data.length > 0) {
+        const metricFactIds = data.map(d => d.id);
+        const { data: existingSentiments } = await this.supabase
+          .from('brand_sentiment')
+          .select('metric_fact_id')
+          .in('metric_fact_id', metricFactIds);
+
+        const existingSentimentIds = new Set((existingSentiments || []).map(s => s.metric_fact_id));
+
+        // Transform to match old format and filter out rows with existing sentiment
+        positionRows = data
+          .filter(d => !existingSentimentIds.has(d.id)) // Only rows without sentiment
+          .filter(d => {
+            const bm = Array.isArray(d.brand_metrics) ? d.brand_metrics[0] : d.brand_metrics;
+            return bm && bm.total_brand_mentions > 0;
+          })
+          .map(d => {
+            const bm = Array.isArray(d.brand_metrics) ? d.brand_metrics[0] : d.brand_metrics;
+            const cr = Array.isArray(d.collector_results) ? d.collector_results[0] : d.collector_results;
+            
+            return {
+              id: d.id,
+              collector_result_id: d.collector_result_id,
+              brand_name: cr?.brand || 'Unknown',
+              competitor_name: null, // Brand row
+              sentiment_score: null,
+              sentiment_label: null,
+              brand_id: d.brand_id,
+              customer_id: d.customer_id,
+              processed_at: d.processed_at,
+              total_brand_mentions: bm?.total_brand_mentions || 0,
+            };
+          });
+      }
+    } else {
+      console.log('   📋 Using legacy sentiment query (extracted_positions)');
+      
+      // LEGACY: Query extracted_positions
+      let query = this.supabase
+        .from('extracted_positions')
+        .select('id, collector_result_id, brand_name, competitor_name, sentiment_score, sentiment_label, brand_id, customer_id, processed_at, total_brand_mentions')
+        .is('sentiment_score', null)
+        .not('collector_result_id', 'is', null)
+        .gt('total_brand_mentions', 0)
+        .order('processed_at', { ascending: false })
+        .limit(limit * 10);
+
+      if (options.customerId) query = query.eq('customer_id', options.customerId);
+      if (options.brandIds?.length) query = query.in('brand_id', options.brandIds);
+      if (options.since) query = query.gte('processed_at', options.since);
+
+      const { data, error: queryError } = await query;
+      positionRows = data || [];
+      error = queryError;
+    }
+
     if (error) throw error;
     if (!positionRows || positionRows.length === 0) {
-      console.log('✅ No pending combined sentiment rows found in extracted_positions');
+      console.log(`✅ No pending sentiment rows found (${USE_OPTIMIZED_SENTIMENT_QUERY ? 'optimized' : 'legacy'})`);
       return 0;
     }
+
+    console.log(`   📊 Found ${positionRows.length} rows without sentiment (${USE_OPTIMIZED_SENTIMENT_QUERY ? 'optimized' : 'legacy'})`);
 
     // Group by collector_result_id to get all entities (brand + competitors) for each result
     const groupedByCollectorResult = new Map<number, Array<typeof positionRows[0]>>();

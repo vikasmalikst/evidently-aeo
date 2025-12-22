@@ -60,26 +60,117 @@ export class CompetitorSentimentService {
     if (options.since) console.log(`   ▶ since: ${options.since}`);
     console.log('   ▶ limit:', limit, '\n');
 
-    let query = this.supabase
-      .from('extracted_positions')
-      .select('id, collector_result_id, competitor_name, sentiment_score_competitor, sentiment_label_competitor, brand_id, customer_id, processed_at')
-      .is('sentiment_score_competitor', null)
-      .not('competitor_name', 'is', null)
-      .neq('competitor_name', '')
-      .not('collector_result_id', 'is', null)
-      .order('processed_at', { ascending: false })
-      .limit(limit * 10);
+    // Feature flag: Use optimized query (new schema) vs legacy (extracted_positions)
+    const USE_OPTIMIZED_SENTIMENT_QUERY = process.env.USE_OPTIMIZED_SENTIMENT_QUERY === 'true';
+    
+    let positionRows: any[] = [];
+    let error: any = null;
 
-    if (options.customerId) query = query.eq('customer_id', options.customerId);
-    if (options.brandIds?.length) query = query.in('brand_id', options.brandIds);
-    if (options.since) query = query.gte('processed_at', options.since);
+    if (USE_OPTIMIZED_SENTIMENT_QUERY) {
+      console.log('   ⚡ Using optimized competitor sentiment query (new schema)');
+      
+      // OPTIMIZED: Query metric_facts + competitor_metrics for rows without sentiment
+      let query = this.supabase
+        .from('metric_facts')
+        .select(`
+          id,
+          collector_result_id,
+          brand_id,
+          customer_id,
+          processed_at,
+          competitor_metrics!inner(
+            competitor_id,
+            brand_competitors!inner(competitor_name)
+          )
+        `)
+        .not('collector_result_id', 'is', null)
+        .order('processed_at', { ascending: false })
+        .limit(limit * 10);
 
-    const { data: positionRows, error } = await query;
+      if (options.customerId) query = query.eq('customer_id', options.customerId);
+      if (options.brandIds?.length) query = query.in('brand_id', options.brandIds);
+      if (options.since) query = query.gte('processed_at', options.since);
+
+      const { data, error: queryError } = await query;
+      error = queryError;
+
+      // Check if competitor_sentiment exists for each row
+      if (data && data.length > 0) {
+        // Flatten competitor_metrics and check for existing sentiment
+        const competitorMetricPairs: Array<{ metric_fact_id: number; competitor_id: string; competitor_name: string }> = [];
+        
+        data.forEach(d => {
+          const cms = Array.isArray(d.competitor_metrics) ? d.competitor_metrics : [d.competitor_metrics];
+          cms.forEach((cm: any) => {
+            if (cm) {
+              const bc = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
+              if (bc && bc.competitor_name) {
+                competitorMetricPairs.push({
+                  metric_fact_id: d.id,
+                  competitor_id: cm.competitor_id,
+                  competitor_name: bc.competitor_name,
+                });
+              }
+            }
+          });
+        });
+
+        // Check which already have sentiment
+        const metricFactIds = [...new Set(competitorMetricPairs.map(p => p.metric_fact_id))];
+        const { data: existingSentiments } = await this.supabase
+          .from('competitor_sentiment')
+          .select('metric_fact_id, competitor_id')
+          .in('metric_fact_id', metricFactIds);
+
+        const existingSentimentKeys = new Set((existingSentiments || []).map(s => `${s.metric_fact_id}:${s.competitor_id}`));
+
+        // Transform to match old format and filter out rows with existing sentiment
+        positionRows = competitorMetricPairs
+          .filter(p => !existingSentimentKeys.has(`${p.metric_fact_id}:${p.competitor_id}`))
+          .map(p => {
+            const metricFact = data.find(d => d.id === p.metric_fact_id);
+            return {
+              id: p.metric_fact_id,
+              collector_result_id: metricFact?.collector_result_id,
+              competitor_name: p.competitor_name,
+              sentiment_score_competitor: null,
+              sentiment_label_competitor: null,
+              brand_id: metricFact?.brand_id,
+              customer_id: metricFact?.customer_id,
+              processed_at: metricFact?.processed_at,
+            };
+          });
+      }
+    } else {
+      console.log('   📋 Using legacy competitor sentiment query (extracted_positions)');
+      
+      // LEGACY: Query extracted_positions
+      let query = this.supabase
+        .from('extracted_positions')
+        .select('id, collector_result_id, competitor_name, sentiment_score_competitor, sentiment_label_competitor, brand_id, customer_id, processed_at')
+        .is('sentiment_score_competitor', null)
+        .not('competitor_name', 'is', null)
+        .neq('competitor_name', '')
+        .not('collector_result_id', 'is', null)
+        .order('processed_at', { ascending: false })
+        .limit(limit * 10);
+
+      if (options.customerId) query = query.eq('customer_id', options.customerId);
+      if (options.brandIds?.length) query = query.in('brand_id', options.brandIds);
+      if (options.since) query = query.gte('processed_at', options.since);
+
+      const { data, error: queryError } = await query;
+      positionRows = data || [];
+      error = queryError;
+    }
+
     if (error) throw error;
     if (!positionRows || positionRows.length === 0) {
-      console.log('✅ No pending competitor sentiment rows found in extracted_positions');
+      console.log(`✅ No pending competitor sentiment rows found (${USE_OPTIMIZED_SENTIMENT_QUERY ? 'optimized' : 'legacy'})`);
       return 0;
     }
+
+    console.log(`   📊 Found ${positionRows.length} competitor rows without sentiment (${USE_OPTIMIZED_SENTIMENT_QUERY ? 'optimized' : 'legacy'})`);
 
     const groupedByCollectorResult = new Map<number, Array<typeof positionRows[0]>>();
     for (const row of positionRows) {

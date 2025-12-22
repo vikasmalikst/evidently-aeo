@@ -25,6 +25,33 @@ USE_OPTIMIZED_POSITION_CHECK=false
 **Impact:** LOW (internal check only, not user-facing)  
 **Risk:** VERY LOW (simple existence check)
 
+### Sentiment Services (Deprecated)
+
+**`USE_OPTIMIZED_SENTIMENT_QUERY`** (default: `false`)
+
+Controls whether sentiment services use the optimized new schema or the legacy `extracted_positions` table for finding rows without sentiment.
+
+- `true`: Query `metric_facts` + `brand_metrics` / `competitor_metrics` (optimized)
+- `false`: Query `extracted_positions` (legacy, current behavior)
+
+**Usage:**
+```bash
+# Enable optimization
+USE_OPTIMIZED_SENTIMENT_QUERY=true
+
+# Disable (default)
+USE_OPTIMIZED_SENTIMENT_QUERY=false
+```
+
+**Impact:** LOW (deprecated services, using consolidated analysis now)  
+**Risk:** VERY LOW (backfill only)
+
+**Services affected:**
+- `combined-sentiment.service.ts`
+- `competitor-sentiment.service.ts`
+
+**Note:** These services are deprecated. New data uses consolidated analysis which writes directly to the new schema (`brand_sentiment` and `competitor_sentiment` tables).
+
 ---
 
 ## Migration Status
@@ -32,7 +59,7 @@ USE_OPTIMIZED_POSITION_CHECK=false
 | Service | Flag | Status | Enabled |
 |---------|------|--------|---------|
 | Position Extraction | `USE_OPTIMIZED_POSITION_CHECK` | ✅ Implemented | ⏳ Testing |
-| Sentiment Services | TBD | ⏳ Pending | - |
+| Sentiment Services | `USE_OPTIMIZED_SENTIMENT_QUERY` | ✅ Implemented | ⏳ Testing |
 | Prompt Metrics | TBD | ⏳ Pending | - |
 | Keywords Analytics | TBD | ⏳ Pending | - |
 | Source Attribution | TBD | ⏳ Pending | - |

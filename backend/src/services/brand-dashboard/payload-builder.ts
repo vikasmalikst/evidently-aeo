@@ -1939,6 +1939,8 @@ export async function buildDashboardPayload(
   const positionRowCollectorTypes = new Set<string>()
   let skippedRowsCount = 0
   let processedBrandRowsCount = 0
+  const dateMismatchesByCollector = new Map<string, number>()
+  const successfulMatchesByCollector = new Map<string, number>()
   
   positionRows.forEach(row => {
     // Prefer processed_at if it exists and is not null, otherwise use created_at
@@ -1966,11 +1968,16 @@ export async function buildDashboardPayload(
       if (dailyData) {
         processedBrandRowsCount++
         const dayData = dailyData.get(date)
-        if (!dayData && processedBrandRowsCount <= 5) {
-          // Log first few date mismatches to diagnose the issue
-          console.warn(`[TimeSeries] Date mismatch for ${collectorType}: extracted date '${date}' not in allDates. Available dates: ${Array.from(dailyData.keys()).slice(0, 5).join(', ')}...`)
+        if (!dayData) {
+          // Track date mismatches per collector
+          dateMismatchesByCollector.set(collectorType, (dateMismatchesByCollector.get(collectorType) || 0) + 1)
+          // Log first mismatch for each collector
+          if (dateMismatchesByCollector.get(collectorType) === 1) {
+            console.warn(`[TimeSeries] ⚠️ Date mismatch for ${collectorType}: extracted date '${date}' not found. Available dates: [${Array.from(dailyData.keys()).slice(0, 3).join(', ')}...]`)
+          }
         }
         if (dayData) {
+          successfulMatchesByCollector.set(collectorType, (successfulMatchesByCollector.get(collectorType) || 0) + 1)
           const brandVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index) ?? 0))
           // Note: share_of_answers_brand is stored as percentage (0-100), not decimal (0-1)
           // This matches the main brand share calculation (line 897) and visibility.service.ts (line 82)
@@ -2041,6 +2048,12 @@ export async function buildDashboardPayload(
   console.log(`   - Skipped rows: ${skippedRowsCount}`)
   console.log(`   - Collector types in position rows: ${Array.from(positionRowCollectorTypes).join(', ')}`)
   console.log(`   - Collector types in timeSeriesByCollector: ${Array.from(timeSeriesByCollector.keys()).join(', ')}`)
+  console.log(`[TimeSeries] Per-collector matching stats:`)
+  Array.from(positionRowCollectorTypes).forEach(collectorType => {
+    const successful = successfulMatchesByCollector.get(collectorType) || 0
+    const mismatched = dateMismatchesByCollector.get(collectorType) || 0
+    console.log(`   - ${collectorType}: ${successful} matched, ${mismatched} date mismatches`)
+  })
 
   // Calculate daily averages for each collector
   const timeSeriesData = new Map<string, {

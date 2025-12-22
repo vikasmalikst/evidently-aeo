@@ -1337,6 +1337,15 @@ export class BrandService {
       // Set default date range (last 30 days)
       const end = endDate ? new Date(endDate) : new Date();
       const start = startDate ? new Date(startDate) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+      
+      // Validate dates
+      if (isNaN(start.getTime())) {
+        throw new Error(`Invalid startDate: ${startDate}`);
+      }
+      if (isNaN(end.getTime())) {
+        throw new Error(`Invalid endDate: ${endDate}`);
+      }
+      
       const startIso = start.toISOString();
       const endIso = end.toISOString();
       
@@ -1525,7 +1534,7 @@ export class BrandService {
         
         if (positionsError) {
           console.error(`❌ Error fetching extracted_positions [${step3Time.toFixed(2)}ms]:`, positionsError);
-          throw new DatabaseError('Failed to fetch positions');
+          throw new Error(`Failed to fetch positions: ${positionsError.message || positionsError}`);
         }
         positions = posData || [];
         console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorTypes.length > 0 ? ` (for collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''} [${step3Time.toFixed(2)}ms]`);
@@ -1537,7 +1546,7 @@ export class BrandService {
         
         if (positionsError) {
           console.error(`❌ Error fetching extracted_positions [${step3Time.toFixed(2)}ms]:`, positionsError);
-          throw new DatabaseError('Failed to fetch positions');
+          throw new Error(`Failed to fetch positions: ${positionsError.message || positionsError}`);
         }
         positions = posData || [];
         console.log(`📊 Found ${positions.length} positions after querying directly${mappedCollectorTypes.length > 0 ? ` (filtered by collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''}`);

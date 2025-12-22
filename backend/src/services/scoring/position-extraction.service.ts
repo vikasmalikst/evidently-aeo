@@ -89,6 +89,12 @@ export interface ExtractPositionsOptions {
   brandIds?: string[];
   since?: string;
   limit?: number;
+  /**
+   * Optional: Specific collector_result IDs to process
+   * If provided, only these IDs will be processed (ignores other filters)
+   * This ensures position extraction processes the same results that were analyzed
+   */
+  collectorResultIds?: number[];
 }
 
 const DEFAULT_POSITION_LIMIT = 500;
@@ -138,67 +144,111 @@ export class PositionExtractionService {
   ): Promise<number> {
     const limit = Math.max(options.limit ?? DEFAULT_POSITION_LIMIT, 1);
     const fetchLimit = Math.max(limit * 2, limit);
-    if (options.customerId) {
-    }
-    if (options.brandIds?.length) {
-    }
-    if (options.since) {
-    }
-    // Fetch collector results (limit to recent ones)
-    let query = this.supabase
-      .from('collector_results')
-      .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata')
-      .order('created_at', { ascending: false })
-      .limit(fetchLimit);
+    
+    let allResults: any[] = [];
 
-    if (options.customerId) {
-      query = query.eq('customer_id', options.customerId);
-    }
-    if (options.brandIds && options.brandIds.length > 0) {
-      query = query.in('brand_id', options.brandIds);
-    }
-    if (options.since) {
-      query = query.gte('created_at', options.since);
-    }
+    // If specific collector_result IDs are provided, fetch only those
+    // This ensures we process the same results that were analyzed in consolidated analysis
+    if (options.collectorResultIds && options.collectorResultIds.length > 0) {
+      console.log(`   📌 [Position Extraction] Processing specific collector_result IDs: ${options.collectorResultIds.length} results`);
+      console.log(`   📋 [Position Extraction] IDs: ${options.collectorResultIds.slice(0, 10).join(', ')}${options.collectorResultIds.length > 10 ? '...' : ''}`);
+      
+      const { data: fetchedResults, error: fetchError } = await this.supabase
+        .from('collector_results')
+        .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata')
+        .in('id', options.collectorResultIds);
 
-    const { data: allResults, error: fetchError } = await query;
+      if (fetchError) {
+        console.error(`   ❌ [Position Extraction] Error fetching collector results:`, fetchError.message);
+        throw fetchError;
+      }
+      
+      if (!fetchedResults || fetchedResults.length === 0) {
+        console.log(`   ⚠️ [Position Extraction] No collector results found for provided IDs`);
+        return 0;
+      }
 
-    if (fetchError) throw fetchError;
-    if (!allResults || allResults.length === 0) {
-      return 0;
+      console.log(`   ✅ [Position Extraction] Fetched ${fetchedResults.length} collector results from database`);
+      allResults = fetchedResults;
+    } else {
+      // Original behavior: fetch collector results based on filters
+      let query = this.supabase
+        .from('collector_results')
+        .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata')
+        .order('created_at', { ascending: false })
+        .limit(fetchLimit);
+
+      if (options.customerId) {
+        query = query.eq('customer_id', options.customerId);
+      }
+      if (options.brandIds && options.brandIds.length > 0) {
+        query = query.in('brand_id', options.brandIds);
+      }
+      if (options.since) {
+        query = query.gte('created_at', options.since);
+      }
+
+      const { data: fetchedResults, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+      if (!fetchedResults || fetchedResults.length === 0) {
+        return 0;
+      }
+
+      allResults = fetchedResults;
     }
 
     // Check which results already have positions in the positions table
+    console.log(`   🔍 [Position Extraction] Checking which results already have positions...`);
     const processedCollectorResults = new Set<number>();
 
     for (const result of allResults) {
-      const { data: existing } = await this.supabase
+      const { data: existing, error: checkError } = await this.supabase
         .from('extracted_positions')
         .select('id')
         .eq('collector_result_id', result.id)
         .limit(1)
         .maybeSingle();
       
+      if (checkError) {
+        console.error(`   ❌ [Position Extraction] Error checking existing positions for collector_result ${result.id}:`, checkError.message);
+      }
+      
       if (existing) {
         processedCollectorResults.add(result.id);
+        console.log(`   ℹ️ [Position Extraction] Collector_result ${result.id} already has positions, will skip`);
       }
     }
 
-    // Filter to only new results
-    const results = allResults.filter(r => {
-      return !processedCollectorResults.has(r.id);
-    }).slice(0, limit); // Process configurable batch size
+    console.log(`   📊 [Position Extraction] Found ${processedCollectorResults.size} results that already have positions`);
+
+    // Filter to only new results (skip if specific IDs were provided - process all of them)
+    const results = options.collectorResultIds && options.collectorResultIds.length > 0
+      ? allResults.filter(r => r && r.raw_answer) // Only filter by raw_answer if specific IDs provided
+      : allResults.filter(r => {
+          return !processedCollectorResults.has(r.id);
+        }).slice(0, limit); // Process configurable batch size
+    
+    console.log(`   📊 [Position Extraction] Will process ${results.length} results (${allResults.length} total, ${processedCollectorResults.size} already processed)`);
+    
     if (results.length === 0) {
+      console.log(`   ⚠️ [Position Extraction] No results to process`);
       return 0;
     }
+    
+    console.log(`   📋 [Position Extraction] Processing collector_result IDs: ${results.map(r => r.id).slice(0, 10).join(', ')}${results.length > 10 ? '...' : ''}`);
 
     // Process each result
     let processed = 0;
     for (const result of results) {
       try {
+        console.log(`   🔄 [Position Extraction] Processing collector_result ${result.id}...`);
         const parsedResult = CollectorResultRow.parse(result);
         const positionResult = await this.extractPositions(parsedResult);
+        const totalRows = 1 + positionResult.competitorRows.length; // brand row + competitor rows
+        console.log(`   📊 [Position Extraction] Extracted ${totalRows} position rows for collector_result ${result.id} (1 brand, ${positionResult.competitorRows.length} competitors)`);
         await this.savePositions(positionResult);
+        console.log(`   ✅ [Position Extraction] Saved positions for collector_result ${result.id}`);
 
         processed++;
         const totalCompetitorMentions = positionResult.competitorRows.reduce((sum, row) => sum + row.competitor_mentions, 0);
@@ -943,27 +993,46 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
    * Save extracted positions to database
    */
   private async savePositions(payload: PositionExtractionPayload): Promise<void> {
+    const collectorResultId = payload.brandRow.collector_result_id;
     const rows = [
       payload.brandRow,
       ...payload.competitorRows,
     ];
 
+    console.log(`   💾 [savePositions] Saving ${rows.length} position rows for collector_result ${collectorResultId}`);
+    console.log(`      - Brand row: ${payload.brandRow.brand_name || 'N/A'}`);
+    console.log(`      - Competitor rows: ${payload.competitorRows.length} (${payload.competitorRows.map(r => r.competitor_name).join(', ')})`);
+
     // Ensure idempotency by deleting existing rows for this collector result
+    console.log(`   🗑️ [savePositions] Deleting existing positions for collector_result ${collectorResultId}...`);
     const { error: deleteError } = await this.supabase
       .from('extracted_positions')
       .delete()
-      .eq('collector_result_id', payload.brandRow.collector_result_id);
+      .eq('collector_result_id', collectorResultId);
 
     if (deleteError) {
+      console.error(`   ❌ [savePositions] Failed to delete existing positions:`, deleteError.message);
       throw new Error(`Failed to reset existing positions: ${deleteError.message}`);
     }
+    console.log(`   ✅ [savePositions] Deleted existing positions (if any) for collector_result ${collectorResultId}`);
 
-    const { error: insertError } = await this.supabase
+    console.log(`   💾 [savePositions] Inserting ${rows.length} new position rows...`);
+    const { data: insertedData, error: insertError } = await this.supabase
       .from('extracted_positions')
-      .insert(rows);
+      .insert(rows)
+      .select('id, collector_result_id');
 
     if (insertError) {
+      console.error(`   ❌ [savePositions] Failed to insert positions:`, insertError.message);
+      console.error(`   ❌ [savePositions] Insert error details:`, JSON.stringify(insertError, null, 2));
       throw new Error(`Failed to save positions: ${insertError.message}`);
+    }
+
+    if (insertedData && insertedData.length > 0) {
+      console.log(`   ✅ [savePositions] Successfully inserted ${insertedData.length} position rows for collector_result ${collectorResultId}`);
+      console.log(`   📋 [savePositions] Inserted position IDs: ${insertedData.map(r => r.id).slice(0, 10).join(', ')}${insertedData.length > 10 ? '...' : ''}`);
+    } else {
+      console.warn(`   ⚠️ [savePositions] Insert succeeded but no data returned for collector_result ${collectorResultId}`);
     }
 
     // Update collector_results.metadata with product names if available

@@ -45,6 +45,31 @@ export const ScheduledJobs = () => {
   const [diagnostic, setDiagnostic] = useState<any>(null);
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  
+  // Ollama settings state
+  const [ollamaSettings, setOllamaSettings] = useState({
+    ollamaUrl: 'http://localhost:11434',
+    ollamaModel: 'qwen2.5:latest',
+    useOllama: false,
+  });
+  const [ollamaLoading, setOllamaLoading] = useState(false);
+  const [ollamaSaving, setOllamaSaving] = useState(false);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [ollamaSuccess, setOllamaSuccess] = useState<string | null>(null);
+  
+  // Ollama health check state
+  const [ollamaHealth, setOllamaHealth] = useState<{
+    healthy: boolean;
+    error?: string;
+    responseTime?: number;
+  } | null>(null);
+  const [ollamaHealthChecking, setOllamaHealthChecking] = useState(false);
+  
+  // Test prompt state
+  const [testPrompt, setTestPrompt] = useState('');
+  const [testResponse, setTestResponse] = useState<string | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
 
   // Get customer_id from auth store or fetch from brand
   const authUser = useAuthStore((state) => state.user);
@@ -99,6 +124,128 @@ export const ScheduledJobs = () => {
       }
     }
   }, [customerId, selectedBrandId]);
+
+  // Load Ollama settings on component mount
+  useEffect(() => {
+    loadOllamaSettings();
+  }, []);
+
+  // Check health when Ollama is enabled
+  useEffect(() => {
+    if (ollamaSettings.useOllama && ollamaSettings.ollamaUrl) {
+      checkOllamaHealth();
+    } else {
+      setOllamaHealth(null);
+    }
+  }, [ollamaSettings.useOllama, ollamaSettings.ollamaUrl]);
+
+  const loadOllamaSettings = async () => {
+    try {
+      setOllamaLoading(true);
+      setOllamaError(null);
+      const response = await apiClient.get('/admin/global-settings/consolidated-analysis/ollama');
+      if (response.success && response.data) {
+        setOllamaSettings(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to load Ollama settings:', error);
+      setOllamaError('Failed to load Ollama settings');
+    } finally {
+      setOllamaLoading(false);
+    }
+  };
+
+  const checkOllamaHealth = async () => {
+    try {
+      setOllamaHealthChecking(true);
+      setOllamaError(null);
+      const response = await apiClient.get('/admin/global-settings/consolidated-analysis/ollama/health');
+      if (response.success && response.data) {
+        setOllamaHealth(response.data);
+        if (!response.data.healthy) {
+          setOllamaError(response.data.error || 'Ollama is not available');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check Ollama health:', error);
+      setOllamaHealth({
+        healthy: false,
+        error: 'Failed to check Ollama health',
+      });
+    } finally {
+      setOllamaHealthChecking(false);
+    }
+  };
+
+  const saveOllamaSettings = async () => {
+    try {
+      setOllamaSaving(true);
+      setOllamaError(null);
+      setOllamaSuccess(null);
+      
+      // Validate URL format
+      try {
+        new URL(ollamaSettings.ollamaUrl);
+      } catch {
+        setOllamaError('Invalid URL format');
+        setOllamaSaving(false);
+        return;
+      }
+
+      const response = await apiClient.put('/admin/global-settings/consolidated-analysis/ollama', {
+        ollamaUrl: ollamaSettings.ollamaUrl,
+        ollamaModel: ollamaSettings.ollamaModel,
+        useOllama: ollamaSettings.useOllama,
+      });
+
+      if (response.success) {
+        setOllamaSuccess('Ollama settings saved successfully!');
+        setTimeout(() => setOllamaSuccess(null), 3000);
+        
+        // Auto-check health after saving if Ollama is enabled
+        if (ollamaSettings.useOllama) {
+          setTimeout(() => checkOllamaHealth(), 500);
+        } else {
+          setOllamaHealth(null);
+        }
+      } else {
+        setOllamaError(response.error || 'Failed to save settings');
+      }
+    } catch (error) {
+      console.error('Failed to save Ollama settings:', error);
+      setOllamaError('Failed to save Ollama settings');
+    } finally {
+      setOllamaSaving(false);
+    }
+  };
+
+  const testOllamaPrompt = async () => {
+    if (!testPrompt.trim()) {
+      setTestError('Please enter a test prompt');
+      return;
+    }
+
+    try {
+      setTestLoading(true);
+      setTestError(null);
+      setTestResponse(null);
+      
+      const response = await apiClient.post('/admin/global-settings/consolidated-analysis/ollama/test', {
+        prompt: testPrompt,
+      });
+
+      if (response.success && response.data) {
+        setTestResponse(response.data.response);
+      } else {
+        setTestError(response.error || 'Test failed');
+      }
+    } catch (error: any) {
+      console.error('Failed to test Ollama prompt:', error);
+      setTestError(error?.response?.data?.error || 'Failed to test Ollama prompt');
+    } finally {
+      setTestLoading(false);
+    }
+  };
 
   const loadDiagnostic = async () => {
     if (!selectedBrandId || !customerId) return;
@@ -218,7 +365,7 @@ export const ScheduledJobs = () => {
       alert('Customer ID not available. Please select a brand.');
       return;
     }
-    if (!confirm(`Start scoring for this brand now? This will process all unprocessed collector results.`)) {
+    if (!confirm(`Start scoring for this brand now? This will process all unprocessed collector results. The process runs in the background and may take 5-30 minutes.`)) {
       return;
     }
     try {
@@ -227,12 +374,28 @@ export const ScheduledJobs = () => {
         customer_id: customerId,
       });
       if (response.success) {
-        alert(`Scoring completed! Processed ${response.data.positionsProcessed} positions, ${response.data.sentimentsProcessed} sentiments.`);
+        alert(`Scoring started in background! ${response.message || 'Check job run history for progress.'}`);
         loadRecentRuns();
       }
     } catch (error: any) {
       console.error('Failed to start scoring:', error);
-      alert(`Failed to start scoring: ${error?.response?.data?.error || error.message}`);
+      console.error('Error details:', {
+        error,
+        type: typeof error,
+        isError: error instanceof Error,
+        message: error?.message,
+        response: error?.response,
+        stack: error?.stack,
+      });
+      // Extract error message from various possible error formats
+      // apiClient uses fetch, so errors are standard Error objects with message property
+      const errorMessage = 
+        error?.response?.data?.error || 
+        error?.response?.data?.message ||
+        error?.message || 
+        (typeof error === 'string' ? error : error?.toString()) || 
+        'Unknown error occurred. Please check the browser console for details.';
+      alert(`Failed to start scoring: ${errorMessage}`);
     } finally {
       setScoring(false);
     }
@@ -502,6 +665,268 @@ export const ScheduledJobs = () => {
           </div>
         )}
       </div>
+
+      {/* Ollama Settings Panel */}
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900">Ollama Configuration</h2>
+          <div className="flex items-center gap-2">
+            {ollamaSettings.useOllama && (
+              <>
+                {/* Health Status Indicator */}
+                {ollamaHealthChecking ? (
+                  <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 flex items-center gap-1">
+                    <div className="w-2 h-2 border border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                    Checking...
+                  </span>
+                ) : ollamaHealth ? (
+                  ollamaHealth.healthy ? (
+                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 flex items-center gap-1">
+                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                      Healthy
+                      {ollamaHealth.responseTime && (
+                        <span className="ml-1 text-green-700">
+                          ({ollamaHealth.responseTime}ms)
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 flex items-center gap-1">
+                      <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                      Unavailable
+                    </span>
+                  )
+                ) : null}
+                
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 flex items-center gap-1">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                  Active
+                </span>
+                
+                {/* Manual Health Check Button */}
+                <button
+                  onClick={checkOllamaHealth}
+                  disabled={ollamaHealthChecking}
+                  className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+                  title="Check Ollama health"
+                >
+                  🔄
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {ollamaLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <span className="ml-2 text-gray-600">Loading settings...</span>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Toggle Switch */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div>
+                <label className="text-sm font-medium text-gray-900">Use Ollama for Scoring</label>
+                <p className="text-xs text-gray-500 mt-1">
+                  When enabled, scoring will use your local Ollama instance instead of cloud APIs
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ollamaSettings.useOllama}
+                  onChange={(e) =>
+                    setOllamaSettings({ ...ollamaSettings, useOllama: e.target.checked })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Configuration Fields */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ollama API URL
+                </label>
+                <input
+                  type="text"
+                  value={ollamaSettings.ollamaUrl}
+                  onChange={(e) =>
+                    setOllamaSettings({ ...ollamaSettings, ollamaUrl: e.target.value })
+                  }
+                  placeholder="http://localhost:11434"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={ollamaSaving}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  URL where your Ollama instance is running
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ollama Model
+                </label>
+                <input
+                  type="text"
+                  value={ollamaSettings.ollamaModel}
+                  onChange={(e) =>
+                    setOllamaSettings({ ...ollamaSettings, ollamaModel: e.target.value })
+                  }
+                  placeholder="qwen2.5:latest"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={ollamaSaving}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Model name as it appears in Ollama (e.g., qwen2.5:latest)
+                </p>
+              </div>
+            </div>
+
+            {/* Health Status Details */}
+            {ollamaSettings.useOllama && ollamaHealth && !ollamaHealth.healthy && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                <div className="flex items-start">
+                  <svg className="h-5 w-5 text-red-400 mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-red-800">Ollama is not available</p>
+                    <p className="text-xs text-red-700 mt-1">{ollamaHealth.error}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Status Messages */}
+            {ollamaError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-800">{ollamaError}</p>
+              </div>
+            )}
+
+            {ollamaSuccess && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-sm text-green-800">{ollamaSuccess}</p>
+              </div>
+            )}
+
+            {/* Info Box */}
+            {ollamaSettings.useOllama && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg
+                      className="h-5 w-5 text-blue-400"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-blue-800">Sequential Processing Enabled</h3>
+                    <div className="mt-2 text-sm text-blue-700">
+                      <p>
+                        When using Ollama, answers are processed one at a time to avoid overloading your local instance.
+                        This may take longer but ensures stability.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Save Button */}
+            <div className="flex justify-end">
+              <button
+                onClick={saveOllamaSettings}
+                disabled={ollamaSaving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {ollamaSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save Settings</span>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Test Prompt Section */}
+      {ollamaSettings.useOllama && (
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Test Ollama</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Send a test prompt to verify Ollama is working correctly
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Test Prompt
+              </label>
+              <textarea
+                value={testPrompt}
+                onChange={(e) => setTestPrompt(e.target.value)}
+                placeholder="Enter a test prompt here..."
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                disabled={testLoading}
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={testOllamaPrompt}
+                disabled={testLoading || !testPrompt.trim()}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {testLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Testing...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🚀</span>
+                    <span>Send Test Prompt</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Test Response */}
+            {testError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm font-medium text-red-800">Error</p>
+                <p className="text-xs text-red-700 mt-1">{testError}</p>
+              </div>
+            )}
+
+            {testResponse && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-sm font-medium text-green-800 mb-2">Response</p>
+                <div className="bg-white p-3 rounded border border-green-200">
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{testResponse}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Jobs Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden mb-6">

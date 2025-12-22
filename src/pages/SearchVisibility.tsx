@@ -718,7 +718,7 @@ export const SearchVisibility = () => {
               <div className="flex flex-col gap-6">
                 {/* KPI Toggle and LLM Selectors Row - KPI on left, LLM selectors on right */}
                 <div className="flex items-start justify-between gap-4">
-                  <KpiToggle metricType={metricType} onChange={setMetricType} />
+                <KpiToggle metricType={metricType} onChange={setMetricType} />
                   {activeTab === 'competitive' && llmOptions.filter((o) => o.value !== 'all').length > 0 && (
                     <div className="flex flex-col gap-2 flex-shrink-0">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8690a8] text-right">

@@ -327,28 +327,37 @@ export const SearchSourcesR2 = () => {
     { enabled: !authLoading && !brandsLoading && !!trendsEndpoint, refetchOnMount: false }
   );
 
-  // Prepare data for Impact Score trends chart
+  // Prepare data for Impact Score trends chart - only show selected sources
   const impactScoreTrendsData = useMemo(() => {
+    // If no sources are selected, return empty array
+    if (selectedTrendSources.length === 0) {
+      return [];
+    }
+
     if (!trendsResponse?.success || !trendsResponse.data) {
       // Fallback to current sources if trends data not available
       if (!enhancedSources.length) return [];
-      const selected = selectedTrendSources.length
-        ? selectedTrendSources.slice(0, 10)
-        : [...enhancedSources].sort((a, b) => b.valueScore - a.valueScore).slice(0, 10).map((s) => s.name);
-
+      
+      // Only use selected sources
+      const selectedSet = new Set(selectedTrendSources);
       const byName = new Map(enhancedSources.map((s) => [s.name, s.valueScore] as const));
-      return selected.map((name) => ({
-        name,
-        valueScore: byName.get(name) ?? 0
-      }));
+      return selectedTrendSources
+        .filter(name => byName.has(name))
+        .map((name) => ({
+          name,
+          valueScore: byName.get(name) ?? 0
+        }));
     }
 
-    // Use real trends data from API
-    return trendsResponse.data.sources.map((source) => ({
-      name: source.name,
-      valueScore: source.data[source.data.length - 1] || 0, // Current value (last day)
-      trendData: source.data // Historical data
-    }));
+    // Use real trends data from API - filter to only selected sources
+    const selectedSet = new Set(selectedTrendSources);
+    return trendsResponse.data.sources
+      .filter((source) => selectedSet.has(source.name))
+      .map((source) => ({
+        name: source.name,
+        valueScore: source.data[source.data.length - 1] || 0, // Current value (last day)
+        trendData: source.data // Historical data
+      }));
   }, [trendsResponse, enhancedSources, selectedTrendSources]);
 
   const trendSelectedSet = useMemo(() => new Set(selectedTrendSources), [selectedTrendSources]);

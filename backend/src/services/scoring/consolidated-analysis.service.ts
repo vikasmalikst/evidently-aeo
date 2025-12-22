@@ -13,6 +13,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import { shouldUseOllama, callOllamaAPI as callOllamaClientAPI } from './ollama-client.service';
 
 dotenv.config();
 
@@ -86,13 +87,141 @@ export class ConsolidatedAnalysisService {
   }
 
   /**
+   * Get cached analysis from database (provider-agnostic)
+   * Also fetches citations from citation_categories table
+   */
+  private async getCachedAnalysisFromDB(
+    collectorResultId: number,
+    citations: string[],
+    customerId?: string,
+    brandId?: string
+  ): Promise<ConsolidatedAnalysisResult | null> {
+    try {
+      const { data, error } = await this.supabase
+        .from('consolidated_analysis_cache')
+        .select('products, sentiment, llm_provider')
+        .eq('collector_result_id', collectorResultId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn(`⚠️ Error fetching cached analysis for collector_result ${collectorResultId}:`, error.message);
+        return null;
+      }
+
+      if (!data) {
+        return null;
+      }
+
+      // Fetch citations from citation_categories table
+      const citationsMap: ConsolidatedAnalysisResult['citations'] = {};
+      if (citations && citations.length > 0) {
+        const cachedCitations = await this.getCachedCitationCategories(
+          citations,
+          customerId,
+          brandId
+        );
+
+        // Valid category type guard
+        const isValidCategory = (cat: string): cat is 'Editorial' | 'Corporate' | 'Reference' | 'UGC' | 'Social' | 'Institutional' => {
+          return ['Editorial', 'Corporate', 'Reference', 'UGC', 'Social', 'Institutional'].includes(cat);
+        };
+
+        // Map cached citations back to original URLs
+        for (const url of citations) {
+          const domain = this.extractDomain(url);
+          const cached = cachedCitations.get(domain.toLowerCase());
+          if (cached && isValidCategory(cached.category)) {
+            citationsMap[url] = {
+              category: cached.category,
+              pageName: cached.pageName,
+            };
+          }
+        }
+      }
+
+      // Reconstruct ConsolidatedAnalysisResult from cached data
+      const cachedResult: ConsolidatedAnalysisResult = {
+        products: data.products || { brand: [], competitors: {} },
+        sentiment: data.sentiment || { brand: { label: 'NEUTRAL', score: 60 }, competitors: {} },
+        citations: citationsMap, // Citations fetched from citation_categories table
+      };
+
+      console.log(`📦 Using cached analysis from DB for collector_result ${collectorResultId} (provider: ${data.llm_provider}, ${Object.keys(citationsMap).length} citations)`);
+      return cachedResult;
+    } catch (error) {
+      console.warn(`⚠️ Error fetching cached analysis:`, error instanceof Error ? error.message : error);
+      return null;
+    }
+  }
+
+  /**
+   * Store analysis result in database cache
+   */
+  private async storeAnalysisInDB(
+    collectorResultId: number,
+    result: ConsolidatedAnalysisResult,
+    llmProvider: 'ollama' | 'openrouter'
+  ): Promise<void> {
+    try {
+      // Extract only products and sentiment (citations are stored separately)
+      const cacheData = {
+        collector_result_id: collectorResultId,
+        products: {
+          brand: result.products?.brand || [],
+          competitors: result.products?.competitors || {},
+        },
+        sentiment: {
+          brand: result.sentiment?.brand || { label: 'NEUTRAL', score: 60 },
+          competitors: result.sentiment?.competitors || {},
+        },
+        llm_provider: llmProvider,
+      };
+
+      const { error } = await this.supabase
+        .from('consolidated_analysis_cache')
+        .upsert(cacheData, {
+          onConflict: 'collector_result_id',
+          ignoreDuplicates: false,
+        });
+
+      if (error) {
+        console.warn(`⚠️ Error storing analysis cache for collector_result ${collectorResultId}:`, error.message);
+      } else {
+        console.log(`💾 Stored analysis cache in DB for collector_result ${collectorResultId} (provider: ${llmProvider})`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Error storing analysis cache:`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  /**
    * Main function: Perform consolidated analysis
    */
   async analyze(options: ConsolidatedAnalysisOptions): Promise<ConsolidatedAnalysisResult> {
-    // Check cache first
+    // Check in-memory cache first (for same request)
     if (options.collectorResultId && this.cache.has(options.collectorResultId)) {
-      console.log(`📦 Using cached consolidated analysis for collector_result ${options.collectorResultId}`);
+      console.log(`📦 Using in-memory cached analysis for collector_result ${options.collectorResultId}`);
       return this.cache.get(options.collectorResultId)!;
+    }
+
+    // Check database cache (provider-agnostic - reuse regardless of current provider)
+    if (options.collectorResultId) {
+      // Normalize inputs for citation fetching
+      const citations = Array.isArray(options.citations) ? options.citations : [];
+      const customerId = options.customerId || options.brandMetadata?.customer_id;
+      const brandId = options.brandId || options.brandMetadata?.brand_id;
+      
+      const cachedResult = await this.getCachedAnalysisFromDB(
+        options.collectorResultId,
+        citations,
+        customerId,
+        brandId
+      );
+      if (cachedResult) {
+        // Also cache in memory for this request
+        this.cache.set(options.collectorResultId, cachedResult);
+        return cachedResult;
+      }
     }
 
     try {
@@ -125,8 +254,14 @@ export class ConsolidatedAnalysisService {
         brandName: brandName,
       });
 
-      // Call OpenRouter API (only for uncached citations)
-      const result = await this.callOpenRouterAPI(prompt);
+      // Check if Ollama should be used (optional path - doesn't affect existing functionality)
+      const useOllama = await shouldUseOllama();
+      const llmProvider: 'ollama' | 'openrouter' = useOllama ? 'ollama' : 'openrouter';
+      
+      // Call LLM API - either Ollama or OpenRouter (existing functionality)
+      const result = useOllama 
+        ? await this.callOllamaAPI(prompt)
+        : await this.callOpenRouterAPI(prompt);
 
       // Merge cached citations with LLM results
       const mergedCitations: ConsolidatedAnalysisResult['citations'] = {};
@@ -166,9 +301,14 @@ export class ConsolidatedAnalysisService {
       // Update result with merged citations
       result.citations = mergedCitations;
 
-      // Cache result
+      // Cache result in memory (for same request)
       if (options.collectorResultId) {
         this.cache.set(options.collectorResultId, result);
+      }
+
+      // Store analysis result in database cache (for fault tolerance and resume capability)
+      if (options.collectorResultId) {
+        await this.storeAnalysisInDB(options.collectorResultId, result, llmProvider);
       }
 
       return result;
@@ -317,6 +457,58 @@ Respond with ONLY valid JSON in this exact structure:
     }
   }
 }`;
+  }
+
+  /**
+   * Call Ollama API (separate, modular function - doesn't affect existing functionality)
+   */
+  private async callOllamaAPI(prompt: string): Promise<ConsolidatedAnalysisResult> {
+    console.log('🦙 Calling Ollama for consolidated analysis...');
+
+    const systemMessage = 'You are a precise analysis assistant. Always respond with valid JSON only, no explanations.';
+    
+    try {
+      // Use the separate Ollama client service
+      const fullResponse = await callOllamaClientAPI(systemMessage, prompt);
+
+      // Extract JSON from response (handle markdown code blocks)
+      let jsonStr = typeof fullResponse === 'string' ? fullResponse.trim() : String(fullResponse).trim();
+      
+      if (!jsonStr || jsonStr.length === 0) {
+        throw new Error('Empty response from Ollama API');
+      }
+      
+      // Remove markdown code blocks if present
+      if (jsonStr.includes('```json')) {
+        jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+      } else if (jsonStr.includes('```')) {
+        jsonStr = jsonStr.replace(/```\s*/g, '');
+      }
+
+      // Find JSON object
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (!jsonMatch || !jsonMatch[0]) {
+        console.error('⚠️ No JSON found in Ollama response. Response preview:', jsonStr.substring(0, 500));
+        throw new Error('No JSON found in Ollama response');
+      }
+
+      let result: ConsolidatedAnalysisResult;
+      try {
+        result = JSON.parse(jsonMatch[0]) as ConsolidatedAnalysisResult;
+      } catch (parseError) {
+        console.error('⚠️ Failed to parse JSON from Ollama. Response preview:', jsonStr.substring(0, 500));
+        throw new Error(`Failed to parse JSON from Ollama response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+      }
+      
+      // Validate and normalize result (same as OpenRouter)
+      return this.validateAndNormalize(result);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Ollama API call failed:`, errorMsg);
+      // Don't fallback to OpenRouter automatically - let the error propagate
+      // This ensures Ollama failures are visible and don't silently fallback
+      throw new Error(`Ollama API error: ${errorMsg}`);
+    }
   }
 
   /**
@@ -712,7 +904,7 @@ Respond with ONLY valid JSON in this exact structure:
             customer_id: customerId || null,
             brand_id: brandId || null,
             cited_url: url,
-            domain: domain,
+            domain: domain.toLowerCase(), // Normalize domain to lowercase
             category: categorization.category,
             page_name: categorization.pageName || null,
           };
@@ -723,10 +915,28 @@ Respond with ONLY valid JSON in this exact structure:
         return;
       }
 
+      // Deduplicate by domain to avoid "ON CONFLICT DO UPDATE cannot affect row a second time" error
+      // When multiple URLs from the same domain are processed, we keep only one row per domain
+      const domainMap = new Map<string, typeof rowsToInsert[0]>();
+      for (const row of rowsToInsert) {
+        const existing = domainMap.get(row.domain);
+        // Keep the first occurrence, or prefer one with a page_name if available
+        if (!existing || (!existing.page_name && row.page_name)) {
+          domainMap.set(row.domain, row);
+        }
+      }
+
+      const uniqueRows = Array.from(domainMap.values());
+
+      if (uniqueRows.length === 0) {
+        return;
+      }
+
       // Use upsert to avoid duplicates (on conflict with domain, update)
+      // Now we only have one row per domain, so no duplicate conflicts
       const { error } = await this.supabase
         .from('citation_categories')
-        .upsert(rowsToInsert, {
+        .upsert(uniqueRows, {
           onConflict: 'domain',
           ignoreDuplicates: false, // Update if exists
         });
@@ -734,7 +944,7 @@ Respond with ONLY valid JSON in this exact structure:
       if (error) {
         console.warn(`⚠️ Error storing citation categories in cache:`, error.message);
       } else {
-        console.log(`✅ Stored ${rowsToInsert.length} citation categories in database cache`);
+        console.log(`✅ Stored ${uniqueRows.length} citation categories in database cache (${rowsToInsert.length} URLs, ${uniqueRows.length} unique domains)`);
       }
     } catch (error) {
       console.warn(`⚠️ Error storing citation categories:`, error instanceof Error ? error.message : error);
@@ -744,3 +954,6 @@ Respond with ONLY valid JSON in this exact structure:
 
 // Export singleton instance
 export const consolidatedAnalysisService = new ConsolidatedAnalysisService();
+
+
+

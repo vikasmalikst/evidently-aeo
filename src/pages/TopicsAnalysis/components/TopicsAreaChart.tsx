@@ -137,6 +137,40 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
     };
   }, [sortedTopics, metricType]);
 
+  // Calculate dynamic max value from data for auto-scaling
+  const calculatedMax = useMemo(() => {
+    if (sortedTopics.length === 0) {
+      return 100; // Default fallback
+    }
+
+    // Find the maximum value across all topics for the selected metric
+    let maxValue = 0;
+    sortedTopics.forEach((topic) => {
+      let value = 0;
+      if (metricType === 'visibility') {
+        value = Math.max(0, Math.min(100, topic.currentVisibility ?? 0));
+      } else if (metricType === 'sentiment') {
+        value = Math.max(0, Math.min(100, topic.currentSentiment ?? 0));
+      } else {
+        value = Math.max(0, Math.min(100, topic.currentSoA ?? 0));
+      }
+      maxValue = Math.max(maxValue, value);
+    });
+
+    // If no valid data found, use default
+    if (maxValue === 0) {
+      return 100;
+    }
+
+    // Add 10% padding above the max value for better visualization
+    // Round up to nearest 10 for cleaner scale
+    const paddedMax = maxValue * 1.1;
+    const roundedMax = Math.ceil(paddedMax / 10) * 10;
+    
+    // Ensure minimum scale for very small values
+    return Math.max(roundedMax, 10);
+  }, [sortedTopics, metricType]);
+
   const options = useMemo(() => {
     const metricLabel =
       metricType === 'share' ? 'Share of Answer (SoA)' : metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
@@ -250,12 +284,13 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
             callback: function(value: any) {
               return metricType === 'share' ? value + '%' : value;
             },
+            stepSize: calculatedMax <= 20 ? 5 : calculatedMax <= 50 ? 10 : 20,
           },
-          max: 100,
+          max: calculatedMax,
         },
       },
     };
-  }, [sortedTopics, onBarClick, isMobile, metricType]);
+  }, [sortedTopics, onBarClick, isMobile, metricType, calculatedMax]);
 
   return (
     <div className="p-3 sm:p-4 lg:p-6">

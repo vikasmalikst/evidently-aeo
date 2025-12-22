@@ -425,3 +425,6 @@ COST:                  $0.002005
 - Good quality for structured tasks
 - Structured output support
 - 23x cheaper than Claude Sonnet 4.5
+
+
+

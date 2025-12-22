@@ -185,6 +185,186 @@ router.put('/global-settings/:serviceName', async (req: Request, res: Response) 
 });
 
 /**
+ * GET /api/admin/global-settings/consolidated-analysis/ollama
+ * Get Ollama configuration for consolidated analysis
+ */
+router.get('/global-settings/consolidated-analysis/ollama', async (req: Request, res: Response) => {
+  try {
+    const { getOllamaConfigForUI } = await import('../services/scoring/ollama-client.service');
+    const config = await getOllamaConfigForUI();
+    
+    if (!config) {
+      // Return default values if not configured
+      return res.json({
+        success: true,
+        data: {
+          ollamaUrl: 'http://localhost:11434',
+          ollamaModel: 'qwen2.5:latest',
+          useOllama: false,
+        }
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
+    console.error('Error getting Ollama config:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get Ollama configuration'
+    });
+  }
+});
+
+/**
+ * GET /api/admin/global-settings/consolidated-analysis/ollama/health
+ * Check Ollama API health/availability
+ */
+router.get('/global-settings/consolidated-analysis/ollama/health', async (req: Request, res: Response) => {
+  try {
+    const { checkOllamaHealth } = await import('../services/scoring/ollama-client.service');
+    const health = await checkOllamaHealth();
+    
+    res.json({
+      success: true,
+      data: health
+    });
+  } catch (error) {
+    console.error('Error checking Ollama health:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to check Ollama health'
+    });
+  }
+});
+
+/**
+ * POST /api/admin/global-settings/consolidated-analysis/ollama/test
+ * Test Ollama with a custom prompt
+ */
+router.post('/global-settings/consolidated-analysis/ollama/test', async (req: Request, res: Response) => {
+  try {
+    const { prompt } = req.body;
+    
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'prompt is required and must be a string'
+      });
+    }
+    
+    const { testOllamaPrompt } = await import('../services/scoring/ollama-client.service');
+    const result = await testOllamaPrompt(prompt);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        data: {
+          response: result.response,
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error || 'Test failed'
+      });
+    }
+  } catch (error) {
+    console.error('Error testing Ollama prompt:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to test Ollama prompt'
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/global-settings/consolidated-analysis/ollama
+ * Update Ollama configuration for consolidated analysis
+ */
+router.put('/global-settings/consolidated-analysis/ollama', async (req: Request, res: Response) => {
+  try {
+    const { ollamaUrl, ollamaModel, useOllama } = req.body;
+    
+    // Validate inputs
+    if (ollamaUrl && typeof ollamaUrl !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'ollamaUrl must be a string'
+      });
+    }
+    
+    if (ollamaModel && typeof ollamaModel !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'ollamaModel must be a string'
+      });
+    }
+    
+    if (useOllama !== undefined && typeof useOllama !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'useOllama must be a boolean'
+      });
+    }
+    
+    // Get existing setting or create default
+    let setting = await globalSettingsService.getGlobalSetting('consolidated_analysis');
+    
+    const existingMetadata = setting?.metadata || {};
+    
+    // Compute the actual useOllama value (use provided value or fall back to existing/default)
+    const computedUseOllama = useOllama !== undefined ? useOllama : (existingMetadata.useOllama || false);
+    
+    const newMetadata = {
+      ...existingMetadata,
+      ollamaUrl: ollamaUrl || existingMetadata.ollamaUrl || 'http://localhost:11434',
+      ollamaModel: ollamaModel || existingMetadata.ollamaModel || 'qwen2.5:latest',
+      useOllama: computedUseOllama,
+      // Explicitly set provider values based on computed useOllama value
+      // When disabling Ollama, reset to OpenRouter (don't preserve stale Ollama values)
+      default_provider: computedUseOllama ? 'ollama' : 'openrouter',
+      enabled_providers: computedUseOllama ? ['ollama'] : ['openrouter'],
+    };
+    
+    if (!setting) {
+      // Create new setting
+      setting = await globalSettingsService.createGlobalSetting({
+        service_name: 'consolidated_analysis',
+        P1: null,
+        P2: null,
+        P3: null,
+        P4: null,
+        metadata: newMetadata,
+      });
+    } else {
+      // Update existing setting
+      setting = await globalSettingsService.updateGlobalSetting('consolidated_analysis', {
+        metadata: newMetadata,
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        ollamaUrl: newMetadata.ollamaUrl,
+        ollamaModel: newMetadata.ollamaModel,
+        useOllama: newMetadata.useOllama,
+      },
+      message: 'Ollama configuration updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating Ollama config:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update Ollama configuration'
+    });
+  }
+});
+
+/**
  * POST /api/admin/global-settings
  * Create new global setting
  */
@@ -845,38 +1025,70 @@ router.post('/brands/:brandId/collect-data-now', async (req: Request, res: Respo
 /**
  * POST /api/admin/brands/:brandId/score-now
  * Immediately trigger scoring for a brand (no schedule needed)
+ * Returns immediately and runs the work in the background to avoid timeout issues
+ * (especially important when using Ollama which processes sequentially and can take longer)
  */
 router.post('/brands/:brandId/score-now', async (req: Request, res: Response) => {
   try {
     const { brandId } = req.params;
     const { customer_id, since, positionLimit, sentimentLimit, parallel } = req.body;
 
-    if (!customer_id) {
+    // Validate required parameters
+    if (!brandId) {
       return res.status(400).json({
         success: false,
-        error: 'customer_id is required',
+        error: 'brandId is required in URL parameters',
       });
     }
 
-    console.log(`[Admin] Immediate scoring requested for brand ${brandId}`);
+    if (!customer_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'customer_id is required in request body',
+      });
+    }
 
-    // Import brand scoring service
-    const { brandScoringService } = await import('../services/scoring/brand-scoring.orchestrator');
+    console.log(`[Admin] Immediate scoring requested for brand ${brandId}, customer ${customer_id}`);
 
-    // Execute scoring immediately
-    const result = await brandScoringService.scoreBrand({
-      brandId,
-      customerId: customer_id,
-      since,
-      positionLimit,
-      sentimentLimit,
-      parallel: parallel || false,
-    });
-
+    // Return immediately to avoid timeout (especially important with Ollama which is slower)
     res.json({
       success: true,
-      data: result,
-      message: 'Scoring completed successfully',
+      message: 'Scoring started in background. This process may take 5-30 minutes depending on the number of results and whether Ollama is enabled. Check job run history for progress.',
+      data: {
+        brandId,
+        status: 'started',
+        startedAt: new Date().toISOString(),
+      },
+    });
+
+    // Run the scoring in the background (don't await - let it run asynchronously)
+    setImmediate(async () => {
+      try {
+        console.log(`[Admin] Starting background scoring for brand ${brandId}...`);
+        
+        // Import brand scoring service
+        const { brandScoringService } = await import('../services/scoring/brand-scoring.orchestrator');
+
+        // Execute scoring
+        const result = await brandScoringService.scoreBrand({
+          brandId,
+          customerId: customer_id,
+          since,
+          positionLimit,
+          sentimentLimit,
+          parallel: parallel || false,
+        });
+
+        console.log(`[Admin] Background scoring completed for brand ${brandId}:`, {
+          positionsProcessed: result.positionsProcessed,
+          sentimentsProcessed: result.sentimentsProcessed,
+          citationsProcessed: result.citationsProcessed,
+          errors: result.errors.length,
+        });
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[Admin] Background scoring failed for brand ${brandId}:`, errorMsg);
+      }
     });
   } catch (error) {
     console.error('Error triggering immediate scoring:', error);

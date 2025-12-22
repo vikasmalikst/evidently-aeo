@@ -152,6 +152,40 @@ export const VisibilityChart = memo(({
     };
   }, [data, selectedModels, models, chartType, focusedDataset]);
 
+  // Calculate dynamic max value from data for auto-scaling
+  const calculatedMax = useMemo(() => {
+    if (!data || selectedModels.length === 0) {
+      // Default fallback values based on metric type
+      return metricType === 'visibility' ? 120 : 100;
+    }
+
+    // Find the maximum value across all selected datasets
+    let maxValue = 0;
+    selectedModels.forEach((modelId) => {
+      const modelData = data.datasets.find(d => d.id === modelId);
+      if (modelData && modelData.data) {
+        const datasetMax = Math.max(
+          ...modelData.data.filter((v): v is number => typeof v === 'number' && !isNaN(v))
+        );
+        maxValue = Math.max(maxValue, datasetMax);
+      }
+    });
+
+    // If no valid data found, use default
+    if (maxValue === 0) {
+      return metricType === 'visibility' ? 120 : 100;
+    }
+
+    // Add 10% padding above the max value for better visualization
+    // Round up to nearest 10 for cleaner scale
+    const paddedMax = maxValue * 1.1;
+    const roundedMax = Math.ceil(paddedMax / 10) * 10;
+    
+    // Ensure minimum scale for very small values
+    const minScale = metricType === 'visibility' ? 20 : 10;
+    return Math.max(roundedMax, minScale);
+  }, [data, selectedModels, metricType]);
+
   const options = useMemo(() => {
     const isBarChart = chartType === 'bar';
     return {
@@ -166,7 +200,7 @@ export const VisibilityChart = memo(({
         y: {
           beginAtZero: true,
           min: 0,
-          max: 120,
+          max: calculatedMax,
           title: {
             display: true,
             text: metricType === 'visibility' 
@@ -196,7 +230,7 @@ export const VisibilityChart = memo(({
             },
             callback: (value: any) => String(value),
             padding: 8,
-            stepSize: 10,
+            stepSize: calculatedMax <= 20 ? 5 : calculatedMax <= 50 ? 10 : 20,
             maxRotation: 0,
             minRotation: 0,
           },
@@ -314,7 +348,7 @@ export const VisibilityChart = memo(({
         easing: 'easeInOutQuart' as const,
       },
     };
-  }, [chartType, metricType]);
+  }, [chartType, metricType, calculatedMax]);
 
   // Handle chart resize on window resize (e.g., when dev tools open/close)
   // Must be called after chartData is defined

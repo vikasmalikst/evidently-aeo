@@ -175,6 +175,37 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
     };
   }, [sortedTopics, weekLabels]);
 
+  // Calculate dynamic max value from data for auto-scaling
+  const calculatedMax = useMemo(() => {
+    if (!chartData || chartData.datasets.length === 0) {
+      return 100; // Default fallback
+    }
+
+    // Find the maximum value across all datasets and all data points
+    let maxValue = 0;
+    chartData.datasets.forEach((dataset) => {
+      if (dataset.data && Array.isArray(dataset.data)) {
+        const datasetMax = Math.max(
+          ...dataset.data.filter((v): v is number => typeof v === 'number' && !isNaN(v))
+        );
+        maxValue = Math.max(maxValue, datasetMax);
+      }
+    });
+
+    // If no valid data found, use default
+    if (maxValue === 0) {
+      return 100;
+    }
+
+    // Add 10% padding above the max value for better visualization
+    // Round up to nearest 10 for cleaner scale
+    const paddedMax = maxValue * 1.1;
+    const roundedMax = Math.ceil(paddedMax / 10) * 10;
+    
+    // Ensure minimum scale for very small values
+    return Math.max(roundedMax, 10);
+  }, [chartData]);
+
   const options = useMemo(() => {
     return {
       indexAxis: 'x' as const,
@@ -284,7 +315,7 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
         y: {
           beginAtZero: true,
           min: 0,
-          max: 100,
+          max: calculatedMax,
           title: {
             display: false,
           },
@@ -302,7 +333,7 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
             },
             padding: 8,
-            stepSize: 10,
+            stepSize: calculatedMax <= 20 ? 5 : calculatedMax <= 50 ? 10 : 20,
             callback: (value: any) => `${value}%`,
             maxRotation: 0,
             minRotation: 0,
@@ -322,7 +353,7 @@ export const TopicsLineChart = ({ topics, onBarClick, selectedDateRange }: Topic
         easing: 'easeInOutQuart' as const,
       },
     };
-  }, [sortedTopics, onBarClick, chartGridColor, chartLabelColor, avgIndustrySoA, AVG_INDUSTRY_COLOR]);
+  }, [sortedTopics, onBarClick, chartGridColor, chartLabelColor, avgIndustrySoA, AVG_INDUSTRY_COLOR, calculatedMax]);
 
   // Color key for topics
   const colorKeyItems = sortedTopics.map((topic, index) => ({

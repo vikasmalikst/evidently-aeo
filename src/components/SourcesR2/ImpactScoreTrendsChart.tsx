@@ -88,6 +88,38 @@ export const ImpactScoreTrendsChart = ({
     return { labels, datasets };
   }, [topSources, chartDates]);
 
+  // Calculate dynamic max value from data with padding
+  const calculatedMax = useMemo(() => {
+    if (!topSources || topSources.length === 0) {
+      return 110; // Default fallback
+    }
+
+    // Find the maximum value across all sources and their trend data
+    let maxValue = 0;
+    topSources.forEach((source) => {
+      // Check current valueScore
+      if (typeof source.valueScore === 'number' && !isNaN(source.valueScore)) {
+        maxValue = Math.max(maxValue, source.valueScore);
+      }
+      
+      // Check trend data if available
+      if (source.trendData && Array.isArray(source.trendData)) {
+        source.trendData.forEach((value) => {
+          if (typeof value === 'number' && !isNaN(value)) {
+            maxValue = Math.max(maxValue, value);
+          }
+        });
+      }
+    });
+
+    // Add 15% padding above max value, round to nearest 5
+    const paddedMax = maxValue > 0 ? maxValue * 1.15 : 10;
+    const roundedMax = Math.ceil(paddedMax / 5) * 5;
+    
+    // Ensure minimum of 10 for visibility
+    return Math.max(roundedMax, 10);
+  }, [topSources]);
+
   const options = useMemo(() => {
     return {
       responsive: true,
@@ -130,7 +162,7 @@ export const ImpactScoreTrendsChart = ({
         },
         y: {
           beginAtZero: true,
-          max: 110,
+          max: calculatedMax,
           grid: {
             color: '#e2e8f0',
             display: true
@@ -140,6 +172,7 @@ export const ImpactScoreTrendsChart = ({
             font: {
               size: 11
             },
+            stepSize: calculatedMax <= 50 ? 5 : calculatedMax <= 100 ? 10 : 20,
             callback: (value: any) => value.toFixed(1)
           },
           title: {
@@ -159,7 +192,7 @@ export const ImpactScoreTrendsChart = ({
         intersect: false
       }
     };
-  }, [yAxisLabel]);
+  }, [yAxisLabel, calculatedMax]);
 
   // Handle chart resize
   useChartResize(chartRef, topSources.length > 0);
@@ -167,7 +200,7 @@ export const ImpactScoreTrendsChart = ({
   if (!topSources.length) {
     return (
       <div style={{ padding: 24, color: '#94a3b8', textAlign: 'center' }}>
-        No source data available to display trends.
+        No citation source has been selected. Please select sources from the table above to view trends.
       </div>
     );
   }

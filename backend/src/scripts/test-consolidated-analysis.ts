@@ -317,3 +317,6 @@ testConsolidatedAnalysis()
     console.error('❌ Test suite failed:', error);
     process.exit(1);
   });
+
+
+

@@ -44,6 +44,7 @@ export class PromptMetricsService {
       const USE_OPTIMIZED_PROMPT_METRICS = process.env.USE_OPTIMIZED_PROMPT_METRICS === 'true'
 
       if (USE_OPTIMIZED_PROMPT_METRICS) {
+        console.log('   ⚡ [Prompt Metrics] Using optimized query (metric_facts + brand_metrics + brand_sentiment)');
         // OPTIMIZED: Query metric_facts + brand_metrics + brand_sentiment (single query for both metrics)
         const { data: metricsData } = await supabaseAdmin
           .from('metric_facts')

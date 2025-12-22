@@ -133,6 +133,7 @@ export const keywordsAnalyticsService = {
       let positionsError: any = null
 
       if (USE_OPTIMIZED_KEYWORDS_QUERY) {
+        console.log('   ⚡ [Keywords Analytics] Using optimized query (metric_facts + brand_metrics)');
         // OPTIMIZED: Query metric_facts + brand_metrics
         let query = supabaseAdmin
           .from('metric_facts')

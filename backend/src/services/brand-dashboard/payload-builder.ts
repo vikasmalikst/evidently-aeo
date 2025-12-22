@@ -1966,6 +1966,10 @@ export async function buildDashboardPayload(
       if (dailyData) {
         processedBrandRowsCount++
         const dayData = dailyData.get(date)
+        if (!dayData && processedBrandRowsCount <= 5) {
+          // Log first few date mismatches to diagnose the issue
+          console.warn(`[TimeSeries] Date mismatch for ${collectorType}: extracted date '${date}' not in allDates. Available dates: ${Array.from(dailyData.keys()).slice(0, 5).join(', ')}...`)
+        }
         if (dayData) {
           const brandVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index) ?? 0))
           // Note: share_of_answers_brand is stored as percentage (0-100), not decimal (0-1)

@@ -83,8 +83,7 @@ interface MetricFact {
   query_id: string;
   collector_type: string;
   topic: string | null;
-  collected_at: string;
-  metadata: any;
+  processed_at: string;
 }
 
 interface BrandMetrics {
@@ -210,8 +209,7 @@ async function processBatch(positions: ExtractedPosition[], stats: Stats): Promi
         query_id: brandRow.query_id,
         collector_type: brandRow.collector_type,
         topic: brandRow.topic,
-        collected_at: brandRow.processed_at,
-        metadata: brandRow.metadata || {},
+        processed_at: brandRow.processed_at,
       };
 
       if (DRY_RUN) {

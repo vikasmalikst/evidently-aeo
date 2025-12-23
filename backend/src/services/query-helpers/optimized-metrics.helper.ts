@@ -625,7 +625,15 @@ export class OptimizedMetricsHelper {
 
       const { data, error } = await query;
 
+      console.log(`   🔍 [fetchSourceAttributionMetrics] Query params:`, {
+        collectorResultIds: collectorResultIds.length,
+        brandId,
+        startDate,
+        endDate,
+      });
+
       if (error) {
+        console.error(`   ❌ [fetchSourceAttributionMetrics] Query error:`, error);
         return {
           success: false,
           data: [],
@@ -633,6 +641,8 @@ export class OptimizedMetricsHelper {
           duration_ms: Date.now() - startTime,
         };
       }
+
+      console.log(`   📊 [fetchSourceAttributionMetrics] Raw query result: ${data?.length || 0} rows`);
 
       // Transform results to match legacy format
       const transformed: Array<{
@@ -692,12 +702,24 @@ export class OptimizedMetricsHelper {
         }
       }
 
+      console.log(`   ✅ [fetchSourceAttributionMetrics] Transformed: ${transformed.length} rows`);
+      if (transformed.length > 0) {
+        console.log(`   📝 [fetchSourceAttributionMetrics] Sample row:`, {
+          collector_result_id: transformed[0].collector_result_id,
+          share_of_answers_brand: transformed[0].share_of_answers_brand,
+          total_brand_mentions: transformed[0].total_brand_mentions,
+          sentiment_score: transformed[0].sentiment_score,
+          visibility_index: transformed[0].visibility_index,
+        });
+      }
+
       return {
         success: true,
         data: transformed,
         duration_ms: Date.now() - startTime,
       };
     } catch (error) {
+      console.error(`   ❌ [fetchSourceAttributionMetrics] Exception:`, error);
       return {
         success: false,
         data: [],

@@ -605,6 +605,8 @@ export class OptimizedMetricsHelper {
           ),
           competitor_metrics(
             competitor_id,
+            share_of_answers,
+            visibility_index,
             brand_competitors!inner(
               name
             )
@@ -673,12 +675,14 @@ export class OptimizedMetricsHelper {
               : comp.brand_competitors;
             
             if (competitor) {
+              // Access competitor_metrics fields (now properly selected in query)
+              const compAny = comp as any; // TypeScript doesn't infer nested select types perfectly
               transformed.push({
                 collector_result_id: row.collector_result_id,
-                share_of_answers_brand: comp.share_of_answers || null, // Competitor share
+                share_of_answers_brand: compAny.share_of_answers || null, // Competitor share
                 total_brand_mentions: 0, // Competitors don't have brand mentions
                 sentiment_score: null, // Competitor sentiment would be in competitor_sentiment table
-                visibility_index: comp.visibility_index || null, // Competitor visibility
+                visibility_index: compAny.visibility_index || null, // Competitor visibility
                 competitor_name: competitor.name,
                 topic: row.topic,
                 processed_at: row.processed_at,

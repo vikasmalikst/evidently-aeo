@@ -273,8 +273,8 @@ export class SourceAttributionService {
           const result = await optimizedMetricsHelper.fetchSourceAttributionMetrics({
             collectorResultIds,
             brandId,
-            startDate: startDate,
-            endDate: endDate,
+            startDate: startIso,
+            endDate: endIso,
           });
 
           if (result.error) {

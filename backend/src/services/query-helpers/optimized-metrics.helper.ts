@@ -608,7 +608,7 @@ export class OptimizedMetricsHelper {
             share_of_answers,
             visibility_index,
             brand_competitors!inner(
-              name
+              competitor_name
             )
           )
         `)
@@ -693,7 +693,7 @@ export class OptimizedMetricsHelper {
                 total_brand_mentions: 0, // Competitors don't have brand mentions
                 sentiment_score: null, // Competitor sentiment would be in competitor_sentiment table
                 visibility_index: compAny.visibility_index || null, // Competitor visibility
-                competitor_name: competitor.name,
+                competitor_name: competitor.competitor_name,
                 topic: row.topic,
                 processed_at: row.processed_at,
               });

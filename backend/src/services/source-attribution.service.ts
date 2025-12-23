@@ -292,6 +292,15 @@ export class SourceAttributionService {
             }));
             stepTimings['extracted_positions_query'] = result.duration_ms;
             console.log(`   ⚡ [Source Attribution] Optimized query completed in ${result.duration_ms}ms (${extractedPositions.length} rows)`);
+            
+            // Debug: Count brand vs competitor rows
+            const brandRows = extractedPositions.filter(p => !p.competitor_name || p.competitor_name.trim() === '');
+            const compRows = extractedPositions.filter(p => p.competitor_name && p.competitor_name.trim() !== '');
+            const withSOA = brandRows.filter(p => p.share_of_answers_brand !== null && p.share_of_answers_brand !== undefined);
+            const withSentiment = brandRows.filter(p => p.sentiment_score !== null && p.sentiment_score !== undefined);
+            console.log(`   📊 [Source Attribution] Row breakdown: ${brandRows.length} brand rows, ${compRows.length} competitor rows`);
+            console.log(`   📊 [Source Attribution] Data quality: ${withSOA.length} with SOA, ${withSentiment.length} with sentiment`);
+            console.log(`   📊 [Source Attribution] Requested ${collectorResultIds.length} collector_result_ids, got data for ${new Set(extractedPositions.map(p => p.collector_result_id)).size} unique IDs`);
           }
         } else {
           console.log('   📋 [Source Attribution] Using legacy query (extracted_positions)');
@@ -573,6 +582,14 @@ export class SourceAttributionService {
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         if (aggregate.prompts.size === 0) {
         }
+      }
+      
+      // Debug: Log aggregation results (first 3 sources)
+      const sourceKeys = Array.from(sourceAggregates.keys()).slice(0, 3);
+      console.log(`   📊 [Source Attribution] Sample aggregation results (first 3 sources):`);
+      for (const key of sourceKeys) {
+        const agg = sourceAggregates.get(key)!;
+        console.log(`      ${key}: citations=${agg.citations}, collectorResults=${agg.collectorResultIds.size}, shareValues=[${agg.shareValues.length} values: ${agg.shareValues.slice(0,3).join(', ')}...], sentimentValues=[${agg.sentimentValues.length} values]`);
       }
 
       // Step 10: Calculate previous period for change metrics

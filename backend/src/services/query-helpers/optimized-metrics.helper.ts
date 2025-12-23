@@ -730,6 +730,294 @@ export class OptimizedMetricsHelper {
   }
 
   /**
+   * Fetch distinct collector types (models) for a brand in a date range
+   * Used by Topics page to populate "Available Models" filter
+   * 
+   * @param options - Query options
+   * @returns Set of distinct collector types
+   */
+  async fetchDistinctCollectorTypes(options: {
+    brandId: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
+    success: boolean;
+    data: Set<string>;
+    duration_ms: number;
+    error?: string;
+  }> {
+    const startTime = Date.now();
+    const { brandId, startDate, endDate } = options;
+
+    try {
+      let query = this.supabase
+        .from('metric_facts')
+        .select('collector_type')
+        .eq('brand_id', brandId)
+        .not('collector_type', 'is', null);
+
+      if (startDate) {
+        query = query.gte('processed_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('processed_at', endDate);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        return {
+          success: false,
+          data: new Set(),
+          duration_ms: Date.now() - startTime,
+          error: error.message,
+        };
+      }
+
+      const collectorTypes = new Set<string>();
+      (data || []).forEach((row: any) => {
+        if (row.collector_type) {
+          collectorTypes.add(row.collector_type);
+        }
+      });
+
+      return {
+        success: true,
+        data: collectorTypes,
+        duration_ms: Date.now() - startTime,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: new Set(),
+        duration_ms: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Fetch positions for topics with all necessary metrics
+   * Used by Topics page to get brand metrics grouped by topic
+   * 
+   * @param options - Query options
+   * @returns Array of positions with topic, SOA, visibility, sentiment
+   */
+  async fetchTopicPositions(options: {
+    brandId: string;
+    customerId?: string;
+    startDate?: string;
+    endDate?: string;
+    collectorTypes?: string[];
+    collectorResultIds?: number[];
+  }): Promise<{
+    success: boolean;
+    data: Array<{
+      collector_result_id: number;
+      collector_type: string;
+      topic: string | null;
+      processed_at: string;
+      share_of_answers_brand: number | null;
+      visibility_index: number | null;
+      has_brand_presence: boolean;
+      sentiment_score: number | null;
+    }>;
+    duration_ms: number;
+    error?: string;
+  }> {
+    const startTime = Date.now();
+    const { brandId, customerId, startDate, endDate, collectorTypes, collectorResultIds } = options;
+
+    try {
+      let query = this.supabase
+        .from('metric_facts')
+        .select(`
+          collector_result_id,
+          collector_type,
+          topic,
+          processed_at,
+          brand_metrics!inner(
+            share_of_answers,
+            visibility_index,
+            has_brand_presence
+          ),
+          brand_sentiment(
+            sentiment_score
+          )
+        `)
+        .eq('brand_id', brandId);
+
+      if (customerId) {
+        query = query.eq('customer_id', customerId);
+      }
+      if (startDate) {
+        query = query.gte('processed_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('processed_at', endDate);
+      }
+      if (collectorTypes && collectorTypes.length > 0) {
+        if (collectorTypes.length === 1) {
+          query = query.eq('collector_type', collectorTypes[0]);
+        } else {
+          query = query.in('collector_type', collectorTypes);
+        }
+      }
+      if (collectorResultIds && collectorResultIds.length > 0) {
+        query = query.in('collector_result_id', collectorResultIds);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        return {
+          success: false,
+          data: [],
+          duration_ms: Date.now() - startTime,
+          error: error.message,
+        };
+      }
+
+      // Transform to match expected format
+      const transformed = (data || []).map((row: any) => {
+        const bm = Array.isArray(row.brand_metrics) ? row.brand_metrics[0] : row.brand_metrics;
+        const bs = Array.isArray(row.brand_sentiment) ? row.brand_sentiment[0] : row.brand_sentiment;
+
+        return {
+          collector_result_id: row.collector_result_id,
+          collector_type: row.collector_type,
+          topic: row.topic,
+          processed_at: row.processed_at,
+          share_of_answers_brand: bm?.share_of_answers || null,
+          visibility_index: bm?.visibility_index || null,
+          has_brand_presence: bm?.has_brand_presence || false,
+          sentiment_score: bs?.sentiment_score || null,
+        };
+      });
+
+      return {
+        success: true,
+        data: transformed,
+        duration_ms: Date.now() - startTime,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: [],
+        duration_ms: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Fetch competitor averages per topic for comparison
+   * Used by Topics page to show competitor performance
+   * 
+   * @param options - Query options
+   * @returns Map of topic -> average competitor SOA
+   */
+  async fetchCompetitorAveragesByTopic(options: {
+    brandIds: string[];
+    startDate?: string;
+    endDate?: string;
+    collectorTypes?: string[];
+  }): Promise<{
+    success: boolean;
+    data: Map<string, number>;
+    duration_ms: number;
+    error?: string;
+  }> {
+    const startTime = Date.now();
+    const { brandIds, startDate, endDate, collectorTypes } = options;
+
+    if (brandIds.length === 0) {
+      return {
+        success: true,
+        data: new Map(),
+        duration_ms: Date.now() - startTime,
+      };
+    }
+
+    try {
+      let query = this.supabase
+        .from('metric_facts')
+        .select(`
+          topic,
+          competitor_metrics!inner(
+            share_of_answers
+          )
+        `)
+        .in('brand_id', brandIds)
+        .not('topic', 'is', null);
+
+      if (startDate) {
+        query = query.gte('processed_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('processed_at', endDate);
+      }
+      if (collectorTypes && collectorTypes.length > 0) {
+        if (collectorTypes.length === 1) {
+          query = query.eq('collector_type', collectorTypes[0]);
+        } else {
+          query = query.in('collector_type', collectorTypes);
+        }
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        return {
+          success: false,
+          data: new Map(),
+          duration_ms: Date.now() - startTime,
+          error: error.message,
+        };
+      }
+
+      // Group by topic and calculate average
+      const topicSoaMap = new Map<string, number[]>();
+      (data || []).forEach((row: any) => {
+        const topic = row.topic?.toLowerCase()?.trim();
+        if (!topic) return;
+
+        const cm = Array.isArray(row.competitor_metrics) ? row.competitor_metrics : [row.competitor_metrics];
+        cm.forEach((metric: any) => {
+          if (metric && metric.share_of_answers !== null && metric.share_of_answers !== undefined) {
+            if (!topicSoaMap.has(topic)) {
+              topicSoaMap.set(topic, []);
+            }
+            topicSoaMap.get(topic)!.push(metric.share_of_answers);
+          }
+        });
+      });
+
+      // Calculate averages
+      const averages = new Map<string, number>();
+      topicSoaMap.forEach((values, topic) => {
+        if (values.length > 0) {
+          const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+          averages.set(topic, avg);
+        }
+      });
+
+      return {
+        success: true,
+        data: averages,
+        duration_ms: Date.now() - startTime,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: new Map(),
+        duration_ms: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
    * Log query performance for monitoring
    * 
    * @param metrics - Performance metrics to log

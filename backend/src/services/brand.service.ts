@@ -1962,6 +1962,24 @@ export class BrandService {
         return new Map();
       }
 
+      // Check feature flag for optimized queries
+      const USE_OPTIMIZED_TOPICS_QUERY = process.env.USE_OPTIMIZED_TOPICS_QUERY === 'true';
+      
+      if (USE_OPTIMIZED_TOPICS_QUERY) {
+        console.log('   ⚡ [Competitor Averages] Using optimized query (metric_facts + competitor_metrics)');
+        // NEW: Use optimized schema
+        return this.getCompetitorAveragesOptimized(
+          currentBrandId,
+          customerId,
+          topicNames,
+          startIso,
+          endIso,
+          competitorNames
+        );
+      }
+      
+      console.log('   📋 [Competitor Averages] Using legacy query (extracted_positions)');
+
       // Filter at the DB level by the topics we care about.
       // In our data, `extracted_positions.topic` is populated (see topic extraction summary logs),
       // so this drastically reduces the rows scanned vs querying the entire customer/date-range.
@@ -2336,6 +2354,84 @@ export class BrandService {
     } catch (error) {
       const funcTime = performance.now() - funcStart;
       console.error(`⚠️ Error in getIndustryAvgSoAPerTopic [${funcTime.toFixed(2)}ms]:`, error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Get competitor averages per topic using OPTIMIZED schema
+   * (metric_facts + competitor_metrics)
+   */
+  private async getCompetitorAveragesOptimized(
+    currentBrandId: string,
+    customerId: string,
+    topicNames: string[],
+    startIso: string,
+    endIso: string,
+    competitorNames?: string[]
+  ): Promise<
+    Map<
+      string,
+      {
+        avgSoA: number;
+        avgVisibility: number | null;
+        avgSentiment: number | null;
+        trend: { direction: 'up' | 'down' | 'neutral'; delta: number };
+        brandCount: number;
+        competitorSoA?: Map<string, number>;
+        competitorVisibility?: Map<string, number>;
+        competitorSentiment?: Map<string, number>;
+      }
+    >
+  > {
+    try {
+      // Get all brands for this customer (to calculate industry averages)
+      const { data: allBrands } = await supabaseAdmin
+        .from('brands')
+        .select('id, name')
+        .eq('customer_id', customerId);
+      
+      const allBrandIds = (allBrands || []).map(b => b.id);
+      if (allBrandIds.length === 0) {
+        return new Map();
+      }
+      
+      // Use optimized helper to get competitor averages per topic
+      const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
+      const result = await optimizedMetricsHelper.fetchCompetitorAveragesByTopic({
+        brandIds: allBrandIds,
+        startDate: startIso,
+        endDate: endIso,
+      });
+      
+      if (result.error) {
+        console.warn(`⚠️ Error fetching competitor averages from new schema:`, result.error);
+        return new Map();
+      }
+      
+      // Transform to match legacy format
+      const resultMap = new Map<string, any>();
+      const normalizedTopicNames = topicNames.map(t => t.toLowerCase().trim());
+      const topicNameSet = new Set(normalizedTopicNames);
+      
+      result.data.forEach((avgSoA, topic) => {
+        const normalizedTopic = topic.toLowerCase().trim();
+        if (topicNameSet.has(normalizedTopic)) {
+          resultMap.set(normalizedTopic, {
+            avgSoA: avgSoA,
+            avgVisibility: null, // Can be extended later if needed
+            avgSentiment: null, // Can be extended later if needed
+            trend: { direction: 'neutral' as const, delta: 0 },
+            brandCount: allBrandIds.length,
+          });
+        }
+      });
+      
+      console.log(`📊 Calculated competitor averages for ${resultMap.size} topics (${allBrandIds.length} brands, ${result.duration_ms}ms)`);
+      
+      return resultMap;
+    } catch (error) {
+      console.error('❌ Error in getCompetitorAveragesOptimized:', error);
       return new Map();
     }
   }

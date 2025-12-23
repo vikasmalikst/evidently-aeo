@@ -104,6 +104,64 @@ USE_OPTIMIZED_KEYWORDS_QUERY=false
 - 10-15x faster
 - Simpler query structure
 
+### Source Attribution Service
+
+**`USE_OPTIMIZED_SOURCE_ATTRIBUTION`** (default: `false`)
+
+Controls whether source attribution uses the optimized new schema or the legacy `extracted_positions` table.
+
+- `true`: Query `metric_facts` + `brand_metrics` + `competitor_metrics` (optimized)
+- `false`: Query `extracted_positions` (legacy, current behavior)
+
+**Usage:**
+```bash
+# Enable optimization
+USE_OPTIMIZED_SOURCE_ATTRIBUTION=true
+
+# Disable (default)
+USE_OPTIMIZED_SOURCE_ATTRIBUTION=false
+```
+
+**Impact:** HIGH (source attribution page)  
+**Risk:** MEDIUM (complex aggregations by source)
+
+**Benefits:**
+- Better performance with normalized schema
+- Direct JOIN on indexed tables
+- Accurate data from new schema only
+
+### Brand Topics Service
+
+**`USE_OPTIMIZED_TOPICS_QUERY`** (default: `false`)
+
+Controls whether the Topics page uses the optimized new schema or the legacy `extracted_positions` table.
+
+- `true`: Query `metric_facts` + `brand_metrics` + `brand_sentiment` + `competitor_metrics` (optimized)
+- `false`: Query `extracted_positions` (legacy, current behavior)
+
+**Usage:**
+```bash
+# Enable optimization
+USE_OPTIMIZED_TOPICS_QUERY=true
+
+# Disable (default)
+USE_OPTIMIZED_TOPICS_QUERY=false
+```
+
+**Impact:** 🔴 CRITICAL (Topics page shows NO new data without this)  
+**Risk:** MEDIUM (complex topic analytics)
+
+**Benefits:**
+- Topics page shows NEW data immediately after collection
+- Eliminates user confusion ("where's my data?")
+- Better performance with normalized schema
+- Accurate topic metrics (SOA, sentiment, visibility)
+
+**Query Points Migrated:**
+1. Available models (distinct collector_types)
+2. Brand positions for topics
+3. Competitor averages per topic
+
 ---
 
 ## Migration Status
@@ -114,8 +172,8 @@ USE_OPTIMIZED_KEYWORDS_QUERY=false
 | Sentiment Services | `USE_OPTIMIZED_SENTIMENT_QUERY` | ✅ Implemented | ⏳ Testing |
 | Prompt Metrics | `USE_OPTIMIZED_PROMPT_METRICS` | ✅ Implemented | ⏳ Testing |
 | Keywords Analytics | `USE_OPTIMIZED_KEYWORDS_QUERY` | ✅ Implemented | ⏳ Testing |
-| Source Attribution | TBD | ⏳ Pending (Phase 3.3) | - |
-| Brand Topics | TBD | ⏳ Pending (Phase 3.4) | - |
+| Source Attribution | `USE_OPTIMIZED_SOURCE_ATTRIBUTION` | ✅ Implemented | ✅ Verified (Bose) |
+| Brand Topics | `USE_OPTIMIZED_TOPICS_QUERY` | ✅ Implemented | ⏳ Testing |
 
 ---
 

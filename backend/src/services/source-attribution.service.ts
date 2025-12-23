@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../config/database'
 import { DatabaseError } from '../types/auth'
 import { normalizeDateRange, round, toNumber, average } from './brand-dashboard/utils'
 import { sourceAttributionCacheService } from './source-attribution-cache.service'
+import { optimizedMetricsHelper } from './query-helpers/optimized-metrics.helper'
 
 export interface SourceAttributionData {
   name: string
@@ -259,30 +260,62 @@ export class SourceAttributionService {
         sentiment_score?: number | null;
         visibility_index?: number | null;
         competitor_name?: string | null;
-        metadata: any;
+        topic?: string | null;
+        metadata?: any;
       }> = []
 
       if (collectorResultIds.length > 0) {
-        const { data: positionsData, error: positionsError } = await supabaseAdmin
-          .from('extracted_positions')
-          .select(`
-            collector_result_id,
-            share_of_answers_brand,
-            total_brand_mentions,
-            sentiment_score,
-            visibility_index,
-            competitor_name,
-            topic,
-            metadata
-          `)
-          .in('collector_result_id', collectorResultIds)
-          .eq('brand_id', brandId)
+        // Feature flag: Use optimized query (new schema) vs legacy (extracted_positions)
+        const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION === 'true';
 
-        if (positionsError) {
-          console.warn('[SourceAttribution] Failed to fetch extracted positions:', positionsError)
+        if (USE_OPTIMIZED_SOURCE_ATTRIBUTION) {
+          console.log('   ⚡ [Source Attribution] Using optimized query (metric_facts + brand_metrics + brand_sentiment)');
+          const result = await optimizedMetricsHelper.fetchSourceAttributionMetrics({
+            collectorResultIds,
+            brandId,
+            startDate: startDate,
+            endDate: endDate,
+          });
+
+          if (result.error) {
+            console.warn('[SourceAttribution] Failed to fetch optimized positions:', result.error);
+          } else {
+            extractedPositions = result.data.map(row => ({
+              collector_result_id: row.collector_result_id,
+              share_of_answers_brand: row.share_of_answers_brand,
+              total_brand_mentions: row.total_brand_mentions,
+              sentiment_score: row.sentiment_score,
+              visibility_index: row.visibility_index,
+              competitor_name: row.competitor_name,
+              topic: row.topic || null,
+              metadata: row.metadata,
+            }));
+            stepTimings['extracted_positions_query'] = result.duration_ms;
+            console.log(`   ⚡ [Source Attribution] Optimized query completed in ${result.duration_ms}ms (${extractedPositions.length} rows)`);
+          }
         } else {
-          extractedPositions = positionsData || []
-          stepTimings['extracted_positions_query'] = Date.now() - positionsStartTime;
+          console.log('   📋 [Source Attribution] Using legacy query (extracted_positions)');
+          const { data: positionsData, error: positionsError } = await supabaseAdmin
+            .from('extracted_positions')
+            .select(`
+              collector_result_id,
+              share_of_answers_brand,
+              total_brand_mentions,
+              sentiment_score,
+              visibility_index,
+              competitor_name,
+              topic,
+              metadata
+            `)
+            .in('collector_result_id', collectorResultIds)
+            .eq('brand_id', brandId)
+
+          if (positionsError) {
+            console.warn('[SourceAttribution] Failed to fetch extracted positions:', positionsError)
+          } else {
+            extractedPositions = positionsData || []
+            stepTimings['extracted_positions_query'] = Date.now() - positionsStartTime;
+          }
         }
       }
 
@@ -578,13 +611,40 @@ export class SourceAttributionService {
         ))
         
         // Fetch previous period share of answer and sentiment from extracted_positions
-        const { data: previousPositions } = await supabaseAdmin
-        .from('extracted_positions')
-        .select('collector_result_id, share_of_answers_brand, sentiment_score, competitor_name')
-        .in('collector_result_id', previousCollectorIds)
-        .eq('brand_id', brandId)
-        .gte('processed_at', previousStart.toISOString())
-        .lte('processed_at', previousEnd.toISOString())
+        const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION === 'true';
+        let previousPositions: Array<{
+          collector_result_id: number | null;
+          share_of_answers_brand: number | null;
+          sentiment_score?: number | null;
+          competitor_name?: string | null;
+        }> = [];
+
+        if (USE_OPTIMIZED_SOURCE_ATTRIBUTION && previousCollectorIds.length > 0) {
+          const result = await optimizedMetricsHelper.fetchSourceAttributionMetrics({
+            collectorResultIds: previousCollectorIds,
+            brandId,
+            startDate: previousStart.toISOString(),
+            endDate: previousEnd.toISOString(),
+          });
+
+          if (!result.error && result.data) {
+            previousPositions = result.data.map(row => ({
+              collector_result_id: row.collector_result_id,
+              share_of_answers_brand: row.share_of_answers_brand,
+              sentiment_score: row.sentiment_score,
+              competitor_name: row.competitor_name,
+            }));
+          }
+        } else {
+          const { data } = await supabaseAdmin
+            .from('extracted_positions')
+            .select('collector_result_id, share_of_answers_brand, sentiment_score, competitor_name')
+            .in('collector_result_id', previousCollectorIds)
+            .eq('brand_id', brandId)
+            .gte('processed_at', previousStart.toISOString())
+            .lte('processed_at', previousEnd.toISOString());
+          previousPositions = data || [];
+        }
 
         // Calculate average share of answer per collector result for previous period
         const previousShareByCollectorResult = new Map<number, number[]>()
@@ -1281,21 +1341,54 @@ export class SourceAttributionService {
       ))
 
       // Fetch extracted_positions for share, sentiment, visibility
-      const { data: positionsData } = await supabaseAdmin
-        .from('extracted_positions')
-        .select(`
-          collector_result_id,
-          share_of_answers_brand,
-          total_brand_mentions,
-          sentiment_score,
-          visibility_index,
-          competitor_name,
-          processed_at
-        `)
-        .in('collector_result_id', collectorResultIds)
-        .eq('brand_id', brandId)
-        .gte('processed_at', startIso)
-        .lte('processed_at', endIso)
+      const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION === 'true';
+      let positionsData: Array<{
+        collector_result_id: number | null;
+        share_of_answers_brand: number | null;
+        total_brand_mentions: number | null;
+        sentiment_score?: number | null;
+        visibility_index?: number | null;
+        competitor_name?: string | null;
+        processed_at: string;
+      }> = [];
+
+      if (USE_OPTIMIZED_SOURCE_ATTRIBUTION && collectorResultIds.length > 0) {
+        const result = await optimizedMetricsHelper.fetchSourceAttributionMetrics({
+          collectorResultIds,
+          brandId,
+          startDate: startIso,
+          endDate: endIso,
+        });
+
+        if (!result.error && result.data) {
+          positionsData = result.data.map(row => ({
+            collector_result_id: row.collector_result_id,
+            share_of_answers_brand: row.share_of_answers_brand,
+            total_brand_mentions: row.total_brand_mentions,
+            sentiment_score: row.sentiment_score,
+            visibility_index: row.visibility_index,
+            competitor_name: row.competitor_name,
+            processed_at: row.processed_at,
+          }));
+        }
+      } else {
+        const { data } = await supabaseAdmin
+          .from('extracted_positions')
+          .select(`
+            collector_result_id,
+            share_of_answers_brand,
+            total_brand_mentions,
+            sentiment_score,
+            visibility_index,
+            competitor_name,
+            processed_at
+          `)
+          .in('collector_result_id', collectorResultIds)
+          .eq('brand_id', brandId)
+          .gte('processed_at', startIso)
+          .lte('processed_at', endIso);
+        positionsData = data || [];
+      }
 
       // Fetch queries for topics
       const queryIds = Array.from(new Set(

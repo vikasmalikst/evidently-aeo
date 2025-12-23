@@ -547,6 +547,163 @@ export class OptimizedMetricsHelper {
   }
 
   /**
+   * Fetch source attribution metrics (share, mentions, sentiment, visibility)
+   * Optimized query for source attribution service
+   * 
+   * @param options - Query options
+   * @returns Source attribution metrics with all required fields
+   */
+  async fetchSourceAttributionMetrics(options: {
+    collectorResultIds: number[];
+    brandId: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
+    success: boolean;
+    data: Array<{
+      collector_result_id: number;
+      share_of_answers_brand: number | null;
+      total_brand_mentions: number;
+      sentiment_score: number | null;
+      visibility_index: number | null;
+      competitor_name: string | null;
+      topic: string | null;
+      processed_at: string;
+      metadata?: any;
+    }>;
+    error?: string;
+    duration_ms: number;
+  }> {
+    const startTime = Date.now();
+    const { collectorResultIds, brandId, startDate, endDate } = options;
+
+    if (collectorResultIds.length === 0) {
+      return {
+        success: true,
+        data: [],
+        duration_ms: Date.now() - startTime,
+      };
+    }
+
+    try {
+      // Build query: metric_facts with joins to brand_metrics, brand_sentiment, and competitor_metrics
+      let query = this.supabase
+        .from('metric_facts')
+        .select(`
+          collector_result_id,
+          brand_id,
+          topic,
+          processed_at,
+          created_at,
+          brand_metrics!inner(
+            share_of_answers,
+            total_brand_mentions,
+            visibility_index
+          ),
+          brand_sentiment(
+            sentiment_score
+          ),
+          competitor_metrics(
+            competitor_id,
+            brand_competitors!inner(
+              name
+            )
+          )
+        `)
+        .in('collector_result_id', collectorResultIds)
+        .eq('brand_id', brandId);
+
+      // Add date filters if provided
+      if (startDate) {
+        query = query.gte('processed_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('processed_at', endDate);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        return {
+          success: false,
+          data: [],
+          error: error.message,
+          duration_ms: Date.now() - startTime,
+        };
+      }
+
+      // Transform results to match legacy format
+      const transformed: Array<{
+        collector_result_id: number;
+        share_of_answers_brand: number | null;
+        total_brand_mentions: number;
+        sentiment_score: number | null;
+        visibility_index: number | null;
+        competitor_name: string | null;
+        topic: string | null;
+        processed_at: string;
+        metadata?: any;
+      }> = [];
+
+      // Process brand rows (from brand_metrics join)
+      if (data) {
+        for (const row of data) {
+          const bm = Array.isArray(row.brand_metrics) ? row.brand_metrics[0] : row.brand_metrics;
+          const bs = Array.isArray(row.brand_sentiment) ? row.brand_sentiment[0] : row.brand_sentiment;
+          const cm = Array.isArray(row.competitor_metrics) ? row.competitor_metrics : [];
+
+          if (bm) {
+            // Brand row
+            transformed.push({
+              collector_result_id: row.collector_result_id,
+              share_of_answers_brand: bm.share_of_answers,
+              total_brand_mentions: bm.total_brand_mentions || 0,
+              sentiment_score: bs?.sentiment_score || null,
+              visibility_index: bm.visibility_index,
+              competitor_name: null,
+              topic: row.topic,
+              processed_at: row.processed_at,
+            });
+          }
+
+          // Competitor rows (if any)
+          for (const comp of cm) {
+            const competitor = Array.isArray(comp.brand_competitors) 
+              ? comp.brand_competitors[0] 
+              : comp.brand_competitors;
+            
+            if (competitor) {
+              transformed.push({
+                collector_result_id: row.collector_result_id,
+                share_of_answers_brand: comp.share_of_answers || null, // Competitor share
+                total_brand_mentions: 0, // Competitors don't have brand mentions
+                sentiment_score: null, // Competitor sentiment would be in competitor_sentiment table
+                visibility_index: comp.visibility_index || null, // Competitor visibility
+                competitor_name: competitor.name,
+                topic: row.topic,
+                processed_at: row.processed_at,
+              });
+            }
+          }
+        }
+      }
+
+      return {
+        success: true,
+        data: transformed,
+        duration_ms: Date.now() - startTime,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: [],
+        error: error instanceof Error ? error.message : String(error),
+        duration_ms: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
    * Log query performance for monitoring
    * 
    * @param metrics - Performance metrics to log

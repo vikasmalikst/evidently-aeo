@@ -911,44 +911,88 @@ export class OptimizedMetricsHelper {
   }
 
   /**
-   * Fetch competitor averages per topic for comparison
+   * Fetch competitor metrics per topic for comparison
    * Used by Topics page to show competitor performance
+   * Returns SOA, visibility, sentiment with timestamps for trend calculation
    * 
    * @param options - Query options
-   * @returns Map of topic -> average competitor SOA
+   * @returns Array of competitor positions grouped by topic
    */
-  async fetchCompetitorAveragesByTopic(options: {
-    brandIds: string[];
+  async fetchCompetitorMetricsByTopic(options: {
+    customerId: string;
+    currentBrandId: string;
+    currentBrandName?: string;
+    topicNames: string[];
     startDate?: string;
     endDate?: string;
     collectorTypes?: string[];
+    competitorNames?: string[]; // Filter by specific competitors
   }): Promise<{
     success: boolean;
-    data: Map<string, number>;
+    data: Array<{
+      topic: string;
+      brand_id: string;
+      competitor_id: string | null;
+      competitor_name: string | null;
+      share_of_answers: number | null;
+      visibility_index: number | null;
+      sentiment_score: number | null;
+      processed_at: string;
+    }>;
     duration_ms: number;
     error?: string;
   }> {
     const startTime = Date.now();
-    const { brandIds, startDate, endDate, collectorTypes } = options;
+    const { customerId, currentBrandId, currentBrandName, topicNames, startDate, endDate, collectorTypes, competitorNames } = options;
 
-    if (brandIds.length === 0) {
+    if (topicNames.length === 0) {
       return {
         success: true,
-        data: new Map(),
+        data: [],
         duration_ms: Date.now() - startTime,
       };
     }
 
     try {
+      // Get all brands for this customer
+      const { data: brands, error: brandsError } = await this.supabase
+        .from('brands')
+        .select('id')
+        .eq('customer_id', customerId);
+
+      if (brandsError || !brands || brands.length === 0) {
+        return {
+          success: false,
+          data: [],
+          duration_ms: Date.now() - startTime,
+          error: brandsError?.message || 'No brands found',
+        };
+      }
+
+      const allBrandIds = brands.map(b => b.id);
+
+      // Build query for competitor metrics
       let query = this.supabase
         .from('metric_facts')
         .select(`
           topic,
+          brand_id,
+          processed_at,
+          collector_type,
           competitor_metrics!inner(
-            share_of_answers
+            competitor_id,
+            share_of_answers,
+            visibility_index,
+            brand_competitors!inner(
+              competitor_name
+            )
+          ),
+          competitor_sentiment(
+            sentiment_score
           )
         `)
-        .in('brand_id', brandIds)
+        .in('brand_id', allBrandIds)
+        .in('topic', topicNames)
         .not('topic', 'is', null);
 
       if (startDate) {
@@ -970,47 +1014,86 @@ export class OptimizedMetricsHelper {
       if (error) {
         return {
           success: false,
-          data: new Map(),
+          data: [],
           duration_ms: Date.now() - startTime,
           error: error.message,
         };
       }
 
-      // Group by topic and calculate average
-      const topicSoaMap = new Map<string, number[]>();
+      // Transform and filter data
+      const transformed: Array<{
+        topic: string;
+        brand_id: string;
+        competitor_id: string | null;
+        competitor_name: string | null;
+        share_of_answers: number | null;
+        visibility_index: number | null;
+        sentiment_score: number | null;
+        processed_at: string;
+      }> = [];
+
       (data || []).forEach((row: any) => {
-        const topic = row.topic?.toLowerCase()?.trim();
+        const topic = row.topic;
         if (!topic) return;
 
-        const cm = Array.isArray(row.competitor_metrics) ? row.competitor_metrics : [row.competitor_metrics];
-        cm.forEach((metric: any) => {
-          if (metric && metric.share_of_answers !== null && metric.share_of_answers !== undefined) {
-            if (!topicSoaMap.has(topic)) {
-              topicSoaMap.set(topic, []);
-            }
-            topicSoaMap.get(topic)!.push(metric.share_of_answers);
-          }
-        });
-      });
+        // Handle competitor_metrics (can be array or single object)
+        const cms = Array.isArray(row.competitor_metrics) ? row.competitor_metrics : [row.competitor_metrics];
+        const cs = Array.isArray(row.competitor_sentiment) ? row.competitor_sentiment[0] : row.competitor_sentiment;
 
-      // Calculate averages
-      const averages = new Map<string, number>();
-      topicSoaMap.forEach((values, topic) => {
-        if (values.length > 0) {
-          const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-          averages.set(topic, avg);
-        }
+        cms.forEach((cm: any) => {
+          if (!cm) return;
+
+          // Get competitor name
+          const competitorNameObj = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
+          const competitorName = competitorNameObj?.competitor_name || null;
+
+          if (!competitorName) return;
+
+          const normalizedCompetitorName = competitorName.toLowerCase().trim();
+
+          // Exclude current brand when it appears as competitor
+          if (currentBrandName && normalizedCompetitorName === currentBrandName.toLowerCase().trim()) {
+            return;
+          }
+
+          // Filter by specific competitor names if provided
+          if (competitorNames && competitorNames.length > 0) {
+            const normalizedCompetitorNames = competitorNames.map(n => n.toLowerCase().trim());
+            if (!normalizedCompetitorNames.includes(normalizedCompetitorName)) {
+              return;
+            }
+          }
+
+          // Only include if at least one metric is present
+          const hasMetric = 
+            (cm.share_of_answers !== null && cm.share_of_answers !== undefined) ||
+            (cm.visibility_index !== null && cm.visibility_index !== undefined) ||
+            (cs?.sentiment_score !== null && cs?.sentiment_score !== undefined);
+
+          if (!hasMetric) return;
+
+          transformed.push({
+            topic,
+            brand_id: row.brand_id,
+            competitor_id: cm.competitor_id,
+            competitor_name: competitorName,
+            share_of_answers: cm.share_of_answers,
+            visibility_index: cm.visibility_index,
+            sentiment_score: cs?.sentiment_score || null,
+            processed_at: row.processed_at,
+          });
+        });
       });
 
       return {
         success: true,
-        data: averages,
+        data: transformed,
         duration_ms: Date.now() - startTime,
       };
     } catch (error) {
       return {
         success: false,
-        data: new Map(),
+        data: [],
         duration_ms: Date.now() - startTime,
         error: error instanceof Error ? error.message : String(error),
       };

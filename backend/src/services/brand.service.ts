@@ -2360,7 +2360,8 @@ export class BrandService {
 
   /**
    * Get competitor averages per topic using OPTIMIZED schema
-   * (metric_facts + competitor_metrics)
+   * (metric_facts + competitor_metrics + competitor_sentiment)
+   * Matches legacy logic exactly: filters, exclusions, trends, per-competitor breakdowns
    */
   private async getCompetitorAveragesOptimized(
     currentBrandId: string,
@@ -2385,49 +2386,304 @@ export class BrandService {
     >
   > {
     try {
-      // Get all brands for this customer (to calculate industry averages)
-      const { data: allBrands } = await supabaseAdmin
+      // Get current brand name to exclude it when it appears as a competitor
+      const { data: currentBrand } = await supabaseAdmin
         .from('brands')
-        .select('id, name')
-        .eq('customer_id', customerId);
+        .select('name')
+        .eq('id', currentBrandId)
+        .single();
       
-      const allBrandIds = (allBrands || []).map(b => b.id);
-      if (allBrandIds.length === 0) {
-        return new Map();
-      }
+      const currentBrandName = currentBrand?.name?.toLowerCase().trim() || null;
       
-      // Use optimized helper to get competitor averages per topic
+      // Normalize topic names for matching
+      const normalizedTopicNames = topicNames.map(name => name.toLowerCase().trim());
+      const topicNameSet = new Set(normalizedTopicNames);
+      
+      // Use optimized helper to get competitor metrics
       const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
-      const result = await optimizedMetricsHelper.fetchCompetitorAveragesByTopic({
-        brandIds: allBrandIds,
+      const result = await optimizedMetricsHelper.fetchCompetitorMetricsByTopic({
+        customerId,
+        currentBrandId,
+        currentBrandName: currentBrandName || undefined,
+        topicNames,
         startDate: startIso,
         endDate: endIso,
+        competitorNames,
       });
       
       if (result.error) {
-        console.warn(`⚠️ Error fetching competitor averages from new schema:`, result.error);
+        console.warn(`⚠️ Error fetching competitor metrics from new schema:`, result.error);
         return new Map();
       }
       
-      // Transform to match legacy format
-      const resultMap = new Map<string, any>();
-      const normalizedTopicNames = topicNames.map(t => t.toLowerCase().trim());
-      const topicNameSet = new Set(normalizedTopicNames);
+      if (!result.data || result.data.length === 0) {
+        console.log(`ℹ️ No competitor data found for comparison (${result.duration_ms}ms)`);
+        console.log(`   - Looking for topics: ${normalizedTopicNames.join(', ')}`);
+        console.log(`   - Date range: ${startIso} to ${endIso}`);
+        return new Map();
+      }
       
-      result.data.forEach((avgSoA, topic) => {
-        const normalizedTopic = topic.toLowerCase().trim();
-        if (topicNameSet.has(normalizedTopic)) {
-          resultMap.set(normalizedTopic, {
-            avgSoA: avgSoA,
-            avgVisibility: null, // Can be extended later if needed
-            avgSentiment: null, // Can be extended later if needed
-            trend: { direction: 'neutral' as const, delta: 0 },
-            brandCount: allBrandIds.length,
+      console.log(`📊 Found ${result.data.length} competitor positions for comparison (${result.duration_ms}ms)`);
+      
+      // Group by normalized topic name and calculate averages (matching legacy logic)
+      const topicDataMap = new Map<
+        string,
+        {
+          soaValues: number[];
+          visibilityValues: number[];
+          sentimentValues: number[];
+          brandIds: Set<string>;
+          timestamps: Date[];
+          competitorSoAMap?: Map<string, number[]>;
+          competitorVisibilityMap?: Map<string, number[]>;
+          competitorSentimentMap?: Map<string, number[]>;
+        }
+      >();
+      
+      result.data.forEach(pos => {
+        const normalizedTopicName = pos.topic.toLowerCase().trim();
+        
+        // Only process topics we care about
+        if (!topicNameSet.has(normalizedTopicName)) return;
+        
+        if (!topicDataMap.has(normalizedTopicName)) {
+          topicDataMap.set(normalizedTopicName, {
+            soaValues: [],
+            visibilityValues: [],
+            sentimentValues: [],
+            brandIds: new Set(),
+            timestamps: [],
+            competitorSoAMap: competitorNames && competitorNames.length > 0 ? new Map() : undefined,
+            competitorVisibilityMap: competitorNames && competitorNames.length > 0 ? new Map() : undefined,
+            competitorSentimentMap: competitorNames && competitorNames.length > 0 ? new Map() : undefined
           });
+        }
+        
+        const topicData = topicDataMap.get(normalizedTopicName)!;
+        
+        // Parse metrics
+        const competitorSoA = this.parseFiniteNumber(pos.share_of_answers);
+        const competitorVisibilityRaw = this.parseFiniteNumber(pos.visibility_index);
+        const competitorVisibility = competitorVisibilityRaw !== null ? this.normalizeVisibilityScore(competitorVisibilityRaw) : null;
+        const competitorSentiment = this.parseFiniteNumber(pos.sentiment_score);
+        
+        const competitorNameKey = pos.competitor_name ? pos.competitor_name.toLowerCase().trim() : null;
+        
+        const anyMetricPresent =
+          (typeof competitorSoA === 'number' && isFinite(competitorSoA)) ||
+          (typeof competitorVisibility === 'number' && isFinite(competitorVisibility)) ||
+          (typeof competitorSentiment === 'number' && isFinite(competitorSentiment));
+        
+        if (anyMetricPresent) {
+          // Track the brand_id (for brand count)
+          if (pos.brand_id) {
+            topicData.brandIds.add(pos.brand_id);
+          }
+        }
+        
+        // Add SOA values
+        if (typeof competitorSoA === 'number' && isFinite(competitorSoA)) {
+          topicData.soaValues.push(competitorSoA);
+          if (competitorNameKey) {
+            if (!topicData.competitorSoAMap) topicData.competitorSoAMap = new Map<string, number[]>();
+            if (!topicData.competitorSoAMap.has(competitorNameKey)) topicData.competitorSoAMap.set(competitorNameKey, []);
+            topicData.competitorSoAMap.get(competitorNameKey)!.push(competitorSoA);
+          }
+        }
+        
+        // Add visibility values
+        if (typeof competitorVisibility === 'number' && isFinite(competitorVisibility)) {
+          topicData.visibilityValues.push(competitorVisibility);
+          if (competitorNameKey) {
+            if (!topicData.competitorVisibilityMap) topicData.competitorVisibilityMap = new Map<string, number[]>();
+            if (!topicData.competitorVisibilityMap.has(competitorNameKey)) topicData.competitorVisibilityMap.set(competitorNameKey, []);
+            topicData.competitorVisibilityMap.get(competitorNameKey)!.push(competitorVisibility);
+          }
+        }
+        
+        // Add sentiment values
+        if (typeof competitorSentiment === 'number' && isFinite(competitorSentiment)) {
+          topicData.sentimentValues.push(competitorSentiment);
+          if (competitorNameKey) {
+            if (!topicData.competitorSentimentMap) topicData.competitorSentimentMap = new Map<string, number[]>();
+            if (!topicData.competitorSentimentMap.has(competitorNameKey)) topicData.competitorSentimentMap.set(competitorNameKey, []);
+            topicData.competitorSentimentMap.get(competitorNameKey)!.push(competitorSentiment);
+          }
+        }
+        
+        // Track timestamp for trend calculation
+        if (pos.processed_at) {
+          topicData.timestamps.push(new Date(pos.processed_at));
         }
       });
       
-      console.log(`📊 Calculated competitor averages for ${resultMap.size} topics (${allBrandIds.length} brands, ${result.duration_ms}ms)`);
+      // Calculate averages and trends for each topic (matching legacy logic)
+      const resultMap = new Map<
+        string,
+        {
+          avgSoA: number;
+          avgVisibility: number | null;
+          avgSentiment: number | null;
+          trend: { direction: 'up' | 'down' | 'neutral'; delta: number };
+          brandCount: number;
+          competitorSoA?: Map<string, number>;
+          competitorVisibility?: Map<string, number>;
+          competitorSentiment?: Map<string, number>;
+        }
+      >();
+      
+      topicDataMap.forEach((data, normalizedTopicName) => {
+        if (data.soaValues.length === 0 && data.visibilityValues.length === 0 && data.sentimentValues.length === 0) return;
+        
+        // Calculate average SOA (or individual competitor SOA if single competitor selected)
+        let avgSoA: number = 0;
+        let avgVisibility: number | null = null;
+        let avgSentiment: number | null = null;
+        let competitorSoA: Map<string, number> | undefined;
+        let competitorVisibility: Map<string, number> | undefined;
+        let competitorSentiment: Map<string, number> | undefined;
+        
+        // If filtering by specific competitors and only one is selected, return that competitor's values
+        if (competitorNames && competitorNames.length === 1) {
+          const singleCompetitor = competitorNames[0];
+          
+          // SOA
+          if (data.competitorSoAMap) {
+            const competitorValues = data.competitorSoAMap.get(singleCompetitor) || [];
+            if (competitorValues.length > 0) {
+              avgSoA = competitorValues.reduce((sum, val) => sum + val, 0) / competitorValues.length;
+              competitorSoA = new Map([[singleCompetitor, avgSoA]]);
+            } else if (data.soaValues.length > 0) {
+              avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
+            }
+          } else if (data.soaValues.length > 0) {
+            avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
+          }
+          
+          // Visibility
+          if (data.competitorVisibilityMap) {
+            const values = data.competitorVisibilityMap.get(singleCompetitor) || [];
+            if (values.length > 0) {
+              const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+              avgVisibility = avg;
+              competitorVisibility = new Map([[singleCompetitor, avg]]);
+            } else if (data.visibilityValues.length > 0) {
+              avgVisibility = data.visibilityValues.reduce((sum, val) => sum + val, 0) / data.visibilityValues.length;
+            }
+          } else if (data.visibilityValues.length > 0) {
+            avgVisibility = data.visibilityValues.reduce((sum, val) => sum + val, 0) / data.visibilityValues.length;
+          }
+          
+          // Sentiment
+          if (data.competitorSentimentMap) {
+            const values = data.competitorSentimentMap.get(singleCompetitor) || [];
+            if (values.length > 0) {
+              const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+              avgSentiment = avg;
+              competitorSentiment = new Map([[singleCompetitor, avg]]);
+            } else if (data.sentimentValues.length > 0) {
+              avgSentiment = data.sentimentValues.reduce((sum, val) => sum + val, 0) / data.sentimentValues.length;
+            }
+          } else if (data.sentimentValues.length > 0) {
+            avgSentiment = data.sentimentValues.reduce((sum, val) => sum + val, 0) / data.sentimentValues.length;
+          }
+        } else {
+          // Multiple competitors or no filter - calculate overall averages
+          if (data.soaValues.length > 0) {
+            avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
+          }
+          
+          if (data.visibilityValues.length > 0) {
+            avgVisibility = data.visibilityValues.reduce((sum, val) => sum + val, 0) / data.visibilityValues.length;
+          }
+          
+          if (data.sentimentValues.length > 0) {
+            avgSentiment = data.sentimentValues.reduce((sum, val) => sum + val, 0) / data.sentimentValues.length;
+          }
+          
+          // Calculate per-competitor averages if filtering by multiple competitors
+          if (competitorNames && competitorNames.length > 1) {
+            if (data.competitorSoAMap) {
+              competitorSoA = new Map();
+              data.competitorSoAMap.forEach((values, compName) => {
+                if (values.length > 0) {
+                  const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+                  competitorSoA!.set(compName, avg);
+                }
+              });
+            }
+            
+            if (data.competitorVisibilityMap) {
+              competitorVisibility = new Map();
+              data.competitorVisibilityMap.forEach((values, compName) => {
+                if (values.length > 0) {
+                  const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+                  competitorVisibility!.set(compName, avg);
+                }
+              });
+            }
+            
+            if (data.competitorSentimentMap) {
+              competitorSentiment = new Map();
+              data.competitorSentimentMap.forEach((values, compName) => {
+                if (values.length > 0) {
+                  const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+                  competitorSentiment!.set(compName, avg);
+                }
+              });
+            }
+          }
+        }
+        
+        // Calculate trend
+        let trend: { direction: 'up' | 'down' | 'neutral'; delta: number } = { direction: 'neutral', delta: 0 };
+        if (data.timestamps.length >= 2 && data.soaValues.length >= 2) {
+          // Sort by timestamp
+          const sortedIndices = data.timestamps
+            .map((t, i) => ({ t, i }))
+            .sort((a, b) => a.t.getTime() - b.t.getTime())
+            .map(x => x.i);
+          
+          const midpoint = Math.floor(sortedIndices.length / 2);
+          const firstHalfIndices = sortedIndices.slice(0, midpoint);
+          const secondHalfIndices = sortedIndices.slice(midpoint);
+          
+          if (firstHalfIndices.length > 0 && secondHalfIndices.length > 0) {
+            const firstHalfSoA = firstHalfIndices
+              .map(i => data.soaValues[i])
+              .filter(v => typeof v === 'number' && isFinite(v));
+            const secondHalfSoA = secondHalfIndices
+              .map(i => data.soaValues[i])
+              .filter(v => typeof v === 'number' && isFinite(v));
+            
+            if (firstHalfSoA.length > 0 && secondHalfSoA.length > 0) {
+              const firstAvg = firstHalfSoA.reduce((sum, v) => sum + v, 0) / firstHalfSoA.length;
+              const secondAvg = secondHalfSoA.reduce((sum, v) => sum + v, 0) / secondHalfSoA.length;
+              const delta = secondAvg - firstAvg;
+              
+              if (Math.abs(delta) >= 1) {
+                trend = {
+                  direction: delta > 0 ? 'up' : 'down',
+                  delta: Math.round(delta)
+                };
+              }
+            }
+          }
+        }
+        
+        resultMap.set(normalizedTopicName, {
+          avgSoA,
+          avgVisibility,
+          avgSentiment,
+          trend,
+          brandCount: data.brandIds.size,
+          competitorSoA,
+          competitorVisibility,
+          competitorSentiment,
+        });
+      });
+      
+      console.log(`📊 Calculated competitor averages for ${resultMap.size} topics (${result.duration_ms}ms)`);
       
       return resultMap;
     } catch (error) {

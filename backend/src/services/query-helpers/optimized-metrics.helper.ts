@@ -1101,6 +1101,136 @@ export class OptimizedMetricsHelper {
   }
 
   /**
+   * Fetch prompts analytics data (visibility, sentiment, mentions, competitors)
+   * Used by Prompts Analytics page to show metrics per prompt
+   * 
+   * @param options - Query options
+   * @returns Array of rows with visibility, sentiment, mentions, competitor data
+   */
+  async fetchPromptsAnalytics(options: {
+    brandId: string;
+    customerId?: string;
+    startDate?: string;
+    endDate?: string;
+    queryIds?: string[];
+    collectorResultIds?: number[];
+  }): Promise<{
+    success: boolean;
+    data: Array<{
+      query_id: string | null;
+      collector_result_id: number | null;
+      collector_type: string | null;
+      visibility_index: number | null;
+      sentiment_score: number | null;
+      total_brand_mentions: number | null;
+      total_brand_product_mentions: number | null;
+      competitor_names: string[];
+      competitor_count: number;
+    }>;
+    duration_ms: number;
+    error?: string;
+  }> {
+    const startTime = Date.now();
+    const { brandId, customerId, startDate, endDate, queryIds, collectorResultIds } = options;
+
+    try {
+      let query = this.supabase
+        .from('metric_facts')
+        .select(`
+          query_id,
+          collector_result_id,
+          collector_type,
+          processed_at,
+          brand_metrics!inner(
+            visibility_index,
+            total_brand_mentions,
+            total_brand_product_mentions
+          ),
+          brand_sentiment(
+            sentiment_score
+          ),
+          competitor_metrics(
+            competitor_id,
+            brand_competitors!inner(
+              competitor_name
+            )
+          )
+        `)
+        .eq('brand_id', brandId);
+
+      if (customerId) {
+        query = query.eq('customer_id', customerId);
+      }
+      if (startDate) {
+        query = query.gte('processed_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('processed_at', endDate);
+      }
+      if (queryIds && queryIds.length > 0) {
+        query = query.in('query_id', queryIds);
+      }
+      if (collectorResultIds && collectorResultIds.length > 0) {
+        query = query.in('collector_result_id', collectorResultIds);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        return {
+          success: false,
+          data: [],
+          duration_ms: Date.now() - startTime,
+          error: error.message,
+        };
+      }
+
+      // Transform to match legacy format
+      const transformed = (data || []).map((row: any) => {
+        const bm = Array.isArray(row.brand_metrics) ? row.brand_metrics[0] : row.brand_metrics;
+        const bs = Array.isArray(row.brand_sentiment) ? row.brand_sentiment[0] : row.brand_sentiment;
+        const cms = Array.isArray(row.competitor_metrics) ? row.competitor_metrics : [row.competitor_metrics];
+
+        // Extract competitor names
+        const competitorNames: string[] = [];
+        cms.forEach((cm: any) => {
+          if (cm) {
+            const bc = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
+            if (bc?.competitor_name) {
+              competitorNames.push(bc.competitor_name);
+            }
+          }
+        });
+
+        return {
+          query_id: row.query_id,
+          collector_result_id: row.collector_result_id,
+          collector_type: row.collector_type,
+          visibility_index: bm?.visibility_index || null,
+          sentiment_score: bs?.sentiment_score || null,
+          total_brand_mentions: bm?.total_brand_mentions || null,
+          total_brand_product_mentions: bm?.total_brand_product_mentions || null,
+          competitor_names: competitorNames,
+          competitor_count: competitorNames.length,
+        };
+      });
+
+      return {
+        success: true,
+        data: transformed,
+        duration_ms: Date.now() - startTime,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: [],
+        duration_ms: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
    * Log query performance for monitoring
    * 
    * @param metrics - Performance metrics to log

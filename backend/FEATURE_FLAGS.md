@@ -162,6 +162,39 @@ USE_OPTIMIZED_TOPICS_QUERY=false
 2. Brand positions for topics
 3. Competitor averages per topic
 
+### Prompts Analytics Service
+
+**`USE_OPTIMIZED_PROMPTS_ANALYTICS`** (default: `false`)
+
+Controls whether the Prompts Analytics page uses the optimized new schema or the legacy `extracted_positions` table.
+
+- `true`: Query `metric_facts` + `brand_metrics` + `brand_sentiment` + `competitor_metrics` (optimized)
+- `false`: Query `extracted_positions` (legacy, current behavior)
+
+**Usage:**
+```bash
+# Enable optimization
+USE_OPTIMIZED_PROMPTS_ANALYTICS=true
+
+# Disable (default)
+USE_OPTIMIZED_PROMPTS_ANALYTICS=false
+```
+
+**Impact:** 🔴 CRITICAL (Prompts Analytics page shows NO new data without this)  
+**Risk:** MEDIUM (complex aggregations and mention counts)
+
+**Benefits:**
+- Prompts Analytics page shows NEW data immediately after collection
+- Eliminates user confusion ("where's my prompts data?")
+- Better performance with normalized schema
+- Accurate metrics (visibility, sentiment, mentions, competitor highlights)
+
+**Query Points Migrated:**
+1. Visibility scores (from brand_metrics)
+2. Sentiment scores (from brand_sentiment)
+3. Mention counts (brand, product, competitor from brand_metrics)
+4. Competitor names (from competitor_metrics → brand_competitors)
+
 ---
 
 ## Migration Status
@@ -173,7 +206,8 @@ USE_OPTIMIZED_TOPICS_QUERY=false
 | Prompt Metrics | `USE_OPTIMIZED_PROMPT_METRICS` | ✅ Implemented | ⏳ Testing |
 | Keywords Analytics | `USE_OPTIMIZED_KEYWORDS_QUERY` | ✅ Implemented | ⏳ Testing |
 | Source Attribution | `USE_OPTIMIZED_SOURCE_ATTRIBUTION` | ✅ Implemented | ✅ Verified (Bose) |
-| Brand Topics | `USE_OPTIMIZED_TOPICS_QUERY` | ✅ Implemented | ⏳ Testing |
+| Brand Topics | `USE_OPTIMIZED_TOPICS_QUERY` | ✅ Implemented | ✅ Verified (100% match) |
+| Prompts Analytics | `USE_OPTIMIZED_PROMPTS_ANALYTICS` | ✅ Implemented | ⏳ Testing |
 
 ---
 

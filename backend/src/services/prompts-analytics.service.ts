@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/database'
 import { DatabaseError } from '../types/auth'
+import { OptimizedMetricsHelper } from './query-helpers/optimized-metrics.helper'
 
 interface PromptAnalyticsOptions {
   brandId: string
@@ -701,7 +702,6 @@ export class PromptsAnalyticsService {
       .from('brand_competitors')
       .select('competitor_name')
       .eq('brand_id', brandRow.id)
-      .eq('customer_id', customerId)
 
     if (competitorError) {
       console.warn(`Failed to load competitors: ${competitorError.message}`)
@@ -722,55 +722,124 @@ export class PromptsAnalyticsService {
       }
     }
 
-    // Fetch sentiments from extracted_positions (same source as dashboard) and visibility scores from extracted_positions
-    // Use sentiment_score from extracted_positions table only (no fallback to collector_results) - matches dashboard behavior
+    // Fetch sentiments and visibility scores
+    // Use sentiment_score from new schema (matches dashboard behavior)
     const sentimentByCollectorResult = new Map<number, number>()
 
-    // Fetch visibility scores and sentiment scores from extracted_positions (same source as dashboard)
+    // Fetch visibility scores and sentiment scores
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
     const mentionCountsByCollector = new Map<number, { brand: number; product: number; competitor: number }>()
     const mentionCountsByQuery = new Map<string, { brand: number; product: number; competitor: number }>()
+    
+    // Initialize feature flag and optimized metrics helper
+    const USE_OPTIMIZED_PROMPTS_ANALYTICS = process.env.USE_OPTIMIZED_PROMPTS_ANALYTICS === 'true';
+    const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
+    
+    if (USE_OPTIMIZED_PROMPTS_ANALYTICS) {
+      console.log('   ⚡ [Prompts Analytics] Using optimized query (metric_facts + brand_metrics + brand_sentiment)');
+    } else {
+      console.log('   📋 [Prompts Analytics] Using legacy query (extracted_positions)');
+    }
+    
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
-      let visibilityQuery = supabaseAdmin
-        .from('extracted_positions')
-        .select('query_id, collector_result_id, collector_type, visibility_index, competitor_name, sentiment_score, total_brand_mentions, total_brand_product_mentions, competitor_mentions')
-        .eq('brand_id', brandRow.id)
-        .eq('customer_id', customerId)
-        .gte('processed_at', normalizedRange.startIsoBound)
-        .lte('processed_at', normalizedRange.endIsoBound)
-
-      // Build the OR condition for query_id and collector_result_id
-      const orConditions: string[] = []
-      if (allQueryIds.length > 0) {
-        orConditions.push(`query_id.in.(${allQueryIds.join(',')})`)
-      }
-      if (allCollectorResultIds.length > 0) {
-        orConditions.push(`collector_result_id.in.(${allCollectorResultIds.join(',')})`)
-      }
-      if (orConditions.length > 0) {
-        visibilityQuery = visibilityQuery.or(orConditions.join(','))
-      }
-
-      // Filter by collector_type if multiple collectors are selected
-      // This ensures we get all sentiment data from the selected collectors
-      // CRITICAL: When filtering by collector_type, we get ALL rows for those collectors,
-      // not just those whose collector_result_ids we already know about
-      if (collectorFilterActive) {
-        visibilityQuery = visibilityQuery.in('collector_type', collectorFilter)
-      }
-
-      const { data: visibilityRows, error: visibilityError } = await visibilityQuery
-
-      if (visibilityError) {
-        console.warn(`Failed to load visibility scores: ${visibilityError.message}`)
+      let visibilityRows: any[] = [];
+      
+      if (USE_OPTIMIZED_PROMPTS_ANALYTICS) {
+        // NEW: Use optimized schema
+        const result = await optimizedMetricsHelper.fetchPromptsAnalytics({
+          brandId: brandRow.id,
+          customerId,
+          startDate: normalizedRange.startIsoBound,
+          endDate: normalizedRange.endIsoBound,
+          queryIds: allQueryIds.length > 0 ? allQueryIds : undefined,
+          collectorResultIds: allCollectorResultIds.length > 0 ? allCollectorResultIds : undefined,
+        });
+        
+        if (result.error) {
+          console.warn(`Failed to load visibility scores from new schema: ${result.error}`);
+        } else {
+          // Transform to match legacy format
+          visibilityRows = result.data.map(row => ({
+            query_id: row.query_id,
+            collector_result_id: row.collector_result_id,
+            collector_type: row.collector_type,
+            visibility_index: row.visibility_index,
+            competitor_name: null, // Brand rows don't have competitor_name
+            sentiment_score: row.sentiment_score,
+            total_brand_mentions: row.total_brand_mentions,
+            total_brand_product_mentions: row.total_brand_product_mentions,
+            competitor_mentions: row.competitor_count, // Use competitor count as mentions
+            // Add competitor rows separately
+            competitor_names: row.competitor_names,
+          }));
+          
+          // Add competitor rows (one per competitor)
+          result.data.forEach(row => {
+            if (row.competitor_names && row.competitor_names.length > 0) {
+              row.competitor_names.forEach((compName: string) => {
+                visibilityRows.push({
+                  query_id: row.query_id,
+                  collector_result_id: row.collector_result_id,
+                  collector_type: row.collector_type,
+                  visibility_index: null, // Competitors don't have visibility
+                  competitor_name: compName,
+                  sentiment_score: null, // Competitors don't have sentiment in this context
+                  total_brand_mentions: null,
+                  total_brand_product_mentions: null,
+                  competitor_mentions: 1, // One mention per competitor
+                });
+              });
+            }
+          });
+        }
       } else {
-        // When collector filter is active, we've already filtered by collector_type in the query
-        // All rows returned match the selected collectors, so we just need to verify they're valid
-        // No need to double-filter since the query already handles collector_type filtering
-        const filteredRows = visibilityRows ?? []
+        // LEGACY: Query extracted_positions
+        let visibilityQuery = supabaseAdmin
+          .from('extracted_positions')
+          .select('query_id, collector_result_id, collector_type, visibility_index, competitor_name, sentiment_score, total_brand_mentions, total_brand_product_mentions, competitor_mentions')
+          .eq('brand_id', brandRow.id)
+          .eq('customer_id', customerId)
+          .gte('processed_at', normalizedRange.startIsoBound)
+          .lte('processed_at', normalizedRange.endIsoBound)
+
+        // Build the OR condition for query_id and collector_result_id
+        const orConditions: string[] = []
+        if (allQueryIds.length > 0) {
+          orConditions.push(`query_id.in.(${allQueryIds.join(',')})`)
+        }
+        if (allCollectorResultIds.length > 0) {
+          orConditions.push(`collector_result_id.in.(${allCollectorResultIds.join(',')})`)
+        }
+        if (orConditions.length > 0) {
+          visibilityQuery = visibilityQuery.or(orConditions.join(','))
+        }
+
+        // Filter by collector_type if multiple collectors are selected
+        if (collectorFilterActive) {
+          visibilityQuery = visibilityQuery.in('collector_type', collectorFilter)
+        }
+
+        const { data: legacyRows, error: visibilityError } = await visibilityQuery
+
+        if (visibilityError) {
+          console.warn(`Failed to load visibility scores: ${visibilityError.message}`)
+        } else {
+          visibilityRows = legacyRows ?? []
+        }
+      }
+      
+      // Process rows (same logic for both optimized and legacy)
+      if (visibilityRows.length > 0) {
+        // Filter by collector_type if needed (for legacy path)
+        const filteredRows = collectorFilterActive && !USE_OPTIMIZED_PROMPTS_ANALYTICS
+          ? visibilityRows.filter((row: any) => {
+              const rowCollectorType = normalizeCollectorType(row.collector_type)
+              return rowCollectorType && collectorFilter.includes(rowCollectorType)
+            })
+          : visibilityRows
 
         filteredRows.forEach((row: any) => {
-          // Process visibility_index and sentiment_score from extracted_positions (same source as dashboard)
+          // Process visibility_index and sentiment_score (from new schema or legacy extracted_positions)
           const isBrandRow = !row?.competitor_name || String(row.competitor_name).trim().length === 0
           const collectorResultId =
             typeof row?.collector_result_id === 'number' ? row.collector_result_id : null

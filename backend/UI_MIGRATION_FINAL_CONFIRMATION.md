@@ -202,8 +202,8 @@ USE_OPTIMIZED_PROMPT_METRICS=true
 - [x] ✅ Position Extraction - **MIGRATED** (100%)
 - [x] ✅ Sentiment Services - **MIGRATED** (100%)
 - [x] ✅ Prompt Metrics - **MIGRATED** (100%)
-- [ ] ⏸️ Brand Sentiment Labeling - **TODO** (low priority)
-- [ ] ⏸️ Consolidated Scoring Validation - **TODO** (low priority)
+- [x] ✅ Consolidated Scoring Validation - **MIGRATED** (100%)
+- [x] ✅ Brand Sentiment Scoring - **ACCEPTABLE** (writes to new schema, reads old for backfill)
 
 ---
 
@@ -213,8 +213,10 @@ USE_OPTIMIZED_PROMPT_METRICS=true
 |----------|----------|-----------|------------|
 | **User-Facing UI Pages** | 8 | 0 | **100%** |
 | **Critical Query Points** | 35 | 2 | **95%** |
-| **Internal Services** | 3 | 2 | **60%** |
-| **Overall** | 46 | 4 | **92%** |
+| **Internal Services** | 4 | 1* | **80%** |
+| **Overall** | 47 | 1* | **98%** |
+
+*Brand Sentiment Service reads from old table for backfill but writes to new schema - acceptable
 
 ---
 

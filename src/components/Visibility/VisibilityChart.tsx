@@ -69,10 +69,10 @@ interface VisibilityChartProps {
       id: string;
       label: string;
       data: Array<number | null>;
+      isRealData?: boolean[]; // NEW: true if data from DB, false if interpolated
     }>;
   };
   chartType: string;
-  timeframe: string;
   selectedModels: string[];
   loading?: boolean;
   activeTab: string;
@@ -129,6 +129,12 @@ export const VisibilityChart = memo(({
           };
         } else {
           // Line chart configuration
+          // Use isRealData to show dots only for real data points (not interpolated)
+          const isRealData = modelData.isRealData
+          const pointRadius = isRealData && isRealData.length === modelData.data.length
+            ? isRealData.map((isReal) => (isReal ? (isDimmed ? 2 : 3) : 0)) // Show dot only if real data
+            : (isDimmed ? 2 : 3) // Fallback: show all dots if isRealData not available
+          
           return {
             label: modelData.label,
             data: modelData.data,
@@ -136,7 +142,7 @@ export const VisibilityChart = memo(({
             pointBackgroundColor: isDimmed ? inactiveBorderColor : activeBorderColor,
             backgroundColor: 'transparent',
             borderWidth: isDimmed ? 1 : 2.5,
-            pointRadius: isDimmed ? 2 : 3,
+            pointRadius: pointRadius, // Array or number - Chart.js supports both
             pointHoverRadius: isDimmed ? 3 : 6,
             tension: 0.4,
             fill: false,

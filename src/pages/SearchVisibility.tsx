@@ -6,6 +6,7 @@ import { ChartControls } from '../components/Visibility/ChartControls';
 import { VisibilityChart } from '../components/Visibility/VisibilityChart';
 import { VisibilityTable } from '../components/Visibility/VisibilityTable';
 import { KpiToggle } from '../components/Visibility/KpiToggle';
+import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useCachedData } from '../hooks/useCachedData';
@@ -52,6 +53,7 @@ interface LlmVisibilitySlice {
     visibility: number[];
     share: number[];
     sentiment: (number | null)[];
+    isRealData?: boolean[]; // NEW: true if data from DB, false if interpolated
   };
 }
 
@@ -85,6 +87,7 @@ interface CompetitorVisibilityEntry {
     visibility: number[];
     share: number[];
     sentiment: (number | null)[];
+    isRealData?: boolean[]; // NEW: true if data from DB, false if interpolated
   };
 }
 
@@ -125,6 +128,7 @@ interface ModelData {
   topTopics?: LlmTopic[];
   color?: string;
   isBrand?: boolean;
+  isRealData?: boolean[]; // NEW: true if data from DB, false if interpolated
 }
 
 const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -142,47 +146,24 @@ const normalizeId = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
 
 const buildTimeseries = (value: number) => Array(chartLabels.length).fill(Math.max(0, Math.round(value)));
 
-// Helper to format date for chart labels (e.g., "Jan 15" or "Mon 15")
-const formatDateLabel = (dateStr: string): string => {
-  try {
-    const date = new Date(dateStr + 'T00:00:00Z')
-    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' })
-    const dayNum = date.getDate()
-    return `${dayName} ${dayNum}`
-  } catch {
-    return dateStr
-  }
-}
+import { formatDateLabel } from '../utils/dateFormatting';
 
-const getDateRangeForTimeframe = (timeframe: string) => {
+// Get default date range (last 7 days)
+const getDefaultDateRange = () => {
   const end = new Date();
   end.setUTCHours(23, 59, 59, 999);
-
   const start = new Date(end);
-  switch (timeframe) {
-    case 'monthly':
-      start.setUTCDate(start.getUTCDate() - 29);
-      break;
-    case 'ytd':
-      start.setUTCMonth(0, 1);
-      break;
-    case 'weekly':
-    default:
-      start.setUTCDate(start.getUTCDate() - 6);
-      break;
-  }
+  start.setUTCDate(start.getUTCDate() - 6); // Last 7 days including today
   start.setUTCHours(0, 0, 0, 0);
-
   return {
-    startDate: start.toISOString(),
-    endDate: end.toISOString()
+    start: start.toISOString().split('T')[0],
+    end: end.toISOString().split('T')[0]
   };
 };
 
 export const SearchVisibility = () => {
   const pageLoadStart = useRef(performance.now());
   const [activeTab, setActiveTab] = useState<'brand' | 'competitive'>('brand');
-  const [timeframe, setTimeframe] = useState('weekly');
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
   const [llmFilters, setLlmFilters] = useState<string[]>([]);
@@ -196,6 +177,11 @@ export const SearchVisibility = () => {
   const kpiSectionRef = useRef<HTMLDivElement | null>(null);
   const kpiParam = useMemo(() => parseMetricType(searchParams.get('kpi')), [searchParams]);
 
+  // Date range state - default to last 7 days
+  const defaultDateRange = getDefaultDateRange();
+  const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
+  const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
+
   const authLoading = useAuthStore((state) => state.isLoading);
   const {
     brands,
@@ -205,7 +191,15 @@ export const SearchVisibility = () => {
     selectBrand
   } = useManualBrandDashboard();
 
-  const dateRange = useMemo(() => getDateRangeForTimeframe(timeframe), [timeframe]);
+  // Convert date strings to ISO format for API
+  const dateRange = useMemo(() => {
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T23:59:59.999');
+    return {
+      startDate: start.toISOString(),
+      endDate: end.toISOString()
+    };
+  }, [startDate, endDate]);
 
   useEffect(() => {
     if (!kpiParam) {
@@ -363,6 +357,8 @@ export const SearchVisibility = () => {
           ? slice.timeSeries.sentiment.map((s: number | null) => s !== null ? s : null)
           : (sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined),
         brandPresenceData,
+        // Pass through isRealData flags for chart rendering (show dots only for real data)
+        isRealData: slice.timeSeries?.isRealData,
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -563,6 +559,8 @@ export const SearchVisibility = () => {
           ? entry.timeSeries.sentiment.map((s: number | null) => s !== null ? s : null)
           : (competitorSentimentDisplay !== null ? buildTimeseries(competitorSentimentDisplay) : undefined),
         brandPresenceData: competitorBrandPresenceData,
+        // Pass through isRealData flags for chart rendering (show dots only for real data)
+        isRealData: entry.timeSeries?.isRealData,
         topTopics: entry.topTopics?.map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -635,7 +633,8 @@ export const SearchVisibility = () => {
           ? (model.shareData ?? model.data)
           : metricType === 'brandPresence'
             ? (model.brandPresenceData ?? buildTimeseries(model.brandPresencePercentage ?? 0))
-            : (model.sentimentData ?? model.data).map((v) => v ?? 0) // avoid null gaps in sentiment lines
+            : (model.sentimentData ?? model.data).map((v) => v ?? 0), // avoid null gaps in sentiment lines
+      isRealData: model.isRealData // Pass through isRealData flags for chart rendering
     }))
   }), [currentModels, metricType, chartDateLabels]);
 
@@ -789,8 +788,10 @@ export const SearchVisibility = () => {
             </div>
 
             <ChartControls
-              timeframe={timeframe}
-              onTimeframeChange={setTimeframe}
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
               chartType={chartType}
               onChartTypeChange={setChartType}
               region={region}
@@ -803,7 +804,6 @@ export const SearchVisibility = () => {
             <VisibilityChart
               data={chartData}
               chartType={chartType}
-              timeframe={timeframe}
               selectedModels={selectedModels}
               loading={combinedLoading}
               activeTab={activeTab}

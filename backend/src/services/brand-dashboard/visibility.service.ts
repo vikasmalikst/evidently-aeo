@@ -63,6 +63,7 @@ export class VisibilityService {
       share: number[]
       sentiment: (number | null)[]
       brandPresence: number[]
+      isRealData: boolean[] // NEW: true if data from DB, false if interpolated
     }>,
     filtersActive: boolean = false
   ): LlmVisibilitySlice[] {
@@ -170,7 +171,7 @@ export class VisibilityService {
             visibility: timeSeries.visibility,
             share: timeSeries.share,
             sentiment: timeSeries.sentiment,
-            brandPresence: timeSeries.brandPresence
+            isRealData: timeSeries.isRealData // Pass through isRealData flags
           } : undefined
         }
       })
@@ -210,6 +211,7 @@ export class VisibilityService {
       visibility: number[]
       share: number[]
       sentiment: (number | null)[]
+      isRealData: boolean[] // NEW: true if data from DB, false if interpolated
     }>
   ): CompetitorVisibility[] {
     let competitorVisibility: CompetitorVisibility[] = Array.from(competitorAggregates.entries())
@@ -305,7 +307,8 @@ export class VisibilityService {
             dates: timeSeries.dates,
             visibility: timeSeries.visibility,
             share: timeSeries.share,
-            sentiment: timeSeries.sentiment
+            sentiment: timeSeries.sentiment,
+            isRealData: timeSeries.isRealData // Pass through isRealData flags
           } : undefined
         }
       })

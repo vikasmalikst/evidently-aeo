@@ -2266,6 +2266,189 @@ export async function buildDashboardPayload(
   // Log date range being used for this request
   console.log(`[TimeSeries] Date range for this request: ${allDates[0]} to ${allDates[allDates.length - 1]} (${allDates.length} days)`)
 
+  // Lookback initialization: Get most recent data before requested range to initialize carry-forward values
+  // This fixes the issue where short date ranges show zeros for days that have data in longer ranges
+  const getLookbackValues = async (
+    brandId: string,
+    collectorTypes: string[],
+    beforeDate: string,
+    lookbackDays: number = 7
+  ): Promise<Map<string, {
+    visibility: number
+    share: number
+    sentiment: number | null
+    brandPresence: number
+  }>> => {
+    const lookbackMap = new Map<string, {
+      visibility: number
+      share: number
+      sentiment: number | null
+      brandPresence: number
+    }>()
+
+    // Only perform lookback if requested range is relatively short (< 14 days)
+    // For longer ranges, the requested range likely contains the initialization data
+    const requestedRangeDays = allDates.length
+    if (requestedRangeDays >= 14) {
+      console.log(`[TimeSeries] Skipping lookback (requested range ${requestedRangeDays} days >= 14)`)
+      return lookbackMap
+    }
+
+    try {
+      const lookbackStart = new Date(beforeDate)
+      lookbackStart.setDate(lookbackStart.getDate() - lookbackDays)
+      lookbackStart.setUTCHours(0, 0, 0, 0)
+      
+      const lookbackEnd = new Date(beforeDate)
+      lookbackEnd.setUTCHours(0, 0, 0, 0)
+      
+      const lookbackStartIso = lookbackStart.toISOString()
+      const lookbackEndIso = lookbackEnd.toISOString()
+
+      // Query metric_facts with brand_metrics and brand_sentiment for lookback period
+      // Get the most recent date's aggregated values for each collector
+      const { data: lookbackMetricFacts, error: lookbackError } = await supabaseAdmin
+        .from('metric_facts')
+        .select(`
+          id,
+          collector_type,
+          processed_at,
+          collector_result_id,
+          brand_metrics!inner(
+            visibility_index,
+            share_of_answers,
+            has_brand_presence
+          ),
+          brand_sentiment(
+            sentiment_score
+          )
+        `)
+        .eq('brand_id', brandId)
+        .gte('processed_at', lookbackStartIso)
+        .lt('processed_at', lookbackEndIso)
+        .order('processed_at', { ascending: false })
+
+      if (lookbackError) {
+        console.warn(`[TimeSeries] Lookback query error: ${lookbackError.message}`)
+        return lookbackMap
+      }
+
+      if (!lookbackMetricFacts || lookbackMetricFacts.length === 0) {
+        console.log(`[TimeSeries] No lookback data found for ${lookbackDays} days before ${beforeDate}`)
+        return lookbackMap
+      }
+
+      // Group by collector_type and date, then get most recent date's values
+      const lookbackByCollector = new Map<string, Map<string, {
+        visibilityValues: number[]
+        shareValues: number[]
+        sentimentValues: number[]
+        collectorResultsWithPresence: Set<number>
+        uniqueCollectorResults: Set<number>
+      }>>()
+
+      lookbackMetricFacts.forEach(mf => {
+        const collectorType = mf.collector_type
+        if (!collectorType || !collectorTypes.includes(collectorType)) return
+
+        const timestamp = mf.processed_at
+        const date = extractDate(timestamp)
+        if (!date) return
+
+        // Extract brand_metrics (can be array or single object from Supabase join)
+        const bm = Array.isArray(mf.brand_metrics) ? mf.brand_metrics[0] : mf.brand_metrics
+        if (!bm) return
+
+        // Extract brand_sentiment (can be array or single object, or null)
+        const bs = Array.isArray(mf.brand_sentiment) 
+          ? (mf.brand_sentiment.length > 0 ? mf.brand_sentiment[0] : null)
+          : mf.brand_sentiment
+
+        if (!lookbackByCollector.has(collectorType)) {
+          lookbackByCollector.set(collectorType, new Map())
+        }
+        const collectorDates = lookbackByCollector.get(collectorType)!
+
+        if (!collectorDates.has(date)) {
+          collectorDates.set(date, {
+            visibilityValues: [],
+            shareValues: [],
+            sentimentValues: [],
+            collectorResultsWithPresence: new Set<number>(),
+            uniqueCollectorResults: new Set<number>()
+          })
+        }
+
+        const dayData = collectorDates.get(date)!
+        const visibility = Math.min(1, Math.max(0, toNumber(bm.visibility_index) ?? 0))
+        const share = Math.max(0, toNumber(bm.share_of_answers) ?? 0)
+        const sentiment = bs?.sentiment_score !== null && bs?.sentiment_score !== undefined
+          ? toNumber(bs.sentiment_score)
+          : null
+
+        dayData.visibilityValues.push(visibility)
+        dayData.shareValues.push(share)
+        if (sentiment !== null && Number.isFinite(sentiment)) {
+          dayData.sentimentValues.push(sentiment)
+        }
+
+        if (mf.collector_result_id && typeof mf.collector_result_id === 'number') {
+          dayData.uniqueCollectorResults.add(mf.collector_result_id)
+          if (bm.has_brand_presence === true) {
+            dayData.collectorResultsWithPresence.add(mf.collector_result_id)
+          }
+        }
+      })
+
+      // For each collector, get the most recent date's aggregated values
+      lookbackByCollector.forEach((dates, collectorType) => {
+        const sortedDates = Array.from(dates.keys()).sort().reverse() // Most recent first
+        if (sortedDates.length === 0) return
+
+        const mostRecentDate = sortedDates[0]
+        const dayData = dates.get(mostRecentDate)!
+
+        const avgVisibility = dayData.visibilityValues.length > 0
+          ? round(average(dayData.visibilityValues) * 100)
+          : 0
+        const avgShare = dayData.shareValues.length > 0
+          ? round(average(dayData.shareValues))
+          : 0
+        const avgSentiment = dayData.sentimentValues.length > 0
+          ? round(average(dayData.sentimentValues), 2)
+          : null
+        const totalCollectorResults = dayData.uniqueCollectorResults.size
+        const collectorResultsWithPresence = dayData.collectorResultsWithPresence.size
+        const brandPresencePercentage = totalCollectorResults > 0
+          ? round((collectorResultsWithPresence / totalCollectorResults) * 100)
+          : 0
+
+        lookbackMap.set(collectorType, {
+          visibility: avgVisibility,
+          share: avgShare,
+          sentiment: avgSentiment,
+          brandPresence: brandPresencePercentage
+        })
+      })
+
+      if (lookbackMap.size > 0) {
+        console.log(`[TimeSeries] Lookback initialized for ${lookbackMap.size} collectors from ${lookbackDays} days before requested range`)
+      }
+    } catch (error) {
+      console.warn(`[TimeSeries] Lookback initialization error: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    return lookbackMap
+  }
+
+  // Get lookback values for brand collectors
+  const lookbackValues = await getLookbackValues(
+    brand.id,
+    Array.from(collectorAggregates.keys()),
+    startIsoBound,
+    7 // 7 days lookback
+  )
+
   // Calculate daily averages for each collector
   const timeSeriesData = new Map<string, {
     dates: string[]
@@ -2273,6 +2456,7 @@ export async function buildDashboardPayload(
     share: number[]
     sentiment: (number | null)[]
     brandPresence: number[]
+    isRealData: boolean[] // NEW: true if data from DB, false if interpolated
   }>()
 
   timeSeriesByCollector.forEach((dailyData, collectorType) => {
@@ -2281,38 +2465,45 @@ export async function buildDashboardPayload(
     const share: number[] = []
     const sentiment: (number | null)[] = []
     const brandPresence: number[] = []
+    const isRealData: boolean[] = [] // Track which data points are real vs interpolated
 
     // Carry-forward behavior:
     // If there is no data collected for a given day, keep the previous day's value
     // (matches Sources/ImpactScoreTrends behavior where gaps stay flat).
-    let lastVisibility = 0
-    let lastShare = 0
-    let lastSentiment: number | null = null
-    let lastBrandPresence = 0
+    // Initialize from lookback values if available, otherwise start at 0
+    const lookback = lookbackValues.get(collectorType)
+    let lastVisibility = lookback?.visibility ?? 0
+    let lastShare = lookback?.share ?? 0
+    let lastSentiment = lookback?.sentiment ?? null
+    let lastBrandPresence = lookback?.brandPresence ?? 0
 
     allDates.forEach(date => {
       const dayData = dailyData.get(date)
       if (dayData) {
         dates.push(date)
         const hasVisibility = dayData.visibilityValues.length > 0
+        const hasShare = dayData.shareValues.length > 0
+        const hasSentiment = dayData.sentimentValues.length > 0
+        const totalCollectorResults = dayData.uniqueCollectorResults.size
+        const hasBrandPresenceData = totalCollectorResults > 0
+
+        // Determine if this is real data or interpolated
+        const isReal = hasVisibility || hasShare || hasSentiment || hasBrandPresenceData
+
         const avgVisibility = hasVisibility
           ? round(average(dayData.visibilityValues) * 100)
           : lastVisibility
         // Note: shareValues are already percentages (0-100), not decimals, so don't multiply by 100
         // This matches the main brand share calculation (line 897) which uses average(...) without * 100
-        const hasShare = dayData.shareValues.length > 0
         const avgShare = hasShare
           ? round(average(dayData.shareValues))
           : lastShare
         // Average sentiment: all scores are now in 1-100 format
         // Simple average - return in 1-100 range (no conversion)
-        const hasSentiment = dayData.sentimentValues.length > 0
         const avgSentiment = hasSentiment ? average(dayData.sentimentValues) : 0
         const normalizedSentiment = hasSentiment ? round(avgSentiment, 2) : lastSentiment
         // Calculate brand presence percentage: (unique collector results with presence / total unique collector results) * 100
-        const totalCollectorResults = dayData.uniqueCollectorResults.size
         const collectorResultsWithPresence = dayData.collectorResultsWithBrandPresence.size
-        const hasBrandPresenceData = totalCollectorResults > 0
         const brandPresencePercentage = hasBrandPresenceData
           ? round((collectorResultsWithPresence / totalCollectorResults) * 100)
           : lastBrandPresence
@@ -2321,6 +2512,7 @@ export async function buildDashboardPayload(
         share.push(avgShare)
         sentiment.push(normalizedSentiment)
         brandPresence.push(brandPresencePercentage)
+        isRealData.push(isReal) // Mark as real data if any metric has actual values
 
         // Update carry-forward values (only update sentiment when we have a value)
         lastVisibility = avgVisibility
@@ -2338,11 +2530,205 @@ export async function buildDashboardPayload(
       const hasData = visibility.some(v => v > 0) || share.some(s => s > 0)
       // Show FULL arrays for collectors to diagnose zero values
       console.log(`[TimeSeries] Collector ${collectorType}: ${dates.length} dates, hasData=${hasData}, visibility=[${visibility.join(', ')}], share=[${share.join(', ')}]`)
-      timeSeriesData.set(collectorType, { dates, visibility, share, sentiment, brandPresence })
+      timeSeriesData.set(collectorType, { dates, visibility, share, sentiment, brandPresence, isRealData })
     } else {
       console.warn(`[TimeSeries] Collector ${collectorType} has NO dates in time-series (position rows might be missing)`)
     }
   })
+
+  // Get lookback values for competitors (similar to brand collectors)
+  // Note: For competitors, we need to query competitor_metrics instead of brand_metrics
+  const getCompetitorLookbackValues = async (
+    brandId: string,
+    competitorNames: string[],
+    beforeDate: string,
+    lookbackDays: number = 7
+  ): Promise<Map<string, Map<string, {
+    visibility: number
+    share: number
+    sentiment: number | null
+  }>>> => {
+    const lookbackMap = new Map<string, Map<string, {
+      visibility: number
+      share: number
+      sentiment: number | null
+    }>>()
+
+    const requestedRangeDays = allDates.length
+    if (requestedRangeDays >= 14 || competitorNames.length === 0) {
+      return lookbackMap
+    }
+
+    try {
+      const lookbackStart = new Date(beforeDate)
+      lookbackStart.setDate(lookbackStart.getDate() - lookbackDays)
+      lookbackStart.setUTCHours(0, 0, 0, 0)
+      
+      const lookbackEnd = new Date(beforeDate)
+      lookbackEnd.setUTCHours(0, 0, 0, 0)
+      
+      const lookbackStartIso = lookbackStart.toISOString()
+      const lookbackEndIso = lookbackEnd.toISOString()
+
+      // Get competitor IDs for the competitor names
+      const { data: competitors, error: competitorsError } = await supabaseAdmin
+        .from('brand_competitors')
+        .select('id, competitor_name')
+        .eq('brand_id', brandId)
+        .in('competitor_name', competitorNames)
+
+      if (competitorsError || !competitors || competitors.length === 0) {
+        return lookbackMap
+      }
+
+      const competitorIds = competitors.map(c => c.id)
+      const competitorIdToName = new Map(competitors.map(c => [c.id, c.competitor_name]))
+
+      // Query metric_facts with competitor_metrics and competitor_sentiment
+      const { data: lookbackMetricFacts, error: lookbackError } = await supabaseAdmin
+        .from('metric_facts')
+        .select(`
+          id,
+          collector_type,
+          processed_at,
+          competitor_metrics!inner(
+            competitor_id,
+            visibility_index,
+            share_of_answers
+          ),
+          competitor_sentiment(
+            competitor_id,
+            sentiment_score
+          )
+        `)
+        .eq('brand_id', brandId)
+        .in('competitor_metrics.competitor_id', competitorIds)
+        .gte('processed_at', lookbackStartIso)
+        .lt('processed_at', lookbackEndIso)
+        .order('processed_at', { ascending: false })
+
+      if (lookbackError || !lookbackMetricFacts || lookbackMetricFacts.length === 0) {
+        return lookbackMap
+      }
+
+      // Group by competitor_name, collector_type, and date
+      const lookbackByCompetitor = new Map<string, Map<string, Map<string, {
+        visibilityValues: number[]
+        shareValues: number[]
+        sentimentValues: number[]
+      }>>>()
+
+      lookbackMetricFacts.forEach(mf => {
+        const collectorType = mf.collector_type
+        if (!collectorType) return
+
+        const timestamp = mf.processed_at
+        const date = extractDate(timestamp)
+        if (!date) return
+
+        // Extract competitor_metrics (array from join)
+        const cmArray = Array.isArray(mf.competitor_metrics) ? mf.competitor_metrics : []
+        const csArray = Array.isArray(mf.competitor_sentiment) ? mf.competitor_sentiment : []
+
+        cmArray.forEach(cm => {
+          const competitorId = cm.competitor_id
+          const competitorName = competitorIdToName.get(competitorId)
+          if (!competitorName) return
+
+          if (!lookbackByCompetitor.has(competitorName)) {
+            lookbackByCompetitor.set(competitorName, new Map())
+          }
+          const competitorCollectors = lookbackByCompetitor.get(competitorName)!
+
+          if (!competitorCollectors.has(collectorType)) {
+            competitorCollectors.set(collectorType, new Map())
+          }
+          const collectorDates = competitorCollectors.get(collectorType)!
+
+          if (!collectorDates.has(date)) {
+            collectorDates.set(date, {
+              visibilityValues: [],
+              shareValues: [],
+              sentimentValues: []
+            })
+          }
+
+          const dayData = collectorDates.get(date)!
+          const visibility = Math.min(1, Math.max(0, toNumber(cm.visibility_index) ?? 0))
+          const share = cm.share_of_answers !== null && cm.share_of_answers !== undefined
+            ? Math.max(0, toNumber(cm.share_of_answers))
+            : null
+
+          dayData.visibilityValues.push(visibility)
+          if (share !== null && Number.isFinite(share)) {
+            dayData.shareValues.push(share)
+          }
+
+          // Find matching sentiment
+          const matchingSentiment = csArray.find(cs => cs.competitor_id === competitorId)
+          if (matchingSentiment?.sentiment_score !== null && matchingSentiment?.sentiment_score !== undefined) {
+            const sentiment = toNumber(matchingSentiment.sentiment_score)
+            if (sentiment !== null && Number.isFinite(sentiment)) {
+              dayData.sentimentValues.push(sentiment)
+            }
+          }
+        })
+      })
+
+      // For each competitor and collector, get the most recent date's aggregated values
+      lookbackByCompetitor.forEach((collectors, competitorName) => {
+        const competitorLookback = new Map<string, {
+          visibility: number
+          share: number
+          sentiment: number | null
+        }>()
+
+        collectors.forEach((dates, collectorType) => {
+          const sortedDates = Array.from(dates.keys()).sort().reverse()
+          if (sortedDates.length === 0) return
+
+          const mostRecentDate = sortedDates[0]
+          const dayData = dates.get(mostRecentDate)!
+
+          const avgVisibility = dayData.visibilityValues.length > 0
+            ? round(average(dayData.visibilityValues) * 100)
+            : 0
+          const avgShare = dayData.shareValues.length > 0
+            ? round(average(dayData.shareValues))
+            : 0
+          const avgSentiment = dayData.sentimentValues.length > 0
+            ? round(average(dayData.sentimentValues), 2)
+            : null
+
+          competitorLookback.set(collectorType, {
+            visibility: avgVisibility,
+            share: avgShare,
+            sentiment: avgSentiment
+          })
+        })
+
+        if (competitorLookback.size > 0) {
+          lookbackMap.set(competitorName, competitorLookback)
+        }
+      })
+
+      if (lookbackMap.size > 0) {
+        console.log(`[TimeSeries] Competitor lookback initialized for ${lookbackMap.size} competitors`)
+      }
+    } catch (error) {
+      console.warn(`[TimeSeries] Competitor lookback initialization error: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    return lookbackMap
+  }
+
+  // Get lookback values for competitors
+  const competitorLookbackValues = await getCompetitorLookbackValues(
+    brand.id,
+    knownCompetitors,
+    startIsoBound,
+    7 // 7 days lookback
+  )
 
   // Calculate daily averages for each competitor
   // Note: shareValues arrays only contain valid (non-null) competitor SOA values
@@ -2352,6 +2738,7 @@ export async function buildDashboardPayload(
     visibility: number[]
     share: number[]
     sentiment: (number | null)[]
+    isRealData: boolean[] // NEW: true if data from DB, false if interpolated
   }>()
 
   timeSeriesByCompetitor.forEach((dailyData, competitorName) => {
@@ -2359,36 +2746,53 @@ export async function buildDashboardPayload(
     const visibility: number[] = []
     const share: number[] = []
     const sentiment: (number | null)[] = []
+    const isRealData: boolean[] = [] // Track which data points are real vs interpolated
 
-    // Carry-forward behavior for gaps (see collector series above).
+    // Initialize carry-forward from lookback (if available)
+    // Note: Competitor lookback is per-collector, but we aggregate across all collectors
+    // For simplicity, we'll use the first available lookback value or 0
+    const competitorLookback = competitorLookbackValues.get(competitorName)
     let lastVisibility = 0
     let lastShare = 0
     let lastSentiment: number | null = null
+
+    // Try to get initial values from lookback (use first collector's values if available)
+    if (competitorLookback && competitorLookback.size > 0) {
+      const firstLookback = Array.from(competitorLookback.values())[0]
+      lastVisibility = firstLookback.visibility
+      lastShare = firstLookback.share
+      lastSentiment = firstLookback.sentiment
+    }
 
     allDates.forEach(date => {
       const dayData = dailyData.get(date)
       if (dayData) {
         dates.push(date)
         const hasVisibility = dayData.visibilityValues.length > 0
+        const hasShare = dayData.shareValues.length > 0
+        const hasSentiment = dayData.sentimentValues.length > 0
+
+        // Determine if this is real data or interpolated
+        const isReal = hasVisibility || hasShare || hasSentiment
+
         const avgVisibility = hasVisibility
           ? round(average(dayData.visibilityValues) * 100)
           : lastVisibility
         // Calculate average share using simple average of valid values (matches SQL AVG behavior)
         // Note: shareValues are already percentages (0-100), not decimals, so don't multiply by 100
         // This ensures charts display the same SOA values as the main table (which uses round(average(...)) without * 100)
-        const hasShare = dayData.shareValues.length > 0
         const avgShare = hasShare
           ? round(average(dayData.shareValues))
           : lastShare
         // Average sentiment: all scores are now in 1-100 format
         // Simple average - return in 1-100 range (no conversion)
-        const hasSentiment = dayData.sentimentValues.length > 0
         const avgSentiment = hasSentiment ? average(dayData.sentimentValues) : 0
         const normalizedSentiment = hasSentiment ? round(avgSentiment, 2) : lastSentiment
 
         visibility.push(avgVisibility)
         share.push(avgShare)
         sentiment.push(normalizedSentiment)
+        isRealData.push(isReal) // Mark as real data if any metric has actual values
 
         lastVisibility = avgVisibility
         lastShare = avgShare
@@ -2400,7 +2804,7 @@ export async function buildDashboardPayload(
 
     // Only include timeSeries if there's actual data (not all empty arrays)
     if (dates.length > 0) {
-      competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment })
+      competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment, isRealData })
     }
   })
   

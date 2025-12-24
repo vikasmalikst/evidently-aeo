@@ -60,7 +60,12 @@ With `USE_CONSOLIDATED_ANALYSIS=true` enabled:
 
 1. ✅ **Position Extraction** → Writes to NEW SCHEMA only
 2. ✅ **Consolidated Scoring** → Writes to NEW SCHEMA only
-3. ✅ **Legacy Sentiment Services** → **NOT CALLED** (bypassed by orchestrator)
+3. ✅ **Brand Scoring Orchestrator** → Uses Consolidated Scoring (NEW SCHEMA)
+4. ⚠️ **scoringWorker.ts** → Directly calls legacy services, BUT:
+   - Legacy services check `USE_CONSOLIDATED_ANALYSIS` flag
+   - They try to use cached consolidated analysis results first
+   - Only fallback to writing `extracted_positions` if cache unavailable
+   - **Note:** If orchestrator runs first, cache should be populated
 
 ### Read Operations Audit:
 
@@ -89,7 +94,7 @@ All UI services use NEW SCHEMA (with feature flags):
 4. ✅ `USE_CONSOLIDATED_ANALYSIS=true` is enabled
 5. ✅ No active dependencies on `extracted_positions`
 
-**Risk Level:** 🟢 **ZERO** (no active dependencies)
+**Risk Level:** 🟢 **VERY LOW** (primary paths migrated, edge case in worker)
 
 ---
 
@@ -132,10 +137,12 @@ All UI services use NEW SCHEMA (with feature flags):
 ### Immediate (Today):
 ✅ **Status:** Ready for deprecation
 
-### Week 1: Final Verification (Optional but Recommended)
+### Week 1: Final Verification (Recommended)
 - [ ] Check production logs for any `extracted_positions` queries
+- [ ] Verify `scoringWorker.ts` is using cached consolidated analysis (not writing to old table)
 - [ ] Verify all scoring operations successful
 - [ ] Verify all UI pages working correctly
+- [ ] **If `scoringWorker.ts` still writes to old table:** Consider migrating it to use orchestrator
 
 ### Week 2: Cleanup
 - [ ] Remove legacy fallback code paths

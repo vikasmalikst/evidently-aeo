@@ -13,6 +13,7 @@
 
 import { getCerebrasKey, getCerebrasModel } from '../../utils/api-key-resolver';
 import { supabaseAdmin } from '../../config/database';
+import { OptimizedMetricsHelper } from '../query-helpers/optimized-metrics.helper';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
 
 // ============================================================================

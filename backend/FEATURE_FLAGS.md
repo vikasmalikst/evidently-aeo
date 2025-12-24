@@ -195,6 +195,73 @@ USE_OPTIMIZED_PROMPTS_ANALYTICS=false
 3. Mention counts (brand, product, competitor from brand_metrics)
 4. Competitor names (from competitor_metrics → brand_competitors)
 
+### Recommendation Services (V1)
+
+**`USE_OPTIMIZED_RECOMMENDATIONS_V1`** (default: `false`)
+
+Controls whether the Recommendation Service V1 uses the optimized new schema or the legacy `extracted_positions` table.
+
+- `true`: Query `metric_facts` + `brand_metrics` + `brand_sentiment` (optimized)
+- `false`: Query `extracted_positions` (legacy, current behavior)
+
+**Usage:**
+```bash
+# Enable optimization
+USE_OPTIMIZED_RECOMMENDATIONS_V1=true
+
+# Disable (default)
+USE_OPTIMIZED_RECOMMENDATIONS_V1=false
+```
+
+**Impact:** 🔴 HIGH (AI recommendations based on latest data)  
+**Risk:** MEDIUM (complex data aggregation for AI context)
+
+**Benefits:**
+- Recommendations use NEW data immediately after collection
+- More accurate AI insights based on latest metrics
+- Better performance with normalized schema
+- Accurate brand and LLM-specific metrics
+
+**Query Points Migrated (4 of 5):**
+1. ✅ Overall brand metrics (current period)
+2. ✅ Overall brand metrics (previous period - trends)
+3. ⏸️ Competitor metrics (using legacy for now)
+4. ✅ LLM-specific metrics (per-model analysis)
+5. ✅ Source-specific metrics (citation analysis)
+
+### Recommendation Services (V3)
+
+**`USE_OPTIMIZED_RECOMMENDATIONS_V3`** (default: `false`)
+
+Controls whether the Recommendation Service V3 uses the optimized new schema or the legacy `extracted_positions` table.
+
+- `true`: Query `metric_facts` + `brand_metrics` + `brand_sentiment` (optimized)
+- `false`: Query `extracted_positions` (legacy, current behavior)
+
+**Usage:**
+```bash
+# Enable optimization
+USE_OPTIMIZED_RECOMMENDATIONS_V3=true
+
+# Disable (default)
+USE_OPTIMIZED_RECOMMENDATIONS_V3=false
+```
+
+**Impact:** 🔴 HIGH (AI recommendations based on latest data)  
+**Risk:** MEDIUM (complex data aggregation for AI context)
+
+**Benefits:**
+- Recommendations use NEW data immediately after collection
+- More accurate AI insights based on latest metrics
+- Better performance with normalized schema and batched fetching
+- Accurate source attribution for recommendations
+
+**Query Points Migrated (3 of 4):**
+1. ✅ Overall brand metrics (current period)
+2. ✅ Overall brand metrics (previous period - trends)
+3. ⏸️ Competitor metrics (using legacy for now)
+4. ✅ Batched position metrics for sources (optimized batch processing)
+
 ---
 
 ## Migration Status
@@ -208,6 +275,8 @@ USE_OPTIMIZED_PROMPTS_ANALYTICS=false
 | Source Attribution | `USE_OPTIMIZED_SOURCE_ATTRIBUTION` | ✅ Implemented | ✅ Verified (Bose) |
 | Brand Topics | `USE_OPTIMIZED_TOPICS_QUERY` | ✅ Implemented | ✅ Verified (100% match) |
 | Prompts Analytics | `USE_OPTIMIZED_PROMPTS_ANALYTICS` | ✅ Implemented | ⏳ Testing |
+| Recommendations V1 | `USE_OPTIMIZED_RECOMMENDATIONS_V1` | ✅ Implemented (80%) | ⏳ Testing |
+| Recommendations V3 | `USE_OPTIMIZED_RECOMMENDATIONS_V3` | ✅ Implemented | ⏳ Testing |
 
 ---
 

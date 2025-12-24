@@ -182,59 +182,125 @@ class RecommendationV3Service {
       const previousStartDate = sixtyDaysAgo.toISOString().split('T')[0];
       const previousEndDate = thirtyDaysAgo.toISOString().split('T')[0];
 
-      // Get overall metrics (current period)
-      const { data: overallMetrics } = await supabaseAdmin
-        .from('extracted_positions')
-        .select('visibility_index, share_of_answers_brand, sentiment_score')
-        .eq('brand_id', brandId)
-        .gte('created_at', currentStartDate)
-        .lte('created_at', currentEndDate);
+      // Initialize feature flag and helper
+      const USE_OPTIMIZED_RECOMMENDATIONS = process.env.USE_OPTIMIZED_RECOMMENDATIONS_V3 === 'true';
+      const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
 
+      if (USE_OPTIMIZED_RECOMMENDATIONS) {
+        console.log('   ⚡ [Recommendations V3] Using optimized queries (metric_facts + brand_metrics)');
+      } else {
+        console.log('   📋 [Recommendations V3] Using legacy queries (extracted_positions)');
+      }
+
+      // ========================================
+      // 1. OVERALL BRAND METRICS (Current Period)
+      // ========================================
       let visibilityIndex: number | undefined;
       let shareOfAnswers: number | undefined;
       let sentimentScore: number | undefined;
 
-      if (overallMetrics && overallMetrics.length > 0) {
-        const validVis = overallMetrics.filter(m => m.visibility_index != null);
-        const validSoa = overallMetrics.filter(m => m.share_of_answers_brand != null);
-        const validSent = overallMetrics.filter(m => m.sentiment_score != null);
+      if (USE_OPTIMIZED_RECOMMENDATIONS) {
+        const result = await optimizedMetricsHelper.fetchBrandMetricsByDateRange({
+          brandId,
+          customerId,
+          startDate: currentStartDate,
+          endDate: currentEndDate,
+          includeSentiment: true,
+        });
 
-        if (validVis.length > 0) {
-          visibilityIndex = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+        if (result.success && result.data.length > 0) {
+          const validVis = result.data.filter(m => m.visibility_index != null);
+          const validSoa = result.data.filter(m => m.share_of_answers != null);
+          const validSent = result.data.filter(m => m.sentiment_score != null);
+
+          if (validVis.length > 0) {
+            visibilityIndex = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+          }
+          if (validSoa.length > 0) {
+            shareOfAnswers = validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length;
+          }
+          if (validSent.length > 0) {
+            sentimentScore = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+          }
         }
-        if (validSoa.length > 0) {
-          shareOfAnswers = validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length;
-        }
-        if (validSent.length > 0) {
-          sentimentScore = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+      } else {
+        const { data: overallMetrics } = await supabaseAdmin
+          .from('extracted_positions')
+          .select('visibility_index, share_of_answers_brand, sentiment_score')
+          .eq('brand_id', brandId)
+          .gte('created_at', currentStartDate)
+          .lte('created_at', currentEndDate);
+
+        if (overallMetrics && overallMetrics.length > 0) {
+          const validVis = overallMetrics.filter(m => m.visibility_index != null);
+          const validSoa = overallMetrics.filter(m => m.share_of_answers_brand != null);
+          const validSent = overallMetrics.filter(m => m.sentiment_score != null);
+
+          if (validVis.length > 0) {
+            visibilityIndex = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+          }
+          if (validSoa.length > 0) {
+            shareOfAnswers = validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length;
+          }
+          if (validSent.length > 0) {
+            sentimentScore = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+          }
         }
       }
 
-      // Get previous period metrics for trends
-      const { data: previousMetrics } = await supabaseAdmin
-        .from('extracted_positions')
-        .select('visibility_index, share_of_answers_brand, sentiment_score')
-        .eq('brand_id', brandId)
-        .gte('created_at', previousStartDate)
-        .lte('created_at', previousEndDate);
-
+      // ========================================
+      // 1B. OVERALL BRAND METRICS (Previous Period) - For Trend Analysis
+      // ========================================
       let prevVisibilityIndex: number | undefined;
       let prevShareOfAnswers: number | undefined;
       let prevSentimentScore: number | undefined;
 
-      if (previousMetrics && previousMetrics.length > 0) {
-        const validVis = previousMetrics.filter(m => m.visibility_index != null);
-        const validSoa = previousMetrics.filter(m => m.share_of_answers_brand != null);
-        const validSent = previousMetrics.filter(m => m.sentiment_score != null);
+      if (USE_OPTIMIZED_RECOMMENDATIONS) {
+        const result = await optimizedMetricsHelper.fetchBrandMetricsByDateRange({
+          brandId,
+          customerId,
+          startDate: previousStartDate,
+          endDate: previousEndDate,
+          includeSentiment: true,
+        });
 
-        if (validVis.length > 0) {
-          prevVisibilityIndex = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+        if (result.success && result.data.length > 0) {
+          const validVis = result.data.filter(m => m.visibility_index != null);
+          const validSoa = result.data.filter(m => m.share_of_answers != null);
+          const validSent = result.data.filter(m => m.sentiment_score != null);
+
+          if (validVis.length > 0) {
+            prevVisibilityIndex = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+          }
+          if (validSoa.length > 0) {
+            prevShareOfAnswers = validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length;
+          }
+          if (validSent.length > 0) {
+            prevSentimentScore = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+          }
         }
-        if (validSoa.length > 0) {
-          prevShareOfAnswers = validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length;
-        }
-        if (validSent.length > 0) {
-          prevSentimentScore = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+      } else {
+        const { data: previousMetrics } = await supabaseAdmin
+          .from('extracted_positions')
+          .select('visibility_index, share_of_answers_brand, sentiment_score')
+          .eq('brand_id', brandId)
+          .gte('created_at', previousStartDate)
+          .lte('created_at', previousEndDate);
+
+        if (previousMetrics && previousMetrics.length > 0) {
+          const validVis = previousMetrics.filter(m => m.visibility_index != null);
+          const validSoa = previousMetrics.filter(m => m.share_of_answers_brand != null);
+          const validSent = previousMetrics.filter(m => m.sentiment_score != null);
+
+          if (validVis.length > 0) {
+            prevVisibilityIndex = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+          }
+          if (validSoa.length > 0) {
+            prevShareOfAnswers = validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length;
+          }
+          if (validSent.length > 0) {
+            prevSentimentScore = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+          }
         }
       }
 
@@ -269,6 +335,9 @@ class RecommendationV3Service {
       
       if (competitors && competitors.length > 0) {
         for (const comp of competitors) {
+          // TODO: Migrate competitor metrics query to new schema
+          // For now, using legacy query for competitor-specific metrics
+          // This requires querying competitor_metrics joined with metric_facts for date filtering
           const { data: compMetrics } = await supabaseAdmin
             .from('extracted_positions')
             .select('visibility_index, share_of_answers_brand, sentiment_score')
@@ -373,26 +442,56 @@ class RecommendationV3Service {
           visibility_index: number | null;
         }>>();
         
-        const batchSize = 100;
-        for (let i = 0; i < allCollectorIds.length; i += batchSize) {
-          const batch = allCollectorIds.slice(i, i + batchSize);
-          const { data: batchPositions } = await supabaseAdmin
-            .from('extracted_positions')
-            .select('collector_result_id, share_of_answers_brand, sentiment_score, visibility_index')
-            .eq('brand_id', brandId)
-            .in('collector_result_id', batch);
-          
-          if (batchPositions) {
-            for (const pos of batchPositions) {
-              if (pos.collector_result_id) {
-                if (!allPositionsMap.has(pos.collector_result_id)) {
-                  allPositionsMap.set(pos.collector_result_id, []);
+        if (USE_OPTIMIZED_RECOMMENDATIONS) {
+          // Use optimized helper to fetch brand metrics
+          const batchSize = 100;
+          for (let i = 0; i < allCollectorIds.length; i += batchSize) {
+            const batch = allCollectorIds.slice(i, i + batchSize);
+            const result = await optimizedMetricsHelper.fetchBrandMetrics({
+              collectorResultIds: batch,
+              brandId,
+              customerId,
+              includeSentiment: true,
+            });
+            
+            if (result.success && result.data.length > 0) {
+              for (const pos of result.data) {
+                if (pos.collector_result_id) {
+                  if (!allPositionsMap.has(pos.collector_result_id)) {
+                    allPositionsMap.set(pos.collector_result_id, []);
+                  }
+                  allPositionsMap.get(pos.collector_result_id)!.push({
+                    share_of_answers_brand: pos.share_of_answers,
+                    sentiment_score: pos.sentiment_score,
+                    visibility_index: pos.visibility_index
+                  });
                 }
-                allPositionsMap.get(pos.collector_result_id)!.push({
-                  share_of_answers_brand: pos.share_of_answers_brand,
-                  sentiment_score: pos.sentiment_score,
-                  visibility_index: pos.visibility_index
-                });
+              }
+            }
+          }
+        } else {
+          // Legacy path
+          const batchSize = 100;
+          for (let i = 0; i < allCollectorIds.length; i += batchSize) {
+            const batch = allCollectorIds.slice(i, i + batchSize);
+            const { data: batchPositions } = await supabaseAdmin
+              .from('extracted_positions')
+              .select('collector_result_id, share_of_answers_brand, sentiment_score, visibility_index')
+              .eq('brand_id', brandId)
+              .in('collector_result_id', batch);
+            
+            if (batchPositions) {
+              for (const pos of batchPositions) {
+                if (pos.collector_result_id) {
+                  if (!allPositionsMap.has(pos.collector_result_id)) {
+                    allPositionsMap.set(pos.collector_result_id, []);
+                  }
+                  allPositionsMap.get(pos.collector_result_id)!.push({
+                    share_of_answers_brand: pos.share_of_answers_brand,
+                    sentiment_score: pos.sentiment_score,
+                    visibility_index: pos.visibility_index
+                  });
+                }
               }
             }
           }

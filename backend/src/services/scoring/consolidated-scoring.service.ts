@@ -13,6 +13,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { consolidatedAnalysisService, ConsolidatedAnalysisOptions } from './consolidated-analysis.service';
 import { positionExtractionService } from './position-extraction.service';
+import { OptimizedMetricsHelper } from '../query-helpers/optimized-metrics.helper';
 
 dotenv.config();
 
@@ -275,35 +276,88 @@ export class ConsolidatedScoringService {
     const fullyProcessedResults = new Set<number>();
     const hasPositionsButNoSentiment = new Set<number>();
     
-    for (const cr of collectorResults) {
-      if (!cr || !cr.id) {
-        continue;
-      }
+    // Use optimized schema for validation checks
+    const USE_OPTIMIZED_VALIDATION = process.env.USE_OPTIMIZED_VALIDATION !== 'false'; // Default to true
+    const optimizedMetricsHelper = new OptimizedMetricsHelper(this.supabase);
+    
+    // Batch check all collector results at once for better performance
+    const collectorResultIds = collectorResults
+      .filter(cr => cr && cr.id)
+      .map(cr => cr.id!);
+    
+    if (USE_OPTIMIZED_VALIDATION && collectorResultIds.length > 0) {
+      // Check positions using metric_facts + brand_metrics
+      const { data: metricFacts } = await this.supabase
+        .from('metric_facts')
+        .select('collector_result_id, id')
+        .in('collector_result_id', collectorResultIds)
+        .eq('brand_id', brandId);
       
-      // Check if positions exist
-      const { data: positionRow } = await this.supabase
-        .from('extracted_positions')
-        .select('id, sentiment_score')
-        .eq('collector_result_id', cr.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (positionRow) {
-        // Check if sentiment is missing (null sentiment_score indicates missing sentiment)
-        const { data: sentimentCheck } = await this.supabase
+      const collectorResultsWithPositions = new Set<number>();
+      if (metricFacts) {
+        metricFacts.forEach(mf => {
+          if (mf.collector_result_id) {
+            collectorResultsWithPositions.add(mf.collector_result_id);
+          }
+        });
+        
+        // Check sentiment for results that have positions
+        if (collectorResultsWithPositions.size > 0) {
+          const metricFactIds = metricFacts.map(mf => mf.id);
+          const { data: brandSentiment } = await this.supabase
+            .from('brand_sentiment')
+            .select('metric_fact_id')
+            .in('metric_fact_id', metricFactIds)
+            .not('sentiment_score', 'is', null);
+          
+          const metricFactIdsWithSentiment = new Set(brandSentiment?.map(bs => bs.metric_fact_id) || []);
+          
+          // Map back to collector_result_ids
+          for (const mf of metricFacts) {
+            if (mf.collector_result_id && collectorResultsWithPositions.has(mf.collector_result_id)) {
+              if (metricFactIdsWithSentiment.has(mf.id)) {
+                // Fully processed: has positions AND sentiment
+                fullyProcessedResults.add(mf.collector_result_id);
+              } else {
+                // Has positions but missing sentiment (Step 3 incomplete)
+                hasPositionsButNoSentiment.add(mf.collector_result_id);
+              }
+            }
+          }
+        }
+      }
+    } else {
+      // Legacy: Check using extracted_positions
+      for (const cr of collectorResults) {
+        if (!cr || !cr.id) {
+          continue;
+        }
+        
+        // Check if positions exist
+        const { data: positionRow } = await this.supabase
           .from('extracted_positions')
-          .select('id')
+          .select('id, sentiment_score')
           .eq('collector_result_id', cr.id)
-          .not('sentiment_score', 'is', null)
           .limit(1)
           .maybeSingle();
-        
-        if (sentimentCheck) {
-          // Fully processed: has positions AND sentiment
-          fullyProcessedResults.add(cr.id);
-        } else {
-          // Has positions but missing sentiment (Step 3 incomplete)
-          hasPositionsButNoSentiment.add(cr.id);
+
+        if (positionRow) {
+          // Check if sentiment is missing (null sentiment_score indicates missing sentiment)
+          const { data: sentimentCheck } = await this.supabase
+            .from('extracted_positions')
+            .select('id')
+            .eq('collector_result_id', cr.id)
+            .not('sentiment_score', 'is', null)
+            .limit(1)
+            .maybeSingle();
+          
+          if (sentimentCheck) {
+            // Fully processed: has positions AND sentiment
+            fullyProcessedResults.add(cr.id);
+          } else {
+            // Has positions but missing sentiment (Step 3 incomplete)
+            hasPositionsButNoSentiment.add(cr.id);
+          }
         }
       }
     }

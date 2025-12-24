@@ -547,6 +547,121 @@ export class OptimizedMetricsHelper {
   }
 
   /**
+   * Fetch competitor metrics by date range
+   * Similar to fetchBrandMetricsByDateRange but for competitors
+   * 
+   * @param options - Fetch options including competitor ID
+   * @returns Competitor metrics rows
+   */
+  async fetchCompetitorMetricsByDateRange(options: {
+    competitorId: string;
+    brandId: string;
+    customerId: string;
+    startDate: string;
+    endDate: string;
+    includeSentiment?: boolean;
+  }): Promise<FetchCompetitorMetricsResult> {
+    const startTime = Date.now();
+    
+    try {
+      const {
+        competitorId,
+        brandId,
+        customerId,
+        startDate,
+        endDate,
+        includeSentiment = true,
+      } = options;
+
+      // Build query - query metric_facts and join competitor_metrics filtered by competitor_id
+      // Query competitor_metrics directly and join with metric_facts for date filtering
+      let query = this.supabase
+        .from('competitor_metrics')
+        .select(`
+          metric_fact_id,
+          competitor_id,
+          visibility_index,
+          share_of_answers,
+          metric_facts!inner(
+            collector_result_id,
+            brand_id,
+            customer_id,
+            query_id,
+            collector_type,
+            topic,
+            processed_at,
+            created_at
+          )
+          ${includeSentiment ? `,competitor_sentiment(
+            sentiment_score,
+            sentiment_label
+          )` : ''}
+        `)
+        .eq('competitor_id', competitorId)
+        .eq('metric_facts.brand_id', brandId)
+        .eq('metric_facts.customer_id', customerId)
+        .gte('metric_facts.processed_at', startDate)
+        .lte('metric_facts.processed_at', endDate);
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('[OptimizedMetricsHelper] Error fetching competitor metrics by date range:', error);
+        return {
+          success: false,
+          data: [],
+          error: error.message,
+          duration_ms: Date.now() - startTime,
+        };
+      }
+
+      // Flatten nested structure
+      const flattenedData: CompetitorMetricsRow[] = (data || []).map((row: any) => {
+        const metricFact = Array.isArray(row.metric_facts) 
+          ? row.metric_facts[0] 
+          : row.metric_facts;
+        
+        const competitorSentiment = Array.isArray(row.competitor_sentiment)
+          ? row.competitor_sentiment[0]
+          : row.competitor_sentiment;
+
+        return {
+          collector_result_id: metricFact?.collector_result_id || null,
+          brand_id: metricFact?.brand_id || null,
+          customer_id: metricFact?.customer_id || null,
+          query_id: metricFact?.query_id || null,
+          collector_type: metricFact?.collector_type || null,
+          topic: metricFact?.topic || null,
+          processed_at: metricFact?.processed_at || null,
+          created_at: metricFact?.created_at || null,
+          competitor_id: competitorId,
+          competitor_name: null, // Will be populated from brand_competitors if needed
+          visibility_index: row.visibility_index || null,
+          share_of_answers: row.share_of_answers || null,
+          ...(includeSentiment && competitorSentiment ? {
+            sentiment_score: competitorSentiment.sentiment_score,
+            sentiment_label: competitorSentiment.sentiment_label,
+          } : {}),
+        };
+      });
+
+      return {
+        success: true,
+        data: flattenedData,
+        duration_ms: Date.now() - startTime,
+      };
+    } catch (error) {
+      console.error('[OptimizedMetricsHelper] Unexpected error in fetchCompetitorMetricsByDateRange:', error);
+      return {
+        success: false,
+        data: [],
+        error: error instanceof Error ? error.message : String(error),
+        duration_ms: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
    * Fetch source attribution metrics (share, mentions, sentiment, visibility)
    * Optimized query for source attribution service
    * 

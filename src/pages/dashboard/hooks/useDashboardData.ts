@@ -136,9 +136,25 @@ export const useDashboardData = () => {
   };
 
   const dashboardEndpoint = useMemo(() => {
+    // Wait for brands to load before creating endpoint to prevent 404 errors
+    // This ensures selectedBrandId has been validated against the actual brands list
+    if (brandsLoading) {
+      return null;
+    }
+    
+    // Ensure we have a valid brand selected that exists in the brands list
     if (!selectedBrandId || !startDate || !endDate) {
       return null;
     }
+    
+    // Additional safety check: ensure the selected brand actually exists in the brands list
+    // This prevents trying to fetch data for a deleted brand
+    const brandExists = brands.some(b => b.id === selectedBrandId);
+    if (!brandExists) {
+      console.warn(`[useDashboardData] Selected brand ${selectedBrandId} does not exist in brands list. Waiting for validation...`);
+      return null;
+    }
+    
     const params = new URLSearchParams({
       startDate,
       endDate,
@@ -153,7 +169,7 @@ export const useDashboardData = () => {
     }
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     return endpoint;
-  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress]);
+  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress, brandsLoading, brands]);
 
   const dataFetchStart = useRef(performance.now());
   const {

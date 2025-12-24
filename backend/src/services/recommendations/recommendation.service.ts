@@ -784,49 +784,88 @@ class RecommendationService {
       // ========================================
       // 2. COMPETITOR COMPARISON
       // ========================================
+      // Get competitors from brand_competitors (new schema)
       const { data: competitors } = await supabaseAdmin
-        .from('competitors')
-        .select('id, name')
+        .from('brand_competitors')
+        .select('id, competitor_name')
         .eq('brand_id', brandId)
         .eq('is_active', true)
+        .order('priority', { ascending: true })
         .limit(5);
 
       const competitorData: BrandContext['competitors'] = [];
       
       if (competitors && competitors.length > 0) {
         for (const comp of competitors) {
-          // TODO: Migrate competitor metrics query to new schema
-          // For now, using legacy query for competitor-specific metrics
-          // This requires querying competitor_metrics joined with metric_facts for date filtering
-          const { data: compMetrics } = await supabaseAdmin
-            .from('extracted_positions')
-            .select('visibility_index, share_of_answers_brand, sentiment_score')
-            .eq('competitor_id', comp.id)
-            .gte('created_at', currentStartDate)
-            .lte('created_at', currentEndDate);
-
           let compVis: number | undefined;
           let compSoa: number | undefined;
           let compSent: number | undefined;
 
-          if (compMetrics && compMetrics.length > 0) {
-            const validVis = compMetrics.filter(m => m.visibility_index != null);
-            const validSoa = compMetrics.filter(m => m.share_of_answers_brand != null);
-            const validSent = compMetrics.filter(m => m.sentiment_score != null);
+          if (USE_OPTIMIZED_RECOMMENDATIONS) {
+            const result = await optimizedMetricsHelper.fetchCompetitorMetricsByDateRange({
+              competitorId: comp.id,
+              brandId,
+              customerId,
+              startDate: currentStartDate,
+              endDate: currentEndDate,
+              includeSentiment: true,
+            });
 
-            if (validVis.length > 0) {
-              compVis = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+            if (result.success && result.data.length > 0) {
+              const validVis = result.data.filter(m => m.visibility_index != null);
+              const validSoa = result.data.filter(m => m.share_of_answers != null);
+              const validSent = result.data.filter(m => m.sentiment_score != null);
+
+              if (validVis.length > 0) {
+                compVis = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+              }
+              if (validSoa.length > 0) {
+                compSoa = validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length;
+              }
+              if (validSent.length > 0) {
+                compSent = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+              }
             }
-            if (validSoa.length > 0) {
-              compSoa = validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length;
-            }
-            if (validSent.length > 0) {
-              compSent = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+          } else {
+            // Legacy: Query from old competitors table and extracted_positions
+            const { data: legacyCompetitors } = await supabaseAdmin
+              .from('competitors')
+              .select('id, name')
+              .eq('brand_id', brandId)
+              .eq('is_active', true)
+              .limit(5);
+
+            if (legacyCompetitors) {
+              const legacyComp = legacyCompetitors.find(c => c.name === comp.competitor_name);
+              if (legacyComp) {
+                const { data: compMetrics } = await supabaseAdmin
+                  .from('extracted_positions')
+                  .select('visibility_index, share_of_answers_brand, sentiment_score')
+                  .eq('competitor_id', legacyComp.id)
+                  .gte('created_at', currentStartDate)
+                  .lte('created_at', currentEndDate);
+
+                if (compMetrics && compMetrics.length > 0) {
+                  const validVis = compMetrics.filter(m => m.visibility_index != null);
+                  const validSoa = compMetrics.filter(m => m.share_of_answers_brand != null);
+                  const validSent = compMetrics.filter(m => m.sentiment_score != null);
+
+                  if (validVis.length > 0) {
+                    compVis = validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length;
+                  }
+                  if (validSoa.length > 0) {
+                    compSoa = validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length;
+                  }
+                  if (validSent.length > 0) {
+                    compSent = validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length;
+                  }
+                }
+              }
             }
           }
 
           competitorData.push({
-            name: comp.name,
+            name: comp.competitor_name || comp.name || 'Unknown',
             visibilityIndex: compVis,
             shareOfAnswers: compSoa,
             sentimentScore: compSent

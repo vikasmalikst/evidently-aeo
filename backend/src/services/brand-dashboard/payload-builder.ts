@@ -25,6 +25,7 @@ import {
   DISTRIBUTION_COLORS
 } from './utils'
 import { visibilityService } from './visibility.service'
+import { OptimizedMetricsHelper } from '../query-helpers/optimized-metrics.helper'
 
 /**
  * Helper function to detect if any filters are active
@@ -1697,15 +1698,37 @@ export async function buildDashboardPayload(
     console.warn(`[Dashboard] Error fetching previous period citations: ${prevCitationsError.message}`)
   }
 
-  const { data: previousPositions, error: prevPositionsError } = await supabaseAdmin
-    .from('extracted_positions')
-    .select('collector_result_id, share_of_answers_brand, visibility_index')
-    .eq('brand_id', brand.id)
-    .eq('customer_id', customerId)
-    .gte('created_at', previousStart.toISOString())
-    .lte('created_at', previousEnd.toISOString())
+  // Fetch previous period positions from new optimized schema
+  const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin)
+  let previousPositions: Array<{
+    collector_result_id: number | null
+    share_of_answers_brand: number | null
+    visibility_index: number | null
+  }> | null = null
+  let prevPositionsError: Error | null = null
 
-  if (prevPositionsError) {
+  try {
+    const result = await optimizedMetricsHelper.fetchBrandMetricsByDateRange({
+      brandId: brand.id,
+      customerId,
+      startDate: previousStart.toISOString(),
+      endDate: previousEnd.toISOString(),
+      includeSentiment: false, // We only need SOA and visibility for previous period
+    })
+
+    if (result.success && result.data.length > 0) {
+      // Transform to match legacy format for backwards compatibility
+      previousPositions = result.data.map(row => ({
+        collector_result_id: row.collector_result_id,
+        share_of_answers_brand: row.share_of_answers, // Map share_of_answers to share_of_answers_brand
+        visibility_index: row.visibility_index,
+      }))
+    } else if (result.error) {
+      prevPositionsError = new Error(result.error)
+      console.warn(`[Dashboard] Error fetching previous period positions from new schema: ${result.error}`)
+    }
+  } catch (error) {
+    prevPositionsError = error instanceof Error ? error : new Error(String(error))
     console.warn(`[Dashboard] Error fetching previous period positions: ${prevPositionsError.message}`)
   }
 

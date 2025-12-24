@@ -167,12 +167,12 @@ async function main() {
 
   // Test 5: Test Dashboard Service (should use new schema)
   await runTest('Dashboard Service', 'Build dashboard payload', async () => {
-    const { buildBrandDashboardPayload } = await import('../src/services/brand-dashboard/payload-builder');
+    const { buildDashboardPayload } = await import('../src/services/brand-dashboard/payload-builder');
     
-    // Get a test brand
+    // Get a test brand with all required fields
     const { data: brand } = await supabase
       .from('brands')
-      .select('id, customer_id')
+      .select('*')
       .limit(1)
       .single();
 
@@ -187,7 +187,7 @@ async function main() {
       endIso: new Date().toISOString(),
     };
 
-    await buildBrandDashboardPayload(brand, brand.customer_id, range, supabase);
+    await buildDashboardPayload(brand as any, brand.customer_id, range, {});
   });
 
   // Test 6: Test Topics Service (should use new schema)
@@ -208,16 +208,11 @@ async function main() {
     // Enable optimized query flag for this test
     process.env.USE_OPTIMIZED_TOPICS_QUERY = 'true';
 
-    const range = {
-      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      endDate: new Date(),
-    };
-
     await brandService.getBrandTopicsWithAnalytics(
       brand.id,
       brand.customer_id,
-      range.startDate.toISOString(),
-      range.endDate.toISOString()
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      new Date().toISOString()
     );
   });
 
@@ -239,16 +234,9 @@ async function main() {
     // Enable optimized query flag for this test
     process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION = 'true';
 
-    const range = {
-      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      endDate: new Date(),
-    };
-
     await sourceAttributionService.getSourceAttribution(
       brand.id,
-      brand.customer_id,
-      range.startDate.toISOString(),
-      range.endDate.toISOString()
+      brand.customer_id
     );
   });
 

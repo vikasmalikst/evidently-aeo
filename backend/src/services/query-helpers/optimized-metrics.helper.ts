@@ -638,6 +638,8 @@ export class OptimizedMetricsHelper {
           competitor_name: null, // Will be populated from brand_competitors if needed
           visibility_index: row.visibility_index || null,
           share_of_answers: row.share_of_answers || null,
+          competitor_mentions: row.competitor_mentions || 0,
+          competitor_positions: row.competitor_positions || [],
           ...(includeSentiment && competitorSentiment ? {
             sentiment_score: competitorSentiment.sentiment_score,
             sentiment_label: competitorSentiment.sentiment_label,

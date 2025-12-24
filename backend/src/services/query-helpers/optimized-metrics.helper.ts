@@ -582,6 +582,8 @@ export class OptimizedMetricsHelper {
           competitor_id,
           visibility_index,
           share_of_answers,
+          competitor_mentions,
+          competitor_positions,
           metric_facts!inner(
             collector_result_id,
             brand_id,

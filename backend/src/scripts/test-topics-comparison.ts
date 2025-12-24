@@ -14,6 +14,14 @@ import { supabaseAdmin } from '../config/database';
 const BRAND_ID = '5a57c430-6940-4198-a1f5-a443cbd044dc';
 const CUSTOMER_ID = '157c845c-9e87-4146-8479-cb8d045212bf';
 
+interface CompetitorMetrics {
+  competitorName: string;
+  soa: number | null;
+  visibility: number | null;
+  sentiment: number | null;
+  dataPointCount: number;
+}
+
 interface TopicMetrics {
   topic: string;
   brandSOA: number | null;
@@ -22,6 +30,7 @@ interface TopicMetrics {
   competitorAvgSOA: number | null;
   competitorAvgVisibility: number | null;
   competitorAvgSentiment: number | null;
+  competitors: Map<string, CompetitorMetrics>; // competitor_name -> metrics
   competitorCount: number;
   dataPointCount: number;
 }
@@ -37,6 +46,11 @@ interface ComparisonResult {
     competitorSOA: boolean;
     competitorVisibility: boolean;
     competitorSentiment: boolean;
+    competitorDetails: Map<string, {
+      soa: boolean;
+      visibility: boolean;
+      sentiment: boolean;
+    }>;
   };
 }
 
@@ -70,7 +84,7 @@ async function extractFromLegacySchema(): Promise<Map<string, TopicMetrics>> {
 
   console.log(`✅ Found ${data?.length || 0} rows in extracted_positions\n`);
 
-  // Group by topic
+  // Group by topic and competitor
   const topicMap = new Map<string, {
     brandSOA: number[];
     brandVisibility: number[];
@@ -79,6 +93,11 @@ async function extractFromLegacySchema(): Promise<Map<string, TopicMetrics>> {
     competitorVisibility: number[];
     competitorSentiment: number[];
     competitorNames: Set<string>;
+    competitorData: Map<string, {
+      soa: number[];
+      visibility: number[];
+      sentiment: number[];
+    }>;
   }>();
 
   (data || []).forEach((row: any) => {
@@ -94,6 +113,7 @@ async function extractFromLegacySchema(): Promise<Map<string, TopicMetrics>> {
         competitorVisibility: [],
         competitorSentiment: [],
         competitorNames: new Set(),
+        competitorData: new Map(),
       });
     }
 
@@ -114,24 +134,37 @@ async function extractFromLegacySchema(): Promise<Map<string, TopicMetrics>> {
         topicData.brandSentiment.push(row.sentiment_score);
       }
     } else {
-      // Competitor metrics
+      // Competitor metrics - track per competitor
+      const competitorName = row.competitor_name?.toLowerCase().trim() || 'unknown';
+      topicData.competitorNames.add(competitorName);
+
+      if (!topicData.competitorData.has(competitorName)) {
+        topicData.competitorData.set(competitorName, {
+          soa: [],
+          visibility: [],
+          sentiment: [],
+        });
+      }
+
+      const compData = topicData.competitorData.get(competitorName)!;
+
       if (typeof row.share_of_answers_competitor === 'number' && isFinite(row.share_of_answers_competitor)) {
         topicData.competitorSOA.push(row.share_of_answers_competitor);
+        compData.soa.push(row.share_of_answers_competitor);
       }
       if (typeof row.visibility_index_competitor === 'number' && isFinite(row.visibility_index_competitor)) {
         const vis = row.visibility_index_competitor < 2 ? row.visibility_index_competitor * 100 : row.visibility_index_competitor;
         topicData.competitorVisibility.push(vis);
+        compData.visibility.push(vis);
       }
       if (typeof row.sentiment_score_competitor === 'number' && isFinite(row.sentiment_score_competitor)) {
         topicData.competitorSentiment.push(row.sentiment_score_competitor);
-      }
-      if (row.competitor_name) {
-        topicData.competitorNames.add(row.competitor_name.toLowerCase().trim());
+        compData.sentiment.push(row.sentiment_score_competitor);
       }
     }
   });
 
-  // Calculate averages
+  // Calculate averages and per-competitor metrics
   const result = new Map<string, TopicMetrics>();
   topicMap.forEach((data, topic) => {
     const avgSOA = data.brandSOA.length > 0
@@ -154,6 +187,28 @@ async function extractFromLegacySchema(): Promise<Map<string, TopicMetrics>> {
       ? data.competitorSentiment.reduce((sum, v) => sum + v, 0) / data.competitorSentiment.length
       : null;
 
+    // Calculate per-competitor metrics
+    const competitors = new Map<string, CompetitorMetrics>();
+    data.competitorData.forEach((compData, compName) => {
+      const compSOA = compData.soa.length > 0
+        ? compData.soa.reduce((sum, v) => sum + v, 0) / compData.soa.length
+        : null;
+      const compVisibility = compData.visibility.length > 0
+        ? compData.visibility.reduce((sum, v) => sum + v, 0) / compData.visibility.length
+        : null;
+      const compSentiment = compData.sentiment.length > 0
+        ? compData.sentiment.reduce((sum, v) => sum + v, 0) / compData.sentiment.length
+        : null;
+
+      competitors.set(compName, {
+        competitorName: compName,
+        soa: compSOA,
+        visibility: compVisibility,
+        sentiment: compSentiment,
+        dataPointCount: compData.soa.length + compData.visibility.length + compData.sentiment.length,
+      });
+    });
+
     result.set(topic, {
       topic,
       brandSOA: avgSOA,
@@ -162,6 +217,7 @@ async function extractFromLegacySchema(): Promise<Map<string, TopicMetrics>> {
       competitorAvgSOA,
       competitorAvgVisibility,
       competitorAvgSentiment,
+      competitors,
       competitorCount: data.competitorNames.size,
       dataPointCount: data.brandSOA.length + data.competitorSOA.length,
     });
@@ -230,7 +286,7 @@ async function extractFromNewSchema(): Promise<Map<string, TopicMetrics>> {
 
   console.log(`✅ Found ${competitorData?.length || 0} competitor metric rows\n`);
 
-  // Group by topic
+  // Group by topic and competitor
   const topicMap = new Map<string, {
     brandSOA: number[];
     brandVisibility: number[];
@@ -239,6 +295,11 @@ async function extractFromNewSchema(): Promise<Map<string, TopicMetrics>> {
     competitorVisibility: number[];
     competitorSentiment: number[];
     competitorNames: Set<string>;
+    competitorData: Map<string, {
+      soa: number[];
+      visibility: number[];
+      sentiment: number[];
+    }>;
   }>();
 
   // Process brand metrics
@@ -255,6 +316,7 @@ async function extractFromNewSchema(): Promise<Map<string, TopicMetrics>> {
         competitorVisibility: [],
         competitorSentiment: [],
         competitorNames: new Set(),
+        competitorData: new Map(),
       });
     }
 
@@ -289,6 +351,7 @@ async function extractFromNewSchema(): Promise<Map<string, TopicMetrics>> {
         competitorVisibility: [],
         competitorSentiment: [],
         competitorNames: new Set(),
+        competitorData: new Map(),
       });
     }
 
@@ -299,18 +362,33 @@ async function extractFromNewSchema(): Promise<Map<string, TopicMetrics>> {
     cms.forEach((cm: any) => {
       if (!cm) return;
 
+      // Get competitor name
+      const bc = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
+      const competitorName = bc?.competitor_name?.toLowerCase().trim() || 'unknown';
+      
+      if (bc?.competitor_name) {
+        topicData.competitorNames.add(competitorName);
+      }
+
+      // Initialize competitor data if not exists
+      if (!topicData.competitorData.has(competitorName)) {
+        topicData.competitorData.set(competitorName, {
+          soa: [],
+          visibility: [],
+          sentiment: [],
+        });
+      }
+
+      const compData = topicData.competitorData.get(competitorName)!;
+
       if (cm.share_of_answers !== null && cm.share_of_answers !== undefined) {
         topicData.competitorSOA.push(cm.share_of_answers);
+        compData.soa.push(cm.share_of_answers);
       }
       if (cm.visibility_index !== null && cm.visibility_index !== undefined) {
         const vis = cm.visibility_index < 2 ? cm.visibility_index * 100 : cm.visibility_index;
         topicData.competitorVisibility.push(vis);
-      }
-
-      // Get competitor name
-      const bc = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
-      if (bc?.competitor_name) {
-        topicData.competitorNames.add(bc.competitor_name.toLowerCase().trim());
+        compData.visibility.push(vis);
       }
 
       // Find matching sentiment
@@ -318,11 +396,12 @@ async function extractFromNewSchema(): Promise<Map<string, TopicMetrics>> {
       const matchingSentiment = css.find((s: any) => s?.competitor_id === competitorId);
       if (matchingSentiment?.sentiment_score !== null && matchingSentiment?.sentiment_score !== undefined) {
         topicData.competitorSentiment.push(matchingSentiment.sentiment_score);
+        compData.sentiment.push(matchingSentiment.sentiment_score);
       }
     });
   });
 
-  // Calculate averages
+  // Calculate averages and per-competitor metrics
   const result = new Map<string, TopicMetrics>();
   topicMap.forEach((data, topic) => {
     const avgSOA = data.brandSOA.length > 0
@@ -345,6 +424,28 @@ async function extractFromNewSchema(): Promise<Map<string, TopicMetrics>> {
       ? data.competitorSentiment.reduce((sum, v) => sum + v, 0) / data.competitorSentiment.length
       : null;
 
+    // Calculate per-competitor metrics
+    const competitors = new Map<string, CompetitorMetrics>();
+    data.competitorData.forEach((compData, compName) => {
+      const compSOA = compData.soa.length > 0
+        ? compData.soa.reduce((sum, v) => sum + v, 0) / compData.soa.length
+        : null;
+      const compVisibility = compData.visibility.length > 0
+        ? compData.visibility.reduce((sum, v) => sum + v, 0) / compData.visibility.length
+        : null;
+      const compSentiment = compData.sentiment.length > 0
+        ? compData.sentiment.reduce((sum, v) => sum + v, 0) / compData.sentiment.length
+        : null;
+
+      competitors.set(compName, {
+        competitorName: compName,
+        soa: compSOA,
+        visibility: compVisibility,
+        sentiment: compSentiment,
+        dataPointCount: compData.soa.length + compData.visibility.length + compData.sentiment.length,
+      });
+    });
+
     result.set(topic, {
       topic,
       brandSOA: avgSOA,
@@ -353,6 +454,7 @@ async function extractFromNewSchema(): Promise<Map<string, TopicMetrics>> {
       competitorAvgSOA,
       competitorAvgVisibility,
       competitorAvgSentiment,
+      competitors,
       competitorCount: data.competitorNames.size,
       dataPointCount: data.brandSOA.length + data.competitorSOA.length,
     });
@@ -411,6 +513,7 @@ async function compareSchemas() {
         competitorAvgSOA: null,
         competitorAvgVisibility: null,
         competitorAvgSentiment: null,
+        competitors: new Map(),
         competitorCount: 0,
         dataPointCount: 0,
       };
@@ -423,9 +526,33 @@ async function compareSchemas() {
         competitorAvgSOA: null,
         competitorAvgVisibility: null,
         competitorAvgSentiment: null,
+        competitors: new Map(),
         competitorCount: 0,
         dataPointCount: 0,
       };
+
+      // Compare per-competitor metrics
+      const allCompetitorNames = new Set([
+        ...(legacy.competitors?.keys() || []),
+        ...(optimized.competitors?.keys() || []),
+      ]);
+
+      const competitorDetails = new Map<string, {
+        soa: boolean;
+        visibility: boolean;
+        sentiment: boolean;
+      }>();
+
+      allCompetitorNames.forEach(compName => {
+        const legComp = legacy.competitors?.get(compName);
+        const optComp = optimized.competitors?.get(compName);
+
+        competitorDetails.set(compName, {
+          soa: valuesMatch(legComp?.soa || null, optComp?.soa || null),
+          visibility: valuesMatch(legComp?.visibility || null, optComp?.visibility || null),
+          sentiment: valuesMatch(legComp?.sentiment || null, optComp?.sentiment || null),
+        });
+      });
 
       const match = {
         brandSOA: valuesMatch(legacy.brandSOA, optimized.brandSOA),
@@ -434,6 +561,7 @@ async function compareSchemas() {
         competitorSOA: valuesMatch(legacy.competitorAvgSOA, optimized.competitorAvgSOA),
         competitorVisibility: valuesMatch(legacy.competitorAvgVisibility, optimized.competitorAvgVisibility),
         competitorSentiment: valuesMatch(legacy.competitorAvgSentiment, optimized.competitorAvgSentiment),
+        competitorDetails,
       };
 
       const allMatch = Object.values(match).every(m => m);
@@ -489,8 +617,44 @@ async function compareSchemas() {
       console.log(`    Legacy:    ${formatValue(comp.legacy.competitorAvgSentiment).padStart(8)}  ${comp.match.competitorSentiment ? '✅' : '❌'}`);
       console.log(`    Optimized: ${formatValue(comp.optimized.competitorAvgSentiment).padStart(8)}`);
       
+      // Per-Competitor Breakdown
+      const allCompetitorNames = Array.from(new Set([
+        ...(comp.legacy.competitors?.keys() || []),
+        ...(comp.optimized.competitors?.keys() || []),
+      ])).sort();
+
+      if (allCompetitorNames.length > 0) {
+        console.log('\n🏢 PER-COMPETITOR BREAKDOWN:');
+        allCompetitorNames.forEach(compName => {
+          const legComp = comp.legacy.competitors?.get(compName);
+          const optComp = comp.optimized.competitors?.get(compName);
+          const compMatch = comp.match.competitorDetails?.get(compName);
+
+          const compStatus = compMatch && compMatch.soa && compMatch.visibility && compMatch.sentiment ? '✅' : '❌';
+          console.log(`\n  📌 ${compName.toUpperCase()}: ${compStatus}`);
+          
+          console.log(`    SOA:`);
+          console.log(`      Legacy:    ${formatValue(legComp?.soa || null).padStart(8)}  ${compMatch?.soa ? '✅' : '❌'}`);
+          console.log(`      Optimized: ${formatValue(optComp?.soa || null).padStart(8)}`);
+          
+          console.log(`    Visibility:`);
+          console.log(`      Legacy:    ${formatValue(legComp?.visibility || null).padStart(8)}  ${compMatch?.visibility ? '✅' : '❌'}`);
+          console.log(`      Optimized: ${formatValue(optComp?.visibility || null).padStart(8)}`);
+          
+          console.log(`    Sentiment:`);
+          console.log(`      Legacy:    ${formatValue(legComp?.sentiment || null).padStart(8)}  ${compMatch?.sentiment ? '✅' : '❌'}`);
+          console.log(`      Optimized: ${formatValue(optComp?.sentiment || null).padStart(8)}`);
+          
+          if (legComp || optComp) {
+            const legCount = legComp?.dataPointCount || 0;
+            const optCount = optComp?.dataPointCount || 0;
+            console.log(`    Data Points: ${legCount} (legacy) vs ${optCount} (optimized)`);
+          }
+        });
+      }
+      
       console.log(`\n  Competitor Count: ${comp.legacy.competitorCount} (legacy) vs ${comp.optimized.competitorCount} (optimized)`);
-      console.log(`  Data Points: ${comp.legacy.dataPointCount} (legacy) vs ${comp.optimized.dataPointCount} (optimized)`);
+      console.log(`  Total Data Points: ${comp.legacy.dataPointCount} (legacy) vs ${comp.optimized.dataPointCount} (optimized)`);
       console.log('\n');
     });
 

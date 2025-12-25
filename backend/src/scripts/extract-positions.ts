@@ -28,7 +28,8 @@ async function main() {
   console.log('╚════════════════════════════════════════════════════════════════╝\n');
 
   try {
-    const processed = await positionExtractionService.extractPositionsForNewResults();
+    const result = await positionExtractionService.extractPositionsForNewResults();
+    const processed = result.count;
     
     console.log('\n╔════════════════════════════════════════════════════════════════╗');
     console.log('║                        ✅ COMPLETE!                            ║');

@@ -281,8 +281,267 @@ router.post('/global-settings/consolidated-analysis/ollama/test', async (req: Re
 });
 
 /**
+ * GET /api/admin/brands/:brandId/local-llm
+ * Get brand-specific Ollama configuration
+ */
+router.get('/brands/:brandId/local-llm', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    
+    if (!brandId) {
+      return res.status(400).json({
+        success: false,
+        error: 'brandId is required'
+      });
+    }
+    
+    // Get brand with local_llm column
+    const { data: brand, error: brandError } = await supabase
+      .from('brands')
+      .select('local_llm')
+      .eq('id', brandId)
+      .single();
+    
+    if (brandError || !brand) {
+      return res.status(404).json({
+        success: false,
+        error: 'Brand not found'
+      });
+    }
+    
+    // Return local_llm config or default values
+    if (brand.local_llm && typeof brand.local_llm === 'object') {
+      const config = brand.local_llm as any;
+      return res.json({
+        success: true,
+        data: {
+          ollamaUrl: config.ollamaUrl || 'http://localhost:11434',
+          ollamaModel: config.ollamaModel || 'qwen2.5:latest',
+          useOllama: config.useOllama || false,
+        }
+      });
+    }
+    
+    // Return default values if not configured
+    res.json({
+      success: true,
+      data: {
+        ollamaUrl: 'http://localhost:11434',
+        ollamaModel: 'qwen2.5:latest',
+        useOllama: false,
+      }
+    });
+  } catch (error) {
+    console.error('Error getting brand Ollama config:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get brand Ollama configuration'
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/brands/:brandId/local-llm
+ * Update brand-specific Ollama configuration
+ */
+router.put('/brands/:brandId/local-llm', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const { ollamaUrl, ollamaModel, useOllama } = req.body;
+    
+    if (!brandId) {
+      return res.status(400).json({
+        success: false,
+        error: 'brandId is required'
+      });
+    }
+    
+    // Validate inputs
+    if (ollamaUrl && typeof ollamaUrl !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'ollamaUrl must be a string'
+      });
+    }
+    
+    if (ollamaModel && typeof ollamaModel !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'ollamaModel must be a string'
+      });
+    }
+    
+    if (useOllama !== undefined && typeof useOllama !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'useOllama must be a boolean'
+      });
+    }
+    
+    // Validate URL format if provided
+    if (ollamaUrl) {
+      try {
+        new URL(ollamaUrl);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid URL format for ollamaUrl'
+        });
+      }
+    }
+    
+    // Get existing brand to check if it exists
+    const { data: existingBrand, error: fetchError } = await supabase
+      .from('brands')
+      .select('local_llm')
+      .eq('id', brandId)
+      .single();
+    
+    if (fetchError || !existingBrand) {
+      return res.status(404).json({
+        success: false,
+        error: 'Brand not found'
+      });
+    }
+    
+    // Build local_llm config
+    const existingConfig = (existingBrand.local_llm as any) || {};
+    const newConfig = {
+      useOllama: useOllama !== undefined ? useOllama : (existingConfig.useOllama || false),
+      ollamaUrl: ollamaUrl || existingConfig.ollamaUrl || 'http://localhost:11434',
+      ollamaModel: ollamaModel || existingConfig.ollamaModel || 'qwen2.5:latest',
+    };
+    
+    // If useOllama is false, set to null (clean up)
+    const localLlmValue = newConfig.useOllama ? newConfig : null;
+    
+    // Update brand with new local_llm config
+    const { error: updateError } = await supabase
+      .from('brands')
+      .update({ local_llm: localLlmValue })
+      .eq('id', brandId);
+    
+    if (updateError) {
+      throw new Error(`Failed to update brand: ${updateError.message}`);
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        ollamaUrl: newConfig.ollamaUrl,
+        ollamaModel: newConfig.ollamaModel,
+        useOllama: newConfig.useOllama,
+      },
+      message: 'Brand Ollama configuration updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating brand Ollama config:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update brand Ollama configuration'
+    });
+  }
+});
+
+/**
+ * GET /api/admin/brands/:brandId/local-llm/health
+ * Check Ollama API health/availability for a specific brand
+ */
+router.get('/brands/:brandId/local-llm/health', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    
+    if (!brandId) {
+      return res.status(400).json({
+        success: false,
+        error: 'brandId is required'
+      });
+    }
+    
+    // Verify brand exists first
+    const { data: brand, error: brandError } = await supabase
+      .from('brands')
+      .select('id')
+      .eq('id', brandId)
+      .single();
+    
+    if (brandError || !brand) {
+      return res.status(404).json({
+        success: false,
+        error: 'Brand not found'
+      });
+    }
+    
+    // Import and use brand-specific health check
+    const { checkOllamaHealthForBrand } = await import('../services/scoring/ollama-client.service');
+    const health = await checkOllamaHealthForBrand(brandId);
+    
+    res.json({
+      success: true,
+      data: health
+    });
+  } catch (error) {
+    console.error('Error checking brand Ollama health:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to check brand Ollama health';
+    console.error('Error details:', error instanceof Error ? error.stack : error);
+    res.status(500).json({
+      success: false,
+      error: errorMessage
+    });
+  }
+});
+
+/**
+ * POST /api/admin/brands/:brandId/local-llm/test
+ * Test Ollama with a custom prompt for a specific brand
+ */
+router.post('/brands/:brandId/local-llm/test', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const { prompt } = req.body;
+    
+    if (!brandId) {
+      return res.status(400).json({
+        success: false,
+        error: 'brandId is required'
+      });
+    }
+    
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'prompt is required and must be a string'
+      });
+    }
+    
+    const { testOllamaPromptForBrand } = await import('../services/scoring/ollama-client.service');
+    const result = await testOllamaPromptForBrand(brandId, prompt);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        data: {
+          response: result.response,
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error || 'Test failed'
+      });
+    }
+  } catch (error) {
+    console.error('Error testing brand Ollama prompt:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to test brand Ollama prompt'
+    });
+  }
+});
+
+/**
  * PUT /api/admin/global-settings/consolidated-analysis/ollama
- * Update Ollama configuration for consolidated analysis
+ * Update Ollama configuration for consolidated analysis (DEPRECATED - use brand-specific endpoints)
  */
 router.put('/global-settings/consolidated-analysis/ollama', async (req: Request, res: Response) => {
   try {

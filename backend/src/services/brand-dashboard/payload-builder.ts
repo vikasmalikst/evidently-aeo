@@ -401,15 +401,23 @@ export async function buildDashboardPayload(
   }
 
   // Generate all dates in the range for time-series
+  // IMPORTANT: Parse YYYY-MM-DD strings as calendar dates and use UTC methods to avoid timezone shifts
+  // This ensures date ranges are generated correctly regardless of server timezone
   const generateDateRange = (start: string, end: string): string[] => {
     const dates: string[] = []
-    const startDate = new Date(start)
-    const endDate = new Date(end)
+    
+    // Parse date strings (YYYY-MM-DD) as calendar dates in UTC
+    const [startYear, startMonth, startDay] = start.split('-').map(Number)
+    const [endYear, endMonth, endDay] = end.split('-').map(Number)
+    
+    const startDate = new Date(Date.UTC(startYear, startMonth - 1, startDay))
+    const endDate = new Date(Date.UTC(endYear, endMonth - 1, endDay))
     const current = new Date(startDate)
     
+    // Generate dates using UTC methods to avoid timezone shifts
     while (current <= endDate) {
       dates.push(current.toISOString().split('T')[0])
-      current.setDate(current.getDate() + 1)
+      current.setUTCDate(current.getUTCDate() + 1)
     }
     return dates
   }

@@ -129,9 +129,10 @@ async function processSingleRun(run: ScoringJobRun): Promise<void> {
   const startedAt = new Date();
 
   try {
-    const positionsProcessed = await positionExtractionService.extractPositionsForNewResults(
+    const positionResult = await positionExtractionService.extractPositionsForNewResults(
       extractionOptions,
     );
+    const positionsProcessed = positionResult.count;
     const sentimentsProcessed = await collectorSentimentService.scorePending(sentimentOptions);
     
     // Use new separated services for brand and competitor sentiment

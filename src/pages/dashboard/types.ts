@@ -111,6 +111,7 @@ export interface DashboardPayload {
     share: number;
     shareOfSearch?: number;
     visibility?: number;
+    sentiment?: number | null;
     delta: number;
     brandPresenceCount: number;
     totalQueries?: number;
@@ -159,6 +160,7 @@ export interface LLMVisibilitySliceUI {
   share: number;
   shareOfSearch?: number;
   visibility?: number;
+  sentiment?: number | null;
   delta: number;
   brandPresenceCount: number;
   color: string;

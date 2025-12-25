@@ -326,6 +326,7 @@ export const Dashboard = () => {
                     share: slice.shareOfSearch ?? slice.share,
                     shareOfSearch: slice.shareOfSearch ?? slice.share,
                     visibility: slice.visibility ?? 0,
+                    sentiment: slice.sentiment ?? null,
                     delta: slice.delta ?? 0,
                     brandPresenceCount: brandPresencePercentage,
                     color: slice.color || '#64748b',

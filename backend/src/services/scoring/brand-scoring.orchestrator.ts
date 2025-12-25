@@ -187,7 +187,8 @@ export class BrandScoringService {
         // Run scoring operations sequentially (safer, better error handling)
         // 1. Position extraction
         try {
-          result.positionsProcessed = await positionExtractionService.extractPositionsForNewResults(positionOptions);
+          const positionResult = await positionExtractionService.extractPositionsForNewResults(positionOptions);
+          result.positionsProcessed = positionResult.count;
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           result.errors.push({ operation: 'position_extraction', error: errorMsg });
@@ -263,7 +264,7 @@ export class BrandScoringService {
 
         // Process positions result
         if (positionsResult.status === 'fulfilled') {
-          result.positionsProcessed = positionsResult.value;
+          result.positionsProcessed = positionsResult.value.count;
         } else {
           const errorMsg = positionsResult.reason instanceof Error
             ? positionsResult.reason.message
@@ -297,7 +298,8 @@ export class BrandScoringService {
         // Run scoring operations sequentially (safer, better error handling)
         // 1. Position extraction
         try {
-          result.positionsProcessed = await positionExtractionService.extractPositionsForNewResults(positionOptions);
+          const positionResult = await positionExtractionService.extractPositionsForNewResults(positionOptions);
+          result.positionsProcessed = positionResult.count;
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           result.errors.push({ operation: 'position_extraction', error: errorMsg });

@@ -192,9 +192,18 @@ export const SearchVisibility = () => {
   } = useManualBrandDashboard();
 
   // Convert date strings to ISO format for API
+  // IMPORTANT: Treat startDate/endDate as calendar dates (YYYY-MM-DD) and convert to UTC boundaries
+  // This ensures the selected date range matches what the user sees, regardless of timezone
   const dateRange = useMemo(() => {
-    const start = new Date(startDate + 'T00:00:00');
-    const end = new Date(endDate + 'T23:59:59.999');
+    // Parse calendar dates (YYYY-MM-DD) and create UTC boundaries
+    // This preserves the calendar date regardless of user's timezone
+    const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+    const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+    
+    // Create UTC date boundaries for the selected calendar dates
+    const start = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0, 0));
+    const end = new Date(Date.UTC(endYear, endMonth - 1, endDay, 23, 59, 59, 999));
+    
     return {
       startDate: start.toISOString(),
       endDate: end.toISOString()

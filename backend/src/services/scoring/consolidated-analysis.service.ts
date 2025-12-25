@@ -254,13 +254,13 @@ export class ConsolidatedAnalysisService {
         brandName: brandName,
       });
 
-      // Check if Ollama should be used (optional path - doesn't affect existing functionality)
-      const useOllama = await shouldUseOllama();
+      // Check if Ollama should be used (brand-specific)
+      const useOllama = await shouldUseOllama(brandId);
       const llmProvider: 'ollama' | 'openrouter' = useOllama ? 'ollama' : 'openrouter';
       
       // Call LLM API - either Ollama or OpenRouter (existing functionality)
       const result = useOllama 
-        ? await this.callOllamaAPI(prompt)
+        ? await this.callOllamaAPI(prompt, brandId)
         : await this.callOpenRouterAPI(prompt);
 
       // Merge cached citations with LLM results
@@ -460,16 +460,16 @@ Respond with ONLY valid JSON in this exact structure:
   }
 
   /**
-   * Call Ollama API (separate, modular function - doesn't affect existing functionality)
+   * Call Ollama API (separate, modular function - brand-specific)
    */
-  private async callOllamaAPI(prompt: string): Promise<ConsolidatedAnalysisResult> {
+  private async callOllamaAPI(prompt: string, brandId?: string): Promise<ConsolidatedAnalysisResult> {
     console.log('🦙 Calling Ollama for consolidated analysis...');
 
     const systemMessage = 'You are a precise analysis assistant. Always respond with valid JSON only, no explanations.';
     
     try {
-      // Use the separate Ollama client service
-      const fullResponse = await callOllamaClientAPI(systemMessage, prompt);
+      // Use the separate Ollama client service (brand-specific)
+      const fullResponse = await callOllamaClientAPI(systemMessage, prompt, brandId);
 
       // Extract JSON from response (handle markdown code blocks)
       let jsonStr = typeof fullResponse === 'string' ? fullResponse.trim() : String(fullResponse).trim();

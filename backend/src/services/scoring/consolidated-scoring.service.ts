@@ -82,6 +82,126 @@ export class ConsolidatedScoringService {
   }
 
   /**
+   * Process a single collector_result with per-result batching
+   * OPTIMIZATION: Batches all database operations (positions + sentiment) for one collector_result together
+   * This reduces database round trips from 5+ operations to 1 batch per collector_result
+   */
+  private async processSingleResultWithBatching(
+    collectorResult: any,
+    brandId: string,
+    customerId: string,
+    result: ConsolidatedScoringResult,
+    processedCount: number,
+    totalCount: number
+  ): Promise<void> {
+    const collectorResultId = collectorResult.id;
+    
+    // Track success status for each step
+    let step1Success = false;
+    let step2Success = false;
+    let step3Success = false;
+
+    try {
+      // Step 1: Run consolidated analysis (or get from cache)
+      console.log(`\n   📊 [Item ${processedCount}/${totalCount}] Processing collector_result ${collectorResultId}...`);
+      
+      // Check if analysis exists in DB cache
+      let analysis = await this.getCachedAnalysisFromDB(collectorResultId);
+      let citationsStored = false;
+      
+      if (analysis) {
+        console.log(`   ♻️ Using cached analysis from DB for collector_result ${collectorResultId}`);
+        step1Success = true;
+        citationsStored = true;
+      } else {
+        // Run new analysis (this stores citations during analysis)
+        analysis = await this.runConsolidatedAnalysis(collectorResult, brandId, customerId);
+        if (!analysis) {
+          console.warn(`   ⚠️ No analysis returned for collector_result ${collectorResultId}`);
+          result.errors.push({
+            collectorResultId,
+            error: 'Step 1 failed: No analysis returned',
+          });
+          return;
+        }
+        step1Success = true;
+        citationsStored = true;
+      }
+
+      if (citationsStored) {
+        result.citationsProcessed++;
+      }
+
+      // Step 2 & 3: Extract positions and prepare sentiment, then batch save everything together
+      console.log(`   📍 [Item ${processedCount}/${totalCount}] Extracting positions for collector_result ${collectorResultId}...`);
+      
+      try {
+        const { positionExtractionService } = await import('./position-extraction.service');
+        // OPTIMIZATION: Pass collector result data to avoid redundant fetch
+        const positionPayload = await positionExtractionService.extractPositionPayloadForBatch(collectorResultId, collectorResult);
+        
+        if (positionPayload) {
+          const totalRows = 1 + positionPayload.competitorRows.length;
+          console.log(`   📊 [Item ${processedCount}/${totalCount}] Extracted ${totalRows} position rows for collector_result ${collectorResultId} (1 brand, ${positionPayload.competitorRows.length} competitors)`);
+          
+          // Prepare sentiment data if available
+          let sentimentData: any = undefined;
+          if (analysis && analysis.sentiment) {
+            const competitorNames = Object.keys(analysis.products?.competitors || {});
+            sentimentData = {
+              brandSentiment: analysis.sentiment.brand,
+              competitorSentiment: analysis.sentiment.competitors || {},
+              competitorNames: competitorNames,
+            };
+            console.log(`   💾 [Item ${processedCount}/${totalCount}] Prepared sentiment data for collector_result ${collectorResultId}`);
+          }
+          
+          // OPTIMIZATION: Batch save all operations together (positions + sentiment)
+          console.log(`   📦 [Item ${processedCount}/${totalCount}] Batch saving all operations for collector_result ${collectorResultId}...`);
+          const saveResult = await positionExtractionService.batchSaveCollectorResult(positionPayload, sentimentData);
+          
+          console.log(`   ✅ [Item ${processedCount}/${totalCount}] Batch saved all operations for collector_result ${collectorResultId} (metric_fact_id: ${saveResult.metricFactId})`);
+          
+          result.positionsProcessed++;
+          if (sentimentData) {
+            result.sentimentsProcessed++;
+          }
+          
+          step2Success = true;
+          step3Success = !!sentimentData;
+        } else {
+          console.warn(`   ⚠️ No position payload extracted for collector_result ${collectorResultId}`);
+          step2Success = true; // Consider it success if no error thrown
+          step3Success = true;
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`   ❌ Batch save failed for collector_result ${collectorResultId}:`, errorMsg);
+        result.errors.push({
+          collectorResultId,
+          error: `Batch save failed: ${errorMsg}`,
+        });
+        step2Success = false;
+        step3Success = false;
+      }
+
+      // Track success
+      if (step1Success) {
+        result.processed++;
+      }
+
+      console.log(`   ✅ [Item ${processedCount}/${totalCount}] Completed all steps for collector_result ${collectorResultId}`);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`   ❌ Error processing collector_result ${collectorResultId}:`, errorMsg);
+      result.errors.push({
+        collectorResultId,
+        error: errorMsg,
+      });
+    }
+  }
+
+  /**
    * Process a single collector_result completely (Step 1 → Step 2 → Step 3)
    * Used for incremental processing when Ollama is enabled
    */
@@ -132,17 +252,41 @@ export class ConsolidatedScoringService {
 
       // Step 2: Extract positions for this single result
       console.log(`   📍 [Item ${processedCount}/${totalCount}] Extracting positions for collector_result ${collectorResultId}...`);
+      let metricFactId: number | null = null;
+      let competitorIdMap: Map<string, string> = new Map();
+      
       try {
         const { positionExtractionService } = await import('./position-extraction.service');
-        const positionsCount = await positionExtractionService.extractPositionsForNewResults({
+        const positionResult = await positionExtractionService.extractPositionsForNewResults({
           customerId,
           brandIds: [brandId],
           collectorResultIds: [collectorResultId], // Process only this one
         });
         
-        if (positionsCount > 0) {
-          result.positionsProcessed += positionsCount;
+        if (positionResult.count > 0) {
+          result.positionsProcessed += positionResult.count;
           console.log(`   ✅ Positions extracted for collector_result ${collectorResultId}`);
+          
+          // OPTIMIZATION: Use metric_fact_id from position extraction result (no redundant query needed)
+          const positionData = positionResult.results.get(collectorResultId);
+          if (positionData) {
+            metricFactId = positionData.metricFactId;
+            competitorIdMap = positionData.competitorIdMap;
+            console.log(`   ✅ [Optimization] Using metric_fact_id ${metricFactId} for collector_result ${collectorResultId} (from position extraction)`);
+          } else {
+            console.warn(`   ⚠️ [Optimization] No position data returned for collector_result ${collectorResultId}, falling back to query`);
+            // Fallback: query if data not returned (shouldn't happen, but safe fallback)
+            const { data: metricFact, error: metricFactError } = await this.supabase
+              .from('metric_facts')
+              .select('id')
+              .eq('collector_result_id', collectorResultId)
+              .single();
+            
+            if (!metricFactError && metricFact) {
+              metricFactId = metricFact.id;
+            }
+          }
+          
           step2Success = true;
         } else {
           console.warn(`   ⚠️ No positions extracted for collector_result ${collectorResultId}`);
@@ -160,13 +304,31 @@ export class ConsolidatedScoringService {
       }
 
       // Step 3: Store sentiment for this single result
-      if (analysis && analysis.sentiment) {
+      if (analysis && analysis.sentiment && metricFactId) {
         console.log(`   💾 [Item ${processedCount}/${totalCount}] Storing sentiment for collector_result ${collectorResultId}...`);
         try {
           const competitorNames = analysis.sentiment.competitors 
             ? Object.keys(analysis.sentiment.competitors) 
             : [];
-          await this.storeSentiment(collectorResult, analysis, competitorNames);
+          
+          // OPTIMIZATION: Batch fetch competitor IDs once per brand (not per collector_result)
+          // This is done lazily - only fetch if we don't have them cached
+          if (competitorNames.length > 0 && competitorIdMap.size === 0) {
+            const { data: competitorData, error: compFetchError } = await this.supabase
+              .from('brand_competitors')
+              .select('id, competitor_name')
+              .eq('brand_id', brandId)
+              .in('competitor_name', competitorNames);
+            
+            if (!compFetchError && competitorData) {
+              competitorData.forEach(comp => {
+                competitorIdMap.set(comp.competitor_name, comp.id);
+              });
+              console.log(`   ✅ [Optimization] Cached ${competitorIdMap.size} competitor IDs for brand ${brandId}`);
+            }
+          }
+          
+          await this.storeSentiment(collectorResult, analysis, competitorNames, metricFactId, brandId, competitorIdMap);
           result.sentimentsProcessed++;
           console.log(`   ✅ Sentiment stored for collector_result ${collectorResultId}`);
           step3Success = true;
@@ -179,6 +341,8 @@ export class ConsolidatedScoringService {
           });
           step3Success = false;
         }
+      } else if (analysis && analysis.sentiment && !metricFactId) {
+        console.warn(`   ⚠️ Skipping sentiment storage - no metric_fact_id found for collector_result ${collectorResultId}`);
       } else {
         console.log(`   ⏭️ Skipping sentiment storage for collector_result ${collectorResultId} (no sentiment data)`);
         step3Skipped = true;
@@ -379,9 +543,9 @@ export class ConsolidatedScoringService {
       return result;
     }
 
-    // Check if Ollama is enabled (for sequential processing)
+    // Check if Ollama is enabled (for sequential processing) - brand-specific
     const { shouldUseOllama } = await import('./ollama-client.service');
-    const useOllama = await shouldUseOllama();
+    const useOllama = await shouldUseOllama(brandId);
     
     if (useOllama) {
       console.log(`🦙 Ollama is enabled - processing sequentially (one answer at a time)...`);
@@ -396,8 +560,10 @@ export class ConsolidatedScoringService {
     if (useOllama) {
       // INCREMENTAL PROCESSING: Process each item completely (Step 1 → Step 2 → Step 3) before moving to next
       // This provides real-time results and better fault tolerance
+      // OPTIMIZATION: Batch all database operations for each collector_result together (per-result batching)
       console.log(`\n🔄 Using incremental processing (Ollama enabled)`);
       console.log(`   Each item will be fully processed (analysis → positions → sentiment) before moving to next`);
+      console.log(`   📦 All database operations for each collector_result will be batched together for efficiency`);
       
       for (const collectorResult of resultsToProcess) {
         if (!collectorResult || !collectorResult.id) {
@@ -413,8 +579,8 @@ export class ConsolidatedScoringService {
           continue;
         }
 
-        // Process this item completely (all 3 steps)
-        await this.processSingleResultIncrementally(
+        // Process this item completely (all 3 steps) with per-result batching
+        await this.processSingleResultWithBatching(
           collectorResult,
           brandId,
           customerId,
@@ -425,7 +591,7 @@ export class ConsolidatedScoringService {
       }
 
       // For Ollama, we're done - all steps completed incrementally
-      // Note: citationsProcessed is tracked during processSingleResultIncrementally
+      // Note: citationsProcessed is tracked during processSingleResultWithBatching
       // when Step 1 succeeds (citations are stored during analysis, independent of Steps 2/3)
       console.log(`\n✅ Incremental processing complete!`);
       console.log(`   Processed: ${result.processed}`);
@@ -511,7 +677,7 @@ export class ConsolidatedScoringService {
       console.log(`   📋 Passing ${analyzedCollectorResultIds.length} collector_result IDs to position extraction:`, 
         analyzedCollectorResultIds.slice(0, 10).join(', ') + (analyzedCollectorResultIds.length > 10 ? '...' : ''));
       
-      const positionsCount = await positionExtractionService.extractPositionsForNewResults({
+      const positionResult = await positionExtractionService.extractPositionsForNewResults({
         customerId,
         brandIds: [brandId],
         since,
@@ -519,13 +685,13 @@ export class ConsolidatedScoringService {
         // Pass specific IDs to ensure we process the same results that were analyzed
         collectorResultIds: analyzedCollectorResultIds.length > 0 ? analyzedCollectorResultIds : undefined,
       });
-      result.positionsProcessed = positionsCount;
-      console.log(`   ✅ Position extraction complete: ${positionsCount} results processed`);
+      result.positionsProcessed = positionResult.count;
+      console.log(`   ✅ Position extraction complete: ${positionResult.count} results processed`);
       console.log(`   📊 Position rows should now exist for collector_result IDs:`, 
         analyzedCollectorResultIds.slice(0, 10).join(', ') + (analyzedCollectorResultIds.length > 10 ? '...' : ''));
       
       // Verify positions were actually created
-      if (positionsCount === 0 && analyzedCollectorResultIds.length > 0) {
+      if (positionResult.count === 0 && analyzedCollectorResultIds.length > 0) {
         console.warn(`⚠️ Position extraction returned 0 results but we expected positions for ${analyzedCollectorResultIds.length} collector results`);
         console.warn(`   This might indicate an issue. Check position extraction logs above.`);
       }
@@ -581,7 +747,44 @@ export class ConsolidatedScoringService {
           ? Object.keys(analysis.sentiment.competitors) 
           : [];
         console.log(`   💾 Storing sentiment for collector_result ${collectorResult.id} (${competitorNames.length} competitors)`);
-        await this.storeSentiment(collectorResult, analysis, competitorNames);
+        
+        // OPTIMIZATION: Fetch metric_fact_id and brand_id (single query, avoids redundant brand_id query)
+        const { data: metricFact, error: metricFactError } = await this.supabase
+          .from('metric_facts')
+          .select('id, brand_id')
+          .eq('collector_result_id', collectorResult.id)
+          .single();
+        
+        if (metricFactError || !metricFact) {
+          console.warn(`   ⚠️ No metric_fact found for collector_result ${collectorResult.id}, skipping sentiment`);
+          sentimentSkippedCount++;
+          continue;
+        }
+        
+        // OPTIMIZATION: Batch fetch competitor IDs once per brand (cache for reuse)
+        let competitorIdMap = new Map<string, string>();
+        if (competitorNames.length > 0) {
+          const { data: competitorData, error: compFetchError } = await this.supabase
+            .from('brand_competitors')
+            .select('id, competitor_name')
+            .eq('brand_id', metricFact.brand_id)
+            .in('competitor_name', competitorNames);
+          
+          if (!compFetchError && competitorData) {
+            competitorData.forEach(comp => {
+              competitorIdMap.set(comp.competitor_name, comp.id);
+            });
+          }
+        }
+        
+        await this.storeSentiment(
+          collectorResult, 
+          analysis, 
+          competitorNames, 
+          metricFact.id, 
+          metricFact.brand_id, 
+          competitorIdMap
+        );
         result.sentimentsProcessed++;
         sentimentStoredCount++;
         console.log(`   ✅ Sentiment stored for collector_result ${collectorResult.id}`);
@@ -805,10 +1008,21 @@ export class ConsolidatedScoringService {
    * Store sentiment in NEW OPTIMIZED SCHEMA
    * Writes to: brand_sentiment, competitor_sentiment
    */
+  /**
+   * Store sentiment for brand and competitors
+   * OPTIMIZATION: Accepts metric_fact_id, brand_id, and competitorIdMap to avoid redundant queries
+   * 
+   * ATOMICITY NOTE: Uses upsert operations which are atomic at the row level.
+   * For full transaction support, consider using Supabase RPC functions with explicit transactions,
+   * but current upsert approach provides good reliability and handles concurrent updates better than delete+insert.
+   */
   private async storeSentiment(
     collectorResult: any,
     analysis: any,
-    competitorNames: string[]
+    competitorNames: string[],
+    metricFactId: number,
+    brandId: string,
+    competitorIdMap: Map<string, string>
   ): Promise<void> {
     const collectorResultId = collectorResult.id;
     
@@ -818,24 +1032,8 @@ export class ConsolidatedScoringService {
       return;
     }
 
-    console.log(`   🔍 [storeSentiment] Looking for metric_fact for collector_result ${collectorResultId}...`);
-
-    // Get metric_fact for this collector_result
-    const { data: metricFact, error: metricFactError } = await this.supabase
-      .from('metric_facts')
-      .select('id, brand_id')
-      .eq('collector_result_id', collectorResultId)
-      .single();
-
-    if (metricFactError || !metricFact) {
-      console.error(`   ❌ [storeSentiment] No metric_fact found for collector_result ${collectorResultId}:`, metricFactError?.message);
-      console.error(`      This means position extraction did not create a metric_fact for this collector_result`);
-      console.error(`      Check if position extraction processed collector_result ${collectorResultId}`);
-      return;
-    }
-
-    const metricFactId = metricFact.id;
-    console.log(`   ✅ [storeSentiment] Found metric_fact (id: ${metricFactId}) for collector_result ${collectorResultId}`);
+    // OPTIMIZATION: Use provided metric_fact_id instead of querying
+    console.log(`   ✅ [storeSentiment] Using metric_fact_id ${metricFactId} for collector_result ${collectorResultId} (from position extraction)`);
 
     // Upsert brand sentiment
     if (analysis.sentiment.brand) {
@@ -868,40 +1066,32 @@ export class ConsolidatedScoringService {
     if (analysis.sentiment.competitors && competitorNames && competitorNames.length > 0) {
       console.log(`   📝 [storeSentiment] Processing sentiment for ${competitorNames.length} competitors: ${competitorNames.join(', ')}`);
       
-      // Get competitor IDs from brand_competitors table
-      const { data: competitorData, error: compFetchError } = await this.supabase
-        .from('brand_competitors')
-        .select('id, competitor_name')
-        .eq('brand_id', metricFact.brand_id)
-        .in('competitor_name', competitorNames);
+      // OPTIMIZATION: Use provided competitorIdMap instead of querying
+      // If map is empty, fetch competitor IDs (fallback for edge cases)
+      let effectiveCompetitorIdMap = competitorIdMap;
+      if (!competitorIdMap || competitorIdMap.size === 0) {
+        console.log(`   🔍 [storeSentiment] Competitor ID map empty, fetching from database (fallback)...`);
+        const { data: competitorData, error: compFetchError } = await this.supabase
+          .from('brand_competitors')
+          .select('id, competitor_name')
+          .eq('brand_id', brandId)
+          .in('competitor_name', competitorNames);
 
-      if (compFetchError) {
-        console.error(`   ❌ [storeSentiment] Failed to fetch competitor IDs:`, compFetchError.message);
-        throw new Error(`Failed to fetch competitor IDs: ${compFetchError.message}`);
+        if (compFetchError) {
+          console.error(`   ❌ [storeSentiment] Failed to fetch competitor IDs:`, compFetchError.message);
+          throw new Error(`Failed to fetch competitor IDs: ${compFetchError.message}`);
+        }
+
+        effectiveCompetitorIdMap = new Map<string, string>();
+        (competitorData || []).forEach(comp => {
+          effectiveCompetitorIdMap.set(comp.competitor_name, comp.id);
+        });
       }
-
-      // Create a map of competitor_name -> competitor_id
-      const competitorIdMap = new Map<string, string>();
-      (competitorData || []).forEach(comp => {
-        competitorIdMap.set(comp.competitor_name, comp.id);
-      });
       
-      // Delete existing competitor_sentiment for this metric_fact (for idempotency)
-      console.log(`   🗑️ [storeSentiment] Deleting existing competitor_sentiment...`);
-      const { error: deleteCompError } = await this.supabase
-        .from('competitor_sentiment')
-        .delete()
-        .eq('metric_fact_id', metricFactId);
-
-      if (deleteCompError) {
-        console.warn(`   ⚠️ [storeSentiment] Warning deleting competitor_sentiment:`, deleteCompError.message);
-        // Don't throw - might not exist
-      }
-
       // Build competitor_sentiment rows
       const competitorSentimentRows = [];
       for (const compName of competitorNames) {
-        const competitorId = competitorIdMap.get(compName);
+        const competitorId = effectiveCompetitorIdMap.get(compName);
         if (!competitorId) {
           console.warn(`   ⚠️ [storeSentiment] Competitor "${compName}" not found in brand_competitors table`);
           continue;
@@ -926,18 +1116,23 @@ export class ConsolidatedScoringService {
       }
 
       if (competitorSentimentRows.length > 0) {
-        console.log(`   💾 [storeSentiment] Inserting ${competitorSentimentRows.length} competitor_sentiment rows...`);
+        // OPTIMIZATION: Use upsert with ON CONFLICT instead of delete+insert
+        // This is atomic, more efficient, and handles concurrent updates better
+        console.log(`   💾 [storeSentiment] Upserting ${competitorSentimentRows.length} competitor_sentiment rows...`);
         
         const { error: compSentimentError } = await this.supabase
           .from('competitor_sentiment')
-          .insert(competitorSentimentRows);
+          .upsert(competitorSentimentRows, {
+            onConflict: 'metric_fact_id,competitor_id',
+            ignoreDuplicates: false,
+          });
 
         if (compSentimentError) {
-          console.error(`   ❌ [storeSentiment] Failed to insert competitor_sentiment:`, compSentimentError.message);
+          console.error(`   ❌ [storeSentiment] Failed to upsert competitor_sentiment:`, compSentimentError.message);
           throw new Error(`Failed to save competitor sentiment: ${compSentimentError.message}`);
         }
 
-        console.log(`   ✅ [storeSentiment] Inserted ${competitorSentimentRows.length} competitor_sentiment rows`);
+        console.log(`   ✅ [storeSentiment] Upserted ${competitorSentimentRows.length} competitor_sentiment rows`);
       }
     } else {
       console.log(`   ℹ️ [storeSentiment] No competitor sentiment to process (competitors: ${competitorNames.length})`);

@@ -139,9 +139,17 @@ export class PositionExtractionService {
     }
   }
 
+  /**
+   * Extract positions for new collector results
+   * Returns: count of processed results and a map of collector_result_id -> { metricFactId, brandId, competitorIdMap }
+   * OPTIMIZATION: Returns metric_fact_id data to avoid redundant queries in calling functions
+   */
   public async extractPositionsForNewResults(
     options: ExtractPositionsOptions = {}
-  ): Promise<number> {
+  ): Promise<{ 
+    count: number; 
+    results: Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }> 
+  }> {
     const limit = Math.max(options.limit ?? DEFAULT_POSITION_LIMIT, 1);
     const fetchLimit = Math.max(limit * 2, limit);
     
@@ -254,24 +262,26 @@ export class PositionExtractionService {
 
     console.log(`   📊 [Position Extraction] Found ${processedCollectorResults.size} results that already have positions`);
 
-    // Filter to only new results (skip if specific IDs were provided - process all of them)
-    const results = options.collectorResultIds && options.collectorResultIds.length > 0
-      ? allResults.filter(r => r && r.raw_answer) // Only filter by raw_answer if specific IDs provided
-      : allResults.filter(r => {
-          return !processedCollectorResults.has(r.id);
-        }).slice(0, limit); // Process configurable batch size
+    // Filter to only new results - ALWAYS respect processedCollectorResults check for efficiency
+    // This prevents redundant processing even when specific IDs are provided
+    const results = allResults
+      .filter(r => r && r.raw_answer) // Must have raw_answer
+      .filter(r => !processedCollectorResults.has(r.id)) // Skip if already processed
+      .slice(0, limit); // Process configurable batch size
     
     console.log(`   📊 [Position Extraction] Will process ${results.length} results (${allResults.length} total, ${processedCollectorResults.size} already processed)`);
     
     if (results.length === 0) {
       console.log(`   ⚠️ [Position Extraction] No results to process`);
-      return 0;
+      return { count: 0, results: new Map() };
     }
     
     console.log(`   📋 [Position Extraction] Processing collector_result IDs: ${results.map(r => r.id).slice(0, 10).join(', ')}${results.length > 10 ? '...' : ''}`);
 
-    // Process each result
+    // Process each result and collect metric_fact_id data for optimization
     let processed = 0;
+    const resultsMap = new Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }>();
+    
     for (const result of results) {
       try {
         console.log(`   🔄 [Position Extraction] Processing collector_result ${result.id}...`);
@@ -279,8 +289,15 @@ export class PositionExtractionService {
         const positionResult = await this.extractPositions(parsedResult);
         const totalRows = 1 + positionResult.competitorRows.length; // brand row + competitor rows
         console.log(`   📊 [Position Extraction] Extracted ${totalRows} position rows for collector_result ${result.id} (1 brand, ${positionResult.competitorRows.length} competitors)`);
-        await this.savePositions(positionResult);
-        console.log(`   ✅ [Position Extraction] Saved positions for collector_result ${result.id}`);
+        const saveResult = await this.savePositions(positionResult);
+        console.log(`   ✅ [Position Extraction] Saved positions for collector_result ${result.id} (metric_fact_id: ${saveResult.metricFactId})`);
+
+        // Store result data for optimization (avoid redundant queries in calling functions)
+        resultsMap.set(result.id, {
+          metricFactId: saveResult.metricFactId,
+          brandId: saveResult.brandId,
+          competitorIdMap: saveResult.competitorIdMap
+        });
 
         processed++;
         const totalCompetitorMentions = positionResult.competitorRows.reduce((sum, row) => sum + row.competitor_mentions, 0);
@@ -292,7 +309,224 @@ export class PositionExtractionService {
     if (this.totalTokenCalls > 0) {
     }
 
-    return processed;
+    return { count: processed, results: resultsMap };
+  }
+
+  /**
+   * Extract position payload for a single collector result (without saving to database)
+   * Used for batch processing - returns payload that can be saved later in batch
+   * OPTIMIZATION: Accepts optional collector result data to avoid redundant fetch
+   */
+  public async extractPositionPayloadForBatch(
+    collectorResultId: number,
+    collectorResultData?: any
+  ): Promise<PositionExtractionPayload | null> {
+    try {
+      let result = collectorResultData;
+      
+      // Fetch collector result if not provided
+      if (!result) {
+        const { data: fetchedResult, error: fetchError } = await this.supabase
+          .from('collector_results')
+          .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata, topic')
+          .eq('id', collectorResultId)
+          .single();
+
+        if (fetchError || !fetchedResult) {
+          console.error(`   ❌ [extractPositionPayloadForBatch] Failed to fetch collector_result ${collectorResultId}:`, fetchError);
+          return null;
+        }
+        result = fetchedResult;
+      }
+
+      const parsedResult = CollectorResultRow.parse(result);
+      const positionResult = await this.extractPositions(parsedResult);
+      return positionResult;
+    } catch (error) {
+      console.error(`   ❌ [extractPositionPayloadForBatch] Error extracting positions for collector_result ${collectorResultId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Batch save multiple position payloads to database
+   * OPTIMIZATION: Reduces database round trips by batching operations
+   */
+  public async batchSavePositions(
+    payloads: Array<{ payload: PositionExtractionPayload; collectorResultId: number }>
+  ): Promise<Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }>> {
+    const resultsMap = new Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }>();
+    
+    if (payloads.length === 0) {
+      return resultsMap;
+    }
+
+    console.log(`   📦 [batchSavePositions] Batch saving ${payloads.length} position payloads...`);
+
+    // Collect all metric_facts for batch upsert
+    const metricFactsToUpsert: any[] = [];
+    const payloadsByCollectorResult = new Map<number, PositionExtractionPayload>();
+
+    for (const { payload, collectorResultId } of payloads) {
+      const brandRow = payload.brandRow;
+      const metricFact = {
+        collector_result_id: collectorResultId,
+        brand_id: brandRow.brand_id,
+        customer_id: brandRow.customer_id,
+        query_id: brandRow.query_id,
+        collector_type: brandRow.collector_type,
+        topic: brandRow.topic || null,
+        processed_at: brandRow.processed_at,
+      };
+      metricFactsToUpsert.push(metricFact);
+      payloadsByCollectorResult.set(collectorResultId, payload);
+    }
+
+    // Batch upsert metric_facts
+    console.log(`   🚀 [batchSavePositions] Batch upserting ${metricFactsToUpsert.length} metric_facts...`);
+    const { data: metricFactsData, error: metricFactsError } = await this.supabase
+      .from('metric_facts')
+      .upsert(metricFactsToUpsert, {
+        onConflict: 'collector_result_id',
+        ignoreDuplicates: false,
+      })
+      .select('id, collector_result_id');
+
+    if (metricFactsError || !metricFactsData) {
+      console.error(`   ❌ [batchSavePositions] Failed to batch upsert metric_facts:`, metricFactsError);
+      throw new Error(`Failed to batch save metric_facts: ${metricFactsError?.message}`);
+    }
+
+    // Create map of collector_result_id -> metric_fact_id
+    const metricFactIdMap = new Map<number, number>();
+    metricFactsData.forEach(mf => {
+      metricFactIdMap.set(mf.collector_result_id, mf.id);
+    });
+
+    console.log(`   ✅ [batchSavePositions] Batch upserted ${metricFactsData.length} metric_facts`);
+
+    // Collect all brand_metrics for batch upsert
+    const brandMetricsToUpsert: any[] = [];
+    for (const { payload, collectorResultId } of payloads) {
+      const metricFactId = metricFactIdMap.get(collectorResultId);
+      if (!metricFactId) continue;
+
+      const brandRow = payload.brandRow;
+      brandMetricsToUpsert.push({
+        metric_fact_id: metricFactId,
+        visibility_index: brandRow.visibility_index,
+        share_of_answers: brandRow.share_of_answers_brand,
+        brand_first_position: brandRow.brand_first_position,
+        brand_positions: brandRow.brand_positions || [],
+        total_brand_mentions: brandRow.total_brand_mentions || 0,
+        total_word_count: brandRow.total_word_count || 0,
+        has_brand_presence: brandRow.has_brand_presence || false,
+      });
+    }
+
+    // Batch upsert brand_metrics
+    if (brandMetricsToUpsert.length > 0) {
+      console.log(`   🚀 [batchSavePositions] Batch upserting ${brandMetricsToUpsert.length} brand_metrics...`);
+      const { error: brandMetricsError } = await this.supabase
+        .from('brand_metrics')
+        .upsert(brandMetricsToUpsert, {
+          onConflict: 'metric_fact_id',
+          ignoreDuplicates: false,
+        });
+
+      if (brandMetricsError) {
+        console.error(`   ❌ [batchSavePositions] Failed to batch upsert brand_metrics:`, brandMetricsError);
+        throw new Error(`Failed to batch save brand_metrics: ${brandMetricsError.message}`);
+      }
+      console.log(`   ✅ [batchSavePositions] Batch upserted ${brandMetricsToUpsert.length} brand_metrics`);
+    }
+
+    // Collect all competitor_metrics for batch upsert
+    // First, collect all unique competitor names across all payloads
+    const allCompetitorNames = new Set<string>();
+    const brandIds = new Set<string>();
+    for (const { payload } of payloads) {
+      brandIds.add(payload.brandRow.brand_id);
+      payload.competitorRows.forEach(row => {
+        if (row.competitor_name) allCompetitorNames.add(row.competitor_name);
+      });
+    }
+
+    // Batch fetch all competitor IDs
+    const competitorIdMapGlobal = new Map<string, string>();
+    if (allCompetitorNames.size > 0) {
+      const { data: competitorData, error: compFetchError } = await this.supabase
+        .from('brand_competitors')
+        .select('id, competitor_name, brand_id')
+        .in('brand_id', Array.from(brandIds))
+        .in('competitor_name', Array.from(allCompetitorNames));
+
+      if (compFetchError) {
+        console.error(`   ❌ [batchSavePositions] Failed to fetch competitor IDs:`, compFetchError);
+        throw new Error(`Failed to fetch competitor IDs: ${compFetchError.message}`);
+      }
+
+      (competitorData || []).forEach(comp => {
+        competitorIdMapGlobal.set(`${comp.brand_id}:${comp.competitor_name}`, comp.id);
+      });
+    }
+
+    // Build competitor_metrics rows
+    const competitorMetricsRows: any[] = [];
+    for (const { payload, collectorResultId } of payloads) {
+      const metricFactId = metricFactIdMap.get(collectorResultId);
+      if (!metricFactId) continue;
+
+      const brandId = payload.brandRow.brand_id;
+      const competitorIdMap = new Map<string, string>();
+
+      for (const compRow of payload.competitorRows) {
+        if (!compRow.competitor_name) continue;
+
+        const competitorId = competitorIdMapGlobal.get(`${brandId}:${compRow.competitor_name}`);
+        if (!competitorId) {
+          console.warn(`   ⚠️ [batchSavePositions] Competitor "${compRow.competitor_name}" not found for brand ${brandId}`);
+          continue;
+        }
+
+        competitorIdMap.set(compRow.competitor_name, competitorId);
+        competitorMetricsRows.push({
+          metric_fact_id: metricFactId,
+          competitor_id: competitorId,
+          visibility_index: compRow.visibility_index_competitor,
+          share_of_answers: compRow.share_of_answers_competitor,
+          competitor_positions: compRow.competitor_positions || [],
+          competitor_mentions: compRow.competitor_mentions || 0,
+        });
+      }
+
+      // Store result data
+      resultsMap.set(collectorResultId, {
+        metricFactId,
+        brandId,
+        competitorIdMap
+      });
+    }
+
+    // Batch upsert competitor_metrics
+    if (competitorMetricsRows.length > 0) {
+      console.log(`   🚀 [batchSavePositions] Batch upserting ${competitorMetricsRows.length} competitor_metrics...`);
+      const { error: compMetricsError } = await this.supabase
+        .from('competitor_metrics')
+        .upsert(competitorMetricsRows, {
+          onConflict: 'metric_fact_id,competitor_id',
+          ignoreDuplicates: false,
+        });
+
+      if (compMetricsError) {
+        console.error(`   ❌ [batchSavePositions] Failed to batch upsert competitor_metrics:`, compMetricsError);
+        throw new Error(`Failed to batch save competitor_metrics: ${compMetricsError.message}`);
+      }
+      console.log(`   ✅ [batchSavePositions] Batch upserted ${competitorMetricsRows.length} competitor_metrics`);
+    }
+
+    console.log(`   ✅ [batchSavePositions] Successfully batch saved ${payloads.length} position payloads`);
+    return resultsMap;
   }
 
   // ============================================================================
@@ -1022,10 +1256,284 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
   }
 
   /**
+   * Batch save all operations for a single collector_result together
+   * OPTIMIZATION: Saves positions and sentiment in one unified batch operation
+   * This reduces database round trips from 5+ operations to 1 batch per collector_result
+   * 
+   * Writes to: metric_facts, brand_metrics, competitor_metrics, brand_sentiment, competitor_sentiment
+   * Returns: metric_fact_id, brand_id, and competitorIdMap for use by calling functions
+   * 
+   * ATOMICITY NOTE: Uses upsert operations which are atomic at the row level.
+   * All operations for one collector_result are batched together for efficiency.
+   */
+  public async batchSaveCollectorResult(
+    positionPayload: PositionExtractionPayload,
+    sentimentData?: {
+      brandSentiment?: { label: string; score: number; positive_sentences?: string[]; negative_sentences?: string[] };
+      competitorSentiment?: Record<string, { label: string; score: number; positive_sentences?: string[]; negative_sentences?: string[] }>;
+      competitorNames: string[];
+    }
+  ): Promise<{ 
+    metricFactId: number; 
+    brandId: string; 
+    competitorIdMap: Map<string, string> 
+  }> {
+    const collectorResultId = positionPayload.brandRow.collector_result_id;
+    const brandRow = positionPayload.brandRow;
+
+    console.log(`   📦 [batchSaveCollectorResult] Batch saving all operations for collector_result ${collectorResultId}...`);
+    console.log(`      - Brand: ${brandRow.brand_name || 'N/A'}`);
+    console.log(`      - Competitors: ${positionPayload.competitorRows.length} (${positionPayload.competitorRows.map(r => r.competitor_name).join(', ')})`);
+    console.log(`      - Includes sentiment: ${sentimentData ? 'Yes' : 'No'}`);
+
+    // Step 1: Upsert metric_fact (core reference table)
+    const metricFact = {
+      collector_result_id: collectorResultId,
+      brand_id: brandRow.brand_id,
+      customer_id: brandRow.customer_id,
+      query_id: brandRow.query_id,
+      collector_type: brandRow.collector_type,
+      topic: brandRow.topic || null,
+      processed_at: brandRow.processed_at,
+    };
+
+    const { data: metricFactData, error: metricFactError } = await this.supabase
+      .from('metric_facts')
+      .upsert(metricFact, {
+        onConflict: 'collector_result_id',
+        ignoreDuplicates: false,
+      })
+      .select('id')
+      .single();
+
+    if (metricFactError || !metricFactData) {
+      console.error(`   ❌ [batchSaveCollectorResult] Failed to upsert metric_fact:`, metricFactError);
+      throw new Error(`Failed to create metric_fact: ${metricFactError?.message}`);
+    }
+
+    const metricFactId = metricFactData.id;
+
+    // Step 2: Prepare brand_metrics
+    const brandMetrics = {
+      metric_fact_id: metricFactId,
+      visibility_index: brandRow.visibility_index,
+      share_of_answers: brandRow.share_of_answers_brand,
+      brand_first_position: brandRow.brand_first_position,
+      brand_positions: brandRow.brand_positions || [],
+      total_brand_mentions: brandRow.total_brand_mentions || 0,
+      total_word_count: brandRow.total_word_count || 0,
+      has_brand_presence: brandRow.has_brand_presence || false,
+    };
+
+    // Step 3: Get competitor IDs (needed for both competitor_metrics and competitor_sentiment)
+    const competitorIdMap = new Map<string, string>();
+    let competitorMetricsRows: any[] = [];
+    let competitorSentimentRows: any[] = [];
+
+    if (positionPayload.competitorRows.length > 0 || (sentimentData?.competitorSentiment && Object.keys(sentimentData.competitorSentiment).length > 0)) {
+      const competitorNames = [
+        ...positionPayload.competitorRows.map(r => r.competitor_name).filter(Boolean),
+        ...(sentimentData?.competitorNames || [])
+      ].filter(Boolean) as string[];
+      
+      const uniqueCompetitorNames = Array.from(new Set(competitorNames));
+
+      if (uniqueCompetitorNames.length > 0) {
+        const { data: competitorData, error: compFetchError } = await this.supabase
+          .from('brand_competitors')
+          .select('id, competitor_name')
+          .eq('brand_id', brandRow.brand_id)
+          .in('competitor_name', uniqueCompetitorNames);
+
+        if (compFetchError) {
+          console.error(`   ❌ [batchSaveCollectorResult] Failed to fetch competitor IDs:`, compFetchError);
+          throw new Error(`Failed to fetch competitor IDs: ${compFetchError.message}`);
+        }
+
+        (competitorData || []).forEach(comp => {
+          competitorIdMap.set(comp.competitor_name, comp.id);
+        });
+
+        // Build competitor_metrics rows
+        for (const compRow of positionPayload.competitorRows) {
+          if (!compRow.competitor_name) continue;
+
+          const competitorId = competitorIdMap.get(compRow.competitor_name);
+          if (!competitorId) {
+            console.warn(`   ⚠️ [batchSaveCollectorResult] Competitor "${compRow.competitor_name}" not found in brand_competitors table`);
+            continue;
+          }
+
+          competitorMetricsRows.push({
+            metric_fact_id: metricFactId,
+            competitor_id: competitorId,
+            visibility_index: compRow.visibility_index_competitor,
+            share_of_answers: compRow.share_of_answers_competitor,
+            competitor_positions: compRow.competitor_positions || [],
+            competitor_mentions: compRow.competitor_mentions || 0,
+          });
+        }
+
+        // Build competitor_sentiment rows
+        if (sentimentData?.competitorSentiment) {
+          for (const [competitorName, sentiment] of Object.entries(sentimentData.competitorSentiment)) {
+            const competitorId = competitorIdMap.get(competitorName);
+            if (!competitorId) {
+              console.warn(`   ⚠️ [batchSaveCollectorResult] Competitor "${competitorName}" not found for sentiment`);
+              continue;
+            }
+
+            competitorSentimentRows.push({
+              metric_fact_id: metricFactId,
+              competitor_id: competitorId,
+              sentiment_label: sentiment.label || 'NEUTRAL',
+              sentiment_score: sentiment.score || 60,
+              positive_sentences: sentiment.positive_sentences || [],
+              negative_sentences: sentiment.negative_sentences || [],
+            });
+          }
+        }
+      }
+    }
+
+    // Step 4: Batch upsert all data together
+    // Note: We still need separate upserts per table, but we batch all rows for each table
+    const upsertPromises: Promise<any>[] = [];
+
+    // Upsert brand_metrics
+    upsertPromises.push(
+      this.supabase
+        .from('brand_metrics')
+        .upsert(brandMetrics, {
+          onConflict: 'metric_fact_id',
+          ignoreDuplicates: false,
+        })
+        .then(({ error }) => {
+          if (error) throw new Error(`Failed to save brand_metrics: ${error.message}`);
+        })
+    );
+
+    // Upsert competitor_metrics (if any)
+    if (competitorMetricsRows.length > 0) {
+      upsertPromises.push(
+        this.supabase
+          .from('competitor_metrics')
+          .upsert(competitorMetricsRows, {
+            onConflict: 'metric_fact_id,competitor_id',
+            ignoreDuplicates: false,
+          })
+          .then(({ error }) => {
+            if (error) throw new Error(`Failed to save competitor_metrics: ${error.message}`);
+          })
+      );
+    }
+
+    // Upsert brand_sentiment (if provided)
+    if (sentimentData?.brandSentiment) {
+      upsertPromises.push(
+        this.supabase
+          .from('brand_sentiment')
+          .upsert({
+            metric_fact_id: metricFactId,
+            sentiment_label: sentimentData.brandSentiment.label || 'NEUTRAL',
+            sentiment_score: sentimentData.brandSentiment.score || 60,
+            positive_sentences: sentimentData.brandSentiment.positive_sentences || [],
+            negative_sentences: sentimentData.brandSentiment.negative_sentences || [],
+          }, {
+            onConflict: 'metric_fact_id',
+            ignoreDuplicates: false,
+          })
+          .then(({ error }) => {
+            if (error) throw new Error(`Failed to save brand_sentiment: ${error.message}`);
+          })
+      );
+    }
+
+    // Upsert competitor_sentiment (if any)
+    if (competitorSentimentRows.length > 0) {
+      upsertPromises.push(
+        this.supabase
+          .from('competitor_sentiment')
+          .upsert(competitorSentimentRows, {
+            onConflict: 'metric_fact_id,competitor_id',
+            ignoreDuplicates: false,
+          })
+          .then(({ error }) => {
+            if (error) throw new Error(`Failed to save competitor_sentiment: ${error.message}`);
+          })
+      );
+    }
+
+    // Execute all upserts in parallel
+    try {
+      await Promise.all(upsertPromises);
+      console.log(`   ✅ [batchSaveCollectorResult] Successfully batch saved all operations for collector_result ${collectorResultId}`);
+      console.log(`      - metric_fact: ✅`);
+      console.log(`      - brand_metrics: ✅`);
+      if (competitorMetricsRows.length > 0) {
+        console.log(`      - competitor_metrics: ✅ (${competitorMetricsRows.length} rows)`);
+      }
+      if (sentimentData?.brandSentiment) {
+        console.log(`      - brand_sentiment: ✅`);
+      }
+      if (competitorSentimentRows.length > 0) {
+        console.log(`      - competitor_sentiment: ✅ (${competitorSentimentRows.length} rows)`);
+      }
+    } catch (error) {
+      console.error(`   ❌ [batchSaveCollectorResult] Failed to batch save operations:`, error);
+      throw error;
+    }
+
+    // Update collector_results.metadata with product names if available
+    if (positionPayload.productNames && positionPayload.productNames.length > 0) {
+      try {
+        const { data: currentResult, error: fetchError } = await this.supabase
+          .from('collector_results')
+          .select('metadata')
+          .eq('id', collectorResultId)
+          .single();
+
+        if (!fetchError && currentResult) {
+          const updatedMetadata = {
+            ...(currentResult.metadata || {}),
+            product_names: positionPayload.productNames,
+            productNames: positionPayload.productNames,
+            products: positionPayload.productNames,
+          };
+
+          await this.supabase
+            .from('collector_results')
+            .update({ metadata: updatedMetadata })
+            .eq('id', collectorResultId);
+        }
+      } catch (error) {
+        console.warn(`   ⚠️ [batchSaveCollectorResult] Could not update collector_results metadata:`, error);
+      }
+    }
+
+    return {
+      metricFactId,
+      brandId: brandRow.brand_id,
+      competitorIdMap
+    };
+  }
+
+  /**
    * Save extracted positions to NEW OPTIMIZED SCHEMA
    * Writes to: metric_facts, brand_metrics, competitor_metrics
+   * Returns: metric_fact_id, brand_id, and competitorIdMap for use by calling functions (optimization: avoid redundant queries)
+   * 
+   * ATOMICITY NOTE: Uses upsert operations which are atomic at the row level.
+   * For full transaction support across multiple tables, consider using Supabase RPC functions
+   * with explicit BEGIN/COMMIT/ROLLBACK, but current upsert approach provides good reliability.
+   * 
+   * NOTE: This method is kept for backward compatibility. New code should use batchSaveCollectorResult().
    */
-  private async savePositions(payload: PositionExtractionPayload): Promise<void> {
+  private async savePositions(payload: PositionExtractionPayload): Promise<{ 
+    metricFactId: number; 
+    brandId: string; 
+    competitorIdMap: Map<string, string> 
+  }> {
     const collectorResultId = payload.brandRow.collector_result_id;
     const brandRow = payload.brandRow;
 
@@ -1089,21 +1597,12 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
 
     console.log(`   ✅ [savePositions] Brand metrics saved`);
 
-    // Step 3: Delete existing competitor_metrics for this metric_fact (for idempotency)
-    console.log(`   🗑️ [savePositions] Deleting existing competitor_metrics...`);
-    const { error: deleteCompError } = await this.supabase
-      .from('competitor_metrics')
-      .delete()
-      .eq('metric_fact_id', metricFactId);
+    // Initialize competitorIdMap (will be populated if competitors exist, returned for reuse)
+    const competitorIdMap = new Map<string, string>();
 
-    if (deleteCompError) {
-      console.warn(`   ⚠️ [savePositions] Warning deleting competitor_metrics:`, deleteCompError.message);
-      // Don't throw - might not exist
-    }
-
-    // Step 4: Create competitor_metrics for each competitor
+    // Step 3: Upsert competitor_metrics (OPTIMIZATION: Use upsert instead of delete+insert for atomicity and efficiency)
     if (payload.competitorRows.length > 0) {
-      console.log(`   🚀 [savePositions] Inserting ${payload.competitorRows.length} competitor_metrics...`);
+      console.log(`   🚀 [savePositions] Upserting ${payload.competitorRows.length} competitor_metrics...`);
 
       // Get competitor IDs from brand_competitors table
       const competitorNames = payload.competitorRows.map(r => r.competitor_name).filter(Boolean) as string[];
@@ -1118,8 +1617,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
         throw new Error(`Failed to fetch competitor IDs: ${compFetchError.message}`);
       }
 
-      // Create a map of competitor_name -> competitor_id
-      const competitorIdMap = new Map<string, string>();
+      // Populate the map of competitor_name -> competitor_id (will be returned for reuse)
       (competitorData || []).forEach(comp => {
         competitorIdMap.set(comp.competitor_name, comp.id);
       });
@@ -1146,16 +1644,21 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       }
 
       if (competitorMetricsRows.length > 0) {
+        // OPTIMIZATION: Use upsert with ON CONFLICT instead of delete+insert
+        // This is atomic, more efficient, and handles concurrent updates better
         const { error: compMetricsError } = await this.supabase
           .from('competitor_metrics')
-          .insert(competitorMetricsRows);
+          .upsert(competitorMetricsRows, {
+            onConflict: 'metric_fact_id,competitor_id',
+            ignoreDuplicates: false,
+          });
 
         if (compMetricsError) {
-          console.error(`   ❌ [savePositions] Failed to insert competitor_metrics:`, compMetricsError);
+          console.error(`   ❌ [savePositions] Failed to upsert competitor_metrics:`, compMetricsError);
           throw new Error(`Failed to save competitor_metrics: ${compMetricsError.message}`);
         }
 
-        console.log(`   ✅ [savePositions] Inserted ${competitorMetricsRows.length} competitor_metrics`);
+        console.log(`   ✅ [savePositions] Upserted ${competitorMetricsRows.length} competitor_metrics`);
       }
     }
 
@@ -1196,6 +1699,13 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
         console.warn(`   ⚠️ [savePositions] Error updating metadata:`, error);
       }
     }
+
+    // Return metric_fact_id, brand_id, and competitorIdMap for use by calling functions (optimization: avoid redundant queries)
+    return {
+      metricFactId,
+      brandId: brandRow.brand_id,
+      competitorIdMap // Will be empty map if no competitors, populated map if competitors exist
+    };
   }
 }
 

@@ -125,10 +125,12 @@ export const ScheduledJobs = () => {
     }
   }, [customerId, selectedBrandId]);
 
-  // Load Ollama settings on component mount
+  // Load Ollama settings when brand is selected
   useEffect(() => {
+    if (selectedBrandId) {
     loadOllamaSettings();
-  }, []);
+    }
+  }, [selectedBrandId]);
 
   // Check health when Ollama is enabled
   useEffect(() => {
@@ -140,10 +142,13 @@ export const ScheduledJobs = () => {
   }, [ollamaSettings.useOllama, ollamaSettings.ollamaUrl]);
 
   const loadOllamaSettings = async () => {
+    if (!selectedBrandId) {
+      return;
+    }
     try {
       setOllamaLoading(true);
       setOllamaError(null);
-      const response = await apiClient.get('/admin/global-settings/consolidated-analysis/ollama');
+      const response = await apiClient.get(`/admin/brands/${selectedBrandId}/local-llm`);
       if (response.success && response.data) {
         setOllamaSettings(response.data);
       }
@@ -156,10 +161,13 @@ export const ScheduledJobs = () => {
   };
 
   const checkOllamaHealth = async () => {
+    if (!selectedBrandId) {
+      return;
+    }
     try {
       setOllamaHealthChecking(true);
       setOllamaError(null);
-      const response = await apiClient.get('/admin/global-settings/consolidated-analysis/ollama/health');
+      const response = await apiClient.get(`/admin/brands/${selectedBrandId}/local-llm/health`);
       if (response.success && response.data) {
         setOllamaHealth(response.data);
         if (!response.data.healthy) {
@@ -178,6 +186,10 @@ export const ScheduledJobs = () => {
   };
 
   const saveOllamaSettings = async () => {
+    if (!selectedBrandId) {
+      setOllamaError('Please select a brand first');
+      return;
+    }
     try {
       setOllamaSaving(true);
       setOllamaError(null);
@@ -192,7 +204,7 @@ export const ScheduledJobs = () => {
         return;
       }
 
-      const response = await apiClient.put('/admin/global-settings/consolidated-analysis/ollama', {
+      const response = await apiClient.put(`/admin/brands/${selectedBrandId}/local-llm`, {
         ollamaUrl: ollamaSettings.ollamaUrl,
         ollamaModel: ollamaSettings.ollamaModel,
         useOllama: ollamaSettings.useOllama,
@@ -220,6 +232,10 @@ export const ScheduledJobs = () => {
   };
 
   const testOllamaPrompt = async () => {
+    if (!selectedBrandId) {
+      setTestError('Please select a brand first');
+      return;
+    }
     if (!testPrompt.trim()) {
       setTestError('Please enter a test prompt');
       return;
@@ -230,7 +246,7 @@ export const ScheduledJobs = () => {
       setTestError(null);
       setTestResponse(null);
       
-      const response = await apiClient.post('/admin/global-settings/consolidated-analysis/ollama/test', {
+      const response = await apiClient.post(`/admin/brands/${selectedBrandId}/local-llm/test`, {
         prompt: testPrompt,
       });
 
@@ -730,6 +746,16 @@ export const ScheduledJobs = () => {
                 <label className="text-sm font-medium text-gray-900">Use Ollama for Scoring</label>
                 <p className="text-xs text-gray-500 mt-1">
                   When enabled, scoring will use your local Ollama instance instead of cloud APIs
+                  {selectedBrandId && (
+                    <span className="block mt-1 text-blue-600 font-medium">
+                      (Brand-specific settings)
+                    </span>
+                  )}
+                  {!selectedBrandId && (
+                    <span className="block mt-1 text-amber-600 font-medium">
+                      Please select a brand to configure Ollama settings
+                    </span>
+                  )}
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">

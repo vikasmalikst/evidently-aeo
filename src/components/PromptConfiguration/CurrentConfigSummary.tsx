@@ -79,7 +79,11 @@ export const CurrentConfigSummary = ({
 
       <div className="mt-5 pt-4 border-t border-[var(--border-default)]">
         <div className="text-xs text-[var(--text-caption)]">
-          Last updated: {new Date(lastUpdated).toLocaleDateString()}
+          Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+          }) : 'N/A'}
         </div>
       </div>
     </div>

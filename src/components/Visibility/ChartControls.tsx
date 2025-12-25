@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, LineChart, BarChart3 } from 'lucide-react';
 import { CountryFlag } from '../CountryFlag';
+import { DateRangePicker } from '../DateRangePicker/DateRangePicker';
 
 interface BrandOption {
   id: string;
@@ -8,8 +9,10 @@ interface BrandOption {
 }
 
 interface ChartControlsProps {
-  timeframe: string;
-  onTimeframeChange: (value: string) => void;
+  startDate: string;
+  endDate: string;
+  onStartDateChange: (date: string) => void;
+  onEndDateChange: (date: string) => void;
   chartType: string;
   onChartTypeChange: (value: string) => void;
   region: string;
@@ -22,8 +25,10 @@ interface ChartControlsProps {
 }
 
 export const ChartControls = ({
-  timeframe,
-  onTimeframeChange,
+  startDate,
+  endDate,
+  onStartDateChange,
+  onEndDateChange,
   chartType,
   onChartTypeChange,
   region,
@@ -53,12 +58,6 @@ export const ChartControls = ({
     };
   }, [openDropdown]);
 
-  const timeframeOptions = [
-    { value: 'weekly', label: 'Weekly (Last 7 days)' },
-    { value: 'monthly', label: 'Monthly (Last 30 days)' },
-    { value: 'ytd', label: 'Year to Date' }
-  ];
-
   const chartTypeOptions = [
     { value: 'line', label: 'Line Chart', icon: LineChart },
     { value: 'bar', label: 'Bar Chart', icon: BarChart3 }
@@ -83,7 +82,6 @@ export const ChartControls = ({
     { value: 'southeast-asia', label: 'Southeast Asia' }
   ];
 
-  const currentTimeframe = timeframeOptions.find(o => o.value === timeframe);
   const allRegionOptions = [...countryOptions, ...regionOptions];
   const currentRegion = allRegionOptions.find(o => o.value === region);
 
@@ -302,13 +300,14 @@ export const ChartControls = ({
             onBrandChange
           )
         }
-        {renderDropdown(
-          'timeframe',
-          'Timeframe',
-          currentTimeframe?.label,
-          timeframeOptions,
-          onTimeframeChange
-        )}
+        <DateRangePicker
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={onStartDateChange}
+          onEndDateChange={onEndDateChange}
+          showComparisonInfo={false}
+          variant="popover"
+        />
         {renderDropdown(
           'region',
           'Region',

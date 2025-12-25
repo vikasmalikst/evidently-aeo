@@ -24,6 +24,7 @@ import { InlineTopicManager } from '../../components/Settings/InlineTopicManager
 import type { Topic as ConfigTopic, TopicCategory, TopicSource } from '../../types/topic';
 import type { TopicConfiguration as TopicConfigSnapshot } from '../BrandSettings/types';
 import { usePromptsManagement } from './hooks/usePromptsManagement';
+import { formatDateWithYear } from '../../utils/dateFormatting';
 
 // Configuration version type for prompts
 interface PromptTimelineItemProps {
@@ -36,14 +37,7 @@ interface PromptTimelineItemProps {
   isLoading: boolean;
 }
 
-const formatDateShort = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric',
-    year: 'numeric',
-  });
-};
+const formatDateShort = formatDateWithYear;
 
 const normalizeTopicName = (name: string) => name.trim().toLowerCase();
 const generateTemporaryTopicId = () => Date.now() + Math.floor(Math.random() * 1000);

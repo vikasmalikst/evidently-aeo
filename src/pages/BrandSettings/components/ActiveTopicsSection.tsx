@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Edit2, X, ChevronRight, ChevronDown, Search } from 'lucide-react';
 import { IconBulb } from '@tabler/icons-react';
 import { apiClient } from '../../../lib/apiClient';
+import { formatDateWithYear } from '../../../utils/dateFormatting';
 import type { Topic } from '../../../types/topic';
 import type { TopicConfiguration } from '../types';
 
@@ -33,10 +34,7 @@ const getSourceBadgeColor = (source: string) => {
   }
 };
 
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-};
+const formatDate = formatDateWithYear;
 
 // Helper to get prompts for a topic from API data
 const getTopicPrompts = (topicId: string, topicName: string, promptsByTopic: Record<string, string[]> = {}): string[] => {

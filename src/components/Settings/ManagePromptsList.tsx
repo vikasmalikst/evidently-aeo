@@ -15,6 +15,7 @@ import {
   applyBatchChanges,
   calculateImpact as calculateImpactApi,
 } from '../../api/promptManagementApi';
+import { formatDateWithYear } from '../../utils/dateFormatting';
 import type { PendingChanges } from '../../hooks/usePromptConfiguration';
 
 interface PromptConfiguration {
@@ -74,14 +75,7 @@ const getWeeklyDateRanges = () => {
   return ranges;
 };
 
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric',
-    year: 'numeric',
-  });
-};
+const formatDate = formatDateWithYear;
 
 const uuidSegmentToNumber = (uuid: string): number => {
   if (!uuid) {

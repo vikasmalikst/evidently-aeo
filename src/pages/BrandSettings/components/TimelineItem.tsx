@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Eye } from 'lucide-react';
+import { formatDateWithYear } from '../../../utils/dateFormatting';
 import type { TopicConfiguration } from '../types';
 
 interface TimelineItemProps {
@@ -9,14 +10,7 @@ interface TimelineItemProps {
   onView: () => void;
 }
 
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric',
-    year: 'numeric',
-  });
-};
+const formatDate = formatDateWithYear;
 
 export const TimelineItem = ({
   config,

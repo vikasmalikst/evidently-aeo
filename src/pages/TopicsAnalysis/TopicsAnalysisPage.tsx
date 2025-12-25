@@ -9,6 +9,7 @@ import { TopicDetailModal } from './components/TopicDetailModal';
 import { DateRangePicker } from '../../components/DateRangePicker/DateRangePicker';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { getActiveCompetitors, type ManagedCompetitor } from '../../api/competitorManagementApi';
+import { formatDateWithYear } from '../../utils/dateFormatting';
 import type { Competitor } from './utils/competitorColors';
 import type { TopicsAnalysisData, Topic } from './types';
 import type { PodId } from './components/CompactMetricsPods';
@@ -331,12 +332,8 @@ export const TopicsAnalysisPage = ({
 
   const formatDateLabel = useCallback((dateStr?: string) => {
     if (!dateStr) return '';
-    try {
-      const date = new Date(dateStr + 'T00:00:00Z');
-      return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-    } catch {
-      return dateStr;
-    }
+    // Use shared utility function for consistent timezone handling
+    return formatDateWithYear(dateStr);
   }, []);
 
   const dateRangeLabel = useMemo(() => {

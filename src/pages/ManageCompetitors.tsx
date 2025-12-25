@@ -15,15 +15,9 @@ import {
 } from '../api/competitorManagementApi';
 import { IconUsers, IconHistory, IconPlus, IconX, IconTrash, IconEdit } from '@tabler/icons-react';
 import { X as XIcon, Plus as PlusIcon } from 'lucide-react';
+import { formatDateWithYear } from '../utils/dateFormatting';
 
-const formatDateShort = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric',
-    year: 'numeric',
-  });
-};
+const formatDateShort = formatDateWithYear;
 
 interface CompetitorCardProps {
   competitor: ManagedCompetitor;

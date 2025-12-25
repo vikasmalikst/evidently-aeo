@@ -1,4 +1,5 @@
 import { Edit2, History } from 'lucide-react';
+import { formatDateShort } from '../../../utils/dateFormatting';
 import type { TopicConfiguration } from '../types';
 
 interface CurrentConfigCardProps {
@@ -23,10 +24,7 @@ const getSourceBadgeColor = (source: string) => {
   }
 };
 
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
+const formatDate = formatDateShort;
 
 export const CurrentConfigCard = ({
   config,

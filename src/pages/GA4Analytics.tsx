@@ -28,8 +28,10 @@ export const GA4Analytics = () => {
       setCustomerId(activeCustomerId);
 
       // Check if GA4 is configured
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const apiUrl = apiBase.endsWith('/api') ? apiBase : `${apiBase}/api`;
       const configRes = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/brands/${activeBrandId}/analytics/credentials?customer_id=${activeCustomerId}`
+        `${apiUrl}/brands/${activeBrandId}/analytics/credentials?customer_id=${activeCustomerId}`
       );
 
       if (configRes.ok) {

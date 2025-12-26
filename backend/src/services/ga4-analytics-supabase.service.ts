@@ -417,6 +417,91 @@ export async function getTrafficSources(
   }
 }
 
+/**
+ * Get active users by city from GA4
+ */
+export async function getActiveUsersByCity(
+  brandId: string,
+  customerId: string,
+  days: number = 7,
+  startDate?: string,
+  endDate?: string
+): Promise<any> {
+  const cacheKey = `activeUsersByCity:${days}d:${startDate || 'auto'}:${endDate || 'today'}`;
+  
+  // Check cache
+  const cached = await getCachedData(brandId, customerId, cacheKey);
+  if (cached) {
+    return { ...cached, cached: true };
+  }
+  
+  // Get credentials
+  const credential = await getCredentials(brandId, customerId);
+  if (!credential) {
+    throw new Error('GA4 not configured for this brand');
+  }
+  
+  try {
+    const endDateStr = endDate || new Date().toISOString().split('T')[0];
+    const startDateStr = startDate || new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
+    
+    const analyticsDataClient = new BetaAnalyticsDataClient({
+      credentials: credential.service_account_key,
+    });
+    
+    const [response] = await analyticsDataClient.runReport({
+      property: `properties/${credential.property_id}`,
+      dateRanges: [
+        {
+          startDate: startDateStr,
+          endDate: endDateStr,
+        },
+      ],
+      dimensions: [
+        {
+          name: 'city',
+        },
+      ],
+      metrics: [
+        {
+          name: 'activeUsers',
+        },
+      ],
+    });
+    
+    const cities = response.rows?.map((row) => ({
+      city: row.dimensionValues?.[0]?.value || 'unknown',
+      activeUsers: parseInt(row.metricValues?.[0]?.value || '0'),
+    })) || [];
+    
+    const totalActiveUsers = parseInt(response.totals?.[0]?.metricValues?.[0]?.value || '0');
+    
+    const reportData = {
+      cities,
+      totalActiveUsers,
+      dateRange: { startDate: startDateStr, endDate: endDateStr },
+    };
+    
+    // Cache result
+    await setCachedData(brandId, customerId, cacheKey, reportData);
+    
+    // Log access
+    await supabaseAdmin.from('ga4_audit_log').insert({
+      brand_id: brandId,
+      customer_id: customerId,
+      action: 'access',
+      details: { endpoint: 'activeUsersByCity', days, startDate: startDateStr, endDate: endDateStr },
+    });
+    
+    return { ...reportData, cached: false };
+  } catch (error) {
+    console.error('GA4 active users by city query failed:', error);
+    throw new Error(`Failed to fetch active users by city: ${(error as Error).message}`);
+  }
+}
+
 export const ga4AnalyticsService = {
   saveCredentials,
   getCredentials,
@@ -424,6 +509,7 @@ export const ga4AnalyticsService = {
   getAnalyticsReport,
   getTopEvents,
   getTrafficSources,
+  getActiveUsersByCity,
   cleanExpiredCache,
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -49,9 +49,13 @@ export const GA4Dashboard: React.FC<GA4DashboardProps> = ({ brandId, customerId 
     setError(null);
 
     try {
+      // Build API URL correctly
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const apiUrl = apiBase.endsWith('/api') ? apiBase : `${apiBase}/api`;
+
       // Fetch event count over time
       const eventRes = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/brands/${brandId}/analytics/reports?customer_id=${customerId}&metric=eventCount&dimension=date&days=${days}`
+        `${apiUrl}/brands/${brandId}/analytics/reports?customer_id=${customerId}&metric=eventCount&dimension=date&days=${days}`
       );
 
       if (!eventRes.ok) {
@@ -64,7 +68,7 @@ export const GA4Dashboard: React.FC<GA4DashboardProps> = ({ brandId, customerId 
 
       // Fetch top events
       const topRes = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/brands/${brandId}/analytics/top-events?customer_id=${customerId}&days=${days}`
+        `${apiUrl}/brands/${brandId}/analytics/top-events?customer_id=${customerId}&days=${days}`
       );
 
       if (topRes.ok) {
@@ -74,7 +78,7 @@ export const GA4Dashboard: React.FC<GA4DashboardProps> = ({ brandId, customerId 
 
       // Fetch traffic sources
       const trafficRes = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/brands/${brandId}/analytics/traffic-sources?customer_id=${customerId}&days=${days}`
+        `${apiUrl}/brands/${brandId}/analytics/traffic-sources?customer_id=${customerId}&days=${days}`
       );
 
       if (trafficRes.ok) {
@@ -194,8 +198,9 @@ export const GA4Dashboard: React.FC<GA4DashboardProps> = ({ brandId, customerId 
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-[var(--text-body)]">Date Range:</label>
+          <label htmlFor="date-range-select" className="text-sm text-[var(--text-body)]">Date Range:</label>
           <select
+            id="date-range-select"
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
             className="px-3 py-2 border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"

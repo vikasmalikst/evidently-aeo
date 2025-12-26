@@ -55,8 +55,18 @@ export const notFoundHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  res.status(404).json({
-    success: false,
-    error: `Route ${req.method} ${req.path} not found`
-  });
+  console.log(`⚠️  404 - Route not found: ${req.method} ${req.path}`);
+  console.log(`   Original URL: ${req.originalUrl}`);
+  console.log(`   Query:`, req.query);
+  
+  // Ensure we always send JSON
+  if (!res.headersSent) {
+    res.status(404).json({
+      success: false,
+      error: `Route ${req.method} ${req.path} not found`,
+      path: req.path,
+      method: req.method,
+      originalUrl: req.originalUrl
+    });
+  }
 };

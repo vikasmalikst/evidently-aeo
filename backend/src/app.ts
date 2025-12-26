@@ -108,6 +108,8 @@ app.use('/api', (_req, res, next) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
+// Analytics routes must come BEFORE brandRoutes to avoid route conflicts
+app.use('/api/brands', analyticsRoutes);
 app.use('/api/brands', brandRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/query-generation', queryGenerationRoutes);
@@ -118,7 +120,6 @@ app.use('/api/citations', citationCategorizationRoutes);
 app.use('/api', promptManagementRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/recommendations', recommendationsRoutes);
-app.use('/api/brands', analyticsRoutes);
 // TEMPORARY: User management routes commented out
 // app.use('/api/users', userManagementRoutes);
 

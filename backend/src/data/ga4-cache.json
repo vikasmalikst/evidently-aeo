@@ -1,4 +1,185 @@
 {
-  "cache": []
+  "cache": [
+    {
+      "brand_id": "1",
+      "cache_key": "realtime:country:activeUsers",
+      "data": {
+        "dimensions": [
+          "country"
+        ],
+        "metrics": [
+          "activeUsers"
+        ],
+        "headers": [
+          "country",
+          "activeUsers"
+        ],
+        "rows": [
+          {
+            "dimensions": [
+              "United States"
+            ],
+            "metrics": [
+              "3"
+            ],
+            "flat": [
+              "United States",
+              "3"
+            ],
+            "data": {
+              "country": "United States",
+              "activeUsers": "3"
+            }
+          }
+        ],
+        "totals": [],
+        "totalsObject": {},
+        "rowCount": 1,
+        "timestamp": "2025-12-26T00:18:49.832Z"
+      },
+      "expires_at": "2025-12-26T00:19:19.832Z"
+    },
+    {
+      "brand_id": "default-brand",
+      "cache_key": "realtime:country:activeUsers",
+      "data": {
+        "dimensions": [
+          "country"
+        ],
+        "metrics": [
+          "activeUsers"
+        ],
+        "headers": [
+          "country",
+          "activeUsers"
+        ],
+        "rows": [
+          {
+            "dimensions": [
+              "United States"
+            ],
+            "metrics": [
+              "3"
+            ],
+            "flat": [
+              "United States",
+              "3"
+            ],
+            "data": {
+              "country": "United States",
+              "activeUsers": "3"
+            }
+          }
+        ],
+        "totals": [],
+        "totalsObject": {},
+        "rowCount": 1,
+        "timestamp": "2025-12-26T00:21:23.671Z"
+      },
+      "expires_at": "2025-12-26T00:21:53.671Z"
+    },
+    {
+      "brand_id": "default-brand",
+      "cache_key": "eventCount:date:7d",
+      "data": {
+        "metric": "eventCount",
+        "dimension": "date",
+        "days": 7,
+        "dateRange": {
+          "startDate": "2025-12-19",
+          "endDate": "2025-12-26"
+        },
+        "data": [
+          {
+            "date": "20251224",
+            "eventCount": 524
+          },
+          {
+            "date": "20251222",
+            "eventCount": 346
+          },
+          {
+            "date": "20251223",
+            "eventCount": 312
+          },
+          {
+            "date": "20251221",
+            "eventCount": 283
+          },
+          {
+            "date": "20251219",
+            "eventCount": 227
+          },
+          {
+            "date": "20251225",
+            "eventCount": 165
+          },
+          {
+            "date": "20251220",
+            "eventCount": 111
+          }
+        ],
+        "total": 0
+      },
+      "expires_at": "2025-12-26T00:28:56.461Z"
+    },
+    {
+      "brand_id": "default-brand",
+      "cache_key": "topEvents:7d",
+      "data": {
+        "events": [
+          {
+            "name": "page_view",
+            "count": 1079
+          },
+          {
+            "name": "scroll",
+            "count": 465
+          },
+          {
+            "name": "user_engagement",
+            "count": 276
+          },
+          {
+            "name": "session_start",
+            "count": 94
+          },
+          {
+            "name": "form_start",
+            "count": 30
+          },
+          {
+            "name": "first_visit",
+            "count": 23
+          },
+          {
+            "name": "click",
+            "count": 1
+          }
+        ],
+        "total": 1968
+      },
+      "expires_at": "2025-12-26T00:28:56.804Z"
+    },
+    {
+      "brand_id": "default-brand",
+      "cache_key": "trafficSources:7d",
+      "data": {
+        "trafficSources": [
+          {
+            "source": "(direct)",
+            "sessions": 90,
+            "percentage": 0
+          },
+          {
+            "source": "(not set)",
+            "sessions": 14,
+            "percentage": 0
+          }
+        ],
+        "totalSessions": 0
+      },
+      "expires_at": "2025-12-26T00:28:57.207Z"
+    }
+  ]
 }
-

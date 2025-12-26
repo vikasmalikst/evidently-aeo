@@ -23,6 +23,7 @@
     "cron:job:worker": "ts-node --transpile-only src/cron/unified-job-worker.ts",
     "cron:brightdata:background": "ts-node --transpile-only src/cron/brightdata-background.cron.ts",
     "cron:query-execution:cleanup": "ts-node --transpile-only src/cron/queryExecutionCleanup.cron.ts",
+    "script:backfill-scoring-status": "ts-node --transpile-only src/scripts/backfill-scoring-status.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config jest.e2e.config.js",

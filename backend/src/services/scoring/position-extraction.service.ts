@@ -173,7 +173,7 @@ export class PositionExtractionService {
       
       if (!fetchedResults || fetchedResults.length === 0) {
         console.log(`   ⚠️ [Position Extraction] No collector results found for provided IDs`);
-        return 0;
+        return { count: 0, results: new Map() };
       }
 
       console.log(`   ✅ [Position Extraction] Fetched ${fetchedResults.length} collector results from database`);
@@ -200,7 +200,7 @@ export class PositionExtractionService {
 
       if (fetchError) throw fetchError;
       if (!fetchedResults || fetchedResults.length === 0) {
-        return 0;
+        return { count: 0, results: new Map() };
       }
 
       allResults = fetchedResults;
@@ -1377,7 +1377,19 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
         // Build competitor_sentiment rows
         if (sentimentData?.competitorSentiment) {
           for (const [competitorName, sentiment] of Object.entries(sentimentData.competitorSentiment)) {
-            const competitorId = competitorIdMap.get(competitorName);
+            // Try exact match first
+            let competitorId = competitorIdMap.get(competitorName);
+            
+            // If not found, try case-insensitive match
+            if (!competitorId) {
+                for (const [name, id] of competitorIdMap.entries()) {
+                    if (name.toLowerCase() === competitorName.toLowerCase()) {
+                        competitorId = id;
+                        break;
+                    }
+                }
+            }
+            
             if (!competitorId) {
               console.warn(`   ⚠️ [batchSaveCollectorResult] Competitor "${competitorName}" not found for sentiment`);
               continue;
@@ -1398,7 +1410,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
 
     // Step 4: Batch upsert all data together
     // Note: We still need separate upserts per table, but we batch all rows for each table
-    const upsertPromises: Promise<any>[] = [];
+    const upsertPromises: any[] = [];
 
     // Upsert brand_metrics
     upsertPromises.push(

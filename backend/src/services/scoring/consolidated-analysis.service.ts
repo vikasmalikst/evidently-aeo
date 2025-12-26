@@ -14,6 +14,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { shouldUseOllama, callOllamaAPI as callOllamaClientAPI } from './ollama-client.service';
+import { GeneratedKeyword } from '../keywords/keyword-generation.service';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ export interface ConsolidatedAnalysisResult {
       score: number; // 1-100 scale: <55 = negative, 55-65 = neutral, >65 = positive
     }>;
   };
+  keywords?: GeneratedKeyword[];
 }
 
 // ============================================================================
@@ -413,6 +415,22 @@ Analyze the sentiment toward each competitor separately.
    - 66-100: Positive sentiment (good)
 3. For competitors, analyze sentiment specifically about each competitor
 
+## TASK 4: Keyword Detection
+
+Extract the most important keywords and key phrases from the answer text.
+These keywords should be:
+1. Relevant for SEO and AEO optimization
+2. What users would actually search for
+3. Include both short keywords (1-2 words) and long-tail keywords (3-5 words)
+4. Include question-based keywords (how, what, why, when, where)
+5. Focus on actionable, searchable terms
+6. Generate up to 20 keywords
+
+For each keyword, provide:
+- The keyword phrase
+- A relevance score (0.0 to 1.0)
+- Brief reasoning (1 sentence)
+
 ## Answer Text to Analyze:
 ${truncatedAnswer}
 
@@ -455,7 +473,16 @@ Respond with ONLY valid JSON in this exact structure:
         "score": 1 to 100
       }
     }
-  }
+  },
+  "keywords": [
+    {
+      "keyword": "exact keyword phrase",
+      "relevance_score": 0.85,
+      "metadata": {
+        "reasoning": "Reasoning here"
+      }
+    }
+  ]
 }`;
   }
 
@@ -766,6 +793,25 @@ Respond with ONLY valid JSON in this exact structure:
           }
         }
       }
+    }
+
+    // Normalize keywords
+    if (result.keywords) {
+      if (!Array.isArray(result.keywords)) {
+        result.keywords = [];
+      } else {
+        result.keywords = result.keywords
+          .filter(kw => kw && kw.keyword && typeof kw.keyword === 'string')
+          .map(kw => ({
+            keyword: kw.keyword.trim(),
+            relevance_score: typeof kw.relevance_score === 'number' 
+              ? Math.max(0, Math.min(1, kw.relevance_score)) 
+              : 0.5,
+            metadata: kw.metadata || {}
+          }));
+      }
+    } else {
+      result.keywords = [];
     }
 
     return result;

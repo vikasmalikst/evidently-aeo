@@ -14,6 +14,7 @@ import dotenv from 'dotenv';
 import { consolidatedAnalysisService, ConsolidatedAnalysisOptions } from './consolidated-analysis.service';
 import { positionExtractionService } from './position-extraction.service';
 import { OptimizedMetricsHelper } from '../query-helpers/optimized-metrics.helper';
+import { keywordGenerationService } from '../keywords/keyword-generation.service';
 
 dotenv.config();
 
@@ -78,6 +79,130 @@ export class ConsolidatedScoringService {
     } catch (error) {
       console.warn(`⚠️ Error fetching cached analysis:`, error instanceof Error ? error.message : error);
       return null;
+    }
+  }
+
+  /**
+   * Atomically claim a collector_result for processing
+   * Sets status to 'processing' only if status is claimable (pending, error, or null)
+   * Returns true if successfully claimed, false if already claimed by another worker
+   */
+  private async claimCollectorResult(collectorResultId: number): Promise<boolean> {
+    try {
+      // 1. Try with RPC (Atomic) if available
+      const { data, error } = await this.supabase
+        .rpc('claim_collector_result', { row_id: collectorResultId })
+        .maybeSingle();
+
+      if (!error && data) return true;
+      
+      // 2. Fallback strategies (Sequential to avoid OR() bug)
+      // We try to claim by matching specific status one by one
+      const statuses = [null, 'pending', 'error'];
+      
+      for (const status of statuses) {
+          let query = this.supabase.from('collector_results').update({
+              scoring_status: 'processing',
+              scoring_started_at: new Date().toISOString(),
+          }).eq('id', collectorResultId);
+          
+          if (status === null) {
+              query = query.is('scoring_status', null);
+          } else {
+              query = query.eq('scoring_status', status);
+          }
+          
+          const { data: legacyData, error: legacyError } = await query.select('id').single();
+          
+          if (!legacyError && legacyData) return true;
+          
+          // Handle missing column fallback
+          if (legacyError && (legacyError.message.includes('column') || legacyError.message.includes('scoring_started_at'))) {
+             if (status === null) {
+                 console.warn(`⚠️ 'scoring_started_at' column likely missing, falling back to 'scoring_status' only.`);
+             }
+
+             let minQuery = this.supabase.from('collector_results').update({
+                  scoring_status: 'processing'
+              }).eq('id', collectorResultId);
+              
+              if (status === null) {
+                  minQuery = minQuery.is('scoring_status', null);
+              } else {
+                  minQuery = minQuery.eq('scoring_status', status);
+              }
+              
+              const { data: minData, error: minError } = await minQuery.select('id').single();
+              if (!minError && minData) return true;
+          }
+      }
+      
+      return false;
+
+    } catch (error) {
+      console.warn(`⚠️ Exception claiming collector_result ${collectorResultId}:`, error instanceof Error ? error.message : error);
+      return false;
+    }
+  }
+
+  /**
+   * Mark a collector_result as completed
+   * Sets status to 'completed' and clears error message
+   */
+  private async markCollectorResultCompleted(collectorResultId: number): Promise<void> {
+    try {
+      const { error } = await this.supabase
+        .from('collector_results')
+        .update({
+          scoring_status: 'completed',
+          scoring_completed_at: new Date().toISOString(),
+          scoring_error: null,
+        })
+        .eq('id', collectorResultId);
+
+      if (error) {
+        // Fallback: update only status if columns missing
+        if (error.message.includes('column') || error.message.includes('scoring_completed_at')) {
+           await this.supabase
+            .from('collector_results')
+            .update({ scoring_status: 'completed' })
+            .eq('id', collectorResultId);
+           return;
+        }
+        console.warn(`⚠️ Error marking collector_result ${collectorResultId} as completed:`, error.message);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Exception marking collector_result ${collectorResultId} as completed:`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  /**
+   * Mark a collector_result as error
+   * Sets status to 'error' and stores error message
+   */
+  private async markCollectorResultError(collectorResultId: number, errorMessage: string): Promise<void> {
+    try {
+      const { error } = await this.supabase
+        .from('collector_results')
+        .update({
+          scoring_status: 'error',
+          scoring_error: errorMessage,
+        })
+        .eq('id', collectorResultId);
+
+      if (error) {
+         // Fallback: update only status if columns missing
+        if (error.message.includes('column') || error.message.includes('scoring_error')) {
+           await this.supabase
+            .from('collector_results')
+            .update({ scoring_status: 'error' })
+            .eq('id', collectorResultId);
+           return;
+        }
+        console.warn(`⚠️ Error marking collector_result ${collectorResultId} as error:`, error.message);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Exception marking collector_result ${collectorResultId} as error:`, error instanceof Error ? error.message : error);
     }
   }
 
@@ -411,12 +536,14 @@ export class ConsolidatedScoringService {
     };
 
     // Fetch collector results that need processing
+    // Filter by status: only fetch rows that are NOT 'processing' or 'completed'
     let query = this.supabase
       .from('collector_results')
       .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata, citations, urls, topic')
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
       .not('raw_answer', 'is', null) // Only process results with raw_answer
+      .or('scoring_status.is.null,scoring_status.eq.pending,scoring_status.eq.error') // Only fetch processable rows
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -555,16 +682,113 @@ export class ConsolidatedScoringService {
 
     // HYBRID APPROACH: Incremental processing for Ollama, batch processing for OpenRouter
     const analysisResults = new Map<number, any>();
+    // Track which items were claimed and their processing status
+    const claimedResults = new Map<number, { collectorResult: any; step1Success: boolean; step2Success: boolean; step3Success: boolean; error?: string }>();
     let processedCount = 0;
 
     if (useOllama) {
-      // INCREMENTAL PROCESSING: Process each item completely (Step 1 → Step 2 → Step 3) before moving to next
-      // This provides real-time results and better fault tolerance
-      // OPTIMIZATION: Batch all database operations for each collector_result together (per-result batching)
-      console.log(`\n🔄 Using incremental processing (Ollama enabled)`);
-      console.log(`   Each item will be fully processed (analysis → positions → sentiment) before moving to next`);
-      console.log(`   📦 All database operations for each collector_result will be batched together for efficiency`);
+      // ONE-AT-A-TIME PROCESSING: Fetch first available row → claim → process → update status → fetch next
+      // Simple approach: Query excludes 'processing' and 'completed', claim atomically, if claim fails fetch next row
+      console.log(`\n🔄 Using one-at-a-time processing (Ollama enabled)`);
+      console.log(`   Fetch first available row → claim → process → update status → fetch next`);
       
+      processedCount = 0;
+      let consecutiveFailedClaims = 0;
+      const maxConsecutiveFailedClaims = 10; // Exit if we can't claim 10 rows in a row (indicates no work available)
+      
+      // One-at-a-time processing loop
+      while (true) {
+        // Fetch FIRST row that needs processing (query excludes 'processing' and 'completed')
+        let fetchQuery = this.supabase
+          .from('collector_results')
+          .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata, citations, urls, topic, scoring_status')
+          .eq('brand_id', brandId)
+          .eq('customer_id', customerId)
+          .not('raw_answer', 'is', null)
+          .or('scoring_status.is.null,scoring_status.eq.pending,scoring_status.eq.error')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (since) {
+          fetchQuery = (fetchQuery as any).gte('created_at', since);
+        }
+
+        const { data: collectorResult, error: fetchError } = await fetchQuery;
+
+        if (fetchError || !collectorResult) {
+          // No more rows to process
+          break;
+        }
+
+        // Validate required fields
+        if (!collectorResult.raw_answer || collectorResult.raw_answer.trim().length === 0) {
+          console.warn(`⚠️ Skipping collector_result ${collectorResult.id}: no raw_answer`);
+          continue;
+        }
+
+        // Atomically claim this result for processing
+        const claimed = await this.claimCollectorResult(collectorResult.id);
+        if (!claimed) {
+          // Another worker claimed it first - fetch next row
+          consecutiveFailedClaims++;
+          console.warn(`   ⚠️ Claim failed for collector_result ${collectorResult.id}. Consecutive failures: ${consecutiveFailedClaims}`);
+          if (consecutiveFailedClaims >= maxConsecutiveFailedClaims) {
+            console.log(`   ⚠️ Failed to claim ${consecutiveFailedClaims} rows consecutively. No available rows, exiting.`);
+            break;
+          }
+          continue; // Fetch next row
+        }
+        
+        // Successfully claimed - reset counter and process
+        consecutiveFailedClaims = 0;
+        processedCount++;
+
+        console.log(`   🔒 Successfully claimed collector_result ${collectorResult.id} for processing`);
+
+        try {
+          // Process this item completely (all 3 steps) with per-result batching
+          await this.processSingleResultWithBatching(
+            collectorResult,
+            brandId,
+            customerId,
+            result,
+            processedCount,
+            0 // Total count unknown in one-at-a-time mode
+          );
+
+          // Mark as completed
+          await this.markCollectorResultCompleted(collectorResult.id);
+          console.log(`   ✅ Collector_result ${collectorResult.id} marked as completed`);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          await this.markCollectorResultError(collectorResult.id, errorMsg);
+          console.error(`   ❌ Collector_result ${collectorResult.id} marked as error: ${errorMsg}`);
+          result.errors.push({
+            collectorResultId: collectorResult.id,
+            error: errorMsg,
+          });
+        }
+      }
+
+      // For Ollama, we're done - all steps completed incrementally
+      // Note: citationsProcessed is tracked during processSingleResultWithBatching
+      // when Step 1 succeeds (citations are stored during analysis, independent of Steps 2/3)
+      console.log(`\n✅ One-at-a-time processing complete!`);
+      console.log(`   Processed: ${result.processed}`);
+      console.log(`   Citations: ${result.citationsProcessed}`);
+      console.log(`   Positions: ${result.positionsProcessed}`);
+      console.log(`   Sentiments: ${result.sentimentsProcessed}`);
+      console.log(`   Errors: ${result.errors.length}`);
+      return result;
+    } else {
+      // BATCH PROCESSING: Step 1 → Step 2 → Step 3 (for OpenRouter - faster)
+      // Status updates: Claim before Step 1, update after Step 3 (per item)
+      console.log(`\n🔄 Using batch processing (OpenRouter enabled)`);
+      console.log(`   Step 1: Analyze all → Step 2: Extract all positions → Step 3: Store all sentiment`);
+      console.log(`   Status: Claim before Step 1, update after Step 3 (per item)`);
+      
+      // Step 1: Claim and run consolidated analysis for all results
       for (const collectorResult of resultsToProcess) {
         if (!collectorResult || !collectorResult.id) {
           continue;
@@ -575,51 +799,25 @@ export class ConsolidatedScoringService {
         // Validate required fields
         if (!collectorResult.raw_answer || collectorResult.raw_answer.trim().length === 0) {
           console.warn(`⚠️ Skipping collector_result ${collectorResult.id}: no raw_answer`);
-          console.log(`   ⏭️ Skipping item ${processedCount} of ${resultsToProcess.length} (no raw_answer)`);
           continue;
         }
 
-        // Process this item completely (all 3 steps) with per-result batching
-        await this.processSingleResultWithBatching(
+        // Atomically claim this result for processing
+        const claimed = await this.claimCollectorResult(collectorResult.id);
+        if (!claimed) {
+          console.log(`   ⏭️ Collector_result ${collectorResult.id} already claimed by another worker, skipping`);
+          continue;
+        }
+
+        console.log(`   🔒 Successfully claimed collector_result ${collectorResult.id} for processing`);
+        claimedResults.set(collectorResult.id, {
           collectorResult,
-          brandId,
-          customerId,
-          result,
-          processedCount,
-          resultsToProcess.length
-        );
-      }
-
-      // For Ollama, we're done - all steps completed incrementally
-      // Note: citationsProcessed is tracked during processSingleResultWithBatching
-      // when Step 1 succeeds (citations are stored during analysis, independent of Steps 2/3)
-      console.log(`\n✅ Incremental processing complete!`);
-      console.log(`   Processed: ${result.processed}`);
-      console.log(`   Citations: ${result.citationsProcessed}`);
-      console.log(`   Positions: ${result.positionsProcessed}`);
-      console.log(`   Sentiments: ${result.sentimentsProcessed}`);
-      console.log(`   Errors: ${result.errors.length}`);
-      return result;
-    } else {
-      // BATCH PROCESSING: Step 1 → Step 2 → Step 3 (for OpenRouter - faster)
-      console.log(`\n🔄 Using batch processing (OpenRouter enabled)`);
-      console.log(`   Step 1: Analyze all → Step 2: Extract all positions → Step 3: Store all sentiment`);
-      
-      // Step 1: Run consolidated analysis for all results
-      for (const collectorResult of resultsToProcess) {
-        if (!collectorResult || !collectorResult.id) {
-          continue;
-        }
-        
-        processedCount++;
+          step1Success: false,
+          step2Success: false,
+          step3Success: false,
+        });
         
         try {
-          // Validate required fields
-          if (!collectorResult.raw_answer || collectorResult.raw_answer.trim().length === 0) {
-            console.warn(`⚠️ Skipping collector_result ${collectorResult.id}: no raw_answer`);
-            continue;
-          }
-
           // Check DB cache first
           let analysis = await this.getCachedAnalysisFromDB(collectorResult.id);
           
@@ -633,14 +831,24 @@ export class ConsolidatedScoringService {
           if (analysis) {
             analysisResults.set(collectorResult.id, analysis);
             result.processed++;
+            const status = claimedResults.get(collectorResult.id);
+            if (status) {
+              status.step1Success = true;
+            }
+          } else {
+            throw new Error('Analysis returned no results');
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           result.errors.push({
             collectorResultId: collectorResult.id,
-            error: errorMsg,
+            error: `Step 1 failed: ${errorMsg}`,
           });
           console.error(`❌ Failed consolidated analysis for collector_result ${collectorResult.id}:`, errorMsg);
+          const status = claimedResults.get(collectorResult.id);
+          if (status) {
+            status.error = `Step 1 failed: ${errorMsg}`;
+          }
         }
       }
     }
@@ -690,10 +898,43 @@ export class ConsolidatedScoringService {
       console.log(`   📊 Position rows should now exist for collector_result IDs:`, 
         analyzedCollectorResultIds.slice(0, 10).join(', ') + (analyzedCollectorResultIds.length > 10 ? '...' : ''));
       
+      // Update Step 2 status for successfully processed items
+      for (const collectorResultId of analyzedCollectorResultIds) {
+        const status = claimedResults.get(collectorResultId);
+        if (status) {
+          // Check if metric_fact exists (indicates Step 2 succeeded)
+          const { data: metricFact } = await this.supabase
+            .from('metric_facts')
+            .select('id')
+            .eq('collector_result_id', collectorResultId)
+            .maybeSingle();
+          
+          if (metricFact) {
+            status.step2Success = true;
+          } else {
+            status.step2Success = false;
+            if (!status.error) {
+              status.error = 'Step 2 failed: No metric_fact created';
+            }
+          }
+        }
+      }
+      
       // Verify positions were actually created
       if (positionResult.count === 0 && analyzedCollectorResultIds.length > 0) {
         console.warn(`⚠️ Position extraction returned 0 results but we expected positions for ${analyzedCollectorResultIds.length} collector results`);
         console.warn(`   This might indicate an issue. Check position extraction logs above.`);
+        
+        // Mark all as Step 2 failed
+        for (const collectorResultId of analyzedCollectorResultIds) {
+          const status = claimedResults.get(collectorResultId);
+          if (status) {
+            status.step2Success = false;
+            if (!status.error) {
+              status.error = 'Step 2 failed: Position extraction returned 0 results';
+            }
+          }
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -703,6 +944,16 @@ export class ConsolidatedScoringService {
       });
       console.error(`❌ Position extraction failed:`, errorMsg);
       console.error(`   Stack:`, error instanceof Error ? error.stack : 'No stack trace');
+      
+      // Mark all claimed items as Step 2 failed
+      for (const [collectorResultId, status] of claimedResults.entries()) {
+        if (status.step1Success) {
+          status.step2Success = false;
+          if (!status.error) {
+            status.error = `Step 2 failed: ${errorMsg}`;
+          }
+        }
+      }
     }
 
     // Step 3: Store sentiment in extracted_positions (now that positions exist)
@@ -732,12 +983,40 @@ export class ConsolidatedScoringService {
       if (!analysis) {
         console.log(`   ⚠️ No analysis found for collector_result ${collectorResult.id}, skipping sentiment`);
         sentimentSkippedCount++;
+        // Update status: Step 1 or Step 2 failed
+        const status = claimedResults.get(collectorResult.id);
+        if (status) {
+          status.step3Success = false;
+          if (!status.error) {
+            status.error = 'Step 3 skipped: No analysis found';
+          }
+        }
         continue;
       }
       
       if (!analysis.sentiment) {
         console.log(`   ⚠️ No sentiment data in analysis for collector_result ${collectorResult.id}, skipping`);
         sentimentSkippedCount++;
+        // Update status: Step 3 skipped (but Steps 1 & 2 succeeded)
+        // Check if positions exist (Step 2 succeeded)
+        const { data: metricFact } = await this.supabase
+          .from('metric_facts')
+          .select('id')
+          .eq('collector_result_id', collectorResult.id)
+          .maybeSingle();
+        
+        const status = claimedResults.get(collectorResult.id);
+        if (status) {
+          if (metricFact) {
+            // Steps 1 & 2 succeeded, Step 3 skipped (no sentiment data) - still mark as completed
+            status.step3Success = true; // Consider skipped as success (no error, just no data)
+          } else {
+            status.step3Success = false;
+            if (!status.error) {
+              status.error = 'Step 3 skipped: No sentiment data and no positions found';
+            }
+          }
+        }
         continue;
       }
       
@@ -758,6 +1037,15 @@ export class ConsolidatedScoringService {
         if (metricFactError || !metricFact) {
           console.warn(`   ⚠️ No metric_fact found for collector_result ${collectorResult.id}, skipping sentiment`);
           sentimentSkippedCount++;
+          // Update status: Step 2 failed (no positions)
+          const status = claimedResults.get(collectorResult.id);
+          if (status) {
+            status.step2Success = false;
+            status.step3Success = false;
+            if (!status.error) {
+              status.error = 'Step 2 failed: No metric_fact found (positions not extracted)';
+            }
+          }
           continue;
         }
         
@@ -788,10 +1076,40 @@ export class ConsolidatedScoringService {
         result.sentimentsProcessed++;
         sentimentStoredCount++;
         console.log(`   ✅ Sentiment stored for collector_result ${collectorResult.id}`);
+        
+        // Update Step 3 status
+        const status = claimedResults.get(collectorResult.id);
+        if (status) {
+          status.step3Success = true;
+        }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`   ❌ Failed to store sentiment for collector_result ${collectorResult.id}:`, errorMsg);
         sentimentErrorCount++;
+        
+        // Update Step 3 status
+        const status = claimedResults.get(collectorResult.id);
+        if (status) {
+          status.step3Success = false;
+          if (!status.error) {
+            status.error = `Step 3 failed: ${errorMsg}`;
+          }
+        }
+      }
+    }
+    
+    // Update status for all claimed items based on processing results
+    console.log(`\n📊 Updating scoring_status for ${claimedResults.size} claimed items...`);
+    for (const [collectorResultId, status] of claimedResults.entries()) {
+      if (status.step1Success && status.step2Success && status.step3Success) {
+        // All steps succeeded
+        await this.markCollectorResultCompleted(collectorResultId);
+        console.log(`   ✅ Collector_result ${collectorResultId} marked as completed`);
+      } else {
+        // One or more steps failed
+        const errorMsg = status.error || 'Unknown error during processing';
+        await this.markCollectorResultError(collectorResultId, errorMsg);
+        console.log(`   ❌ Collector_result ${collectorResultId} marked as error: ${errorMsg}`);
       }
     }
     
@@ -1000,6 +1318,24 @@ export class ConsolidatedScoringService {
     console.log(`   ✅ Citations stored for collector_result ${collectorResultId}`);
 
     // Return analysis for later use (sentiment storage after positions are extracted)
+    
+    // Store keywords if present
+    if (analysis.keywords && analysis.keywords.length > 0) {
+      console.log(`   💾 Storing ${analysis.keywords.length} keywords for collector_result ${collectorResultId}`);
+      // Don't await this to avoid blocking the main flow
+      keywordGenerationService.storeKeywords(analysis.keywords, {
+        answer: rawAnswer,
+        query_id: collectorResult.query_id,
+        collector_result_id: collectorResultId,
+        brand_id: brandId,
+        customer_id: customerId,
+        // Optional: pass query_text if available in collectorResult
+        query_text: collectorResult.question || undefined
+      }).catch(err => {
+        console.error(`   ❌ Failed to store keywords for collector_result ${collectorResultId}:`, err);
+      });
+    }
+
     return analysis;
   }
 

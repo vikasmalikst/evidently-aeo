@@ -55,7 +55,7 @@ export const useManualBrandDashboard = (
       return null
     }
   })
-  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState<number>(0)
 

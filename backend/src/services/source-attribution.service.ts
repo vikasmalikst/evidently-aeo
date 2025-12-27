@@ -1305,7 +1305,8 @@ export class SourceAttributionService {
     customerId: string,
     days: number = 7,
     selectedSources?: string[],
-    metric: 'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' = 'impactScore'
+    metric: 'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' = 'impactScore',
+    dateRange?: { start: string; end: string }
   ): Promise<{
     dates: string[]
     sources: Array<{
@@ -1319,12 +1320,23 @@ export class SourceAttributionService {
           ? new Set(selectedSources.map((s) => s.toLowerCase().trim()).filter((s) => s.length > 0))
           : null
 
-      // Calculate date range (last N days)
-      const endDate = new Date()
-      endDate.setUTCHours(23, 59, 59, 999)
-      const startDate = new Date(endDate)
-      startDate.setUTCDate(startDate.getUTCDate() - (days - 1))
-      startDate.setUTCHours(0, 0, 0, 0)
+      // Calculate date range (last N days) or use provided range
+      let startDate: Date
+      let endDate: Date
+
+      if (dateRange && dateRange.start && dateRange.end) {
+        startDate = new Date(dateRange.start)
+        endDate = new Date(dateRange.end)
+        // Ensure times
+        startDate.setUTCHours(0, 0, 0, 0)
+        endDate.setUTCHours(23, 59, 59, 999)
+      } else {
+        endDate = new Date()
+        endDate.setUTCHours(23, 59, 59, 999)
+        startDate = new Date(endDate)
+        startDate.setUTCDate(startDate.getUTCDate() - (days - 1))
+        startDate.setUTCHours(0, 0, 0, 0)
+      }
 
       const startIso = startDate.toISOString()
       const endIso = endDate.toISOString()
@@ -1470,81 +1482,55 @@ export class SourceAttributionService {
         totalCitationsByDate.set(date, prev + (citation.usage_count || 1))
       }
 
+      // Fetch daily total responses for Mention Rate calculation
+      const { data: dailyResponsesData } = await supabaseAdmin
+        .from('collector_results')
+        .select('created_at')
+        .eq('brand_id', brandId)
+        .gte('created_at', startIso)
+        .lte('created_at', endIso)
+      
+      const totalResponsesByDate = new Map<string, number>()
+      if (dailyResponsesData) {
+        for (const r of dailyResponsesData) {
+          const date = new Date(r.created_at).toISOString().split('T')[0]
+          totalResponsesByDate.set(date, (totalResponsesByDate.get(date) || 0) + 1)
+        }
+      }
+
       // Calculate Impact Score for each domain and date
       const impactScoresByDomain = new Map<string, number[]>()
       
-      // Get max values for normalization (across all days)
-      const allDomains = Array.from(citationsByDomainAndDate.keys())
-      const allCitations = citationsData.map(c => c.usage_count || 1)
-      const maxCitations = Math.max(...allCitations, 1)
-      
-      // Count topics per domain (across all days)
-      const topicsByDomain = new Map<string, Set<string>>()
-      for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
-        const topics = new Set<string>()
-        for (const citations of dateMap.values()) {
-          for (const citation of citations) {
-            if (citation.query_id) {
-              const query = queryMap.get(citation.query_id)
-              if (query?.topic) {
-                topics.add(query.topic)
-              }
-            }
-          }
-        }
-        topicsByDomain.set(domain, topics)
-      }
-      const maxTopics = Math.max(...Array.from(topicsByDomain.values()).map(t => t.size), 1)
-      
-      // Calculate max sentiment across all days and domains (use new sentiment range without fixed normalization)
-      const allSentimentValuesForTrends: number[] = []
+      // Calculate daily aggregates to find max values for normalization
+      let globalMaxDailyCitations = 1
+      let globalMaxDailyTopics = 1
+      // Use fixed max sentiment of 1.0 (assuming 0-1 scale) or calculate from data if needed
+      // But to match "no normalization" request better, let's use the actual max found
+      let globalMaxDailySentiment = 1
+
+      const dailyAggregates = new Map<string, {
+        totalCitations: number,
+        uniqueTopics: Set<string>,
+        avgSentiment: number,
+        uniqueCollectorResults: Set<number>
+      }>()
+
+      // First pass: Calculate daily aggregates and find max values
       for (const date of dates) {
         for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
           const dayCitations = dateMap.get(date) || []
-          for (const citation of dayCitations) {
-            if (citation.collector_result_id) {
-              const key = `${citation.collector_result_id}_${date}`
-              const positions = positionsByCollectorAndDate.get(key) || []
-              for (const pos of positions) {
-                const isBrandRow = !pos.competitor_name || 
-                  (typeof pos.competitor_name === 'string' && pos.competitor_name.trim().length === 0)
-                if (isBrandRow && pos.sentiment_score !== null) {
-                  allSentimentValuesForTrends.push(toNumber(pos.sentiment_score))
-                }
-              }
-            }
-          }
-        }
-      }
-      const maxSentiment = allSentimentValuesForTrends.length > 0 ? Math.max(...allSentimentValuesForTrends, 1) : 1
+          if (dayCitations.length === 0) continue
 
-      // Calculate Impact Score for each day
-      for (const date of dates) {
-        for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
-          const dayCitations = dateMap.get(date) || []
-          if (dayCitations.length === 0) {
-            // No data for this day, use 0 or previous day's value
-            if (!impactScoresByDomain.has(domain)) {
-              impactScoresByDomain.set(domain, [])
-            }
-            const scores = impactScoresByDomain.get(domain)!
-            scores.push(scores.length > 0 ? scores[scores.length - 1] : 0)
-            continue
-          }
-
-          // Aggregate metrics for this domain on this day
-          const collectorIds = Array.from(new Set(
-            dayCitations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
-          ))
-
-          const shareValues: number[] = []
-          const sentimentValues: number[] = []
-          const visibilityValues: number[] = []
           let totalCitations = 0
           const dayTopics = new Set<string>()
+          const sentimentValues: number[] = []
+          const dayCollectorResults = new Set<number>()
 
           for (const citation of dayCitations) {
             totalCitations += citation.usage_count || 1
+            if (citation.collector_result_id) {
+              dayCollectorResults.add(citation.collector_result_id)
+            }
             
             if (citation.query_id) {
               const query = queryMap.get(citation.query_id)
@@ -1556,61 +1542,111 @@ export class SourceAttributionService {
             if (citation.collector_result_id) {
               const key = `${citation.collector_result_id}_${date}`
               const positions = positionsByCollectorAndDate.get(key) || []
-              
               for (const pos of positions) {
                 const isBrandRow = !pos.competitor_name || 
                   (typeof pos.competitor_name === 'string' && pos.competitor_name.trim().length === 0)
-                
-                if (isBrandRow) {
-                  if (pos.share_of_answers_brand !== null) {
-                    shareValues.push(toNumber(pos.share_of_answers_brand))
-                  }
-                  if (pos.sentiment_score !== null) {
-                    sentimentValues.push(toNumber(pos.sentiment_score))
-                  }
-                  if (pos.visibility_index !== null) {
-                    visibilityValues.push(toNumber(pos.visibility_index) * 100)
-                  }
+                if (isBrandRow && pos.sentiment_score !== null) {
+                  sentimentValues.push(toNumber(pos.sentiment_score))
                 }
               }
             }
           }
 
-          // Calculate averages
-          const avgShare = shareValues.length > 0 ? average(shareValues) : 0
           const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
-          const avgVisibility = visibilityValues.length > 0 ? average(visibilityValues) : 0
+          
+          globalMaxDailyCitations = Math.max(globalMaxDailyCitations, totalCitations)
+          globalMaxDailyTopics = Math.max(globalMaxDailyTopics, dayTopics.size)
+          globalMaxDailySentiment = Math.max(globalMaxDailySentiment, avgSentiment)
 
-          // Calculate common normalized metrics (0-100)
-          const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
+          dailyAggregates.set(`${domain}_${date}`, {
+            totalCitations,
+            uniqueTopics: dayTopics,
+            avgSentiment,
+            uniqueCollectorResults: dayCollectorResults
+          })
+        }
+      }
+
+      // Ensure sentiment max is at least 1 to avoid division by zero or tiny numbers
+      globalMaxDailySentiment = Math.max(globalMaxDailySentiment, 1)
+
+      // Second pass: Calculate scores
+      for (const date of dates) {
+        for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
+          const dayCitations = dateMap.get(date) || []
+          
+          if (dayCitations.length === 0) {
+            // No data for this day - RETURN 0 (No fill-forward)
+            if (!impactScoresByDomain.has(domain)) {
+              impactScoresByDomain.set(domain, [])
+            }
+            impactScoresByDomain.get(domain)!.push(0)
+            continue
+          }
+
+          const agg = dailyAggregates.get(`${domain}_${date}`)!
+          
+          // Re-calculate averages for SOA and Visibility (we didn't cache them in first pass)
+          const shareValues: number[] = []
+          const visibilityValues: number[] = []
+
+          for (const citation of dayCitations) {
+            if (citation.collector_result_id) {
+              const key = `${citation.collector_result_id}_${date}`
+              const positions = positionsByCollectorAndDate.get(key) || []
+              for (const pos of positions) {
+                const isBrandRow = !pos.competitor_name || 
+                  (typeof pos.competitor_name === 'string' && pos.competitor_name.trim().length === 0)
+                if (isBrandRow) {
+                  if (pos.share_of_answers_brand !== null) shareValues.push(toNumber(pos.share_of_answers_brand))
+                  if (pos.visibility_index !== null) visibilityValues.push(toNumber(pos.visibility_index) * 100)
+                }
+              }
+            }
+          }
+
+          const avgShare = shareValues.length > 0 ? average(shareValues) : 0
+          // const avgVisibility = visibilityValues.length > 0 ? average(visibilityValues) : 0
+
+          // Calculate normalized metrics for Impact Score
+          // const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
           const normalizedSOA = Math.min(100, Math.max(0, avgShare))
-          // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed -1 to 1 normalization)
-          const normalizedSentiment = maxSentiment > 0 ? Math.min(100, Math.max(0, (avgSentiment / maxSentiment) * 100)) : 0
-          const normalizedCitations = maxCitations > 0 ? Math.min(100, (totalCitations / maxCitations) * 100) : 0
-          const normalizedTopics = maxTopics > 0 ? Math.min(100, (dayTopics.size / maxTopics) * 100) : 0
+          
+          // Normalize relative to global max daily values
+          const normalizedSentiment = (agg.avgSentiment / globalMaxDailySentiment) * 100
+          const normalizedCitations = (agg.totalCitations / globalMaxDailyCitations) * 100
+          const normalizedTopics = (agg.uniqueTopics.size / globalMaxDailyTopics) * 100
 
-          const mentionDenom = totalCitationsByDate.get(date) || 0
-          const mentionRate = mentionDenom > 0 ? Math.min(100, (totalCitations / mentionDenom) * 100) : 0
+          // Calculate Mention Rate (percentage of total responses)
+          const totalResponses = totalResponsesByDate.get(date) || 1
+          const mentionRate = Math.min(100, (agg.uniqueCollectorResults.size / totalResponses) * 100)
 
+          // Weights matching Frontend (SearchSourcesR2.tsx):
+          // Mention: 0.3
+          // SOA: 0.3
+          // Sentiment: 0.2
+          // Citations: 0.1
+          // Topics: 0.1
           const impactScore = round(
-            (normalizedVisibility * 0.2) +
-            (normalizedSOA * 0.2) +
+            (mentionRate * 0.3) +
+            (normalizedSOA * 0.3) +
             (normalizedSentiment * 0.2) +
-            (normalizedCitations * 0.2) +
-            (normalizedTopics * 0.2),
+            (normalizedCitations * 0.1) +
+            (normalizedTopics * 0.1),
             1
           )
 
           const metricValue = (() => {
+
             switch (metric) {
               case 'mentionRate':
                 return round(mentionRate, 1)
               case 'soa':
-                return round(normalizedSOA, 1)
+                return round(avgShare, 1) // Raw SOA
               case 'sentiment':
-                return round(normalizedSentiment, 1)
+                return round(agg.avgSentiment, 2) // Raw Sentiment
               case 'citations':
-                return round(normalizedCitations, 1)
+                return agg.totalCitations // Raw Citations
               case 'impactScore':
               default:
                 return impactScore

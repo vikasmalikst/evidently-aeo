@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
+import { LoadingScreen } from '../components/common/LoadingScreen';
 import { SourceTabs } from '../components/Sources/SourceTabs';
 import { SourceCoverageHeatmap } from '../components/Sources/SourceCoverageHeatmap';
 import { Bubble, Bar, Doughnut, Scatter } from 'react-chartjs-2';
@@ -75,7 +76,7 @@ interface SourceData {
 
 const fallbackTopicOptions = ['Innovation', 'Trends', 'Sustainability', 'Pricing', 'Comparison', 'Reviews', 'Technology', 'Market'];
 
-type SortField = 'name' | 'type' | 'value' | 'mentionRate' | 'soa' | 'sentiment' | 'topics' | 'pages' | 'prompts';
+type SortField = 'name' | 'type' | 'value' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' | 'topics' | 'pages' | 'prompts';
 type SortDirection = 'asc' | 'desc';
 
 export const SearchSources = () => {
@@ -355,6 +356,10 @@ export const SearchSources = () => {
           aValue = a.sentiment;
           bValue = b.sentiment;
           break;
+        case 'citations':
+          aValue = a.citations;
+          bValue = b.citations;
+          break;
         case 'topics':
           aValue = a.topics.length;
           bValue = b.topics.length;
@@ -495,28 +500,12 @@ export const SearchSources = () => {
     return minRadius + clamped * (maxRadius - minRadius);
   };
 
-  // Deterministic pseudo-random generator to keep jitter stable until data changes
-  const deterministicRandom = (seed: string): number => {
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) {
-      hash = (hash << 5) - hash + seed.charCodeAt(i);
-      hash |= 0; // Convert to 32-bit integer
-    }
-    return ((hash >>> 0) % 10000) / 10000; // 0..0.9999
-  };
-
-  // Helper function to add jittering to prevent exact overlaps (stable per source)
-  const addJitter = (value: number, seed: string, maxJitter: number = 0.4): number => {
-    const rand = deterministicRandom(seed) - 0.5; // -0.5 .. 0.4999
-    return value + rand * maxJitter;
-  };
-
   const chartData = useMemo(() => ({
     datasets: filteredData.map((source) => ({
       label: source.name,
       data: [{
-        x: addJitter(source.mentionRate, source.name),
-        y: addJitter(source.soa, `${source.name}-soa`),
+        x: source.mentionRate,
+        y: source.soa,
         r: sentimentToRadius(source.sentiment),
       }],
       backgroundColor: sourceTypeColors[source.type] + 'B3', // 70% opacity (B3 in hex)
@@ -532,8 +521,8 @@ export const SearchSources = () => {
       datasets: competitorSourceData.sources.map((source) => ({
         label: source.name,
         data: [{
-          x: addJitter(source.mentionRate, `competitor-${source.name}`),
-          y: addJitter(source.soa, `competitor-${source.name}-soa`),
+          x: source.mentionRate,
+          y: source.soa,
           r: sentimentToRadius(source.sentiment),
         }],
         backgroundColor: sourceTypeColors[source.type] + 'B3',
@@ -715,6 +704,14 @@ export const SearchSources = () => {
       ctx.restore();
     }
   }), [thresholds]);
+
+  if (loading && (!response || !response.data)) {
+    return (
+      <Layout>
+        <LoadingScreen message="Loading source analysis..." />
+      </Layout>
+    );
+  }
 
   // Analytics chart renderers (shared by brand and competitor)
   const renderFunnelChart = (distribution: Array<{ label: string; count: number; avgSoa: number }>) => (
@@ -2046,6 +2043,27 @@ export const SearchSources = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Sentiment
                       {sortField === 'sentiment' && (
+                        sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('citations')}
+                    style={{
+                      textAlign: 'right',
+                      padding: '14px 12px',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      color: '#1a1d29',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                      Citations
+                      {sortField === 'citations' && (
                         sortDirection === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
                       )}
                     </div>

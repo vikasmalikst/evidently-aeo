@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
+import { LoadingScreen } from '../components/common/LoadingScreen';
 import { PromptFilters } from '../components/Prompts/PromptFilters';
 import { PromptsList } from '../components/Prompts/PromptsList';
 import { ResponseViewer } from '../components/Prompts/ResponseViewer';
@@ -167,6 +168,14 @@ export const Prompts = () => {
   const handleLLMChange = (llms: string[]) => {
     setSelectedLLMs(llms);
   };
+
+  if (loading && (!response || !response.data)) {
+    return (
+      <Layout>
+        <LoadingScreen message="Loading prompts..." />
+      </Layout>
+    );
+  }
 
   return (
     <Layout>

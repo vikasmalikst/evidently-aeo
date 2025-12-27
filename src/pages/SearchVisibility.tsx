@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
+import { LoadingScreen } from '../components/common/LoadingScreen';
 import { VisibilityTabs } from '../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../components/Visibility/ChartControls';
 import { VisibilityChart } from '../components/Visibility/VisibilityChart';
 import { VisibilityTable } from '../components/Visibility/VisibilityTable';
 import { KpiToggle } from '../components/Visibility/KpiToggle';
-import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import { useCachedData } from '../hooks/useCachedData';
@@ -169,6 +169,7 @@ export const SearchVisibility = () => {
   const [llmFilters, setLlmFilters] = useState<string[]>([]);
   const [allLlmOptions, setAllLlmOptions] = useState<Array<{ value: string; label: string; color?: string }>>([]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [isSelectionInitialized, setIsSelectionInitialized] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [metricType, setMetricType] = useState<MetricType>(() => parseMetricType(searchParams.get('kpi')) ?? 'visibility');
   const [brandModels, setBrandModels] = useState<ModelData[]>([]);
@@ -188,6 +189,7 @@ export const SearchVisibility = () => {
     selectedBrandId,
     selectedBrand,
     isLoading: brandsLoading,
+    error: brandsError,
     selectBrand
   } = useManualBrandDashboard();
 
@@ -229,10 +231,32 @@ export const SearchVisibility = () => {
     setSearchParams(nextParams, { replace: true });
   }, [kpiParam, metricType, searchParams, setSearchParams]);
 
+  // Auto-correct selected brand if it's invalid
+  useEffect(() => {
+    if (brandsLoading || brands.length === 0 || !selectedBrandId) {
+      return;
+    }
+
+    const brandExists = brands.some(b => b.id === selectedBrandId);
+    if (!brandExists) {
+      console.warn(`[SearchVisibility] Selected brand ${selectedBrandId} is invalid. Switching to default...`);
+      selectBrand(brands[0].id);
+    }
+  }, [brands, brandsLoading, selectedBrandId, selectBrand]);
+
   // Build endpoint
   const visibilityEndpoint = useMemo(() => {
     const endpointStart = performance.now();
-    if (!selectedBrandId) return null;
+    
+    // Wait for brands to load and validate selection
+    if (brandsLoading || !selectedBrandId) return null;
+    
+    // Ensure selected brand exists in the list
+    const brandExists = brands.some(b => b.id === selectedBrandId);
+    if (!brandExists) {
+      return null;
+    }
+
     const params = new URLSearchParams({
       startDate: dateRange.startDate,
       endDate: dateRange.endDate
@@ -247,8 +271,9 @@ export const SearchVisibility = () => {
     }
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     perfLog('SearchVisibility: Endpoint computation', endpointStart);
+    console.log('[SearchVisibility] Endpoint:', endpoint, 'BrandsLoading:', brandsLoading, 'SelectedBrand:', selectedBrandId);
     return endpoint;
-  }, [selectedBrandId, dateRange.startDate, dateRange.endDate, reloadToken, activeTab, llmFilters]);
+  }, [brands, brandsLoading, selectedBrandId, dateRange.startDate, dateRange.endDate, reloadToken, activeTab, llmFilters]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());
@@ -264,11 +289,67 @@ export const SearchVisibility = () => {
     { enabled: !authLoading && !brandsLoading && !!visibilityEndpoint, refetchOnMount: false }
   );
 
+  useEffect(() => {
+    console.log('[SearchVisibility] Data State:', {
+      loading,
+      hasResponse: !!response,
+      hasError: !!fetchError,
+      authLoading,
+      brandsLoading,
+      endpoint: visibilityEndpoint
+    });
+  }, [loading, response, fetchError, authLoading, brandsLoading, visibilityEndpoint]);
+
+  const currentModels = activeTab === 'brand' ? brandModels : competitorModels;
+
+  const isAwaitingBrandSelection = !brandsLoading && brands.length > 0 && !selectedBrandId;
+  const isInvalidSelectedBrand =
+    !brandsLoading &&
+    brands.length > 0 &&
+    !!selectedBrandId &&
+    !brands.some((brand) => brand.id === selectedBrandId);
+
+  const dataLoading =
+    !!authLoading ||
+    brandsLoading ||
+    isAwaitingBrandSelection ||
+    isInvalidSelectedBrand ||
+    loading ||
+    (!!visibilityEndpoint && !response && !fetchError);
+
+  const selectionInitializing =
+    !!response?.data && currentModels.length > 0 && selectedModels.length === 0 && !isSelectionInitialized;
+
+  const combinedLoading = dataLoading || selectionInitializing;
+
+  useEffect(() => {
+    console.log('[SearchVisibility Debug] Loading components:', JSON.stringify({
+      authLoading,
+      brandsLoading,
+      isAwaitingBrandSelection,
+      isInvalidSelectedBrand,
+      loading,
+      hasEndpoint: !!visibilityEndpoint,
+      hasResponse: !!response,
+      hasFetchError: !!fetchError,
+      isSelectionInitialized,
+      selectionInitializing,
+      dataLoading,
+      combinedLoading
+    }, null, 2));
+  }, [authLoading, brandsLoading, isAwaitingBrandSelection, isInvalidSelectedBrand, loading, visibilityEndpoint, response, fetchError, isSelectionInitialized, selectionInitializing, dataLoading, combinedLoading]);
+
   // Log fetch completion
   useEffect(() => {
     if (response && !loading) {
       perfLog('SearchVisibility: Data fetch complete', fetchStart.current);
       fetchStart.current = performance.now();
+      console.log('[SearchVisibility] Response received:', {
+        success: response.success,
+        hasData: !!response.data,
+        llmCount: response.data?.llmVisibility?.length,
+        competitorCount: response.data?.competitorVisibility?.length
+      });
     }
   }, [response, loading]);
 
@@ -599,10 +680,38 @@ export const SearchVisibility = () => {
   const [chartDateLabels, setChartDateLabels] = useState<string[]>(chartLabels);
   
   useEffect(() => {
+    console.log('[SearchVisibility] Updating models from processed data:', {
+      brandModels: processedData.brandModels.length,
+      competitorModels: processedData.competitorModels.length,
+      hasDateLabels: !!processedData.chartDateLabels
+    });
     setBrandModels(processedData.brandModels);
     setCompetitorModels(processedData.competitorModels);
     setChartDateLabels(processedData.chartDateLabels || chartLabels);
+
+    // If new data is available, we might need to re-initialize selection logic
+    // But only if we actually have data to select from.
+    if (processedData.brandModels.length > 0 || processedData.competitorModels.length > 0) {
+      // If we are switching data sources (e.g. brand to competitive or new date range),
+      // we might want to ensure selection is re-validated.
+      // However, we rely on the selection useEffect below to handle the logic.
+      // The critical part is ensuring the loading screen stays up if selection is pending.
+      // If we have data, we reset initialization to force the selection effect to run
+      // and update the selection state before rendering the chart.
+       setIsSelectionInitialized(false);
+    }
   }, [processedData]);
+
+  useEffect(() => {
+    console.log('[SearchVisibility] Loading state:', { 
+      authLoading, 
+      brandsLoading, 
+      loading, 
+      hasEndpoint: !!visibilityEndpoint, 
+      hasResponse: !!response, 
+      combinedLoading 
+    });
+  }, [authLoading, brandsLoading, loading, visibilityEndpoint, response, combinedLoading]);
 
   // Log page render completion
   useEffect(() => {
@@ -610,8 +719,6 @@ export const SearchVisibility = () => {
       perfLog('SearchVisibility: Page fully rendered', pageLoadStart.current);
     }
   }, [loading, brandModels.length]);
-
-  const currentModels = activeTab === 'brand' ? brandModels : competitorModels;
 
   useEffect(() => {
     const availableModels = currentModels;
@@ -621,9 +728,33 @@ export const SearchVisibility = () => {
         return stillValid;
       }
       // Select all available models by default, regardless of their values
-      return availableModels.map((model) => model.id);
+      const allIds = availableModels.map((model) => model.id);
+      return allIds;
     });
   }, [activeTab, currentModels]);
+
+  // Reset initialization when switching tabs to prevent flashing invalid state
+  useEffect(() => {
+    setIsSelectionInitialized(false);
+  }, [activeTab]);
+
+  // Synchronize initialization state with selection state
+  useEffect(() => {
+    // If we have models and a selection, we are initialized
+    if (currentModels.length > 0 && selectedModels.length > 0) {
+       // Verify that the selected models actually correspond to the current models
+       // This prevents initialization with stale selection IDs
+       const hasValidSelection = selectedModels.some(id => currentModels.some(m => m.id === id));
+       if (hasValidSelection) {
+         console.log('[SearchVisibility] Initialization complete: Selection valid');
+         setIsSelectionInitialized(true);
+       }
+    } else if (response && !loading && currentModels.length === 0) {
+       // If loaded but no models, we are initialized (empty state)
+       console.log('[SearchVisibility] Initialization complete: No models available');
+       setIsSelectionInitialized(true);
+    }
+  }, [selectedModels, currentModels, response, loading]);
 
   const handleModelToggle = useCallback((modelId: string) => {
     setSelectedModels((prev) =>
@@ -647,14 +778,28 @@ export const SearchVisibility = () => {
     }))
   }), [currentModels, metricType, chartDateLabels]);
 
-  const combinedLoading = authLoading || brandsLoading || loading;
-
   const handleRetry = useCallback(() => {
     setReloadToken((prev) => prev + 1);
     refetchVisibility();
   }, [refetchVisibility]);
 
-  const error = fetchError?.message || (response && !response.success ? (response.error || response.message || 'Failed to load visibility data.') : null);
+  if (dataLoading && (!response || !response.data)) {
+    return (
+      <Layout>
+        <LoadingScreen message="Loading visibility data..." />
+      </Layout>
+    );
+  }
+
+  if (selectionInitializing) {
+    return (
+      <Layout>
+        <LoadingScreen message="Initializing chart..." />
+      </Layout>
+    );
+  }
+
+  const error = brandsError || fetchError?.message || (response && !response.success ? (response.error || response.message || 'Failed to load visibility data.') : null);
 
   const EmptyState = ({ message }: { message: string }) => (
     <div className="flex flex-col items-center justify-center py-12 text-center text-sm text-[#6c7289]">

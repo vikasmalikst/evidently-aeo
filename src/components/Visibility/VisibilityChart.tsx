@@ -368,11 +368,31 @@ export const VisibilityChart = memo(({
     );
   }
 
-  if (!chartData || selectedModels.length === 0) {
+  if (models.length === 0) {
+    return (
+      <div className="w-full h-full flex items-center justify-center p-6 bg-white min-h-[400px]">
+        <p className="text-[var(--text-caption)] text-sm text-center">
+          No data available for the selected period
+        </p>
+      </div>
+    );
+  }
+
+  if (selectedModels.length === 0) {
     return (
       <div className="w-full h-full flex items-center justify-center p-6 bg-white min-h-[400px]">
         <p className="text-[var(--text-caption)] text-sm text-center">
           Select at least one {activeTab === 'brand' ? 'LLM model' : 'brand'} to display
+        </p>
+      </div>
+    );
+  }
+
+  if (!chartData || chartData.datasets.length === 0) {
+    return (
+      <div className="w-full h-full flex items-center justify-center p-6 bg-white min-h-[400px]">
+        <p className="text-[var(--text-caption)] text-sm text-center">
+          No data available for the selected period
         </p>
       </div>
     );

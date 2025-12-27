@@ -737,13 +737,18 @@ router.get('/:brandId/sources/impact-score-trends', authenticateToken, async (re
     const metric = (metricRaw || 'impactScore').toString();
     const allowedMetrics = new Set(['impactScore', 'mentionRate', 'soa', 'sentiment', 'citations']);
     const safeMetric = allowedMetrics.has(metric) ? metric : 'impactScore';
+
+    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    const dateRange = startDate && endDate ? { start: startDate, end: endDate } : undefined;
     
     const trends = await sourceAttributionService.getImpactScoreTrends(
       brandId,
       customerId,
       days,
       selectedSources.length ? selectedSources : undefined,
-      safeMetric as any
+      safeMetric as any,
+      dateRange
     );
     
     res.json({ success: true, data: trends });

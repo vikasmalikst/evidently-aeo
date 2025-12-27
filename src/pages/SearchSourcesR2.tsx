@@ -300,15 +300,19 @@ export const SearchSourcesR2 = () => {
     setHasInitializedTrendSelection(true);
   }, [selectedBrandId, enhancedSources, hasInitializedTrendSelection]);
 
-  // Fetch Impact Score trends data (last 7 days, daily)
+  // Fetch Impact Score trends data (follows selected date range)
   const trendsEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
-    const params = new URLSearchParams({ days: '7', metric: trendMetric });
+    const params = new URLSearchParams({ 
+      metric: trendMetric,
+      startDate,
+      endDate
+    });
     if (selectedTrendSources.length > 0) {
       params.set('sources', selectedTrendSources.slice(0, 10).join(','));
     }
     return `/brands/${selectedBrandId}/sources/impact-score-trends?${params.toString()}`;
-  }, [selectedBrandId, selectedTrendSources, trendMetric]);
+  }, [selectedBrandId, selectedTrendSources, trendMetric, startDate, endDate]);
 
   const { 
     data: trendsResponse, 
@@ -399,7 +403,7 @@ export const SearchSourcesR2 = () => {
       case 'sentiment':
         return 'Sentiment';
       case 'citations':
-        return 'Citations (normalized)';
+        return 'Citations';
       case 'impactScore':
       default:
         return 'Impact Score';

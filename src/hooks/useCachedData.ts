@@ -288,7 +288,7 @@ export function useCachedData<T>(
       // Use same cache key generation logic as apiCache (includes customer_id)
       const cacheKey = generateCacheKeyForHook(endpoint, params);
       
-      cacheDebugLog(`[useCachedData] Checking cache for key: ${cacheKey} at`, performance.now());
+      console.log(`[useCachedData] Checking cache for key: ${cacheKey} at`, performance.now());
       const cached = cacheManager.get<T>(cacheKey);
       const cacheCheckTime = performance.now() - cacheCheckStart;
       
@@ -296,7 +296,7 @@ export function useCachedData<T>(
         const isStaleValue = cacheManager.isStale(cacheKey);
         const isFreshValue = cacheManager.isFresh(cacheKey);
         const isExpiredValue = cacheManager.isExpired(cacheKey);
-        cacheDebugLog(`[useCachedData] ✅ CACHE HIT at`, performance.now(), `- Cache check took: ${cacheCheckTime.toFixed(2)}ms - Fresh: ${isFreshValue}, Stale: ${isStaleValue}, Expired: ${isExpiredValue}`);
+        console.log(`[useCachedData] ✅ CACHE HIT at`, performance.now(), `- Cache check took: ${cacheCheckTime.toFixed(2)}ms - Fresh: ${isFreshValue}, Stale: ${isStaleValue}, Expired: ${isExpiredValue}`);
         setData(cached);
         setLoading(false);
         setIsStale(isStaleValue);

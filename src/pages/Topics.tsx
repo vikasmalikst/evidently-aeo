@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { TopicsAnalysisPage } from './TopicsAnalysis/TopicsAnalysisPage';
+import { Layout } from '../components/Layout/Layout';
+import { LoadingScreen } from '../components/common/LoadingScreen';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useCachedData } from '../hooks/useCachedData';
 import { calculatePreviousPeriod } from '../components/DateRangePicker/DateRangePicker';
@@ -247,7 +249,6 @@ const getDefaultDateRange = () => {
 
 export const Topics = () => {
   const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
-  const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<TopicsFilters>(() => {
     const defaults = getDefaultDateRange();
     return { startDate: defaults.start, endDate: defaults.end };
@@ -512,120 +513,37 @@ export const Topics = () => {
       
       const transformed = transformTopicsData(topicsArray, topicDeltaMap);
       
-      // Set avgSoADelta from API response or calculated value
-      if (avgSoADelta !== undefined && avgSoADelta !== null) {
+      if (avgSoADelta !== undefined) {
         transformed.performance.avgSoADelta = avgSoADelta;
       }
       
       return transformed;
-    } catch (err) {
-      console.error('Error transforming topics:', err);
-      setError(err instanceof Error ? err.message : 'Failed to transform topics');
+    } catch (e) {
+      console.error('Error transforming topics data:', e);
       return null;
     }
   }, [response, previousResponse]);
 
-  useEffect(() => {
-    if (fetchError) {
-      setError(fetchError.message || 'Failed to load topics');
-    } else if (response && !response.success) {
-      setError(response.error || response.message || 'Failed to load topics');
-    }
-  }, [fetchError, response]);
-
   const hasTransformedData = !!topicsData;
-  const showInitialLoading = (isLoading || brandsLoading) && !hasTransformedData;
   const isRefreshing = (isLoading || previousLoading) && hasTransformedData;
 
-  // Show loading state only on initial load (no existing data)
-  if (showInitialLoading) {
+  if (isLoading && !topicsData) {
     return (
-      <TopicsAnalysisPage
-        data={{
-          portfolio: { totalTopics: 0, searchVolume: 0, categories: 0, lastUpdated: new Date().toISOString() },
-          performance: { avgSoA: 0, maxSoA: 0, minSoA: 0, weeklyGainer: { topic: '', delta: 0, category: '' } },
-          topics: [],
-          categories: []
-        }}
-        isLoading={true}
-        onTopicClick={(topic) => {
-          console.log('Topic clicked:', topic);
-        }}
-        onFiltersChange={updateFilters}
-        availableModels={availableModels}
-        currentCollectorType={filters.collectorType}
-        currentStartDate={filters.startDate}
-        currentEndDate={filters.endDate}
-        competitors={competitors}
-        selectedCompetitors={selectedCompetitors}
-        onCompetitorToggle={handleCompetitorToggle}
-        onSelectAllCompetitors={handleSelectAllCompetitors}
-        onDeselectAllCompetitors={handleDeselectAllCompetitors}
-        isLoadingCompetitors={isLoadingCompetitors}
-      />
+      <Layout>
+        <LoadingScreen message="Loading topics analysis..." />
+      </Layout>
     );
   }
 
-  // Use real data - allow empty topics array (filtering might return empty results)
-  if (!topicsData) {
-    // Only show empty state if we don't have a response at all
-    // If we have a response with empty topics, still show the page so filters work
-    if (!response || !response.success) {
-      return (
-        <TopicsAnalysisPage
-          data={{
-            portfolio: { totalTopics: 0, searchVolume: 0, categories: 0, lastUpdated: new Date().toISOString() },
-            performance: { avgSoA: 0, maxSoA: 0, minSoA: 0, weeklyGainer: { topic: '', delta: 0, category: '' } },
-            topics: [],
-            categories: []
-          }}
-          isLoading={false}
-          onTopicClick={(topic) => {
-            console.log('Topic clicked:', topic);
-          }}
-          onFiltersChange={updateFilters}
-          availableModels={availableModels}
-          currentCollectorType={filters.collectorType}
-          currentStartDate={filters.startDate}
-          currentEndDate={filters.endDate}
-          competitors={competitors}
-          selectedCompetitors={selectedCompetitors}
-          onCompetitorToggle={handleCompetitorToggle}
-          onSelectAllCompetitors={handleSelectAllCompetitors}
-          onDeselectAllCompetitors={handleDeselectAllCompetitors}
-          isLoadingCompetitors={isLoadingCompetitors}
-        />
-      );
-    }
-    // If response is successful but transformation failed, show error
-    return (
-        <TopicsAnalysisPage
-          data={{
-            portfolio: { totalTopics: 0, searchVolume: 0, categories: 0, lastUpdated: new Date().toISOString() },
-            performance: { avgSoA: 0, maxSoA: 0, minSoA: 0, weeklyGainer: { topic: '', delta: 0, category: '' } },
-            topics: [],
-            categories: []
-          }}
-          isLoading={false}
-          onTopicClick={(topic) => {
-            console.log('Topic clicked:', topic);
-          }}
-          onFiltersChange={updateFilters}
-          availableModels={availableModels}
-          currentCollectorType={filters.collectorType}
-          currentStartDate={filters.startDate}
-          currentEndDate={filters.endDate}
-          competitors={competitors}
-          selectedCompetitors={selectedCompetitors}
-          onCompetitorToggle={handleCompetitorToggle}
-          onSelectAllCompetitors={handleSelectAllCompetitors}
-          onDeselectAllCompetitors={handleDeselectAllCompetitors}
-          isLoadingCompetitors={isLoadingCompetitors}
-        />
-    );
-  }
+  // If no data available (error or empty), provide empty structure
+  const dataToShow = topicsData || {
+    portfolio: { totalTopics: 0, searchVolume: 0, categories: 0, lastUpdated: new Date().toISOString() },
+    performance: { avgSoA: 0, maxSoA: 0, minSoA: 0, weeklyGainer: { topic: '', delta: 0, category: '' } },
+    topics: [],
+    categories: []
+  };
 
-  const dataToShow = topicsData;
+  const error = fetchError?.message || (response && !response.success ? (response.error || response.message || 'Failed to load topics') : null);
 
   return (
     <>

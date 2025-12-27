@@ -151,7 +151,7 @@ export const useDashboardData = () => {
     // This prevents trying to fetch data for a deleted brand
     const brandExists = brands.some(b => b.id === selectedBrandId);
     if (!brandExists) {
-      console.warn(`[useDashboardData] Selected brand ${selectedBrandId} does not exist in brands list. Waiting for validation...`);
+      console.warn(`[useDashboardData] Selected brand ${selectedBrandId} not found in brands list`);
       return null;
     }
     
@@ -168,6 +168,7 @@ export const useDashboardData = () => {
       params.set('cacheBust', String(reloadKey));
     }
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+    console.debug(`[useDashboardData] Endpoint created: ${endpoint}`);
     return endpoint;
   }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress, brandsLoading, brands]);
 

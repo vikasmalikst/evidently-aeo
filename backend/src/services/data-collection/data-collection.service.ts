@@ -37,6 +37,7 @@ export interface QueryExecutionRequest {
   locale: string;
   country: string;
   collectors: string[];
+  suppressScoring?: boolean;
 }
 
 export interface CollectorResult {
@@ -54,6 +55,7 @@ export interface CollectorResult {
   customerId?: string;
   snapshotId?: string;
   rawResponseJson?: any; // Raw JSON response from collector API
+  suppressScoring?: boolean;
 }
 
 export interface CollectorConfig {
@@ -220,12 +222,11 @@ export class DataCollectionService {
                 executionId: '', // No execution ID since all collectors failed
                 collectorType: request.collectors.join(','),
                 status: 'failed',
-                error: collectorResults.length > 0 
-                  ? collectorResults.map(r => r.error).filter(Boolean).join('; ') 
-                  : 'All collectors failed',
+                error: collectorResults.length > 0 ? collectorResults.map(r => r.error).filter(Boolean).join('; ') : 'All collectors failed',
                 brandId: request.brandId,
                 customerId: request.customerId,
-                executionTimeMs: 0
+                executionTimeMs: 0,
+                suppressScoring: request.suppressScoring
               });
             } catch (storeError) {
               console.error(`❌ Failed to store failed collector_result for query ${request.queryId}:`, storeError);
@@ -246,16 +247,17 @@ export class DataCollectionService {
           
           // Create a failed collector_result entry even when exception is thrown
           try {
-            await this.storeCollectorResult({
-              queryId: request.queryId,
-              executionId: '',
-              collectorType: request.collectors.join(','),
-              status: 'failed',
-              error: errorMessage,
-              brandId: request.brandId,
-              customerId: request.customerId,
-              executionTimeMs: 0
-            });
+                await this.storeCollectorResult({
+                  queryId: request.queryId,
+                  executionId: '',
+                  collectorType: request.collectors.join(','),
+                  status: 'failed',
+                  error: errorMessage,
+                  brandId: request.brandId,
+                  customerId: request.customerId,
+                  executionTimeMs: 0,
+                  suppressScoring: request.suppressScoring
+                });
           } catch (storeError) {
             console.error(`❌ Failed to store failed collector_result for query ${request.queryId}:`, storeError);
           }
@@ -463,8 +465,9 @@ export class DataCollectionService {
         intent: request.intent,
         locale: request.locale,
         country: request.country,
-        collectors: request.collectors
-      }
+        collectors: request.collectors,
+        suppress_scoring: request.suppressScoring === true,
+      },
     };
 
     // Add snapshot_id if provided (for BrightData collectors)
@@ -499,6 +502,51 @@ export class DataCollectionService {
       console.error(`❌ Failed to create query execution for ${collectorType}:`, error);
       throw new Error(`Failed to create query execution: ${error.message}`);
     }
+
+    if (data?.id) {
+      try {
+        const pendingCollectorResult: any = {
+          query_id: request.queryId,
+          collector_type: mappedCollectorType,
+          raw_answer: null,
+          citations: null,
+          urls: null,
+          question: request.queryText || null,
+          brand_id: request.brandId,
+          customer_id: request.customerId,
+          execution_id: data.id,
+          status: status === 'failed' ? (collectorError?.retryable ? 'failed_retry' : 'failed') : status,
+          metadata: {
+            intent: request.intent,
+            locale: request.locale,
+            country: request.country,
+            collectors: request.collectors,
+            suppress_scoring: request.suppressScoring === true,
+          },
+        };
+
+        if (snapshotId) {
+          pendingCollectorResult.brightdata_snapshot_id = snapshotId;
+        }
+
+        if (collectorError && status === 'failed') {
+          pendingCollectorResult.error_message = collectorError.message;
+        }
+
+        const { error: pendingInsertError } = await this.supabase
+          .from('collector_results')
+          .insert(pendingCollectorResult)
+          .select('id')
+          .maybeSingle();
+
+        if (pendingInsertError) {
+          if (pendingInsertError.code !== 'PGRST204') {
+          }
+        }
+      } catch (collectorResultInsertError) {
+      }
+    }
+
     return data.id;
   }
 
@@ -574,6 +622,36 @@ export class DataCollectionService {
     // Verify the update was successful
     if (!data || data.length === 0) {
     } else {
+    }
+
+    try {
+      const mappedCollectorType = this.mapCollectorTypeToDatabase(collectorType);
+      const collectorResultStatus =
+        status === 'failed' ? (collectorError?.retryable ? 'failed_retry' : 'failed') : status;
+
+      const collectorUpdate: any = {
+        status: collectorResultStatus,
+      };
+
+      if (snapshotId) {
+        collectorUpdate.brightdata_snapshot_id = snapshotId;
+      }
+
+      if (collectorError && status === 'failed') {
+        collectorUpdate.error_message = collectorError.message;
+      }
+
+      const { error: collectorStatusError } = await this.supabase
+        .from('collector_results')
+        .update(collectorUpdate)
+        .eq('execution_id', executionId)
+        .eq('collector_type', mappedCollectorType);
+
+      if (collectorStatusError) {
+        if (collectorStatusError.code !== 'PGRST204') {
+        }
+      }
+    } catch (collectorStatusUpdateError) {
     }
   }
 
@@ -896,7 +974,8 @@ export class DataCollectionService {
         // Add missing fields from request
         brandId: request.brandId,
         customerId: request.customerId,
-        rawResponseJson: rawResponseJson
+        rawResponseJson: rawResponseJson,
+        suppressScoring: request.suppressScoring
       });
 
       // CRITICAL: Update execution status to 'completed' after successful result storage
@@ -1080,6 +1159,7 @@ export class DataCollectionService {
       competitors: competitorsList.length > 0 ? competitorsList : null, // Add competitors as JSONB array (not stringified)
       topic: topicFromQuery || null, // Store topic in dedicated column
       collection_time_ms: result.executionTimeMs || null, // Store collection time in dedicated column
+      status: result.status === 'failed' ? 'failed' : result.status,
       metadata: (() => {
         // Remove raw_response_json from metadata to avoid 413 Request Entity Too Large errors
         const { raw_response_json: _, ...metadataWithoutRawJson } = result.metadata || {};
@@ -1089,6 +1169,7 @@ export class DataCollectionService {
           status: result.status,
           collected_by: 'main_process',
           collected_at: new Date().toISOString(),
+          suppress_scoring: result.suppressScoring === true,
           ...(topicFromQuery ? { topic: topicFromQuery } : {}), // Also store in metadata for backward compatibility
           ...(result.error ? { error: result.error } : {}), // Store error message for failed results
           ...(result.status === 'failed' ? { failed: true, failed_at: new Date().toISOString() } : {})
@@ -1126,10 +1207,35 @@ export class DataCollectionService {
     if (result.rawResponseJson) {
       insertData.raw_response_json = result.rawResponseJson;
     }
-    const { data: insertedData, error } = await this.supabase
-      .from('collector_results')
-      .insert(insertData)
-      .select();
+    let insertedData: any[] | null = null;
+    let error: any = null;
+
+    if (result.executionId) {
+      try {
+        const { data: updatedData, error: updateError } = await this.supabase
+          .from('collector_results')
+          .update(insertData)
+          .eq('execution_id', result.executionId)
+          .select('id');
+
+        if (!updateError && updatedData && updatedData.length > 0) {
+          insertedData = updatedData;
+        } else if (updateError) {
+          if (updateError.code !== 'PGRST204') {
+          }
+        }
+      } catch (updateException) {
+      }
+    }
+
+    if (!insertedData) {
+      const insertResult = await this.supabase
+        .from('collector_results')
+        .insert(insertData)
+        .select();
+      insertedData = insertResult.data || null;
+      error = insertResult.error;
+    }
 
     if (error) {
       console.error('❌ Failed to store collector result:', error);
@@ -1242,7 +1348,7 @@ export class DataCollectionService {
       // Run asynchronously to not block data collection
       // Only trigger scoring if raw_answer is populated (skip for async BrightData requests that will be updated later)
       const hasAnswer = result.response && result.response.trim().length > 0;
-      if (insertedData && insertedData.length > 0 && result.brandId && result.customerId && hasAnswer) {
+      if (!result.suppressScoring && insertedData && insertedData.length > 0 && result.brandId && result.customerId && hasAnswer) {
         try {
           // Import and trigger scoring asynchronously (non-blocking)
           const { brandScoringService } = await import('../scoring/brand-scoring.orchestrator');

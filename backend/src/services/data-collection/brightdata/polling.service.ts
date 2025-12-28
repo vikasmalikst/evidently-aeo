@@ -367,7 +367,7 @@ export class BrightDataPollingService {
       // Find the collector_result record by snapshot_id
       const { data: existingResult, error: findError } = await this.supabase
         .from('collector_results')
-        .select('id, execution_id, query_id, brand_id, customer_id')
+        .select('id, execution_id, query_id, brand_id, customer_id, metadata')
         .eq('brightdata_snapshot_id', snapshotId)
         .single();
       
@@ -375,11 +375,15 @@ export class BrightDataPollingService {
         // Try to find by execution_id from query_executions
         const { data: execution } = await this.supabase
           .from('query_executions')
-          .select('id, query_id, brand_id, customer_id')
+          .select('id, query_id, brand_id, customer_id, metadata')
           .eq('brightdata_snapshot_id', snapshotId)
           .single();
         
         if (execution) {
+          const suppressScoring =
+            execution?.metadata?.suppress_scoring === true ||
+            execution?.metadata?.suppressScoring === true;
+
           // Upsert essential fields
           const { error: upsertError, data: upsertedData } = await this.supabase
             .from('collector_results')
@@ -402,7 +406,8 @@ export class BrightDataPollingService {
                 locale: request.locale,
                 country: request.country,
                 collected_by: 'async_polling',
-                collected_at: new Date().toISOString()
+                collected_at: new Date().toISOString(),
+                suppress_scoring: suppressScoring,
               }
             }, {
               onConflict: 'execution_id'
@@ -418,7 +423,13 @@ export class BrightDataPollingService {
               .eq('id', resultId);
             
             // Trigger scoring
-            if (answer && answer.trim().length > 0 && execution.brand_id && execution.customer_id) {
+            if (
+              !suppressScoring &&
+              answer &&
+              answer.trim().length > 0 &&
+              execution.brand_id &&
+              execution.customer_id
+            ) {
               try {
                 const { brandScoringService } = await import('../../scoring/brand-scoring.orchestrator');
                 brandScoringService.scoreBrandAsync({
@@ -432,6 +443,10 @@ export class BrightDataPollingService {
           }
         }
       } else {
+        const suppressScoring =
+          existingResult?.metadata?.suppress_scoring === true ||
+          existingResult?.metadata?.suppressScoring === true;
+
         // Update existing record
         await this.supabase
           .from('collector_results')
@@ -446,7 +461,8 @@ export class BrightDataPollingService {
               snapshot_id: snapshotId,
               success: true,
               collected_by: 'async_polling',
-              collected_at: new Date().toISOString()
+              collected_at: new Date().toISOString(),
+              suppress_scoring: suppressScoring,
             }
           })
           .eq('id', existingResult.id);
@@ -458,7 +474,13 @@ export class BrightDataPollingService {
           .eq('id', existingResult.id);
         
         // Trigger scoring
-        if (answer && answer.trim().length > 0 && existingResult.brand_id && existingResult.customer_id) {
+        if (
+          !suppressScoring &&
+          answer &&
+          answer.trim().length > 0 &&
+          existingResult.brand_id &&
+          existingResult.customer_id
+        ) {
           try {
             const { brandScoringService } = await import('../../scoring/brand-scoring.orchestrator');
             brandScoringService.scoreBrandAsync({
@@ -475,4 +497,3 @@ export class BrightDataPollingService {
     }
   }
 }
-

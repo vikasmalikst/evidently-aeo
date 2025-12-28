@@ -200,6 +200,7 @@ async function processSingleRun(run: JobRun): Promise<void> {
             locale,
             country,
             since,
+            suppressScoring: run.job_type === 'data_collection',
           }
         );
 
@@ -334,4 +335,3 @@ void tick();
 setInterval(() => {
   void tick();
 }, POLL_INTERVAL_MS);
-

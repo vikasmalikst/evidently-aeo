@@ -1168,11 +1168,30 @@ router.get('/brands/:brandId/queries-diagnostic', async (req: Request, res: Resp
     // Check collector results
     const { data: collectorResults, error: resultsError } = await supabase
       .from('collector_results')
-      .select('id, created_at')
+      .select('id, created_at, status')
       .eq('brand_id', brandId)
       .eq('customer_id', customer_id)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(100);
+
+    const statusCounts: Record<string, number> = {};
+    const nowMs = Date.now();
+    const pendingOver2h: number[] = [];
+    const pendingOver8h: number[] = [];
+
+    (collectorResults || []).forEach((r: any) => {
+      const status = r.status || 'unknown';
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+
+      if ((status === 'pending' || status === 'running') && r.created_at) {
+        const ageMs = nowMs - new Date(r.created_at).getTime();
+        if (ageMs >= 8 * 60 * 60 * 1000) {
+          pendingOver8h.push(r.id);
+        } else if (ageMs >= 2 * 60 * 60 * 1000) {
+          pendingOver2h.push(r.id);
+        }
+      }
+    });
 
     res.json({
       success: true,
@@ -1189,6 +1208,9 @@ router.get('/brands/:brandId/queries-diagnostic', async (req: Request, res: Resp
         collectorResults: {
           count: collectorResults?.length || 0,
           recent: collectorResults || [],
+          statusCounts,
+          pendingOver2hCount: pendingOver2h.length,
+          pendingOver8hCount: pendingOver8h.length,
           error: resultsError?.message || null,
         },
         diagnostic: {
@@ -1206,6 +1228,129 @@ router.get('/brands/:brandId/queries-diagnostic', async (req: Request, res: Resp
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to run diagnostic',
+    });
+  }
+});
+
+/**
+ * GET /api/admin/collector-results
+ * List collector_results across brands with filters for admin monitoring
+ */
+router.get('/collector-results', async (req: Request, res: Response) => {
+  try {
+    const {
+      customer_id,
+      brand_id,
+      from,
+      to,
+      scoring_status,
+      collection_status,
+      raw_answer,
+      limit,
+      offset,
+    } = req.query;
+
+    if (!customer_id || typeof customer_id !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'customer_id query parameter is required',
+      });
+    }
+
+    const parsedLimit = Math.min(Math.max(Number(limit ?? 100), 1), 500);
+    const parsedOffset = Math.max(Number(offset ?? 0), 0);
+
+    const selectColumns =
+      'id, brand_id, collector_type, status, scoring_status, raw_answer, created_at';
+
+    let query = supabase
+      .from('collector_results')
+      .select(selectColumns, { count: 'exact' })
+      .eq('customer_id', customer_id)
+      .order('created_at', { ascending: false })
+      .range(parsedOffset, parsedOffset + parsedLimit - 1);
+
+    if (brand_id && typeof brand_id === 'string') {
+      query = query.eq('brand_id', brand_id);
+    }
+
+    if (scoring_status && typeof scoring_status === 'string') {
+      query = query.eq('scoring_status', scoring_status);
+    }
+
+    if (collection_status && typeof collection_status === 'string') {
+      query = query.eq('status', collection_status);
+    }
+
+    if (raw_answer === 'missing') {
+      query = query.is('raw_answer', null);
+    } else if (raw_answer === 'present') {
+      query = query.not('raw_answer', 'is', null);
+    }
+
+    if (from && typeof from === 'string') {
+      const fromIso = from.includes('T') ? from : new Date(`${from}T00:00:00.000Z`).toISOString();
+      query = query.gte('created_at', fromIso);
+    }
+
+    if (to && typeof to === 'string') {
+      const toIso = to.includes('T') ? to : new Date(`${to}T23:59:59.999Z`).toISOString();
+      query = query.lte('created_at', toIso);
+    }
+
+    const { data: rows, error, count } = await query;
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    const brandIds = Array.from(
+      new Set((rows || []).map((r: any) => r.brand_id).filter(Boolean))
+    ) as string[];
+
+    let brandsById: Record<string, { id: string; name: string }> = {};
+    if (brandIds.length > 0) {
+      const { data: brands, error: brandsError } = await supabase
+        .from('brands')
+        .select('id, name')
+        .in('id', brandIds);
+
+      if (!brandsError && brands) {
+        brandsById = brands.reduce((acc: any, b: any) => {
+          if (b?.id) acc[b.id] = { id: b.id, name: b.name };
+          return acc;
+        }, {});
+      }
+    }
+
+    const enrichedRows = (rows || []).map((r: any) => ({
+      id: r.id,
+      brandId: r.brand_id,
+      brandName: brandsById?.[r.brand_id]?.name || null,
+      collectorType: r.collector_type,
+      status: r.status,
+      scoringStatus: r.scoring_status,
+      rawAnswerPresent: r.raw_answer !== null && r.raw_answer !== undefined,
+      createdAt: r.created_at,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        rows: enrichedRows,
+        total: count ?? 0,
+        limit: parsedLimit,
+        offset: parsedOffset,
+      },
+    });
+  } catch (error) {
+    console.error('Error listing collector results:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to list collector results',
     });
   }
 });
@@ -1264,6 +1409,7 @@ router.post('/brands/:brandId/collect-data-now', async (req: Request, res: Respo
         collectors: collectorsToUse,
         locale,
         country,
+        suppressScoring: true,
       }
     );
 
@@ -1480,6 +1626,7 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
               collectors: collectorsToUse,
               locale,
               country,
+              suppressScoring: true,
             }
           );
           results.dataCollection = collectionResult;

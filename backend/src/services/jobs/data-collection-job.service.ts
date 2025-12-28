@@ -36,6 +36,7 @@ export class DataCollectionJobService {
       locale?: string;
       country?: string;
       since?: string; // Only collect data for queries created after this timestamp
+      suppressScoring?: boolean;
     }
   ): Promise<DataCollectionJobResult> {
     console.log(`\n🔍 Starting data collection for brand ${brandId} (customer: ${customerId})`);
@@ -124,6 +125,7 @@ export class DataCollectionJobService {
               intent: query.intent || 'data_collection',
               locale: options?.locale || query.locale || 'en-US',
               country: options?.country || query.country || 'US',
+              suppressScoring: options?.suppressScoring === true,
               collectors: options?.collectors || [
                 'chatgpt',
                 'google_aio',
@@ -185,6 +187,7 @@ export class DataCollectionJobService {
         intent: query.intent || 'data_collection',
         locale: options?.locale || query.locale || 'en-US',
         country: options?.country || query.country || 'US',
+        suppressScoring: options?.suppressScoring === true,
         collectors: options?.collectors || [
           'chatgpt',
           'google_aio',
@@ -271,4 +274,3 @@ export class DataCollectionJobService {
 }
 
 export const dataCollectionJobService = new DataCollectionJobService();
-

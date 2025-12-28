@@ -341,33 +341,6 @@ export class PriorityCollectorService {
         try {
           fallbackChain.push(provider.name);
           
-          // For BrightData, start polling but don't wait for completion if it takes too long
-          // Store snapshot_id immediately when we get it
-          let snapshotIdStored = false;
-          if (provider.name.includes('brightdata')) {
-            // Call the BrightData provider to get snapshot_id
-            try {
-              const snapshotResult = await this.callBrightDataProvider(
-                provider,
-                queryText,
-                brandId,
-                locale,
-                country,
-                collectorType
-              );
-              
-              // If we got snapshot_id immediately, store it
-              const immediateSnapshotId = snapshotResult.metadata?.snapshot_id || snapshotResult.snapshot_id;
-              if (immediateSnapshotId && !snapshotIdStored) {
-                // Update execution record with snapshot_id immediately
-                await this.updateExecutionSnapshotId(executionId, immediateSnapshotId);
-                snapshotIdStored = true;
-              }
-            } catch (err) {
-              // Continue to normal execution flow
-            }
-          }
-          
           const result = await this.executeWithProvider(
             provider,
             queryText,
@@ -380,6 +353,14 @@ export class PriorityCollectorService {
           const executionTime = Date.now() - startTime;
           // Extract snapshot_id from BrightData results
           const snapshotId = result.metadata?.snapshot_id || result.snapshot_id;
+
+          if (snapshotId && provider.name.includes('brightdata')) {
+            await this.updateExecutionSnapshotId(executionId, snapshotId);
+          }
+
+          if (snapshotId && snapshotIdCallback) {
+            snapshotIdCallback(snapshotId);
+          }
           
           return {
             queryId,

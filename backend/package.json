@@ -23,12 +23,13 @@
     "cron:job:worker": "ts-node --transpile-only src/cron/unified-job-worker.ts",
     "cron:brightdata:background": "ts-node --transpile-only src/cron/brightdata-background.cron.ts",
     "cron:query-execution:cleanup": "ts-node --transpile-only src/cron/queryExecutionCleanup.cron.ts",
+    "cron:collector-results:timeout": "ts-node --transpile-only src/cron/collectorResultsTimeout.cron.ts",
     "script:backfill-scoring-status": "ts-node --transpile-only src/scripts/backfill-scoring-status.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config jest.e2e.config.js",
-    "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix"
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint src/**/*.ts",
+    "lint:fix": "ESLINT_USE_FLAT_CONFIG=false eslint src/**/*.ts --fix"
   },
   "keywords": [
     "answerintel",

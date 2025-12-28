@@ -1,7 +1,32 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { useAuthStore } from '../../store/authStore';
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+interface QueriesDiagnosticPayload {
+  queries?: {
+    total?: number;
+    active?: number;
+  };
+  collectorResults?: {
+    count?: number;
+    statusCounts?: Record<string, number>;
+    pendingOver2hCount?: number;
+    pendingOver8hCount?: number;
+  };
+  diagnostic?: {
+    hasActiveQueries?: boolean;
+    canCollectData?: boolean;
+  };
+}
 
 interface ScheduledJob {
   id: string;
@@ -14,7 +39,7 @@ interface ScheduledJob {
   next_run_at: string | null;
   last_run_at: string | null;
   created_at: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 interface JobRun {
@@ -28,21 +53,20 @@ interface JobRun {
   started_at: string | null;
   finished_at: string | null;
   error_message: string | null;
-  metrics: Record<string, any>;
+  metrics: Record<string, unknown>;
 }
 
 export const ScheduledJobs = () => {
+  const navigate = useNavigate();
   const { selectedBrandId, brands, selectBrand } = useManualBrandDashboard();
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
-  const [runs, setRuns] = useState<JobRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState<ScheduledJob | null>(null);
   const [showRunsModal, setShowRunsModal] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [scoring, setScoring] = useState(false);
-  const [collectingAndScoring, setCollectingAndScoring] = useState(false);
-  const [diagnostic, setDiagnostic] = useState<any>(null);
+  const [diagnostic, setDiagnostic] = useState<QueriesDiagnosticPayload | null>(null);
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   
@@ -91,7 +115,9 @@ export const ScheduledJobs = () => {
         }
 
         // Try to fetch brand details to get customer_id
-        const response = await apiClient.get(`/brands/${selectedBrandId}`);
+        const response = await apiClient.get<ApiResponse<{ customer_id?: string }>>(
+          `/brands/${selectedBrandId}`
+        );
         if (response.success && response.data) {
           const brandCustomerId = response.data.customer_id;
           if (brandCustomerId) {
@@ -115,10 +141,19 @@ export const ScheduledJobs = () => {
     fetchCustomerId();
   }, [selectedBrandId, authUser?.customerId]);
 
+  const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string') return message;
+    }
+    return 'Unknown error';
+  };
+
   useEffect(() => {
     if (customerId) {
       loadJobs();
-      loadRecentRuns();
       if (selectedBrandId) {
         loadDiagnostic();
       }
@@ -148,7 +183,9 @@ export const ScheduledJobs = () => {
     try {
       setOllamaLoading(true);
       setOllamaError(null);
-      const response = await apiClient.get(`/admin/brands/${selectedBrandId}/local-llm`);
+      const response = await apiClient.get<
+        ApiResponse<{ ollamaUrl: string; ollamaModel: string; useOllama: boolean }>
+      >(`/admin/brands/${selectedBrandId}/local-llm`);
       if (response.success && response.data) {
         setOllamaSettings(response.data);
       }
@@ -167,7 +204,9 @@ export const ScheduledJobs = () => {
     try {
       setOllamaHealthChecking(true);
       setOllamaError(null);
-      const response = await apiClient.get(`/admin/brands/${selectedBrandId}/local-llm/health`);
+      const response = await apiClient.get<
+        ApiResponse<{ healthy: boolean; error?: string; responseTime?: number }>
+      >(`/admin/brands/${selectedBrandId}/local-llm/health`);
       if (response.success && response.data) {
         setOllamaHealth(response.data);
         if (!response.data.healthy) {
@@ -204,11 +243,14 @@ export const ScheduledJobs = () => {
         return;
       }
 
-      const response = await apiClient.put(`/admin/brands/${selectedBrandId}/local-llm`, {
-        ollamaUrl: ollamaSettings.ollamaUrl,
-        ollamaModel: ollamaSettings.ollamaModel,
-        useOllama: ollamaSettings.useOllama,
-      });
+      const response = await apiClient.put<ApiResponse<unknown>>(
+        `/admin/brands/${selectedBrandId}/local-llm`,
+        {
+          ollamaUrl: ollamaSettings.ollamaUrl,
+          ollamaModel: ollamaSettings.ollamaModel,
+          useOllama: ollamaSettings.useOllama,
+        }
+      );
 
       if (response.success) {
         setOllamaSuccess('Ollama settings saved successfully!');
@@ -246,18 +288,25 @@ export const ScheduledJobs = () => {
       setTestError(null);
       setTestResponse(null);
       
-      const response = await apiClient.post(`/admin/brands/${selectedBrandId}/local-llm/test`, {
-        prompt: testPrompt,
-      });
+      const response = await apiClient.post<ApiResponse<{ response: string }>>(
+        `/admin/brands/${selectedBrandId}/local-llm/test`,
+        {
+          prompt: testPrompt,
+        }
+      );
 
       if (response.success && response.data) {
         setTestResponse(response.data.response);
       } else {
         setTestError(response.error || 'Test failed');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to test Ollama prompt:', error);
-      setTestError(error?.response?.data?.error || 'Failed to test Ollama prompt');
+      const apiError =
+        typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      setTestError(apiError || 'Failed to test Ollama prompt');
     } finally {
       setTestLoading(false);
     }
@@ -266,7 +315,7 @@ export const ScheduledJobs = () => {
   const loadDiagnostic = async () => {
     if (!selectedBrandId || !customerId) return;
     try {
-      const response = await apiClient.get(
+      const response = await apiClient.get<ApiResponse<QueriesDiagnosticPayload>>(
         `/admin/brands/${selectedBrandId}/queries-diagnostic?customer_id=${customerId}`
       );
       if (response.success && response.data) {
@@ -285,7 +334,9 @@ export const ScheduledJobs = () => {
       if (selectedBrandId) {
         params.append('brand_id', selectedBrandId);
       }
-      const response = await apiClient.get(`/admin/scheduled-jobs?${params.toString()}`);
+      const response = await apiClient.get<ApiResponse<ScheduledJob[]>>(
+        `/admin/scheduled-jobs?${params.toString()}`
+      );
       if (response.success && response.data) {
         setJobs(response.data);
       }
@@ -296,25 +347,9 @@ export const ScheduledJobs = () => {
     }
   };
 
-  const loadRecentRuns = async () => {
-    try {
-      if (!customerId) return;
-      const params = new URLSearchParams({ customer_id: customerId, limit: '10' });
-      if (selectedBrandId) {
-        params.append('brand_id', selectedBrandId);
-      }
-      const response = await apiClient.get(`/admin/job-runs?${params.toString()}`);
-      if (response.success && response.data) {
-        setRuns(response.data);
-      }
-    } catch (error) {
-      console.error('Failed to load job runs:', error);
-    }
-  };
-
   const handleCreateJob = async (jobData: Partial<ScheduledJob>) => {
     try {
-      const response = await apiClient.post('/admin/scheduled-jobs', {
+      const response = await apiClient.post<ApiResponse<unknown>>('/admin/scheduled-jobs', {
         ...jobData,
         customer_id: customerId,
         brand_id: selectedBrandId || brands[0]?.id,
@@ -331,9 +366,12 @@ export const ScheduledJobs = () => {
 
   const handleToggleActive = async (job: ScheduledJob) => {
     try {
-      const response = await apiClient.put(`/admin/scheduled-jobs/${job.id}`, {
-        is_active: !job.is_active,
-      });
+      const response = await apiClient.put<ApiResponse<unknown>>(
+        `/admin/scheduled-jobs/${job.id}`,
+        {
+          is_active: !job.is_active,
+        }
+      );
       if (response.success) {
         loadJobs();
       }
@@ -344,10 +382,11 @@ export const ScheduledJobs = () => {
 
   const handleTriggerJob = async (jobId: string) => {
     try {
-      const response = await apiClient.post(`/admin/scheduled-jobs/${jobId}/trigger`);
+      const response = await apiClient.post<ApiResponse<unknown>>(
+        `/admin/scheduled-jobs/${jobId}/trigger`
+      );
       if (response.success) {
         alert('Job triggered successfully');
-        loadRecentRuns();
       }
     } catch (error) {
       console.error('Failed to trigger job:', error);
@@ -361,16 +400,18 @@ export const ScheduledJobs = () => {
     }
     try {
       setCollecting(true);
-      const response = await apiClient.post(`/admin/brands/${brandId}/collect-data-now`, {
-        customer_id: customerId,
-      });
-      if (response.success) {
+      const response = await apiClient.post<ApiResponse<{ queriesExecuted: number }>>(
+        `/admin/brands/${brandId}/collect-data-now`,
+        {
+          customer_id: customerId,
+        }
+      );
+      if (response.success && response.data) {
         alert(`Data collection started! ${response.data.queriesExecuted} queries will be executed.`);
-        loadRecentRuns();
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to start data collection:', error);
-      alert(`Failed to start data collection: ${error?.response?.data?.error || error.message}`);
+      alert(`Failed to start data collection: ${getErrorMessage(error)}`);
     } finally {
       setCollecting(false);
     }
@@ -381,84 +422,26 @@ export const ScheduledJobs = () => {
       alert('Customer ID not available. Please select a brand.');
       return;
     }
-    if (!confirm(`Start scoring for this brand now? This will process all unprocessed collector results. The process runs in the background and may take 5-30 minutes.`)) {
+    if (
+      !confirm(
+        `Start scoring for this brand now? This will process all unprocessed collector results. The process runs in the background and may take 5-30 minutes.`
+      )
+    ) {
       return;
     }
     try {
       setScoring(true);
-      const response = await apiClient.post(`/admin/brands/${brandId}/score-now`, {
+      const response = await apiClient.post<ApiResponse<unknown>>(`/admin/brands/${brandId}/score-now`, {
         customer_id: customerId,
       });
       if (response.success) {
         alert(`Scoring started in background! ${response.message || 'Check job run history for progress.'}`);
-        loadRecentRuns();
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to start scoring:', error);
-      console.error('Error details:', {
-        error,
-        type: typeof error,
-        isError: error instanceof Error,
-        message: error?.message,
-        response: error?.response,
-        stack: error?.stack,
-      });
-      // Extract error message from various possible error formats
-      // apiClient uses fetch, so errors are standard Error objects with message property
-      const errorMessage = 
-        error?.response?.data?.error || 
-        error?.response?.data?.message ||
-        error?.message || 
-        (typeof error === 'string' ? error : error?.toString()) || 
-        'Unknown error occurred. Please check the browser console for details.';
-      alert(`Failed to start scoring: ${errorMessage}`);
+      alert(`Failed to start scoring: ${getErrorMessage(error)}`);
     } finally {
       setScoring(false);
-    }
-  };
-
-  const handleCollectAndScoreNow = async (brandId: string) => {
-    if (!customerId) {
-      alert('Customer ID not available. Please select a brand.');
-      return;
-    }
-    if (!confirm(`Start data collection and scoring for this brand now? This will collect data first, then automatically score it.`)) {
-      return;
-    }
-    try {
-      setCollectingAndScoring(true);
-      const response = await apiClient.post(`/admin/brands/${brandId}/collect-and-score-now`, {
-        customer_id: customerId,
-      });
-      if (response.success) {
-        // Check if this is the new async response format
-        if (response.data.status === 'started') {
-          alert(`✅ Data collection and scoring started!\n\nThis process will run in the background and may take 10-30 minutes. Check the job run history below to monitor progress.`);
-          loadRecentRuns();
-        } else {
-          // Legacy synchronous response format (for backwards compatibility)
-          const collection = response.data.dataCollection;
-          const scoring = response.data.scoring;
-          let message = `✅ Completed!\n\n`;
-          if (collection) {
-            message += `Data Collection: ${collection.queriesExecuted} queries executed, ${collection.successfulExecutions} successful\n`;
-          }
-          if (scoring) {
-            message += `Scoring: ${scoring.positionsProcessed} positions, ${scoring.sentimentsProcessed} sentiments processed\n`;
-          }
-          if (response.data.errors && response.data.errors.length > 0) {
-            message += `\n⚠️ Some errors occurred. Check job run history for details.`;
-          }
-          alert(message);
-          loadRecentRuns();
-        }
-      }
-    } catch (error: any) {
-      console.error('Failed to start collection and scoring:', error);
-      const errorMessage = error?.message || error?.toString() || 'Unknown error';
-      alert(`Failed to start: ${errorMessage}`);
-    } finally {
-      setCollectingAndScoring(false);
     }
   };
 
@@ -467,7 +450,7 @@ export const ScheduledJobs = () => {
       return;
     }
     try {
-      const response = await apiClient.delete(`/admin/scheduled-jobs/${jobId}`);
+      const response = await apiClient.delete<ApiResponse<unknown>>(`/admin/scheduled-jobs/${jobId}`);
       if (response.success) {
         loadJobs();
       }
@@ -475,15 +458,6 @@ export const ScheduledJobs = () => {
       console.error('Failed to delete job:', error);
       alert('Failed to delete job');
     }
-  };
-
-  const formatCron = (cron: string) => {
-    // Simple cron format display
-    const parts = cron.split(' ');
-    if (parts.length === 5) {
-      return `${parts[1]}:${parts[0]} ${parts[2]}/${parts[3]} * * ${parts[4]}`;
-    }
-    return cron;
   };
 
   const getJobTypeLabel = (type: string) => {
@@ -499,21 +473,6 @@ export const ScheduledJobs = () => {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      processing: 'bg-blue-100 text-blue-800',
-      completed: 'bg-green-100 text-green-800',
-      failed: 'bg-red-100 text-red-800',
-      cancelled: 'bg-gray-100 text-gray-800',
-    };
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${colors[status] || colors.pending}`}>
-        {status}
-      </span>
-    );
-  };
-
   if (loading) {
     return <div className="p-8">Loading...</div>;
   }
@@ -523,24 +482,12 @@ export const ScheduledJobs = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Scheduled Jobs</h1>
         <div className="flex space-x-3">
-          {selectedBrandId && (
-            <>
-              <button
-                onClick={() => handleCollectDataNow(selectedBrandId)}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                title="Start data collection immediately for selected brand"
-              >
-                Collect Data Now
-              </button>
-              <button
-                onClick={() => handleScoreNow(selectedBrandId)}
-                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
-                title="Start scoring immediately for selected brand"
-              >
-                Score Now
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => navigate('/admin/data-collection-status')}
+            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+          >
+            Data Collection Status
+          </button>
           <button
             onClick={() => setShowCreateModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -617,6 +564,23 @@ export const ScheduledJobs = () => {
                     </span>
                   </div>
                 </div>
+                {diagnostic.collectorResults?.statusCounts && (
+                  <div className="mt-2 text-sm text-gray-700">
+                    <span className="text-gray-600">Statuses:</span>
+                    <span className="ml-2">
+                      pending {diagnostic.collectorResults.statusCounts.pending || 0},{' '}
+                      running {diagnostic.collectorResults.statusCounts.running || 0},{' '}
+                      completed {diagnostic.collectorResults.statusCounts.completed || 0},{' '}
+                      failed_retry {diagnostic.collectorResults.statusCounts.failed_retry || 0},{' '}
+                      failed {diagnostic.collectorResults.statusCounts.failed || 0}
+                    </span>
+                    {(diagnostic.collectorResults.pendingOver2hCount || diagnostic.collectorResults.pendingOver8hCount) ? (
+                      <span className="ml-2 text-yellow-700">
+                        (stuck: &gt;2h {diagnostic.collectorResults.pendingOver2hCount || 0}, &gt;8h {diagnostic.collectorResults.pendingOver8hCount || 0})
+                      </span>
+                    ) : null}
+                  </div>
+                )}
                 {!diagnostic.diagnostic?.canCollectData && (
                   <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
                     ⚠️ No active queries found. Queries need to be created during onboarding or set to <code className="bg-yellow-100 px-1 rounded">is_active = true</code> in the <code className="bg-yellow-100 px-1 rounded">generated_queries</code> table.
@@ -624,7 +588,7 @@ export const ScheduledJobs = () => {
                 )}
               </div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white p-4 rounded border border-green-200">
                 <h4 className="font-medium text-gray-900 mb-2">Collect Data Now</h4>
                 <p className="text-sm text-gray-600 mb-3">
@@ -632,7 +596,7 @@ export const ScheduledJobs = () => {
                 </p>
                 <button
                   onClick={() => handleCollectDataNow(selectedBrandId)}
-                  disabled={collecting || collectingAndScoring}
+                  disabled={collecting || scoring}
                   className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {collecting ? 'Collecting...' : 'Start Collection'}
@@ -645,37 +609,11 @@ export const ScheduledJobs = () => {
                 </p>
                 <button
                   onClick={() => handleScoreNow(selectedBrandId)}
-                  disabled={scoring || collectingAndScoring}
+                  disabled={collecting || scoring}
                   className="w-full px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {scoring ? 'Scoring...' : 'Start Scoring'}
                 </button>
-              </div>
-              <div className="bg-white p-4 rounded border border-orange-200">
-                <h4 className="font-medium text-gray-900 mb-2">⭐ Collect & Score</h4>
-                <p className="text-sm text-gray-600 mb-3">
-                  Collects data first, then automatically scores it (recommended)
-                </p>
-                <button
-                  onClick={() => handleCollectAndScoreNow(selectedBrandId)}
-                  disabled={collecting || scoring || collectingAndScoring}
-                  className="w-full px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
-                >
-                  {collectingAndScoring ? 'Running...' : 'Collect & Score'}
-                </button>
-              </div>
-              <div className="bg-white p-4 rounded border border-indigo-200">
-                <h4 className="font-medium text-gray-900 mb-2">View Historical Trends</h4>
-                <p className="text-sm text-gray-600 mb-3">
-                  See charts and trends for this brand over time
-                </p>
-                <a
-                  href={`/search-visibility`}
-                  target="_blank"
-                  className="block w-full px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-center"
-                >
-                  View Trends →
-                </a>
               </div>
             </div>
           </div>
@@ -1037,44 +975,13 @@ export const ScheduledJobs = () => {
         )}
       </div>
 
-      {/* Recent Runs */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-bold mb-4">Recent Job Runs</h2>
-        <div className="space-y-2">
-          {runs.slice(0, 10).map((run) => (
-            <div key={run.id} className="flex items-center justify-between p-3 border rounded">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3">
-                  {getStatusBadge(run.status)}
-                  <span className="text-sm font-medium">{getJobTypeLabel(run.job_type)}</span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(run.scheduled_for).toLocaleString()}
-                  </span>
-                </div>
-                {run.error_message && (
-                  <div className="text-sm text-red-600 mt-1">{run.error_message}</div>
-                )}
-                {run.metrics && Object.keys(run.metrics).length > 0 && (
-                  <div className="text-xs text-gray-500 mt-1">
-                    {JSON.stringify(run.metrics, null, 2)}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-          {runs.length === 0 && (
-            <div className="text-center text-gray-500 py-4">No recent job runs</div>
-          )}
-        </div>
-      </div>
-
       {/* Create Modal */}
       {showCreateModal && (
         <CreateJobModal
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateJob}
           brands={brands}
-          defaultBrandId={selectedBrandId}
+          defaultBrandId={selectedBrandId ?? undefined}
         />
       )}
 
@@ -1104,9 +1011,15 @@ const CreateJobModal = ({
   brands: Array<{ id: string; name: string }>;
   defaultBrandId?: string;
 }) => {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    brand_id: string;
+    job_type: ScheduledJob['job_type'];
+    cron_expression: string;
+    timezone: string;
+    is_active: boolean;
+  }>({
     brand_id: defaultBrandId || brands[0]?.id || '',
-    job_type: 'data_collection_and_scoring' as const,
+    job_type: 'data_collection_and_scoring',
     cron_expression: '0 9 * * *', // Daily at 9 AM
     timezone: 'UTC',
     is_active: true,
@@ -1141,11 +1054,17 @@ const CreateJobModal = ({
             <label className="block text-sm font-medium mb-1">Job Type</label>
             <select
               value={formData.job_type}
-              onChange={(e) =>
-                setFormData({ ...formData, job_type: e.target.value as any })
-              }
+              onChange={(e) => {
+                const value = e.target.value;
+                if (
+                  value === 'data_collection' ||
+                  value === 'scoring' ||
+                  value === 'data_collection_and_scoring'
+                ) {
+                  setFormData({ ...formData, job_type: value });
+                }
+              }}
               className="w-full border rounded px-3 py-2"
-              required
             >
               <option value="data_collection">Data Collection</option>
               <option value="scoring">Scoring</option>
@@ -1218,7 +1137,7 @@ const RunsHistoryModal = ({ job, onClose }: { job: ScheduledJob; onClose: () => 
   const loadRuns = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get(
+      const response = await apiClient.get<ApiResponse<JobRun[]>>(
         `/admin/job-runs?scheduled_job_id=${job.id}&limit=50`
       );
       if (response.success && response.data) {
@@ -1298,4 +1217,3 @@ const RunsHistoryModal = ({ job, onClose }: { job: ScheduledJob; onClose: () => 
     </div>
   );
 };
-

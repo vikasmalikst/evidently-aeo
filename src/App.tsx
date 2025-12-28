@@ -18,6 +18,7 @@ import { Settings } from './pages/Settings';
 import { ManagePrompts } from './pages/ManagePrompts';
 import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
+import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
@@ -224,6 +225,22 @@ function App() {
           element={
             <ProtectedRoute>
               <ScheduledJobs />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/data-collection-status"
+          element={
+            <ProtectedRoute>
+              <DataCollectionStatus />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/Data_Collection_Status"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/admin/data-collection-status" replace />
             </ProtectedRoute>
           }
         />

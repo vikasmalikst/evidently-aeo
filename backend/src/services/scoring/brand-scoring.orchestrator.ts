@@ -3,13 +3,12 @@
  * Orchestrates all scoring operations (position extraction, sentiment scoring, citation extraction) for a specific brand
  */
 
-import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
+import { loadEnvironment } from '../../utils/env-utils';
 import { positionExtractionService } from './position-extraction.service';
-import { brandSentimentService } from './sentiment/brand-sentiment.service';
-import { competitorSentimentService } from './sentiment/competitor-sentiment.service';
 import { combinedSentimentService } from './sentiment/combined-sentiment.service';
 import { citationExtractionService } from '../citations/citation-extraction.service';
 import { consolidatedScoringService } from './consolidated-scoring.service';
+import { shouldUseOllama } from './ollama-client.service';
 
 // Note: Consolidated scoring service combines all operations in a single API call
 // Set USE_CONSOLIDATED_ANALYSIS=true to use the new approach
@@ -58,8 +57,10 @@ export class BrandScoringService {
    * @returns Summary of processed results
    */
   async scoreBrand(options: BrandScoringOptions): Promise<BrandScoringResult> {
-    // Use consolidated scoring if enabled
-    if (USE_CONSOLIDATED_ANALYSIS) {
+    const useConsolidated = USE_CONSOLIDATED_ANALYSIS || (await shouldUseOllama(options.brandId));
+
+    // Use consolidated scoring if enabled (or required for Ollama one-at-a-time mode)
+    if (useConsolidated) {
       return await this.scoreBrandWithConsolidatedAnalysis(options);
     }
 
@@ -153,7 +154,7 @@ export class BrandScoringService {
 
         // Process positions result
         if (positionsResult.status === 'fulfilled') {
-          result.positionsProcessed = positionsResult.value;
+          result.positionsProcessed = positionsResult.value.count;
         } else {
           const errorMsg = positionsResult.reason instanceof Error 
             ? positionsResult.reason.message 
@@ -352,4 +353,3 @@ export class BrandScoringService {
 }
 
 export const brandScoringService = new BrandScoringService();
-

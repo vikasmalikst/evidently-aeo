@@ -297,7 +297,7 @@ export const DataCollectionStatus = () => {
             >
               <option value="">Any</option>
               <option value="pending">pending</option>
-              <option value="running">running</option>
+              <option value="processing">processing</option>
               <option value="completed">completed</option>
               <option value="failed_retry">failed_retry</option>
               <option value="failed">failed</option>

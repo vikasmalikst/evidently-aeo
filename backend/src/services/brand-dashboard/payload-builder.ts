@@ -205,41 +205,28 @@ export async function buildDashboardPayload(
       const brandSentiment = brandSentimentRows
       const competitorSentiment = competitorSentimentRows
 
-      // Defensive: Ensure all data is arrays
-      const brandMetricsArray = Array.isArray(brandMetrics) ? brandMetrics : [];
-      const brandSentimentArray = Array.isArray(brandSentiment) ? brandSentiment : [];
-      const competitorMetricsArray = Array.isArray(competitorMetrics) ? competitorMetrics : [];
-      const competitorSentimentArray = Array.isArray(competitorSentiment) ? competitorSentiment : [];
+      const brandMetricsArray = Array.isArray(brandMetrics) ? brandMetrics : []
+      const brandSentimentArray = Array.isArray(brandSentiment) ? brandSentiment : []
+      const competitorMetricsArray = Array.isArray(competitorMetrics) ? competitorMetrics : []
+      const competitorSentimentArray = Array.isArray(competitorSentiment) ? competitorSentiment : []
 
-      // Debug logging
-      console.log('[Dashboard] Data types:', {
-        brandMetrics: Array.isArray(brandMetrics) ? 'array' : typeof brandMetrics,
-        brandSentiment: Array.isArray(brandSentiment) ? 'array' : typeof brandSentiment,
-        competitorMetrics: Array.isArray(competitorMetrics) ? 'array' : typeof competitorMetrics,
-        competitorSentiment: Array.isArray(competitorSentiment) ? 'array' : typeof competitorSentiment,
-      });
+      const brandMetricsMap = new Map(brandMetricsArray.map((bm) => [bm.metric_fact_id, bm]))
+      const brandSentimentMap = new Map(brandSentimentArray.map((bs) => [bs.metric_fact_id, bs]))
+      const competitorMetricsMap = new Map<number, any[]>()
+      const competitorSentimentMap = new Map<string, any>()
 
-      // Create maps for lookups
-      const brandMetricsMap = new Map(brandMetricsArray.map(bm => [bm.metric_fact_id, bm]));
-      const brandSentimentMap = new Map(brandSentimentArray.map(bs => [bs.metric_fact_id, bs]));
-      const competitorMetricsMap = new Map<number, any[]>();
-      const competitorSentimentMap = new Map<string, any>(); // key: "metric_fact_id:competitor_id"
-
-      // Group competitor metrics by metric_fact_id
-      competitorMetricsArray.forEach(cm => {
+      competitorMetricsArray.forEach((cm) => {
         if (!competitorMetricsMap.has(cm.metric_fact_id)) {
           competitorMetricsMap.set(cm.metric_fact_id, [])
         }
         competitorMetricsMap.get(cm.metric_fact_id)!.push(cm)
       })
 
-      // Index competitor sentiment
-      competitorSentimentArray.forEach(cs => {
+      competitorSentimentArray.forEach((cs) => {
         const key = `${cs.metric_fact_id}:${cs.competitor_id}`
         competitorSentimentMap.set(key, cs)
       })
 
-      // Transform to extracted_positions format
       const positionRows: any[] = []
 
       for (const mf of metricFacts) {

@@ -15,6 +15,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
+import { transitionCollectorResultById } from '../services/data-collection/collector-results-status';
 
 // Load environment variables
 loadEnvironment();
@@ -29,6 +30,8 @@ const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 const BATCH_SIZE = 10; // Process 10 records at a time to avoid rate limits
+const STUCK_PROCESSING_HOURS = 8;
+const STUCK_PROCESSING_ERROR = 'Running for more than 8 hours. Check BrightData Status';
 
 interface BackfillStats {
   totalFound: number;
@@ -37,19 +40,7 @@ interface BackfillStats {
   stillProcessing: number;
   notFound: number;
   errors: number;
-}
-
-/**
- * Map collector_type to BrightData dataset ID
- * Only Bing Copilot and Grok use BrightData snapshots
- */
-function getDatasetId(collectorType: string): string | null {
-  const mapping: { [key: string]: string } = {
-    'Bing Copilot': 'gd_m7di5jy6s9geokz8w',
-    'Grok': 'gd_m8ve0u141icu75ae74',
-    'ChatGPT': 'gd_m7di5jy6s9geokz8w', // ChatGPT also uses BrightData
-  };
-  return mapping[collectorType] || null;
+  stuckMarkedFailed: number;
 }
 
 /**
@@ -170,6 +161,8 @@ async function processRecord(
   record: { id: number; brightdata_snapshot_id: string; collector_type: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
     // Fetch snapshot data
     const snapshotResult = await fetchSnapshotData(record.brightdata_snapshot_id);
     
@@ -191,31 +184,194 @@ async function processRecord(
       return { success: false, error: 'empty_answer' };
     }
 
-    // Update collector_results table
-    // First, update raw_answer, citations, and urls (essential fields)
-    const { error: updateError } = await supabase
+    const scoringStartedAt = new Date().toISOString();
+
+    const { data: rawUpdatedRows, error: rawUpdateError } = await supabase
       .from('collector_results')
       .update({
         raw_answer: answer,
         citations: urls.length > 0 ? urls : null,
         urls: urls.length > 0 ? urls : null,
-        metadata: {
-          updated_by: 'backfill_script',
-          updated_at: new Date().toISOString(),
-          snapshot_id: record.brightdata_snapshot_id
-        }
       })
-      .eq('id', record.id);
+      .eq('id', record.id)
+      .select('id, status');
 
-    if (updateError) {
-      console.error(`   ❌ Error updating record ${record.id}:`, updateError.message);
-      return { success: false, error: updateError.message };
+    if (rawUpdateError) {
+      console.error(`   ❌ Error updating record ${record.id}:`, rawUpdateError.message);
+      return { success: false, error: rawUpdateError.message };
+    }
+
+    const currentStatus = rawUpdatedRows?.[0]?.status ?? null;
+
+    if (currentStatus === 'failed') {
+      const { error: directStatusError } = await supabase
+        .from('collector_results')
+        .update({
+          status: 'completed',
+          error_message: null,
+        })
+        .eq('id', record.id)
+        .eq('status', 'failed');
+
+      if (directStatusError) {
+        console.warn(
+          `   ⚠️  Error updating status (failed->completed) for record ${record.id}:`,
+          directStatusError.message
+        );
+      }
+    } else if (currentStatus !== 'completed') {
+      let transitioned = false;
+      let skippedTerminal = false;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const result = await transitionCollectorResultById(
+          supabase,
+          record.id,
+          'completed',
+          {
+            source: 'backfill_script',
+            reason: 'successful_snapshot_processing',
+            collectorType: record.collector_type,
+            snapshotId: record.brightdata_snapshot_id,
+          },
+          {
+            error_message: null,
+            metadata: {
+              updated_by: 'backfill_script',
+              updated_at: scoringStartedAt,
+              snapshot_id: record.brightdata_snapshot_id,
+            },
+          }
+        );
+
+        if (result.updated || result.skippedTerminal) {
+          transitioned = true;
+          skippedTerminal = result.skippedTerminal;
+          break;
+        }
+
+        await sleep(150 * Math.pow(2, attempt - 1));
+      }
+
+      if (skippedTerminal) {
+        const { data: statusRow } = await supabase
+          .from('collector_results')
+          .select('status')
+          .eq('id', record.id)
+          .maybeSingle();
+
+        if (statusRow?.status === 'failed') {
+          const { error: directStatusError } = await supabase
+            .from('collector_results')
+            .update({
+              status: 'completed',
+              error_message: null,
+            })
+            .eq('id', record.id)
+            .eq('status', 'failed');
+
+          if (directStatusError) {
+            console.warn(
+              `   ⚠️  Error updating status (failed->completed) for record ${record.id}:`,
+              directStatusError.message
+            );
+          }
+        }
+      }
+
+      if (!transitioned) {
+        return { success: false, error: 'status_transition_failed' };
+      }
+    }
+
+    const scoringResetPayload = {
+      scoring_status: 'pending',
+      scoring_started_at: null,
+      scoring_completed_at: null,
+      scoring_error: null,
+    };
+
+    const { data: updatedScoringNull, error: scoringNullError } = await supabase
+      .from('collector_results')
+      .update(scoringResetPayload)
+      .eq('id', record.id)
+      .is('scoring_status', null)
+      .select('id');
+
+    if (scoringNullError) {
+      console.warn(`   ⚠️  Error updating scoring_status for record ${record.id}:`, scoringNullError.message);
+    }
+
+    if (!scoringNullError && (!updatedScoringNull || updatedScoringNull.length === 0)) {
+      const { error: scoringPendingError } = await supabase
+        .from('collector_results')
+        .update(scoringResetPayload)
+        .eq('id', record.id)
+        .in('scoring_status', ['pending', 'processing', 'error'])
+        .select('id');
+
+      if (scoringPendingError) {
+        console.warn(
+          `   ⚠️  Error updating scoring_status (pending/error) for record ${record.id}:`,
+          scoringPendingError.message
+        );
+      }
     }
 
     return { success: true };
   } catch (error: any) {
     console.error(`   ❌ Exception processing record ${record.id}:`, error.message);
     return { success: false, error: error.message || 'unknown_error' };
+  }
+}
+
+async function markStuckProcessingRows(stats: BackfillStats): Promise<void> {
+  const cutoff = new Date(Date.now() - STUCK_PROCESSING_HOURS * 60 * 60 * 1000).toISOString();
+  const PAGE_SIZE = 500;
+  let offset = 0;
+
+  while (true) {
+    const { data: rows, error } = await supabase
+      .from('collector_results')
+      .select('id')
+      .eq('status', 'processing')
+      .not('brightdata_snapshot_id', 'is', null)
+      .is('raw_answer', null)
+      .lt('created_at', cutoff)
+      .order('id', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (error) {
+      console.error('❌ Error fetching stuck processing rows:', error.message);
+      return;
+    }
+
+    if (!rows || rows.length === 0) {
+      return;
+    }
+
+    const ids = rows.map((row: any) => row.id).filter((id: any) => typeof id === 'number' && Number.isFinite(id));
+    if (ids.length > 0) {
+      const { data: updated, error: updateError } = await supabase
+        .from('collector_results')
+        .update({
+          status: 'failed',
+          error_message: STUCK_PROCESSING_ERROR,
+        })
+        .in('id', ids)
+        .select('id');
+
+      if (updateError) {
+        console.error('❌ Error marking stuck processing rows as failed:', updateError.message);
+      } else {
+        stats.stuckMarkedFailed += (updated?.length ?? 0);
+      }
+    }
+
+    if (rows.length < PAGE_SIZE) {
+      return;
+    }
+
+    offset += PAGE_SIZE;
   }
 }
 
@@ -274,9 +430,15 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
     stillProcessing: 0,
     notFound: 0,
     errors: 0,
+    stuckMarkedFailed: 0,
   };
 
   try {
+    await markStuckProcessingRows(stats);
+    if (stats.stuckMarkedFailed > 0) {
+      console.log(`⚠️  Marked ${stats.stuckMarkedFailed} stuck 'processing' rows as failed (>${STUCK_PROCESSING_HOURS}h)`);
+    }
+
     // Step 1: Count total records to process
     const { count: totalCount, error: countError } = await supabase
       .from('collector_results')
@@ -345,6 +507,7 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
     console.log(`   ⏳ Still processing: ${stats.stillProcessing}`);
     console.log(`   ⚠️  Not found/no data: ${stats.notFound}`);
     console.log(`   ❌ Errors: ${stats.errors}`);
+    console.log(`   🚫 Marked stuck as failed: ${stats.stuckMarkedFailed}`);
     console.log('='.repeat(60) + '\n');
 
   } catch (error) {
@@ -368,4 +531,3 @@ if (require.main === module) {
 }
 
 export { backfillRawAnswerFromSnapshots };
-

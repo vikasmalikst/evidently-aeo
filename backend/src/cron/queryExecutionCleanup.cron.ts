@@ -10,6 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
+import { transitionCollectorResultByExecution } from '../services/data-collection/collector-results-status';
 
 // Load environment variables
 loadEnvironment();
@@ -96,49 +97,41 @@ export class QueryExecutionCleanupService {
             // Result exists - execution actually completed, just status wasn't updated
             console.log(`✅ Found result for execution ${execution.id}, updating status to 'completed'`);
             
-            const { error: updateError } = await supabase
-              .from('query_executions')
-              .update({
-                status: 'completed',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', execution.id);
-
-            if (updateError) {
-              console.error(`❌ Failed to update execution ${execution.id} to 'completed':`, updateError);
-              stats.errors++;
-            } else {
-              console.log(`✅ Successfully updated execution ${execution.id} to 'completed'`);
-              stats.fixed++;
-            }
+            await transitionCollectorResultByExecution(
+              supabase,
+              execution.id,
+              execution.collector_type,
+              'completed',
+              {
+                source: 'cleanup_cron',
+                reason: 'stuck_running_with_result',
+                executionId: execution.id,
+                collectorType: execution.collector_type
+              }
+            );
+            
+            stats.fixed++;
           } else {
-            // No result found - execution likely failed or timed out
-            const stuckDuration = Date.now() - new Date(execution.updated_at).getTime();
-            const stuckMinutes = Math.round(stuckDuration / 60000);
+            // No result exists after timeout - mark as failed
+            console.log(`❌ No result for stuck execution ${execution.id} after timeout, marking as 'failed'`);
             
-            console.log(`⚠️ No result found for execution ${execution.id} (stuck for ${stuckMinutes} minutes), marking as 'failed'`);
+            await transitionCollectorResultByExecution(
+              supabase,
+              execution.id,
+              execution.collector_type,
+              'failed',
+              {
+                source: 'cleanup_cron',
+                reason: 'stuck_running_timeout',
+                executionId: execution.id,
+                collectorType: execution.collector_type
+              },
+              {
+                error_message: 'Execution timed out in running status (stuck for >5m)'
+              }
+            );
             
-            const { error: updateError } = await supabase
-              .from('query_executions')
-              .update({
-                status: 'failed',
-                error_message: `Execution stuck in 'running' status for ${stuckMinutes} minutes. Likely timeout or process crash.`,
-                error_metadata: {
-                  stuck_duration_minutes: stuckMinutes,
-                  cleanup_reason: 'stuck_running_timeout',
-                  cleaned_at: new Date().toISOString()
-                },
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', execution.id);
-
-            if (updateError) {
-              console.error(`❌ Failed to update execution ${execution.id} to 'failed':`, updateError);
-              stats.errors++;
-            } else {
-              console.log(`✅ Successfully marked execution ${execution.id} as 'failed'`);
-              stats.failed++;
-            }
+            stats.failed++;
           }
 
         } catch (executionError: any) {

@@ -20,15 +20,6 @@ if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
   throw new Error('Missing required Supabase environment variables');
 }
 
-// Log Supabase configuration (without exposing full keys)
-console.log('🔧 Supabase Configuration:');
-console.log('   URL:', supabaseUrl);
-console.log('   Service Role Key:', supabaseServiceKey ? `${supabaseServiceKey.substring(0, 20)}...` : 'MISSING');
-console.log('   Anon Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : 'MISSING');
-console.log('   URL length:', supabaseUrl?.length || 0);
-console.log('   Service Role Key length:', supabaseServiceKey?.length || 0);
-console.log('   Anon Key length:', supabaseAnonKey?.length || 0);
-
 // Create Supabase clients
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
@@ -36,29 +27,6 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     persistSession: false
   }
 });
-
-// Test the admin client connection
-(async () => {
-  try {
-    const { error } = await supabaseAdmin.from('customers').select('count').limit(1);
-    if (error) {
-      console.error('❌ Supabase Admin Client Connection Error:', error.message);
-      console.error('   Error Code:', error.code);
-      console.error('   Error Details:', error.details);
-      console.error('   Error Hint:', error.hint);
-      console.error('   Full error object:', JSON.stringify(error, null, 2));
-      console.error('   Supabase URL being used:', supabaseUrl);
-      console.error('   Service Role Key prefix:', supabaseServiceKey?.substring(0, 30) || 'MISSING');
-      console.error('   Service Role Key ends with:', supabaseServiceKey?.substring(supabaseServiceKey.length - 10) || 'MISSING');
-    } else {
-      console.log('✅ Supabase Admin Client connected successfully');
-    }
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    console.error('❌ Failed to test Supabase Admin Client:', error.message);
-    console.error('   Error stack:', error.stack);
-  }
-})();
 
 export const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
 

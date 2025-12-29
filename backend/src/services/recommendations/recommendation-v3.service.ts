@@ -404,7 +404,7 @@ class RecommendationV3Service {
           }
 
           competitorData.push({
-            name: comp.competitor_name || comp.name || 'Unknown',
+            name: comp.competitor_name || 'Unknown',
             visibilityIndex: compVis,
             shareOfAnswers: compSoa,
             sentimentScore: compSent

@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
+import { transitionCollectorResultByExecution } from './collector-results-status';
 import { brightDataCollectorService } from './brightdata-collector.service';
 import { dataCollectionService } from './data-collection.service';
 
@@ -160,23 +161,7 @@ export class BrightDataBackgroundService {
 
             const competitorsList = competitorsData?.map(c => c.competitor_name).filter(Boolean) || [];
 
-            // Update execution status to completed
-            const { error: updateError } = await supabase
-              .from('query_executions')
-              .update({
-                status: 'completed',
-                updated_at: new Date().toISOString(),
-                executed_at: new Date().toISOString()
-              })
-              .eq('id', execution.id);
-
-            if (updateError) {
-              console.error(`❌ Failed to update execution ${execution.id} to 'completed':`, updateError);
-              throw updateError;
-            } else {
-            }
-
-            // Store result in collector_results
+            // Store result in collector_results FIRST
             const { error: insertError } = await supabase
               .from('collector_results')
               .upsert({
@@ -207,30 +192,26 @@ export class BrightDataBackgroundService {
               console.error(`❌ Failed to store result for execution ${execution.id}:`, insertError);
               stats.errors++;
             } else {
-              // Double-check that status is 'completed' after storing result
-              // This ensures status is updated even if the earlier update didn't persist
-              const { data: verifyExecution } = await supabase
-                .from('query_executions')
-                .select('id, status')
-                .eq('id', execution.id)
-                .single();
-
-              if (verifyExecution && verifyExecution.status !== 'completed') {
-                const { error: reUpdateError } = await supabase
-                  .from('query_executions')
-                  .update({
-                    status: 'completed',
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('id', execution.id);
-
-                if (reUpdateError) {
-                  console.error(`❌ Failed to re-update execution ${execution.id} to 'completed':`, reUpdateError);
-                  stats.errors++;
-                } else {
-                }
+              // Update execution status to completed using atomic transition helper
+              // This will also verify that raw_answer was correctly stored
+              try {
+                await transitionCollectorResultByExecution(
+                  supabase,
+                  execution.id,
+                  execution.collector_type,
+                  'completed',
+                  {
+                    source: 'background_service',
+                    reason: 'snapshot_ready',
+                    executionId: execution.id,
+                    collectorType: execution.collector_type
+                  }
+                );
+                stats.completed++;
+              } catch (transitionError) {
+                console.error(`❌ Failed to transition execution ${execution.id} to 'completed':`, transitionError);
+                stats.errors++;
               }
-              stats.completed++;
             }
           } else if (downloadResult?.status === 'running' || (downloadResult?.message && downloadResult.message.includes('not ready'))) {
             stats.stillProcessing++;

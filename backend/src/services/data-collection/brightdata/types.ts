@@ -34,3 +34,16 @@ export interface BrightDataResponse {
   };
 }
 
+export class BrightDataError extends Error {
+  public statusCode?: number;
+  public details?: any;
+
+  constructor(message: string, statusCode?: number, details?: any) {
+    super(message);
+    this.name = 'BrightDataError';
+    this.statusCode = statusCode;
+    this.details = details;
+    Object.setPrototypeOf(this, BrightDataError.prototype);
+  }
+}
+

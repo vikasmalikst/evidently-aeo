@@ -865,11 +865,13 @@ class RecommendationService {
           }
 
           competitorData.push({
-            name: comp.competitor_name || comp.name || 'Unknown',
+            name: comp.competitor_name || 'Unknown',
             visibilityIndex: compVis,
             shareOfAnswers: compSoa,
             sentimentScore: compSent
           });
+
+          const competitorName = comp.competitor_name || 'Unknown';
 
           // Detect gaps vs this competitor
           if (visibilityIndex !== undefined && compVis !== undefined && compVis > visibilityIndex + 10) {
@@ -881,9 +883,9 @@ class RecommendationService {
               metric: 'Visibility Index',
               currentValue: Math.round(visibilityIndex * 10) / 10,
               benchmarkValue: Math.round(compVis * 10) / 10,
-              benchmarkSource: `Competitor: ${comp.name}`,
+              benchmarkSource: `Competitor: ${competitorName}`,
               gap: `${Math.round(visibilityIndex - compVis)}%`,
-              description: `Your visibility (${Math.round(visibilityIndex * 10) / 10}%) is ${Math.round(compVis - visibilityIndex)}% below ${comp.name} (${Math.round(compVis * 10) / 10}%)`
+              description: `Your visibility (${Math.round(visibilityIndex * 10) / 10}%) is ${Math.round(compVis - visibilityIndex)}% below ${competitorName} (${Math.round(compVis * 10) / 10}%)`
             });
           }
 
@@ -896,9 +898,9 @@ class RecommendationService {
               metric: 'Share of Answers',
               currentValue: Math.round(shareOfAnswers * 10) / 10,
               benchmarkValue: Math.round(compSoa * 10) / 10,
-              benchmarkSource: `Competitor: ${comp.name}`,
+              benchmarkSource: `Competitor: ${competitorName}`,
               gap: `${Math.round(shareOfAnswers - compSoa)}%`,
-              description: `Your SOA (${Math.round(shareOfAnswers * 10) / 10}%) is ${Math.round(compSoa - shareOfAnswers)}% below ${comp.name} (${Math.round(compSoa * 10) / 10}%)`
+              description: `Your SOA (${Math.round(shareOfAnswers * 10) / 10}%) is ${Math.round(compSoa - shareOfAnswers)}% below ${competitorName} (${Math.round(compSoa * 10) / 10}%)`
             });
           }
         }
@@ -915,14 +917,14 @@ class RecommendationService {
         .lte('created_at', currentEndDate);
 
       const llmMetrics: LLMMetrics[] = [];
-      const llmGroups = new Map<string, string[]>();
+      const llmGroups = new Map<string, number[]>();
 
       if (llmData && llmData.length > 0) {
         // Group collector_result IDs by LLM type
         for (const row of llmData) {
           if (row.collector_type) {
             const existing = llmGroups.get(row.collector_type) || [];
-            existing.push(row.id);
+            existing.push(Number(row.id));
             llmGroups.set(row.collector_type, existing);
           }
         }

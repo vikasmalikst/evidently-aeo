@@ -3,15 +3,52 @@
  * Handles snapshot polling and result extraction
  */
 
-import { BrightDataRequest, BrightDataResponse } from './types';
+import { BrightDataRequest, BrightDataResponse, BrightDataError } from './types';
+import { transitionCollectorResultById } from '../collector-results-status';
+import { getEnvVar } from '../../../utils/env-utils';
+
+const CIRCUIT_BREAKER_RESET_TIMEOUT_MS = parseInt(getEnvVar('BRIGHTDATA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS') || '60000', 10); // 1 minute
+const CIRCUIT_BREAKER_FAILURE_THRESHOLD = parseInt(getEnvVar('BRIGHTDATA_CIRCUIT_BREAKER_FAILURE_THRESHOLD') || '3', 10);
 
 export class BrightDataPollingService {
   private apiKey: string;
   private supabase: any;
+  private failureCount: number = 0;
+  private isCircuitOpen: boolean = false;
+  private openedTimestamp: number = 0;
 
   constructor(apiKey: string, supabase: any) {
     this.apiKey = apiKey;
     this.supabase = supabase;
+  }
+
+  private checkCircuit(): void {
+    if (this.isCircuitOpen) {
+      const now = Date.now();
+      if (now - this.openedTimestamp > CIRCUIT_BREAKER_RESET_TIMEOUT_MS) {
+        // Circuit is half-open, allow one request to try
+        this.isCircuitOpen = false;
+        console.warn('⚠️ BrightData circuit breaker is now HALF-OPEN. Allowing a test request.');
+      } else {
+        throw new BrightDataError('BrightData circuit is OPEN. Requests are being short-circuited.', 503);
+      }
+    }
+  }
+
+  private recordSuccess(): void {
+    this.failureCount = 0;
+    this.isCircuitOpen = false;
+    console.log('✅ BrightData circuit breaker is CLOSED. All systems operational.');
+  }
+
+  private recordFailure(): void {
+    this.failureCount++;
+    console.warn(`❌ BrightData circuit breaker failure count: ${this.failureCount}/${CIRCUIT_BREAKER_FAILURE_THRESHOLD}`);
+    if (this.failureCount >= CIRCUIT_BREAKER_FAILURE_THRESHOLD) {
+      this.isCircuitOpen = true;
+      this.openedTimestamp = Date.now();
+      console.error('🛑 BrightData circuit breaker is now OPEN. Short-circuiting requests.');
+    }
   }
 
   /**
@@ -23,6 +60,8 @@ export class BrightDataPollingService {
     request: BrightDataRequest,
     collectorType: string = 'chatgpt'
   ): Promise<BrightDataResponse | null> {
+    this.checkCircuit(); // Check circuit status before making a request
+
     try {
       const snapshotUrl = `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}`;
       
@@ -33,8 +72,15 @@ export class BrightDataPollingService {
         }
       });
 
+      if (response.status === 202) {
+        return null;
+      }
+
       if (response.status !== 200) {
-        return null; // Not ready yet
+        const errorBody = await response.text();
+        console.error(`❌ BrightData API returned non-200 status: ${response.status}, body: ${errorBody}`);
+        this.recordFailure(); // Record failure for non-200 responses
+        throw new BrightDataError(`BrightData API returned non-200 status: ${response.status}`, response.status, { responseBody: errorBody });
       }
       
       const responseText = await response.text();
@@ -42,8 +88,10 @@ export class BrightDataPollingService {
       
       try {
         downloadResult = JSON.parse(responseText);
-      } catch {
-        return null; // Not JSON yet, not ready
+      } catch (parseError) {
+        console.error(`❌ BrightData API response is not valid JSON: ${responseText.substring(0, 200)}...`, parseError);
+        this.recordFailure(); // Record failure for JSON parsing errors
+        throw new BrightDataError('BrightData API response is not valid JSON', 500, { responseBody: responseText });
       }
       
       // Handle different response structures
@@ -66,9 +114,10 @@ export class BrightDataPollingService {
         const { answer, urls } = this.extractAnswerAndUrls(actualResult);
         
         if (!answer || answer.trim().length === 0) {
+          console.warn(`⚠️ BrightData snapshot ${snapshotId} returned empty answer after extraction.`);
           return null;
         }
-
+        this.recordSuccess(); // Record success if data is valid
         return {
           query_id: `brightdata_${collectorType}_${Date.now()}`,
           run_start: new Date().toISOString(),
@@ -93,9 +142,16 @@ export class BrightDataPollingService {
         };
       }
       
-      return null; // Not ready yet
-    } catch (error) {
-      return null; // Error, not ready
+      console.warn(`⚠️ BrightData snapshot ${snapshotId} data not ready yet.`);
+      return null;
+    } catch (error: any) {
+      if (error instanceof BrightDataError) {
+        throw error; // Re-throw custom errors directly
+      } else {
+        console.error(`❌ Unexpected error during quickPollSnapshot for ${snapshotId}:`, error);
+        this.recordFailure(); // Record failure for unexpected errors
+        throw new BrightDataError(`Unexpected error during quickPollSnapshot: ${error.message}`, 500, { originalError: error });
+      }
     }
   }
 
@@ -108,6 +164,8 @@ export class BrightDataPollingService {
     datasetId: string,
     request: BrightDataRequest
   ): Promise<void> {
+    this.checkCircuit(); // Check circuit status before making a request
+
     const maxAttempts = 60; // 10 minutes max
     const pollInterval = 10000; // 10 seconds
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -124,25 +182,36 @@ export class BrightDataPollingService {
           if (attempt < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, pollInterval));
             continue;
-          } else {
-            console.error(`❌ BrightData snapshot ${snapshotId} timed out - still processing after max attempts`);
-            return;
           }
+
+          console.error(`❌ BrightData snapshot ${snapshotId} timed out - still processing after max attempts`);
+          await this.markSnapshotFailed(
+            snapshotId,
+            collectorType,
+            datasetId,
+            request,
+            'BrightData snapshot timed out - still processing after max attempts'
+          );
+          this.recordFailure();
+          throw new BrightDataError(`BrightData snapshot ${snapshotId} timed out - still processing after max attempts`, 408);
         }
         
+        if (response.status !== 200) {
+          const errorBody = await response.text();
+          console.error(`❌ BrightData API returned non-200 status: ${response.status}, body: ${errorBody}`);
+          this.recordFailure();
+          throw new BrightDataError(`BrightData API returned non-200 status: ${response.status}`, response.status, { responseBody: errorBody });
+        }
+
         const responseText = await response.text();
         let downloadResult: any;
         
         try {
           downloadResult = JSON.parse(responseText);
         } catch (parseError) {
-          if (attempt < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, pollInterval));
-            continue;
-          } else {
-            console.error(`❌ BrightData snapshot ${snapshotId} timed out - response is not JSON`);
-            return;
-          }
+          console.error(`❌ BrightData API response is not valid JSON: ${responseText.substring(0, 200)}...`, parseError);
+          this.recordFailure();
+          throw new BrightDataError('BrightData API response is not valid JSON', 500, { responseBody: responseText });
         }
         
         let actualResult = downloadResult;
@@ -158,7 +227,7 @@ export class BrightDataPollingService {
         if (actualResult && (hasAnswerText || hasAnswerSectionHtml || hasAnswer)) {
           const { answer, urls } = this.extractAnswerAndUrls(actualResult);
           await this.updateDatabaseWithResults(snapshotId, collectorType, datasetId, request, answer, urls, downloadResult);
-          
+          this.recordSuccess(); // Record success if data is valid and processed
           return; // Success - exit polling
         }
         
@@ -167,14 +236,24 @@ export class BrightDataPollingService {
           await new Promise(resolve => setTimeout(resolve, pollInterval));
         } else {
           console.error(`❌ Snapshot ${snapshotId} timed out after ${maxAttempts} attempts`);
+          await this.markSnapshotFailed(
+            snapshotId,
+            collectorType,
+            datasetId,
+            request,
+            'BrightData snapshot timed out - data not ready'
+          );
+          this.recordFailure();
+          throw new BrightDataError(`BrightData snapshot ${snapshotId} timed out - data not ready`, 408, { snapshotId, actualResult });
         }
         
       } catch (error: any) {
-        console.error(`❌ Error polling snapshot ${snapshotId} (attempt ${attempt}):`, error.message);
-        if (attempt < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        if (error instanceof BrightDataError) {
+          throw error; // Re-throw custom errors directly
         } else {
-          throw error;
+          console.error(`❌ Unexpected error during pollForSnapshotAsync for ${snapshotId} (attempt ${attempt}):`, error);
+          this.recordFailure(); // Record failure for unexpected errors
+          throw new BrightDataError(`Unexpected error during pollForSnapshotAsync: ${error.message}`, 500, { originalError: error });
         }
       }
     }
@@ -189,6 +268,8 @@ export class BrightDataPollingService {
     datasetId: string,
     request: BrightDataRequest
   ): Promise<BrightDataResponse> {
+    this.checkCircuit(); // Check circuit status before making a request
+
     const maxAttempts = 60; // 10 minutes max
     const pollInterval = 10000; // 10 seconds
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -206,22 +287,34 @@ export class BrightDataPollingService {
             await new Promise(resolve => setTimeout(resolve, pollInterval));
             continue;
           } else {
-            throw new Error('BrightData snapshot timed out - still processing after max attempts');
+            await this.markSnapshotFailed(
+              snapshotId,
+              collectorType,
+              datasetId,
+              request,
+              'BrightData snapshot timed out - still processing after max attempts'
+            );
+            this.recordFailure();
+            throw new BrightDataError('BrightData snapshot timed out - still processing after max attempts', 408);
           }
         }
         
+        if (response.status !== 200) {
+          const errorBody = await response.text();
+          console.error(`❌ BrightData API returned non-200 status: ${response.status}, body: ${errorBody}`);
+          this.recordFailure();
+          throw new BrightDataError(`BrightData API returned non-200 status: ${response.status}`, response.status, { responseBody: errorBody });
+        }
+
         const responseText = await response.text();
         let downloadResult: any;
         
         try {
           downloadResult = JSON.parse(responseText);
         } catch (parseError) {
-          if (attempt < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, pollInterval));
-            continue;
-          } else {
-            throw new Error('BrightData snapshot timed out - response is not JSON');
-          }
+          console.error(`❌ BrightData API response is not valid JSON: ${responseText.substring(0, 200)}...`, parseError);
+          this.recordFailure();
+          throw new BrightDataError('BrightData API response is not valid JSON', 500, { responseBody: responseText });
         }
         
         let actualResult = downloadResult;
@@ -246,9 +339,11 @@ export class BrightDataPollingService {
               await new Promise(resolve => setTimeout(resolve, pollInterval));
               continue;
             } else {
-              throw new Error('BrightData snapshot timed out - answer is empty after max attempts');
+              this.recordFailure();
+              throw new BrightDataError('BrightData snapshot timed out - answer is empty after max attempts', 408, { snapshotId });
             }
           }
+          this.recordSuccess(); // Record success if data is valid
           return {
             query_id: `brightdata_${collectorType}_${Date.now()}`,
             run_start: new Date().toISOString(),
@@ -278,22 +373,37 @@ export class BrightDataPollingService {
           await new Promise(resolve => setTimeout(resolve, pollInterval));
           continue;
         } else {
-          throw new Error('BrightData snapshot timed out - data not ready');
+          await this.markSnapshotFailed(
+            snapshotId,
+            collectorType,
+            datasetId,
+            request,
+            'BrightData snapshot timed out - data not ready'
+          );
+          this.recordFailure();
+          throw new BrightDataError('BrightData snapshot timed out - data not ready', 408, { snapshotId, actualResult });
         }
         
       } catch (error: any) {
-        console.error(`❌ Error on attempt ${attempt}:`, error.message);
-        
-        if (attempt === maxAttempts) {
-          console.error(`❌ Failed to get snapshot results after ${maxAttempts} attempts`);
-          throw error;
+        if (error instanceof BrightDataError) {
+          throw error; // Re-throw custom errors directly
+        } else {
+          console.error(`❌ Unexpected error during pollForSnapshot for ${snapshotId} (attempt ${attempt}):`, error);
+          this.recordFailure(); // Record failure for unexpected errors
+          throw new BrightDataError(`Unexpected error during pollForSnapshot: ${error.message}`, 500, { originalError: error });
         }
-        
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
       }
     }
     
-    throw new Error('BrightData snapshot polling exceeded maximum attempts');
+    await this.markSnapshotFailed(
+      snapshotId,
+      collectorType,
+      datasetId,
+      request,
+      'BrightData snapshot polling exceeded maximum attempts'
+    );
+    this.recordFailure();
+    throw new BrightDataError('BrightData snapshot polling exceeded maximum attempts', 408);
   }
 
   /**
@@ -354,6 +464,55 @@ export class BrightDataPollingService {
   /**
    * Update database with polling results
    */
+  private async markSnapshotFailed(
+    snapshotId: string,
+    collectorType: string,
+    datasetId: string,
+    request: BrightDataRequest,
+    errorMessage: string
+  ): Promise<void> {
+    try {
+      const { data: existingResult } = await this.supabase
+        .from('collector_results')
+        .select('id, execution_id, brand_id, customer_id, metadata')
+        .eq('brightdata_snapshot_id', snapshotId)
+        .maybeSingle();
+
+      if (!existingResult?.id) return;
+
+      await transitionCollectorResultById(
+        this.supabase,
+        existingResult.id,
+        'failed',
+        {
+          source: 'brightdata:polling',
+          reason: 'timeout',
+          brandId: existingResult.brand_id,
+          customerId: existingResult.customer_id,
+          executionId: existingResult.execution_id,
+          collectorType: collectorType === 'chatgpt' ? 'ChatGPT' : collectorType,
+          snapshotId,
+        },
+        {
+          error_message: errorMessage,
+          metadata: {
+            provider: `brightdata_${collectorType}`,
+            dataset_id: datasetId,
+            snapshot_id: snapshotId,
+            success: false,
+            brand: request.brand,
+            locale: request.locale,
+            country: request.country,
+            collected_by: 'async_polling',
+            collected_at: new Date().toISOString(),
+          },
+        }
+      );
+    } catch (error: any) {
+      console.error(`❌ Failed to mark snapshot ${snapshotId} as failed:`, error?.message || String(error));
+    }
+  }
+
   private async updateDatabaseWithResults(
     snapshotId: string,
     collectorType: string,
@@ -371,6 +530,33 @@ export class BrightDataPollingService {
         .eq('brightdata_snapshot_id', snapshotId)
         .single();
       
+      const nowIso = new Date().toISOString();
+
+      const computeCollectionTimeMs = (metadata: any): number | null => {
+        const firstAt = metadata?.status_transitions?.[0]?.at;
+        if (typeof firstAt === 'string') {
+          const startMs = new Date(firstAt).getTime();
+          if (!Number.isNaN(startMs)) {
+            return Math.max(0, Date.now() - startMs);
+          }
+        }
+        return null;
+      };
+
+      const getTopicForQueryId = async (queryId: string | null | undefined): Promise<string | null> => {
+        if (!queryId) return null;
+        try {
+          const { data: queryData } = await this.supabase
+            .from('generated_queries')
+            .select('topic, metadata')
+            .eq('id', queryId)
+            .single();
+          return queryData?.topic || queryData?.metadata?.topic_name || queryData?.metadata?.topic || null;
+        } catch (error) {
+          return null;
+        }
+      };
+
       if (findError || !existingResult) {
         // Try to find by execution_id from query_executions
         const { data: execution } = await this.supabase
@@ -384,7 +570,9 @@ export class BrightDataPollingService {
             execution?.metadata?.suppress_scoring === true ||
             execution?.metadata?.suppressScoring === true;
 
-          // Upsert essential fields
+          const topic = await getTopicForQueryId(execution.query_id);
+          const collectionTimeMs = computeCollectionTimeMs(execution.metadata);
+
           const { error: upsertError, data: upsertedData } = await this.supabase
             .from('collector_results')
             .upsert({
@@ -397,18 +585,8 @@ export class BrightDataPollingService {
               raw_answer: answer,
               citations: urls,
               urls: urls,
-              metadata: {
-                provider: `brightdata_${collectorType}`,
-                dataset_id: datasetId,
-                snapshot_id: snapshotId,
-                success: true,
-                brand: request.brand,
-                locale: request.locale,
-                country: request.country,
-                collected_by: 'async_polling',
-                collected_at: new Date().toISOString(),
-                suppress_scoring: suppressScoring,
-              }
+              topic: topic,
+              collection_time_ms: collectionTimeMs,
             }, {
               onConflict: 'execution_id'
             })
@@ -416,6 +594,41 @@ export class BrightDataPollingService {
           
           if (!upsertError && upsertedData && upsertedData.length > 0) {
             const resultId = upsertedData[0].id;
+
+            await transitionCollectorResultById(
+              this.supabase,
+              resultId,
+              'completed',
+              {
+                source: 'brightdata:polling',
+                reason: 'raw_answer_stored',
+                brandId: execution.brand_id,
+                customerId: execution.customer_id,
+                executionId: execution.id,
+                collectorType: collectorType === 'chatgpt' ? 'ChatGPT' : collectorType,
+                snapshotId,
+              },
+              {
+                raw_answer: answer,
+                citations: urls,
+                urls: urls,
+                topic: topic,
+                collection_time_ms: collectionTimeMs,
+                metadata: {
+                  provider: `brightdata_${collectorType}`,
+                  dataset_id: datasetId,
+                  snapshot_id: snapshotId,
+                  success: true,
+                  brand: request.brand,
+                  locale: request.locale,
+                  country: request.country,
+                  collected_by: 'async_polling',
+                  collected_at: nowIso,
+                  suppress_scoring: suppressScoring,
+                },
+              }
+            );
+
             // Update raw_response_json separately
             await this.supabase
               .from('collector_results')
@@ -447,25 +660,39 @@ export class BrightDataPollingService {
           existingResult?.metadata?.suppress_scoring === true ||
           existingResult?.metadata?.suppressScoring === true;
 
-        // Update existing record
-        await this.supabase
-          .from('collector_results')
-          .update({
+        const topic = await getTopicForQueryId(existingResult.query_id);
+        const collectionTimeMs = computeCollectionTimeMs(existingResult.metadata);
+
+        await transitionCollectorResultById(
+          this.supabase,
+          existingResult.id,
+          'completed',
+          {
+            source: 'brightdata:polling',
+            reason: 'raw_answer_stored',
+            brandId: existingResult.brand_id,
+            customerId: existingResult.customer_id,
+            executionId: existingResult.execution_id,
+            collectorType: collectorType === 'chatgpt' ? 'ChatGPT' : collectorType,
+            snapshotId,
+          },
+          {
             raw_answer: answer,
             citations: urls,
             urls: urls,
+            topic: topic,
+            collection_time_ms: collectionTimeMs,
             metadata: {
-              ...existingResult.metadata,
               provider: `brightdata_${collectorType}`,
               dataset_id: datasetId,
               snapshot_id: snapshotId,
               success: true,
               collected_by: 'async_polling',
-              collected_at: new Date().toISOString(),
+              collected_at: nowIso,
               suppress_scoring: suppressScoring,
-            }
-          })
-          .eq('id', existingResult.id);
+            },
+          }
+        );
         
         // Update raw_response_json separately
         await this.supabase

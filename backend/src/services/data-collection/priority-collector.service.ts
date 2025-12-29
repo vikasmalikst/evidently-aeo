@@ -354,6 +354,19 @@ export class PriorityCollectorService {
           // Extract snapshot_id from BrightData results
           const snapshotId = result.metadata?.snapshot_id || result.snapshot_id;
 
+          // Determine status based on answer presence
+          const answer = result.answer || result.response;
+          let status: 'completed' | 'running' | 'failed' = 'completed';
+          
+          if (!answer || (typeof answer === 'string' && answer.trim().length === 0)) {
+            if (snapshotId && provider.name.includes('brightdata')) {
+              status = 'running';
+            } else {
+              // No answer and not a pending snapshot - this is a failure
+              throw new Error(`Provider ${provider.name} returned an empty answer`);
+            }
+          }
+
           if (snapshotId && provider.name.includes('brightdata')) {
             await this.updateExecutionSnapshotId(executionId, snapshotId);
           }
@@ -367,8 +380,8 @@ export class PriorityCollectorService {
             executionId,
             collectorType,
             provider: provider.name,
-            status: 'completed',
-            response: result.answer || result.response,
+            status: status,
+            response: answer,
             citations: result.citations || [],
             urls: result.urls || [],
             executionTimeMs: executionTime,

@@ -76,6 +76,19 @@ export async function buildDashboardPayload(
     useProcessedAt: boolean
   ) => {
     try {
+      const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+      const isRetryable = (error: unknown) => {
+        if (!error || typeof error !== 'object') return false
+        const message = 'message' in error ? String((error as { message?: unknown }).message ?? '') : ''
+        const lower = message.toLowerCase()
+        return (
+          lower.includes('502') ||
+          lower.includes('bad gateway') ||
+          lower.includes('<html') ||
+          lower.includes('gateway')
+        )
+      }
+
       // Fetch metric_facts with brand info from collector_results
       let metricFactsQuery = supabaseAdmin
         .from('metric_facts')
@@ -116,51 +129,81 @@ export async function buildDashboardPayload(
 
       const metricFactIds = metricFacts.map(mf => mf.id)
 
-      // Fetch brand_metrics
-      const { data: brandMetrics, error: brandMetricsError } = await supabaseAdmin
-        .from('brand_metrics')
-        .select('*')
-        .in('metric_fact_id', metricFactIds)
+      const chunkSize = 200
+      const brandMetricsRows: any[] = []
+      const competitorMetricsRows: any[] = []
+      const brandSentimentRows: any[] = []
+      const competitorSentimentRows: any[] = []
 
-      if (brandMetricsError) {
-        console.error('[Dashboard] Error fetching brand_metrics:', brandMetricsError)
+      const fetchChunkWithRetry = async <T>(
+        run: () => PromiseLike<{ data: T[] | null; error: any }>
+      ): Promise<{ data: T[]; error: unknown | null }> => {
+        const maxAttempts = 3
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          const result = await run()
+          if (!result.error) {
+            return { data: result.data ?? [], error: null }
+          }
+          if (!isRetryable(result.error) || attempt === maxAttempts) {
+            return { data: [], error: result.error }
+          }
+          await sleep(250 * Math.pow(2, attempt - 1))
+        }
+        return { data: [], error: null }
       }
 
-      // Fetch competitor_metrics with competitor info
-      const { data: competitorMetrics, error: competitorMetricsError } = await supabaseAdmin
-        .from('competitor_metrics')
-        .select(`
-          *,
-          brand_competitors!inner(competitor_name)
-        `)
-        .in('metric_fact_id', metricFactIds)
+      for (let i = 0; i < metricFactIds.length; i += chunkSize) {
+        const chunk = metricFactIds.slice(i, i + chunkSize)
 
-      if (competitorMetricsError) {
-        console.error('[Dashboard] Error fetching competitor_metrics:', competitorMetricsError)
+        const { data: chunkBrandMetrics, error: brandMetricsError } = await fetchChunkWithRetry(() =>
+          supabaseAdmin.from('brand_metrics').select('*').in('metric_fact_id', chunk)
+        )
+        if (brandMetricsError) {
+          console.error('[Dashboard] Error fetching brand_metrics:', brandMetricsError)
+        }
+        brandMetricsRows.push(...chunkBrandMetrics)
+
+        const { data: chunkCompetitorMetrics, error: competitorMetricsError } = await fetchChunkWithRetry(() =>
+          supabaseAdmin
+            .from('competitor_metrics')
+            .select(`
+              *,
+              brand_competitors!inner(competitor_name)
+            `)
+            .in('metric_fact_id', chunk)
+        )
+        if (competitorMetricsError) {
+          console.error('[Dashboard] Error fetching competitor_metrics:', competitorMetricsError)
+        }
+        competitorMetricsRows.push(...chunkCompetitorMetrics)
+
+        const { data: chunkBrandSentiment, error: brandSentimentError } = await fetchChunkWithRetry(() =>
+          supabaseAdmin.from('brand_sentiment').select('*').in('metric_fact_id', chunk)
+        )
+        if (brandSentimentError) {
+          console.error('[Dashboard] Error fetching brand_sentiment:', brandSentimentError)
+        }
+        brandSentimentRows.push(...chunkBrandSentiment)
+
+        const { data: chunkCompetitorSentiment, error: competitorSentimentError } = await fetchChunkWithRetry(() =>
+          supabaseAdmin
+            .from('competitor_sentiment')
+            .select(`
+              *,
+              brand_competitors!inner(competitor_name)
+            `)
+            .in('metric_fact_id', chunk)
+        )
+        if (competitorSentimentError) {
+          console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentError)
+        }
+        competitorSentimentRows.push(...chunkCompetitorSentiment)
       }
 
-      // Fetch brand_sentiment
-      const { data: brandSentiment, error: brandSentimentError } = await supabaseAdmin
-        .from('brand_sentiment')
-        .select('*')
-        .in('metric_fact_id', metricFactIds)
-
-      if (brandSentimentError) {
-        console.error('[Dashboard] Error fetching brand_sentiment:', brandSentimentError)
-      }
-
-      // Fetch competitor_sentiment with competitor info
-      const { data: competitorSentiment, error: competitorSentimentError} = await supabaseAdmin
-        .from('competitor_sentiment')
-        .select(`
-          *,
-          brand_competitors!inner(competitor_name)
-        `)
-        .in('metric_fact_id', metricFactIds)
-
-      if (competitorSentimentError) {
-        console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentError)
-      }
+      const brandMetrics = brandMetricsRows
+      const competitorMetrics = competitorMetricsRows
+      const brandSentiment = brandSentimentRows
+      const competitorSentiment = competitorSentimentRows
 
       // Defensive: Ensure all data is arrays
       const brandMetricsArray = Array.isArray(brandMetrics) ? brandMetrics : [];
@@ -553,27 +596,38 @@ export async function buildDashboardPayload(
     )
     
     if (uniqueCollectorResultIds.length > 0) {
-      const {
-        data: collectorRows,
-        error: collectorRowsError
-      } = await (async () => {
-        const start = Date.now()
-        const result = await supabaseAdmin
-          .from('collector_results')
-          .select('id, question')
-          .in('id', uniqueCollectorResultIds)
-        console.log(`[Dashboard] ⏱ collector results query: ${Date.now() - start}ms`)
-        return result
-      })()
+      const chunkSize = 200
+      const collectorRows: Array<{ id: number; question: string | null }> = []
 
-      if (collectorRowsError) {
-        throw new DatabaseError(`Failed to load collector questions for dashboard: ${collectorRowsError.message}`)
+      for (let i = 0; i < uniqueCollectorResultIds.length; i += chunkSize) {
+        const chunk = uniqueCollectorResultIds.slice(i, i + chunkSize)
+        const { data, error } = await (async () => {
+          const start = Date.now()
+          const result = await supabaseAdmin
+            .from('collector_results')
+            .select('id, question')
+            .in('id', chunk)
+          console.log(`[Dashboard] ⏱ collector results query chunk (${chunk.length}): ${Date.now() - start}ms`)
+          return result
+        })()
+
+        if (error) {
+          console.warn(`[Dashboard] Failed to load collector questions chunk: ${error.message}`)
+          continue
+        }
+
+        ;(data ?? []).forEach((row) => {
+          if (typeof row?.id !== 'number' || !Number.isFinite(row.id)) {
+            return
+          }
+          collectorRows.push({
+            id: row.id,
+            question: typeof row.question === 'string' ? row.question : null
+          })
+        })
       }
 
-      ;(collectorRows ?? []).forEach((collectorRow) => {
-        if (!collectorRow?.id) {
-          return
-        }
+      collectorRows.forEach((collectorRow) => {
         const label =
           typeof collectorRow.question === 'string' && collectorRow.question.trim().length > 0
             ? collectorRow.question.trim()
@@ -591,24 +645,40 @@ export async function buildDashboardPayload(
     )
 
     if (uniqueQueryIds.length > 0) {
-      const {
-        data: queryRows,
-        error: queryRowsError
-      } = await (async () => {
-        const start = Date.now()
-        const result = await supabaseAdmin
-          .from('generated_queries')
-          .select('id, query_text, topic, metadata')
-          .in('id', uniqueQueryIds)
-        console.log(`[Dashboard] ⏱ generated queries lookup query: ${Date.now() - start}ms`)
-        return result
-      })()
+      const chunkSize = 200
+      const queryRows: Array<{ id: string; query_text: string | null; topic: string | null; metadata: unknown }> = []
 
-      if (queryRowsError) {
-        throw new DatabaseError(`Failed to load queries for dashboard: ${queryRowsError.message}`)
+      for (let i = 0; i < uniqueQueryIds.length; i += chunkSize) {
+        const chunk = uniqueQueryIds.slice(i, i + chunkSize)
+        const { data, error } = await (async () => {
+          const start = Date.now()
+          const result = await supabaseAdmin
+            .from('generated_queries')
+            .select('id, query_text, topic, metadata')
+            .in('id', chunk)
+          console.log(`[Dashboard] ⏱ generated queries lookup chunk (${chunk.length}): ${Date.now() - start}ms`)
+          return result
+        })()
+
+        if (error) {
+          console.warn(`[Dashboard] Failed to load generated queries chunk: ${error.message}`)
+          continue
+        }
+
+        ;(data ?? []).forEach((row) => {
+          if (!row?.id) {
+            return
+          }
+          queryRows.push({
+            id: String(row.id),
+            query_text: typeof row.query_text === 'string' ? row.query_text : null,
+            topic: typeof row.topic === 'string' ? row.topic : null,
+            metadata: row.metadata
+          })
+        })
       }
 
-      ;(queryRows ?? []).forEach((query) => {
+      queryRows.forEach((query) => {
         if (!query?.id) {
           return
         }

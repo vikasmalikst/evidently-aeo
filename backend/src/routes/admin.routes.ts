@@ -1261,7 +1261,7 @@ router.get('/collector-results', async (req: Request, res: Response) => {
     const parsedOffset = Math.max(Number(offset ?? 0), 0);
 
     const selectColumns =
-      'id, brand_id, collector_type, status, scoring_status, raw_answer, created_at';
+      'id, brand_id, collector_type, status, scoring_status, raw_answer, created_at, scoring_error, error_message';
 
     let query = supabase
       .from('collector_results')
@@ -1334,7 +1334,14 @@ router.get('/collector-results', async (req: Request, res: Response) => {
       status: r.status,
       scoringStatus: r.scoring_status,
       rawAnswerPresent: r.raw_answer !== null && r.raw_answer !== undefined,
-      createdAt: r.created_at,
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
+      errorMessage: r.error_message ?? null,
+      scoringError:
+        typeof r.scoring_error === 'string'
+          ? r.scoring_error
+          : r.scoring_error
+            ? JSON.stringify(r.scoring_error, null, 2)
+            : null,
     }));
 
     res.json({
@@ -1401,17 +1408,12 @@ router.post('/brands/:brandId/collect-data-now', async (req: Request, res: Respo
       console.log(`[Admin] Using explicitly provided collectors: ${collectorsToUse.join(', ')}`);
     }
 
-    // Execute data collection immediately
-    const result = await dataCollectionJobService.executeDataCollection(
-      brandId,
-      customer_id,
-      {
-        collectors: collectorsToUse,
-        locale,
-        country,
-        suppressScoring: true,
-      }
-    );
+    const { executeAdhocDataCollection } = await import('../services/data-collection/adhoc_data_collector');
+    const result = await executeAdhocDataCollection(brandId, customer_id, {
+      collectors: collectorsToUse,
+      locale,
+      country,
+    });
 
     res.json({
       success: true,

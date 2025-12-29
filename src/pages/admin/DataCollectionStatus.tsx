@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { useAuthStore } from '../../store/authStore';
@@ -17,6 +18,8 @@ interface CollectorResultsRow {
   collectorType: string;
   status: string | null;
   scoringStatus: string | null;
+  errorMessage?: string | null;
+  scoringError?: string | null;
   rawAnswerPresent: boolean;
   createdAt: string;
 }
@@ -34,6 +37,7 @@ const isUuid = (value: string) =>
   );
 
 export const DataCollectionStatus = () => {
+  const navigate = useNavigate();
   const { brands, selectedBrandId, selectBrand } = useManualBrandDashboard();
   const authUser = useAuthStore((state) => state.user);
 
@@ -53,6 +57,16 @@ export const DataCollectionStatus = () => {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCollectionError, setSelectedCollectionError] = useState<{
+    rowId: string;
+    title: string;
+    error: string;
+  } | null>(null);
+  const [selectedScoringError, setSelectedScoringError] = useState<{
+    rowId: string;
+    title: string;
+    error: string;
+  } | null>(null);
 
   const getErrorMessage = (err: unknown): string => {
     if (err instanceof Error) return err.message;
@@ -182,13 +196,21 @@ export const DataCollectionStatus = () => {
     <div className="p-8 max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Data Collection Status</h1>
-        <button
-          onClick={() => load(offset)}
-          disabled={loading || !customerId}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Refresh
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => navigate('/admin/scheduled-jobs')}
+            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+          >
+            Back to Scheduled Jobs
+          </button>
+          <button
+            onClick={() => load(offset)}
+            disabled={loading || !customerId}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow p-6 mb-6 space-y-4">
@@ -360,8 +382,10 @@ export const DataCollectionStatus = () => {
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Created</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Brand</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Collector</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Scoring</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">
+                  Data Collection Status
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Scoring Status</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Raw Answer</th>
               </tr>
             </thead>
@@ -386,8 +410,46 @@ export const DataCollectionStatus = () => {
                     </td>
                     <td className="px-4 py-3">{r.brandName || r.brandId}</td>
                     <td className="px-4 py-3">{r.collectorType}</td>
-                    <td className="px-4 py-3">{r.status || ''}</td>
-                    <td className="px-4 py-3">{r.scoringStatus || ''}</td>
+                    <td
+                      className={`px-4 py-3 ${
+                        r.status === 'failed' || r.status === 'failed_retry'
+                          ? 'cursor-pointer text-red-700 hover:underline'
+                          : ''
+                      }`}
+                      onClick={() => {
+                        if (!(r.status === 'failed' || r.status === 'failed_retry')) {
+                          return;
+                        }
+                        const title = `${r.brandName || r.brandId} • ${r.collectorType} • ${r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}`;
+                        setSelectedCollectionError({
+                          rowId: r.id,
+                          title,
+                          error: r.errorMessage || 'No error details available.',
+                        });
+                      }}
+                    >
+                      {r.status || ''}
+                    </td>
+                    <td
+                      className={`px-4 py-3 ${
+                        r.scoringStatus === 'error'
+                          ? 'cursor-pointer text-red-700 hover:underline'
+                          : ''
+                      }`}
+                      onClick={() => {
+                        if (r.scoringStatus !== 'error') {
+                          return;
+                        }
+                        const title = `${r.brandName || r.brandId} • ${r.collectorType} • ${r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}`;
+                        setSelectedScoringError({
+                          rowId: r.id,
+                          title,
+                          error: r.scoringError || 'No error details available.',
+                        });
+                      }}
+                    >
+                      {r.scoringStatus || ''}
+                    </td>
                     <td className="px-4 py-3">{r.rawAnswerPresent ? 'Non-null' : 'Null'}</td>
                   </tr>
                 ))
@@ -396,7 +458,29 @@ export const DataCollectionStatus = () => {
           </table>
         </div>
       </div>
+
+      {(selectedCollectionError || selectedScoringError) && (
+        <div className="mt-6 bg-white rounded-lg shadow p-6 space-y-6">
+          {selectedCollectionError && (
+            <div>
+              <div className="text-sm font-semibold text-gray-900">Collection Error</div>
+              <div className="text-xs text-gray-600 mt-1">{selectedCollectionError.title}</div>
+              <pre className="mt-3 text-sm whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-4">
+                {selectedCollectionError.error}
+              </pre>
+            </div>
+          )}
+          {selectedScoringError && (
+            <div>
+              <div className="text-sm font-semibold text-gray-900">Scoring Error</div>
+              <div className="text-xs text-gray-600 mt-1">{selectedScoringError.title}</div>
+              <pre className="mt-3 text-sm whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-4">
+                {selectedScoringError.error}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
-

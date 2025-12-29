@@ -7,11 +7,10 @@
  * 3. Data accuracy (matches compatibility view results)
  */
 
+import { beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { OptimizedMetricsHelper } from '../optimized-metrics.helper';
 import {
-  BrandMetricsRow,
-  CompetitorMetricsRow,
   FetchMetricsOptions,
 } from '../../../types/optimized-metrics.types';
 
@@ -205,28 +204,36 @@ describe('OptimizedMetricsHelper', () => {
       expect(Array.isArray(result.data.competitors)).toBe(true);
     });
 
-    it('should be faster than sequential queries', async () => {
-      if (!testCollectorResultIds || testCollectorResultIds.length === 0) {
-        console.warn('Skipping test: no test data available');
-        return;
+    it('should run brand and competitor fetches in parallel', async () => {
+      const brandDelayMs = 250;
+      const competitorDelayMs = 200;
+
+      const brandSpy = jest.spyOn(helper, 'fetchBrandMetrics').mockImplementation(async () => {
+        await new Promise<void>(resolve => setTimeout(resolve, brandDelayMs));
+        return { success: true, data: [], duration_ms: brandDelayMs };
+      });
+
+      const competitorSpy = jest.spyOn(helper, 'fetchCompetitorMetrics').mockImplementation(async () => {
+        await new Promise<void>(resolve => setTimeout(resolve, competitorDelayMs));
+        return { success: true, data: [], duration_ms: competitorDelayMs };
+      });
+
+      try {
+        const start = Date.now();
+        const result = await helper.fetchCombinedMetrics({
+          collectorResultIds: [1],
+          includeSentiment: true,
+        });
+        const elapsed = Date.now() - start;
+
+        expect(result.success).toBe(true);
+        expect(brandSpy).toHaveBeenCalledTimes(1);
+        expect(competitorSpy).toHaveBeenCalledTimes(1);
+        expect(elapsed).toBeLessThan(brandDelayMs + competitorDelayMs - 25);
+      } finally {
+        brandSpy.mockRestore();
+        competitorSpy.mockRestore();
       }
-
-      const options: FetchMetricsOptions = {
-        collectorResultIds: testCollectorResultIds.slice(0, 10),
-        includeSentiment: true,
-      };
-
-      // Combined (parallel)
-      const combinedResult = await helper.fetchCombinedMetrics(options);
-
-      // Sequential
-      const sequentialStart = Date.now();
-      await helper.fetchBrandMetrics(options);
-      await helper.fetchCompetitorMetrics(options);
-      const sequentialDuration = Date.now() - sequentialStart;
-
-      // Parallel should be faster or similar (not slower)
-      expect(combinedResult.duration_ms).toBeLessThanOrEqual(sequentialDuration * 1.5);
     });
   });
 
@@ -445,7 +452,15 @@ describe('OptimizedMetricsHelper', () => {
           optimizedResult.data.map(row => [row.collector_result_id, row])
         );
 
-        compatData.forEach((compatRow: any) => {
+        const compatRows = compatData as Array<{
+          collector_result_id: number;
+          visibility_index: number | null;
+          share_of_answers_brand: number | null;
+          total_brand_mentions: number | null;
+          has_brand_presence: boolean | null;
+        }>;
+
+        compatRows.forEach(compatRow => {
           const optimizedRow = optimizedByCollectorResult.get(compatRow.collector_result_id);
           
           if (optimizedRow) {
@@ -460,4 +475,3 @@ describe('OptimizedMetricsHelper', () => {
     });
   });
 });
-

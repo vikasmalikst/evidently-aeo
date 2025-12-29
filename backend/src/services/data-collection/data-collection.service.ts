@@ -11,6 +11,7 @@ import { priorityCollectorService, PriorityExecutionResult } from './priority-co
 import { keywordGenerationService } from '../keywords/keyword-generation.service';
 import { openRouterCollectorService } from './openrouter-collector.service';
 import { CollectorError, ErrorType } from './types/collector-errors';
+import { transitionCollectorResultByExecution } from './collector-results-status';
 
 // Load environment variables
 loadEnvironment();
@@ -213,26 +214,13 @@ export class DataCollectionService {
           // Execute across enabled collectors with retry mechanism
           // Each collector will create its own execution record
           const collectorResults = await this.executeQueryAcrossCollectorsWithRetry(request, 2); // 2 retries
-          // If all collectors failed, create a failed collector_result entry so the query is tracked
-          if (collectorResults.length === 0 || collectorResults.every(r => r.status === 'failed')) {
-            try {
-              // Create a failed collector_result entry to track this query attempt
-              await this.storeCollectorResult({
-                queryId: request.queryId,
-                executionId: '', // No execution ID since all collectors failed
-                collectorType: request.collectors.join(','),
-                status: 'failed',
-                error: collectorResults.length > 0 ? collectorResults.map(r => r.error).filter(Boolean).join('; ') : 'All collectors failed',
-                brandId: request.brandId,
-                customerId: request.customerId,
-                executionTimeMs: 0,
-                suppressScoring: request.suppressScoring
-              });
-            } catch (storeError) {
-              console.error(`❌ Failed to store failed collector_result for query ${request.queryId}:`, storeError);
-            }
+          if (!collectorResults || collectorResults.length === 0) {
+            return await this.createFailedExecutionsForCollectors(
+              request,
+              new Error('All collectors failed'),
+              0
+            );
           }
-          
           return collectorResults;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -244,25 +232,12 @@ export class DataCollectionService {
             brandId: request.brandId,
             queryId: request.queryId
           });
-          
-          // Create a failed collector_result entry even when exception is thrown
-          try {
-                await this.storeCollectorResult({
-                  queryId: request.queryId,
-                  executionId: '',
-                  collectorType: request.collectors.join(','),
-                  status: 'failed',
-                  error: errorMessage,
-                  brandId: request.brandId,
-                  customerId: request.customerId,
-                  executionTimeMs: 0,
-                  suppressScoring: request.suppressScoring
-                });
-          } catch (storeError) {
-            console.error(`❌ Failed to store failed collector_result for query ${request.queryId}:`, storeError);
-          }
-          
-          return [];
+
+          return await this.createFailedExecutionsForCollectors(
+            request,
+            error instanceof Error ? error : new Error(errorMessage),
+            0
+          );
         }
       });
 
@@ -288,6 +263,50 @@ export class DataCollectionService {
     return results;
   }
 
+  private async createFailedExecutionsForCollectors(
+    request: QueryExecutionRequest,
+    error: Error,
+    attemptNumber: number
+  ): Promise<CollectorResult[]> {
+    const enabledCollectors = request.collectors.filter((collector) => this.collectors.get(collector)?.enabled);
+    const results: CollectorResult[] = [];
+
+    for (const collectorType of enabledCollectors) {
+      const collectorError = CollectorError.fromError(
+        error,
+        {
+          queryId: request.queryId,
+          queryText: request.queryText,
+          collectorType,
+          brandId: request.brandId,
+          customerId: request.customerId,
+        },
+        attemptNumber
+      );
+
+      const executionId = await this.createQueryExecutionForCollector(
+        request,
+        collectorType,
+        'failed',
+        collectorError
+      );
+
+      results.push({
+        queryId: request.queryId,
+        executionId,
+        collectorType,
+        status: 'failed',
+        error: collectorError.message,
+        brandId: request.brandId,
+        customerId: request.customerId,
+        executionTimeMs: 0,
+        suppressScoring: request.suppressScoring,
+      });
+    }
+
+    return results;
+  }
+
   /**
    * Execute query across multiple collectors with enhanced retry mechanism
    * Includes smart retry logic, exponential backoff with jitter, and circuit breaker
@@ -301,7 +320,11 @@ export class DataCollectionService {
     
     // Check circuit breaker for this collector combination
     if (this.isCircuitBreakerOpen(collectorKeys)) {
-      throw new Error(`Circuit breaker is open for collectors: ${request.collectors.join(', ')}`);
+      return await this.createFailedExecutionsForCollectors(
+        request,
+        new Error(`Circuit breaker is open for collectors: ${request.collectors.join(', ')}`),
+        0
+      );
     }
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -453,6 +476,37 @@ export class DataCollectionService {
       } catch (error) {
       }
     }
+
+    let competitorsList: string[] = [];
+    if (request.brandId) {
+      try {
+        const { data: competitorsData } = await this.supabase
+          .from('brand_competitors')
+          .select('competitor_name')
+          .eq('brand_id', request.brandId);
+
+        if (competitorsData && competitorsData.length > 0) {
+          competitorsList = competitorsData.map((c: any) => c.competitor_name).filter(Boolean);
+        }
+      } catch (error) {
+      }
+    }
+
+    let topicFromQuery: string | null = null;
+    if (request.queryId) {
+      try {
+        const { data: queryData } = await this.supabase
+          .from('generated_queries')
+          .select('topic, metadata')
+          .eq('id', request.queryId)
+          .single();
+
+        if (queryData) {
+          topicFromQuery = queryData.topic || queryData.metadata?.topic_name || queryData.metadata?.topic || null;
+        }
+      } catch (error) {
+      }
+    }
     
     const insertData: any = {
       query_id: request.queryId,
@@ -505,6 +559,21 @@ export class DataCollectionService {
 
     if (data?.id) {
       try {
+        const createdTransition = {
+          from: null,
+          to:
+            status === 'failed'
+              ? (collectorError?.retryable ? 'failed_retry' : 'failed')
+              : 'processing',
+          at: new Date().toISOString(),
+          source: 'data_collection:init',
+          ...(request.brandId ? { brand_id: request.brandId } : {}),
+          ...(request.customerId ? { customer_id: request.customerId } : {}),
+          execution_id: data.id,
+          collector_type: mappedCollectorType,
+          ...(snapshotId ? { brightdata_snapshot_id: snapshotId } : {}),
+        };
+
         const pendingCollectorResult: any = {
           query_id: request.queryId,
           collector_type: mappedCollectorType,
@@ -512,16 +581,24 @@ export class DataCollectionService {
           citations: null,
           urls: null,
           question: request.queryText || null,
+          brand: brandName,
+          competitors: competitorsList.length > 0 ? competitorsList : null,
+          topic: topicFromQuery || null,
           brand_id: request.brandId,
           customer_id: request.customerId,
           execution_id: data.id,
-          status: status === 'failed' ? (collectorError?.retryable ? 'failed_retry' : 'failed') : status,
+          status:
+            status === 'failed'
+              ? (collectorError?.retryable ? 'failed_retry' : 'failed')
+              : 'processing',
           metadata: {
             intent: request.intent,
             locale: request.locale,
             country: request.country,
             collectors: request.collectors,
             suppress_scoring: request.suppressScoring === true,
+            last_status_transition: createdTransition,
+            status_transitions: [createdTransition],
           },
         };
 
@@ -567,9 +644,29 @@ export class DataCollectionService {
       throw new Error(`Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`);
     }
 
+    // ENFORCE: If status is 'completed', verify raw_answer exists
+    let finalStatus = status;
+    if (status === 'completed') {
+      try {
+        const { data: result } = await this.supabase
+          .from('collector_results')
+          .select('raw_answer')
+          .eq('execution_id', executionId)
+          .maybeSingle();
+
+        if (!result || !result.raw_answer || (typeof result.raw_answer === 'string' && result.raw_answer.trim().length === 0)) {
+          console.warn(`[query_executions] executionId=${executionId} cannot be 'completed' because raw_answer is null/empty in collector_results. Downgrading to 'running'.`);
+          finalStatus = 'running';
+        }
+      } catch (error) {
+        console.error(`[query_executions] Error checking raw_answer for executionId=${executionId}:`, error);
+        finalStatus = 'running';
+      }
+    }
+
     // Log status update for debugging
     const updateData: any = {
-      status: status,
+      status: finalStatus,
       updated_at: new Date().toISOString()
     };
 
@@ -627,30 +724,30 @@ export class DataCollectionService {
     try {
       const mappedCollectorType = this.mapCollectorTypeToDatabase(collectorType);
       const collectorResultStatus =
-        status === 'failed' ? (collectorError?.retryable ? 'failed_retry' : 'failed') : status;
+        finalStatus === 'failed'
+          ? (collectorError?.retryable ? 'failed_retry' : 'failed')
+          : finalStatus === 'pending' || finalStatus === 'running'
+            ? 'processing'
+            : 'completed';
 
-      const collectorUpdate: any = {
-        status: collectorResultStatus,
-      };
+      const collectorUpdate: any = {};
+      if (snapshotId) collectorUpdate.brightdata_snapshot_id = snapshotId;
+      if (collectorError && finalStatus === 'failed') collectorUpdate.error_message = collectorError.message;
 
-      if (snapshotId) {
-        collectorUpdate.brightdata_snapshot_id = snapshotId;
-      }
-
-      if (collectorError && status === 'failed') {
-        collectorUpdate.error_message = collectorError.message;
-      }
-
-      const { error: collectorStatusError } = await this.supabase
-        .from('collector_results')
-        .update(collectorUpdate)
-        .eq('execution_id', executionId)
-        .eq('collector_type', mappedCollectorType);
-
-      if (collectorStatusError) {
-        if (collectorStatusError.code !== 'PGRST204') {
-        }
-      }
+      await transitionCollectorResultByExecution(
+        this.supabase,
+        executionId,
+        mappedCollectorType,
+        collectorResultStatus,
+        {
+          source: 'data_collection:updateExecutionStatus',
+          reason: finalStatus,
+          executionId,
+          collectorType: mappedCollectorType,
+          snapshotId,
+        },
+        collectorUpdate
+      );
     } catch (collectorStatusUpdateError) {
     }
   }
@@ -791,6 +888,8 @@ export class DataCollectionService {
         }
         // If execution is 'completed' but no result exists, this is a data inconsistency
         else if (execution.status === 'completed' && (!storedResult || !storedResult.raw_answer)) {
+          console.warn(`[query_executions] Found execution ${result.executionId} in 'completed' status but no raw_answer found. Downgrading to 'running'.`);
+          await this.updateExecutionStatus(result.executionId, result.collectorType, 'running');
         }
 
       } catch (error: any) {
@@ -829,17 +928,8 @@ export class DataCollectionService {
         request.country
       );
 
-      // Update execution status with snapshot_id if available
+      // Store result if successful
       if (result.status === 'completed') {
-        await this.updateExecutionStatus(
-          executionId, 
-          collectorType, 
-          'completed', 
-          undefined,
-          result.snapshotId
-        );
-        
-        // Store result if successful
         // Extract raw_response_json from metadata if available (but don't store it back in metadata to avoid 413 errors)
         const rawResponseJson = result.metadata?.raw_response_json;
         
@@ -866,6 +956,18 @@ export class DataCollectionService {
           snapshotId: result.snapshotId,
           rawResponseJson: rawResponseJson
         });
+
+        // Update execution status with snapshot_id if available
+        // This is done AFTER storeCollectorResult so updateExecutionStatus can verify raw_answer
+        await this.updateExecutionStatus(
+          executionId, 
+          collectorType, 
+          'completed', 
+          undefined,
+          result.snapshotId
+        );
+      } else if (result.status === 'running') {
+        await this.updateExecutionStatus(executionId, collectorType, 'running', undefined, result.snapshotId);
       } else {
         // Update execution status for failed attempts
         // Create CollectorError from result.error if it's a string
@@ -1172,7 +1274,7 @@ export class DataCollectionService {
           suppress_scoring: result.suppressScoring === true,
           ...(topicFromQuery ? { topic: topicFromQuery } : {}), // Also store in metadata for backward compatibility
           ...(result.error ? { error: result.error } : {}), // Store error message for failed results
-          ...(result.status === 'failed' ? { failed: true, failed_at: new Date().toISOString() } : {})
+         ...(result.status === 'failed' ? { failed: true, failed_at: new Date().toISOString() } : {})
         };
       })()
     };
@@ -1212,23 +1314,49 @@ export class DataCollectionService {
 
     if (result.executionId) {
       try {
-        const { data: updatedData, error: updateError } = await this.supabase
-          .from('collector_results')
-          .update(insertData)
-          .eq('execution_id', result.executionId)
-          .select('id');
+        const { status: toStatus, ...updateFields } = insertData;
+        const transition = await transitionCollectorResultByExecution(
+          this.supabase,
+          result.executionId,
+          mappedCollectorType,
+          toStatus,
+          {
+            source: 'data_collection:storeCollectorResult',
+            reason: toStatus,
+            brandId: result.brandId,
+            customerId: result.customerId,
+            executionId: result.executionId,
+            collectorType: mappedCollectorType,
+            snapshotId: result.snapshotId,
+          },
+          updateFields
+        );
 
-        if (!updateError && updatedData && updatedData.length > 0) {
-          insertedData = updatedData;
-        } else if (updateError) {
-          if (updateError.code !== 'PGRST204') {
-          }
+        if (transition.collectorResultId) {
+          insertedData = [{ id: transition.collectorResultId }];
         }
       } catch (updateException) {
       }
     }
 
     if (!insertedData) {
+      const storedTransition = {
+        from: null,
+        to: insertData.status,
+        at: new Date().toISOString(),
+        source: 'data_collection:storeCollectorResult',
+        ...(result.brandId ? { brand_id: result.brandId } : {}),
+        ...(result.customerId ? { customer_id: result.customerId } : {}),
+        ...(result.executionId ? { execution_id: result.executionId } : {}),
+        collector_type: mappedCollectorType,
+        ...(result.snapshotId ? { brightdata_snapshot_id: result.snapshotId } : {}),
+      };
+      insertData.metadata = {
+        ...(insertData.metadata || {}),
+        last_status_transition: storedTransition,
+        status_transitions: [storedTransition],
+      };
+
       const insertResult = await this.supabase
         .from('collector_results')
         .insert(insertData)
@@ -1251,6 +1379,7 @@ export class DataCollectionService {
             raw_answer: result.response,
             citations: result.citations,
             urls: result.urls,
+            brand: brandName,
             question: queryText,
             competitors: competitorsList.length > 0 ? competitorsList : null,
             brightdata_snapshot_id: result.snapshotId,

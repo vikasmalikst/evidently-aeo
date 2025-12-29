@@ -8,7 +8,45 @@
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
 
-      gtag('config', 'G-J8G6FB9WNX');
+      // Enhanced tracking configuration with referrer and source tracking
+      gtag('config', 'G-J8G6FB9WNX', {
+        // Capture full page location and referrer
+        'page_location': window.location.href,
+        'page_referrer': document.referrer,
+        
+        // Enable enhanced link attribution
+        'link_attribution': true,
+        
+        // Send page view with additional context
+        'custom_map': {
+          'dimension1': 'source_url',
+          'dimension2': 'referrer_url'
+        },
+        
+        // Optional: Enable debug mode (remove in production)
+        // 'debug_mode': true
+      });
+
+      // Track referrer as custom event for easier analysis
+      if (document.referrer) {
+        gtag('event', 'page_view_with_referrer', {
+          'referrer_url': document.referrer,
+          'referrer_domain': new URL(document.referrer).hostname,
+          'current_url': window.location.href
+        });
+      }
+
+      // Track UTM parameters if present
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.has('utm_source') || urlParams.has('utm_medium') || urlParams.has('utm_campaign')) {
+        gtag('event', 'utm_tracking', {
+          'utm_source': urlParams.get('utm_source') || '(not set)',
+          'utm_medium': urlParams.get('utm_medium') || '(not set)',
+          'utm_campaign': urlParams.get('utm_campaign') || '(not set)',
+          'utm_term': urlParams.get('utm_term') || '(not set)',
+          'utm_content': urlParams.get('utm_content') || '(not set)'
+        });
+      }
     </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />

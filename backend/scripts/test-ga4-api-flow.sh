@@ -28,3 +28,7 @@ curl -X POST "${API_URL}/brands/${BRAND_ID}/analytics/test-connection?customer_i
 echo ""
 echo "Done!"
 
+
+
+
+

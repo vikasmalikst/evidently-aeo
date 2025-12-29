@@ -126,3 +126,7 @@ If this works but the frontend doesn't, it's likely a:
 4. Try accessing the endpoint directly with curl/Postman
 5. Check network tab for the actual request/response
 
+
+
+
+

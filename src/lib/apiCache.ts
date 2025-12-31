@@ -200,7 +200,14 @@ export async function cachedRequest<T>(
   // If caller explicitly requests to skip cache, go straight to the API
   if (skipCache) {
     cacheDebugLog('[apiCache] skipCache=true - bypassing cache for', endpoint);
-    return apiClient.request<T>(endpoint, options, config);
+    const response = await apiClient.request<T>(endpoint, options, config);
+    
+    // Update cache with the fresh data even though we skipped reading from it
+    const cacheKey = generateCacheKey(endpoint, params);
+    const strategy = getCacheStrategy(endpoint);
+    cacheManager.set(cacheKey, response, strategy);
+    
+    return response;
   }
 
   const cacheKey = generateCacheKey(endpoint, params);

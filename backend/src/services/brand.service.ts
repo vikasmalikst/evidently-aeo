@@ -685,7 +685,7 @@ export class BrandService {
               // Fetch the generated queries from database
               const { data: generatedQueries, error: queriesError } = await supabaseAdmin
                 .from('generated_queries')
-                .select('id, query_text, intent')
+                .select('id, query_text, intent, country')
                 .eq('brand_id', newBrand.id)
                 .eq('customer_id', customerId)
                 .eq('is_active', true)
@@ -697,15 +697,15 @@ export class BrandService {
               } else if (generatedQueries && generatedQueries.length > 0) {
                 // Prepare execution requests
                 const executionRequests: QueryExecutionRequest[] = generatedQueries.map(query => ({
-                  queryId: query.id,
-                  brandId: newBrand.id,
-                  customerId: customerId,
-                  queryText: query.query_text,
-                  intent: query.intent || 'data_collection',
-                  locale: 'en-US',
-                  country: 'US',
-                  collectors: collectors
-                }));
+        queryId: query.id,
+        brandId: newBrand.id,
+        customerId: customerId,
+        queryText: query.query_text,
+        intent: query.intent || 'data_collection',
+        locale: 'en-US',
+        country: query.country || 'US',
+        collectors: collectors
+      }));
                 
                 // Execute queries through collectors (non-blocking)
                 // Use setTimeout to run in background without blocking brand creation response

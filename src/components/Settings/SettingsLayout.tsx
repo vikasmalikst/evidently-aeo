@@ -8,29 +8,19 @@ interface SettingsNavItem {
 
 const settingsNavItems: SettingsNavItem[] = [
   {
-    id: 'settings',
-    label: 'Settings',
-    path: '/settings',
-  },
-  {
-    id: 'manage-prompts',
-    label: 'Prompts & Topics',
-    path: '/settings/manage-prompts',
-  },
-  {
-    id: 'topics-prompts-config-v2',
-    label: 'Topics/Prompts Config V2',
-    path: '/settings/topics-prompts-config-v2',
-  },
-  {
-    id: 'manage-competitors',
-    label: 'Competitors',
-    path: '/settings/manage-competitors',
-  },
-  {
     id: 'manage-brands',
     label: 'Manage Brands',
     path: '/settings/manage-brands',
+  },
+  {
+    id: 'manage-competitors',
+    label: 'Manage Competitors',
+    path: '/settings/manage-competitors',
+  },
+  {
+    id: 'topics-prompts-config-v2',
+    label: 'Manage Topics & Prompts',
+    path: '/settings/topics-prompts-config-v2',
   },
   {
     id: 'manage-collectors',
@@ -56,20 +46,19 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
     return location.pathname === path;
   };
 
-  // Filter out "Settings" nav item when on manage-prompts page
-  const visibleNavItems = location.pathname === '/settings/manage-prompts'
-    ? settingsNavItems.filter(item => item.id !== 'settings')
-    : settingsNavItems;
+  // No filtering needed anymore
+  const visibleNavItems = settingsNavItems;
 
   return (
-    <div className="flex" style={{ height: 'calc(100vh - 4rem)' }}>
+    <div className="flex bg-[var(--bg-secondary)]" style={{ height: 'calc(100vh - 4rem)' }}>
       {/* Settings Navigation Sidebar */}
-      <div className="w-64 bg-white border-r border-[var(--border-default)] flex-shrink-0 flex flex-col">
-        <div className="p-6 border-b border-[var(--border-default)]">
-          <h2 className="text-lg font-semibold text-[var(--text-headings)]">Settings</h2>
+      <div className="w-64 bg-white border-r border-[var(--border-default)] flex-shrink-0 flex flex-col shadow-sm">
+        <div className="p-6 border-b border-[var(--border-default)] bg-white">
+          <h2 className="text-lg font-bold text-[var(--text-headings)] tracking-tight">Settings</h2>
+          <p className="text-xs text-[var(--text-caption)] mt-1">Configure your workspace</p>
         </div>
         <nav className="p-4 flex-1 overflow-y-auto">
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             {visibleNavItems.map((item) => {
               const active = isActive(item.path);
 
@@ -77,17 +66,14 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
                 <li key={item.id}>
                   <button
                     onClick={() => navigate(item.path)}
-                    className={`w-full flex items-center px-3 py-2.5 transition-all text-left ${
+                    className={`w-full flex items-center px-4 py-3 transition-all duration-200 text-left rounded-lg group ${
                       active
-                        ? 'text-[var(--text-headings)]'
-                        : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] rounded-lg'
+                        ? 'bg-[var(--accent-primary)]/5 text-[var(--accent-primary)] font-semibold border-r-4 border-[var(--accent-primary)]'
+                        : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
                     }`}
                   >
-                    <span className="text-sm relative">
+                    <span className="text-sm">
                       {item.label}
-                      {active && (
-                        <span className="absolute left-0 h-0.5 bg-[#00bcdc]" style={{ width: '100%', bottom: '-2px' }}></span>
-                      )}
                     </span>
                   </button>
                 </li>
@@ -99,7 +85,9 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
 
       {/* Settings Content */}
       <div className="flex-1 overflow-y-auto bg-[var(--bg-secondary)]">
-        {children}
+        <div className="max-w-6xl mx-auto py-8 px-8">
+          {children}
+        </div>
       </div>
     </div>
   );

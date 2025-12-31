@@ -39,6 +39,7 @@ export class BrightDataGrokService extends BaseBrightDataService {
 
       // Use trigger endpoint for async execution
       const triggerUrl = `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${datasetId}&notify=false&include_errors=true`;
+      console.log(`📤 [BrightData] Triggering Grok query. Payload:`, JSON.stringify(payload, null, 2));
       const response = await fetch(triggerUrl, {
         method: 'POST',
         headers: {

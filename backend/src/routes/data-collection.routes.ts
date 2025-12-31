@@ -345,7 +345,7 @@ router.post('/batch-execute', authenticateToken, async (req: Request, res: Respo
     // Get all active queries for the brand
     const { data: queries, error: queryError } = await supabase
       .from('generated_queries')
-      .select('id, query_text, intent')
+      .select('id, query_text, intent, country')
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
       .eq('is_active', true);
@@ -370,15 +370,15 @@ router.post('/batch-execute', authenticateToken, async (req: Request, res: Respo
 
     // Prepare execution requests
     const executionRequests: QueryExecutionRequest[] = queries.map(query => ({
-      queryId: query.id,
-      brandId,
-      customerId,
-      queryText: query.query_text,
-      intent: query.intent,
-      locale: 'en-US',
-      country: 'US',
-      collectors
-    }));
+        queryId: query.id,
+        brandId,
+        customerId,
+        queryText: query.query_text,
+        intent: query.intent,
+        locale: 'en-US',
+        country: query.country || 'US',
+        collectors
+      }));
 
     // Execute queries
     const results = await dataCollectionService.executeQueries(executionRequests);

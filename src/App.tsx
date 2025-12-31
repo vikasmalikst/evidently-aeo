@@ -14,8 +14,6 @@ import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
 import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
-import { Settings } from './pages/Settings';
-import { ManagePrompts } from './pages/ManagePrompts';
 import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ManageBrands } from './pages/ManageBrands';
 import { ManageCollectors } from './pages/ManageCollectors';
@@ -195,15 +193,7 @@ function App() {
           path="/settings"
           element={
             <ProtectedRoute>
-              <Settings />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings/manage-prompts"
-          element={
-            <ProtectedRoute>
-              <ManagePrompts />
+              <Navigate to="/settings/manage-brands" replace />
             </ProtectedRoute>
           }
         />
@@ -236,14 +226,6 @@ function App() {
           element={
             <ProtectedRoute>
               <ManageCollectors />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings/manage-topics"
-          element={
-            <ProtectedRoute>
-              <Navigate to="/settings/manage-prompts" replace />
             </ProtectedRoute>
           }
         />

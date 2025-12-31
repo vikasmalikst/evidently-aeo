@@ -41,10 +41,11 @@ export interface BrandStats {
 /**
  * Get all brands for the current customer
  */
-export async function getBrands(): Promise<ApiResponse<BrandResponse[]>> {
+export async function getBrands(forceRefresh = false): Promise<ApiResponse<BrandResponse[]>> {
   try {
+    const endpoint = forceRefresh ? '/brands?skipCache=true' : '/brands';
     const response = await cachedRequest<ApiResponse<BrandResponse[]>>(
-      '/brands',
+      endpoint,
       { method: 'GET' },
       { requiresAuth: true }
     );
@@ -109,10 +110,11 @@ export async function updateBrandCollectors(brandId: string, aiModels: string[])
 /**
  * Get aggregated stats for brands
  */
-export async function getBrandStats(): Promise<ApiResponse<BrandStats>> {
+export async function getBrandStats(forceRefresh = false): Promise<ApiResponse<BrandStats>> {
   try {
+    const endpoint = forceRefresh ? '/brands/stats?skipCache=true' : '/brands/stats';
     const response = await cachedRequest<ApiResponse<BrandStats>>(
-      '/brands/stats',
+      endpoint,
       { method: 'GET' },
       { requiresAuth: true }
     );

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { getBrands, updateBrandStatus, getBrandStats, type BrandResponse, type BrandStats } from '../api/brandApi';
+import { invalidateCache } from '../lib/apiCache';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { 
   IconBuildingStore, 
@@ -50,13 +51,22 @@ export const ManageBrands = () => {
     setIsStatsLoading(true);
     setError(null);
     try {
+      // Invalidate existing cache for brands to ensure fresh data across the whole app
+      invalidateCache('/brands');
+      
       const [brandsRes, statsRes] = await Promise.all([
-        getBrands(),
-        getBrandStats()
+        getBrands(true),
+        getBrandStats(true)
       ]);
 
       if (brandsRes.success && brandsRes.data) {
-        setBrands(brandsRes.data);
+        // Sort brands: active first, then inactive
+        const sortedBrands = [...brandsRes.data].sort((a, b) => {
+          if (a.status === 'active' && b.status === 'inactive') return -1;
+          if (a.status === 'inactive' && b.status === 'active') return 1;
+          return a.name.localeCompare(b.name);
+        });
+        setBrands(sortedBrands);
       } else {
         setError(brandsRes.error || 'Failed to load brands');
       }
@@ -104,9 +114,19 @@ export const ManageBrands = () => {
   };
 
   const filteredBrands = useMemo(() => {
-    if (!searchQuery.trim()) return brands;
+    let result = [...brands];
+    
+    // Always sort by status first (active at top), then by name
+    result.sort((a, b) => {
+      if (a.status === 'active' && b.status === 'inactive') return -1;
+      if (a.status === 'inactive' && b.status === 'active') return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    if (!searchQuery.trim()) return result;
+    
     const query = searchQuery.toLowerCase();
-    return brands.filter(b => 
+    return result.filter(b => 
       b.name.toLowerCase().includes(query) || 
       b.homepage_url.toLowerCase().includes(query) ||
       (b.industry && b.industry.toLowerCase().includes(query))
@@ -116,19 +136,18 @@ export const ManageBrands = () => {
   return (
     <Layout>
       <SettingsLayout>
-        <div className="p-6 max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-[var(--text-headings)]">Manage Brands</h1>
-              <p className="text-[var(--text-caption)] mt-1">View and manage all your registered brands and their status</p>
+              <h1 className="text-2xl font-bold text-[var(--text-headings)] tracking-tight">Manage Brands</h1>
+              <p className="text-sm text-[var(--text-caption)] mt-1">View and configure your monitored brands</p>
             </div>
             <button
               onClick={handleAddBrand}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg hover:opacity-90 transition-all font-semibold shadow-sm hover:shadow-md active:scale-95"
+              className="flex items-center gap-2 bg-[var(--accent-primary)] text-white px-4 py-2.5 rounded-lg hover:opacity-90 transition-all font-medium text-sm shadow-sm"
             >
-              <IconPlus size={20} />
-              Add New Brand
+              <IconPlus size={18} />
+              Add Brand
             </button>
           </div>
 

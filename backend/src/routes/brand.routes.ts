@@ -239,6 +239,12 @@ router.put('/:brandId', authenticateToken, async (req: Request, res: Response) =
     const customerId = req.user!.customer_id;
     const updateData: Partial<BrandOnboardingRequest> = req.body;
 
+    console.log('📝 Incoming PUT /brands/:brandId request:', {
+      brandId,
+      customerId,
+      body: req.body
+    });
+
     if (!customerId || !brandId) {
       res.status(400).json({
         success: false,

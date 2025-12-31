@@ -888,7 +888,7 @@ export class BrandService {
         throw new DatabaseError('Failed to fetch brands');
       }
 
-      return brands || [];
+      return (brands || []).map(b => this.transformBrand(b));
     } catch (error) {
       console.error('Error fetching brands:', error);
       if (error instanceof DatabaseError || error instanceof ValidationError) {
@@ -924,7 +924,7 @@ export class BrandService {
           .map((c: any) => c.competitor_name);
       }
 
-      return brand;
+      return brand ? this.transformBrand(brand) : null;
     } catch (error) {
       console.error('Error fetching brand:', error);
       return null;
@@ -1065,7 +1065,7 @@ export class BrandService {
         // Continue without artifact data
       }
 
-      return brand;
+      return brand ? this.transformBrand(brand) : null;
     } catch (error) {
       console.error('Error finding brand:', error);
       return null;
@@ -1081,7 +1081,6 @@ export class BrandService {
     updateData: any
   ): Promise<Brand> {
     try {
-      console.log(`🔄 Updating brand ${brandId} for customer ${customerId}:`, updateData);
       // Validate input
       if (updateData.brand_name) {
         this.validateBrandName(updateData.brand_name);
@@ -1098,50 +1097,45 @@ export class BrandService {
       if (updateData.website_url) updateFields.homepage_url = updateData.website_url;
       if (updateData.description) updateFields.summary = updateData.description;
       if (updateData.industry) updateFields.industry = updateData.industry;
-      if (updateData.status) updateFields.status = updateData.status;
+      if (updateData.status !== undefined) {
+        // Map 'inactive' to 'archived' to satisfy DB constraint
+        // constraint brands_status_check check (status = any (array['active'::text, 'archived'::text]))
+        updateFields.status = updateData.status === 'inactive' ? 'archived' : updateData.status;
+      }
 
-      console.log('📝 Fields to update:', updateFields);
+      console.log('📝 DEBUG: Final update fields for Supabase:', updateFields);
 
-      const { data: updatedBrands, error } = await supabaseAdmin
+      const { data: updatedBrand, error } = await supabaseAdmin
         .from('brands')
         .update(updateFields)
         .eq('id', brandId)
         .eq('customer_id', customerId)
-        .select();
+        .select()
+        .single();
 
       if (error) {
-        console.error('❌ Supabase update error:', error);
+        console.error('❌ Supabase error updating brand:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
         throw new DatabaseError(`Failed to update brand: ${error.message}`);
       }
 
-      if (!updatedBrands || updatedBrands.length === 0) {
-        console.warn(`⚠️ No brand found to update for ID ${brandId} and customer ${customerId}`);
-        // Check if the brand exists at all without customer_id filter for debugging
-        const { data: exists } = await supabaseAdmin
-          .from('brands')
-          .select('id, customer_id')
-          .eq('id', brandId)
-          .single();
-        
-        if (exists) {
-          console.error(`🔒 Permission denied: Brand ${brandId} exists but belongs to customer ${exists.customer_id}, not ${customerId}`);
-          throw new DatabaseError('You do not have permission to update this brand');
-        } else {
-          throw new DatabaseError('Brand not found');
-        }
+      if (!updatedBrand) {
+        console.error('❌ No brand updated for ID:', brandId, 'and customer:', customerId);
+        throw new DatabaseError('Brand not found or not authorized');
       }
 
-      const updatedBrand = updatedBrands[0];
       console.log('✅ Brand updated successfully:', updatedBrand.id);
-      return updatedBrand;
+      return this.transformBrand(updatedBrand);
     } catch (error) {
-      console.error('❌ Error updating brand:', error);
+      console.error('Error in updateBrand service method:', error);
       if (error instanceof ValidationError || error instanceof DatabaseError) {
         throw error;
       }
-      // Log more details about the unknown error
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new DatabaseError(`Failed to update brand: ${errorMessage}`);
+      throw new DatabaseError(error instanceof Error ? error.message : 'Failed to update brand');
     }
   }
 
@@ -1262,6 +1256,20 @@ export class BrandService {
       }
       throw new DatabaseError('Failed to fetch onboarding artifacts');
     }
+  }
+
+  /**
+   * Transform brand for response
+   */
+  private transformBrand(brand: any): Brand {
+    if (!brand) return brand;
+    
+    // Map 'archived' back to 'inactive' for the frontend
+    if (brand.status === 'archived') {
+      brand.status = 'inactive';
+    }
+    
+    return brand;
   }
 
   /**

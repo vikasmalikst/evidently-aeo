@@ -45,6 +45,7 @@ export interface Brand {
   website_url: string;
   description?: string;
   industry?: string;
+  status: 'active' | 'inactive';
   created_at: string;
   updated_at: string;
 }
@@ -88,6 +89,7 @@ export interface BrandOnboardingRequest {
     weight: number;
   }>;
   ai_models?: string[]; // Selected AI models (chatgpt, perplexity, gemini, etc.)
+  status?: 'active' | 'inactive';
   metadata?: Record<string, any>; // Additional metadata
 }
 

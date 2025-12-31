@@ -48,6 +48,36 @@ Handles basic CRUD operations for prompts.
 - `archivePrompt(promptId, brandId, customerId, archivedBy)` - Soft delete
 - `deletePrompt(promptId, brandId, customerId)` - Hard delete
 - `restorePrompt(promptId, brandId, customerId)` - Unarchive
+- `getArchivedVersions(brandId)` - Fetch archived snapshots from `archived_topics_prompts`
+- `saveConfigV2Rows(brandId, customerId, rows, deleteIds)` - Bulk save with auto-archiving
+
+### Archiving System (V2)
+
+The system maintains a historical record of all topic and prompt configurations in the `archived_topics_prompts` table.
+
+#### Schema: `archived_topics_prompts`
+- `id`: UUID (PK)
+- `topic_id`: UUID (FK to `brand_topics`)
+- `topic_name`: TEXT
+- `prompts`: JSONB (Array of objects: `{id, query_text, locale, country, metadata, created_at}`)
+- `version_tag`: TEXT (e.g., "V1", "V2")
+- `brand_id`: UUID (FK to `brands`)
+- `created_at`: TIMESTAMP
+
+#### Archiving Flow:
+1. When `saveConfigV2Rows` is called, the system identifies which topics are being modified or deleted.
+2. For each affected topic, it fetches the current active prompts from `generated_queries`.
+3. It creates an archive record in `archived_topics_prompts` with the current state and the current version tag (from `brand_topics.version`).
+4. It increments the `version` in `brand_topics` for the affected topics.
+5. It applies the updates/inserts/deletes to `brand_topics` and `generated_queries`.
+
+### API Endpoints (V2)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/brands/:brandId/prompts/config-v2` | Get current active topics and prompts |
+| POST | `/brands/:brandId/prompts/config-v2` | Save changes (updates/inserts/deletes) and trigger archiving |
+| GET | `/brands/:brandId/prompts/config-v2/archived` | Get all archived snapshots for a brand |
 
 **Example:**
 ```typescript

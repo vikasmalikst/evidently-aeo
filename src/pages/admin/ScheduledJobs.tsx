@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
@@ -66,6 +66,10 @@ export const ScheduledJobs = () => {
   const [showRunsModal, setShowRunsModal] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillLogs, setBackfillLogs] = useState<Array<{ ts: string; level: string; message: string }>>([]);
+  const [backfillResult, setBackfillResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const backfillEventSourceRef = useRef<EventSource | null>(null);
   const [diagnostic, setDiagnostic] = useState<QueriesDiagnosticPayload | null>(null);
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
@@ -159,6 +163,12 @@ export const ScheduledJobs = () => {
       }
     }
   }, [customerId, selectedBrandId]);
+
+  useEffect(() => {
+    return () => {
+      backfillEventSourceRef.current?.close();
+    };
+  }, []);
 
   // Load Ollama settings when brand is selected
   useEffect(() => {
@@ -445,6 +455,68 @@ export const ScheduledJobs = () => {
     }
   };
 
+  const handleBackfillRawAnswers = () => {
+    if (
+      !confirm(
+        `Run raw_answer backfill from BrightData snapshots now? This will update collector_results where raw_answer is NULL and brightdata_snapshot_id is NOT NULL.`
+      )
+    ) {
+      return;
+    }
+
+    backfillEventSourceRef.current?.close();
+    setBackfillLogs([]);
+    setBackfillResult(null);
+    setBackfillRunning(true);
+
+    let finished = false;
+
+    const url = `${apiClient.baseUrl}/admin/scheduled-jobs/backfill-raw-answer-from-snapshots/stream`;
+    const es = new EventSource(url);
+    backfillEventSourceRef.current = es;
+
+    es.addEventListener('log', (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as { ts: string; level: string; message: string };
+        setBackfillLogs((prev) => {
+          const next = [...prev, payload];
+          if (next.length > 500) {
+            next.splice(0, next.length - 500);
+          }
+          return next;
+        });
+      } catch {
+        setBackfillLogs((prev) => {
+          const next = [...prev, { ts: new Date().toISOString(), level: 'log', message: (event as MessageEvent).data }];
+          if (next.length > 500) {
+            next.splice(0, next.length - 500);
+          }
+          return next;
+        });
+      }
+    });
+
+    es.addEventListener('done', (event) => {
+      finished = true;
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as { ok: boolean; error?: string };
+        setBackfillResult(payload);
+      } catch {
+        setBackfillResult({ ok: false, error: 'Backfill finished with unknown status' });
+      } finally {
+        setBackfillRunning(false);
+        es.close();
+      }
+    });
+
+    es.onerror = () => {
+      if (finished) return;
+      setBackfillRunning(false);
+      setBackfillResult({ ok: false, error: 'Backfill stream connection error' });
+      es.close();
+    };
+  };
+
   const handleDeleteJob = async (jobId: string) => {
     if (!confirm('Are you sure you want to delete this scheduled job?')) {
       return;
@@ -596,7 +668,7 @@ export const ScheduledJobs = () => {
                 </p>
                 <button
                   onClick={() => handleCollectDataNow(selectedBrandId)}
-                  disabled={collecting || scoring}
+                  disabled={collecting || scoring || backfillRunning}
                   className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {collecting ? 'Collecting...' : 'Start Collection'}
@@ -609,16 +681,58 @@ export const ScheduledJobs = () => {
                 </p>
                 <button
                   onClick={() => handleScoreNow(selectedBrandId)}
-                  disabled={collecting || scoring}
+                  disabled={collecting || scoring || backfillRunning}
                   className="w-full px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {scoring ? 'Scoring...' : 'Start Scoring'}
                 </button>
               </div>
             </div>
+            <div className="mt-4 bg-white p-4 rounded border border-orange-200">
+              <h4 className="font-medium text-gray-900 mb-2">Backfill Raw Answers</h4>
+              <p className="text-sm text-gray-600 mb-3">
+                Updates raw_answer from BrightData snapshots and resets stuck scoring
+              </p>
+              <button
+                onClick={handleBackfillRawAnswers}
+                disabled={collecting || scoring || backfillRunning}
+                className="w-full px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {backfillRunning ? 'Running Backfill...' : 'Run Backfill'}
+              </button>
+              {backfillResult ? (
+                <div
+                  className={`mt-2 text-sm ${backfillResult.ok ? 'text-green-700' : 'text-red-700'}`}
+                >
+                  {backfillResult.ok ? 'Backfill finished successfully' : `Backfill failed: ${backfillResult.error || 'Unknown error'}`}
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
       </div>
+
+      {(backfillRunning || backfillLogs.length > 0 || backfillResult) && (
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-bold text-gray-900">Backfill Logs</h2>
+            <button
+              onClick={() => setBackfillLogs([])}
+              disabled={backfillRunning || backfillLogs.length === 0}
+              className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="h-64 overflow-auto border rounded bg-gray-50 p-3 font-mono text-xs whitespace-pre-wrap">
+            {backfillLogs.length === 0
+              ? backfillRunning
+                ? 'Connecting...'
+                : 'No logs yet'
+              : backfillLogs.map((l) => `${l.ts} [${l.level}] ${l.message}`).join('\n')}
+          </div>
+        </div>
+      )}
 
       {/* Ollama Settings Panel */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">

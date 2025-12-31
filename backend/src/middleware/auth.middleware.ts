@@ -36,7 +36,7 @@ export const authenticateToken = async (
     req.user = {
       id: 'dev-user-123',
       email: 'dev@evidently.ai',
-      customer_id: '123e4567-e89b-12d3-a456-426614174001', // Test Brand customer ID
+      customer_id: '157c845c-9e87-4146-8479-cb8d045212bf', // SanDisk customer ID
       role: 'admin',
       full_name: 'Dev User'
     };

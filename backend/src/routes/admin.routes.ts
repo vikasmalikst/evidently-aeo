@@ -6,6 +6,7 @@ import { customerEntitlementsService } from '../services/customer-entitlements.s
 import { authService } from '../services/auth/auth.service';
 import { jobSchedulerService } from '../services/jobs/job-scheduler.service';
 import { dataCollectionJobService } from '../services/jobs/data-collection-job.service';
+import { backfillRawAnswerFromSnapshots } from '../scripts/backfill-raw-answer-from-snapshots';
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
 
@@ -16,6 +17,7 @@ const supabaseServiceKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const router = Router();
+let isBackfillRawAnswerRunning = false;
 
 // Apply authentication and admin access to all routes
 // TEMPORARY: Skip authentication for testing
@@ -1003,6 +1005,94 @@ router.post('/scheduled-jobs/:jobId/trigger', async (req: Request, res: Response
       success: false,
       error: error instanceof Error ? error.message : 'Failed to trigger job run',
     });
+  }
+});
+
+router.get('/scheduled-jobs/backfill-raw-answer-from-snapshots/stream', async (_req: Request, res: Response) => {
+  if (isBackfillRawAnswerRunning) {
+    res.status(409).json({
+      success: false,
+      error: 'Backfill is already running',
+    });
+    return;
+  }
+
+  isBackfillRawAnswerRunning = true;
+
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const maybeFlush = (res as any).flushHeaders;
+  if (typeof maybeFlush === 'function') {
+    maybeFlush.call(res);
+  }
+
+  const writeEvent = (event: string, payload: unknown) => {
+    if (res.writableEnded) return;
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  let clientClosed = false;
+  res.on('close', () => {
+    clientClosed = true;
+  });
+
+  writeEvent('start', { ok: true, ts: new Date().toISOString() });
+
+  const originalLog = console.log;
+  const originalInfo = console.info;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+
+  const formatArgs = (args: unknown[]) =>
+    args
+      .map((arg) => {
+        if (typeof arg === 'string') return arg;
+        if (arg instanceof Error) return arg.stack || arg.message;
+        try {
+          return JSON.stringify(arg);
+        } catch {
+          return String(arg);
+        }
+      })
+      .join(' ');
+
+  const forward = (level: 'log' | 'info' | 'warn' | 'error') => {
+    return (...args: unknown[]) => {
+      const message = formatArgs(args);
+      if (!clientClosed) {
+        writeEvent('log', { level, message, ts: new Date().toISOString() });
+      }
+
+      if (level === 'log') originalLog.apply(console, args as any);
+      else if (level === 'info') originalInfo.apply(console, args as any);
+      else if (level === 'warn') originalWarn.apply(console, args as any);
+      else originalError.apply(console, args as any);
+    };
+  };
+
+  console.log = forward('log') as any;
+  console.info = forward('info') as any;
+  console.warn = forward('warn') as any;
+  console.error = forward('error') as any;
+
+  try {
+    await backfillRawAnswerFromSnapshots();
+    writeEvent('done', { ok: true, ts: new Date().toISOString() });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    writeEvent('done', { ok: false, error: message, ts: new Date().toISOString() });
+  } finally {
+    console.log = originalLog;
+    console.info = originalInfo;
+    console.warn = originalWarn;
+    console.error = originalError;
+    isBackfillRawAnswerRunning = false;
+    res.end();
   }
 });
 

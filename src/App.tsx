@@ -17,6 +17,8 @@ import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCo
 import { Settings } from './pages/Settings';
 import { ManagePrompts } from './pages/ManagePrompts';
 import { ManageCompetitors } from './pages/ManageCompetitors';
+import { ManageBrands } from './pages/ManageBrands';
+import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2/index';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -205,10 +207,26 @@ function App() {
           }
         />
         <Route
+          path="/settings/topics-prompts-config-v2"
+          element={
+            <ProtectedRoute>
+              <TopicsPromptsConfigV2 />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/settings/manage-competitors"
           element={
             <ProtectedRoute>
               <ManageCompetitors />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/manage-brands"
+          element={
+            <ProtectedRoute>
+              <ManageBrands />
             </ProtectedRoute>
           }
         />

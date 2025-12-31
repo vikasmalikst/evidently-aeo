@@ -159,6 +159,37 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /brands/stats
+ * Get aggregated stats for brands
+ */
+router.get('/stats', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const customerId = req.user!.customer_id;
+    
+    if (!customerId) {
+      res.status(403).json({
+        success: false,
+        error: 'Customer ID is required.'
+      });
+      return;
+    }
+    
+    const stats = await brandService.getBrandStats(customerId);
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error fetching brand stats:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch brand stats'
+    });
+  }
+});
+
+/**
  * GET /brands/:brandId
  * Get a specific brand
  */

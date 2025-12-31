@@ -18,6 +18,247 @@ const router = express.Router()
 // Apply authentication to all routes
 router.use(authenticateToken)
 
+router.get('/brightdata/countries', async (_req: Request, res: Response) => {
+  try {
+    const apiKey = process.env.BRIGHTDATA_API_KEY || ''
+    if (!apiKey) {
+      return res.status(500).json({
+        success: false,
+        error: 'BrightData API key not configured'
+      })
+    }
+
+    const response = await fetch('https://api.brightdata.com/countrieslist', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      }
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '')
+      return res.status(response.status).json({
+        success: false,
+        error: `Failed to load BrightData countries: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`
+      })
+    }
+
+    const responseText = await response.text()
+    const normalizedText = responseText.trim().replace(/^\uFEFF/, '')
+    let payload: unknown
+    try {
+      payload = JSON.parse(normalizedText)
+    } catch {
+      payload = normalizedText
+    }
+
+    const displayNames = new Intl.DisplayNames(['en'], { type: 'region' })
+    const normalizedByCode = new Map<string, { code: string; name: string }>()
+
+    const isIso2 = (value: string) => /^[A-Za-z]{2}$/.test(value.trim())
+
+    const addCountry = (codeRaw: unknown, nameRaw?: unknown) => {
+      const code = typeof codeRaw === 'string' ? codeRaw.trim().toUpperCase() : ''
+      if (!code) return
+      const name =
+        typeof nameRaw === 'string' && nameRaw.trim().length > 0
+          ? nameRaw.trim()
+          : displayNames.of(code) || code
+      normalizedByCode.set(code, { code, name })
+    }
+
+    const tryAddFromObject = (obj: Record<string, unknown>) => {
+      const codeRaw =
+        obj.code ??
+        obj.country_code ??
+        obj.alpha2 ??
+        obj.alpha_2 ??
+        obj.iso2 ??
+        obj.iso_2 ??
+        obj.iso ??
+        obj.id ??
+        obj.value
+
+      const nameRaw = obj.name ?? obj.country_name ?? obj.country ?? obj.label ?? obj.title
+
+      if (typeof codeRaw === 'string' && isIso2(codeRaw)) {
+        addCountry(codeRaw, typeof nameRaw === 'string' ? nameRaw : undefined)
+        return true
+      }
+
+      if (typeof nameRaw === 'string') {
+        for (const v of Object.values(obj)) {
+          if (typeof v === 'string' && isIso2(v)) {
+            addCountry(v, nameRaw)
+            return true
+          }
+        }
+      }
+
+      return false
+    }
+
+    const normalizeArray = (arr: unknown[]) => {
+      for (const item of arr) {
+        if (typeof item === 'string') {
+          const trimmed = item.trim()
+          if (isIso2(trimmed)) {
+            addCountry(trimmed)
+            continue
+          }
+
+          const match =
+            trimmed.match(/^([A-Za-z]{2})\s*[-:|]\s*(.+)$/) ||
+            trimmed.match(/^(.+)\s*[-:|]\s*([A-Za-z]{2})$/)
+          if (match) {
+            const a = match[1]?.trim()
+            const b = match[2]?.trim()
+            if (/^[A-Za-z]{2}$/.test(a)) addCountry(a, b)
+            else if (/^[A-Za-z]{2}$/.test(b)) addCountry(b, a)
+            continue
+          }
+
+          if (/^[A-Za-z]{2},/.test(trimmed)) {
+            addCountry(trimmed.slice(0, 2))
+            continue
+          }
+
+          continue
+        }
+        if (Array.isArray(item)) {
+          const a = item[0]
+          const b = item[1]
+          if (typeof a === 'string' && typeof b === 'string') {
+            if (isIso2(a)) addCountry(a, b)
+            else if (isIso2(b)) addCountry(b, a)
+          } else {
+            normalizeArray(item)
+          }
+          continue
+        }
+        if (item && typeof item === 'object') {
+          tryAddFromObject(item as Record<string, unknown>)
+        }
+      }
+    }
+
+    const visit = (node: unknown, depth: number) => {
+      if (depth > 6 || node === null || node === undefined) return
+      if (typeof node === 'string') {
+        const text = node.trim()
+        if (isIso2(text)) addCountry(text)
+        return
+      }
+      if (Array.isArray(node)) {
+        normalizeArray(node)
+        for (const item of node) visit(item, depth + 1)
+        return
+      }
+      if (typeof node === 'object') {
+        const obj = node as Record<string, unknown>
+        tryAddFromObject(obj)
+
+        for (const [k, v] of Object.entries(obj)) {
+          if (isIso2(k)) {
+            if (typeof v === 'string') addCountry(k, v)
+            else if (v && typeof v === 'object') {
+              const nestedName =
+                (v as Record<string, unknown>).name ??
+                (v as Record<string, unknown>).country_name ??
+                (v as Record<string, unknown>).country ??
+                (v as Record<string, unknown>).label ??
+                (v as Record<string, unknown>).title
+              addCountry(k, typeof nestedName === 'string' ? nestedName : undefined)
+            }
+          }
+          visit(v, depth + 1)
+        }
+      }
+    }
+
+    if (typeof payload === 'string') {
+      const lines = payload.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+      for (const line of lines) {
+        const token = line.split(/[\s,;|]+/)[0]?.trim()
+        if (token && isIso2(token)) addCountry(token)
+      }
+
+      if (normalizedByCode.size === 0) {
+        const tokens = payload.split(/[\s,;|]+/).map(t => t.trim()).filter(Boolean)
+        for (const token of tokens) {
+          if (isIso2(token)) addCountry(token)
+        }
+      }
+    } else if (Array.isArray(payload)) {
+      visit(payload, 0)
+    } else if (payload && typeof payload === 'object') {
+      const obj = payload as Record<string, unknown>
+      const nested =
+        obj.countries && Array.isArray(obj.countries)
+          ? obj.countries
+          : obj.data && Array.isArray(obj.data)
+            ? obj.data
+            : obj.result && Array.isArray(obj.result)
+              ? obj.result
+              : obj.items && Array.isArray(obj.items)
+                ? obj.items
+                : obj.list && Array.isArray(obj.list)
+                  ? obj.list
+                  : obj.values && Array.isArray(obj.values)
+                    ? obj.values
+                    : obj.countrieslist && Array.isArray(obj.countrieslist)
+                      ? obj.countrieslist
+                      : obj.countriesList && Array.isArray(obj.countriesList)
+                        ? obj.countriesList
+            : null
+
+      if (nested) {
+        visit(nested, 0)
+      } else if (obj.countries && obj.countries && typeof obj.countries === 'object' && !Array.isArray(obj.countries)) {
+        visit(obj.countries, 0)
+      } else {
+        visit(obj, 0)
+      }
+    }
+
+    if (normalizedByCode.size === 0) {
+      const contentType = response.headers.get('content-type') || ''
+      const topLevel =
+        payload === null
+          ? 'null'
+          : Array.isArray(payload)
+            ? 'array'
+            : typeof payload
+      const keys =
+        payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? Object.keys(payload as Record<string, unknown>).slice(0, 30)
+          : []
+      return res.status(502).json({
+        success: false,
+        error: `BrightData countries response could not be parsed (content-type: ${contentType || 'unknown'})`,
+        data: {
+          topLevel,
+          keys,
+          preview: normalizedText.slice(0, 800)
+        }
+      })
+    }
+
+    const countries = Array.from(normalizedByCode.values()).sort((a, b) => a.name.localeCompare(b.name))
+
+    return res.json({
+      success: true,
+      data: { countries }
+    })
+  } catch (error) {
+    console.error('Error fetching BrightData countries:', error)
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch BrightData countries'
+    })
+  }
+})
+
 /**
  * GET /api/brands/:brandId/prompts/manage
  * Get all active prompts for management UI
@@ -45,6 +286,118 @@ router.get('/brands/:brandId/prompts/manage', async (req: Request, res: Response
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to fetch prompts'
+    })
+  }
+})
+
+router.get('/brands/:brandId/prompts/config-v2', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params
+    const customerId = req.user?.customer_id
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized'
+      })
+    }
+
+    const rows = await promptCrudService.getConfigV2Rows(brandId, customerId)
+
+    return res.json({
+      success: true,
+      data: { rows }
+    })
+  } catch (error) {
+    console.error('Error fetching config v2 rows:', error)
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch config rows'
+    })
+  }
+})
+
+router.get('/brands/:brandId/prompts/config-v2/archived', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params
+    const versions = await promptCrudService.getArchivedVersions(brandId)
+    res.json({ success: true, data: versions })
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+router.post('/brands/:brandId/prompts/config-v2', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params
+    const customerId = req.user?.customer_id
+    const { rows, deleteIds } = req.body
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized'
+      })
+    }
+
+    if (!Array.isArray(rows)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Rows are required'
+      })
+    }
+
+    if (deleteIds !== undefined && !Array.isArray(deleteIds)) {
+      return res.status(400).json({
+        success: false,
+        error: 'deleteIds must be an array'
+      })
+    }
+
+    const result = await promptCrudService.saveConfigV2Rows(
+      brandId,
+      customerId,
+      rows,
+      Array.isArray(deleteIds) ? deleteIds : []
+    )
+
+    return res.json({
+      success: true,
+      data: result,
+      message: 'Saved successfully'
+    })
+  } catch (error) {
+    console.error('Error saving config v2 rows:', error)
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to save config rows'
+    })
+  }
+})
+
+router.get('/brands/:brandId/prompts/history-v2', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params
+    const customerId = req.user?.customer_id
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized'
+      })
+    }
+
+    const history = await promptCrudService.getHistory(brandId)
+
+    return res.json({
+      success: true,
+      data: history
+    })
+  } catch (error) {
+    console.error('Error fetching history v2:', error)
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch history'
     })
   }
 })
@@ -485,4 +838,3 @@ router.get('/brands/:brandId/prompts/versions/compare', async (req: Request, res
 })
 
 export default router
-

@@ -98,174 +98,82 @@ interface BackendVersionDetails {
 
 interface BackendImpactResponse {
   estimatedImpact: {
-    coverage: {
-      current: number;
-      projected: number | null;
-      change: number | null;
-      changePercent: number | null;
-    };
-    visibilityScore: {
-      current: number | null;
-      projected: number | null;
-      change: number | null;
-      changePercent: number | null;
-    };
-    topicCoverage: {
-      increased: string[];
-      decreased: string[];
-      unchanged: string[];
-    };
-    affectedAnalyses: number;
-    warnings: string[];
+    promptCountChange: number;
+    topicCountChange: number;
+    coverageChange: number;
   };
-  calculatedAt: string;
 }
 
-interface PendingChanges {
-  added: Array<{ text: string; topic: string }>;
-  removed: Array<{ id: string; text?: string }>;
-  edited: Array<{ id: string; oldText?: string; newText: string }>;
-}
-
-// Frontend types (matching existing UI)
-export interface Prompt {
-  id: number;
-  text: string;
-  response: string;
-  lastUpdated: string;
-  sentiment: number;
-  volume: number;
-  keywords: {
-    brand: string[];
-    target: string[];
-    top: string[];
-  };
-  // Additional fields from backend
-  queryId?: string;
-  visibilityScore?: number | null;
-  createdAt?: string;
-  source?: 'custom' | 'generated';
-}
-
-export interface Topic {
-  id: number;
-  name: string;
-  prompts: Prompt[];
-  category?: string | null;
-}
-
-export interface PromptConfiguration {
-  id: string;
-  version: number;
-  is_active: boolean;
-  change_type: string;
-  change_summary: string;
-  topics: Topic[];
-  created_at: string;
-  analysis_count: number;
-}
+export type {
+  BackendManagedPrompt,
+  BackendPromptTopic,
+  BackendManagePromptsResponse,
+  BackendVersion,
+  BackendVersionHistory,
+  BackendVersionDetails,
+  BackendImpactResponse,
+};
 
 /**
- * Transform backend prompt to frontend format
+ * Get managed prompts for a brand
  */
-function transformPrompt(backend: BackendManagedPrompt, topicName: string): Prompt {
-  return {
-    id: parseInt(backend.id.split('-')[0] || '0', 16) % 1000000, // Convert UUID to number for compatibility
-    text: backend.text,
-    response: backend.response || '',
-    lastUpdated: backend.lastUpdated || backend.createdAt.split('T')[0],
-    sentiment: backend.sentiment ?? 0,
-    volume: backend.volumeCount,
-    keywords: {
-      brand: backend.keywords.brand || [],
-      target: backend.keywords.products || [],
-      top: backend.keywords.keywords || [],
-    },
-    queryId: backend.queryId,
-    visibilityScore: backend.visibilityScore,
-    createdAt: backend.createdAt,
-    source: 'generated',
-  };
-}
-
-/**
- * Transform backend topic to frontend format
- */
-function transformTopic(backend: BackendPromptTopic): Topic {
-  // Convert topic ID from string to number
-  const topicId = parseInt(backend.id.split('-')[0] || '0', 16) % 1000000;
-  
-  return {
-    id: topicId,
-    name: backend.name,
-    prompts: backend.prompts.map(p => transformPrompt(p, backend.name)),
-    category: backend.category ?? null,
-  };
-}
-
-/**
- * Transform backend version to frontend format
- */
-function transformVersion(backend: BackendVersion, topics: Topic[]): PromptConfiguration {
-  return {
-    id: backend.id,
-    version: backend.version,
-    is_active: backend.isActive,
-    change_type: backend.changeType,
-    change_summary: backend.changeSummary || 'No summary',
-    topics: topics, // Will be populated from version details if needed
-    created_at: backend.createdAt,
-    analysis_count: backend.metrics?.analysesCount || 0,
-  };
-}
-
-/**
- * Get active prompts for management UI
- */
-export async function getActivePrompts(brandId: string): Promise<{
-  brandId: string;
-  brandName: string;
-  currentVersion: number;
-  topics: Topic[];
-  summary: {
-    totalPrompts: number;
-    totalTopics: number;
-    coverage: number;
-    avgVisibility: number | null;
-    avgSentiment: number | null;
-  };
-}> {
+export async function getManagedPrompts(brandId: string): Promise<BackendManagePromptsResponse> {
   try {
     const response = await apiClient.request<ApiResponse<BackendManagePromptsResponse>>(
-      `/brands/${brandId}/prompts/manage`
+      `/brands/${brandId}/prompts`
     );
 
     if (!response.success || !response.data) {
       throw new Error(response.error || 'Failed to fetch prompts');
     }
 
-    const backend = response.data;
-
-    return {
-      brandId: backend.brandId,
-      brandName: backend.brandName,
-      currentVersion: backend.currentVersion,
-      topics: backend.topics.map(transformTopic),
-      summary: backend.summary,
-    };
+    return response.data;
   } catch (error) {
-    console.error('Error fetching active prompts:', error);
+    console.error('Error fetching prompts:', error);
     throw error;
   }
 }
 
+export async function getActivePrompts(brandId: string): Promise<BackendManagePromptsResponse> {
+  const response = await apiClient.request<ApiResponse<BackendManagePromptsResponse>>(
+    `/brands/${brandId}/prompts/manage`
+  );
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Failed to fetch prompts');
+  }
+
+  return response.data;
+}
+
 /**
- * Get version history
+ * Add a new prompt
  */
-export async function getVersionHistory(brandId: string): Promise<{
-  currentVersion: number;
-  versions: PromptConfiguration[];
-}> {
+export async function addPrompt(
+  brandId: string,
+  text: string,
+  topic: string,
+  metadata?: Record<string, unknown>
+): Promise<{ promptId: string }> {
+  const response = await apiClient.request<ApiResponse<{ promptId: string }>>(
+    `/brands/${brandId}/prompts`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ text, topic, metadata }),
+    }
+  );
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Failed to add prompt');
+  }
+
+  return response.data;
+}
+
+/**
+ * Get prompt version history
+ */
+export async function getVersionHistory(brandId: string): Promise<BackendVersionHistory> {
   try {
     const response = await apiClient.request<ApiResponse<BackendVersionHistory>>(
       `/brands/${brandId}/prompts/versions`
@@ -275,24 +183,7 @@ export async function getVersionHistory(brandId: string): Promise<{
       throw new Error(response.error || 'Failed to fetch version history');
     }
 
-    const backend = response.data;
-
-    // For now, return versions without topics (will be loaded on demand)
-    const versions: PromptConfiguration[] = backend.versions.map(v => ({
-      id: v.id,
-      version: v.version,
-      is_active: v.isActive,
-      change_type: v.changeType,
-      change_summary: v.changeSummary || 'No summary',
-      topics: [], // Will be loaded separately if needed
-      created_at: v.createdAt,
-      analysis_count: v.metrics?.analysesCount || 0,
-    }));
-
-    return {
-      currentVersion: backend.currentVersion,
-      versions,
-    };
+    return response.data;
   } catch (error) {
     console.error('Error fetching version history:', error);
     throw error;
@@ -300,12 +191,12 @@ export async function getVersionHistory(brandId: string): Promise<{
 }
 
 /**
- * Get specific version details with snapshots
+ * Get details for a specific version
  */
 export async function getVersionDetails(
   brandId: string,
   version: number
-): Promise<PromptConfiguration> {
+): Promise<BackendVersionDetails> {
   try {
     const response = await apiClient.request<ApiResponse<BackendVersionDetails>>(
       `/brands/${brandId}/prompts/versions/${version}`
@@ -315,102 +206,33 @@ export async function getVersionDetails(
       throw new Error(response.error || 'Failed to fetch version details');
     }
 
-    const backend = response.data;
-
-    // Group snapshots by topic
-    const topicMap = new Map<string, Prompt[]>();
-    backend.snapshots.forEach(snapshot => {
-      if (!snapshot.isIncluded) return;
-
-      if (!topicMap.has(snapshot.topic)) {
-        topicMap.set(snapshot.topic, []);
-      }
-
-      const prompt: Prompt = {
-        id: parseInt(snapshot.queryId.split('-')[0] || '0', 16) % 1000000,
-        text: snapshot.queryText,
-        response: '',
-        lastUpdated: snapshot.createdAt.split('T')[0],
-        sentiment: 0,
-        volume: 0,
-        keywords: {
-          brand: [],
-          target: [],
-          top: [],
-        },
-        queryId: snapshot.queryId,
-        createdAt: snapshot.createdAt,
-        source: 'generated',
-      };
-
-      topicMap.get(snapshot.topic)!.push(prompt);
-    });
-
-    // Convert to Topic array
-    const topics: Topic[] = Array.from(topicMap.entries()).map(([name, prompts], index) => ({
-      id: index + 1,
-      name,
-      prompts,
-    }));
-
-    return {
-      id: backend.id,
-      version: backend.version,
-      is_active: backend.isActive,
-      change_type: backend.changeType,
-      change_summary: backend.changeSummary || 'No summary',
-      topics,
-      created_at: backend.createdAt,
-      analysis_count: 0,
-    };
+    return response.data;
   } catch (error) {
     console.error('Error fetching version details:', error);
     throw error;
   }
 }
 
-/**
- * Add a new prompt
- */
-export async function addPrompt(
-  brandId: string,
-  text: string,
-  topic: string
-): Promise<{ promptId: string }> {
-  try {
-    const response = await apiClient.request<ApiResponse<{ promptId: string }>>(
-      `/brands/${brandId}/prompts`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ text, topic }),
-      }
-    );
-
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to add prompt');
-    }
-
-    return response.data;
-  } catch (error) {
-    console.error('Error adding prompt:', error);
-    throw error;
-  }
+export interface PendingChanges {
+  added: Array<{ text: string; topic: string; metadata?: Record<string, any> }>;
+  removed: string[]; // IDs of prompts to remove
+  edited: Array<{ id: string; text: string; topic: string; metadata?: Record<string, any> }>;
 }
 
 /**
- * Update an existing prompt
+ * Update a prompt
  */
 export async function updatePrompt(
   brandId: string,
   promptId: string,
-  text: string
+  updates: { text?: string; topic?: string; metadata?: Record<string, any> }
 ): Promise<void> {
   try {
     const response = await apiClient.request<ApiResponse<void>>(
       `/brands/${brandId}/prompts/${promptId}`,
       {
-        method: 'PUT',
-        body: JSON.stringify({ text }),
+        method: 'PATCH',
+        body: JSON.stringify(updates),
       }
     );
 
@@ -506,6 +328,92 @@ export async function calculateImpact(
   }
 }
 
+export interface TopicsPromptsConfigV2Row {
+  id: string;
+  topic: string;
+  prompt: string;
+  locale: string;
+  country: string;
+  version?: number;
+}
+
+export interface BrightdataCountry {
+  code: string;
+  name: string;
+}
+
+export async function getBrightdataCountries(): Promise<BrightdataCountry[]> {
+  const response = await apiClient.request<ApiResponse<{ countries: BrightdataCountry[] }>>(
+    `/brightdata/countries`
+  );
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Failed to fetch countries');
+  }
+
+  return response.data.countries;
+}
+
+export interface ArchivedTopicsPromptsV2 {
+  id: string;
+  topic_id: string;
+  topic_name: string;
+  prompts: Array<{
+    id: string;
+    query_text: string;
+    locale: string;
+    country: string;
+    metadata?: any;
+    created_at: string;
+  }>;
+  version_tag: string;
+  brand_id: string;
+  created_at: string;
+}
+
+export async function getArchivedTopicsPromptsV2(brandId: string): Promise<ArchivedTopicsPromptsV2[]> {
+  const response = await apiClient.request<ApiResponse<ArchivedTopicsPromptsV2[]>>(
+    `/brands/${brandId}/prompts/config-v2/archived`
+  );
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Failed to fetch archived versions');
+  }
+  return response.data;
+}
+
+export async function getTopicsPromptsConfigV2Rows(
+  brandId: string
+): Promise<TopicsPromptsConfigV2Row[]> {
+  const response = await apiClient.request<ApiResponse<{ rows: TopicsPromptsConfigV2Row[] }>>(
+    `/brands/${brandId}/prompts/config-v2`
+  );
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Failed to fetch config rows');
+  }
+
+  return response.data.rows;
+}
+
+export async function saveTopicsPromptsConfigV2Rows(
+  brandId: string,
+  rows: Array<{ id?: string; topic: string; prompt: string; locale: string; country: string }>,
+  deleteIds: string[] = []
+): Promise<{ created: number; updated: number; topicsCreated: number; topicsReactivated: number }> {
+  const response = await apiClient.request<
+    ApiResponse<{ created: number; updated: number; topicsCreated: number; topicsReactivated: number }>
+  >(`/brands/${brandId}/prompts/config-v2`, {
+    method: 'POST',
+    body: JSON.stringify({ rows, deleteIds }),
+  });
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Failed to save config rows');
+  }
+
+  return response.data;
+}
+
 /**
  * Revert to a specific version
  */
@@ -557,11 +465,6 @@ export async function compareVersions(
       removed: string[];
     };
   };
-  metricsComparison: {
-    prompts: { v1: number; v2: number; diff: number };
-    topics: { v1: number; v2: number; diff: number };
-    coverage: { v1: number; v2: number; diff: number };
-  };
 }> {
   try {
     const response = await apiClient.request<ApiResponse<{
@@ -576,13 +479,12 @@ export async function compareVersions(
           removed: string[];
         };
       };
-      metricsComparison: {
-        prompts: { v1: number; v2: number; diff: number };
-        topics: { v1: number; v2: number; diff: number };
-        coverage: { v1: number; v2: number; diff: number };
-      };
     }>>(
-      `/brands/${brandId}/prompts/versions/compare?version1=${version1}&version2=${version2}`
+      `/brands/${brandId}/prompts/versions/compare`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ version1, version2 }),
+      }
     );
 
     if (!response.success || !response.data) {
@@ -596,3 +498,31 @@ export async function compareVersions(
   }
 }
 
+export interface ArchivedTopicPrompt {
+  id: string;
+  topic_id: string | null;
+  topic_name: string;
+  prompts: Array<{
+    id: string;
+    query_text: string;
+    locale: string;
+    country: string;
+    metadata: any;
+    created_at: string;
+  }>;
+  version_tag: string;
+  created_at: string;
+  brand_id: string;
+}
+
+export async function getHistoryV2(brandId: string): Promise<ArchivedTopicPrompt[]> {
+  const response = await apiClient.request<ApiResponse<ArchivedTopicPrompt[]>>(
+    `/brands/${brandId}/prompts/history-v2`
+  );
+
+  if (!response.success) {
+    throw new Error(response.error || 'Failed to fetch history');
+  }
+
+  return response.data || [];
+}

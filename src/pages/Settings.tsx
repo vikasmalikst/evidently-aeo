@@ -1,18 +1,32 @@
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { useNavigate } from 'react-router-dom';
-import { IconForms, IconChevronRight, IconUsers } from '@tabler/icons-react';
+import { IconForms, IconChevronRight, IconUsers, IconTable, IconBuildingStore } from '@tabler/icons-react';
 
 export const Settings = () => {
   const navigate = useNavigate();
 
   const settingsOptions = [
     {
+      id: 'manage-brands',
+      title: 'Manage Brands',
+      description: 'View and manage all your brands, toggle active status, or add new brands',
+      icon: IconBuildingStore,
+      path: '/settings/manage-brands',
+    },
+    {
       id: 'manage-prompts',
       title: 'Prompts & Topics',
       description: 'Edit tracked topics and the prompts that power your analyses from one place',
       icon: IconForms,
       path: '/settings/manage-prompts',
+    },
+    {
+      id: 'topics-prompts-config-v2',
+      title: 'Topics/Prompts Config V2',
+      description: 'Edit topics, prompts, locale, and country in a single table',
+      icon: IconTable,
+      path: '/settings/topics-prompts-config-v2',
     },
     {
       id: 'manage-competitors',
@@ -71,4 +85,3 @@ export const Settings = () => {
     </Layout>
   );
 };
-

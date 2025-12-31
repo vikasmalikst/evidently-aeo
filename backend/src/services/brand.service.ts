@@ -1078,9 +1078,10 @@ export class BrandService {
   async updateBrand(
     brandId: string, 
     customerId: string, 
-    updateData: Partial<BrandOnboardingRequest>
+    updateData: any
   ): Promise<Brand> {
     try {
+      console.log(`🔄 Updating brand ${brandId} for customer ${customerId}:`, updateData);
       // Validate input
       if (updateData.brand_name) {
         this.validateBrandName(updateData.brand_name);
@@ -1089,31 +1090,128 @@ export class BrandService {
         this.validateWebsiteUrl(updateData.website_url);
       }
 
-      const { data: updatedBrand, error } = await supabaseAdmin
+      const updateFields: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (updateData.brand_name) updateFields.name = updateData.brand_name;
+      if (updateData.website_url) updateFields.homepage_url = updateData.website_url;
+      if (updateData.description) updateFields.summary = updateData.description;
+      if (updateData.industry) updateFields.industry = updateData.industry;
+      if (updateData.status) updateFields.status = updateData.status;
+
+      console.log('📝 Fields to update:', updateFields);
+
+      const { data: updatedBrands, error } = await supabaseAdmin
         .from('brands')
-        .update({
-          name: updateData.brand_name,
-          website_url: updateData.website_url,
-          description: updateData.description,
-          industry: updateData.industry,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateFields)
         .eq('id', brandId)
         .eq('customer_id', customerId)
-        .select()
-        .single();
+        .select();
 
-      if (error || !updatedBrand) {
-        throw new DatabaseError('Failed to update brand');
+      if (error) {
+        console.error('❌ Supabase update error:', error);
+        throw new DatabaseError(`Failed to update brand: ${error.message}`);
       }
 
+      if (!updatedBrands || updatedBrands.length === 0) {
+        console.warn(`⚠️ No brand found to update for ID ${brandId} and customer ${customerId}`);
+        // Check if the brand exists at all without customer_id filter for debugging
+        const { data: exists } = await supabaseAdmin
+          .from('brands')
+          .select('id, customer_id')
+          .eq('id', brandId)
+          .single();
+        
+        if (exists) {
+          console.error(`🔒 Permission denied: Brand ${brandId} exists but belongs to customer ${exists.customer_id}, not ${customerId}`);
+          throw new DatabaseError('You do not have permission to update this brand');
+        } else {
+          throw new DatabaseError('Brand not found');
+        }
+      }
+
+      const updatedBrand = updatedBrands[0];
+      console.log('✅ Brand updated successfully:', updatedBrand.id);
       return updatedBrand;
     } catch (error) {
-      console.error('Error updating brand:', error);
+      console.error('❌ Error updating brand:', error);
       if (error instanceof ValidationError || error instanceof DatabaseError) {
         throw error;
       }
-      throw new DatabaseError('Failed to update brand');
+      // Log more details about the unknown error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new DatabaseError(`Failed to update brand: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Get brand stats for a customer
+   */
+  async getBrandStats(customerId: string): Promise<any> {
+    try {
+      if (!customerId) {
+        throw new ValidationError('Customer ID is required');
+      }
+
+      // 1. Get total brands
+      const { data: brands, error: brandsError } = await supabaseAdmin
+        .from('brands')
+        .select('id, metadata')
+        .eq('customer_id', customerId);
+
+      if (brandsError) throw brandsError;
+      const brandIds = brands.map(b => b.id);
+      const totalBrands = brands.length;
+
+      if (totalBrands === 0) {
+        return {
+          totalBrands: 0,
+          totalTopics: 0,
+          totalQueries: 0,
+          avgLlmsPerBrand: 0,
+          totalAnswers: 0
+        };
+      }
+
+      // 2. Get total topics
+      const { count: totalTopics, error: topicsError } = await supabaseAdmin
+        .from('brand_topics')
+        .select('*', { count: 'exact', head: true })
+        .in('brand_id', brandIds);
+
+      if (topicsError) throw topicsError;
+
+      // 3. Get total queries
+      const { count: totalQueries, error: queriesError } = await supabaseAdmin
+        .from('generated_queries')
+        .select('*', { count: 'exact', head: true })
+        .eq('customer_id', customerId)
+        .in('brand_id', brandIds);
+
+      if (queriesError) throw queriesError;
+
+      // 4. Calculate average LLMs per brand
+      let totalLlms = 0;
+      brands.forEach(brand => {
+        const aiModels = brand.metadata?.ai_models || [];
+        totalLlms += aiModels.length;
+      });
+      const avgLlmsPerBrand = totalBrands > 0 ? totalLlms / totalBrands : 0;
+
+      // 5. Calculate total answers (Queries * Average LLM)
+      const totalAnswers = Math.round(totalQueries * avgLlmsPerBrand);
+
+      return {
+        totalBrands,
+        totalTopics: totalTopics || 0,
+        totalQueries: totalQueries || 0,
+        avgLlmsPerBrand,
+        totalAnswers
+      };
+    } catch (error) {
+      console.error('Error fetching brand stats:', error);
+      throw new DatabaseError('Failed to fetch brand stats');
     }
   }
 

@@ -32,6 +32,9 @@ const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
 const BATCH_SIZE = 10; // Process 10 records at a time to avoid rate limits
 const STUCK_PROCESSING_HOURS = 8;
 const STUCK_PROCESSING_ERROR = 'Running for more than 8 hours. Check BrightData Status';
+const STUCK_SCORING_RESET_HOURS = 2;
+const STUCK_SCORING_FAIL_HOURS = 8;
+const STUCK_SCORING_TIMEOUT_ERROR = 'Scoring Time Out. Pending for more than 8 hours';
 
 interface BackfillStats {
   totalFound: number;
@@ -41,6 +44,8 @@ interface BackfillStats {
   notFound: number;
   errors: number;
   stuckMarkedFailed: number;
+  scoringResetToNull: number;
+  scoringTimedOutFailed: number;
 }
 
 /**
@@ -375,6 +380,122 @@ async function markStuckProcessingRows(stats: BackfillStats): Promise<void> {
   }
 }
 
+async function markStuckScoringRows(stats: BackfillStats): Promise<void> {
+  const resetCutoff = new Date(Date.now() - STUCK_SCORING_RESET_HOURS * 60 * 60 * 1000).toISOString();
+  const failCutoff = new Date(Date.now() - STUCK_SCORING_FAIL_HOURS * 60 * 60 * 1000).toISOString();
+  const PAGE_SIZE = 500;
+
+  let lastFailedId = 0;
+  while (true) {
+    const { data: rows, error } = await supabase
+      .from('collector_results')
+      .select('id, scoring_error')
+      .eq('scoring_status', 'pending')
+      .not('raw_answer', 'is', null)
+      .not('scoring_started_at', 'is', null)
+      .lt('scoring_started_at', failCutoff)
+      .gt('id', lastFailedId)
+      .order('id', { ascending: true })
+      .limit(PAGE_SIZE);
+
+    if (error) {
+      console.error('❌ Error fetching stuck scoring rows (pending >8h):', error.message);
+      return;
+    }
+
+    if (!rows || rows.length === 0) {
+      break;
+    }
+
+    for (const row of rows as Array<{ id: number; scoring_error: string | null }>) {
+      const nextError =
+        row.scoring_error && row.scoring_error.trim().length > 0
+          ? `${row.scoring_error}\n${STUCK_SCORING_TIMEOUT_ERROR}`
+          : STUCK_SCORING_TIMEOUT_ERROR;
+
+      const { error: updateError } = await supabase
+        .from('collector_results')
+        .update({
+          scoring_status: 'error',
+          scoring_error: nextError,
+        })
+        .eq('id', row.id)
+        .eq('scoring_status', 'pending')
+        .not('raw_answer', 'is', null)
+        .not('scoring_started_at', 'is', null)
+        .lt('scoring_started_at', failCutoff);
+
+      if (updateError) {
+        console.error(`❌ Error marking scoring timeout for collector_result ${row.id}:`, updateError.message);
+      } else {
+        stats.scoringTimedOutFailed += 1;
+      }
+    }
+
+    lastFailedId = (rows as any[])[rows.length - 1]?.id ?? lastFailedId;
+    if (rows.length < PAGE_SIZE) {
+      break;
+    }
+  }
+
+  let lastResetId = 0;
+  while (true) {
+    const { data: rows, error } = await supabase
+      .from('collector_results')
+      .select('id')
+      .eq('scoring_status', 'pending')
+      .not('raw_answer', 'is', null)
+      .not('scoring_started_at', 'is', null)
+      .lt('scoring_started_at', resetCutoff)
+      .gte('scoring_started_at', failCutoff)
+      .gt('id', lastResetId)
+      .order('id', { ascending: true })
+      .limit(PAGE_SIZE);
+
+    if (error) {
+      console.error('❌ Error fetching stuck scoring rows (pending >2h):', error.message);
+      return;
+    }
+
+    if (!rows || rows.length === 0) {
+      break;
+    }
+
+    const ids = (rows as any[])
+      .map((row) => row.id)
+      .filter((id) => typeof id === 'number' && Number.isFinite(id));
+
+    if (ids.length > 0) {
+      const { data: updated, error: updateError } = await supabase
+        .from('collector_results')
+        .update({
+          scoring_status: null,
+          scoring_started_at: null,
+          scoring_completed_at: null,
+          scoring_error: null,
+        })
+        .in('id', ids)
+        .eq('scoring_status', 'pending')
+        .not('raw_answer', 'is', null)
+        .not('scoring_started_at', 'is', null)
+        .lt('scoring_started_at', resetCutoff)
+        .gte('scoring_started_at', failCutoff)
+        .select('id');
+
+      if (updateError) {
+        console.error('❌ Error resetting stuck scoring rows to null:', updateError.message);
+      } else {
+        stats.scoringResetToNull += updated?.length ?? 0;
+      }
+    }
+
+    lastResetId = (rows as any[])[rows.length - 1]?.id ?? lastResetId;
+    if (rows.length < PAGE_SIZE) {
+      break;
+    }
+  }
+}
+
 /**
  * Process a batch of collector_results
  */
@@ -431,12 +552,26 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
     notFound: 0,
     errors: 0,
     stuckMarkedFailed: 0,
+    scoringResetToNull: 0,
+    scoringTimedOutFailed: 0,
   };
 
   try {
     await markStuckProcessingRows(stats);
     if (stats.stuckMarkedFailed > 0) {
       console.log(`⚠️  Marked ${stats.stuckMarkedFailed} stuck 'processing' rows as failed (>${STUCK_PROCESSING_HOURS}h)`);
+    }
+
+    await markStuckScoringRows(stats);
+    if (stats.scoringResetToNull > 0) {
+      console.log(
+        `⚠️  Reset ${stats.scoringResetToNull} stuck scoring_status='pending' rows to NULL (>${STUCK_SCORING_RESET_HOURS}h)`
+      );
+    }
+    if (stats.scoringTimedOutFailed > 0) {
+      console.log(
+        `⚠️  Marked ${stats.scoringTimedOutFailed} stuck scoring_status='pending' rows as error (>${STUCK_SCORING_FAIL_HOURS}h)`
+      );
     }
 
     // Step 1: Count total records to process
@@ -508,6 +643,8 @@ async function backfillRawAnswerFromSnapshots(): Promise<void> {
     console.log(`   ⚠️  Not found/no data: ${stats.notFound}`);
     console.log(`   ❌ Errors: ${stats.errors}`);
     console.log(`   🚫 Marked stuck as failed: ${stats.stuckMarkedFailed}`);
+    console.log(`   ⏳ Reset scoring pending to NULL: ${stats.scoringResetToNull}`);
+    console.log(`   ❌ Marked scoring pending as error: ${stats.scoringTimedOutFailed}`);
     console.log('='.repeat(60) + '\n');
 
   } catch (error) {

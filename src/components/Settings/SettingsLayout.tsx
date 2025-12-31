@@ -18,9 +18,19 @@ const settingsNavItems: SettingsNavItem[] = [
     path: '/settings/manage-prompts',
   },
   {
+    id: 'topics-prompts-config-v2',
+    label: 'Topics/Prompts Config V2',
+    path: '/settings/topics-prompts-config-v2',
+  },
+  {
     id: 'manage-competitors',
     label: 'Competitors',
     path: '/settings/manage-competitors',
+  },
+  {
+    id: 'manage-brands',
+    label: 'Manage Brands',
+    path: '/settings/manage-brands',
   },
 ];
 
@@ -89,4 +99,3 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
     </div>
   );
 };
-

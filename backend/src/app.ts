@@ -115,8 +115,8 @@ app.use('/api/trending-keywords', trendingKeywordsRoutes);
 app.use('/api/data-collection', dataCollectionRoutes);
 app.use('/api/keywords', keywordGenerationRoutes);
 app.use('/api/citations', citationCategorizationRoutes);
-app.use('/api', promptManagementRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api', promptManagementRoutes);
 app.use('/api/recommendations', recommendationsRoutes);
 app.use('/api/recommendations-v3', recommendationsV3Routes);
 // TEMPORARY: User management routes commented out

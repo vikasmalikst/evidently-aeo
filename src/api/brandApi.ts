@@ -1,4 +1,5 @@
 import { apiClient } from '../lib/apiClient';
+import { ApiResponse } from '../pages/dashboard/types';
 
 export interface BrandOnboardingData {
   brand_name: string;
@@ -23,8 +24,71 @@ export interface BrandResponse {
   homepage_url: string;
   industry?: string;
   summary?: string;
+  status: 'active' | 'inactive';
   created_at: string;
   updated_at: string;
+}
+
+export interface BrandStats {
+  totalBrands: number;
+  totalTopics: number;
+  totalQueries: number;
+  avgLlmsPerBrand: number;
+  totalAnswers: number;
+}
+
+/**
+ * Get all brands for the current customer
+ */
+export async function getBrands(): Promise<ApiResponse<BrandResponse[]>> {
+  try {
+    const response = await apiClient.request<ApiResponse<BrandResponse[]>>(
+      '/brands',
+      { method: 'GET' },
+      { requiresAuth: true }
+    );
+    return response;
+  } catch (error) {
+    console.error('❌ Fetch brands failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update brand status
+ */
+export async function updateBrandStatus(brandId: string, status: 'active' | 'inactive'): Promise<ApiResponse<BrandResponse>> {
+  try {
+    const response = await apiClient.request<ApiResponse<BrandResponse>>(
+      `/brands/${brandId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ status: status }),
+      },
+      { requiresAuth: true }
+    );
+    return response;
+  } catch (error) {
+    console.error('❌ Update brand status failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get aggregated stats for brands
+ */
+export async function getBrandStats(): Promise<ApiResponse<BrandStats>> {
+  try {
+    const response = await apiClient.request<ApiResponse<BrandStats>>(
+      '/brands/stats',
+      { method: 'GET' },
+      { requiresAuth: true }
+    );
+    return response;
+  } catch (error) {
+    console.error('❌ Fetch brand stats failed:', error);
+    throw error;
+  }
 }
 
 export interface BrandOnboardingResponse {

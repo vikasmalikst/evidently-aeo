@@ -18,6 +18,7 @@ import { Settings } from './pages/Settings';
 import { ManagePrompts } from './pages/ManagePrompts';
 import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ManageBrands } from './pages/ManageBrands';
+import { ManageCollectors } from './pages/ManageCollectors';
 import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2/index';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
@@ -227,6 +228,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ManageBrands />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/manage-collectors"
+          element={
+            <ProtectedRoute>
+              <ManageCollectors />
             </ProtectedRoute>
           }
         />

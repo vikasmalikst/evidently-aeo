@@ -899,6 +899,52 @@ export class BrandService {
   }
 
   /**
+   * Update brand collectors (AI models)
+   */
+  async updateBrandCollectors(brandId: string, customerId: string, aiModels: string[]): Promise<void> {
+    try {
+      if (!brandId || !customerId) {
+        throw new ValidationError('Brand ID and Customer ID are required');
+      }
+
+      // Fetch current brand to get existing metadata
+      const { data: brand, error: fetchError } = await supabaseAdmin
+        .from('brands')
+        .select('metadata')
+        .eq('id', brandId)
+        .eq('customer_id', customerId)
+        .single();
+
+      if (fetchError || !brand) {
+        throw new DatabaseError(`Brand not found: ${fetchError?.message || 'Unknown error'}`);
+      }
+
+      const updatedMetadata = {
+        ...(brand.metadata || {}),
+        ai_models: aiModels
+      };
+
+      const { error: updateError } = await supabaseAdmin
+        .from('brands')
+        .update({ metadata: updatedMetadata })
+        .eq('id', brandId)
+        .eq('customer_id', customerId);
+
+      if (updateError) {
+        throw new DatabaseError(`Failed to update brand collectors: ${updateError.message}`);
+      }
+
+      console.log(`✅ Updated collectors for brand ${brandId}:`, aiModels);
+    } catch (error) {
+      console.error('Error updating brand collectors:', error);
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
+        throw error;
+      }
+      throw new DatabaseError('Failed to update brand collectors');
+    }
+  }
+
+  /**
    * Get brand by ID
    */
   async getBrandById(brandId: string, customerId: string): Promise<Brand | null> {
@@ -1148,11 +1194,12 @@ export class BrandService {
         throw new ValidationError('Customer ID is required');
       }
 
-      // 1. Get total brands
+      // 1. Get total brands (active only)
       const { data: brands, error: brandsError } = await supabaseAdmin
         .from('brands')
         .select('id, metadata')
-        .eq('customer_id', customerId);
+        .eq('customer_id', customerId)
+        .neq('status', 'archived'); // Exclude archived brands
 
       if (brandsError) throw brandsError;
       const brandIds = brands.map(b => b.id);

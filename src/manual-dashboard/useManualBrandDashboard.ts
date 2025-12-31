@@ -12,6 +12,8 @@ export interface ManualBrandSummary {
   id: string
   name: string
   slug?: string | null
+  status?: 'active' | 'inactive'
+  metadata?: Record<string, any>
 }
 
 interface UseManualBrandDashboardOptions {
@@ -91,7 +93,7 @@ export const useManualBrandDashboard = (
           throw new Error(response.error || response.message || 'Failed to load brands')
         }
 
-        let fetchedBrands = response.data
+        let fetchedBrands = response.data.filter(b => b.status !== 'inactive')
         if (filter) {
           fetchedBrands = filter(fetchedBrands)
         }

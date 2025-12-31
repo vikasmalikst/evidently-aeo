@@ -1,0 +1,252 @@
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Layout } from '../components/Layout/Layout';
+import { SettingsLayout } from '../components/Settings/SettingsLayout';
+import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
+import { updateBrandCollectors } from '../api/brandApi';
+import { 
+  IconRobot, 
+  IconCheck, 
+  IconX, 
+  IconLoader2, 
+  IconInfoCircle,
+  IconSearch,
+  IconBrain,
+  IconMessageCircle,
+  IconBrandOpenai,
+  IconBrandGoogle,
+  IconBolt,
+  IconDeviceLaptop
+} from '@tabler/icons-react';
+
+interface CollectorDefinition {
+  id: string;
+  name: string;
+  provider: string;
+  description: string;
+  icon: any;
+  color: string;
+}
+
+const AVAILABLE_COLLECTORS: CollectorDefinition[] = [
+  {
+    id: 'chatgpt',
+    name: 'ChatGPT',
+    provider: 'OpenAI',
+    description: 'Queries OpenAI\'s ChatGPT models for brand mentions and visibility.',
+    icon: IconBrandOpenai,
+    color: '#10a37f'
+  },
+  {
+    id: 'google_aio',
+    name: 'Google Search AIO',
+    provider: 'Google',
+    description: 'Tracks brand presence in Google\'s AI-powered Search Generative Experience.',
+    icon: IconBrandGoogle,
+    color: '#4285f4'
+  },
+  {
+    id: 'perplexity',
+    name: 'Perplexity',
+    provider: 'Perplexity AI',
+    description: 'Monitors brand citations and mentions in Perplexity AI search results.',
+    icon: IconSearch,
+    color: '#20b2aa'
+  },
+  {
+    id: 'claude',
+    name: 'Claude',
+    provider: 'Anthropic',
+    description: 'Analyzes brand perception and visibility in Anthropic\'s Claude models.',
+    icon: IconBrain,
+    color: '#d97757'
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini',
+    provider: 'Google',
+    description: 'Queries Google\'s Gemini models for brand insights and performance.',
+    icon: IconBolt,
+    color: '#1a73e8'
+  },
+  {
+    id: 'bing_copilot',
+    name: 'Bing Copilot',
+    provider: 'Microsoft',
+    description: 'Tracks brand mentions in Microsoft\'s AI-powered Bing search.',
+    icon: IconDeviceLaptop,
+    color: '#00a4ef'
+  },
+  {
+    id: 'grok',
+    name: 'Grok',
+    provider: 'xAI',
+    description: 'Monitors brand presence and mentions in xAI\'s Grok assistant.',
+    icon: IconMessageCircle,
+    color: '#000000'
+  }
+];
+
+export const ManageCollectors = () => {
+  const { selectedBrand, selectedBrandId, reload } = useManualBrandDashboard();
+  const [enabledCollectors, setEnabledCollectors] = useState<Set<string>>(new Set());
+  const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Initialize enabled collectors from brand metadata
+  useEffect(() => {
+    if (selectedBrand?.metadata?.ai_models) {
+      setEnabledCollectors(new Set(selectedBrand.metadata.ai_models));
+    } else {
+      setEnabledCollectors(new Set());
+    }
+  }, [selectedBrand]);
+
+  const handleToggleCollector = async (collectorId: string) => {
+    if (!selectedBrandId) return;
+    
+    setIsUpdating(collectorId);
+    setError(null);
+    setSuccessMessage(null);
+
+    const newEnabled = new Set(enabledCollectors);
+    if (newEnabled.has(collectorId)) {
+      newEnabled.delete(collectorId);
+    } else {
+      newEnabled.add(collectorId);
+    }
+
+    try {
+      const aiModels = Array.from(newEnabled);
+      const response = await updateBrandCollectors(selectedBrandId, aiModels);
+
+      if (response.success) {
+        setEnabledCollectors(newEnabled);
+        setSuccessMessage(`${AVAILABLE_COLLECTORS.find(c => c.id === collectorId)?.name} status updated`);
+        // Refresh brand data to sync metadata
+        reload();
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setError(response.error || 'Failed to update collector status');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    } finally {
+      setIsUpdating(null);
+    }
+  };
+
+  if (!selectedBrandId) {
+    return (
+      <Layout>
+        <SettingsLayout>
+          <div className="p-6">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center gap-3">
+              <IconInfoCircle className="text-yellow-600" size={20} />
+              <p className="text-yellow-800">Please select a brand to manage collectors.</p>
+            </div>
+          </div>
+        </SettingsLayout>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      <SettingsLayout>
+        <div className="p-6 max-w-5xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-[var(--text-headings)] mb-2">
+              Manage Collectors
+            </h1>
+            <p className="text-[var(--text-caption)]">
+              Enable or disable AI data collectors for <strong>{selectedBrand?.name}</strong>. 
+              Only enabled collectors will be used for automated data collection.
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-red-800">
+              <IconX size={20} />
+              {error}
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3 text-green-800 animate-in fade-in slide-in-from-top-2">
+              <IconCheck size={20} />
+              {successMessage}
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {AVAILABLE_COLLECTORS.map((collector) => {
+              const isActive = enabledCollectors.has(collector.id);
+              const updating = isUpdating === collector.id;
+
+              return (
+                <div 
+                  key={collector.id}
+                  className={`bg-white rounded-lg border p-4 transition-all flex items-center justify-between ${
+                    isActive 
+                      ? 'border-[var(--accent-primary)] shadow-sm' 
+                      : 'border-[var(--border-default)]'
+                  }`}
+                >
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="p-2 rounded-lg flex-shrink-0" style={{ backgroundColor: `${collector.color}15` }}>
+                      <collector.icon size={24} style={{ color: collector.color }} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h3 className="text-base font-bold text-[var(--text-headings)] truncate">
+                          {collector.name}
+                        </h3>
+                        <span className="text-[10px] font-bold text-[var(--text-caption)] uppercase tracking-wider px-1.5 py-0.5 bg-gray-100 rounded">
+                          {collector.provider}
+                        </span>
+                      </div>
+                      <p className="text-sm text-[var(--text-body)] truncate max-w-xl">
+                        {collector.description}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-6 ml-4">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+                      <span className={`text-xs font-bold ${isActive ? 'text-green-600' : 'text-gray-500'} hidden sm:inline`}>
+                        {isActive ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleToggleCollector(collector.id)}
+                      disabled={updating !== false && updating !== null}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:ring-offset-2 ${
+                        isActive ? 'bg-[var(--accent-primary)]' : 'bg-gray-200'
+                      } ${updating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <span
+                        className={`${
+                          isActive ? 'translate-x-6' : 'translate-x-1'
+                        } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                      />
+                      {updating && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <IconLoader2 size={12} className="animate-spin text-white" />
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </SettingsLayout>
+    </Layout>
+  );
+};

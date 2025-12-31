@@ -32,6 +32,11 @@ const settingsNavItems: SettingsNavItem[] = [
     label: 'Manage Brands',
     path: '/settings/manage-brands',
   },
+  {
+    id: 'manage-collectors',
+    label: 'Manage Collectors',
+    path: '/settings/manage-collectors',
+  },
 ];
 
 interface SettingsLayoutProps {

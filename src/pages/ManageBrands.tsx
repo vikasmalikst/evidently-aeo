@@ -12,7 +12,6 @@ import {
   IconCircleCheck, 
   IconAlertCircle,
   IconSearch,
-  IconChartBar,
   IconListCheck,
   IconQuestionMark,
   IconRobot,

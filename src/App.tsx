@@ -17,7 +17,7 @@ import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCo
 import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ManageBrands } from './pages/ManageBrands';
 import { ManageCollectors } from './pages/ManageCollectors';
-import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2/index';
+import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { ProtectedRoute } from './components/ProtectedRoute';

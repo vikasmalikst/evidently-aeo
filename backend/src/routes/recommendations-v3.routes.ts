@@ -234,7 +234,8 @@ router.get('/:generationId', authenticateToken, async (req, res) => {
       isCompleted: rec.is_completed,
       completedAt: rec.completed_at,
       kpiBeforeValue: rec.kpi_before_value,
-      kpiAfterValue: rec.kpi_after_value
+      kpiAfterValue: rec.kpi_after_value,
+      reviewStatus: rec.review_status || 'pending_review'
     }));
 
     return res.json({
@@ -313,7 +314,14 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
 
     if (stepNum === 1) {
       // Step 1: All recommendations (not approved)
-      query = query.eq('is_approved', false);
+      // Filter by review_status if provided in query params
+      const reviewStatus = req.query.reviewStatus as string | undefined;
+      if (reviewStatus && ['pending_review', 'approved', 'rejected'].includes(reviewStatus)) {
+        query = query.eq('review_status', reviewStatus);
+      } else {
+        // Default: show all recommendations that are not approved (for backward compatibility)
+        query = query.eq('is_approved', false);
+      }
     } else if (stepNum === 2) {
       // Step 2: Approved but content not generated
       query = query.eq('is_approved', true).eq('is_content_generated', false);
@@ -505,7 +513,10 @@ router.patch('/:recommendationId/approve', authenticateToken, async (req, res) =
     const verifiedIds = recommendations.map(r => r.id);
     const { error: updateError } = await supabaseAdmin
       .from('recommendations')
-      .update({ is_approved: true })
+      .update({ 
+        is_approved: true,
+        review_status: 'approved' // Also update review_status
+      })
       .in('id', verifiedIds)
       .eq('customer_id', customerId);
 
@@ -531,6 +542,96 @@ router.patch('/:recommendationId/approve', authenticateToken, async (req, res) =
     return res.status(500).json({
       success: false,
       error: 'Failed to approve recommendation(s)'
+    });
+  }
+});
+
+/**
+ * PATCH /api/recommendations-v3/:recommendationId/status
+ * 
+ * Update the review status of a recommendation (Step 1).
+ * Status values: 'pending_review', 'approved', 'rejected'
+ * 
+ * Request body:
+ *   - status: 'pending_review' | 'approved' | 'rejected'
+ */
+router.patch('/:recommendationId/status', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    const { recommendationId } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['pending_review', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid status. Must be one of: pending_review, approved, rejected'
+      });
+    }
+
+    // Verify recommendation belongs to customer
+    const { data: recommendation, error: verifyError } = await supabaseAdmin
+      .from('recommendations')
+      .select('id, customer_id, generation_id')
+      .eq('id', recommendationId)
+      .eq('customer_id', customerId)
+      .single();
+
+    if (verifyError || !recommendation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Recommendation not found'
+      });
+    }
+
+    // Build update object
+    const updateData: any = { review_status: status };
+    
+    // If status is 'approved', also set is_approved = true
+    // If status is 'rejected' or 'pending_review', set is_approved = false
+    if (status === 'approved') {
+      updateData.is_approved = true;
+    } else {
+      updateData.is_approved = false;
+    }
+
+    // Update recommendation
+    const { error: updateError } = await supabaseAdmin
+      .from('recommendations')
+      .update(updateData)
+      .eq('id', recommendationId)
+      .eq('customer_id', customerId);
+
+    if (updateError) {
+      console.error('❌ [RecommendationsV3] Error updating review status:', updateError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to update review status'
+      });
+    }
+
+    console.log(`✅ [RecommendationsV3] Successfully updated review status for recommendation ${recommendationId} to ${status}`);
+
+    return res.json({
+      success: true,
+      data: {
+        recommendationId,
+        status
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [RecommendationsV3 Status Update] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update review status'
     });
   }
 });
@@ -1036,7 +1137,8 @@ router.get('/brand/:brandId/latest', authenticateToken, async (req, res) => {
       isCompleted: rec.is_completed,
       completedAt: rec.completed_at,
       kpiBeforeValue: rec.kpi_before_value,
-      kpiAfterValue: rec.kpi_after_value
+      kpiAfterValue: rec.kpi_after_value,
+      reviewStatus: rec.review_status || 'pending_review'
     }));
 
     return res.json({

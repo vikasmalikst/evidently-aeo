@@ -59,6 +59,7 @@ export interface RecommendationV3 {
   completedAt?: string;
   kpiBeforeValue?: number;
   kpiAfterValue?: number;
+  reviewStatus?: 'pending_review' | 'approved' | 'rejected';
 }
 
 /**
@@ -229,16 +230,24 @@ export async function getGenerationV3(
 
 /**
  * Get recommendations filtered by workflow step
+ * @param reviewStatus - Optional filter for review status (only used in Step 1)
  */
 export async function getRecommendationsByStepV3(
   generationId: string,
-  step: number
+  step: number,
+  reviewStatus?: 'pending_review' | 'approved' | 'rejected'
 ): Promise<GetByStepV3Response> {
   try {
+    // Build query params
+    const params = new URLSearchParams();
+    if (step === 1 && reviewStatus) {
+      params.append('reviewStatus', reviewStatus);
+    }
+    const queryString = params.toString();
+    const url = `/recommendations-v3/${generationId}/steps/${step}${queryString ? `?${queryString}` : ''}`;
+    
     // apiClient.get returns the parsed JSON response directly, not wrapped in .data
-    const response = await apiClient.get<GetByStepV3Response>(
-      `/recommendations-v3/${generationId}/steps/${step}`
-    );
+    const response = await apiClient.get<GetByStepV3Response>(url);
     // Response is already the parsed JSON object with { success, data, error }
     return response;
   } catch (error: any) {
@@ -428,6 +437,34 @@ export async function getLatestGenerationV3(
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to fetch latest generation'
+    };
+  }
+}
+
+/**
+ * Update review status of a recommendation (Step 1)
+ */
+export async function updateRecommendationStatusV3(
+  recommendationId: string,
+  status: 'pending_review' | 'approved' | 'rejected'
+): Promise<{ success: boolean; data?: { recommendationId: string; status: string }; error?: string }> {
+  try {
+    const response = await apiClient.patch<{ success: boolean; data?: { recommendationId: string; status: string }; error?: string }>(
+      `/recommendations-v3/${recommendationId}/status`,
+      { status }
+    );
+    // apiClient.patch returns response.data, so we need to check the structure
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; data?: { recommendationId: string; status: string }; error?: string };
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      return (response as any).data;
+    }
+    return response as { success: boolean; data?: { recommendationId: string; status: string }; error?: string };
+  } catch (error: any) {
+    console.error('Error updating recommendation status:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to update recommendation status'
     };
   }
 }

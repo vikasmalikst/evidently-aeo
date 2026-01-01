@@ -8,7 +8,7 @@
  * Step 4: Results Tracking - View KPI improvements (before/after)
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import {
@@ -21,6 +21,7 @@ import {
   completeRecommendationV3,
   getKPIsV3,
   getLatestGenerationV3,
+  updateRecommendationStatusV3,
   type RecommendationV3,
   type IdentifiedKPI
 } from '../api/recommendationsV3Api';
@@ -50,6 +51,7 @@ export const RecommendationsV3 = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contentMap, setContentMap] = useState<Map<string, any>>(new Map());
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
 
   // Track if we're manually loading data to prevent useEffect from interfering
   const [isManuallyLoading, setIsManuallyLoading] = useState(false);
@@ -87,7 +89,11 @@ export const RecommendationsV3 = () => {
 
       try {
         console.log(`📥 [RecommendationsV3] Loading Step ${currentStep} data for generation ${generationId}`);
-        const response = await getRecommendationsByStepV3(generationId, currentStep);
+        // For Step 1, include status filter if set
+        const reviewStatus = (currentStep === 1 && statusFilter !== 'all') 
+          ? statusFilter as 'pending_review' | 'approved' | 'rejected'
+          : undefined;
+        const response = await getRecommendationsByStepV3(generationId, currentStep, reviewStatus);
         console.log(`📊 [RecommendationsV3] Step ${currentStep} response:`, {
           success: response.success,
           hasData: !!response.data,
@@ -209,17 +215,60 @@ export const RecommendationsV3 = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generationId, currentStep, selectedBrandId]);
 
-  // Load latest generation on mount or when brand changes (if no generationId)
+  // Reload Step 1 when status filter changes
   useEffect(() => {
-    if (!selectedBrandId) return;
-
-    // If we already have a generationId, don't reload
-    // This prevents interfering with step-specific data loading
-    // The loadStepData useEffect will handle loading data for the current step
-    if (generationId) {
-      console.log('⏭️ [RecommendationsV3] Skipping loadLatestGeneration - already have generationId, loadStepData will handle step-specific loading');
+    if (!generationId || currentStep !== 1 || isManuallyLoading || isManuallyNavigatingRef.current) {
       return;
     }
+
+    const reloadWithFilter = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const reviewStatus = statusFilter !== 'all' 
+          ? statusFilter as 'pending_review' | 'approved' | 'rejected'
+          : undefined;
+        const response = await getRecommendationsByStepV3(generationId, 1, reviewStatus);
+        if (response.success && response.data) {
+          const recommendationsWithIds = response.data.recommendations
+            .filter(rec => rec.id && rec.id.length > 10)
+            .map(rec => ({ ...rec, id: rec.id! }));
+          setRecommendations(recommendationsWithIds);
+        }
+      } catch (err: any) {
+        setError(err.message || 'Failed to load recommendations');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    reloadWithFilter();
+  }, [statusFilter, generationId, currentStep, isManuallyLoading]);
+
+  // Track if this is the first load (to determine initial step) vs a brand switch
+  const isFirstLoadRef = useRef(true);
+  
+  // Handle brand switching with proper state cleanup
+  const handleBrandSwitch = useCallback((newBrandId: string) => {
+    console.log(`🔄 [RecommendationsV3] Switching from brand ${selectedBrandId} to ${newBrandId}`);
+    
+    // Clear all state related to the current brand
+    setGenerationId(null);
+    setRecommendations([]);
+    setSelectedIds(new Set());
+    setCompletedIds(new Set());
+    setContentMap(new Map());
+    setExpandedSections(new Map());
+    setError(null);
+    setCurrentStep(1);
+    
+    // Now update the brand - this will trigger loadLatestGeneration
+    selectBrand(newBrandId);
+  }, [selectedBrandId, selectBrand]);
+  
+  // Load latest generation on mount or when brand changes
+  useEffect(() => {
+    if (!selectedBrandId) return;
 
     const loadLatestGeneration = async () => {
       setIsLoading(true);
@@ -232,8 +281,11 @@ export const RecommendationsV3 = () => {
         if (response.success && response.data && response.data.generationId) {
           const genId = response.data.generationId;
           
-          // Only update if we don't already have this generation loaded
-          if (genId !== generationId) {
+          // Check if this is a different generation than what we currently have
+          const isDifferentGeneration = genId !== generationId;
+          
+          if (isDifferentGeneration) {
+            console.log(`🔄 [RecommendationsV3] Switching to generation ${genId} (previous: ${generationId})`);
             setGenerationId(genId);
             
             if (response.data.recommendations && response.data.recommendations.length > 0) {
@@ -243,49 +295,56 @@ export const RecommendationsV3 = () => {
                 .map(rec => ({ ...rec, id: rec.id! }));
               
               if (recommendationsWithIds.length > 0) {
-                // Set manual loading flag to prevent useEffect from interfering
-                setIsManuallyLoading(true);
-                
-                // DON'T set recommendations here - let the loadStepData useEffect handle it based on currentStep
-                // This ensures Step 2 only shows approved recommendations, Step 1 only unapproved, etc.
                 setKpis(response.data.kpis || []);
-                // Determine current step - this will trigger loadStepData to load the correct step's data
-                const hasApproved = recommendationsWithIds.some(r => r.isApproved);
-                const hasContentGenerated = recommendationsWithIds.some(r => r.isContentGenerated);
-                const hasCompleted = recommendationsWithIds.some(r => r.isCompleted);
                 
-                if (hasCompleted) {
-                  setCurrentStep(4);
-                } else if (hasContentGenerated) {
-                  setCurrentStep(3);
-                } else if (hasApproved) {
-                  setCurrentStep(2);
+                // Only auto-determine step on first load or when explicitly refreshing
+                // Don't change step when user is manually navigating between steps
+                if (isFirstLoadRef.current) {
+                  // First load: determine the most relevant step
+                  const hasApproved = recommendationsWithIds.some(r => r.isApproved);
+                  const hasContentGenerated = recommendationsWithIds.some(r => r.isContentGenerated);
+                  const hasCompleted = recommendationsWithIds.some(r => r.isCompleted);
+                  
+                  // Start at the first incomplete step
+                  if (hasCompleted && recommendationsWithIds.some(r => !r.isCompleted)) {
+                    setCurrentStep(3); // Some completed, some not - stay at content review
+                  } else if (hasCompleted) {
+                    setCurrentStep(4); // All completed - show results
+                  } else if (hasContentGenerated && recommendationsWithIds.some(r => r.isApproved && !r.isContentGenerated)) {
+                    setCurrentStep(2); // Some have content, some don't - stay at approved
+                  } else if (hasContentGenerated) {
+                    setCurrentStep(3); // All approved have content - review content
+                  } else if (hasApproved) {
+                    setCurrentStep(2); // Has approved recs but no content - generate content
+                  } else {
+                    setCurrentStep(1); // No approved recs - start at review
+                  }
+                  
+                  console.log(`✅ [RecommendationsV3] First load - set step based on data state`);
+                  isFirstLoadRef.current = false;
                 } else {
+                  // Brand switch: reset to step 1 to show all new recommendations
                   setCurrentStep(1);
+                  console.log(`🔄 [RecommendationsV3] Brand switched - reset to step 1`);
                 }
-                console.log(`✅ [RecommendationsV3] Set step to ${hasCompleted ? 4 : hasContentGenerated ? 3 : hasApproved ? 2 : 1}, loadStepData will load step-specific recommendations`);
-                setError(null); // Clear any previous errors on successful load
                 
-                // Clear manual loading flags after a short delay to allow step to be set
-                setTimeout(() => {
-                  setIsManuallyLoading(false);
-                  isManuallyNavigatingRef.current = false;
-                }, 200);
+                setError(null);
+                // Clear selections when switching brands/generations
+                setSelectedIds(new Set());
+                setCompletedIds(new Set());
               }
             }
           }
         } else {
           // No previous generation found - this is fine, user can generate new ones
           console.log('📭 [RecommendationsV3] No previous generation found for this brand');
-          if (!generationId) {
-            setRecommendations([]);
-            setGenerationId(null);
-            setError(null); // Clear error if no generation found (not an error state)
-          }
+          setRecommendations([]);
+          setGenerationId(null);
+          setCurrentStep(1); // Reset to step 1 when no generation
+          setError(null);
         }
       } catch (err) {
         console.error('Error loading latest generation:', err);
-        // Don't set error - allow user to generate new recommendations
         setError(null); // Clear error on catch to prevent stale error messages
       } finally {
         setIsLoading(false);
@@ -294,7 +353,7 @@ export const RecommendationsV3 = () => {
 
     loadLatestGeneration();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBrandId]); // Only run when brand changes or on mount
+  }, [selectedBrandId]); // Run when brand changes or on mount
 
   // Load KPIs when generation is available
   useEffect(() => {
@@ -550,6 +609,33 @@ export const RecommendationsV3 = () => {
       console.error('Error polling for latest generation:', err);
       // Poll again
       await pollForLatestGeneration(brandId, attempt + 1, maxAttempts);
+    }
+  };
+
+  // Handle status change for a recommendation
+  const handleStatusChange = async (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected') => {
+    if (!recommendationId) return;
+
+    setError(null);
+
+    try {
+      console.log(`📝 [RecommendationsV3] Updating status for ${recommendationId} to ${status}`);
+      const response = await updateRecommendationStatusV3(recommendationId, status);
+      
+      if (response.success) {
+        // Update the recommendation in state
+        setRecommendations(prev => prev.map(rec => 
+          rec.id === recommendationId 
+            ? { ...rec, reviewStatus: status, isApproved: status === 'approved' }
+            : rec
+        ));
+        console.log(`✅ [RecommendationsV3] Successfully updated status for ${recommendationId}`);
+      } else {
+        setError(response.error || 'Failed to update status');
+      }
+    } catch (err: any) {
+      console.error('Error updating recommendation status:', err);
+      setError(err.message || 'Failed to update status');
     }
   };
 
@@ -1171,7 +1257,7 @@ export const RecommendationsV3 = () => {
               {brands && brands.length > 1 && (
                 <select
                   value={selectedBrandId || ''}
-                  onChange={(e) => selectBrand(e.target.value)}
+                  onChange={(e) => handleBrandSwitch(e.target.value)}
                   className="px-3 py-2 border border-[#e8e9ed] rounded-md text-[13px] text-[#1a1d29] bg-white focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent"
                 >
                   {brands.map((brand) => (
@@ -1328,15 +1414,28 @@ export const RecommendationsV3 = () => {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 1: Generate & Review</h2>
-                  {selectedIds.size > 0 && (
-                    <button
-                      onClick={handleApprove}
-                      disabled={isLoading}
-                      className="px-4 py-2 bg-[#06c686] text-white rounded-md text-[13px] font-medium hover:bg-[#05a870] disabled:opacity-50 transition-colors"
+                  <div className="flex items-center gap-3">
+                    {/* Status Filter */}
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value as 'all' | 'pending_review' | 'approved' | 'rejected')}
+                      className="px-3 py-2 text-[13px] border border-[#cbd5e1] rounded-md bg-white text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent"
                     >
-                      Approve ({selectedIds.size})
-                    </button>
-                  )}
+                      <option value="all">All Status</option>
+                      <option value="pending_review">Pending Review</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                    {selectedIds.size > 0 && (
+                      <button
+                        onClick={handleApprove}
+                        disabled={isLoading}
+                        className="px-4 py-2 bg-[#06c686] text-white rounded-md text-[13px] font-medium hover:bg-[#05a870] disabled:opacity-50 transition-colors"
+                      >
+                        Approve ({selectedIds.size})
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <RecommendationsTableV3
                   recommendations={recommendations}
@@ -1344,6 +1443,8 @@ export const RecommendationsV3 = () => {
                   onSelect={handleSelect}
                   onSelectAll={handleSelectAll}
                   showCheckboxes={true}
+                  showStatusDropdown={true}
+                  onStatusChange={handleStatusChange}
                 />
               </div>
             )}

@@ -52,6 +52,7 @@ export const RecommendationsV3 = () => {
   const [error, setError] = useState<string | null>(null);
   const [contentMap, setContentMap] = useState<Map<string, any>>(new Map());
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
+  const [allRecommendations, setAllRecommendations] = useState<RecommendationV3[]>([]); // Store all Step 1 recommendations for local filtering
 
   // Track if we're manually loading data to prevent useEffect from interfering
   const [isManuallyLoading, setIsManuallyLoading] = useState(false);
@@ -89,11 +90,8 @@ export const RecommendationsV3 = () => {
 
       try {
         console.log(`📥 [RecommendationsV3] Loading Step ${currentStep} data for generation ${generationId}`);
-        // For Step 1, include status filter if set
-        const reviewStatus = (currentStep === 1 && statusFilter !== 'all') 
-          ? statusFilter as 'pending_review' | 'approved' | 'rejected'
-          : undefined;
-        const response = await getRecommendationsByStepV3(generationId, currentStep, reviewStatus);
+        // Don't pass status filter to API - we'll filter locally for Step 1
+        const response = await getRecommendationsByStepV3(generationId, currentStep);
         console.log(`📊 [RecommendationsV3] Step ${currentStep} response:`, {
           success: response.success,
           hasData: !!response.data,
@@ -134,9 +132,39 @@ export const RecommendationsV3 = () => {
           if (recommendationsWithIds.length === 0 && response.data.recommendations.length > 0) {
             setError('Recommendations loaded but no valid IDs found. Please refresh the page.');
           } else {
-            // IMPORTANT: Only set recommendations for the current step
-            // This ensures Step 2 only shows approved recommendations
-            setRecommendations(recommendationsWithIds);
+            // For Step 1, store all recommendations separately for filtering
+            if (currentStep === 1) {
+              // Merge with existing allRecommendations to preserve any unsaved status changes
+              const mergedRecommendations = (() => {
+                const existingMap = new Map(allRecommendations.map(r => [r.id, r]));
+                // Preserve status from existing if it exists and differs from loaded value (user changed it)
+                return recommendationsWithIds.map(rec => {
+                  const existing = existingMap.get(rec.id);
+                  if (existing?.reviewStatus && existing.reviewStatus !== rec.reviewStatus) {
+                    // User has changed status, preserve it
+                    return { ...rec, reviewStatus: existing.reviewStatus, isApproved: existing.isApproved };
+                  }
+                  return rec;
+                });
+              })();
+              
+              setAllRecommendations(mergedRecommendations);
+              
+              // Apply current filter
+              if (statusFilter === 'all') {
+                setRecommendations(mergedRecommendations);
+              } else {
+                const filtered = mergedRecommendations.filter(rec => {
+                  const recStatus = rec.reviewStatus || 'pending_review';
+                  return recStatus === statusFilter;
+                });
+                setRecommendations(filtered);
+              }
+            } else {
+              // For other steps, set recommendations directly
+              setAllRecommendations([]);
+              setRecommendations(recommendationsWithIds);
+            }
             // Clear any previous errors on successful load
             setError(null);
           }
@@ -215,35 +243,24 @@ export const RecommendationsV3 = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generationId, currentStep, selectedBrandId]);
 
-  // Reload Step 1 when status filter changes
+  // Apply status filter locally instead of reloading (prevents overwriting status changes)
   useEffect(() => {
-    if (!generationId || currentStep !== 1 || isManuallyLoading || isManuallyNavigatingRef.current) {
-      return;
+    if (currentStep !== 1 || allRecommendations.length === 0) {
+      return; // Don't filter if not on Step 1 or if allRecommendations not loaded yet
     }
 
-    const reloadWithFilter = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const reviewStatus = statusFilter !== 'all' 
-          ? statusFilter as 'pending_review' | 'approved' | 'rejected'
-          : undefined;
-        const response = await getRecommendationsByStepV3(generationId, 1, reviewStatus);
-        if (response.success && response.data) {
-          const recommendationsWithIds = response.data.recommendations
-            .filter(rec => rec.id && rec.id.length > 10)
-            .map(rec => ({ ...rec, id: rec.id! }));
-          setRecommendations(recommendationsWithIds);
-        }
-      } catch (err: any) {
-        setError(err.message || 'Failed to load recommendations');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    reloadWithFilter();
-  }, [statusFilter, generationId, currentStep, isManuallyLoading]);
+    if (statusFilter === 'all') {
+      // Show all recommendations when filter is "all"
+      setRecommendations([...allRecommendations]);
+    } else {
+      // Filter locally by status
+      const filtered = allRecommendations.filter(rec => {
+        const recStatus = rec.reviewStatus || 'pending_review';
+        return recStatus === statusFilter;
+      });
+      setRecommendations([...filtered]);
+    }
+  }, [statusFilter, allRecommendations, currentStep]);
 
   // Track if this is the first load (to determine initial step) vs a brand switch
   const isFirstLoadRef = useRef(true);
@@ -255,11 +272,13 @@ export const RecommendationsV3 = () => {
     // Clear all state related to the current brand
     setGenerationId(null);
     setRecommendations([]);
+    setAllRecommendations([]); // Clear all recommendations cache
     setSelectedIds(new Set());
     setCompletedIds(new Set());
     setContentMap(new Map());
     setExpandedSections(new Map());
     setError(null);
+    setStatusFilter('all'); // Reset filter
     setCurrentStep(1);
     
     // Now update the brand - this will trigger loadLatestGeneration
@@ -618,23 +637,41 @@ export const RecommendationsV3 = () => {
 
     setError(null);
 
+    // Optimistically update UI immediately in both filtered and all recommendations
+    const updateRec = (rec: RecommendationV3) => 
+      rec.id === recommendationId 
+        ? { ...rec, reviewStatus: status, isApproved: status === 'approved' }
+        : rec;
+    
+    setRecommendations(prev => prev.map(updateRec));
+    setAllRecommendations(prev => prev.map(updateRec));
+
     try {
       console.log(`📝 [RecommendationsV3] Updating status for ${recommendationId} to ${status}`);
       const response = await updateRecommendationStatusV3(recommendationId, status);
       
       if (response.success) {
-        // Update the recommendation in state
-        setRecommendations(prev => prev.map(rec => 
-          rec.id === recommendationId 
-            ? { ...rec, reviewStatus: status, isApproved: status === 'approved' }
-            : rec
-        ));
         console.log(`✅ [RecommendationsV3] Successfully updated status for ${recommendationId}`);
+        // Status already updated optimistically, no need to update again
       } else {
+        // Revert optimistic update on error
+        const revertRec = (rec: RecommendationV3) => 
+          rec.id === recommendationId 
+            ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review', isApproved: status === 'approved' ? false : rec.isApproved }
+            : rec;
+        setRecommendations(prev => prev.map(revertRec));
+        setAllRecommendations(prev => prev.map(revertRec));
         setError(response.error || 'Failed to update status');
       }
     } catch (err: any) {
       console.error('Error updating recommendation status:', err);
+      // Revert optimistic update on error
+      const revertRec = (rec: RecommendationV3) => 
+        rec.id === recommendationId 
+          ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review', isApproved: status === 'approved' ? false : rec.isApproved }
+          : rec;
+      setRecommendations(prev => prev.map(revertRec));
+      setAllRecommendations(prev => prev.map(revertRec));
       setError(err.message || 'Failed to update status');
     }
   };
@@ -686,6 +723,13 @@ export const RecommendationsV3 = () => {
       });
       
       if (response.success) {
+        // Update allRecommendations to reflect approved status for selected items
+        setAllRecommendations(prev => prev.map(rec => 
+          selectedIds.has(rec.id || '')
+            ? { ...rec, reviewStatus: 'approved' as const, isApproved: true }
+            : rec
+        ));
+        
         setSelectedIds(new Set());
         
         // Set manual loading flags (both state and ref) to prevent useEffect from interfering
@@ -1412,14 +1456,26 @@ export const RecommendationsV3 = () => {
             {/* Step 1: Generate & Review */}
             {currentStep === 1 && (
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                   <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 1: Generate & Review</h2>
-                  <div className="flex items-center gap-3">
-                    {/* Status Filter */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {/* Status Filter - matching project theme */}
                     <select
+                      id="status-filter"
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value as 'all' | 'pending_review' | 'approved' | 'rejected')}
-                      className="px-3 py-2 text-[13px] border border-[#cbd5e1] rounded-md bg-white text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent"
+                      aria-label="Filter by status"
+                      style={{
+                        border: '1px solid #dcdfe5',
+                        borderRadius: '4px',
+                        padding: '8px 12px',
+                        fontSize: '13px',
+                        fontFamily: 'IBM Plex Sans, sans-serif',
+                        color: '#212534',
+                        backgroundColor: '#ffffff',
+                        cursor: 'pointer',
+                        minWidth: '140px'
+                      }}
                     >
                       <option value="all">All Status</option>
                       <option value="pending_review">Pending Review</option>

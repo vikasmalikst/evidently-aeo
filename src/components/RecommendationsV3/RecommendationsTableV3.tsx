@@ -223,12 +223,39 @@ export const RecommendationsTableV3 = ({
                                 onStatusChange(rec.id, newStatus);
                               }
                             }}
-                            className="px-3 py-1.5 text-[12px] border border-[#cbd5e1] rounded-md bg-white text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent"
                             onClick={(e) => e.stopPropagation()}
+                            aria-label={`Change status for ${rec.action?.substring(0, 30)}`}
+                            style={{
+                              border: '1px solid #dcdfe5',
+                              borderRadius: '4px',
+                              padding: '6px 10px',
+                              fontSize: '13px',
+                              fontFamily: 'IBM Plex Sans, sans-serif',
+                              color: '#212534',
+                              backgroundColor: '#ffffff',
+                              cursor: 'pointer',
+                              minWidth: '140px',
+                              outline: 'none'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = '#cfd4e3';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = '#dcdfe5';
+                            }}
+                            onFocus={(e) => {
+                              e.stopPropagation();
+                              e.currentTarget.style.borderColor = '#0ea5e9';
+                              e.currentTarget.style.boxShadow = '0 0 0 2px rgba(14, 165, 233, 0.1)';
+                            }}
+                            onBlur={(e) => {
+                              e.currentTarget.style.borderColor = '#dcdfe5';
+                              e.currentTarget.style.boxShadow = 'none';
+                            }}
                           >
                             <option value="pending_review">Pending Review</option>
-                            <option value="approved">Approve</option>
-                            <option value="rejected">Reject</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
                           </select>
                         </td>
                       )}

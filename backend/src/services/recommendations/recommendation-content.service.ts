@@ -8,9 +8,10 @@
 import { supabaseAdmin } from '../../config/database';
 import { getCerebrasKey, getCerebrasModel } from '../../utils/api-key-resolver';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
+import { shouldUseOllama, callOllamaAPI } from '../scoring/ollama-client.service';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
-export type RecommendationContentProvider = 'cerebras' | 'openrouter';
+export type RecommendationContentProvider = 'cerebras' | 'openrouter' | 'ollama';
 
 export interface GenerateRecommendationContentRequest {
   contentType?: string; // e.g. 'draft', 'blog_intro', 'faq', 'linkedin_post'
@@ -311,29 +312,69 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
 
     const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${instructions}`;
 
-    // Call providers - OpenRouter as primary, Cerebras as fallback
+    // Call providers - Ollama (if enabled) → OpenRouter → Cerebras
     let content: string | null = null;
     let providerUsed: RecommendationContentProvider | undefined;
     let modelUsed: string | undefined;
 
-    // Try OpenRouter first (primary)
-    try {
-      const or = await openRouterCollectorService.executeQuery({
-        collectorType: 'content',
-        prompt,
-        maxTokens: 2000, // Increased from 900 to handle v2.0 format with multiple sections
-        temperature: 0.6,
-        topP: 0.9,
-        enableWebSearch: false
-      });
-      content = or.response;
-      providerUsed = 'openrouter';
-      modelUsed = or.model_used;
-    } catch (e) {
-      console.error('❌ [RecommendationContentService] OpenRouter failed, trying Cerebras fallback:', e);
+    // Try Ollama first (if enabled for this brand)
+    const useOllama = await shouldUseOllama(rec.brand_id);
+    if (useOllama) {
+      try {
+        console.log('🦙 [RecommendationContentService] Attempting Ollama API (primary for this brand)...');
+        const systemMessage = 'You are a senior marketing consultant and AEO strategist. Generate content for recommendations. Respond only with valid JSON, no markdown code blocks, no explanations.';
+        const ollamaResponse = await callOllamaAPI(systemMessage, prompt, rec.brand_id);
+        
+        // Ollama returns JSON string, may need parsing
+        let parsedContent = ollamaResponse;
+        
+        // Remove markdown code blocks if present
+        if (parsedContent.includes('```json')) {
+          parsedContent = parsedContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+        } else if (parsedContent.includes('```')) {
+          parsedContent = parsedContent.replace(/```\s*/g, '');
+        }
+        
+        // Extract JSON object if wrapped in other text
+        const jsonMatch = parsedContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedContent = jsonMatch[0];
+        }
+        
+        content = parsedContent;
+        if (content) {
+          providerUsed = 'ollama';
+          modelUsed = 'ollama'; // Ollama model name is in config, not returned in response
+          console.log('✅ [RecommendationContentService] Ollama API succeeded');
+        } else {
+          console.warn('⚠️ [RecommendationContentService] Ollama returned empty content');
+        }
+      } catch (e: any) {
+        console.error('❌ [RecommendationContentService] Ollama API failed:', e.message || e);
+        console.log('🔄 [RecommendationContentService] Falling back to OpenRouter...');
+      }
     }
 
-    // Fallback to Cerebras if OpenRouter failed
+    // Try OpenRouter if Ollama not enabled or failed
+    if (!content) {
+      try {
+        const or = await openRouterCollectorService.executeQuery({
+          collectorType: 'content',
+          prompt,
+          maxTokens: 2000, // Increased from 900 to handle v2.0 format with multiple sections
+          temperature: 0.6,
+          topP: 0.9,
+          enableWebSearch: false
+        });
+        content = or.response;
+        providerUsed = 'openrouter';
+        modelUsed = or.model_used;
+      } catch (e) {
+        console.error('❌ [RecommendationContentService] OpenRouter failed, trying Cerebras fallback:', e);
+      }
+    }
+
+    // Fallback to Cerebras if both Ollama and OpenRouter failed
     if (!content && this.cerebrasApiKey) {
       const result = await this.callCerebras(prompt);
       if (result?.content) {

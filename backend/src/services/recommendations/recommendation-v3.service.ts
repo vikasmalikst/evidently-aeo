@@ -15,6 +15,7 @@ import { getCerebrasKey, getCerebrasModel } from '../../utils/api-key-resolver';
 import { supabaseAdmin } from '../../config/database';
 import { OptimizedMetricsHelper } from '../query-helpers/optimized-metrics.helper';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
+import { shouldUseOllama, callOllamaAPI } from '../scoring/ollama-client.service';
 
 // ============================================================================
 // TYPES
@@ -1063,43 +1064,85 @@ Respond only with the JSON array.`;
       let content: string | null = null;
       let providerUsed = 'none';
 
-      // Try OpenRouter first (primary) with timeout protection
-      try {
-        console.log('🚀 [RecommendationV3Service] Attempting OpenRouter API (primary)...');
-        const openRouterStartTime = Date.now();
-        
-        // Add timeout wrapper for OpenRouter call
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('OpenRouter request timeout after 90 seconds')), 90000);
-        });
-        
-        const openRouterPromise = openRouterCollectorService.executeQuery({
-          collectorType: 'content',
-          prompt,
-          maxTokens: 4000,
-          temperature: 0.5,
-          topP: 0.9,
-          enableWebSearch: false
-        });
-        
-        const or = await Promise.race([openRouterPromise, timeoutPromise]) as any;
-        const openRouterDuration = Date.now() - openRouterStartTime;
-        
-        content = or.response;
-        if (content) {
-          providerUsed = 'openrouter';
-          console.log(`✅ [RecommendationV3Service] OpenRouter API succeeded (primary provider) in ${openRouterDuration}ms`);
-        } else {
-          console.warn('⚠️ [RecommendationV3Service] OpenRouter returned empty content');
-        }
-      } catch (e: any) {
-        console.error('❌ [RecommendationV3Service] OpenRouter API failed:', e.message || e);
-        if (e.message?.includes('timeout')) {
-          console.error('⏱️ [RecommendationV3Service] OpenRouter request timed out, trying Cerebras fallback...');
+      // Try Ollama first (if enabled for this brand)
+      const useOllama = await shouldUseOllama(context.brandId);
+      if (useOllama) {
+        try {
+          console.log('🦙 [RecommendationV3Service] Attempting Ollama API (primary for this brand)...');
+          const ollamaStartTime = Date.now();
+          
+          const systemMessage = 'You are a senior Brand/AEO expert. Generate actionable recommendations. Respond only with valid JSON arrays.';
+          const ollamaResponse = await callOllamaAPI(systemMessage, prompt, context.brandId);
+          
+          // Ollama returns JSON string, may need parsing
+          let parsedContent = ollamaResponse;
+          
+          // Remove markdown code blocks if present
+          if (parsedContent.includes('```json')) {
+            parsedContent = parsedContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+          } else if (parsedContent.includes('```')) {
+            parsedContent = parsedContent.replace(/```\s*/g, '');
+          }
+          
+          // Extract JSON array if wrapped in other text
+          const jsonMatch = parsedContent.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            parsedContent = jsonMatch[0];
+          }
+          
+          content = parsedContent;
+          if (content) {
+            providerUsed = 'ollama';
+            const ollamaDuration = Date.now() - ollamaStartTime;
+            console.log(`✅ [RecommendationV3Service] Ollama API succeeded (primary provider) in ${ollamaDuration}ms`);
+          } else {
+            console.warn('⚠️ [RecommendationV3Service] Ollama returned empty content');
+          }
+        } catch (e: any) {
+          console.error('❌ [RecommendationV3Service] Ollama API failed:', e.message || e);
+          console.log('🔄 [RecommendationV3Service] Falling back to OpenRouter...');
         }
       }
 
-      // Fallback to Cerebras if OpenRouter failed
+      // Try OpenRouter if Ollama not enabled or failed
+      if (!content) {
+        try {
+          console.log('🚀 [RecommendationV3Service] Attempting OpenRouter API (primary/fallback)...');
+          const openRouterStartTime = Date.now();
+          
+          // Add timeout wrapper for OpenRouter call
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('OpenRouter request timeout after 90 seconds')), 90000);
+          });
+          
+          const openRouterPromise = openRouterCollectorService.executeQuery({
+            collectorType: 'content',
+            prompt,
+            maxTokens: 4000,
+            temperature: 0.5,
+            topP: 0.9,
+            enableWebSearch: false
+          });
+          
+          const or = await Promise.race([openRouterPromise, timeoutPromise]) as any;
+          const openRouterDuration = Date.now() - openRouterStartTime;
+          
+          content = or.response;
+          if (content) {
+            providerUsed = 'openrouter';
+            console.log(`✅ [RecommendationV3Service] OpenRouter API succeeded in ${openRouterDuration}ms`);
+          } else {
+            console.warn('⚠️ [RecommendationV3Service] OpenRouter returned empty content');
+          }
+        } catch (e: any) {
+          console.error('❌ [RecommendationV3Service] OpenRouter API failed:', e.message || e);
+          if (e.message?.includes('timeout')) {
+            console.error('⏱️ [RecommendationV3Service] OpenRouter request timed out, trying Cerebras fallback...');
+          }
+        }
+      }
+
+      // Fallback to Cerebras if both Ollama and OpenRouter failed
       if (!content && this.cerebrasApiKey) {
         try {
           console.log('🔄 [RecommendationV3Service] OpenRouter failed, trying Cerebras fallback...');
@@ -1633,8 +1676,13 @@ Respond only with the JSON array.`;
   ): Promise<RecommendationV3Response> {
     console.log(`📊 [RecommendationV3Service] Generating recommendations for brand: ${brandId}`);
 
-    // OpenRouter is now primary, Cerebras is fallback
-    console.log('📊 [RecommendationV3Service] Using OpenRouter as primary provider (Cerebras as fallback)');
+    // Check if Ollama is enabled for this brand
+    const useOllama = await shouldUseOllama(brandId);
+    if (useOllama) {
+      console.log('📊 [RecommendationV3Service] Using Ollama as primary provider (OpenRouter → Cerebras as fallback)');
+    } else {
+      console.log('📊 [RecommendationV3Service] Using OpenRouter as primary provider (Cerebras as fallback)');
+    }
 
     try {
       // Step 1: Gather brand context

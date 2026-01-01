@@ -23,6 +23,8 @@ interface RecommendationsTableV3Props {
   showCheckboxes?: boolean;
   showActions?: boolean;
   onAction?: (recommendation: RecommendationV3, action: string) => void;
+  showStatusDropdown?: boolean;
+  onStatusChange?: (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected') => void;
 }
 
 const FocusAreaBadge = ({ area }: { area: 'visibility' | 'soa' | 'sentiment' }) => {
@@ -76,7 +78,9 @@ export const RecommendationsTableV3 = ({
   onSelectAll,
   showCheckboxes = false,
   showActions = false,
-  onAction
+  onAction,
+  showStatusDropdown = false,
+  onStatusChange
 }: RecommendationsTableV3Props) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const allSelected = recommendations.length > 0 && recommendations.every(r => r.id && selectedIds.has(r.id));
@@ -128,6 +132,11 @@ export const RecommendationsTableV3 = ({
               <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[120px]">
                 Effort Level
               </th>
+              {showStatusDropdown && (
+                <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[160px]">
+                  Status
+                </th>
+              )}
               {showActions && (
                 <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[150px]">
                   Actions
@@ -138,7 +147,7 @@ export const RecommendationsTableV3 = ({
           <tbody className="bg-white divide-y divide-[var(--border-default)]">
             {recommendations.length === 0 ? (
               <tr>
-                <td colSpan={showCheckboxes ? 7 : 6} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
+                <td colSpan={showCheckboxes ? (showStatusDropdown ? 8 : 7) : (showStatusDropdown ? 7 : 6)} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
                   No recommendations found
                 </td>
               </tr>
@@ -204,6 +213,25 @@ export const RecommendationsTableV3 = ({
                       <td className="px-4 py-4">
                         <EffortBadge effort={rec.effort} />
                       </td>
+                      {showStatusDropdown && (
+                        <td className="px-4 py-4">
+                          <select
+                            value={rec.reviewStatus || 'pending_review'}
+                            onChange={(e) => {
+                              const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected';
+                              if (rec.id && onStatusChange) {
+                                onStatusChange(rec.id, newStatus);
+                              }
+                            }}
+                            className="px-3 py-1.5 text-[12px] border border-[#cbd5e1] rounded-md bg-white text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="pending_review">Pending Review</option>
+                            <option value="approved">Approve</option>
+                            <option value="rejected">Reject</option>
+                          </select>
+                        </td>
+                      )}
                       {showActions && (
                         <td className="px-4 py-4">
                           {onAction && (
@@ -219,7 +247,7 @@ export const RecommendationsTableV3 = ({
                     </tr>
                     {isExpanded && hasDetails && (
                       <tr key={`${recId}-details`} className="bg-[#f8fafc]">
-                        <td colSpan={showCheckboxes ? (showActions ? 7 : 6) : (showActions ? 6 : 5)} className="px-4 py-4">
+                        <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 8 : 7) : (showActions ? 7 : 6)) : (showStatusDropdown ? (showActions ? 7 : 6) : (showActions ? 6 : 5))} className="px-4 py-4">
                           <div className="bg-white border border-[#e2e8f0] rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Why this matters */}
                             <div className="space-y-2">

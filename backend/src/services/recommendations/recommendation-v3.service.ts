@@ -590,13 +590,17 @@ class RecommendationV3Service {
 
           const mentionRate = (sourceData.collectorIds.size / totalCollectorResults) * 100;
           
+          // Ensure visibility is in 0-100 range (if stored as 0-1, multiply by 100)
+          // This matches how visibility is displayed on other dashboard pages (as integers 0-100)
+          const normalizedVisibility = sourceVisibility <= 1 ? sourceVisibility * 100 : sourceVisibility;
+          
           sourceMetricsData.push({
             domain,
             mentionRate: Math.round(mentionRate * 10) / 10,
             soa: Math.round(sourceSoa * 10) / 10,
             sentiment: Math.round(sourceSentiment * 100) / 100,
             citations: sourceData.count,
-            visibility: Math.round(sourceVisibility * 10) / 10,
+            visibility: Math.round(normalizedVisibility * 10) / 10,
             rawSentiment: sourceSentiment // Keep raw for max calculation
           });
         }
@@ -1337,7 +1341,7 @@ Respond only with the JSON array.`;
             ? String(normalizeSentiment100(matchingSource.sentiment))
             : null,
           visibilityScore: matchingSource && matchingSource.visibility !== null && matchingSource.visibility !== undefined
-            ? String(normalizePercent(matchingSource.visibility))
+            ? String(Math.round(matchingSource.visibility)) // Visibility is already in 0-100 range, just round to integer
             : null,
           citationCount: matchingSource ? matchingSource.citations : 0,
           focusSources: rec.focusSources || rec.citationSource,

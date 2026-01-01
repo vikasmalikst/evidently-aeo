@@ -70,15 +70,21 @@ export const ScheduledJobs = () => {
   const [backfillLogs, setBackfillLogs] = useState<Array<{ ts: string; level: string; message: string }>>([]);
   const [enrichmentRunning, setEnrichmentRunning] = useState(false);
   const [enrichmentLogs, setEnrichmentLogs] = useState<Array<{ ts: string; message: string }>>([]);
+  const [enrichAllBrands, setEnrichAllBrands] = useState(false);
 
   const handleRefreshBrandProducts = async () => {
-    if (!selectedBrandId) return;
+    if (!selectedBrandId && !enrichAllBrands) return;
+    if (enrichAllBrands && !customerId) return;
 
     setEnrichmentRunning(true);
     setEnrichmentLogs([]);
     
     try {
-      const response = await fetch(`${apiClient.baseUrl}/admin/brands/${selectedBrandId}/refresh-products`, {
+      const endpoint = enrichAllBrands 
+        ? `${apiClient.baseUrl}/admin/brands/bulk/refresh-products?customer_id=${customerId}`
+        : `${apiClient.baseUrl}/admin/brands/${selectedBrandId}/refresh-products`;
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiClient.getAccessToken()}`,
@@ -714,7 +720,26 @@ export const ScheduledJobs = () => {
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white p-4 rounded border border-blue-200">
-                <h4 className="font-medium text-gray-900 mb-2 text-blue-800">Refresh Brand Products</h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-gray-900 text-blue-800">Refresh Brand Products</h4>
+                  <div className="flex items-center">
+                    <label className="flex items-center cursor-pointer">
+                      <div className="relative">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only" 
+                          checked={enrichAllBrands}
+                          onChange={(e) => setEnrichAllBrands(e.target.checked)}
+                        />
+                        <div className={`block w-10 h-6 rounded-full transition-colors ${enrichAllBrands ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+                        <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${enrichAllBrands ? 'transform translate-x-4' : ''}`}></div>
+                      </div>
+                      <div className="ml-3 text-gray-700 text-xs font-medium">
+                        Active Brands Only
+                      </div>
+                    </label>
+                  </div>
+                </div>
                 <p className="text-sm text-gray-600 mb-3">
                   LLM enrichment for brand synonyms and commercial products (Ollama or OpenRouter)
                 </p>
@@ -723,7 +748,7 @@ export const ScheduledJobs = () => {
                   disabled={enrichmentRunning || collecting || scoring || backfillRunning}
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {enrichmentRunning ? 'Refreshing...' : 'Refresh Products'}
+                  {enrichmentRunning ? 'Refreshing...' : enrichAllBrands ? 'Refresh Active Brands' : 'Refresh Products'}
                 </button>
               </div>
               <div className="bg-white p-4 rounded border border-green-200">

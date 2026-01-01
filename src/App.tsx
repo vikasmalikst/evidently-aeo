@@ -17,6 +17,7 @@ import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCo
 import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ManageBrands } from './pages/ManageBrands';
 import { ManageCollectors } from './pages/ManageCollectors';
+import { GoogleAnalytics } from './pages/GoogleAnalytics';
 import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
@@ -218,6 +219,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ManageBrands />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/google-analytics"
+          element={
+            <ProtectedRoute>
+              <GoogleAnalytics />
             </ProtectedRoute>
           }
         />

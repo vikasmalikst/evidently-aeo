@@ -68,6 +68,58 @@ export const ScheduledJobs = () => {
   const [scoring, setScoring] = useState(false);
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [backfillLogs, setBackfillLogs] = useState<Array<{ ts: string; level: string; message: string }>>([]);
+  const [enrichmentRunning, setEnrichmentRunning] = useState(false);
+  const [enrichmentLogs, setEnrichmentLogs] = useState<Array<{ ts: string; message: string }>>([]);
+
+  const handleRefreshBrandProducts = async () => {
+    if (!selectedBrandId) return;
+
+    setEnrichmentRunning(true);
+    setEnrichmentLogs([]);
+    
+    try {
+      const response = await fetch(`${apiClient.baseUrl}/admin/brands/${selectedBrandId}/refresh-products`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiClient.getAccessToken()}`,
+        }
+      });
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Failed to read response stream');
+
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ')) {
+            try {
+              const jsonStr = trimmedLine.substring(6);
+              const data = JSON.parse(jsonStr);
+              if (data.message) {
+                setEnrichmentLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), message: data.message }]);
+              }
+              if (data.status === 'completed' || data.status === 'failed') {
+                setEnrichmentRunning(false);
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Enrichment error:', error);
+      setEnrichmentLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), message: `Error: ${error instanceof Error ? error.message : 'Failed to connect'}` }]);
+      setEnrichmentRunning(false);
+    }
+  };
   const [backfillResult, setBackfillResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const backfillEventSourceRef = useRef<EventSource | null>(null);
   const [diagnostic, setDiagnostic] = useState<QueriesDiagnosticPayload | null>(null);
@@ -661,6 +713,19 @@ export const ScheduledJobs = () => {
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white p-4 rounded border border-blue-200">
+                <h4 className="font-medium text-gray-900 mb-2 text-blue-800">Refresh Brand Products</h4>
+                <p className="text-sm text-gray-600 mb-3">
+                  LLM enrichment for brand synonyms and commercial products (Ollama or OpenRouter)
+                </p>
+                <button
+                  onClick={handleRefreshBrandProducts}
+                  disabled={enrichmentRunning || collecting || scoring || backfillRunning}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {enrichmentRunning ? 'Refreshing...' : 'Refresh Products'}
+                </button>
+              </div>
               <div className="bg-white p-4 rounded border border-green-200">
                 <h4 className="font-medium text-gray-900 mb-2">Collect Data Now</h4>
                 <p className="text-sm text-gray-600 mb-3">
@@ -711,6 +776,31 @@ export const ScheduledJobs = () => {
           </div>
         )}
       </div>
+
+      {(enrichmentRunning || enrichmentLogs.length > 0) && (
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-bold text-gray-900">Enrichment Logs</h2>
+            <button
+              onClick={() => setEnrichmentLogs([])}
+              disabled={enrichmentRunning || enrichmentLogs.length === 0}
+              className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="h-64 overflow-auto border rounded bg-gray-900 text-green-400 p-3 font-mono text-xs whitespace-pre-wrap shadow-inner">
+            {enrichmentLogs.length === 0
+              ? 'Initializing LLM enrichment...'
+              : enrichmentLogs.map((l, i) => (
+                  <div key={i} className="mb-1">
+                    <span className="text-gray-500">[{l.ts}]</span> {l.message}
+                  </div>
+                ))}
+            {enrichmentRunning && <div className="animate-pulse inline-block w-2 h-4 bg-green-400 ml-1"></div>}
+          </div>
+        </div>
+      )}
 
       {(backfillRunning || backfillLogs.length > 0 || backfillResult) && (
         <div className="bg-white rounded-lg shadow p-4 mb-6">

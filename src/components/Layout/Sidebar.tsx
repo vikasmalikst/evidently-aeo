@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconLayoutDashboard, IconTargetArrow, IconBulb, IconSparkles } from '@tabler/icons-react';
+import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconLayoutDashboard, IconTargetArrow, IconBulb, IconSparkles, IconBrandGoogleAnalytics } from '@tabler/icons-react';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../lib/auth';
 import { useManualBrandDashboard } from '../../manual-dashboard';
@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
   { icon: IconKey, label: 'Keywords', path: '/keywords' },
   { icon: IconBulb, label: 'Recommendations', path: '/recommendations' },
   { icon: IconSparkles, label: 'Recommendations V3', path: '/recommendations-v3' },
+  { icon: IconBrandGoogleAnalytics, label: 'Google Analytics', path: '/google-analytics' },
 ];
 
 export const Sidebar = () => {

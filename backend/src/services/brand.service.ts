@@ -685,7 +685,7 @@ export class BrandService {
               // Fetch the generated queries from database
               const { data: generatedQueries, error: queriesError } = await supabaseAdmin
                 .from('generated_queries')
-                .select('id, query_text, intent')
+                .select('id, query_text, intent, country')
                 .eq('brand_id', newBrand.id)
                 .eq('customer_id', customerId)
                 .eq('is_active', true)
@@ -697,15 +697,15 @@ export class BrandService {
               } else if (generatedQueries && generatedQueries.length > 0) {
                 // Prepare execution requests
                 const executionRequests: QueryExecutionRequest[] = generatedQueries.map(query => ({
-                  queryId: query.id,
-                  brandId: newBrand.id,
-                  customerId: customerId,
-                  queryText: query.query_text,
-                  intent: query.intent || 'data_collection',
-                  locale: 'en-US',
-                  country: 'US',
-                  collectors: collectors
-                }));
+        queryId: query.id,
+        brandId: newBrand.id,
+        customerId: customerId,
+        queryText: query.query_text,
+        intent: query.intent || 'data_collection',
+        locale: 'en-US',
+        country: query.country || 'US',
+        collectors: collectors
+      }));
                 
                 // Execute queries through collectors (non-blocking)
                 // Use setTimeout to run in background without blocking brand creation response
@@ -895,6 +895,52 @@ export class BrandService {
         throw error;
       }
       throw new DatabaseError('Failed to fetch brands');
+    }
+  }
+
+  /**
+   * Update brand collectors (AI models)
+   */
+  async updateBrandCollectors(brandId: string, customerId: string, aiModels: string[]): Promise<void> {
+    try {
+      if (!brandId || !customerId) {
+        throw new ValidationError('Brand ID and Customer ID are required');
+      }
+
+      // Fetch current brand to get existing metadata
+      const { data: brand, error: fetchError } = await supabaseAdmin
+        .from('brands')
+        .select('metadata')
+        .eq('id', brandId)
+        .eq('customer_id', customerId)
+        .single();
+
+      if (fetchError || !brand) {
+        throw new DatabaseError(`Brand not found: ${fetchError?.message || 'Unknown error'}`);
+      }
+
+      const updatedMetadata = {
+        ...(brand.metadata || {}),
+        ai_models: aiModels
+      };
+
+      const { error: updateError } = await supabaseAdmin
+        .from('brands')
+        .update({ metadata: updatedMetadata })
+        .eq('id', brandId)
+        .eq('customer_id', customerId);
+
+      if (updateError) {
+        throw new DatabaseError(`Failed to update brand collectors: ${updateError.message}`);
+      }
+
+      console.log(`✅ Updated collectors for brand ${brandId}:`, aiModels);
+    } catch (error) {
+      console.error('Error updating brand collectors:', error);
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
+        throw error;
+      }
+      throw new DatabaseError('Failed to update brand collectors');
     }
   }
 
@@ -1148,11 +1194,12 @@ export class BrandService {
         throw new ValidationError('Customer ID is required');
       }
 
-      // 1. Get total brands
+      // 1. Get total brands (active only)
       const { data: brands, error: brandsError } = await supabaseAdmin
         .from('brands')
         .select('id, metadata')
-        .eq('customer_id', customerId);
+        .eq('customer_id', customerId)
+        .neq('status', 'archived'); // Exclude archived brands
 
       if (brandsError) throw brandsError;
       const brandIds = brands.map(b => b.id);

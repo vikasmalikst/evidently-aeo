@@ -139,12 +139,14 @@ export class BrightDataBackgroundService {
               urls = [...new Set(urls)]; // Remove duplicates
             }
 
-            // Get query text
+            // Get query text and country
             const { data: queryData } = await supabase
               .from('generated_queries')
-              .select('query_text')
+              .select('query_text, country')
               .eq('id', execution.query_id)
               .single();
+
+            console.log(`📡 [BackgroundService] Found ready snapshot for execution ${execution.id} (Collector: ${execution.collector_type}, Country: ${queryData?.country || 'US'})`);
 
             // Get brand name
             const { data: brandData } = await supabase

@@ -318,6 +318,7 @@ export class PriorityCollectorService {
     country: string = 'US',
     snapshotIdCallback?: (snapshotId: string) => void
   ): Promise<PriorityExecutionResult> {
+    console.log(`🎯 [PriorityCollector] Starting execution (Collector: ${collectorType}, Country: ${country}, Query: "${queryText.substring(0, 50)}...")`);
     const startTime = Date.now();
     const fallbackChain: string[] = [];
     

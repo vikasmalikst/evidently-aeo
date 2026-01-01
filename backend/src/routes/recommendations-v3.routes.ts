@@ -413,7 +413,8 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
         isCompleted: rec.is_completed,
         completedAt: rec.completed_at,
         kpiBeforeValue: kpiBeforeValue,
-        kpiAfterValue: rec.kpi_after_value
+        kpiAfterValue: rec.kpi_after_value,
+        reviewStatus: rec.review_status || 'pending_review'
       };
     });
 

@@ -151,7 +151,8 @@ export async function generateRecommendationsV3(
 ): Promise<GenerateRecommendationsV3Response> {
   try {
     // Use direct fetch with longer timeout for this long-running operation
-    const timeoutMs = 60000; // 60 seconds
+    // Increased to 150 seconds to accommodate Ollama local models which can be slower
+    const timeoutMs = 150000; // 150 seconds (2.5 minutes) for local Ollama models
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();

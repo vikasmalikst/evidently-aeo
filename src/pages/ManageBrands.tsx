@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { getBrands, updateBrandStatus, getBrandStats, type BrandResponse, type BrandStats } from '../api/brandApi';
+import { invalidateCache } from '../lib/apiCache';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { 
   IconBuildingStore, 
@@ -11,7 +12,6 @@ import {
   IconCircleCheck, 
   IconAlertCircle,
   IconSearch,
-  IconChartBar,
   IconListCheck,
   IconQuestionMark,
   IconRobot,
@@ -50,13 +50,22 @@ export const ManageBrands = () => {
     setIsStatsLoading(true);
     setError(null);
     try {
+      // Invalidate existing cache for brands to ensure fresh data across the whole app
+      invalidateCache('/brands');
+      
       const [brandsRes, statsRes] = await Promise.all([
-        getBrands(),
-        getBrandStats()
+        getBrands(true),
+        getBrandStats(true)
       ]);
 
       if (brandsRes.success && brandsRes.data) {
-        setBrands(brandsRes.data);
+        // Sort brands: active first, then inactive
+        const sortedBrands = [...brandsRes.data].sort((a, b) => {
+          if (a.status === 'active' && b.status === 'inactive') return -1;
+          if (a.status === 'inactive' && b.status === 'active') return 1;
+          return a.name.localeCompare(b.name);
+        });
+        setBrands(sortedBrands);
       } else {
         setError(brandsRes.error || 'Failed to load brands');
       }
@@ -84,6 +93,11 @@ export const ManageBrands = () => {
       const response = await updateBrandStatus(brandId, newStatus);
       if (response.success) {
         setBrands(prev => prev.map(b => b.id === brandId ? { ...b, status: newStatus } : b));
+        // Refresh stats to reflect the status change
+        const statsRes = await getBrandStats();
+        if (statsRes.success && statsRes.data) {
+          setStats(statsRes.data);
+        }
       } else {
         alert(response.error || 'Failed to update brand status');
       }
@@ -99,9 +113,19 @@ export const ManageBrands = () => {
   };
 
   const filteredBrands = useMemo(() => {
-    if (!searchQuery.trim()) return brands;
+    let result = [...brands];
+    
+    // Always sort by status first (active at top), then by name
+    result.sort((a, b) => {
+      if (a.status === 'active' && b.status === 'inactive') return -1;
+      if (a.status === 'inactive' && b.status === 'active') return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    if (!searchQuery.trim()) return result;
+    
     const query = searchQuery.toLowerCase();
-    return brands.filter(b => 
+    return result.filter(b => 
       b.name.toLowerCase().includes(query) || 
       b.homepage_url.toLowerCase().includes(query) ||
       (b.industry && b.industry.toLowerCase().includes(query))
@@ -111,19 +135,18 @@ export const ManageBrands = () => {
   return (
     <Layout>
       <SettingsLayout>
-        <div className="p-6 max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-[var(--text-headings)]">Manage Brands</h1>
-              <p className="text-[var(--text-caption)] mt-1">View and manage all your registered brands and their status</p>
+              <h1 className="text-2xl font-bold text-[var(--text-headings)] tracking-tight">Manage Brands</h1>
+              <p className="text-sm text-[var(--text-caption)] mt-1">View and configure your monitored brands</p>
             </div>
             <button
               onClick={handleAddBrand}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg hover:opacity-90 transition-all font-semibold shadow-sm hover:shadow-md active:scale-95"
+              className="flex items-center gap-2 bg-[var(--accent-primary)] text-white px-4 py-2.5 rounded-lg hover:opacity-90 transition-all font-medium text-sm shadow-sm"
             >
-              <IconPlus size={20} />
-              Add New Brand
+              <IconPlus size={18} />
+              Add Brand
             </button>
           </div>
 
@@ -218,70 +241,84 @@ export const ManageBrands = () => {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="flex flex-col gap-3">
               {filteredBrands.map((brand) => (
                 <div
                   key={brand.id}
-                  className={`bg-white border rounded-lg p-4 transition-all shadow-sm hover:shadow-md group flex flex-col justify-between h-full ${
+                  className={`bg-white border rounded-lg p-4 transition-all shadow-sm hover:shadow-md group flex items-center justify-between ${
                     brand.status === 'active' ? 'border-[var(--border-default)]' : 'border-gray-100 bg-gray-50/50'
                   }`}
                 >
-                  <div className="flex items-start gap-3 mb-4">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className="w-12 h-12 rounded-lg bg-white flex items-center justify-center overflow-hidden border border-[var(--border-default)] shadow-sm group-hover:border-[var(--accent-primary)] transition-colors flex-shrink-0">
                       <SafeLogo 
-                        src={brand.homepage_url ? `https://logo.clearbit.com/${brand.homepage_url.replace(/^https?:\/\//, '').split('/')[0]}` : undefined}
+                        src={brand.homepage_url ? `https://logo.clearbit.com/${brand.homepage_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}` : undefined}
                         domain={brand.homepage_url}
                         alt={brand.name}
                         size={32}
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-base text-[var(--text-headings)] flex items-center gap-1.5 truncate">
-                        {brand.name}
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-base text-[var(--text-headings)] truncate">
+                          {brand.name}
+                        </h3>
                         {brand.status === 'active' && (
                           <IconCircleCheck size={16} className="text-green-500 flex-shrink-0" />
                         )}
-                      </h3>
-                      <a
-                        href={brand.homepage_url.startsWith('http') ? brand.homepage_url : `https://${brand.homepage_url}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-[var(--accent-primary)] hover:underline flex items-center gap-1 mt-0.5 font-medium"
-                      >
-                        <span className="truncate max-w-[120px]">
-                          {brand.homepage_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                        <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full font-bold ${
+                          brand.status === 'active' 
+                            ? 'bg-green-100 text-green-700' 
+                            : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {brand.status}
                         </span>
-                        <IconExternalLink size={12} className="flex-shrink-0" />
-                      </a>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1">
+                        <a
+                          href={brand.homepage_url.startsWith('http') ? brand.homepage_url : `https://${brand.homepage_url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-[var(--accent-primary)] hover:underline flex items-center gap-1 font-medium"
+                        >
+                          <span className="truncate max-w-[200px]">
+                            {brand.homepage_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                          </span>
+                          <IconExternalLink size={12} className="flex-shrink-0" />
+                        </a>
+                        {brand.industry && (
+                          <span className="text-xs text-[var(--text-caption)] flex items-center gap-1 before:content-['•'] before:mr-1">
+                            {brand.industry}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-3 border-t border-[var(--border-default)]">
-                    <div className="flex items-center gap-1.5">
-                      <div className={`w-1.5 h-1.5 rounded-full ${brand.status === 'active' ? 'bg-green-500' : 'bg-gray-400'}`} />
-                      <span className={`text-xs font-bold ${brand.status === 'active' ? 'text-green-600' : 'text-gray-500'}`}>
+                  <div className="flex items-center gap-4 ml-4">
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-2">
+                        {updatingId === brand.id && (
+                          <IconLoader2 size={14} className="animate-spin text-[var(--accent-primary)]" />
+                        )}
+                        <button
+                          onClick={() => handleToggleStatus(brand.id, brand.status)}
+                          disabled={updatingId === brand.id}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all focus:outline-none ring-offset-1 focus:ring-1 focus:ring-[var(--accent-primary)] ${
+                            brand.status === 'active' ? 'bg-green-500' : 'bg-gray-300'
+                          } ${updatingId === brand.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
+                          aria-label={brand.status === 'active' ? "Deactivate brand" : "Activate brand"}
+                        >
+                          <span
+                            className={`${
+                              brand.status === 'active' ? 'translate-x-4' : 'translate-x-1'
+                            } inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out`}
+                          />
+                        </button>
+                      </div>
+                      <span className={`text-[10px] font-bold uppercase tracking-tighter ${brand.status === 'active' ? 'text-green-600' : 'text-gray-400'}`}>
                         {brand.status === 'active' ? 'Active' : 'Inactive'}
                       </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {updatingId === brand.id && (
-                        <IconLoader2 size={14} className="animate-spin text-[var(--accent-primary)]" />
-                      )}
-                      <button
-                        onClick={() => handleToggleStatus(brand.id, brand.status)}
-                        disabled={updatingId === brand.id}
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all focus:outline-none ring-offset-1 focus:ring-1 focus:ring-[var(--accent-primary)] ${
-                          brand.status === 'active' ? 'bg-green-500' : 'bg-gray-300'
-                        } ${updatingId === brand.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
-                        aria-label={brand.status === 'active' ? "Deactivate brand" : "Activate brand"}
-                      >
-                        <span
-                          className={`${
-                            brand.status === 'active' ? 'translate-x-4' : 'translate-x-1'
-                          } inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out`}
-                        />
-                      </button>
                     </div>
                   </div>
                 </div>

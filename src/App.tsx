@@ -14,11 +14,10 @@ import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
 import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
-import { Settings } from './pages/Settings';
-import { ManagePrompts } from './pages/ManagePrompts';
 import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ManageBrands } from './pages/ManageBrands';
-import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2/index';
+import { ManageCollectors } from './pages/ManageCollectors';
+import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -194,15 +193,7 @@ function App() {
           path="/settings"
           element={
             <ProtectedRoute>
-              <Settings />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings/manage-prompts"
-          element={
-            <ProtectedRoute>
-              <ManagePrompts />
+              <Navigate to="/settings/manage-brands" replace />
             </ProtectedRoute>
           }
         />
@@ -231,10 +222,10 @@ function App() {
           }
         />
         <Route
-          path="/settings/manage-topics"
+          path="/settings/manage-collectors"
           element={
             <ProtectedRoute>
-              <Navigate to="/settings/manage-prompts" replace />
+              <ManageCollectors />
             </ProtectedRoute>
           }
         />

@@ -1,5 +1,6 @@
 import { apiClient } from '../lib/apiClient';
 import { ApiResponse } from '../pages/dashboard/types';
+import { invalidateCache, cachedRequest } from '../lib/apiCache';
 
 export interface BrandOnboardingData {
   brand_name: string;
@@ -40,10 +41,11 @@ export interface BrandStats {
 /**
  * Get all brands for the current customer
  */
-export async function getBrands(): Promise<ApiResponse<BrandResponse[]>> {
+export async function getBrands(forceRefresh = false): Promise<ApiResponse<BrandResponse[]>> {
   try {
-    const response = await apiClient.request<ApiResponse<BrandResponse[]>>(
-      '/brands',
+    const endpoint = forceRefresh ? '/brands?skipCache=true' : '/brands';
+    const response = await cachedRequest<ApiResponse<BrandResponse[]>>(
+      endpoint,
       { method: 'GET' },
       { requiresAuth: true }
     );
@@ -67,6 +69,12 @@ export async function updateBrandStatus(brandId: string, status: 'active' | 'ina
       },
       { requiresAuth: true }
     );
+    
+    // Invalidate brands cache so dropdowns update immediately
+    invalidateCache('/brands');
+    // Also invalidate stats since they only count active brands now
+    invalidateCache('/brands/stats');
+    
     return response;
   } catch (error) {
     console.error('❌ Update brand status failed:', error);
@@ -75,12 +83,38 @@ export async function updateBrandStatus(brandId: string, status: 'active' | 'ina
 }
 
 /**
+ * Update brand collectors (AI models)
+ */
+export async function updateBrandCollectors(brandId: string, aiModels: string[]): Promise<ApiResponse<any>> {
+  try {
+    const response = await apiClient.request<ApiResponse<any>>(
+      `/brands/${brandId}/collectors`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ ai_models: aiModels }),
+      },
+      { requiresAuth: true }
+    );
+    
+    // Invalidate brand cache
+    invalidateCache(`/brands/${brandId}`);
+    invalidateCache('/brands');
+    
+    return response;
+  } catch (error) {
+    console.error('❌ Update brand collectors failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Get aggregated stats for brands
  */
-export async function getBrandStats(): Promise<ApiResponse<BrandStats>> {
+export async function getBrandStats(forceRefresh = false): Promise<ApiResponse<BrandStats>> {
   try {
-    const response = await apiClient.request<ApiResponse<BrandStats>>(
-      '/brands/stats',
+    const endpoint = forceRefresh ? '/brands/stats?skipCache=true' : '/brands/stats';
+    const response = await cachedRequest<ApiResponse<BrandStats>>(
+      endpoint,
       { method: 'GET' },
       { requiresAuth: true }
     );

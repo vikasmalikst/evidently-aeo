@@ -906,6 +906,7 @@ export class DataCollectionService {
     request: QueryExecutionRequest,
     collectorType: string
   ): Promise<PriorityExecutionResult> {
+    console.log(`🔄 [DataCollection] Executing query for brand ${request.brandId} using ${collectorType} (Country: ${request.country || 'US'})`);
     // Create execution record for this specific collector
     let executionId: string;
     

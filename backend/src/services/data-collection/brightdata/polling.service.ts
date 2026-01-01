@@ -522,6 +522,7 @@ export class BrightDataPollingService {
     urls: string[],
     downloadResult: any
   ): Promise<void> {
+    console.log(`📥 [Polling] Updating database with results for snapshot ${snapshotId} (Collector: ${collectorType}, Country: ${request.country || 'US'})`);
     try {
       // Find the collector_result record by snapshot_id
       const { data: existingResult, error: findError } = await this.supabase

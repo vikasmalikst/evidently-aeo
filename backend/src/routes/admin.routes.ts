@@ -6,6 +6,7 @@ import { customerEntitlementsService } from '../services/customer-entitlements.s
 import { authService } from '../services/auth/auth.service';
 import { jobSchedulerService } from '../services/jobs/job-scheduler.service';
 import { dataCollectionJobService } from '../services/jobs/data-collection-job.service';
+import { brandProductEnrichmentService } from '../services/onboarding/brand-product-enrichment.service';
 import { backfillRawAnswerFromSnapshots } from '../scripts/backfill-raw-answer-from-snapshots';
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
@@ -73,6 +74,37 @@ router.use((req, res, next) => {
     customer_id: 'temp-customer-id'
   };
   next();
+});
+
+/**
+ * POST /api/admin/brands/:brandId/refresh-products
+ * Trigger LLM enrichment for brand synonyms and products
+ */
+router.post('/brands/:brandId/refresh-products', async (req: Request, res: Response) => {
+  const { brandId } = req.params;
+  
+  // Set up SSE for real-time logging
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendLog = (message: string) => {
+    const data = JSON.stringify({ message, timestamp: new Date().toISOString() });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  try {
+    await brandProductEnrichmentService.enrichBrand(brandId, sendLog);
+    res.write(`data: ${JSON.stringify({ status: 'completed' })}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error('Brand product enrichment failed:', error);
+    res.write(`data: ${JSON.stringify({ 
+      status: 'failed', 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    })}\n\n`);
+    res.end();
+  }
 });
 
 /**

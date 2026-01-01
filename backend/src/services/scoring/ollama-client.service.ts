@@ -219,7 +219,18 @@ export async function callOllamaAPI(
   return ollamaQueue.enqueue(async () => {
     console.log(`🦙 Calling Ollama API at ${ollamaUrl} with model ${ollamaModel}...`);
 
+    // Add timeout for Ollama calls (300 seconds for complex tasks like recommendations or enrichment, 30 seconds for scoring)
+    // Complex tasks need more time due to longer prompts and larger responses
+    const isComplexPrompt = userMessage.includes('Generate 8-12 recommendations') || 
+                            userMessage.includes('actionable recommendations') ||
+                            userMessage.includes('comprehensive synonyms') ||
+                            userMessage.includes('commercial products');
+    const timeoutMs = isComplexPrompt ? 300000 : 30000; // 300s (5 mins) for complex prompts, 30s for scoring
+    
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
       const response = await fetch(`${ollamaUrl}/api/chat`, {
         method: 'POST',
         headers: {
@@ -241,7 +252,10 @@ export async function callOllamaAPI(
           format: 'json', // Force JSON response
           temperature: 0.1, // Low temperature for consistency
         } as OllamaChatRequest),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error');
@@ -265,6 +279,14 @@ export async function callOllamaAPI(
       return content;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
+      
+      // Check if it's a timeout error
+      if (errorMsg.includes('aborted') || errorMsg.includes('timeout') || 
+          (error instanceof Error && error.name === 'AbortError')) {
+        console.error(`❌ Ollama API call timed out after ${timeoutMs / 1000} seconds`);
+        throw new Error(`Ollama API timeout: Request took longer than ${timeoutMs / 1000} seconds. The model may be too slow for this task.`);
+      }
+      
       console.error(`❌ Ollama API call failed:`, errorMsg);
       throw new Error(`Ollama API error: ${errorMsg}`);
     }

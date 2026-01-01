@@ -266,7 +266,6 @@ Return ONLY the JSON array, no additional text.`;
         brand_id: request.brand_id,
         customer_id: request.customer_id,
         query_text: request.query_text || null, // Store query text for context
-        raw_answer: request.answer || null, // Store raw answer for context
         keyword: kw.keyword,
         relevance_score: kw.relevance_score,
         metadata: kw.metadata || {},
@@ -316,7 +315,7 @@ Return ONLY the JSON array, no additional text.`;
     try {
       let query = supabaseAdmin
         .from('generated_keywords')
-        .select('*')
+        .select('keyword, relevance_score, metadata')
         .order('relevance_score', { ascending: false });
 
       if (queryId) {

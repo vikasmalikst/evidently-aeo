@@ -159,6 +159,39 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /brands/:brandId/collectors
+ * Update collectors for a brand
+ */
+router.post('/:brandId/collectors', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+    const { ai_models } = req.body;
+
+    if (!Array.isArray(ai_models)) {
+      res.status(400).json({
+        success: false,
+        error: 'ai_models must be an array'
+      });
+      return;
+    }
+
+    await brandService.updateBrandCollectors(brandId, customerId, ai_models);
+
+    res.json({
+      success: true,
+      message: 'Collectors updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating collectors:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update collectors'
+    });
+  }
+});
+
+/**
  * GET /brands/stats
  * Get aggregated stats for brands
  */

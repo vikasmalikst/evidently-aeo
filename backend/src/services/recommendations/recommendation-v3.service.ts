@@ -16,6 +16,7 @@ import { supabaseAdmin } from '../../config/database';
 import { OptimizedMetricsHelper } from '../query-helpers/optimized-metrics.helper';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
 import { shouldUseOllama, callOllamaAPI } from '../scoring/ollama-client.service';
+import { sourceAttributionService } from '../source-attribution.service';
 
 // ============================================================================
 // TYPES
@@ -413,264 +414,65 @@ class RecommendationV3Service {
         }
       }
 
-      // Get source metrics from citations table (following same pattern as source-attribution.service.ts)
-      // Limit to avoid performance issues with large datasets
-      console.log('📊 [RecommendationV3Service] Fetching citations from database...');
-      const citationsStartTime = Date.now();
-      const { data: citations, error: citationsError } = await supabaseAdmin
-        .from('citations')
-        .select('domain, collector_result_id, usage_count')
-        .eq('brand_id', brandId)
-        .eq('customer_id', customerId)
-        .gte('created_at', currentStartDate)
-        .lte('created_at', currentEndDate)
-        .limit(10000); // Limit to prevent query timeout with very large datasets
+      // Use the same source-attribution service as Citations Sources page for 100% consistency
+      console.log('📊 [RecommendationV3Service] Fetching source data using source-attribution service (same as Citations Sources page)...');
+      const sourceAttributionStartTime = Date.now();
       
-      if (citationsError) {
-        console.error('❌ [RecommendationV3Service] Error fetching citations:', citationsError);
-      } else {
-        console.log(`✅ [RecommendationV3Service] Fetched ${citations?.length || 0} citations in ${Date.now() - citationsStartTime}ms`);
-      }
+      const sourceAttributionResponse = await sourceAttributionService.getSourceAttribution(
+        brandId,
+        customerId,
+        { start: currentStartDate, end: currentEndDate }
+      );
+      
+      console.log(`✅ [RecommendationV3Service] Fetched ${sourceAttributionResponse.sources.length} sources from source-attribution service in ${Date.now() - sourceAttributionStartTime}ms`);
 
       const sourceMetrics: BrandContextV3['sourceMetrics'] = [];
-      const sourceMap = new Map<string, { domain: string; collectorIds: Set<number>; count: number }>();
+      const sourceMap = new Map<string, { domain: string; source: typeof sourceAttributionResponse.sources[0] }>();
 
-      if (citations && citations.length > 0) {
-        // Group citations by domain (normalized, following source-attribution pattern)
-        for (const cit of citations) {
-          if (cit.domain) {
-            const normalized = cit.domain.toLowerCase().replace(/^www\./, '').trim();
-            if (!normalized || normalized === 'unknown') continue;
-            
-            const existing = sourceMap.get(normalized) || { domain: normalized, collectorIds: new Set<number>(), count: 0 };
-            if (cit.collector_result_id && typeof cit.collector_result_id === 'number') {
-              existing.collectorIds.add(cit.collector_result_id);
-            }
-            // Use usage_count if available, otherwise count as 1
-            existing.count += cit.usage_count || 1;
-            sourceMap.set(normalized, existing);
-          }
-        }
-
-        // Get total collector results for mention rate calculation
-        const { count: totalResults } = await supabaseAdmin
-          .from('collector_results')
-          .select('id', { count: 'exact', head: true })
-          .eq('brand_id', brandId)
-          .eq('customer_id', customerId)
-          .gte('created_at', currentStartDate)
-          .lte('created_at', currentEndDate);
-
-        const totalCollectorResults = totalResults || 1;
-
-        // Batch fetch all positions at once instead of per-domain (much faster)
-        console.log('📊 [RecommendationV3Service] Collecting unique collector_result_ids...');
-        const allCollectorIds = Array.from(new Set(
-          Array.from(sourceMap.values())
-            .flatMap(s => Array.from(s.collectorIds))
-            .filter((id): id is number => typeof id === 'number')
-        ));
-        
-        console.log(`📊 [RecommendationV3Service] Found ${allCollectorIds.length} unique collector_result_ids across ${sourceMap.size} domains`);
-        
-        // Fetch all positions in batches to avoid query size limits
-        const positionsStartTime = Date.now();
-        const allPositionsMap = new Map<number, Array<{
-          share_of_answers_brand: number | null;
-          sentiment_score: number | null;
-          visibility_index: number | null;
-        }>>();
-        
-        if (USE_OPTIMIZED_RECOMMENDATIONS) {
-          // Use optimized helper to fetch brand metrics
-          const batchSize = 100;
-          for (let i = 0; i < allCollectorIds.length; i += batchSize) {
-            const batch = allCollectorIds.slice(i, i + batchSize);
-            const result = await optimizedMetricsHelper.fetchBrandMetrics({
-              collectorResultIds: batch,
-              brandId,
-              customerId,
-              includeSentiment: true,
+      if (sourceAttributionResponse.sources && sourceAttributionResponse.sources.length > 0) {
+        // Build source map from source-attribution service response (exact same data as Citations Sources page)
+        for (const source of sourceAttributionResponse.sources) {
+          // Normalize domain name (remove www, lowercase)
+          const normalizedDomain = source.name.toLowerCase().replace(/^www\./, '').trim();
+          if (normalizedDomain && normalizedDomain !== 'unknown') {
+            sourceMap.set(normalizedDomain, {
+              domain: normalizedDomain,
+              source: source
             });
-            
-            if (result.success && result.data.length > 0) {
-              for (const pos of result.data) {
-                if (pos.collector_result_id) {
-                  if (!allPositionsMap.has(pos.collector_result_id)) {
-                    allPositionsMap.set(pos.collector_result_id, []);
-                  }
-                  allPositionsMap.get(pos.collector_result_id)!.push({
-                    share_of_answers_brand: pos.share_of_answers,
-                    sentiment_score: pos.sentiment_score,
-                    visibility_index: pos.visibility_index
-                  });
-                }
-              }
-            }
-          }
-        } else {
-          // Legacy path
-          const batchSize = 100;
-          for (let i = 0; i < allCollectorIds.length; i += batchSize) {
-            const batch = allCollectorIds.slice(i, i + batchSize);
-            const { data: batchPositions } = await supabaseAdmin
-              .from('extracted_positions')
-              .select('collector_result_id, share_of_answers_brand, sentiment_score, visibility_index')
-              .eq('brand_id', brandId)
-              .in('collector_result_id', batch);
-            
-            if (batchPositions) {
-              for (const pos of batchPositions) {
-                if (pos.collector_result_id) {
-                  if (!allPositionsMap.has(pos.collector_result_id)) {
-                    allPositionsMap.set(pos.collector_result_id, []);
-                  }
-                  allPositionsMap.get(pos.collector_result_id)!.push({
-                    share_of_answers_brand: pos.share_of_answers_brand,
-                    sentiment_score: pos.sentiment_score,
-                    visibility_index: pos.visibility_index
-                  });
-                }
-              }
-            }
           }
         }
-        console.log(`✅ [RecommendationV3Service] Fetched positions for ${allPositionsMap.size} collector_result_ids in ${Date.now() - positionsStartTime}ms`);
 
-        // First pass: Calculate all source metrics and find max values for normalization
-        console.log('📊 [RecommendationV3Service] Calculating metrics for each domain...');
-        const sourceMetricsData: Array<{
-          domain: string;
-          mentionRate: number;
-          soa: number;
-          sentiment: number;
-          citations: number;
-          visibility: number;
-          rawSentiment: number; // For max calculation
-        }> = [];
-        
-        for (const [domain, sourceData] of sourceMap.entries()) {
-          const collectorIds = Array.from(sourceData.collectorIds);
-          
-          if (collectorIds.length === 0) continue;
-          
-          // Get positions for this domain's collector_result_ids from pre-fetched map
-          const sourcePositions: Array<{
-            share_of_answers_brand: number | null;
-            sentiment_score: number | null;
-            visibility_index: number | null;
-          }> = [];
-          
-          for (const collectorId of collectorIds) {
-            const positions = allPositionsMap.get(collectorId);
-            if (positions) {
-              sourcePositions.push(...positions);
-            }
-          }
+        // Convert source-attribution data to recommendation format
+        // Use top 10 sources sorted by value score (same as Citations Sources page)
+        const topSources = sourceAttributionResponse.sources
+          .sort((a, b) => {
+            const valueDiff = (b.value || 0) - (a.value || 0);
+            if (Math.abs(valueDiff) > 0.01) return valueDiff;
+            return b.mentionRate - a.mentionRate;
+          })
+          .slice(0, 10);
 
-          let sourceSoa = 0;
-          let sourceSentiment = 0;
-          let sourceVisibility = 0;
-
-          if (sourcePositions.length > 0) {
-            const validSoa = sourcePositions.filter(p => p.share_of_answers_brand != null);
-            const validSent = sourcePositions.filter(p => p.sentiment_score != null);
-            const validVis = sourcePositions.filter(p => p.visibility_index != null);
-
-            if (validSoa.length > 0) {
-              sourceSoa = validSoa.reduce((sum, p) => sum + (p.share_of_answers_brand || 0), 0) / validSoa.length;
-            }
-            if (validSent.length > 0) {
-              sourceSentiment = validSent.reduce((sum, p) => sum + (p.sentiment_score || 0), 0) / validSent.length;
-            }
-            if (validVis.length > 0) {
-              sourceVisibility = validVis.reduce((sum, p) => sum + (p.visibility_index || 0), 0) / validVis.length;
-            }
-          }
-
-          const mentionRate = (sourceData.collectorIds.size / totalCollectorResults) * 100;
+        for (const source of topSources) {
+          const normalizedDomain = source.name.toLowerCase().replace(/^www\./, '').trim();
           
-          // Ensure visibility is in 0-100 range (if stored as 0-1, multiply by 100)
-          // This matches how visibility is displayed on other dashboard pages (as integers 0-100)
-          const normalizedVisibility = sourceVisibility <= 1 ? sourceVisibility * 100 : sourceVisibility;
-          
-          sourceMetricsData.push({
-            domain,
-            mentionRate: Math.round(mentionRate * 10) / 10,
-            soa: Math.round(sourceSoa * 10) / 10,
-            sentiment: Math.round(sourceSentiment * 100) / 100,
-            citations: sourceData.count,
-            visibility: Math.round(normalizedVisibility * 10) / 10,
-            rawSentiment: sourceSentiment // Keep raw for max calculation
-          });
-        }
-        
-        // Calculate max values for normalization (same as Citations Sources page)
-        // Citations Sources page (source-attribution.service.ts lines 687-689):
-        // - Calculates average sentiment per source first
-        // - Then finds max of those averages
-        const maxCitations = Math.max(...sourceMetricsData.map(s => s.citations), 1);
-        const avgSentimentPerSource = sourceMetricsData
-          .map(s => s.rawSentiment)
-          .filter(s => s !== 0 && s !== null && s !== undefined);
-        const maxSentiment = avgSentimentPerSource.length > 0 ? Math.max(...avgSentimentPerSource.map(Math.abs), 1) : 1;
-        
-        // Second pass: Calculate Value score using normalized values (same as Citations Sources page)
-        for (const sourceData of sourceMetricsData) {
-          // Normalize exactly as Citations Sources page does (source-attribution.service.ts lines 715-720)
-          const normalizedVisibility = Math.min(100, Math.max(0, sourceData.visibility)); // Already 0-100
-          const normalizedSOA = Math.min(100, Math.max(0, sourceData.soa)); // Already 0-100
-          
-          // Sentiment normalization: Citations Sources page normalizes relative to max sentiment in dataset
-          // source-attribution.service.ts line 718: (avgSentiment / maxSentiment) * 100
-          // Note: sentiment_score is in -1 to 1 range, Citations Sources uses absolute values for normalization
-          const normalizedSentiment = maxSentiment > 0 
-            ? Math.min(100, Math.max(0, (Math.abs(sourceData.rawSentiment) / maxSentiment) * 100))
-            : 0;
-          
-          const normalizedCitations = maxCitations > 0 ? Math.min(100, (sourceData.citations / maxCitations) * 100) : 0;
-          
-          // Value score: 25% each for 4 metrics (since we don't have topics, distribute the 20% topics weight)
-          // This ensures top sources match Citations Sources page ranking
-          const valueScore = (
-            (normalizedVisibility * 0.25) +
-            (normalizedSOA * 0.25) +
-            (normalizedSentiment * 0.25) +
-            (normalizedCitations * 0.25)
-          );
-
           sourceMetrics.push({
-            domain: sourceData.domain,
-            mentionRate: sourceData.mentionRate,
-            soa: sourceData.soa,
-            sentiment: sourceData.sentiment,
-            citations: sourceData.citations,
-            impactScore: Math.round(valueScore * 10) / 10, // Store as impactScore for compatibility (this is the Value score)
-            visibility: sourceData.visibility
+            domain: normalizedDomain,
+            mentionRate: Math.round(source.mentionRate * 10) / 10,
+            soa: Math.round(source.soa * 10) / 10,
+            sentiment: Math.round(source.sentiment * 100) / 100,
+            citations: source.citations,
+            impactScore: Math.round((source.value || 0) * 10) / 10,
+            visibility: source.visibility ? Math.round(source.visibility) : 0 // Visibility is already 0-100 from source-attribution service
           });
         }
-        
-        // Sort by Value score (same as Citations Sources page): Value descending, then mentionRate as tiebreaker
-        // This matches source-attribution.service.ts line 789: sources.sort((a, b) => (b.value || 0) - (a.value || 0) || b.mentionRate - a.mentionRate)
-        sourceMetrics.sort((a, b) => {
-          const valueDiff = (b.impactScore - a.impactScore);
-          if (Math.abs(valueDiff) > 0.01) return valueDiff; // Value score difference
-          return b.mentionRate - a.mentionRate; // Tiebreaker: mention rate
-        });
-        
-        // Take top 10 only (matching Citations Sources page top sources)
-        const top10Sources = sourceMetrics.slice(0, 10);
-        console.log(`✅ [RecommendationV3Service] Processed ${sourceMetrics.length} sources, top 10 will be used for recommendations`);
-        console.log(`📊 [RecommendationV3Service] Top 10 sources by Value score (matching Citations Sources page):`);
-        top10Sources.forEach((s, idx) => {
+
+        console.log(`✅ [RecommendationV3Service] Using ${sourceMetrics.length} sources from source-attribution service (exact same as Citations Sources page)`);
+        console.log(`📊 [RecommendationV3Service] Top sources by Value score:`);
+        sourceMetrics.forEach((s, idx) => {
           console.log(`  ${idx + 1}. ${s.domain} - Value: ${s.impactScore}, Citations: ${s.citations}, SOA: ${s.soa}%, Visibility: ${s.visibility}, Sentiment: ${s.sentiment}`);
         });
-        
-        // Use only top 10
-        sourceMetrics.length = 0;
-        sourceMetrics.push(...top10Sources);
       } else {
-        console.warn('⚠️ [RecommendationV3Service] No citations found for this brand in the date range');
+        console.warn('⚠️ [RecommendationV3Service] No sources found from source-attribution service');
       }
 
       return {
@@ -1312,14 +1114,14 @@ Respond only with the JSON array.`;
           console.warn(`⚠️ [RecommendationV3Service] No matching source found for "${rec.citationSource}" in sourceMetrics`);
         }
 
-        const normalizePercent = (value: number | null | undefined) => {
+        // Values from source-attribution service are already in correct format:
+        // - mentionRate: 0-100 (percentage)
+        // - soa: 0-100 (percentage)  
+        // - sentiment: normalized value (check source-attribution service format)
+        // - visibility: 0-100 (already fixed to integer)
+        const formatValue = (value: number | null | undefined, decimals: number = 1): string | null => {
           if (value === null || value === undefined) return null;
-          return Math.round(value * 10) / 10;
-        };
-
-        const normalizeSentiment100 = (value: number | null | undefined) => {
-          if (value === null || value === undefined) return null;
-          return Math.round(Math.max(0, Math.min(100, ((value + 1) / 2) * 100)) * 10) / 10;
+          return String(Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals));
         };
 
         return {
@@ -1332,19 +1134,19 @@ Respond only with the JSON array.`;
           reason: rec.reason,
           explanation: rec.explanation || rec.reason,
           expectedBoost: rec.expectedBoost,
-          // Use actual source data, not LLM-generated values
-          impactScore: matchingSource ? String(normalizePercent(matchingSource.impactScore) || matchingSource.impactScore) : null,
+          // Use actual source data from source-attribution service (exact same as Citations Sources page)
+          impactScore: matchingSource ? formatValue(matchingSource.impactScore, 1) : null,
           mentionRate: matchingSource && Number.isFinite(matchingSource.mentionRate) 
-            ? String(normalizePercent(matchingSource.mentionRate)) 
+            ? formatValue(matchingSource.mentionRate, 1) // Already 0-100 from source-attribution service
             : null,
           soa: matchingSource && matchingSource.soa !== null && matchingSource.soa !== undefined
-            ? String(normalizePercent(matchingSource.soa))
+            ? formatValue(matchingSource.soa, 1) // Already 0-100 from source-attribution service
             : null,
           sentiment: matchingSource && matchingSource.sentiment !== null && matchingSource.sentiment !== undefined
-            ? String(normalizeSentiment100(matchingSource.sentiment))
+            ? formatValue(matchingSource.sentiment, 2) // Sentiment from source-attribution is raw avg (typically -1 to 1), format to 2 decimals
             : null,
           visibilityScore: matchingSource && matchingSource.visibility !== null && matchingSource.visibility !== undefined
-            ? String(Math.round(matchingSource.visibility)) // Visibility is already in 0-100 range, just round to integer
+            ? String(Math.round(matchingSource.visibility)) // Visibility is already 0-100 from source-attribution service, round to integer
             : null,
           citationCount: matchingSource ? matchingSource.citations : 0,
           focusSources: rec.focusSources || rec.citationSource,

@@ -219,11 +219,13 @@ export async function callOllamaAPI(
   return ollamaQueue.enqueue(async () => {
     console.log(`🦙 Calling Ollama API at ${ollamaUrl} with model ${ollamaModel}...`);
 
-    // Add timeout for Ollama calls (120 seconds for recommendations, 30 seconds for scoring)
-    // Recommendations need more time due to longer prompts and larger responses
-    const isRecommendationPrompt = userMessage.includes('Generate 8-12 recommendations') || 
-                                   userMessage.includes('actionable recommendations');
-    const timeoutMs = isRecommendationPrompt ? 120000 : 30000; // 120s for recommendations, 30s for scoring
+    // Add timeout for Ollama calls (300 seconds for complex tasks like recommendations or enrichment, 30 seconds for scoring)
+    // Complex tasks need more time due to longer prompts and larger responses
+    const isComplexPrompt = userMessage.includes('Generate 8-12 recommendations') || 
+                            userMessage.includes('actionable recommendations') ||
+                            userMessage.includes('comprehensive synonyms') ||
+                            userMessage.includes('commercial products');
+    const timeoutMs = isComplexPrompt ? 300000 : 30000; // 300s (5 mins) for complex prompts, 30s for scoring
     
     try {
       const controller = new AbortController();

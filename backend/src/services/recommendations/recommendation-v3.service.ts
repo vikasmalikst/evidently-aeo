@@ -1064,6 +1064,9 @@ Return ONLY a JSON array like:
 
 Respond only with the JSON array.`;
 
+    // Log the prompt to terminal
+    console.log(prompt);
+
     try {
       let content: string | null = null;
       let providerUsed = 'none';

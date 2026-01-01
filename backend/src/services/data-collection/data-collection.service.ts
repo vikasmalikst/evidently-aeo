@@ -160,7 +160,7 @@ export class DataCollectionService {
    
     this.collectors.set('claude', {
       name: 'Claude Collector',
-      enabled: true, 
+      enabled: false, 
       baseUrl: 'priority',
       timeout: 30000,
       retries: 2,

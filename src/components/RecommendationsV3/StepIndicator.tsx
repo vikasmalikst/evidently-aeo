@@ -8,11 +8,12 @@
  * Step 4: Results Tracking
  */
 
-import { IconCheck, IconCircle } from '@tabler/icons-react';
+import { IconCheck } from '@tabler/icons-react';
 
 interface StepIndicatorProps {
   currentStep: number;
   onStepClick?: (step: number) => void;
+  attentionSteps?: Partial<Record<number, boolean>>;
 }
 
 const steps = [
@@ -22,10 +23,11 @@ const steps = [
   { number: 4, label: 'Results', description: 'View KPI improvements' }
 ];
 
-export const StepIndicator = ({ currentStep, onStepClick }: StepIndicatorProps) => {
+export const StepIndicator = ({ currentStep, onStepClick, attentionSteps }: StepIndicatorProps) => {
   const isStepComplete = (step: number) => step < currentStep;
   const isStepActive = (step: number) => step === currentStep;
-  const isStepClickable = (step: number) => onStepClick && (isStepComplete(step) || isStepActive(step));
+  // In V3 UX, all steps are navigable once a generation exists; data shown depends on filters/flags.
+  const isStepClickable = (_step: number) => Boolean(onStepClick);
 
   return (
     <div className="w-full">
@@ -43,10 +45,15 @@ export const StepIndicator = ({ currentStep, onStepClick }: StepIndicatorProps) 
                     ? 'bg-[#06c686] border-[#06c686] text-white cursor-pointer hover:bg-[#05a870]'
                     : isStepActive(step.number)
                     ? 'bg-[#00bcdc] border-[#00bcdc] text-white cursor-pointer'
-                    : 'bg-white border-[#e8e9ed] text-[#94a3b8] cursor-not-allowed'
+                    : 'bg-white border-[#e8e9ed] text-[#94a3b8] cursor-pointer hover:border-[#cfd4e3]'
                   }
                 `}
               >
+                {/* Attention pulse (e.g., newly approved / content generated) */}
+                {Boolean(attentionSteps?.[step.number]) && !isStepActive(step.number) && (
+                  <span className="absolute -inset-1 rounded-full bg-[#06c686]/20 animate-ping pointer-events-none" />
+                )}
+
                 {isStepComplete(step.number) ? (
                   <IconCheck size={20} />
                 ) : (

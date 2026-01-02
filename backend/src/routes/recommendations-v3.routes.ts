@@ -15,8 +15,47 @@ import { recommendationV3Service } from '../services/recommendations/recommendat
 import { recommendationContentService } from '../services/recommendations/recommendation-content.service';
 import { supabaseAdmin } from '../config/database';
 import { brandService } from '../services/brand.service';
+import { sourceAttributionService } from '../services/source-attribution.service';
+import { brandDashboardService } from '../services/brand-dashboard';
 
 const router = express.Router();
+
+function normalizeDomain(input?: string | null): string | null {
+  if (!input) return null;
+  const trimmed = String(input).trim();
+  if (!trimmed) return null;
+
+  try {
+    const hasProtocol = /^https?:\/\//i.test(trimmed);
+    const url = new URL(hasProtocol ? trimmed : `https://${trimmed}`);
+    return url.hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    // Fallback: strip path/query and normalize
+    const withoutPath = trimmed.split('/')[0] || trimmed;
+    return withoutPath.replace(/^www\./i, '').toLowerCase();
+  }
+}
+
+function getSourceKpiValue(params: {
+  focusArea?: string | null;
+  kpiName?: string | null;
+  source: { visibility?: number; soa: number; sentiment: number; mentionRate: number };
+}): number | null {
+  const focus = (params.focusArea || '').toLowerCase();
+  if (focus === 'visibility') return params.source.visibility ?? null;
+  if (focus === 'soa') return params.source.soa ?? null;
+  if (focus === 'sentiment') return params.source.sentiment ?? null;
+  if (focus === 'mention' || focus === 'mentions') return params.source.mentionRate ?? null;
+
+  const kpiLower = (params.kpiName || '').toLowerCase();
+  if (kpiLower.includes('visibility')) return params.source.visibility ?? null;
+  if (kpiLower.includes('soa') || kpiLower.includes('share')) return params.source.soa ?? null;
+  if (kpiLower.includes('sentiment')) return params.source.sentiment ?? null;
+  if (kpiLower.includes('mention')) return params.source.mentionRate ?? null;
+
+  // Unknown KPI mapping
+  return null;
+}
 
 /**
  * POST /api/recommendations-v3/generate
@@ -349,22 +388,42 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
         (recommendationsData || []).map(r => ({ id: r.id, action: r.action?.substring(0, 40), is_approved: r.is_approved })));
     }
 
-    // For Step 4, fetch current KPI values if kpi_before_value is null
+    // For Step 4, fetch current per-source KPI values (domain-level) and use them for:
+    // - Current Source KPI Value (frontend uses rec.visibilityScore / rec.soa / rec.sentiment / rec.mentionRate)
+    // - Backfill kpiBeforeValue if null for legacy rows
     let kpiCurrentValuesMap: Map<string, number | null> = new Map();
+    let sourceMetricsByDomain: Map<string, { visibility?: number; soa: number; sentiment: number; mentionRate: number }> = new Map();
     if (stepNum === 4) {
-      const recommendationsWithNullKpiBefore = (recommendationsData || []).filter(
-        rec => rec.kpi_before_value === null && rec.kpi_id
-      );
-      
+      // Fetch source attribution once for the brand (per-domain metrics)
+      const brandId = (recommendationsData || [])?.[0]?.brand_id as string | undefined;
+      if (brandId) {
+        try {
+          const attribution = await sourceAttributionService.getSourceAttribution(brandId, customerId);
+          attribution.sources.forEach((s) => {
+            const domain = normalizeDomain(s.name);
+            if (!domain) return;
+            sourceMetricsByDomain.set(domain, {
+              visibility: s.visibility,
+              soa: s.soa,
+              sentiment: s.sentiment,
+              mentionRate: s.mentionRate
+            });
+          });
+        } catch (e) {
+          console.error('⚠️ [RecommendationsV3 Step 4] Failed to fetch source attribution for current KPI values:', e);
+        }
+      }
+
+      // Legacy fallback: if kpi_before_value is null, fall back to KPI table current_value (brand's overall KPI)
+      const recommendationsWithNullKpiBefore = (recommendationsData || []).filter(rec => rec.kpi_before_value === null && rec.kpi_id);
       if (recommendationsWithNullKpiBefore.length > 0) {
         const kpiIds = [...new Set(recommendationsWithNullKpiBefore.map(r => r.kpi_id).filter(Boolean))];
-        
         if (kpiIds.length > 0) {
           const { data: kpisData } = await supabaseAdmin
             .from('recommendation_v3_kpis')
             .select('id, current_value')
             .in('id', kpiIds);
-          
+
           if (kpisData) {
             kpisData.forEach(kpi => {
               kpiCurrentValuesMap.set(kpi.id, kpi.current_value);
@@ -375,12 +434,34 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
     }
 
     const recommendations = (recommendationsData || []).map(rec => {
-      // For Step 4, use current KPI value if kpi_before_value is null
+      // For Step 4:
+      // - set current KPI fields (soa/sentiment/visibility/mention) from source attribution when available
+      // - backfill kpiBeforeValue from per-source KPI if null (otherwise leave stored snapshot)
       let kpiBeforeValue = rec.kpi_before_value;
-      if (stepNum === 4 && kpiBeforeValue === null && rec.kpi_id) {
-        const currentValue = kpiCurrentValuesMap.get(rec.kpi_id);
-        if (currentValue !== undefined) {
-          kpiBeforeValue = currentValue;
+      let soa = rec.soa;
+      let sentiment = rec.sentiment;
+      let visibilityScore = rec.visibility_score;
+      let mentionRate = rec.mention_rate;
+
+      if (stepNum === 4) {
+        const domain = normalizeDomain(rec.citation_source);
+        const source = domain ? sourceMetricsByDomain.get(domain) : undefined;
+
+        if (source) {
+          // Update per-source metrics for "Current Source KPI Value" column
+          // Keep string formatting simple; frontend parses and formats to 2 decimals.
+          if (source.visibility != null) visibilityScore = String(source.visibility);
+          if (source.soa != null) soa = String(source.soa);
+          if (source.sentiment != null) sentiment = String(source.sentiment);
+          if (source.mentionRate != null) mentionRate = String(source.mentionRate);
+        }
+        
+        // Backfill kpiBeforeValue if null (legacy rows): use brand's overall KPI from KPI table
+        if (kpiBeforeValue === null && rec.kpi_id) {
+          const currentValue = kpiCurrentValuesMap.get(rec.kpi_id);
+          if (currentValue !== undefined) {
+            kpiBeforeValue = currentValue;
+          }
         }
       }
       
@@ -396,10 +477,10 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
         reason: rec.reason,
         explanation: rec.explanation,
         impactScore: rec.impact_score,
-        mentionRate: rec.mention_rate,
-        soa: rec.soa,
-        sentiment: rec.sentiment,
-        visibilityScore: rec.visibility_score,
+        mentionRate: mentionRate,
+        soa: soa,
+        sentiment: sentiment,
+        visibilityScore: visibilityScore,
         citationCount: rec.citation_count,
         focusSources: rec.focus_sources,
         contentFocus: rec.content_focus,
@@ -879,7 +960,7 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
     // Get recommendation with KPI info
     const { data: recommendation, error: recError } = await supabaseAdmin
       .from('recommendations')
-      .select('id, kpi_id, kpi, brand_id, customer_id, is_content_generated')
+      .select('id, kpi_id, kpi, brand_id, customer_id, is_content_generated, citation_source, focus_area')
       .eq('id', recommendationId)
       .eq('customer_id', customerId)
       .single();
@@ -898,19 +979,95 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
       });
     }
 
-    // Get current KPI value
+    // Get brand's overall KPI value from dashboard API (same as shown on first page)
+    // This represents the brand's overall KPI, not the per-source KPI
     let kpiBeforeValue: number | null = null;
-    
-    if (recommendation.kpi_id) {
-      // Get KPI info
-      const { data: kpi } = await supabaseAdmin
-        .from('recommendation_v3_kpis')
-        .select('kpi_name, current_value')
-        .eq('id', recommendation.kpi_id)
-        .single();
 
-      if (kpi) {
-        kpiBeforeValue = kpi.current_value;
+    if (recommendation.brand_id) {
+      try {
+        // Get KPI name - prefer from linked KPI table (more accurate), fallback to recommendation.kpi field
+        let kpiNameToMatch: string | null = null;
+        
+        // First try to get KPI name from recommendation_v3_kpis table (more reliable)
+        if (recommendation.kpi_id) {
+          const { data: kpiData } = await supabaseAdmin
+            .from('recommendation_v3_kpis')
+            .select('kpi_name')
+            .eq('id', recommendation.kpi_id)
+            .single();
+          
+          if (kpiData?.kpi_name) {
+            kpiNameToMatch = kpiData.kpi_name;
+          }
+        }
+        
+        // Fallback to recommendation.kpi field if KPI table lookup didn't work
+        if (!kpiNameToMatch && recommendation.kpi) {
+          kpiNameToMatch = recommendation.kpi;
+        }
+
+        if (!kpiNameToMatch) {
+          console.warn(`⚠️ [RecommendationsV3 Complete] No KPI name found for recommendation ${recommendationId}`);
+        } else {
+          // Fetch brand dashboard to get current overall KPI values
+          const dashboard = await brandDashboardService.getBrandDashboard(
+            recommendation.brand_id,
+            customerId,
+            undefined, // Use default date range
+            { skipCache: false }
+          );
+
+          console.log(`📊 [RecommendationsV3 Complete] Dashboard scores:`, dashboard.scores?.map((s: any) => ({ label: s.label, value: s.value })));
+          console.log(`📊 [RecommendationsV3 Complete] Matching KPI name: "${kpiNameToMatch}"`);
+
+          // Match KPI name to dashboard score (more flexible matching)
+          const kpiNameLower = kpiNameToMatch.toLowerCase();
+          const matchingScore = dashboard.scores?.find((score: any) => {
+            const scoreLabel = (score.label || '').toLowerCase();
+            
+            // Try exact match first
+            if (scoreLabel === kpiNameLower || kpiNameLower.includes(scoreLabel) || scoreLabel.includes(kpiNameLower)) {
+              return true;
+            }
+            
+            // Then try keyword matching
+            if (kpiNameLower.includes('visibility') && scoreLabel.includes('visibility')) {
+              return true;
+            }
+            if ((kpiNameLower.includes('soa') || kpiNameLower.includes('share of answers') || kpiNameLower.includes('share')) 
+                && (scoreLabel.includes('share') || scoreLabel.includes('answers'))) {
+              return true;
+            }
+            if (kpiNameLower.includes('sentiment') && scoreLabel.includes('sentiment')) {
+              return true;
+            }
+            
+            return false;
+          });
+
+          if (matchingScore && typeof matchingScore.value === 'number') {
+            kpiBeforeValue = matchingScore.value;
+            console.log(`✅ [RecommendationsV3 Complete] Matched KPI "${kpiNameToMatch}" to dashboard score "${matchingScore.label}": ${kpiBeforeValue}`);
+          } else {
+            console.warn(`⚠️ [RecommendationsV3 Complete] Could not match KPI "${kpiNameToMatch}" to dashboard score. Available scores:`, 
+              dashboard.scores?.map((s: any) => s.label));
+          }
+        }
+      } catch (e) {
+        console.error('⚠️ [RecommendationsV3 Complete] Failed to fetch dashboard KPI:', e);
+        // Fallback to KPI table current_value if dashboard fetch fails
+        if (recommendation.kpi_id) {
+          const { data: kpi } = await supabaseAdmin
+            .from('recommendation_v3_kpis')
+            .select('kpi_name, current_value')
+            .eq('id', recommendation.kpi_id)
+            .single();
+
+          if (kpi) {
+            kpiBeforeValue = kpi.current_value;
+            console.log(`📊 [RecommendationsV3 Complete] Using fallback KPI table value: ${kpiBeforeValue}`);
+          }
+        }
       }
     }
 

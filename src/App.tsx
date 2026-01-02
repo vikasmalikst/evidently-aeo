@@ -7,8 +7,6 @@ import { SearchSourcesR2 } from './pages/SearchSourcesR2';
 import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
-import { Recommendations } from './pages/Recommendations';
-import { RecommendationsV2 } from './pages/RecommendationsV2';
 import { RecommendationsV3 } from './pages/RecommendationsV3';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
@@ -154,23 +152,7 @@ function App() {
           path="/recommendations"
           element={
             <ProtectedRoute>
-              <RecommendationsV2 />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/recommendations-v2"
-          element={
-            <ProtectedRoute>
-              <Navigate to="/recommendations" replace />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/recommendations-v1"
-          element={
-            <ProtectedRoute>
-              <Recommendations />
+              <RecommendationsV3 />
             </ProtectedRoute>
           }
         />
@@ -178,7 +160,7 @@ function App() {
           path="/recommendations-v3"
           element={
             <ProtectedRoute>
-              <RecommendationsV3 />
+              <Navigate to="/recommendations" replace />
             </ProtectedRoute>
           }
         />

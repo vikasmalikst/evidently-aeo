@@ -28,7 +28,7 @@ import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
-import { IconSparkles, IconAlertCircle, IconTrendingUp, IconTrendingDown, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 
 export const RecommendationsV3 = () => {
   const {
@@ -264,10 +264,18 @@ export const RecommendationsV3 = () => {
 
   // Apply status filter locally instead of reloading (prevents overwriting status changes)
   useEffect(() => {
-    if (currentStep !== 1 || allRecommendations.length === 0) {
-      return; // Don't filter if not on Step 1 or if allRecommendations not loaded yet
+    // Only apply filter on Step 1
+    if (currentStep !== 1) {
+      return;
     }
 
+    // If no recommendations yet, clear the filtered list and wait for data to load
+    if (allRecommendations.length === 0) {
+      setRecommendations([]);
+      return;
+    }
+
+    // Apply the filter
     if (statusFilter === 'all') {
       // Show all recommendations when filter is "all"
       setRecommendations([...allRecommendations]);
@@ -968,9 +976,44 @@ export const RecommendationsV3 = () => {
         // Store content in contentMap (for Step 3)
         setContentMap(prev => new Map(prev).set(recommendation.id!, response.data.content));
 
-        // UX: Once content is generated, it should disappear from Step 2 and make Step 3 "light up".
+        // UX: Once content is generated, make Step 3 "light up" and navigate to it
         setHasGeneratedContentForStep3(true);
         setRecommendations(prev => prev.filter(rec => rec.id !== recommendation.id));
+
+        // Navigate to Step 3 immediately after content generation
+        if (generationId) {
+          isManuallyNavigatingRef.current = true;
+          setIsManuallyLoading(true);
+          lastManuallyLoadedStepRef.current = 3;
+          
+          try {
+            const step3Response = await getRecommendationsByStepV3(generationId, 3);
+            if (step3Response.success && step3Response.data) {
+              const recommendationsWithIds = step3Response.data.recommendations
+                .filter(rec => rec.id && rec.id.length > 10)
+                .map(rec => ({ ...rec, id: rec.id! }));
+              
+              // Initialize expanded sections for Step 3 recommendations
+              const newExpandedSections = new Map(expandedSections);
+              recommendationsWithIds.forEach(rec => {
+                if (rec.id && !newExpandedSections.has(rec.id)) {
+                  newExpandedSections.set(rec.id, { email: true, content: true });
+                }
+              });
+              setExpandedSections(newExpandedSections);
+              
+              setRecommendations(recommendationsWithIds);
+              setCurrentStep(3);
+              setHasGeneratedContentForStep3(false); // Clear the attention animation
+              setError(null);
+            }
+          } catch (loadErr) {
+            console.error('Error loading step 3 after content generation:', loadErr);
+          } finally {
+            setIsManuallyLoading(false);
+            isManuallyNavigatingRef.current = false;
+          }
+        }
       } else {
         setError(response.error || 'Failed to generate content');
       }
@@ -987,52 +1030,102 @@ export const RecommendationsV3 = () => {
     }
   };
 
-  // Handle toggle completion - immediately complete and navigate to Step 4
+  // Handle toggle completion - optimistically navigate to Step 4, then complete in background
   const handleToggleComplete = async (recommendation: RecommendationV3) => {
     if (!recommendation.id || recommendation.isCompleted) return;
     
     setError(null);
     
+    // Capture IDs before async operations
+    const currentGenerationId = generationId;
+    const recommendationIdToComplete = recommendation.id;
+    if (!recommendationIdToComplete || !currentGenerationId) return;
+    
+    // Optimistically mark as completed and navigate to Step 4 immediately
+    const optimisticRec = { 
+      ...recommendation, 
+      isCompleted: true, 
+      completedAt: new Date().toISOString(),
+      reviewStatus: 'approved' as const, // Ensure it's marked as approved for Step 4 filtering
+      isApproved: true
+    };
+    
+    // Navigate to Step 4 immediately (optimistic navigation)
+    isManuallyNavigatingRef.current = true;
+    setIsManuallyLoading(true);
+    lastManuallyLoadedStepRef.current = 4;
+    
     try {
-      console.log(`📝 [RecommendationsV3] Completing recommendation ${recommendation.id}...`);
-      const response = await completeRecommendationV3(recommendation.id);
+      // Load Step 4 data
+      const step4Response = await getRecommendationsByStepV3(currentGenerationId, 4);
       
-      if (response.success) {
-        console.log(`✅ [RecommendationsV3] Successfully completed recommendation ${recommendation.id}`);
+      if (step4Response.success && step4Response.data) {
+        const recommendationsWithIds = step4Response.data.recommendations
+          .filter(rec => rec.id && rec.id.length > 10)
+          .map(rec => ({ ...rec, id: rec.id! }));
         
-        // Drive Step 4 attention pulse
-        setHasCompletedForStep4(true);
+        // Include the optimistically completed recommendation if it's not already in the list
+        const hasOptimisticRec = recommendationsWithIds.some(r => r.id === recommendationIdToComplete);
+        const finalRecommendations = hasOptimisticRec 
+          ? recommendationsWithIds 
+          : [...recommendationsWithIds, optimisticRec];
         
-        // Load Step 4 data and navigate immediately (no delay needed)
-        if (generationId) {
-          isManuallyNavigatingRef.current = true;
-          setIsManuallyLoading(true);
-          lastManuallyLoadedStepRef.current = 4;
-          
-          const step4Response = await getRecommendationsByStepV3(generationId, 4);
-          if (step4Response.success && step4Response.data) {
-            const recommendationsWithIds = step4Response.data.recommendations
-              .filter(rec => rec.id && rec.id.length > 10)
-              .map(rec => ({ ...rec, id: rec.id! }));
-            
-            setRecommendations(recommendationsWithIds);
-            setCurrentStep(4);
-            setHasCompletedForStep4(false);
-            setError(null);
-          }
-          
-          setTimeout(() => {
-            setIsManuallyLoading(false);
-            isManuallyNavigatingRef.current = false;
-          }, 300);
-        }
+        setRecommendations(finalRecommendations);
+        setCurrentStep(4);
+        setHasCompletedForStep4(false);
+        setError(null);
+        console.log(`✅ [RecommendationsV3] Navigated to Step 4 with ${finalRecommendations.length} recommendations`);
       } else {
-        setError(response.error || 'Failed to complete recommendation');
+        // If Step 4 load fails, still show the optimistic recommendation
+        setRecommendations([optimisticRec]);
+        setCurrentStep(4);
+        setError(null);
       }
-    } catch (err: any) {
-      console.error('Error completing recommendation:', err);
-      setError(err.message || 'Failed to complete recommendation');
+    } catch (loadErr: any) {
+      console.error('Error loading step 4:', loadErr);
+      // On error, still navigate and show optimistic recommendation
+      setRecommendations([optimisticRec]);
+      setCurrentStep(4);
+      setError(null);
+    } finally {
+      setIsManuallyLoading(false);
+      isManuallyNavigatingRef.current = false;
     }
+    
+    // Complete the recommendation in the background (API call)
+    // This ensures the database is updated with correct kpiBeforeValue
+    (async () => {
+      try {
+        console.log(`📝 [RecommendationsV3] Completing recommendation ${recommendationIdToComplete} in background...`);
+        const response = await completeRecommendationV3(recommendationIdToComplete);
+        
+        if (response.success) {
+          console.log(`✅ [RecommendationsV3] Successfully completed recommendation ${recommendationIdToComplete} (background)`);
+          // Reload Step 4 to get the latest data with correct completedAt timestamp and kpiBeforeValue
+          if (currentGenerationId) {
+            getRecommendationsByStepV3(currentGenerationId, 4).then(step4Response => {
+              if (step4Response.success && step4Response.data) {
+                const recommendationsWithIds = step4Response.data.recommendations
+                  .filter(rec => rec.id && rec.id.length > 10)
+                  .map(rec => ({ ...rec, id: rec.id! }));
+                setRecommendations(recommendationsWithIds);
+                console.log(`✅ [RecommendationsV3] Reloaded Step 4 with ${recommendationsWithIds.length} recommendations after completion`);
+              }
+            }).catch(err => console.error('Error reloading Step 4:', err));
+          }
+        } else {
+          console.error('Failed to complete recommendation:', response.error);
+          setError(response.error || 'Failed to complete recommendation');
+          // Revert optimistic update on failure
+          setRecommendations(prev => prev.filter(r => r.id !== recommendationIdToComplete));
+        }
+      } catch (err: any) {
+        console.error('Error completing recommendation:', err);
+        setError(err.message || 'Failed to complete recommendation');
+        // Revert optimistic update on failure
+        setRecommendations(prev => prev.filter(r => r.id !== recommendationIdToComplete));
+      }
+    })();
   };
 
 
@@ -1100,7 +1193,7 @@ export const RecommendationsV3 = () => {
         <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
             <div>
-              <h1 className="text-[24px] font-bold text-[#1a1d29] mb-1">Recommendations V3</h1>
+              <h1 className="text-[24px] font-bold text-[#1a1d29] mb-1">Recommendations</h1>
               <p className="text-[13px] text-[#64748b]">
                 KPI-first approach with 4-step workflow
               </p>
@@ -1709,59 +1802,77 @@ export const RecommendationsV3 = () => {
                             Domain/Source
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            KPI
+                            Current Visibility
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Current Source KPI Value
+                            New Visibility
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Before Action KPI Value
+                            Current SOA
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            After Action KPI Value
+                            New SOA
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Change
+                            Current Sentiment
+                          </th>
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
+                            New Sentiment
                           </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#e8e9ed]">
                         {recommendations.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-6 py-12 text-center text-[14px] text-[#64748b]">
+                            <td colSpan={8} className="px-6 py-12 text-center text-[14px] text-[#64748b]">
                               No completed recommendations found. Complete recommendations in Step 3 to see results here.
                             </td>
                           </tr>
                         ) : (
                           recommendations.map((rec) => {
-                            const hasAfterValue = rec.kpiAfterValue !== null && rec.kpiAfterValue !== undefined;
-                            const hasBeforeValue = rec.kpiBeforeValue !== null && rec.kpiBeforeValue !== undefined;
-                            const beforeValue = hasBeforeValue ? rec.kpiBeforeValue! : null;
-                            const improvement = hasAfterValue && beforeValue !== null && beforeValue !== 0
-                              ? ((rec.kpiAfterValue! - beforeValue) / beforeValue) * 100
-                              : null;
+                            // Parse current values from recommendation
+                            const currentVisibility = rec.visibilityScore ? parseFloat(rec.visibilityScore) : null;
+                            const currentSOA = rec.soa ? parseFloat(rec.soa) : null;
+                            const currentSentiment = rec.sentiment ? parseFloat(rec.sentiment) : null;
 
-                            // Get current source KPI value based on KPI name and available fields
-                            const getCurrentSourceKPIValue = (): string | null => {
-                              const kpiName = (rec.kpi || '').toLowerCase();
-                              
-                              // Map KPI name to the corresponding field
+                            // For "New" values, we'll use kpiAfterValue if it exists and matches the KPI type
+                            // For now, we'll show "N/A" or "Pending" as new values will be collected later
+                            // If kpiAfterValue exists, map it to the appropriate KPI column
+                            const kpiName = (rec.kpi || '').toLowerCase();
+                            const hasAfterValue = rec.kpiAfterValue !== null && rec.kpiAfterValue !== undefined;
+                            
+                            let newVisibility: number | null = null;
+                            let newSOA: number | null = null;
+                            let newSentiment: number | null = null;
+
+                            if (hasAfterValue) {
                               if (kpiName.includes('visibility')) {
-                                return rec.visibilityScore || null;
+                                newVisibility = rec.kpiAfterValue!;
                               } else if (kpiName.includes('soa') || kpiName.includes('share')) {
-                                return rec.soa || null;
+                                newSOA = rec.kpiAfterValue!;
                               } else if (kpiName.includes('sentiment')) {
-                                return rec.sentiment || null;
-                              } else if (kpiName.includes('mention')) {
-                                return rec.mentionRate || null;
+                                newSentiment = rec.kpiAfterValue!;
                               }
-                              
-                              // Fallback: try to find any available metric
-                              return rec.visibilityScore || rec.soa || rec.sentiment || rec.mentionRate || null;
+                            }
+
+                            // Format completion date
+                            const formatCompletionDate = (dateString?: string): string | null => {
+                              if (!dateString) return null;
+                              try {
+                                const date = new Date(dateString);
+                                return date.toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                });
+                              } catch (e) {
+                                return null;
+                              }
                             };
 
-                            const currentSourceValue = getCurrentSourceKPIValue();
-                            const parsedCurrentValue = currentSourceValue ? parseFloat(currentSourceValue) : null;
+                            const formattedCompletionDate = formatCompletionDate(rec.completedAt);
 
                             return (
                               <tr key={rec.id} className="hover:bg-[#f9f9fb] transition-colors">
@@ -1770,6 +1881,11 @@ export const RecommendationsV3 = () => {
                                   <div className="text-[14px] font-medium text-[#1a1d29] leading-snug">
                                     {rec.action || 'N/A'}
                                   </div>
+                                  {formattedCompletionDate && (
+                                    <div className="text-[11px] text-[#64748b] mt-1.5">
+                                      Completed: {formattedCompletionDate}
+                                    </div>
+                                  )}
                                 </td>
                                 
                                 {/* Domain/Source */}
@@ -1782,21 +1898,14 @@ export const RecommendationsV3 = () => {
                                   </span>
                                 </td>
                                 
-                                {/* KPI Name */}
-                                <td className="px-6 py-4">
-                                  <div className="text-[13px] text-[#475569] font-medium">
-                                    {rec.kpi || 'N/A'}
-                                  </div>
-                                </td>
-                                
-                                {/* Current Source KPI Value */}
+                                {/* Current Visibility */}
                                 <td className="px-6 py-4">
                                   <div className="flex items-center gap-2">
-                                    {parsedCurrentValue !== null && !isNaN(parsedCurrentValue) ? (
+                                    {currentVisibility !== null && !isNaN(currentVisibility) ? (
                                       <>
                                         <div className="w-2 h-2 rounded-full bg-[#3b82f6]"></div>
                                         <span className="text-[14px] font-semibold text-[#1a1d29]">
-                                          {parsedCurrentValue.toFixed(2)}
+                                          {currentVisibility.toFixed(2)}
                                         </span>
                                       </>
                                     ) : (
@@ -1805,64 +1914,77 @@ export const RecommendationsV3 = () => {
                                   </div>
                                 </td>
                                 
-                                {/* Before Action KPI Value */}
+                                {/* New Visibility */}
                                 <td className="px-6 py-4">
-                                  <div className="flex items-center gap-2">
-                                    {hasBeforeValue ? (
-                                      <>
-                                        <div className="w-2 h-2 rounded-full bg-[#00bcdc]"></div>
-                                        <span className="text-[14px] font-semibold text-[#1a1d29]">
-                                          {rec.kpiBeforeValue!.toFixed(2)}
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <span className="text-[13px] text-[#94a3b8] italic">N/A</span>
-                                    )}
-                                  </div>
-                                </td>
-                                
-                                {/* After Action KPI Value */}
-                                <td className="px-6 py-4">
-                                  <div className="flex items-center gap-2">
-                                    {hasAfterValue ? (
-                                      <>
-                                        <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
-                                        <span className="text-[14px] font-semibold text-[#06c686]">
-                                          {rec.kpiAfterValue!.toFixed(2)}
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <span className="text-[13px] text-[#94a3b8] italic">
-                                        Will be collected on next collection
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                
-                                {/* Change */}
-                                <td className="px-6 py-4">
-                                  {improvement !== null ? (
+                                  {hasAfterValue && kpiName.includes('visibility') && newVisibility !== null ? (
                                     <div className="flex items-center gap-2">
-                                      {improvement > 0 ? (
-                                        <>
-                                          <IconTrendingUp size={18} className="text-[#06c686]" />
-                                          <span className="text-[13px] font-semibold text-[#06c686]">
-                                            +{improvement.toFixed(1)}%
-                                          </span>
-                                        </>
-                                      ) : improvement < 0 ? (
-                                        <>
-                                          <IconTrendingDown size={18} className="text-[#ef4444]" />
-                                          <span className="text-[13px] font-semibold text-[#ef4444]">
-                                            {improvement.toFixed(1)}%
-                                          </span>
-                                        </>
-                                      ) : (
-                                        <span className="text-[13px] text-[#64748b]">No change</span>
-                                      )}
+                                      <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
+                                      <span className="text-[14px] font-semibold text-[#06c686]">
+                                        {newVisibility.toFixed(2)}
+                                      </span>
                                     </div>
                                   ) : (
-                                    <span className="text-[13px] text-[#94a3b8]">—</span>
+                                    <span className="text-[13px] text-[#94a3b8] italic">—</span>
+                                  )}
+                                </td>
+                                
+                                {/* Current SOA */}
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    {currentSOA !== null && !isNaN(currentSOA) ? (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-[#3b82f6]"></div>
+                                        <span className="text-[14px] font-semibold text-[#1a1d29]">
+                                          {currentSOA.toFixed(2)}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[13px] text-[#94a3b8] italic">N/A</span>
+                                    )}
+                                  </div>
+                                </td>
+                                
+                                {/* New SOA */}
+                                <td className="px-6 py-4">
+                                  {hasAfterValue && (kpiName.includes('soa') || kpiName.includes('share')) && newSOA !== null ? (
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
+                                      <span className="text-[14px] font-semibold text-[#06c686]">
+                                        {newSOA.toFixed(2)}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[13px] text-[#94a3b8] italic">—</span>
+                                  )}
+                                </td>
+                                
+                                {/* Current Sentiment */}
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    {currentSentiment !== null && !isNaN(currentSentiment) ? (
+                                      <>
+                                        <div className="w-2 h-2 rounded-full bg-[#3b82f6]"></div>
+                                        <span className="text-[14px] font-semibold text-[#1a1d29]">
+                                          {currentSentiment.toFixed(2)}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[13px] text-[#94a3b8] italic">N/A</span>
+                                    )}
+                                  </div>
+                                </td>
+                                
+                                {/* New Sentiment */}
+                                <td className="px-6 py-4">
+                                  {hasAfterValue && kpiName.includes('sentiment') && newSentiment !== null ? (
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
+                                      <span className="text-[14px] font-semibold text-[#06c686]">
+                                        {newSentiment.toFixed(2)}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[13px] text-[#94a3b8] italic">—</span>
                                   )}
                                 </td>
                               </tr>

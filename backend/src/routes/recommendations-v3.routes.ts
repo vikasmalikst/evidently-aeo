@@ -15,7 +15,6 @@ import { recommendationV3Service } from '../services/recommendations/recommendat
 import { recommendationContentService } from '../services/recommendations/recommendation-content.service';
 import { supabaseAdmin } from '../config/database';
 import { brandService } from '../services/brand.service';
-import { sourceAttributionService } from '../services/source-attribution.service';
 import { brandDashboardService } from '../services/brand-dashboard';
 
 const router = express.Router();
@@ -303,10 +302,10 @@ router.get('/:generationId', authenticateToken, async (req, res) => {
  * 
  * Get recommendations filtered by workflow step.
  * 
- * Step 1: All recommendations (is_approved = false)
+ * Step 1: All non-completed recommendations (is_completed = false)
  * Step 2: Approved recommendations (is_approved = true, is_content_generated = false)
  * Step 3: Content generated (is_content_generated = true, is_completed = false)
- * Step 4: Completed (is_completed = true)
+ * Step 4: Completed and approved (is_completed = true, review_status = 'approved')
  */
 router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => {
   try {
@@ -352,13 +351,13 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
       .eq('customer_id', customerId); // CRITICAL: Filter by customer_id
 
     if (stepNum === 1) {
-      // Step 1: All recommendations - load all regardless of status for local filtering
+      // Step 1: All non-completed recommendations - exclude completed ones
+      query = query.eq('is_completed', false);
       // Filter by review_status if provided in query params (for specific filtering)
       const reviewStatus = req.query.reviewStatus as string | undefined;
       if (reviewStatus && ['pending_review', 'approved', 'rejected'].includes(reviewStatus)) {
         query = query.eq('review_status', reviewStatus);
       }
-      // If no reviewStatus provided, load all recommendations (no filter on is_approved or review_status)
     } else if (stepNum === 2) {
       // Step 2: Approved but content not generated
       query = query.eq('is_approved', true).eq('is_content_generated', false);
@@ -366,8 +365,8 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
       // Step 3: Content generated but not completed
       query = query.eq('is_content_generated', true).eq('is_completed', false);
     } else if (stepNum === 4) {
-      // Step 4: Completed
-      query = query.eq('is_completed', true);
+      // Step 4: Completed and approved (exclude rejected/pending recommendations from results)
+      query = query.eq('is_completed', true).eq('review_status', 'approved');
     }
     
     console.log(`📊 [RecommendationsV3 Step ${stepNum}] Query filters: generation_id=${generationId}, customer_id=${customerId}, is_approved=${stepNum === 2 ? 'true' : stepNum === 1 ? 'false' : 'any'}, is_content_generated=${stepNum === 2 ? 'false' : stepNum === 3 ? 'true' : 'any'}`);
@@ -388,32 +387,10 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
         (recommendationsData || []).map(r => ({ id: r.id, action: r.action?.substring(0, 40), is_approved: r.is_approved })));
     }
 
-    // For Step 4, fetch current per-source KPI values (domain-level) and use them for:
-    // - Current Source KPI Value (frontend uses rec.visibilityScore / rec.soa / rec.sentiment / rec.mentionRate)
-    // - Backfill kpiBeforeValue if null for legacy rows
+    // For Step 4, use stored database values directly (no external API calls for fast loading)
+    // Backfill kpiBeforeValue if null for legacy rows
     let kpiCurrentValuesMap: Map<string, number | null> = new Map();
-    let sourceMetricsByDomain: Map<string, { visibility?: number; soa: number; sentiment: number; mentionRate: number }> = new Map();
     if (stepNum === 4) {
-      // Fetch source attribution once for the brand (per-domain metrics)
-      const brandId = (recommendationsData || [])?.[0]?.brand_id as string | undefined;
-      if (brandId) {
-        try {
-          const attribution = await sourceAttributionService.getSourceAttribution(brandId, customerId);
-          attribution.sources.forEach((s) => {
-            const domain = normalizeDomain(s.name);
-            if (!domain) return;
-            sourceMetricsByDomain.set(domain, {
-              visibility: s.visibility,
-              soa: s.soa,
-              sentiment: s.sentiment,
-              mentionRate: s.mentionRate
-            });
-          });
-        } catch (e) {
-          console.error('⚠️ [RecommendationsV3 Step 4] Failed to fetch source attribution for current KPI values:', e);
-        }
-      }
-
       // Legacy fallback: if kpi_before_value is null, fall back to KPI table current_value (brand's overall KPI)
       const recommendationsWithNullKpiBefore = (recommendationsData || []).filter(rec => rec.kpi_before_value === null && rec.kpi_id);
       if (recommendationsWithNullKpiBefore.length > 0) {
@@ -434,9 +411,7 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
     }
 
     const recommendations = (recommendationsData || []).map(rec => {
-      // For Step 4:
-      // - set current KPI fields (soa/sentiment/visibility/mention) from source attribution when available
-      // - backfill kpiBeforeValue from per-source KPI if null (otherwise leave stored snapshot)
+      // For Step 4, use stored database values directly (fast, no external API calls)
       let kpiBeforeValue = rec.kpi_before_value;
       let soa = rec.soa;
       let sentiment = rec.sentiment;
@@ -444,18 +419,6 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
       let mentionRate = rec.mention_rate;
 
       if (stepNum === 4) {
-        const domain = normalizeDomain(rec.citation_source);
-        const source = domain ? sourceMetricsByDomain.get(domain) : undefined;
-
-        if (source) {
-          // Update per-source metrics for "Current Source KPI Value" column
-          // Keep string formatting simple; frontend parses and formats to 2 decimals.
-          if (source.visibility != null) visibilityScore = String(source.visibility);
-          if (source.soa != null) soa = String(source.soa);
-          if (source.sentiment != null) sentiment = String(source.sentiment);
-          if (source.mentionRate != null) mentionRate = String(source.mentionRate);
-        }
-        
         // Backfill kpiBeforeValue if null (legacy rows): use brand's overall KPI from KPI table
         if (kpiBeforeValue === null && rec.kpi_id) {
           const currentValue = kpiCurrentValuesMap.get(rec.kpi_id);
@@ -1072,12 +1035,16 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
     }
 
     // Update recommendation
+    // Ensure review_status is 'approved' so it appears in Step 4 (which filters by review_status = 'approved')
+    // If a recommendation reached Step 3, it must have been approved (Step 2 requires is_approved = true)
     const { error: updateError } = await supabaseAdmin
       .from('recommendations')
       .update({
         is_completed: true,
         completed_at: new Date().toISOString(),
-        kpi_before_value: kpiBeforeValue
+        kpi_before_value: kpiBeforeValue,
+        review_status: 'approved', // Ensure it's marked as approved so it appears in Step 4
+        is_approved: true // Also ensure is_approved is true for consistency
       })
       .eq('id', recommendationId)
       .eq('customer_id', customerId);

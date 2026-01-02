@@ -83,8 +83,9 @@ export const RecommendationsTableV3 = ({
   onStatusChange
 }: RecommendationsTableV3Props) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const allSelected = recommendations.length > 0 && recommendations.every(r => r.id && selectedIds.has(r.id));
-  const someSelected = recommendations.some(r => r.id && selectedIds.has(r.id));
+  // Only calculate selection state if checkboxes are shown
+  const allSelected = showCheckboxes && recommendations.length > 0 && recommendations.every(r => r.id && selectedIds.has(r.id));
+  const someSelected = showCheckboxes && recommendations.some(r => r.id && selectedIds.has(r.id));
 
   const toggleExpand = (id: string) => {
     setExpandedRows(prev => {

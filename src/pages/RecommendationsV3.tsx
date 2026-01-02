@@ -2,7 +2,7 @@
  * Recommendations V3 Page
  * 
  * KPI-first approach with 4-step workflow:
- * Step 1: Generate & Review - All recommendations with checkboxes for approval
+ * Step 1: Generate & Review - All recommendations with status dropdown (Approved/Rejected/Pending Review)
  * Step 2: Approved Recommendations - Generate content for approved items
  * Step 3: Content Review - Review generated content and mark as completed
  * Step 4: Results Tracking - View KPI improvements (before/after)
@@ -15,7 +15,6 @@ import {
   generateRecommendationsV3,
   getGenerationV3,
   getRecommendationsByStepV3,
-  approveRecommendationsV3,
   generateContentV3,
   generateContentBulkV3,
   completeRecommendationV3,
@@ -90,7 +89,8 @@ export const RecommendationsV3 = () => {
 
       try {
         console.log(`📥 [RecommendationsV3] Loading Step ${currentStep} data for generation ${generationId}`);
-        // Don't pass status filter to API - we'll filter locally for Step 1
+        // For Step 1, load all recommendations (no filter) so we can filter locally by status
+        // For other steps, use default backend filtering
         const response = await getRecommendationsByStepV3(generationId, currentStep);
         console.log(`📊 [RecommendationsV3] Step ${currentStep} response:`, {
           success: response.success,
@@ -474,6 +474,7 @@ export const RecommendationsV3 = () => {
               console.log(`✅ [RecommendationsV3] Setting ${recommendationsWithIds.length} recommendations from database`);
               console.log(`📊 [RecommendationsV3] Recommendation IDs:`, recommendationsWithIds.map(r => r.id));
               setRecommendations(recommendationsWithIds);
+              setAllRecommendations(recommendationsWithIds); // Store all for filtering
               setCurrentStep(1);
               setSelectedIds(new Set());
               setError(null);
@@ -485,8 +486,8 @@ export const RecommendationsV3 = () => {
                 if (recsToSet.length > 0) {
                   console.log(`✅ [RecommendationsV3] Using ${recsToSet.length} recommendations from response (fallback)`);
                   setRecommendations(recsToSet);
+                  setAllRecommendations(recsToSet); // Store all for filtering
                   setCurrentStep(1);
-                  setSelectedIds(new Set());
                   setError(null);
                 } else {
                   setError('Recommendations generated but could not be loaded. Please refresh the page.');
@@ -676,163 +677,8 @@ export const RecommendationsV3 = () => {
     }
   };
 
-  // Handle approve recommendations (Step 1 → Step 2)
-  const handleApprove = async () => {
-    if (selectedIds.size === 0) {
-      setError('Please select at least one recommendation to approve');
-      return;
-    }
-
-    if (!generationId) return;
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Filter out only truly invalid IDs (empty, null, or temporary fallback IDs)
-      // UUIDs are valid - these are the database IDs
-      const idsArray = Array.from(selectedIds).filter(id => {
-        if (!id) return false;
-        // Filter out temporary IDs (contain 'temp' or start with 'rec-' but aren't UUIDs)
-        if (id.includes('temp')) return false;
-        // Check if it's a UUID (has dashes in UUID format) - these are valid database IDs
-        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuidPattern.test(id)) return true;
-        // If it starts with 'rec-' but isn't a UUID, it's a temporary ID - filter it out
-        if (id.startsWith('rec-') && !uuidPattern.test(id)) return false;
-        // If it's a valid-looking string (not empty, not temp), allow it (might be a valid ID format)
-        return id.length > 10;
-      });
-      
-      if (idsArray.length === 0) {
-        setError('No valid recommendation IDs found. The recommendations may not have been saved properly. Please refresh the page.');
-        setIsLoading(false);
-        return;
-      }
-
-      console.log('📝 [RecommendationsV3] Approving recommendations:', idsArray);
-
-      // Use the first valid ID for the route parameter, but send all IDs in body
-      const response = await approveRecommendationsV3(idsArray[0], { recommendationIds: idsArray });
-      
-      console.log('📊 [RecommendationsV3] Approval response:', {
-        success: response.success,
-        hasData: !!response.data,
-        approvedCount: response.data?.approvedCount,
-        error: response.error
-      });
-      
-      if (response.success) {
-        // Update allRecommendations to reflect approved status for selected items
-        setAllRecommendations(prev => prev.map(rec => 
-          selectedIds.has(rec.id || '')
-            ? { ...rec, reviewStatus: 'approved' as const, isApproved: true }
-            : rec
-        ));
-        
-        setSelectedIds(new Set());
-        
-        // Set manual loading flags (both state and ref) to prevent useEffect from interfering
-        isManuallyNavigatingRef.current = true;
-        setIsManuallyLoading(true);
-        
-        // Longer delay to ensure database transaction is fully committed
-        // The backend updates is_approved, so we need to wait for the transaction
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Retry logic: Try loading Step 2 data up to 3 times
-        let step2Response: any = null;
-        let retries = 0;
-        const maxRetries = 3;
-        let loadedSuccessfully = false;
-        
-        while (retries < maxRetries && !loadedSuccessfully) {
-          console.log(`📥 [RecommendationsV3] Attempting to load Step 2 data (attempt ${retries + 1}/${maxRetries})...`);
-          step2Response = await getRecommendationsByStepV3(generationId, 2);
-          
-          console.log(`📊 [RecommendationsV3] Step 2 response (attempt ${retries + 1}):`, {
-            success: step2Response.success,
-            hasData: !!step2Response.data,
-            recommendationsCount: step2Response.data?.recommendations?.length || 0,
-            error: step2Response.error
-          });
-          
-          if (step2Response.success && step2Response.data) {
-            const approvedRecs = step2Response.data.recommendations || [];
-            if (approvedRecs.length > 0) {
-              console.log(`✅ [RecommendationsV3] Loaded ${approvedRecs.length} approved recommendations for Step 2`);
-              console.log(`📊 [RecommendationsV3] Approved recommendation IDs:`, approvedRecs.map((r: any) => r.id));
-              console.log(`📊 [RecommendationsV3] Approved recommendation actions:`, approvedRecs.map((r: any) => r.action?.substring(0, 50)));
-              
-              // IMPORTANT: Set recommendations to ONLY the approved ones
-              setRecommendations(approvedRecs);
-              
-              // Move to step 2 AFTER loading data
-              setCurrentStep(2);
-              setError(null);
-              loadedSuccessfully = true;
-              break; // Success, exit retry loop
-            } else {
-              console.warn(`⚠️ [RecommendationsV3] Step 2 returned empty recommendations array (attempt ${retries + 1})`);
-              retries++;
-              if (retries < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, 300));
-              }
-            }
-          } else {
-            retries++;
-            if (retries < maxRetries) {
-              console.warn(`⚠️ [RecommendationsV3] Step 2 load failed, retrying in 300ms... (${retries}/${maxRetries})`);
-              console.warn(`⚠️ [RecommendationsV3] Error:`, step2Response.error);
-              await new Promise(resolve => setTimeout(resolve, 300));
-            }
-          }
-        }
-        
-        if (!loadedSuccessfully) {
-          console.error('❌ [RecommendationsV3] Failed to load Step 2 data after all retries');
-          console.error('❌ [RecommendationsV3] Final Step 2 response:', step2Response);
-          
-          // Try one more time with a longer delay - sometimes database needs more time
-          console.log('🔄 [RecommendationsV3] Trying one final attempt with longer delay...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const finalStep2Response = await getRecommendationsByStepV3(generationId, 2);
-          
-          if (finalStep2Response.success && finalStep2Response.data && finalStep2Response.data.recommendations?.length > 0) {
-            console.log(`✅ [RecommendationsV3] Successfully loaded ${finalStep2Response.data.recommendations.length} recommendations on final attempt`);
-            setRecommendations(finalStep2Response.data.recommendations);
-            setCurrentStep(2);
-            setError(null);
-          } else {
-            // Even if loading fails, move to step 2 - the useEffect will try to load it
-            setCurrentStep(2);
-            // Clear error - let the useEffect handle loading, it will show error if needed
-            // The useEffect will automatically try to load Step 2 when currentStep changes
-            setError(null);
-            console.log('⏭️ [RecommendationsV3] Moving to Step 2, useEffect will attempt to load data');
-          }
-        }
-        
-          // Mark Step 2 as manually loaded to prevent useEffect from reloading
-          lastManuallyLoadedStepRef.current = 2;
-          
-          // Clear manual loading flags after state has settled
-          setTimeout(() => {
-            setIsManuallyLoading(false);
-            isManuallyNavigatingRef.current = false;
-            console.log('✅ [RecommendationsV3] Manual loading flags cleared');
-          }, 300);
-      } else {
-        console.error('❌ [RecommendationsV3] Approval failed:', response.error);
-        setError(response.error || 'Failed to approve recommendations');
-      }
-    } catch (err: any) {
-      console.error('Error approving recommendations:', err);
-      setError(err.message || 'Failed to approve recommendations');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Note: Approval now happens automatically when user changes status to "approved" via dropdown
+  // The handleStatusChange function handles updating the status, which automatically sets is_approved = true
 
   // Handle generate content for all approved recommendations (Step 2 → Step 3)
   const handleGenerateContentBulk = async () => {
@@ -1482,23 +1328,11 @@ export const RecommendationsV3 = () => {
                       <option value="approved">Approved</option>
                       <option value="rejected">Rejected</option>
                     </select>
-                    {selectedIds.size > 0 && (
-                      <button
-                        onClick={handleApprove}
-                        disabled={isLoading}
-                        className="px-4 py-2 bg-[#06c686] text-white rounded-md text-[13px] font-medium hover:bg-[#05a870] disabled:opacity-50 transition-colors"
-                      >
-                        Approve ({selectedIds.size})
-                      </button>
-                    )}
                   </div>
                 </div>
                 <RecommendationsTableV3
                   recommendations={recommendations}
-                  selectedIds={selectedIds}
-                  onSelect={handleSelect}
-                  onSelectAll={handleSelectAll}
-                  showCheckboxes={true}
+                  showCheckboxes={false}
                   showStatusDropdown={true}
                   onStatusChange={handleStatusChange}
                 />

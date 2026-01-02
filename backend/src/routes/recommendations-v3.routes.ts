@@ -313,15 +313,13 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
       .eq('customer_id', customerId); // CRITICAL: Filter by customer_id
 
     if (stepNum === 1) {
-      // Step 1: All recommendations (not approved)
-      // Filter by review_status if provided in query params
+      // Step 1: All recommendations - load all regardless of status for local filtering
+      // Filter by review_status if provided in query params (for specific filtering)
       const reviewStatus = req.query.reviewStatus as string | undefined;
       if (reviewStatus && ['pending_review', 'approved', 'rejected'].includes(reviewStatus)) {
         query = query.eq('review_status', reviewStatus);
-      } else {
-        // Default: show all recommendations that are not approved (for backward compatibility)
-        query = query.eq('is_approved', false);
       }
+      // If no reviewStatus provided, load all recommendations (no filter on is_approved or review_status)
     } else if (stepNum === 2) {
       // Step 2: Approved but content not generated
       query = query.eq('is_approved', true).eq('is_content_generated', false);

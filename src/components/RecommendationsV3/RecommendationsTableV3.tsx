@@ -216,48 +216,46 @@ export const RecommendationsTableV3 = ({
                       </td>
                       {showStatusDropdown && (
                         <td className="px-4 py-4">
-                          <select
-                            value={rec.reviewStatus || 'pending_review'}
-                            onChange={(e) => {
-                              const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected';
-                              if (rec.id && onStatusChange) {
-                                onStatusChange(rec.id, newStatus);
-                              }
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label={`Change status for ${rec.action?.substring(0, 30)}`}
-                            style={{
-                              border: '1px solid #dcdfe5',
-                              borderRadius: '4px',
-                              padding: '6px 10px',
-                              fontSize: '13px',
-                              fontFamily: 'IBM Plex Sans, sans-serif',
-                              color: '#212534',
-                              backgroundColor: '#ffffff',
-                              cursor: 'pointer',
-                              minWidth: '140px',
-                              outline: 'none'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = '#cfd4e3';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = '#dcdfe5';
-                            }}
-                            onFocus={(e) => {
-                              e.stopPropagation();
-                              e.currentTarget.style.borderColor = '#0ea5e9';
-                              e.currentTarget.style.boxShadow = '0 0 0 2px rgba(14, 165, 233, 0.1)';
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = '#dcdfe5';
-                              e.currentTarget.style.boxShadow = 'none';
-                            }}
-                          >
-                            <option value="pending_review">Pending Review</option>
-                            <option value="approved">Approved</option>
-                            <option value="rejected">Rejected</option>
-                          </select>
+                          <div className="relative">
+                            <select
+                              value={rec.reviewStatus || 'pending_review'}
+                              onChange={(e) => {
+                                const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected';
+                                if (rec.id && onStatusChange) {
+                                  onStatusChange(rec.id, newStatus);
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Change status for ${rec.action?.substring(0, 30)}`}
+                              className={`w-full pl-9 pr-8 py-2 border rounded-lg text-[13px] font-medium cursor-pointer transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                                rec.reviewStatus === 'approved'
+                                  ? 'border-[#06c686] bg-[#f0fdf4] text-[#027a48] focus:ring-[#06c686]'
+                                  : rec.reviewStatus === 'rejected'
+                                  ? 'border-[#fecaca] bg-[#fef2f2] text-[#991b1b] focus:ring-[#ef4444]'
+                                  : 'border-[#fde68a] bg-[#fffbeb] text-[#92400e] focus:ring-[#f59e0b]'
+                              }`}
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L10 1' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+                                backgroundSize: '10px 6px',
+                                backgroundPosition: 'right 8px center',
+                                backgroundRepeat: 'no-repeat'
+                              }}
+                            >
+                              <option value="pending_review">Pending Review</option>
+                              <option value="approved">Approved</option>
+                              <option value="rejected">Rejected</option>
+                            </select>
+                            {/* Status indicator dot */}
+                            <div
+                              className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ${
+                                rec.reviewStatus === 'approved'
+                                  ? 'bg-[#06c686]'
+                                  : rec.reviewStatus === 'rejected'
+                                  ? 'bg-[#ef4444]'
+                                  : 'bg-[#f59e0b]'
+                              }`}
+                            />
+                          </div>
                         </td>
                       )}
                       {showActions && (

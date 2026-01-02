@@ -27,6 +27,7 @@ import {
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
+import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { IconSparkles, IconAlertCircle, IconTrendingUp, IconTrendingDown, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 
 export const RecommendationsV3 = () => {
@@ -1302,32 +1303,63 @@ export const RecommendationsV3 = () => {
             {/* Step 1: Generate & Review */}
             {currentStep === 1 && (
               <div>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 1: Generate & Review</h2>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    {/* Status Filter - matching project theme */}
-                    <select
-                      id="status-filter"
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value as 'all' | 'pending_review' | 'approved' | 'rejected')}
-                      aria-label="Filter by status"
-                      style={{
-                        border: '1px solid #dcdfe5',
-                        borderRadius: '4px',
-                        padding: '8px 12px',
-                        fontSize: '13px',
-                        fontFamily: 'IBM Plex Sans, sans-serif',
-                        color: '#212534',
-                        backgroundColor: '#ffffff',
-                        cursor: 'pointer',
-                        minWidth: '140px'
-                      }}
-                    >
-                      <option value="all">All Status</option>
-                      <option value="pending_review">Pending Review</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                  <div>
+                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 1: Generate & Review</h2>
+                    <p className="text-[13px] text-[#64748b]">Review recommendations and set their status</p>
+                  </div>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    {/* Status Filter - Enhanced UI */}
+                    <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+                    
+                    {/* Proceed to Step 2 Button - Show when there are approved recommendations */}
+                    {(() => {
+                      const approvedCount = allRecommendations.filter(
+                        rec => (rec.reviewStatus || 'pending_review') === 'approved'
+                      ).length;
+                      
+                      if (approvedCount > 0) {
+                        return (
+                          <button
+                            onClick={async () => {
+                              // Set manual loading flags
+                              isManuallyNavigatingRef.current = true;
+                              setIsManuallyLoading(true);
+                              lastManuallyLoadedStepRef.current = 2;
+                              
+                              try {
+                                setIsLoading(true);
+                                setError(null);
+                                console.log(`📥 [RecommendationsV3] Navigating to Step 2`);
+                                const response = await getRecommendationsByStepV3(generationId!, 2);
+                                if (response.success && response.data) {
+                                  const recommendationsWithIds = response.data.recommendations
+                                    .filter(rec => rec.id && rec.id.length > 10)
+                                    .map(rec => ({ ...rec, id: rec.id! }));
+                                  setRecommendations(recommendationsWithIds);
+                                  setCurrentStep(2);
+                                  setError(null);
+                                }
+                              } catch (err: any) {
+                                console.error('Error loading step 2:', err);
+                                setError(err.message || 'Failed to load recommendations');
+                              } finally {
+                                setIsLoading(false);
+                                setTimeout(() => {
+                                  setIsManuallyLoading(false);
+                                  isManuallyNavigatingRef.current = false;
+                                }, 300);
+                              }
+                            }}
+                            className="px-4 py-2.5 bg-[#06c686] text-white rounded-lg text-[13px] font-semibold hover:bg-[#05a870] transition-all shadow-sm hover:shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <IconTrendingUp size={16} />
+                            Proceed to Step 2 ({approvedCount})
+                          </button>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </div>
                 <RecommendationsTableV3

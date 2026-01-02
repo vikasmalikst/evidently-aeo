@@ -31,6 +31,8 @@ export class BrightDataGeminiService extends BaseBrightDataService {
         input: [{
           url: 'https://gemini.google.com/',
           prompt: request.prompt,
+          // Enforce country parameter: default to 'US' if not provided (per strict requirement)
+          country: 'US',
           index: 1
         }]
       };

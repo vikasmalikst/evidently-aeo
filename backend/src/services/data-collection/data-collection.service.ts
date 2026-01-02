@@ -204,6 +204,27 @@ export class DataCollectionService {
    */
   async executeQueries(requests: QueryExecutionRequest[]): Promise<CollectorResult[]> {
     const results: CollectorResult[] = [];
+    
+    // Validation: Check collectors at the beginning (assuming uniform collectors for the batch)
+    if (requests.length > 0) {
+      const firstRequest = requests[0];
+      if (!firstRequest.collectors || firstRequest.collectors.length === 0) {
+        console.warn(`⚠️ [DataCollection] No collectors specified for ${requests.length} queries`);
+        throw new Error('No data collectors selected');
+      }
+
+      const enabledCollectors = firstRequest.collectors.filter(collector => 
+        this.collectors.get(collector)?.enabled
+      );
+
+      if (enabledCollectors.length === 0) {
+        console.warn(`⚠️ [DataCollection] None of the selected collectors are enabled/valid. Selected: ${firstRequest.collectors.join(', ')}`);
+        throw new Error('No data collectors selected');
+      }
+
+      console.log(`🚀 [DataCollection] Executing ${requests.length} queries across ${enabledCollectors.length} collectors: ${enabledCollectors.join(', ')}`);
+    }
+
     const BATCH_SIZE = 3; // Process 3 queries at a time
     // Process requests in batches
     for (let i = 0; i < requests.length; i += BATCH_SIZE) {

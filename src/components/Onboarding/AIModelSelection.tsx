@@ -73,7 +73,7 @@ const AI_MODELS: AIModel[] = [
     available: true,
   },
   {
-    id: 'copilot',
+    id: 'bing_copilot',
     name: 'Microsoft Copilot',
     provider: 'Microsoft',
     logo: (

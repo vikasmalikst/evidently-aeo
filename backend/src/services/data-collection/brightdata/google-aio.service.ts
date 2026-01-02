@@ -32,7 +32,8 @@ export class BrightDataGoogleAIOService extends BaseBrightDataService {
         input: [{
           url: 'https://google.com/aimode',
           prompt: request.prompt,
-          country: request.country || ''
+          // Enforce country parameter: default to 'US' if not provided (per strict requirement)
+          country: 'US'
         }]
       };
 

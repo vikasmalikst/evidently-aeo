@@ -112,7 +112,9 @@ export const ManageCollectors = () => {
           : undefined;
 
       const rawAiModels = Array.isArray(aiModelsValue)
-        ? aiModelsValue.filter((value): value is string => typeof value === 'string')
+        ? aiModelsValue
+            .filter((value): value is string => typeof value === 'string')
+            .map(value => value === 'copilot' ? 'bing_copilot' : value) // Normalize legacy 'copilot' to 'bing_copilot'
         : [];
 
       setEnabledCollectors(new Set(rawAiModels));
@@ -202,7 +204,14 @@ export const ManageCollectors = () => {
           )}
 
           <div className="space-y-3">
-            {AVAILABLE_COLLECTORS.map((collector) => {
+            {[...AVAILABLE_COLLECTORS]
+              .sort((a, b) => {
+                const aActive = enabledCollectors.has(a.id);
+                const bActive = enabledCollectors.has(b.id);
+                if (aActive === bActive) return 0; // Maintain original relative order
+                return aActive ? -1 : 1; // Active first
+              })
+              .map((collector) => {
               const isActive = enabledCollectors.has(collector.id);
               const updating = isUpdating === collector.id;
 

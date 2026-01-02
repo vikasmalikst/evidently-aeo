@@ -75,6 +75,7 @@ export const ChartTitle = ({
       case 'perplexity':
         return <img src={perplexityLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
       case 'copilot':
+      case 'bing_copilot':
         return <img src={copilotLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;
       case 'google_aio':
         return <img src={googleAioLogoSrc} alt="" style={{ width: '16px', height: '16px' }} />;

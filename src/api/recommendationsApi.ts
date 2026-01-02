@@ -1,12 +1,12 @@
 /**
  * Recommendations API
  * 
- * Frontend API client for the brand recommendations engine.
- * Calls the backend to generate AI-powered recommendations using Cerebras/QWEN.
+ * Frontend API client for fetching recommendations.
+ * Note: Recommendations V3 uses its own API (recommendationsV3Api.ts) for generation.
+ * This API is kept for backward compatibility with SearchSourcesR2 page.
  */
 
-import { apiClient } from '../lib/apiClient';
-import { cachedRequest, invalidateCache } from '../lib/apiCache';
+import { cachedRequest } from '../lib/apiCache';
 
 // ============================================================================
 // TYPES
@@ -119,106 +119,9 @@ export async function fetchRecommendationContentLatest(recommendationId: string)
   }
 }
 
-export async function generateRecommendationContent(recommendationId: string, contentType: string = 'draft'): Promise<{
-  success: boolean;
-  data?: { content: RecommendationGeneratedContent; providerUsed?: string; modelUsed?: string };
-  error?: string;
-}> {
-  try {
-    const response = await apiClient.request<{
-      success: boolean;
-      data?: { content: RecommendationGeneratedContent; providerUsed?: string; modelUsed?: string };
-      error?: string;
-    }>(
-      `/recommendations/${recommendationId}/content`,
-      { method: 'POST', body: JSON.stringify({ contentType }) },
-      { requiresAuth: true }
-    );
-    invalidateCache(new RegExp(`^/recommendations/${recommendationId}/content`));
-    return response;
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to generate recommendation content'
-    };
-  }
-}
-
-export async function updateRecommendationContentStatus(contentId: string, status: 'accepted' | 'rejected'): Promise<{
-  success: boolean;
-  data?: { content: RecommendationGeneratedContent };
-  error?: string;
-}> {
-  try {
-    const response = await apiClient.request<{
-      success: boolean;
-      data?: { content: RecommendationGeneratedContent };
-      error?: string;
-    }>(
-      `/recommendations/content/${contentId}`,
-      { method: 'PATCH', body: JSON.stringify({ status }) },
-      { requiresAuth: true }
-    );
-    return response;
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to update content status'
-    };
-  }
-}
-
 // ============================================================================
 // API FUNCTIONS
 // ============================================================================
-
-/**
- * Generate AI-powered recommendations for a brand
- * 
- * @param request - Optional request with brandId
- * @returns RecommendationsResponse with up to 10 recommendations
- * 
- * @example
- * ```ts
- * // Generate for specific brand
- * const result = await generateRecommendations({ brandId: 'abc-123' });
- * 
- * // Generate for default (first) brand
- * const result = await generateRecommendations();
- * ```
- */
-export async function generateRecommendations(
-  request: GenerateRecommendationsRequest = {}
-): Promise<RecommendationsResponse> {
-  try {
-    console.log('📊 [RecommendationsApi] Generating recommendations...', request);
-
-    const response = await apiClient.request<RecommendationsResponse>(
-      '/recommendations',
-      {
-        method: 'POST',
-        body: JSON.stringify(request),
-      },
-      { requiresAuth: true }
-    );
-
-    // Ensure subsequent reads return the latest recommendations
-    invalidateCache(/^\/recommendations/);
-
-    console.log('✅ [RecommendationsApi] Response received:', {
-      success: response.success,
-      count: response.data?.recommendations?.length || 0
-    });
-
-    return response;
-  } catch (error) {
-    console.error('❌ [RecommendationsApi] Error generating recommendations:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to generate recommendations'
-    };
-  }
-}
 
 /**
  * Fetch the latest recommendations for a brand from the database
@@ -268,115 +171,4 @@ export async function fetchRecommendations(
   }
 }
 
-/**
- * Check if the recommendations service is healthy
- */
-export async function checkRecommendationsHealth(): Promise<{
-  success: boolean;
-  message?: string;
-}> {
-  try {
-    const response = await apiClient.request<{ success: boolean; message: string }>(
-      '/recommendations/health',
-      { method: 'GET' },
-      { requiresAuth: false }
-    );
-    return response;
-  } catch (error) {
-    return {
-      success: false,
-      message: 'Recommendations service unavailable'
-    };
-  }
-}
-
-// ============================================================================
-// ACTION STATUS TRACKING
-// ============================================================================
-
-export type RecommendationStatus = 'not_started' | 'in_progress' | 'completed' | 'dismissed';
-
-/**
- * Get the current status of a recommendation
- */
-export async function getRecommendationStatus(recommendationId: string): Promise<{
-  success: boolean;
-  data?: { status: RecommendationStatus };
-  error?: string;
-}> {
-  try {
-    const response = await cachedRequest<{
-      success: boolean;
-      data?: { status: RecommendationStatus };
-      error?: string;
-    }>(`/recommendations/${recommendationId}/status`, { method: 'GET' }, { requiresAuth: true });
-    return response;
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch recommendation status'
-    };
-  }
-}
-
-/**
- * Update the status of a recommendation
- */
-export async function updateRecommendationStatus(
-  recommendationId: string,
-  status: RecommendationStatus,
-  notes?: string
-): Promise<{
-  success: boolean;
-  data?: { action: unknown; status: RecommendationStatus };
-  error?: string;
-}> {
-  try {
-    const response = await apiClient.request<{
-      success: boolean;
-      data?: { action: unknown; status: RecommendationStatus };
-      error?: string;
-    }>(
-      `/recommendations/${recommendationId}/status`,
-      { method: 'PATCH', body: JSON.stringify({ status, notes }) },
-      { requiresAuth: true }
-    );
-    // Invalidate status cache
-    invalidateCache(new RegExp(`^/recommendations/${recommendationId}/status`));
-    invalidateCache(/^\/recommendations\/statuses/);
-    return response;
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to update recommendation status'
-    };
-  }
-}
-
-/**
- * Get statuses for multiple recommendations in batch
- */
-export async function getRecommendationStatuses(recommendationIds: string[]): Promise<{
-  success: boolean;
-  data?: { statuses: Record<string, RecommendationStatus> };
-  error?: string;
-}> {
-  try {
-    const response = await apiClient.request<{
-      success: boolean;
-      data?: { statuses: Record<string, RecommendationStatus> };
-      error?: string;
-    }>(
-      '/recommendations/statuses',
-      { method: 'POST', body: JSON.stringify({ recommendationIds }) },
-      { requiresAuth: true }
-    );
-    return response;
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch recommendation statuses'
-    };
-  }
-}
 

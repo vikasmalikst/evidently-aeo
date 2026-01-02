@@ -5,7 +5,11 @@
 
 require('dotenv').config();
 
-const BRIGHTDATA_API_KEY = process.env.BRIGHTDATA_API_KEY || '50779503a31ea1be376714904cbe4be2ed943da1ce90afd4a3d996249b78b51a';
+const BRIGHTDATA_API_KEY = process.env.BRIGHTDATA_API_KEY;
+if (!BRIGHTDATA_API_KEY) {
+  console.error('Missing BRIGHTDATA_API_KEY in environment');
+  process.exit(1);
+}
 
 console.log('🔍 BrightData API Key:', BRIGHTDATA_API_KEY.substring(0, 20) + '...');
 console.log('');

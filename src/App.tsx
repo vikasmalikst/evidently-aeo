@@ -17,6 +17,7 @@ import { ManageBrands } from './pages/ManageBrands';
 import { ManageCollectors } from './pages/ManageCollectors';
 import { GoogleAnalytics } from './pages/GoogleAnalytics';
 import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2';
+import MoversAndShakers from './pages/MoversAndShakers';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -83,6 +84,14 @@ function App() {
               <DataCollectionLoadingScreenRoute />
             </ProtectedRoute>
           } 
+        />
+        <Route
+          path="/movers-shakers"
+          element={
+            <ProtectedRoute>
+              <MoversAndShakers />
+            </ProtectedRoute>
+          }
         />
         <Route
           path="/dashboard"

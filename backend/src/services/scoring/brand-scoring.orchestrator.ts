@@ -340,6 +340,9 @@ export class BrandScoringService {
    * Useful for triggers that shouldn't block the main operation
    */
   async scoreBrandAsync(options: BrandScoringOptions): Promise<void> {
+    if (process.env.JEST_WORKER_ID !== undefined || process.env.NODE_ENV === 'test') {
+      return;
+    }
     // Run in background without blocking
     setImmediate(async () => {
       try {

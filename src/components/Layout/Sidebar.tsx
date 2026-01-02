@@ -14,6 +14,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { icon: IconLayoutDashboard, label: 'Performance Overview', path: '/' },
+  { icon: IconTrendingUp, label: 'Movers & Shakers', path: '/movers-shakers' },
   { icon: IconEye, label: 'Metrics Analysis', path: '/search-visibility' },
   { icon: IconTargetArrow, label: 'Citations Sources', path: '/search-sources' },
   { icon: IconFolderSearch, label: 'Topics', path: '/topics' },
@@ -36,6 +37,7 @@ export const Sidebar = () => {
   const isActive = (path: string) => location.pathname === path;
 
   // Generate prefetch endpoints for each nav item
+  // Added comment to force refresh for Movers & Shakers menu item visibility
   const getPrefetchEndpoint = (path: string): string | null => {
     if (!selectedBrandId) return null;
     

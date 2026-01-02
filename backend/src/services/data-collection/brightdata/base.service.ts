@@ -4,7 +4,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { getEnvVar } from '../../../utils/env-utils';
+import { getEnvVar, loadEnvironment } from '../../../utils/env-utils';
 import { BrightDataRequest, BrightDataResponse } from './types';
 
 export abstract class BaseBrightDataService {
@@ -14,6 +14,7 @@ export abstract class BaseBrightDataService {
   protected datasetIds: Map<string, string>;
 
   constructor() {
+    loadEnvironment();
     this.apiKey = process.env.BRIGHTDATA_API_KEY || '';
     this.baseUrl = 'https://api.brightdata.com';
     this.datasetIds = new Map();
@@ -40,6 +41,7 @@ export abstract class BaseBrightDataService {
     this.datasetIds.set('google_aio', 'gd_mcswdt6z2elth3zqr2');
     
     if (!this.apiKey) {
+      throw new Error('BrightData API key not configured');
     }
   }
 
@@ -60,4 +62,3 @@ export abstract class BaseBrightDataService {
 
   abstract executeQuery(request: BrightDataRequest): Promise<BrightDataResponse>;
 }
-

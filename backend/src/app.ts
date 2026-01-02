@@ -22,6 +22,7 @@ import promptManagementRoutes from './routes/prompt-management.routes';
 import adminRoutes from './routes/admin.routes';
 import recommendationsRoutes from './routes/recommendations.routes';
 import recommendationsV3Routes from './routes/recommendations-v3.routes';
+import moversShakersRoutes from './routes/movers-shakers.routes';
 // TEMPORARY: User management routes commented out
 // import userManagementRoutes from './routes/user-management.routes';
 
@@ -119,6 +120,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', promptManagementRoutes);
 app.use('/api/recommendations', recommendationsRoutes);
 app.use('/api/recommendations-v3', recommendationsV3Routes);
+app.use('/api/movers-shakers', moversShakersRoutes);
 // TEMPORARY: User management routes commented out
 // app.use('/api/users', userManagementRoutes);
 

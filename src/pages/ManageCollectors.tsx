@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
 import { updateBrandCollectors } from '../api/brandApi';
 import { 
-  IconRobot, 
   IconCheck, 
   IconX, 
   IconLoader2, 
@@ -95,11 +94,32 @@ export const ManageCollectors = () => {
 
   // Initialize enabled collectors from brand metadata
   useEffect(() => {
-    if (selectedBrand?.metadata?.ai_models) {
-      setEnabledCollectors(new Set(selectedBrand.metadata.ai_models));
-    } else {
+    if (!selectedBrand) {
       setEnabledCollectors(new Set());
+      return;
     }
+
+    const metadata = selectedBrand.metadata;
+    const metadataHasAiModelsKey =
+      typeof metadata === 'object' &&
+      metadata !== null &&
+      Object.prototype.hasOwnProperty.call(metadata, 'ai_models');
+
+    if (metadataHasAiModelsKey) {
+      const aiModelsValue =
+        typeof metadata === 'object' && metadata !== null && 'ai_models' in metadata
+          ? (metadata as { ai_models?: unknown }).ai_models
+          : undefined;
+
+      const rawAiModels = Array.isArray(aiModelsValue)
+        ? aiModelsValue.filter((value): value is string => typeof value === 'string')
+        : [];
+
+      setEnabledCollectors(new Set(rawAiModels));
+      return;
+    }
+
+    setEnabledCollectors(new Set(AVAILABLE_COLLECTORS.map((collector) => collector.id)));
   }, [selectedBrand]);
 
   const handleToggleCollector = async (collectorId: string) => {

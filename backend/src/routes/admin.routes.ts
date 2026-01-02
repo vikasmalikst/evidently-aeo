@@ -6,6 +6,7 @@ import { customerEntitlementsService } from '../services/customer-entitlements.s
 import { authService } from '../services/auth/auth.service';
 import { jobSchedulerService } from '../services/jobs/job-scheduler.service';
 import { dataCollectionJobService } from '../services/jobs/data-collection-job.service';
+import type { DataCollectionJobResult } from '../services/jobs/data-collection-job.service';
 import { brandProductEnrichmentService } from '../services/onboarding/brand-product-enrichment.service';
 import { backfillRawAnswerFromSnapshots } from '../scripts/backfill-raw-answer-from-snapshots';
 import { createClient } from '@supabase/supabase-js';
@@ -1546,18 +1547,40 @@ router.post('/brands/:brandId/collect-data-now', async (req: Request, res: Respo
       try {
         const { data: brand, error: brandError } = await supabase
           .from('brands')
-          .select('ai_models')
+          .select('metadata')
           .eq('id', brandId)
           .single();
 
         if (brandError) {
           console.warn(`[Admin] Failed to fetch brand ai_models: ${brandError.message}, using default collectors`);
-        } else if (brand?.ai_models && Array.isArray(brand.ai_models) && brand.ai_models.length > 0) {
-          // Map the brand's selected AI models to collector names
-          collectorsToUse = mapAIModelsToCollectors(brand.ai_models);
-          console.log(`[Admin] Using brand's selected collectors: ${collectorsToUse.join(', ')} (from ai_models: ${brand.ai_models.join(', ')})`);
         } else {
-          console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+          const metadata =
+            typeof brand === 'object' && brand !== null && 'metadata' in brand
+              ? (brand as { metadata?: unknown }).metadata
+              : undefined;
+          const metadataHasAiModelsKey =
+            typeof metadata === 'object' &&
+            metadata !== null &&
+            Object.prototype.hasOwnProperty.call(metadata, 'ai_models');
+
+          const aiModelsValue =
+            typeof metadata === 'object' && metadata !== null && 'ai_models' in metadata
+              ? (metadata as { ai_models?: unknown }).ai_models
+              : undefined;
+
+          const rawAiModels = Array.isArray(aiModelsValue)
+            ? aiModelsValue.filter((value): value is string => typeof value === 'string')
+            : undefined;
+
+          if (Array.isArray(rawAiModels) && rawAiModels.length > 0) {
+            collectorsToUse = mapAIModelsToCollectors(rawAiModels);
+            console.log(`[Admin] Using brand's selected collectors: ${collectorsToUse.join(', ')} (from ai_models: ${rawAiModels.join(', ')})`);
+          } else if (metadataHasAiModelsKey) {
+            collectorsToUse = [];
+            console.log(`[Admin] Brand ${brandId} has an explicit empty collectors selection`);
+          } else {
+            console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+          }
         }
       } catch (error) {
         console.warn(`[Admin] Error fetching brand ai_models: ${error instanceof Error ? error.message : String(error)}, using default collectors`);
@@ -1741,7 +1764,11 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
 
     // Run the work in the background (don't await - let it run asynchronously)
     setImmediate(async () => {
-      const results: any = {
+      const results: {
+        dataCollection: DataCollectionJobResult | null;
+        scoring: unknown;
+        errors: Array<{ operation: string; error: string }>;
+      } = {
         dataCollection: null,
         scoring: null,
         errors: [],
@@ -1756,18 +1783,40 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
           try {
             const { data: brand, error: brandError } = await supabase
               .from('brands')
-              .select('ai_models')
+              .select('metadata')
               .eq('id', brandId)
               .single();
 
             if (brandError) {
               console.warn(`[Admin] Failed to fetch brand ai_models: ${brandError.message}, using default collectors`);
-            } else if (brand?.ai_models && Array.isArray(brand.ai_models) && brand.ai_models.length > 0) {
-              // Map the brand's selected AI models to collector names
-              collectorsToUse = mapAIModelsToCollectors(brand.ai_models);
-              console.log(`[Admin] Using brand's selected collectors: ${collectorsToUse.join(', ')} (from ai_models: ${brand.ai_models.join(', ')})`);
             } else {
-              console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+              const metadata =
+                typeof brand === 'object' && brand !== null && 'metadata' in brand
+                  ? (brand as { metadata?: unknown }).metadata
+                  : undefined;
+              const metadataHasAiModelsKey =
+                typeof metadata === 'object' &&
+                metadata !== null &&
+                Object.prototype.hasOwnProperty.call(metadata, 'ai_models');
+
+              const aiModelsValue =
+                typeof metadata === 'object' && metadata !== null && 'ai_models' in metadata
+                  ? (metadata as { ai_models?: unknown }).ai_models
+                  : undefined;
+
+              const rawAiModels = Array.isArray(aiModelsValue)
+                ? aiModelsValue.filter((value): value is string => typeof value === 'string')
+                : undefined;
+
+              if (Array.isArray(rawAiModels) && rawAiModels.length > 0) {
+                collectorsToUse = mapAIModelsToCollectors(rawAiModels);
+                console.log(`[Admin] Using brand's selected collectors: ${collectorsToUse.join(', ')} (from ai_models: ${rawAiModels.join(', ')})`);
+              } else if (metadataHasAiModelsKey) {
+                collectorsToUse = [];
+                console.log(`[Admin] Brand ${brandId} has an explicit empty collectors selection`);
+              } else {
+                console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+              }
             }
           } catch (error) {
             console.warn(`[Admin] Error fetching brand ai_models: ${error instanceof Error ? error.message : String(error)}, using default collectors`);

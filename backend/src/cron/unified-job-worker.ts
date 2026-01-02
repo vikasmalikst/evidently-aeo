@@ -69,6 +69,35 @@ function mapAIModelsToCollectors(aiModels: string[]): string[] {
   return [...new Set(collectors)];
 }
 
+export function resolveCollectorsFromBrandMetadata(metadata: unknown): {
+  kind: 'selected' | 'explicit_empty' | 'no_key';
+  collectors?: string[];
+} {
+  const metadataHasAiModelsKey =
+    typeof metadata === 'object' &&
+    metadata !== null &&
+    Object.prototype.hasOwnProperty.call(metadata, 'ai_models');
+
+  if (!metadataHasAiModelsKey) {
+    return { kind: 'no_key' };
+  }
+
+  const aiModelsValue =
+    typeof metadata === 'object' && metadata !== null && 'ai_models' in metadata
+      ? (metadata as { ai_models?: unknown }).ai_models
+      : undefined;
+
+  const rawAiModels = Array.isArray(aiModelsValue)
+    ? aiModelsValue.filter((value): value is string => typeof value === 'string')
+    : [];
+
+  if (rawAiModels.length > 0) {
+    return { kind: 'selected', collectors: mapAIModelsToCollectors(rawAiModels) };
+  }
+
+  return { kind: 'explicit_empty', collectors: [] };
+}
+
 interface JobRun {
   id: string;
   scheduled_job_id: string;
@@ -78,14 +107,40 @@ interface JobRun {
   scheduled_for: string;
 }
 
+interface ScheduledJobMetadata {
+  collectors?: string[] | string;
+  locale?: string;
+  country?: string;
+  positionLimit?: number;
+  sentimentLimit?: number;
+  parallel?: boolean;
+  [key: string]: unknown;
+}
+
 interface ScheduledJobRow {
   id: string;
   brand_id: string;
   customer_id: string;
   job_type: 'data_collection' | 'scoring' | 'data_collection_and_scoring';
   is_active: boolean;
-  metadata: Record<string, any>;
+  metadata: ScheduledJobMetadata;
   last_run_at: string | null;
+}
+
+interface JobMetrics {
+  dataCollection?: {
+    queriesExecuted: number;
+    collectorResults: number;
+    successfulExecutions: number;
+    failedExecutions: number;
+  };
+  scoring?: {
+    positionsProcessed: number;
+    sentimentsProcessed: number;
+    competitorSentimentsProcessed: number;
+    citationsProcessed: number;
+  };
+  [key: string]: unknown;
 }
 
 async function processPendingRuns(): Promise<void> {
@@ -153,8 +208,8 @@ async function processSingleRun(run: JobRun): Promise<void> {
   const startedAt = new Date();
 
   try {
-    let metrics: Record<string, any> = {};
-    let errors: Array<{ operation: string; error: string }> = [];
+    const metrics: JobMetrics = {};
+    const errors: Array<{ operation: string; error: string }> = [];
 
     // Determine what to execute based on job_type
     if (run.job_type === 'data_collection' || run.job_type === 'data_collection_and_scoring') {
@@ -167,28 +222,68 @@ async function processSingleRun(run: JobRun): Promise<void> {
         const locale = scheduleRow.metadata?.locale || undefined;
         const country = scheduleRow.metadata?.country || undefined;
 
-        // If collectors not explicitly provided in metadata, fetch brand's selected collectors from onboarding
-        if (!collectors || collectors.length === 0) {
+        const scheduleMetadata = scheduleRow.metadata || {};
+        const scheduleHasCollectorsKey =
+          typeof scheduleMetadata === 'object' &&
+          scheduleMetadata !== null &&
+          Object.prototype.hasOwnProperty.call(scheduleMetadata, 'collectors');
+
+        if (scheduleHasCollectorsKey) {
+          if (collectors === null) {
+            collectors = [];
+          } else if (typeof collectors === 'string') {
+            collectors = collectors
+              .split(',')
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0);
+          }
+        }
+
+        if (!scheduleHasCollectorsKey && (!collectors || collectors.length === 0)) {
           try {
             const { data: brand, error: brandError } = await supabase
               .from('brands')
-              .select('ai_models')
+              .select('metadata')
               .eq('id', run.brand_id)
               .single();
 
             if (brandError) {
               console.warn(`[Worker] Failed to fetch brand ai_models for ${run.brand_id}: ${brandError.message}, using default collectors`);
-            } else if (brand?.ai_models && Array.isArray(brand.ai_models) && brand.ai_models.length > 0) {
-              // Map the brand's selected AI models to collector names
-              collectors = mapAIModelsToCollectors(brand.ai_models);
-              console.log(`[Worker] Using brand's selected collectors: ${collectors.join(', ')} (from ai_models: ${brand.ai_models.join(', ')})`);
             } else {
-              console.log(`[Worker] Brand ${run.brand_id} has no ai_models selected, using default collectors`);
+              const metadata =
+                typeof brand === 'object' && brand !== null && 'metadata' in brand
+                  ? (brand as { metadata?: unknown }).metadata
+                  : undefined;
+              const metadataHasAiModelsKey =
+                typeof metadata === 'object' &&
+                metadata !== null &&
+                Object.prototype.hasOwnProperty.call(metadata, 'ai_models');
+
+              const aiModelsValue =
+                typeof metadata === 'object' && metadata !== null && 'ai_models' in metadata
+                  ? (metadata as { ai_models?: unknown }).ai_models
+                  : undefined;
+
+              const rawAiModels = Array.isArray(aiModelsValue)
+                ? aiModelsValue.filter((value): value is string => typeof value === 'string')
+                : undefined;
+
+              if (Array.isArray(rawAiModels) && rawAiModels.length > 0) {
+                collectors = mapAIModelsToCollectors(rawAiModels);
+                console.log(
+                  `[Worker] Using brand's selected collectors: ${collectors.join(', ')} (from ai_models: ${rawAiModels.join(', ')})`
+                );
+              } else if (metadataHasAiModelsKey) {
+                collectors = [];
+                console.log(`[Worker] Brand ${run.brand_id} has an explicit empty collectors selection`);
+              } else {
+                console.log(`[Worker] Brand ${run.brand_id} has no ai_models selected, using default collectors`);
+              }
             }
           } catch (error) {
             console.warn(`[Worker] Error fetching brand ai_models for ${run.brand_id}: ${error instanceof Error ? error.message : String(error)}, using default collectors`);
           }
-        } else {
+        } else if (scheduleHasCollectorsKey) {
           console.log(`[Worker] Using collectors from job metadata: ${Array.isArray(collectors) ? collectors.join(', ') : collectors}`);
         }
 
@@ -196,7 +291,7 @@ async function processSingleRun(run: JobRun): Promise<void> {
           run.brand_id,
           run.customer_id,
           {
-            collectors,
+            collectors: collectors as string[] | undefined,
             locale,
             country,
             since,
@@ -329,9 +424,10 @@ async function tick(): Promise<void> {
   }
 }
 
-console.log(`[Worker] Unified job worker started. Polling every ${POLL_INTERVAL_MS / 1000} seconds`);
-
-void tick();
-setInterval(() => {
+if (process.env.JEST_WORKER_ID === undefined && process.env.NODE_ENV !== 'test') {
+  console.log(`[Worker] Unified job worker started. Polling every ${POLL_INTERVAL_MS / 1000} seconds`);
   void tick();
-}, POLL_INTERVAL_MS);
+  setInterval(() => {
+    void tick();
+  }, POLL_INTERVAL_MS);
+}

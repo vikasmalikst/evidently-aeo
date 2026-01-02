@@ -38,6 +38,12 @@ interface ConsolidatedScoringResult {
   sentimentsProcessed: number;
   citationsProcessed: number;
   errors: Array<{ collectorResultId: number; error: string }>;
+  metrics: {
+    totalCitations: number;
+    cachedCitations: number;
+    totalOccurrences: number; // Brand + Competitor analysis runs
+    cachedOccurrences: number; // Runs satisfied from cache
+  };
 }
 
 export class ConsolidatedScoringService {
@@ -98,7 +104,7 @@ export class ConsolidatedScoringService {
       
       // 2. Fallback strategies (Sequential to avoid OR() bug)
       // We try to claim by matching specific status one by one
-      const statuses = [null, 'pending', 'error'];
+      const statuses = [null, 'pending', 'error', 'timeout'];
       
       for (const status of statuses) {
           let query = this.supabase.from('collector_results').update({
@@ -177,15 +183,27 @@ export class ConsolidatedScoringService {
   }
 
   /**
-   * Mark a collector_result as error
-   * Sets status to 'error' and stores error message
+   * Mark a collector_result as error or timeout
+   * Sets status to 'error' or 'timeout' and stores error message
    */
   private async markCollectorResultError(collectorResultId: number, errorMessage: string): Promise<void> {
     try {
+      // Check if this is a timeout error
+      const isTimeout = errorMessage.toLowerCase().includes('timeout') || 
+                        errorMessage.toLowerCase().includes('timed out') ||
+                        errorMessage.toLowerCase().includes('abort') ||
+                        errorMessage.toLowerCase().includes('time out');
+      
+      const status = isTimeout ? 'timeout' : 'error';
+
+      if (isTimeout) {
+        console.log(`   ⏱️ Marking collector_result ${collectorResultId} as '${status}' due to timeout error`);
+      }
+
       const { error } = await this.supabase
         .from('collector_results')
         .update({
-          scoring_status: 'error',
+          scoring_status: status,
           scoring_error: errorMessage,
         })
         .eq('id', collectorResultId);
@@ -195,14 +213,14 @@ export class ConsolidatedScoringService {
         if (error.message.includes('column') || error.message.includes('scoring_error')) {
            await this.supabase
             .from('collector_results')
-            .update({ scoring_status: 'error' })
+            .update({ scoring_status: status })
             .eq('id', collectorResultId);
            return;
         }
-        console.warn(`⚠️ Error marking collector_result ${collectorResultId} as error:`, error.message);
+        console.warn(`⚠️ Error marking collector_result ${collectorResultId} as ${status}:`, error.message);
       }
     } catch (error) {
-      console.warn(`⚠️ Exception marking collector_result ${collectorResultId} as error:`, error instanceof Error ? error.message : error);
+      console.warn(`⚠️ Exception marking collector_result ${collectorResultId} as error/timeout:`, error instanceof Error ? error.message : error);
     }
   }
 
@@ -210,6 +228,8 @@ export class ConsolidatedScoringService {
    * Process a single collector_result with per-result batching
    * OPTIMIZATION: Batches all database operations (positions + sentiment) for one collector_result together
    * This reduces database round trips from 5+ operations to 1 batch per collector_result
+   * 
+   * Returns true if ALL steps succeeded, false otherwise
    */
   private async processSingleResultWithBatching(
     collectorResult: any,
@@ -218,46 +238,44 @@ export class ConsolidatedScoringService {
     result: ConsolidatedScoringResult,
     processedCount: number,
     totalCount: number
-  ): Promise<void> {
+  ): Promise<boolean> {
     const collectorResultId = collectorResult.id;
     
     // Track success status for each step
     let step1Success = false;
     let step2Success = false;
     let step3Success = false;
+    let step3Skipped = false;
 
     try {
       // Step 1: Run consolidated analysis (or get from cache)
       console.log(`\n   📊 [Item ${processedCount}/${totalCount}] Processing collector_result ${collectorResultId}...`);
       
-      // Check if analysis exists in DB cache
-      let analysis = await this.getCachedAnalysisFromDB(collectorResultId);
-      let citationsStored = false;
+      // Call runConsolidatedAnalysis which uses consolidatedAnalysisService.analyze
+      // This handles both caching and new analysis with full metrics tracking
+      const analysis = await this.runConsolidatedAnalysis(collectorResult, brandId, customerId);
       
-      if (analysis) {
-        console.log(`   ♻️ Using cached analysis from DB for collector_result ${collectorResultId}`);
-        step1Success = true;
-        citationsStored = true;
-      } else {
-        // Run new analysis (this stores citations during analysis)
-        analysis = await this.runConsolidatedAnalysis(collectorResult, brandId, customerId);
-        if (!analysis) {
-          console.warn(`   ⚠️ No analysis returned for collector_result ${collectorResultId}`);
-          result.errors.push({
-            collectorResultId,
-            error: 'Step 1 failed: No analysis returned',
-          });
-          return;
-        }
-        step1Success = true;
-        citationsStored = true;
+      if (!analysis) {
+        console.warn(`   ⚠️ No analysis returned for collector_result ${collectorResultId}`);
+        result.errors.push({
+          collectorResultId,
+          error: 'Step 1 failed: No analysis returned',
+        });
+        return false;
+      }
+      
+      step1Success = true;
+      result.citationsProcessed++;
+
+      // Update metrics from analysis
+      if (analysis.metrics) {
+        result.metrics.totalCitations += analysis.metrics.totalCitations;
+        result.metrics.cachedCitations += analysis.metrics.cachedCitations;
+        result.metrics.totalOccurrences += analysis.metrics.totalOccurrences;
+        result.metrics.cachedOccurrences += analysis.metrics.cachedOccurrences;
       }
 
-      if (citationsStored) {
-        result.citationsProcessed++;
-      }
-
-      // Step 2 & 3: Extract positions and prepare sentiment, then batch save everything together
+      // Step 2 & 3: Extract positions and prepare sentiment
       console.log(`   📍 [Item ${processedCount}/${totalCount}] Extracting positions for collector_result ${collectorResultId}...`);
       
       try {
@@ -279,6 +297,9 @@ export class ConsolidatedScoringService {
               competitorNames: competitorNames,
             };
             console.log(`   💾 [Item ${processedCount}/${totalCount}] Prepared sentiment data for collector_result ${collectorResultId}`);
+          } else {
+             console.log(`   ⏭️ No sentiment data for collector_result ${collectorResultId}, skipping sentiment storage`);
+             step3Skipped = true;
           }
           
           // OPTIMIZATION: Batch save all operations together (positions + sentiment)
@@ -297,7 +318,8 @@ export class ConsolidatedScoringService {
         } else {
           console.warn(`   ⚠️ No position payload extracted for collector_result ${collectorResultId}`);
           step2Success = true; // Consider it success if no error thrown
-          step3Success = true;
+          step3Success = true; // Step 3 effectively skipped
+          step3Skipped = true;
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -311,11 +333,31 @@ export class ConsolidatedScoringService {
       }
 
       // Track success
-      if (step1Success) {
-        result.processed++;
-      }
+      // Only increment processed counter if ALL applicable steps succeeded
+      const allStepsSucceeded = step1Success && step2Success && (step3Success || step3Skipped);
 
-      console.log(`   ✅ [Item ${processedCount}/${totalCount}] Completed all steps for collector_result ${collectorResultId}`);
+      if (allStepsSucceeded) {
+        result.processed++;
+        console.log(`   ✅ [Item ${processedCount}/${totalCount}] Completed all steps for collector_result ${collectorResultId}`);
+        return true;
+      } else {
+        // Track which steps failed for better error reporting
+        const failedSteps = [];
+        if (!step1Success) failedSteps.push('analysis');
+        if (!step2Success) failedSteps.push('positions');
+        if (!step3Success && !step3Skipped) failedSteps.push('sentiment');
+        
+        const completedSteps = [];
+        if (step1Success) completedSteps.push('analysis');
+        if (step2Success) completedSteps.push('positions');
+        if (step3Success || step3Skipped) completedSteps.push('sentiment');
+        
+        console.log(`   ⚠️ [Item ${processedCount}/${totalCount}] Partially completed collector_result ${collectorResultId}`);
+        console.log(`      ✅ Completed: ${completedSteps.length > 0 ? completedSteps.join(', ') : 'none'}`);
+        console.log(`      ❌ Failed: ${failedSteps.length > 0 ? failedSteps.join(', ') : 'none'}`);
+        console.log(`      ⚠️ Not counted as "processed" due to incomplete steps`);
+        return false;
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`   ❌ Error processing collector_result ${collectorResultId}:`, errorMsg);
@@ -323,6 +365,7 @@ export class ConsolidatedScoringService {
         collectorResultId,
         error: errorMsg,
       });
+      return false;
     }
   }
 
@@ -518,10 +561,55 @@ export class ConsolidatedScoringService {
   }
 
   /**
+   * Clean up stuck processing jobs
+   * - Jobs stuck in 'processing' > 8 hours -> error (failed)
+   * - Jobs stuck in 'processing' > 2 hours -> timeout (retryable)
+   */
+  private async cleanupStuckProcessing(brandId: string): Promise<void> {
+    try {
+      const now = new Date();
+      const eightHoursAgo = new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString();
+      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+
+      // 1. Mark jobs stuck > 8 hours as error
+      const { error: error8h } = await this.supabase
+        .from('collector_results')
+        .update({ 
+          scoring_status: 'error', 
+          scoring_error: 'Processing failed (stuck for > 8 hours)' 
+        })
+        .eq('brand_id', brandId)
+        .eq('scoring_status', 'processing')
+        .lt('scoring_started_at', eightHoursAgo);
+
+      if (error8h) console.warn(`⚠️ Error cleaning up >8h stuck jobs: ${error8h.message}`);
+
+      // 2. Mark jobs stuck > 2 hours as timeout
+      // Note: The >8h jobs are already handled above, so this will only affect jobs between 2h and 8h
+      const { error: error2h } = await this.supabase
+        .from('collector_results')
+        .update({ 
+          scoring_status: 'timeout', 
+          scoring_error: 'Processing timed out (stuck for > 2 hours)' 
+        })
+        .eq('brand_id', brandId)
+        .eq('scoring_status', 'processing')
+        .lt('scoring_started_at', twoHoursAgo);
+
+      if (error2h) console.warn(`⚠️ Error cleaning up >2h stuck jobs: ${error2h.message}`);
+    } catch (error) {
+      console.warn(`⚠️ Exception during stuck job cleanup:`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  /**
    * Score brand using consolidated analysis
    */
   async scoreBrand(options: ConsolidatedScoringOptions): Promise<ConsolidatedScoringResult> {
     const { brandId, customerId, since, limit = 50 } = options;
+
+    // Clean up any stuck jobs before starting new processing
+    await this.cleanupStuckProcessing(brandId);
 
     console.log(`\n🎯 Starting consolidated scoring for brand ${brandId}...`);
     if (since) console.log(`   ▶ since: ${since}`);
@@ -533,6 +621,12 @@ export class ConsolidatedScoringService {
       sentimentsProcessed: 0,
       citationsProcessed: 0,
       errors: [],
+      metrics: {
+        totalCitations: 0,
+        cachedCitations: 0,
+        totalOccurrences: 0,
+        cachedOccurrences: 0,
+      },
     };
 
     // Fetch collector results that need processing
@@ -543,7 +637,7 @@ export class ConsolidatedScoringService {
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
       .not('raw_answer', 'is', null) // Only process results with raw_answer
-      .or('scoring_status.is.null,scoring_status.eq.pending,scoring_status.eq.error') // Only fetch processable rows
+      .or('scoring_status.is.null,scoring_status.eq.pending,scoring_status.eq.error,scoring_status.eq.timeout') // Only fetch processable rows
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -694,7 +788,9 @@ export class ConsolidatedScoringService {
       
       processedCount = 0;
       let consecutiveFailedClaims = 0;
+      let consecutiveOllamaFailures = 0;
       const maxConsecutiveFailedClaims = 10; // Exit if we can't claim 10 rows in a row (indicates no work available)
+      const MAX_OLLAMA_FAILURES = 5;
       
       // One-at-a-time processing loop
       while (true) {
@@ -705,7 +801,7 @@ export class ConsolidatedScoringService {
           .eq('brand_id', brandId)
           .eq('customer_id', customerId)
           .not('raw_answer', 'is', null)
-          .or('scoring_status.is.null,scoring_status.eq.pending,scoring_status.eq.error')
+          .or('scoring_status.is.null,scoring_status.eq.pending,scoring_status.eq.error,scoring_status.eq.timeout')
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -748,7 +844,7 @@ export class ConsolidatedScoringService {
 
         try {
           // Process this item completely (all 3 steps) with per-result batching
-          await this.processSingleResultWithBatching(
+          const success = await this.processSingleResultWithBatching(
             collectorResult,
             brandId,
             customerId,
@@ -757,9 +853,24 @@ export class ConsolidatedScoringService {
             0 // Total count unknown in one-at-a-time mode
           );
 
-          // Mark as completed
-          await this.markCollectorResultCompleted(collectorResult.id);
-          console.log(`   ✅ Collector_result ${collectorResult.id} marked as completed`);
+          if (success) {
+            // Mark as completed ONLY if all steps succeeded
+            await this.markCollectorResultCompleted(collectorResult.id);
+            console.log(`   ✅ Collector_result ${collectorResult.id} marked as completed`);
+            // Reset consecutive failures on success
+            consecutiveOllamaFailures = 0;
+          } else {
+            // Mark as error if any step failed (even if not thrown)
+            const errorMsg = 'Processing failed for one or more steps (see logs)';
+            await this.markCollectorResultError(collectorResult.id, errorMsg);
+            console.log(`   ❌ Collector_result ${collectorResult.id} marked as error: ${errorMsg}`);
+            
+            // Increment consecutive failures
+            consecutiveOllamaFailures++;
+            if (consecutiveOllamaFailures >= MAX_OLLAMA_FAILURES) {
+              await this.disableOllamaForBrand(brandId);
+            }
+          }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           await this.markCollectorResultError(collectorResult.id, errorMsg);
@@ -768,6 +879,12 @@ export class ConsolidatedScoringService {
             collectorResultId: collectorResult.id,
             error: errorMsg,
           });
+
+          // Increment consecutive failures
+          consecutiveOllamaFailures++;
+          if (consecutiveOllamaFailures >= MAX_OLLAMA_FAILURES) {
+            await this.disableOllamaForBrand(brandId);
+          }
         }
       }
 
@@ -818,15 +935,9 @@ export class ConsolidatedScoringService {
         });
         
         try {
-          // Check DB cache first
-          let analysis = await this.getCachedAnalysisFromDB(collectorResult.id);
-          
-          if (!analysis) {
-            // Run new analysis
-            analysis = await this.runConsolidatedAnalysis(collectorResult, brandId, customerId);
-          } else {
-            console.log(`   ♻️ Using cached analysis from DB for collector_result ${collectorResult.id}`);
-          }
+          // ALWAYS call runConsolidatedAnalysis which uses consolidatedAnalysisService.analyze
+          // This handles both caching and new analysis with full metrics tracking
+          const analysis = await this.runConsolidatedAnalysis(collectorResult, brandId, customerId);
           
           if (analysis) {
             analysisResults.set(collectorResult.id, analysis);
@@ -834,6 +945,14 @@ export class ConsolidatedScoringService {
             const status = claimedResults.get(collectorResult.id);
             if (status) {
               status.step1Success = true;
+            }
+
+            // Update metrics from analysis
+            if (analysis.metrics) {
+              result.metrics.totalCitations += analysis.metrics.totalCitations;
+              result.metrics.cachedCitations += analysis.metrics.cachedCitations;
+              result.metrics.totalOccurrences += analysis.metrics.totalOccurrences;
+              result.metrics.cachedOccurrences += analysis.metrics.cachedOccurrences;
             }
           } else {
             throw new Error('Analysis returned no results');
@@ -1125,6 +1244,20 @@ export class ConsolidatedScoringService {
     console.log(`   Step 3: ${sentimentStoredCount} sentiments stored`);
     console.log(`   Total errors: ${result.errors.length}`);
 
+    // Efficiency Metrics
+    const citationEfficiency = result.metrics.totalCitations > 0 
+      ? (result.metrics.cachedCitations / result.metrics.totalCitations) * 100 
+      : 0;
+    const occurrenceEfficiency = result.metrics.totalOccurrences > 0 
+      ? (result.metrics.cachedOccurrences / result.metrics.totalOccurrences) * 100 
+      : 0;
+
+    console.log(`\n📈 Efficiency Metrics:`);
+    console.log(`   1. Total citations logged: ${result.metrics.totalCitations}`);
+    console.log(`   2. Citations from cache: ${result.metrics.cachedCitations} (${citationEfficiency.toFixed(1)}% efficiency)`);
+    console.log(`   3. Brand/Competitor/Products occurrences logged: ${result.metrics.totalOccurrences}`);
+    console.log(`   4. Brand/Competitor/Products occurrences from cache: ${result.metrics.cachedOccurrences} (${occurrenceEfficiency.toFixed(1)}% efficiency)`);
+
     // Citations are already stored in runConsolidatedAnalysis
     result.citationsProcessed = result.processed;
 
@@ -1256,6 +1389,19 @@ export class ConsolidatedScoringService {
       competitorRows = [];
     }
 
+    // Get enriched brand/product data from brand_products table
+    let brandProductsData: any = null;
+    try {
+      const { data: enrichedData } = await this.supabase
+        .from('brand_products')
+        .select('brand_synonyms, brand_products, competitor_data')
+        .eq('brand_id', brandId)
+        .maybeSingle();
+      brandProductsData = enrichedData;
+    } catch (error) {
+      console.warn(`   ⚠️ Failed to fetch brand_products for brand ${brandId}, continuing without enriched data`);
+    }
+
     const competitorMetadataMap = new Map<string, any>();
     (competitorRows || []).forEach((row) => {
       competitorMetadataMap.set(row.competitor_name.toLowerCase(), row.metadata);
@@ -1298,6 +1444,7 @@ export class ConsolidatedScoringService {
     const analysis = await consolidatedAnalysisService.analyze({
       brandName: brand.name || 'Brand',
       brandMetadata: { ...(brand.metadata || {}), customer_id: customerId, brand_id: brandId },
+      brandProducts: brandProductsData,
       competitorNames: competitorNames || [],
       competitorMetadata: competitorMetadataMap,
       rawAnswer: rawAnswer,
@@ -1308,6 +1455,45 @@ export class ConsolidatedScoringService {
     });
 
     console.log(`   ✅ Consolidated analysis complete`);
+    
+    // Analyze detection effectiveness
+    try {
+      const detectedProducts = analysis.products?.brand || [];
+      const kbProducts = brandProductsData?.brand_products || [];
+      const kbSynonyms = brandProductsData?.brand_synonyms || [];
+      const brandName = brand.name?.toLowerCase();
+      
+      const kbMatches = detectedProducts.filter(p => 
+        kbProducts.some(kp => kp.toLowerCase() === p.toLowerCase())
+      );
+      const llmDiscoveries = detectedProducts.filter(p => 
+        !kbProducts.some(kp => kp.toLowerCase() === p.toLowerCase())
+      );
+      
+      const totalDetected = detectedProducts.length;
+      const hitRate = totalDetected > 0 ? (kbMatches.length / totalDetected) * 100 : 0;
+      
+      // Check brand name detection source
+       let brandSource = 'None';
+       if (detectedProducts.length > 0) {
+         // If we detected products, the brand was implicitly or explicitly detected
+         const isExactMatch = true; 
+         const isSynonymMatch = kbSynonyms.some(s => s.toLowerCase() === brand.name?.toLowerCase());
+         brandSource = isExactMatch ? 'Exact Match' : (isSynonymMatch ? 'Synonym Match' : 'LLM Inference');
+       }
+
+      console.log(`      📊 Detection Effectiveness:`);
+      console.log(`         - Total Brand Products: ${totalDetected}`);
+      console.log(`         - KB Matches: ${kbMatches.length} (${hitRate.toFixed(1)}% effectiveness)`);
+      console.log(`         - LLM Discoveries: ${llmDiscoveries.length}`);
+      if (llmDiscoveries.length > 0) {
+        console.log(`         - New Products Found: ${llmDiscoveries.join(', ')}`);
+      }
+      console.log(`         - Brand Name Source: ${brandSource}`);
+    } catch (err) {
+      console.warn('      ⚠️ Error calculating detection effectiveness:', err);
+    }
+
     console.log(`      Products: ${(analysis.products?.brand?.length || 0)} brand, ${Object.keys(analysis.products?.competitors || {}).length} competitors`);
     console.log(`      Citations: ${Object.keys(analysis.citations || {}).length}`);
     console.log(`      Sentiment: Brand ${analysis.sentiment?.brand?.label || 'NEUTRAL'} (${analysis.sentiment?.brand?.score || 60})`);
@@ -1541,6 +1727,60 @@ export class ConsolidatedScoringService {
     }
 
     console.log(`   ✅ Stored ${citationsToInsert.length} citations`);
+  }
+
+  /**
+   * Automatically disable Ollama for a brand if it fails too many times
+   * This provides resilience by falling back to OpenRouter for subsequent calls
+   */
+  private async disableOllamaForBrand(brandId: string): Promise<void> {
+    try {
+      console.log(`\n🚨 [Resilience] Disabling Ollama for brand ${brandId} due to consecutive failures...`);
+      
+      // Fetch current brand
+      const { data: brand, error: fetchError } = await this.supabase
+        .from('brands')
+        .select('metadata, local_llm')
+        .eq('id', brandId)
+        .single();
+        
+      if (fetchError || !brand) {
+        throw new Error(`Failed to fetch brand config: ${fetchError?.message}`);
+      }
+      
+      // Update local_llm field (standard way)
+      const currentLLMConfig = (brand.local_llm as any) || {};
+      const newLLMConfig = {
+        ...currentLLMConfig,
+        useOllama: false,
+        disabled_at: new Date().toISOString(),
+        disable_reason: 'Automatic fallback due to 5 consecutive failures'
+      };
+
+      // Also update metadata field for redundancy
+      const currentMetadata = brand.metadata || {};
+      const newMetadata = {
+        ...currentMetadata,
+        local_llm: false,
+        ollama_disabled_at: new Date().toISOString(),
+      };
+      
+      const { error: updateError } = await this.supabase
+        .from('brands')
+        .update({ 
+          local_llm: newLLMConfig,
+          metadata: newMetadata
+        })
+        .eq('id', brandId);
+        
+      if (updateError) {
+        throw new Error(`Failed to update brand config: ${updateError.message}`);
+      }
+      
+      console.log(`✅ [Resilience] Successfully disabled Ollama for brand ${brandId}. Future requests will use OpenRouter.`);
+    } catch (error) {
+      console.error(`❌ [Resilience] Failed to disable Ollama for brand ${brandId}:`, error);
+    }
   }
 }
 

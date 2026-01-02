@@ -1400,6 +1400,7 @@ router.get('/collector-results', async (req: Request, res: Response) => {
     const {
       customer_id,
       brand_id,
+      collector,
       from,
       to,
       scoring_status,
@@ -1433,8 +1434,28 @@ router.get('/collector-results', async (req: Request, res: Response) => {
       query = query.eq('brand_id', brand_id);
     }
 
+    if (collector && typeof collector === 'string') {
+      const collectorMap: Record<string, string> = {
+        'chatgpt': 'ChatGPT',
+        'google_aio': 'Google AIO',
+        'perplexity': 'Perplexity',
+        'claude': 'Claude',
+        'gemini': 'Gemini',
+        'bing_copilot': 'Bing Copilot',
+        'grok': 'Grok',
+        'deepseek': 'DeepSeek',
+        'mistral': 'Mistral'
+      };
+      const dbCollector = collectorMap[collector] || collector;
+      query = query.eq('collector_type', dbCollector);
+    }
+
     if (scoring_status && typeof scoring_status === 'string') {
-      query = query.eq('scoring_status', scoring_status);
+      if (scoring_status === 'null') {
+        query = query.is('scoring_status', null);
+      } else {
+        query = query.eq('scoring_status', scoring_status);
+      }
     }
 
     if (collection_status && typeof collection_status === 'string') {
@@ -1486,7 +1507,7 @@ router.get('/collector-results', async (req: Request, res: Response) => {
     }
 
     const enrichedRows = (rows || []).map((r: any) => ({
-      id: r.id,
+      id: r.id != null ? String(r.id) : '', // Convert BigInt to string
       brandId: r.brand_id,
       brandName: brandsById?.[r.brand_id]?.name || null,
       collectorType: r.collector_type,

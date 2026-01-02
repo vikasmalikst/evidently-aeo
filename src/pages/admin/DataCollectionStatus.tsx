@@ -45,6 +45,7 @@ export const DataCollectionStatus = () => {
   const [customerIdError, setCustomerIdError] = useState<string | null>(null);
 
   const [brandIdFilter, setBrandIdFilter] = useState<string>('');
+  const [collectorFilter, setCollectorFilter] = useState<string>('');
   const [from, setFrom] = useState<string>('');
   const [to, setTo] = useState<string>('');
   const [collectionStatus, setCollectionStatus] = useState<string>('');
@@ -95,7 +96,7 @@ export const DataCollectionStatus = () => {
     if (from || to) return;
     const end = new Date();
     const start = new Date();
-    start.setDate(end.getDate() - 6);
+    start.setDate(end.getDate() - 1);
     const toDateOnly = (d: Date) => d.toISOString().split('T')[0];
     setFrom(toDateOnly(start));
     setTo(toDateOnly(end));
@@ -149,6 +150,7 @@ export const DataCollectionStatus = () => {
         });
 
         if (brandIdFilter) params.append('brand_id', brandIdFilter);
+        if (collectorFilter) params.append('collector', collectorFilter);
         if (from) params.append('from', from);
         if (to) params.append('to', to);
         if (collectionStatus) params.append('collection_status', collectionStatus);
@@ -176,6 +178,7 @@ export const DataCollectionStatus = () => {
       customerId,
       limit,
       brandIdFilter,
+      collectorFilter,
       from,
       to,
       collectionStatus,
@@ -187,7 +190,15 @@ export const DataCollectionStatus = () => {
   useEffect(() => {
     if (!customerId) return;
     load(0);
-  }, [customerId, brandIdFilter, from, to, collectionStatus, scoringStatus, rawAnswer, load]);
+  }, [customerId, brandIdFilter, collectorFilter, from, to, collectionStatus, scoringStatus, rawAnswer, load]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    const interval = setInterval(() => {
+      load(offset);
+    }, 600000);
+    return () => clearInterval(interval);
+  }, [customerId, load, offset]);
 
   const canPrev = offset > 0;
   const canNext = offset + limit < total;
@@ -239,6 +250,27 @@ export const DataCollectionStatus = () => {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Collector</label>
+            <select
+              value={collectorFilter}
+              onChange={(e) => {
+                setOffset(0);
+                setCollectorFilter(e.target.value);
+              }}
+              className="w-full border rounded px-3 py-2"
+            >
+              <option value="">All Collectors</option>
+              <option value="chatgpt">ChatGPT</option>
+              <option value="google_aio">Google AIO</option>
+              <option value="perplexity">Perplexity</option>
+              <option value="claude">Claude</option>
+              <option value="gemini">Gemini</option>
+              <option value="bing_copilot">Bing Copilot</option>
+              <option value="grok">Grok</option>
+            </select>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">From</label>
             <input
               type="date"
@@ -263,28 +295,56 @@ export const DataCollectionStatus = () => {
               className="w-full border rounded px-3 py-2"
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Raw Answer</label>
-            <select
-              value={rawAnswer}
-              onChange={(e) => {
-                setOffset(0);
-                const value = e.target.value;
-                if (value === 'any' || value === 'missing' || value === 'present') {
-                  setRawAnswer(value);
-                }
-              }}
-              className="w-full border rounded px-3 py-2"
-            >
-              <option value="any">Any</option>
-              <option value="missing">Null</option>
-              <option value="present">Non-null</option>
-            </select>
-          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Raw Answer</label>
+            <div className="flex rounded-md shadow-sm" role="group">
+              <button
+                type="button"
+                onClick={() => {
+                  setOffset(0);
+                  setRawAnswer('any');
+                }}
+                className={`px-4 py-2 text-sm font-medium border border-gray-300 rounded-l-lg focus:z-10 focus:ring-2 focus:ring-blue-500 ${
+                  rawAnswer === 'any'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOffset(0);
+                  setRawAnswer('missing');
+                }}
+                className={`px-4 py-2 text-sm font-medium border-t border-b border-gray-300 focus:z-10 focus:ring-2 focus:ring-blue-500 ${
+                  rawAnswer === 'missing'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Null
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOffset(0);
+                  setRawAnswer('present');
+                }}
+                className={`px-4 py-2 text-sm font-medium border border-gray-300 rounded-r-lg focus:z-10 focus:ring-2 focus:ring-blue-500 ${
+                  rawAnswer === 'present'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Non-null
+              </button>
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Collection Status</label>
             <select
@@ -296,7 +356,6 @@ export const DataCollectionStatus = () => {
               className="w-full border rounded px-3 py-2"
             >
               <option value="">Any</option>
-              <option value="pending">pending</option>
               <option value="processing">processing</option>
               <option value="completed">completed</option>
               <option value="failed_retry">failed_retry</option>
@@ -319,6 +378,8 @@ export const DataCollectionStatus = () => {
               <option value="processing">processing</option>
               <option value="completed">completed</option>
               <option value="error">error</option>
+              <option value="null">Null</option>
+              <option value="timeout">timeout</option>
             </select>
           </div>
 
@@ -330,6 +391,7 @@ export const DataCollectionStatus = () => {
                   setCollectionStatus('');
                   setScoringStatus('');
                   setRawAnswer('any');
+                  setCollectorFilter('');
                 }}
                 className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
               >
@@ -379,6 +441,7 @@ export const DataCollectionStatus = () => {
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">ID</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Created</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Brand</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Collector</th>
@@ -392,21 +455,34 @@ export const DataCollectionStatus = () => {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-gray-600">
+                  <td colSpan={7} className="px-4 py-6 text-center text-gray-600">
                     Loading...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-gray-600">
+                  <td colSpan={7} className="px-4 py-6 text-center text-gray-600">
                     No results found
                   </td>
                 </tr>
               ) : (
                 rows.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50">
+                    <td
+                      className="px-4 py-3 whitespace-nowrap text-xs font-mono text-gray-500 cursor-help"
+                      title={r.id}
+                    >
+                      {r.id.slice(0, 8)}...
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}
+                      {r.createdAt
+                        ? new Date(r.createdAt).toLocaleString(undefined, {
+                            month: 'numeric',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : ''}
                     </td>
                     <td className="px-4 py-3">{r.brandName || r.brandId}</td>
                     <td className="px-4 py-3">{r.collectorType}</td>

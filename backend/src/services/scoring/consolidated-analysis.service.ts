@@ -25,6 +25,11 @@ dotenv.config();
 export interface ConsolidatedAnalysisOptions {
   brandName: string;
   brandMetadata?: any;
+  brandProducts?: {
+    brand_synonyms: string[];
+    brand_products: string[];
+    competitor_data: Record<string, { synonyms: string[]; products: string[] }>;
+  };
   competitorNames: string[];
   competitorMetadata?: Map<string, any>; // competitor_name -> metadata
   rawAnswer: string;
@@ -32,6 +37,13 @@ export interface ConsolidatedAnalysisOptions {
   collectorResultId?: number; // For caching
   customerId?: string; // For database caching
   brandId?: string; // For database caching
+}
+
+export interface ConsolidatedAnalysisMetrics {
+  totalCitations: number;
+  cachedCitations: number;
+  totalOccurrences: number; // Brand + Competitor products
+  cachedOccurrences: number; // From DB cache
 }
 
 export interface ConsolidatedAnalysisResult {
@@ -54,6 +66,7 @@ export interface ConsolidatedAnalysisResult {
     }>;
   };
   keywords?: GeneratedKeyword[];
+  metrics?: ConsolidatedAnalysisMetrics;
 }
 
 // ============================================================================
@@ -146,6 +159,12 @@ export class ConsolidatedAnalysisService {
         products: data.products || { brand: [], competitors: {} },
         sentiment: data.sentiment || { brand: { label: 'NEUTRAL', score: 60 }, competitors: {} },
         citations: citationsMap, // Citations fetched from citation_categories table
+        metrics: {
+          totalCitations: citations.length,
+          cachedCitations: Object.keys(citationsMap).length,
+          totalOccurrences: 1, // The cached analysis itself is one occurrence of brand/competitor data
+          cachedOccurrences: 1
+        }
       };
 
       console.log(`📦 Using cached analysis from DB for collector_result ${collectorResultId} (provider: ${data.llm_provider}, ${Object.keys(citationsMap).length} citations)`);
@@ -303,6 +322,14 @@ export class ConsolidatedAnalysisService {
       // Update result with merged citations
       result.citations = mergedCitations;
 
+      // Add metrics
+      result.metrics = {
+        totalCitations: citations.length,
+        cachedCitations: cachedCitations.size,
+        totalOccurrences: 1,
+        cachedOccurrences: 0 // This was an LLM call
+      };
+
       // Cache result in memory (for same request)
       if (options.collectorResultId) {
         this.cache.set(options.collectorResultId, result);
@@ -328,11 +355,33 @@ export class ConsolidatedAnalysisService {
       ? JSON.stringify(options.brandMetadata, null, 2).substring(0, 600)
       : 'No metadata provided';
 
+    // Add brand synonyms and products from KB if available
+    let brandKBStr = '';
+    if (options.brandProducts) {
+      const { brand_synonyms, brand_products } = options.brandProducts;
+      brandKBStr = `
+**Brand Knowledge Base (Use these for detection):**
+- Synonyms/Aliases: ${brand_synonyms?.join(', ') || 'None'}
+- Known Products: ${brand_products?.join(', ') || 'None'}
+`;
+    }
+
     const competitorMetadataStr = options.competitorMetadata && options.competitorMetadata.size > 0
       ? Array.from(options.competitorMetadata.entries())
           .map(([name, metadata]) => {
             const metadataStr = metadata ? JSON.stringify(metadata).substring(0, 200) : 'No metadata';
-            return `- ${name}: ${metadataStr}`;
+            
+            // Add competitor products/synonyms if available
+            let compKB = '';
+            if (options.brandProducts?.competitor_data) {
+              const compData = options.brandProducts.competitor_data[name] || 
+                               Object.entries(options.brandProducts.competitor_data).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
+              if (compData) {
+                compKB = ` (Products: ${compData.products?.join(', ') || 'None'}, Synonyms: ${compData.synonyms?.join(', ') || 'None'})`;
+              }
+            }
+            
+            return `- ${name}: ${metadataStr}${compKB}`;
           })
           .join('\n')
       : 'No competitor metadata provided';
@@ -361,6 +410,7 @@ Extract official products sold by the brand "${brandName}".
 
 **Brand Context:**
 ${brandMetadataStr}
+${brandKBStr}
 
 **Rules:**
 1. Include only official products (SKUs, models, variants) that consumers can buy
@@ -368,7 +418,8 @@ ${brandMetadataStr}
 3. Exclude competitors and their products
 4. Exclude side effects, conditions, benefits, use-cases, features
 5. Use both the answer text and your knowledge, but never invent products
-6. Maximum 12 products
+6. Use the Brand Knowledge Base above to help identify brand variations and products
+7. Maximum 12 products
 
 ### Competitor Products
 Extract official products for each competitor mentioned in the answer.
@@ -381,8 +432,9 @@ ${competitorMetadataStr}
 **Rules:**
 1. Same rules as brand products (official products only)
 2. Extract products for each competitor separately
-3. Maximum 8 products per competitor
-4. Only include products mentioned in the answer text or your knowledge
+3. Use the Competitor Context above to help identify competitor variations and products
+4. Maximum 8 products per competitor
+5. Only include products mentioned in the answer text or your knowledge
 
 ## TASK 2: Citation Categorization
 
@@ -556,130 +608,150 @@ Respond with ONLY valid JSON in this exact structure:
       headers['X-Title'] = this.openRouterSiteTitle;
     }
 
-    // Use streaming to get usage information
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: 'openai/gpt-oss-20b', // Good balance of cost and quality
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a precise analysis assistant. Always respond with valid JSON only, no explanations.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.1, // Low for consistency
-        max_tokens: 4096,
-        stream: true,
-        stream_options: {
-          include_usage: true
-        },
-        provider: {
-          sort: 'throughput' // Use best throughput model
-        }
-      })
-    });
+    // Add 3-minute timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s (3 mins)
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
-    }
-
-    // Stream the response
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let fullResponse = '';
-    let usage: any = null;
-
-    if (!reader) {
-      throw new Error('No response body reader available');
-    }
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      if (!value) {
-        continue;
-      }
-
-      const chunk = decoder.decode(value, { stream: true });
-      if (!chunk) {
-        continue;
-      }
-
-      const lines = chunk.split('\n').filter(line => line && line.trim() !== '');
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
-
-          try {
-            const parsed = JSON.parse(data);
-            
-            // Extract content
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content && typeof content === 'string') {
-              fullResponse += content;
-            }
-
-            // Extract usage information
-            if (parsed.usage) {
-              usage = parsed.usage;
-            }
-          } catch (e) {
-            // Skip invalid JSON lines
-            continue;
-          }
-        }
-      }
-    }
-
-    if (!fullResponse || (typeof fullResponse === 'string' && fullResponse.trim().length === 0)) {
-      throw new Error('Empty response from OpenRouter API');
-    }
-
-    // Log usage if available
-    if (usage) {
-      console.log(`📊 Token usage: ${usage.prompt_tokens || 0} input, ${usage.completion_tokens || 0} output, ${usage.total_tokens || 0} total`);
-    }
-
-    // Extract JSON from response (handle markdown code blocks)
-    let jsonStr = typeof fullResponse === 'string' ? fullResponse.trim() : String(fullResponse).trim();
-    
-    if (!jsonStr || jsonStr.length === 0) {
-      throw new Error('Empty response from OpenRouter API');
-    }
-    
-    // Remove markdown code blocks if present
-    if (jsonStr.includes('```json')) {
-      jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-    } else if (jsonStr.includes('```')) {
-      jsonStr = jsonStr.replace(/```\s*/g, '');
-    }
-
-    // Find JSON object
-    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!jsonMatch || !jsonMatch[0]) {
-      console.error('⚠️ No JSON found in response. Response preview:', jsonStr.substring(0, 500));
-      throw new Error('No JSON found in OpenRouter response');
-    }
-
-    let result: ConsolidatedAnalysisResult;
     try {
-      result = JSON.parse(jsonMatch[0]) as ConsolidatedAnalysisResult;
-    } catch (parseError) {
-      console.error('⚠️ Failed to parse JSON. Response preview:', jsonStr.substring(0, 500));
-      throw new Error(`Failed to parse JSON from OpenRouter response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+      // Use streaming to get usage information
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: 'openai/gpt-oss-20b', // Good balance of cost and quality
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a precise analysis assistant. Always respond with valid JSON only, no explanations.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.1, // Low for consistency
+          max_tokens: 4096,
+          stream: true,
+          stream_options: {
+            include_usage: true
+          },
+          provider: {
+            sort: 'throughput' // Use best throughput model
+          }
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+      }
+
+      // Stream the response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = '';
+      let usage: any = null;
+
+      if (!reader) {
+        throw new Error('No response body reader available');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        if (!value) {
+          continue;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        if (!chunk) {
+          continue;
+        }
+
+        const lines = chunk.split('\n').filter(line => line && line.trim() !== '');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              
+              // Extract content
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content && typeof content === 'string') {
+                fullResponse += content;
+              }
+
+              // Extract usage information
+              if (parsed.usage) {
+                usage = parsed.usage;
+              }
+            } catch (e) {
+              // Skip invalid JSON lines
+              continue;
+            }
+          }
+        }
+      }
+
+      if (!fullResponse || (typeof fullResponse === 'string' && fullResponse.trim().length === 0)) {
+        throw new Error('Empty response from OpenRouter API');
+      }
+
+      // Log usage if available
+      if (usage) {
+        console.log(`📊 Token usage: ${usage.prompt_tokens || 0} input, ${usage.completion_tokens || 0} output, ${usage.total_tokens || 0} total`);
+      }
+
+      // Extract JSON from response (handle markdown code blocks)
+      let jsonStr = typeof fullResponse === 'string' ? fullResponse.trim() : String(fullResponse).trim();
+      
+      if (!jsonStr || jsonStr.length === 0) {
+        throw new Error('Empty response from OpenRouter API');
+      }
+      
+      // Remove markdown code blocks if present
+      if (jsonStr.includes('```json')) {
+        jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+      } else if (jsonStr.includes('```')) {
+        jsonStr = jsonStr.replace(/```\s*/g, '');
+      }
+
+      // Find JSON object
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (!jsonMatch || !jsonMatch[0]) {
+        console.error('⚠️ No JSON found in response. Response preview:', jsonStr.substring(0, 500));
+        throw new Error('No JSON found in OpenRouter response');
+      }
+
+      let result: ConsolidatedAnalysisResult;
+      try {
+        result = JSON.parse(jsonMatch[0]) as ConsolidatedAnalysisResult;
+      } catch (parseError) {
+        console.error('⚠️ Failed to parse JSON. Response preview:', jsonStr.substring(0, 500));
+        throw new Error(`Failed to parse JSON from OpenRouter response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+      }
+      
+      // Validate and normalize result
+      return this.validateAndNormalize(result);
+
+    } catch (error) {
+      clearTimeout(timeoutId);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error('❌ OpenRouter API request timed out after 3 minutes');
+        throw new Error('OpenRouter API timeout: Request took longer than 3 minutes');
+      }
+      
+      throw error;
     }
-    
-    // Validate and normalize result
-    return this.validateAndNormalize(result);
   }
 
   /**

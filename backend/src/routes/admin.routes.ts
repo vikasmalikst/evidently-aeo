@@ -79,9 +79,11 @@ router.use((req, res, next) => {
 /**
  * POST /api/admin/brands/:brandId/refresh-products
  * Trigger LLM enrichment for brand synonyms and products
+ * If brandId is 'bulk', it looks for customer_id in query and refreshes all brands
  */
 router.post('/brands/:brandId/refresh-products', async (req: Request, res: Response) => {
   const { brandId } = req.params;
+  const { customer_id } = req.query;
   
   // Set up SSE for real-time logging
   res.setHeader('Content-Type', 'text/event-stream');
@@ -94,7 +96,41 @@ router.post('/brands/:brandId/refresh-products', async (req: Request, res: Respo
   };
 
   try {
-    await brandProductEnrichmentService.enrichBrand(brandId, sendLog);
+    if (brandId === 'bulk') {
+      if (!customer_id) {
+        throw new Error('customer_id is required for bulk refresh');
+      }
+
+      sendLog(`🚀 Starting bulk enrichment for active brands of customer ID: ${customer_id}`);
+      
+      // Fetch all active brands for this customer
+      const { data: brands, error: brandsError } = await supabase
+        .from('brands')
+        .select('id, name')
+        .eq('customer_id', customer_id)
+        .eq('status', 'active');
+
+      if (brandsError) throw brandsError;
+      if (!brands || brands.length === 0) {
+        sendLog(`⚠️ No active brands found for customer ${customer_id}`);
+      } else {
+        sendLog(`📊 Found ${brands.length} brands to enrich`);
+        
+        for (const brand of brands) {
+          sendLog(`-------------------------------------------`);
+          sendLog(`🔄 Processing brand: ${brand.name} (${brand.id})`);
+          try {
+            await brandProductEnrichmentService.enrichBrand(brand.id, sendLog);
+            sendLog(`✅ Successfully enriched ${brand.name}`);
+          } catch (err) {
+            sendLog(`❌ Failed to enrich ${brand.name}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
+    } else {
+      await brandProductEnrichmentService.enrichBrand(brandId, sendLog);
+    }
+    
     res.write(`data: ${JSON.stringify({ status: 'completed' })}\n\n`);
     res.end();
   } catch (error) {

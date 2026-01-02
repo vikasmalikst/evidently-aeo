@@ -83,6 +83,9 @@ export class VisibilityScoreService {
     // Use question column instead of generated_queries
     // NOW INCLUDES collector_type for per-collector scoring
     
+    // Fetch brand products knowledge base once for all results if they share the same brand
+    // For now, we'll fetch per result to keep it simple, but we can optimize later
+    
     // OPTIMIZATION: Only fetch results that haven't been scored yet
     // This prevents re-processing and saves API calls
     const { data: allResults, error: fetchError } = await this.supabase
@@ -195,6 +198,13 @@ export class VisibilityScoreService {
       const rawAnswer = (parsedResult.raw_answer || '').trim();
       if (!rawAnswer) continue;
 
+      // Fetch enriched data from brand_products table
+      const { data: enrichedData } = await this.supabase
+        .from('brand_products')
+        .select('brand_synonyms, brand_products, competitor_data')
+        .eq('brand_id', parsedResult.brand_id)
+        .maybeSingle();
+
       // HYBRID APPROACH: LLM for counting, Manual for scoring
       let allMetrics: ScoreRow[];
       
@@ -212,7 +222,8 @@ export class VisibilityScoreService {
           parsedResult.collector_type, // Pass collector type
               competitorsList,
               rawAnswer,
-              brand.metadata
+              brand.metadata,
+              enrichedData
             );
             
         // Log summary of hybrid results
@@ -356,7 +367,8 @@ export class VisibilityScoreService {
     collectorType: string, // NEW: collector type for this result
     competitors: z.infer<typeof CompetitorRow>[],
     rawAnswer: string,
-    brandMetadata?: any
+    brandMetadata?: any,
+    enrichedData?: any
   ): Promise<ScoreRow[]> {
     console.log(`\n🔬 HYBRID SCORING: LLM Counting + Manual Formulas`);
     
@@ -365,7 +377,8 @@ export class VisibilityScoreService {
       brand.name,
       competitors,
       rawAnswer,
-      brandMetadata
+      brandMetadata,
+      enrichedData
     );
     
     console.log(`📊 LLM Counts:`, counts);
@@ -376,14 +389,16 @@ export class VisibilityScoreService {
     const totalWords = tokens.length;
     
     // Get brand aliases for position finding
-    const brandAliases = this.getAliases(brandMetadata || {}, brand.name);
+    const brandAliases = this.getAliases(brandMetadata || {}, brand.name, enrichedData);
     const brandOccurrences = this.findOccurrences(tokens, brandAliases);
     const brandPositions = brandOccurrences.positions;
     
     // Get competitor positions
     const competitorPositionsMap = new Map<string, number[]>();
     for (const comp of competitors) {
-      const compAliases = this.getAliases(comp.metadata || {}, comp.competitor_name);
+      // Get competitor aliases including data from enrichedData if available
+      const compEnrichedData = enrichedData?.competitor_data?.[comp.competitor_name];
+      const compAliases = this.getAliases(comp.metadata || {}, comp.competitor_name, compEnrichedData ? { aliases: compEnrichedData.synonyms } : null);
       const compOccurrences = this.findOccurrences(tokens, compAliases);
       competitorPositionsMap.set(comp.competitor_name, compOccurrences.positions);
     }
@@ -457,12 +472,13 @@ export class VisibilityScoreService {
     brandName: string,
     competitors: z.infer<typeof CompetitorRow>[],
     rawAnswer: string,
-    brandMetadata?: any
+    brandMetadata?: any,
+    enrichedData?: any
   ): Promise<{ brand: number; competitors: { [key: string]: number } }> {
     // Step 1: Extract product names using LLM (gracefully handle failures)
     let productNames: string[] = [];
     try {
-      productNames = await this.extractProductNames(brandMetadata || {}, brandName, rawAnswer);
+      productNames = await this.extractProductNames(brandMetadata || {}, brandName, rawAnswer, enrichedData);
       console.log(`🔍 Extracted ${productNames.length} product names for ${brandName}: ${productNames.slice(0, 5).join(', ')}${productNames.length > 5 ? '...' : ''}`);
     } catch (error) {
       console.warn(`⚠️ Product extraction failed, continuing with brand name only:`, error instanceof Error ? error.message : error);
@@ -1333,7 +1349,7 @@ CRITICAL JSON RULES:
     return sanitized;
   }
 
-  private getAliases(metadata: any, primaryName: string): string[] {
+  private getAliases(metadata: any, primaryName: string, enrichedData?: any): string[] {
     const aliases: string[] = [primaryName.toLowerCase()]; // Always include primary name (lowercase)
     
     if (metadata && typeof metadata === 'object') {
@@ -1346,6 +1362,18 @@ CRITICAL JSON RULES:
           aliases.push(a.toLowerCase());
         }
       });
+    }
+
+    // Add aliases from brand_products table if available
+    if (enrichedData && (enrichedData.brand_synonyms || enrichedData.aliases)) {
+      const extraAliases = (enrichedData.brand_synonyms || enrichedData.aliases) as string[];
+      if (Array.isArray(extraAliases)) {
+        extraAliases.forEach(a => {
+          if (a && typeof a === 'string') {
+            aliases.push(a.toLowerCase());
+          }
+        });
+      }
     }
     
     // Also add common variations (e.g., "Nike" -> "nike", "Nike Inc" -> "nike inc")
@@ -1371,33 +1399,80 @@ CRITICAL JSON RULES:
   private async extractProductNames(
     metadata: any,
     primaryName: string,
-    answerText?: string
+    answerText?: string,
+    enrichedData?: any
   ): Promise<string[]> {
     const productNames: string[] = [];
+
+    // 1. Add known products from brand_products table
+    if (enrichedData && Array.isArray(enrichedData.brand_products)) {
+      productNames.push(...enrichedData.brand_products.map((p: string) => p.toLowerCase()));
+    }
     
-    // FORCE LLM extraction from answer text (if provided)
+    // 2. FORCE LLM extraction from answer text (if provided)
     if (answerText) {
       try {
         console.log(`🔍 FORCING LLM extraction of product names from answer text for brand: ${primaryName}`);
         const llmProducts = await this.extractProductNamesWithLLM(primaryName, answerText);
         if (llmProducts.length > 0) {
+          const newProducts = llmProducts.filter(p => !productNames.includes(p.toLowerCase()));
+          if (newProducts.length > 0) {
+            console.log(`✅ LLM extracted ${newProducts.length} NEW product names: ${newProducts.slice(0, 10).join(', ')}`);
+            // Trigger background update to save new products
+            this.saveNewProductsToKB(metadata.brand_id || metadata.id, newProducts).catch(err => 
+              console.error(`❌ Failed to save new products to KB:`, err)
+            );
+          }
           productNames.push(...llmProducts);
-          console.log(`✅ LLM extracted ${llmProducts.length} product names: ${llmProducts.slice(0, 10).join(', ')}${llmProducts.length > 10 ? '...' : ''}`);
         } else {
           console.log(`⚠️ LLM extraction returned no products for ${primaryName}`);
         }
       } catch (error) {
         console.error(`❌ LLM product extraction failed for ${primaryName}:`, error instanceof Error ? error.message : error);
-        // Return empty array if LLM fails (no fallback)
-        return [];
+        // Continue with already found products if LLM fails
       }
     } else {
       console.warn(`⚠️ No answer text provided for product name extraction for ${primaryName}`);
-      return [];
     }
     
     // Remove duplicates and return
     return [...new Set(productNames)].filter(Boolean);
+  }
+
+  /**
+   * Background task to save newly discovered products back to the brand_products table
+   */
+  private async saveNewProductsToKB(brandId: string, newProducts: string[]): Promise<void> {
+    if (!brandId || newProducts.length === 0) return;
+
+    try {
+      // Get existing products first
+      const { data, error: fetchError } = await this.supabase
+        .from('brand_products')
+        .select('brand_products')
+        .eq('brand_id', brandId)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      const existingProducts = Array.isArray(data?.brand_products) ? data.brand_products : [];
+      const updatedProducts = [...new Set([...existingProducts, ...newProducts])];
+
+      if (updatedProducts.length > existingProducts.length) {
+        const { error: upsertError } = await this.supabase
+          .from('brand_products')
+          .upsert({
+            brand_id: brandId,
+            brand_products: updatedProducts,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'brand_id' });
+
+        if (upsertError) throw upsertError;
+        console.log(`💾 Successfully updated brand_products KB for brand ${brandId} with ${newProducts.length} new products`);
+      }
+    } catch (error) {
+      console.error(`❌ Error in saveNewProductsToKB for brand ${brandId}:`, error);
+    }
   }
 
   // REMOVED: getCommonBrandProducts() - Not used anymore

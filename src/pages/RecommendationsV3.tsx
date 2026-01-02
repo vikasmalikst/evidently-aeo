@@ -2,7 +2,7 @@
  * Recommendations V3 Page
  * 
  * KPI-first approach with 4-step workflow:
- * Step 1: Generate & Review - All recommendations with checkboxes for approval
+ * Step 1: Generate & Review - All recommendations with status dropdown (Approved/Rejected/Pending Review)
  * Step 2: Approved Recommendations - Generate content for approved items
  * Step 3: Content Review - Review generated content and mark as completed
  * Step 4: Results Tracking - View KPI improvements (before/after)
@@ -15,7 +15,6 @@ import {
   generateRecommendationsV3,
   getGenerationV3,
   getRecommendationsByStepV3,
-  approveRecommendationsV3,
   generateContentV3,
   generateContentBulkV3,
   completeRecommendationV3,
@@ -28,6 +27,7 @@ import {
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
+import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { IconSparkles, IconAlertCircle, IconTrendingUp, IconTrendingDown, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 
 export const RecommendationsV3 = () => {
@@ -39,13 +39,38 @@ export const RecommendationsV3 = () => {
     selectBrand
   } = useManualBrandDashboard();
 
+  // Helper functions to persist/restore current step in sessionStorage
+  const getPersistedStep = (brandId: string | null): number => {
+    if (!brandId) return 1;
+    try {
+      const persisted = sessionStorage.getItem(`recommendations-v3-step-${brandId}`);
+      if (persisted) {
+        const step = parseInt(persisted, 10);
+        if (step >= 1 && step <= 4) {
+          return step;
+        }
+      }
+    } catch (e) {
+      // Ignore sessionStorage errors
+    }
+    return 1; // Default to step 1
+  };
+
+  const persistStep = (step: number, brandId: string | null) => {
+    if (!brandId) return;
+    try {
+      sessionStorage.setItem(`recommendations-v3-step-${brandId}`, String(step));
+    } catch (e) {
+      // Ignore sessionStorage errors
+    }
+  };
+
   // State
-  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [currentStep, setCurrentStep] = useState<number>(() => getPersistedStep(selectedBrandId));
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [kpis, setKpis] = useState<IdentifiedKPI[]>([]); // Keep for potential future use, but not displayed in UI
   const [recommendations, setRecommendations] = useState<RecommendationV3[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set()); // For Step 3: selected for completion
   const [expandedSections, setExpandedSections] = useState<Map<string, { email: boolean; content: boolean }>>(new Map()); // For Step 3: track collapsed/expanded sections
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,6 +78,9 @@ export const RecommendationsV3 = () => {
   const [contentMap, setContentMap] = useState<Map<string, any>>(new Map());
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
   const [allRecommendations, setAllRecommendations] = useState<RecommendationV3[]>([]); // Store all Step 1 recommendations for local filtering
+  const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
+  const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
+  const [hasCompletedForStep4, setHasCompletedForStep4] = useState(false); // Drives Step 4 "attention" animation after marking completed
 
   // Track if we're manually loading data to prevent useEffect from interfering
   const [isManuallyLoading, setIsManuallyLoading] = useState(false);
@@ -90,7 +118,8 @@ export const RecommendationsV3 = () => {
 
       try {
         console.log(`📥 [RecommendationsV3] Loading Step ${currentStep} data for generation ${generationId}`);
-        // Don't pass status filter to API - we'll filter locally for Step 1
+        // For Step 1, load all recommendations (no filter) so we can filter locally by status
+        // For other steps, use default backend filtering
         const response = await getRecommendationsByStepV3(generationId, currentStep);
         console.log(`📊 [RecommendationsV3] Step ${currentStep} response:`, {
           success: response.success,
@@ -149,17 +178,7 @@ export const RecommendationsV3 = () => {
               })();
               
               setAllRecommendations(mergedRecommendations);
-              
-              // Apply current filter
-              if (statusFilter === 'all') {
-                setRecommendations(mergedRecommendations);
-              } else {
-                const filtered = mergedRecommendations.filter(rec => {
-                  const recStatus = rec.reviewStatus || 'pending_review';
-                  return recStatus === statusFilter;
-                });
-                setRecommendations(filtered);
-              }
+              // Filter will be applied by the filter useEffect when allRecommendations updates
             } else {
               // For other steps, set recommendations directly
               setAllRecommendations([]);
@@ -262,9 +281,21 @@ export const RecommendationsV3 = () => {
     }
   }, [statusFilter, allRecommendations, currentStep]);
 
-  // Track if this is the first load (to determine initial step) vs a brand switch
-  const isFirstLoadRef = useRef(true);
-  
+  // Restore persisted step when selectedBrandId changes (e.g., brand switch)
+  useEffect(() => {
+    if (selectedBrandId) {
+      const persistedStep = getPersistedStep(selectedBrandId);
+      setCurrentStep(persistedStep);
+    }
+  }, [selectedBrandId]);
+
+  // Update persisted step whenever currentStep changes (for the current brand)
+  useEffect(() => {
+    if (selectedBrandId && currentStep >= 1 && currentStep <= 4) {
+      persistStep(currentStep, selectedBrandId);
+    }
+  }, [currentStep, selectedBrandId]);
+
   // Handle brand switching with proper state cleanup
   const handleBrandSwitch = useCallback((newBrandId: string) => {
     console.log(`🔄 [RecommendationsV3] Switching from brand ${selectedBrandId} to ${newBrandId}`);
@@ -274,12 +305,14 @@ export const RecommendationsV3 = () => {
     setRecommendations([]);
     setAllRecommendations([]); // Clear all recommendations cache
     setSelectedIds(new Set());
-    setCompletedIds(new Set());
     setContentMap(new Map());
     setExpandedSections(new Map());
     setError(null);
     setStatusFilter('all'); // Reset filter
-    setCurrentStep(1);
+    
+    // Load persisted step for new brand, or default to 1
+    const newStep = getPersistedStep(newBrandId);
+    setCurrentStep(newStep);
     
     // Now update the brand - this will trigger loadLatestGeneration
     selectBrand(newBrandId);
@@ -316,41 +349,13 @@ export const RecommendationsV3 = () => {
               if (recommendationsWithIds.length > 0) {
                 setKpis(response.data.kpis || []);
                 
-                // Only auto-determine step on first load or when explicitly refreshing
-                // Don't change step when user is manually navigating between steps
-                if (isFirstLoadRef.current) {
-                  // First load: determine the most relevant step
-                  const hasApproved = recommendationsWithIds.some(r => r.isApproved);
-                  const hasContentGenerated = recommendationsWithIds.some(r => r.isContentGenerated);
-                  const hasCompleted = recommendationsWithIds.some(r => r.isCompleted);
-                  
-                  // Start at the first incomplete step
-                  if (hasCompleted && recommendationsWithIds.some(r => !r.isCompleted)) {
-                    setCurrentStep(3); // Some completed, some not - stay at content review
-                  } else if (hasCompleted) {
-                    setCurrentStep(4); // All completed - show results
-                  } else if (hasContentGenerated && recommendationsWithIds.some(r => r.isApproved && !r.isContentGenerated)) {
-                    setCurrentStep(2); // Some have content, some don't - stay at approved
-                  } else if (hasContentGenerated) {
-                    setCurrentStep(3); // All approved have content - review content
-                  } else if (hasApproved) {
-                    setCurrentStep(2); // Has approved recs but no content - generate content
-                  } else {
-                    setCurrentStep(1); // No approved recs - start at review
-                  }
-                  
-                  console.log(`✅ [RecommendationsV3] First load - set step based on data state`);
-                  isFirstLoadRef.current = false;
-                } else {
-                  // Brand switch: reset to step 1 to show all new recommendations
-                  setCurrentStep(1);
-                  console.log(`🔄 [RecommendationsV3] Brand switched - reset to step 1`);
-                }
+                // Don't auto-change step - use persisted step or keep current step
+                // The user's current step selection should be respected
+                console.log(`✅ [RecommendationsV3] Loaded generation ${genId}, keeping step ${currentStep}`);
                 
                 setError(null);
                 // Clear selections when switching brands/generations
                 setSelectedIds(new Set());
-                setCompletedIds(new Set());
               }
             }
           }
@@ -360,6 +365,7 @@ export const RecommendationsV3 = () => {
           setRecommendations([]);
           setGenerationId(null);
           setCurrentStep(1); // Reset to step 1 when no generation
+          persistStep(1, selectedBrandId);
           setError(null);
         }
       } catch (err) {
@@ -474,6 +480,7 @@ export const RecommendationsV3 = () => {
               console.log(`✅ [RecommendationsV3] Setting ${recommendationsWithIds.length} recommendations from database`);
               console.log(`📊 [RecommendationsV3] Recommendation IDs:`, recommendationsWithIds.map(r => r.id));
               setRecommendations(recommendationsWithIds);
+              setAllRecommendations(recommendationsWithIds); // Store all for filtering
               setCurrentStep(1);
               setSelectedIds(new Set());
               setError(null);
@@ -485,8 +492,8 @@ export const RecommendationsV3 = () => {
                 if (recsToSet.length > 0) {
                   console.log(`✅ [RecommendationsV3] Using ${recsToSet.length} recommendations from response (fallback)`);
                   setRecommendations(recsToSet);
+                  setAllRecommendations(recsToSet); // Store all for filtering
                   setCurrentStep(1);
-                  setSelectedIds(new Set());
                   setError(null);
                 } else {
                   setError('Recommendations generated but could not be loaded. Please refresh the page.');
@@ -638,9 +645,10 @@ export const RecommendationsV3 = () => {
     setError(null);
 
     // Optimistically update UI immediately in both filtered and all recommendations
+    // Only update reviewStatus - this is the single source of truth synced with database
     const updateRec = (rec: RecommendationV3) => 
       rec.id === recommendationId 
-        ? { ...rec, reviewStatus: status, isApproved: status === 'approved' }
+        ? { ...rec, reviewStatus: status }
         : rec;
     
     setRecommendations(prev => prev.map(updateRec));
@@ -654,10 +662,10 @@ export const RecommendationsV3 = () => {
         console.log(`✅ [RecommendationsV3] Successfully updated status for ${recommendationId}`);
         // Status already updated optimistically, no need to update again
       } else {
-        // Revert optimistic update on error
+        // Revert optimistic update on error - restore previous reviewStatus
         const revertRec = (rec: RecommendationV3) => 
           rec.id === recommendationId 
-            ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review', isApproved: status === 'approved' ? false : rec.isApproved }
+            ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review' }
             : rec;
         setRecommendations(prev => prev.map(revertRec));
         setAllRecommendations(prev => prev.map(revertRec));
@@ -665,10 +673,10 @@ export const RecommendationsV3 = () => {
       }
     } catch (err: any) {
       console.error('Error updating recommendation status:', err);
-      // Revert optimistic update on error
+      // Revert optimistic update on error - restore previous reviewStatus
       const revertRec = (rec: RecommendationV3) => 
         rec.id === recommendationId 
-          ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review', isApproved: status === 'approved' ? false : rec.isApproved }
+          ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review' }
           : rec;
       setRecommendations(prev => prev.map(revertRec));
       setAllRecommendations(prev => prev.map(revertRec));
@@ -676,163 +684,8 @@ export const RecommendationsV3 = () => {
     }
   };
 
-  // Handle approve recommendations (Step 1 → Step 2)
-  const handleApprove = async () => {
-    if (selectedIds.size === 0) {
-      setError('Please select at least one recommendation to approve');
-      return;
-    }
-
-    if (!generationId) return;
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Filter out only truly invalid IDs (empty, null, or temporary fallback IDs)
-      // UUIDs are valid - these are the database IDs
-      const idsArray = Array.from(selectedIds).filter(id => {
-        if (!id) return false;
-        // Filter out temporary IDs (contain 'temp' or start with 'rec-' but aren't UUIDs)
-        if (id.includes('temp')) return false;
-        // Check if it's a UUID (has dashes in UUID format) - these are valid database IDs
-        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuidPattern.test(id)) return true;
-        // If it starts with 'rec-' but isn't a UUID, it's a temporary ID - filter it out
-        if (id.startsWith('rec-') && !uuidPattern.test(id)) return false;
-        // If it's a valid-looking string (not empty, not temp), allow it (might be a valid ID format)
-        return id.length > 10;
-      });
-      
-      if (idsArray.length === 0) {
-        setError('No valid recommendation IDs found. The recommendations may not have been saved properly. Please refresh the page.');
-        setIsLoading(false);
-        return;
-      }
-
-      console.log('📝 [RecommendationsV3] Approving recommendations:', idsArray);
-
-      // Use the first valid ID for the route parameter, but send all IDs in body
-      const response = await approveRecommendationsV3(idsArray[0], { recommendationIds: idsArray });
-      
-      console.log('📊 [RecommendationsV3] Approval response:', {
-        success: response.success,
-        hasData: !!response.data,
-        approvedCount: response.data?.approvedCount,
-        error: response.error
-      });
-      
-      if (response.success) {
-        // Update allRecommendations to reflect approved status for selected items
-        setAllRecommendations(prev => prev.map(rec => 
-          selectedIds.has(rec.id || '')
-            ? { ...rec, reviewStatus: 'approved' as const, isApproved: true }
-            : rec
-        ));
-        
-        setSelectedIds(new Set());
-        
-        // Set manual loading flags (both state and ref) to prevent useEffect from interfering
-        isManuallyNavigatingRef.current = true;
-        setIsManuallyLoading(true);
-        
-        // Longer delay to ensure database transaction is fully committed
-        // The backend updates is_approved, so we need to wait for the transaction
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Retry logic: Try loading Step 2 data up to 3 times
-        let step2Response: any = null;
-        let retries = 0;
-        const maxRetries = 3;
-        let loadedSuccessfully = false;
-        
-        while (retries < maxRetries && !loadedSuccessfully) {
-          console.log(`📥 [RecommendationsV3] Attempting to load Step 2 data (attempt ${retries + 1}/${maxRetries})...`);
-          step2Response = await getRecommendationsByStepV3(generationId, 2);
-          
-          console.log(`📊 [RecommendationsV3] Step 2 response (attempt ${retries + 1}):`, {
-            success: step2Response.success,
-            hasData: !!step2Response.data,
-            recommendationsCount: step2Response.data?.recommendations?.length || 0,
-            error: step2Response.error
-          });
-          
-          if (step2Response.success && step2Response.data) {
-            const approvedRecs = step2Response.data.recommendations || [];
-            if (approvedRecs.length > 0) {
-              console.log(`✅ [RecommendationsV3] Loaded ${approvedRecs.length} approved recommendations for Step 2`);
-              console.log(`📊 [RecommendationsV3] Approved recommendation IDs:`, approvedRecs.map((r: any) => r.id));
-              console.log(`📊 [RecommendationsV3] Approved recommendation actions:`, approvedRecs.map((r: any) => r.action?.substring(0, 50)));
-              
-              // IMPORTANT: Set recommendations to ONLY the approved ones
-              setRecommendations(approvedRecs);
-              
-              // Move to step 2 AFTER loading data
-              setCurrentStep(2);
-              setError(null);
-              loadedSuccessfully = true;
-              break; // Success, exit retry loop
-            } else {
-              console.warn(`⚠️ [RecommendationsV3] Step 2 returned empty recommendations array (attempt ${retries + 1})`);
-              retries++;
-              if (retries < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, 300));
-              }
-            }
-          } else {
-            retries++;
-            if (retries < maxRetries) {
-              console.warn(`⚠️ [RecommendationsV3] Step 2 load failed, retrying in 300ms... (${retries}/${maxRetries})`);
-              console.warn(`⚠️ [RecommendationsV3] Error:`, step2Response.error);
-              await new Promise(resolve => setTimeout(resolve, 300));
-            }
-          }
-        }
-        
-        if (!loadedSuccessfully) {
-          console.error('❌ [RecommendationsV3] Failed to load Step 2 data after all retries');
-          console.error('❌ [RecommendationsV3] Final Step 2 response:', step2Response);
-          
-          // Try one more time with a longer delay - sometimes database needs more time
-          console.log('🔄 [RecommendationsV3] Trying one final attempt with longer delay...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const finalStep2Response = await getRecommendationsByStepV3(generationId, 2);
-          
-          if (finalStep2Response.success && finalStep2Response.data && finalStep2Response.data.recommendations?.length > 0) {
-            console.log(`✅ [RecommendationsV3] Successfully loaded ${finalStep2Response.data.recommendations.length} recommendations on final attempt`);
-            setRecommendations(finalStep2Response.data.recommendations);
-            setCurrentStep(2);
-            setError(null);
-          } else {
-            // Even if loading fails, move to step 2 - the useEffect will try to load it
-            setCurrentStep(2);
-            // Clear error - let the useEffect handle loading, it will show error if needed
-            // The useEffect will automatically try to load Step 2 when currentStep changes
-            setError(null);
-            console.log('⏭️ [RecommendationsV3] Moving to Step 2, useEffect will attempt to load data');
-          }
-        }
-        
-          // Mark Step 2 as manually loaded to prevent useEffect from reloading
-          lastManuallyLoadedStepRef.current = 2;
-          
-          // Clear manual loading flags after state has settled
-          setTimeout(() => {
-            setIsManuallyLoading(false);
-            isManuallyNavigatingRef.current = false;
-            console.log('✅ [RecommendationsV3] Manual loading flags cleared');
-          }, 300);
-      } else {
-        console.error('❌ [RecommendationsV3] Approval failed:', response.error);
-        setError(response.error || 'Failed to approve recommendations');
-      }
-    } catch (err: any) {
-      console.error('Error approving recommendations:', err);
-      setError(err.message || 'Failed to approve recommendations');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Note: Approval now happens automatically when user changes status to "approved" via dropdown
+  // The handleStatusChange function handles updating the status, which automatically sets is_approved = true
 
   // Handle generate content for all approved recommendations (Step 2 → Step 3)
   const handleGenerateContentBulk = async () => {
@@ -1096,26 +949,28 @@ export const RecommendationsV3 = () => {
     }
   };
 
-  // Handle generate content for single recommendation (deprecated, kept for backward compatibility)
-  const handleGenerateContent = async (recommendation: RecommendationV3) => {
-    if (!recommendation.id) return;
+  // Handle generate content for single recommendation
+  const handleGenerateContent = async (recommendation: RecommendationV3, action: string) => {
+    if (!recommendation.id || action !== 'generate-content') return;
+    if (generatingContentIds.has(recommendation.id)) return; // Prevent duplicate requests
 
-    setIsLoading(true);
+    // Add to generating set
+    setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
     setError(null);
 
     try {
+      console.log(`📝 [RecommendationsV3] Generating content for recommendation ${recommendation.id}...`);
       const response = await generateContentV3(recommendation.id);
+      
       if (response.success && response.data) {
-        // Store content
-        setContentMap(prev => new Map(prev).set(recommendation.id!, response.data.content));
+        console.log(`✅ [RecommendationsV3] Content generated successfully for ${recommendation.id}`);
         
-        // Reload step 2 data
-        if (generationId) {
-          const step2Response = await getRecommendationsByStepV3(generationId, 2);
-          if (step2Response.success && step2Response.data) {
-            setRecommendations(step2Response.data.recommendations);
-          }
-        }
+        // Store content in contentMap (for Step 3)
+        setContentMap(prev => new Map(prev).set(recommendation.id!, response.data.content));
+
+        // UX: Once content is generated, it should disappear from Step 2 and make Step 3 "light up".
+        setHasGeneratedContentForStep3(true);
+        setRecommendations(prev => prev.filter(rec => rec.id !== recommendation.id));
       } else {
         setError(response.error || 'Failed to generate content');
       }
@@ -1123,110 +978,63 @@ export const RecommendationsV3 = () => {
       console.error('Error generating content:', err);
       setError(err.message || 'Failed to generate content');
     } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Handle toggle completion selection (Step 3 - just selection, no routing)
-  const handleToggleComplete = (recommendation: RecommendationV3) => {
-    if (!recommendation.id) return;
-    
-    setCompletedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(recommendation.id!)) {
+      // Remove from generating set
+      setGeneratingContentIds(prev => {
+        const next = new Set(prev);
         next.delete(recommendation.id!);
-      } else {
-        next.add(recommendation.id!);
-      }
-      return next;
-    });
-  };
-
-  // Handle select all for completion (Step 3)
-  const handleSelectAllComplete = (selected: boolean) => {
-    if (selected) {
-      const allIds = recommendations.filter(r => r.id && !r.isCompleted).map(r => r.id!);
-      setCompletedIds(new Set(allIds));
-    } else {
-      setCompletedIds(new Set());
-    }
-  };
-
-  // Handle proceed to Step 4 - complete all selected recommendations
-  const handleProceedToResults = async () => {
-    if (completedIds.size === 0) {
-      setError('Please select at least one recommendation to mark as completed');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Complete all selected recommendations in parallel
-      const completionPromises = Array.from(completedIds).map(async (id) => {
-        try {
-          return await completeRecommendationV3(id);
-        } catch (err: any) {
-          console.error(`Error completing recommendation ${id}:`, err);
-          return { success: false, error: err.message || 'Failed to complete' };
-        }
+        return next;
       });
-
-      const results = await Promise.all(completionPromises);
-      const successful = results.filter(r => r.success);
-      const failed = results.filter(r => !r.success);
-
-      if (failed.length > 0) {
-        console.warn(`⚠️ [RecommendationsV3] ${failed.length} recommendation(s) failed to complete. ${successful.length} succeeded.`);
-        if (successful.length === 0) {
-          setError(`${failed.length} recommendation(s) failed to complete.`);
-          return;
-        }
-      }
-
-      // Set manual loading flags to prevent useEffect from interfering
-      isManuallyNavigatingRef.current = true;
-      setIsManuallyLoading(true);
-      
-      // Clear completed selections
-      setCompletedIds(new Set());
-      
-      // Small delay to ensure database transactions are committed
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Reload step 4 data (completed recommendations)
-      if (generationId) {
-        const step4Response = await getRecommendationsByStepV3(generationId, 4);
-        if (step4Response.success && step4Response.data) {
-          setRecommendations(step4Response.data.recommendations);
-          // Move to step 4
-          setCurrentStep(4);
-          setError(null);
-        } else {
-          // If no step 4 data yet, reload step 3 to see updated state
-          const step3Response = await getRecommendationsByStepV3(generationId, 3);
-          if (step3Response.success && step3Response.data) {
-            setRecommendations(step3Response.data.recommendations);
-          }
-        }
-      }
-      
-      // Mark Step 4 as manually loaded to prevent useEffect from reloading
-      lastManuallyLoadedStepRef.current = 4;
-      
-      // Clear manual loading flags
-      setTimeout(() => {
-        setIsManuallyLoading(false);
-        isManuallyNavigatingRef.current = false;
-      }, 300);
-    } catch (err: any) {
-      console.error('Error proceeding to results:', err);
-      setError(err.message || 'Failed to complete recommendations');
-    } finally {
-      setIsLoading(false);
     }
   };
+
+  // Handle toggle completion - immediately complete and navigate to Step 4
+  const handleToggleComplete = async (recommendation: RecommendationV3) => {
+    if (!recommendation.id || recommendation.isCompleted) return;
+    
+    setError(null);
+    
+    try {
+      console.log(`📝 [RecommendationsV3] Completing recommendation ${recommendation.id}...`);
+      const response = await completeRecommendationV3(recommendation.id);
+      
+      if (response.success) {
+        console.log(`✅ [RecommendationsV3] Successfully completed recommendation ${recommendation.id}`);
+        
+        // Drive Step 4 attention pulse
+        setHasCompletedForStep4(true);
+        
+        // Load Step 4 data and navigate immediately (no delay needed)
+        if (generationId) {
+          isManuallyNavigatingRef.current = true;
+          setIsManuallyLoading(true);
+          lastManuallyLoadedStepRef.current = 4;
+          
+          const step4Response = await getRecommendationsByStepV3(generationId, 4);
+          if (step4Response.success && step4Response.data) {
+            const recommendationsWithIds = step4Response.data.recommendations
+              .filter(rec => rec.id && rec.id.length > 10)
+              .map(rec => ({ ...rec, id: rec.id! }));
+            
+            setRecommendations(recommendationsWithIds);
+            setCurrentStep(4);
+            setHasCompletedForStep4(false);
+            setError(null);
+          }
+          
+          setTimeout(() => {
+            setIsManuallyLoading(false);
+            isManuallyNavigatingRef.current = false;
+          }, 300);
+        }
+      } else {
+        setError(response.error || 'Failed to complete recommendation');
+      }
+    } catch (err: any) {
+      console.error('Error completing recommendation:', err);
+      setError(err.message || 'Failed to complete recommendation');
+    }
+  };
+
 
   // Handle select recommendation
   const handleSelect = (id: string, selected: boolean) => {
@@ -1336,12 +1144,21 @@ export const RecommendationsV3 = () => {
             <div className="mb-6">
               <StepIndicator
                 currentStep={currentStep}
+                attentionSteps={{
+                  2: (() => {
+                    const sourceArray = allRecommendations.length > 0 ? allRecommendations : recommendations;
+                    const approvedCount = sourceArray.filter(
+                      rec => (rec.reviewStatus || 'pending_review') === 'approved'
+                    ).length;
+                    return currentStep === 1 && approvedCount > 0;
+                  })(),
+                  3: currentStep <= 2 && hasGeneratedContentForStep3,
+                  4: currentStep <= 3 && hasCompletedForStep4
+                }}
                 onStepClick={async (step) => {
-                  // Set ref immediately (synchronous) to prevent useEffect from running
+                  // Set manual loading flags
                   isManuallyNavigatingRef.current = true;
-                  // Also set state flag
                   setIsManuallyLoading(true);
-                  // Mark this step as manually loaded
                   lastManuallyLoadedStepRef.current = step;
                   
                   try {
@@ -1355,26 +1172,16 @@ export const RecommendationsV3 = () => {
                         .map(rec => ({ ...rec, id: rec.id! }));
                       
                       console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${step}`);
-                      if (step === 2) {
-                        console.log(`📊 [RecommendationsV3] Step 2 recommendations (should all be approved):`, 
-                          recommendationsWithIds.map(r => ({ 
-                            id: r.id, 
-                            action: r.action?.substring(0, 40), 
-                            isApproved: r.isApproved,
-                            isContentGenerated: r.isContentGenerated 
-                          })));
-                      }
                       
                       setRecommendations(recommendationsWithIds);
                       setError(null);
                       
                       // Load content for Step 3
                       if (step === 3) {
-                        // Initialize all recommendations to have expanded sections by default
+                        setHasGeneratedContentForStep3(false);
                         const newExpandedSections = new Map(expandedSections);
                         recommendationsWithIds.forEach(rec => {
                           if (rec.id && !newExpandedSections.has(rec.id)) {
-                            // Default to both sections expanded
                             newExpandedSections.set(rec.id, { email: true, content: true });
                           }
                         });
@@ -1403,8 +1210,12 @@ export const RecommendationsV3 = () => {
                         });
                         setContentMap(newContentMap);
                       }
+
+                      // Clear "completed" attention once user visits Step 4
+                      if (step === 4) {
+                        setHasCompletedForStep4(false);
+                      }
                       
-                      // Update step AFTER data is loaded (prevents useEffect from running)
                       setCurrentStep(step);
                     } else {
                       setRecommendations([]);
@@ -1419,7 +1230,6 @@ export const RecommendationsV3 = () => {
                     setCurrentStep(step);
                   } finally {
                     setIsLoading(false);
-                    // Clear flags after a brief delay to ensure useEffect doesn't interfere
                     setTimeout(() => {
                       setIsManuallyLoading(false);
                       isManuallyNavigatingRef.current = false;
@@ -1456,49 +1266,19 @@ export const RecommendationsV3 = () => {
             {/* Step 1: Generate & Review */}
             {currentStep === 1 && (
               <div>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 1: Generate & Review</h2>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    {/* Status Filter - matching project theme */}
-                    <select
-                      id="status-filter"
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value as 'all' | 'pending_review' | 'approved' | 'rejected')}
-                      aria-label="Filter by status"
-                      style={{
-                        border: '1px solid #dcdfe5',
-                        borderRadius: '4px',
-                        padding: '8px 12px',
-                        fontSize: '13px',
-                        fontFamily: 'IBM Plex Sans, sans-serif',
-                        color: '#212534',
-                        backgroundColor: '#ffffff',
-                        cursor: 'pointer',
-                        minWidth: '140px'
-                      }}
-                    >
-                      <option value="all">All Status</option>
-                      <option value="pending_review">Pending Review</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                    {selectedIds.size > 0 && (
-                      <button
-                        onClick={handleApprove}
-                        disabled={isLoading}
-                        className="px-4 py-2 bg-[#06c686] text-white rounded-md text-[13px] font-medium hover:bg-[#05a870] disabled:opacity-50 transition-colors"
-                      >
-                        Approve ({selectedIds.size})
-                      </button>
-                    )}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                  <div>
+                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 1: Generate & Review</h2>
+                    <p className="text-[13px] text-[#64748b]">Review recommendations and set their status</p>
+                  </div>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    {/* Status Filter - Enhanced UI */}
+                    <StatusFilter value={statusFilter} onChange={setStatusFilter} />
                   </div>
                 </div>
                 <RecommendationsTableV3
                   recommendations={recommendations}
-                  selectedIds={selectedIds}
-                  onSelect={handleSelect}
-                  onSelectAll={handleSelectAll}
-                  showCheckboxes={true}
+                  showCheckboxes={false}
                   showStatusDropdown={true}
                   onStatusChange={handleStatusChange}
                 />
@@ -1508,22 +1288,17 @@ export const RecommendationsV3 = () => {
             {/* Step 2: Approved Recommendations */}
             {currentStep === 2 && (
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 2: Approved Recommendations</h2>
-                  {recommendations.length > 0 && (
-                    <button
-                      onClick={handleGenerateContentBulk}
-                      disabled={isLoading}
-                      className="px-4 py-2 bg-[#06c686] text-white rounded-md text-[13px] font-medium hover:bg-[#05a870] disabled:opacity-50 transition-colors flex items-center gap-2"
-                    >
-                      <IconSparkles size={16} />
-                      Generate Content for All ({recommendations.length})
-                    </button>
-                  )}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                  <div>
+                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: Approved Recommendations</h2>
+                    <p className="text-[13px] text-[#64748b]">Generate content for each approved recommendation</p>
+                  </div>
                 </div>
                 <RecommendationsTableV3
                   recommendations={recommendations}
-                  showActions={false}
+                  showActions={true}
+                  onAction={handleGenerateContent}
+                  generatingContentIds={generatingContentIds}
                 />
               </div>
             )}
@@ -1531,44 +1306,13 @@ export const RecommendationsV3 = () => {
             {/* Step 3: Content Review */}
             {currentStep === 3 && (
               <div>
-                <div className="flex items-center justify-between mb-6">
+                <div className="mb-6">
                   <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 3: Content Review</h2>
-                  <div className="flex items-center gap-3">
-                    {recommendations.length > 0 && (
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={completedIds.size > 0 && completedIds.size === recommendations.filter(r => !r.isCompleted).length}
-                          onChange={(e) => handleSelectAllComplete(e.target.checked)}
-                          className="w-4 h-4 rounded border-[#cbd5e1] text-[#00bcdc] focus:ring-2 focus:ring-[#00bcdc]"
-                        />
-                        <span className="text-[13px] text-[#64748b]">Select All</span>
-                      </label>
-                    )}
-                    {completedIds.size > 0 && (
-                      <button
-                        onClick={handleProceedToResults}
-                        disabled={isLoading}
-                        className="px-4 py-2 bg-[#06c686] text-white rounded-md text-[13px] font-medium hover:bg-[#05a870] disabled:opacity-50 transition-colors flex items-center gap-2"
-                      >
-                        {isLoading ? (
-                          <>
-                            <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            Proceed to Results ({completedIds.size})
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
+                  <p className="text-[13px] text-[#64748b] mt-1">Review generated content and mark items as completed</p>
                 </div>
                 <div className="space-y-6">
                   {recommendations.map((rec) => {
                     const content = rec.id ? contentMap.get(rec.id) : null;
-                    const isSelectedForCompletion = rec.id ? completedIds.has(rec.id) : false;
                     return (
                       <div key={rec.id} className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden">
                         {/* Header Section */}
@@ -1586,15 +1330,15 @@ export const RecommendationsV3 = () => {
                               </div>
                             </div>
                             {!rec.isCompleted && (
-                              <label className="flex items-center gap-2 cursor-pointer group ml-4">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelectedForCompletion}
-                                  onChange={() => handleToggleComplete(rec)}
-                                  className="w-5 h-5 rounded border-2 border-[#cbd5e1] text-[#00bcdc] focus:ring-2 focus:ring-[#00bcdc] focus:ring-offset-2 transition-all group-hover:border-[#00bcdc]"
-                                />
-                                <span className="text-[13px] font-medium text-[#1a1d29] group-hover:text-[#00bcdc] transition-colors">Mark as Completed</span>
-                              </label>
+                              <button
+                                onClick={() => handleToggleComplete(rec)}
+                                className="ml-4 px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Mark as Completed
+                              </button>
                             )}
                             {rec.isCompleted && (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-medium bg-[#d1fae5] text-[#065f46] ml-4">

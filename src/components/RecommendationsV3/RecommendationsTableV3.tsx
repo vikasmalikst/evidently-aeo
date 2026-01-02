@@ -25,6 +25,7 @@ interface RecommendationsTableV3Props {
   onAction?: (recommendation: RecommendationV3, action: string) => void;
   showStatusDropdown?: boolean;
   onStatusChange?: (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected') => void;
+  generatingContentIds?: Set<string>; // Track which recommendations are currently generating content
 }
 
 const FocusAreaBadge = ({ area }: { area: 'visibility' | 'soa' | 'sentiment' }) => {
@@ -80,11 +81,13 @@ export const RecommendationsTableV3 = ({
   showActions = false,
   onAction,
   showStatusDropdown = false,
-  onStatusChange
+  onStatusChange,
+  generatingContentIds = new Set()
 }: RecommendationsTableV3Props) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const allSelected = recommendations.length > 0 && recommendations.every(r => r.id && selectedIds.has(r.id));
-  const someSelected = recommendations.some(r => r.id && selectedIds.has(r.id));
+  // Only calculate selection state if checkboxes are shown
+  const allSelected = showCheckboxes && recommendations.length > 0 && recommendations.every(r => r.id && selectedIds.has(r.id));
+  const someSelected = showCheckboxes && recommendations.some(r => r.id && selectedIds.has(r.id));
 
   const toggleExpand = (id: string) => {
     setExpandedRows(prev => {
@@ -147,7 +150,7 @@ export const RecommendationsTableV3 = ({
           <tbody className="bg-white divide-y divide-[var(--border-default)]">
             {recommendations.length === 0 ? (
               <tr>
-                <td colSpan={showCheckboxes ? (showStatusDropdown ? 8 : 7) : (showStatusDropdown ? 7 : 6)} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
+                <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 8 : 7) : (showActions ? 7 : 6)) : (showStatusDropdown ? (showActions ? 7 : 6) : (showActions ? 6 : 5))} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
                   No recommendations found
                 </td>
               </tr>
@@ -215,60 +218,89 @@ export const RecommendationsTableV3 = ({
                       </td>
                       {showStatusDropdown && (
                         <td className="px-4 py-4">
-                          <select
-                            value={rec.reviewStatus || 'pending_review'}
-                            onChange={(e) => {
-                              const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected';
-                              if (rec.id && onStatusChange) {
-                                onStatusChange(rec.id, newStatus);
-                              }
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label={`Change status for ${rec.action?.substring(0, 30)}`}
-                            style={{
-                              border: '1px solid #dcdfe5',
-                              borderRadius: '4px',
-                              padding: '6px 10px',
-                              fontSize: '13px',
-                              fontFamily: 'IBM Plex Sans, sans-serif',
-                              color: '#212534',
-                              backgroundColor: '#ffffff',
-                              cursor: 'pointer',
-                              minWidth: '140px',
-                              outline: 'none'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = '#cfd4e3';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = '#dcdfe5';
-                            }}
-                            onFocus={(e) => {
-                              e.stopPropagation();
-                              e.currentTarget.style.borderColor = '#0ea5e9';
-                              e.currentTarget.style.boxShadow = '0 0 0 2px rgba(14, 165, 233, 0.1)';
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = '#dcdfe5';
-                              e.currentTarget.style.boxShadow = 'none';
-                            }}
-                          >
-                            <option value="pending_review">Pending Review</option>
-                            <option value="approved">Approved</option>
-                            <option value="rejected">Rejected</option>
-                          </select>
+                          <div className="relative">
+                            <select
+                              value={rec.reviewStatus || 'pending_review'}
+                              onChange={(e) => {
+                                const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected';
+                                if (rec.id && onStatusChange) {
+                                  onStatusChange(rec.id, newStatus);
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Change status for ${rec.action?.substring(0, 30)}`}
+                              className={`w-full pl-9 pr-8 py-2 border rounded-lg text-[13px] font-medium cursor-pointer transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                                rec.reviewStatus === 'approved'
+                                  ? 'border-[#06c686] bg-[#f0fdf4] text-[#027a48] focus:ring-[#06c686]'
+                                  : rec.reviewStatus === 'rejected'
+                                  ? 'border-[#fecaca] bg-[#fef2f2] text-[#991b1b] focus:ring-[#ef4444]'
+                                  : 'border-[#fde68a] bg-[#fffbeb] text-[#92400e] focus:ring-[#f59e0b]'
+                              }`}
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L10 1' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+                                backgroundSize: '10px 6px',
+                                backgroundPosition: 'right 8px center',
+                                backgroundRepeat: 'no-repeat'
+                              }}
+                            >
+                              <option value="pending_review">Pending Review</option>
+                              <option value="approved">Approved</option>
+                              <option value="rejected">Rejected</option>
+                            </select>
+                            {/* Status indicator dot */}
+                            <div
+                              className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ${
+                                rec.reviewStatus === 'approved'
+                                  ? 'bg-[#06c686]'
+                                  : rec.reviewStatus === 'rejected'
+                                  ? 'bg-[#ef4444]'
+                                  : 'bg-[#f59e0b]'
+                              }`}
+                            />
+                          </div>
                         </td>
                       )}
                       {showActions && (
                         <td className="px-4 py-4">
-                          {onAction && (
-                            <button
-                              onClick={() => onAction(rec, 'generate-content')}
-                              className="px-3 py-1.5 rounded-md text-[12px] font-semibold bg-[#00bcdc] text-white hover:bg-[#0096b0] transition-colors"
-                            >
-                              Generate Content
-                            </button>
-                          )}
+                          {onAction && (() => {
+                            const isGenerating = generatingContentIds.has(rec.id || '');
+                            const isGenerated = rec.isContentGenerated;
+                            
+                            if (isGenerating) {
+                              return (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
+                                  <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
+                                  Generating...
+                                </span>
+                              );
+                            }
+                            
+                            if (isGenerated) {
+                              return (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#d1fae5] text-[#065f46] border-[#a7f3d0]">
+                                  <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                  </svg>
+                                  Generated
+                                </span>
+                              );
+                            }
+                            
+                            return (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onAction(rec, 'generate-content');
+                                }}
+                                className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border bg-[#06c686] text-white border-[#05a870] hover:bg-[#05a870] transition-colors cursor-pointer"
+                              >
+                                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                Generate
+                              </button>
+                            );
+                          })()}
                         </td>
                       )}
                     </tr>

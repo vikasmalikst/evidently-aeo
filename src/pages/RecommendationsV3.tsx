@@ -53,6 +53,7 @@ export const RecommendationsV3 = () => {
   const [contentMap, setContentMap] = useState<Map<string, any>>(new Map());
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
   const [allRecommendations, setAllRecommendations] = useState<RecommendationV3[]>([]); // Store all Step 1 recommendations for local filtering
+  const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
 
   // Track if we're manually loading data to prevent useEffect from interfering
   const [isManuallyLoading, setIsManuallyLoading] = useState(false);
@@ -640,9 +641,10 @@ export const RecommendationsV3 = () => {
     setError(null);
 
     // Optimistically update UI immediately in both filtered and all recommendations
+    // Only update reviewStatus - this is the single source of truth synced with database
     const updateRec = (rec: RecommendationV3) => 
       rec.id === recommendationId 
-        ? { ...rec, reviewStatus: status, isApproved: status === 'approved' }
+        ? { ...rec, reviewStatus: status }
         : rec;
     
     setRecommendations(prev => prev.map(updateRec));
@@ -656,10 +658,10 @@ export const RecommendationsV3 = () => {
         console.log(`✅ [RecommendationsV3] Successfully updated status for ${recommendationId}`);
         // Status already updated optimistically, no need to update again
       } else {
-        // Revert optimistic update on error
+        // Revert optimistic update on error - restore previous reviewStatus
         const revertRec = (rec: RecommendationV3) => 
           rec.id === recommendationId 
-            ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review', isApproved: status === 'approved' ? false : rec.isApproved }
+            ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review' }
             : rec;
         setRecommendations(prev => prev.map(revertRec));
         setAllRecommendations(prev => prev.map(revertRec));
@@ -667,10 +669,10 @@ export const RecommendationsV3 = () => {
       }
     } catch (err: any) {
       console.error('Error updating recommendation status:', err);
-      // Revert optimistic update on error
+      // Revert optimistic update on error - restore previous reviewStatus
       const revertRec = (rec: RecommendationV3) => 
         rec.id === recommendationId 
-          ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review', isApproved: status === 'approved' ? false : rec.isApproved }
+          ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review' }
           : rec;
       setRecommendations(prev => prev.map(revertRec));
       setAllRecommendations(prev => prev.map(revertRec));
@@ -943,26 +945,35 @@ export const RecommendationsV3 = () => {
     }
   };
 
-  // Handle generate content for single recommendation (deprecated, kept for backward compatibility)
-  const handleGenerateContent = async (recommendation: RecommendationV3) => {
-    if (!recommendation.id) return;
+  // Handle generate content for single recommendation
+  const handleGenerateContent = async (recommendation: RecommendationV3, action: string) => {
+    if (!recommendation.id || action !== 'generate-content') return;
+    if (generatingContentIds.has(recommendation.id)) return; // Prevent duplicate requests
 
-    setIsLoading(true);
+    // Add to generating set
+    setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
     setError(null);
 
     try {
+      console.log(`📝 [RecommendationsV3] Generating content for recommendation ${recommendation.id}...`);
       const response = await generateContentV3(recommendation.id);
+      
       if (response.success && response.data) {
-        // Store content
+        console.log(`✅ [RecommendationsV3] Content generated successfully for ${recommendation.id}`);
+        
+        // Store content in contentMap (for Step 3)
         setContentMap(prev => new Map(prev).set(recommendation.id!, response.data.content));
         
-        // Reload step 2 data
-        if (generationId) {
-          const step2Response = await getRecommendationsByStepV3(generationId, 2);
-          if (step2Response.success && step2Response.data) {
-            setRecommendations(step2Response.data.recommendations);
-          }
-        }
+        // Update the recommendation in place to show "Content Generated" status
+        // The recommendation will move to Step 3 when user navigates there
+        setRecommendations(prev => prev.map(rec => 
+          rec.id === recommendation.id 
+            ? { ...rec, isContentGenerated: true }
+            : rec
+        ));
+        
+        // Note: Recommendation will naturally appear in Step 3 since is_content_generated is now true in database
+        // We keep it visible in Step 2 with "Generated" status so user can see the change
       } else {
         setError(response.error || 'Failed to generate content');
       }
@@ -970,7 +981,12 @@ export const RecommendationsV3 = () => {
       console.error('Error generating content:', err);
       setError(err.message || 'Failed to generate content');
     } finally {
-      setIsLoading(false);
+      // Remove from generating set
+      setGeneratingContentIds(prev => {
+        const next = new Set(prev);
+        next.delete(recommendation.id!);
+        return next;
+      });
     }
   };
 
@@ -1314,10 +1330,16 @@ export const RecommendationsV3 = () => {
                     
                     {/* Proceed to Step 2 Button - Show when there are approved recommendations */}
                     {(() => {
-                      const approvedCount = allRecommendations.filter(
+                      // Calculate approved count from allRecommendations (preferred) or recommendations (fallback)
+                      const sourceArray = allRecommendations.length > 0 ? allRecommendations : recommendations;
+                      const approvedCount = sourceArray.filter(
                         rec => (rec.reviewStatus || 'pending_review') === 'approved'
                       ).length;
                       
+                      // Debug log to help troubleshoot
+                     
+                      
+                      // Always show button if there are approved recommendations
                       if (approvedCount > 0) {
                         return (
                           <button
@@ -1330,7 +1352,7 @@ export const RecommendationsV3 = () => {
                               try {
                                 setIsLoading(true);
                                 setError(null);
-                                console.log(`📥 [RecommendationsV3] Navigating to Step 2`);
+                                console.log(`📥 [RecommendationsV3] Navigating to Step 2 with ${approvedCount} approved recommendations`);
                                 const response = await getRecommendationsByStepV3(generationId!, 2);
                                 if (response.success && response.data) {
                                   const recommendationsWithIds = response.data.recommendations
@@ -1339,6 +1361,8 @@ export const RecommendationsV3 = () => {
                                   setRecommendations(recommendationsWithIds);
                                   setCurrentStep(2);
                                   setError(null);
+                                } else {
+                                  setError(response.error || 'Failed to load Step 2 recommendations');
                                 }
                               } catch (err: any) {
                                 console.error('Error loading step 2:', err);
@@ -1351,10 +1375,11 @@ export const RecommendationsV3 = () => {
                                 }, 300);
                               }
                             }}
-                            className="px-4 py-2.5 bg-[#06c686] text-white rounded-lg text-[13px] font-semibold hover:bg-[#05a870] transition-all shadow-sm hover:shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={isLoading || !generationId}
+                            className="px-5 py-2.5 bg-[#06c686] text-white rounded-lg text-[13px] font-semibold hover:bg-[#05a870] transition-all shadow-sm hover:shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <IconTrendingUp size={16} />
-                            Proceed to Step 2 ({approvedCount})
+                            Proceed to Step 2 ({approvedCount} approved)
                           </button>
                         );
                       }
@@ -1374,22 +1399,105 @@ export const RecommendationsV3 = () => {
             {/* Step 2: Approved Recommendations */}
             {currentStep === 2 && (
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 2: Approved Recommendations</h2>
-                  {recommendations.length > 0 && (
-                    <button
-                      onClick={handleGenerateContentBulk}
-                      disabled={isLoading}
-                      className="px-4 py-2 bg-[#06c686] text-white rounded-md text-[13px] font-medium hover:bg-[#05a870] disabled:opacity-50 transition-colors flex items-center gap-2"
-                    >
-                      <IconSparkles size={16} />
-                      Generate Content for All ({recommendations.length})
-                    </button>
-                  )}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                  <div>
+                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: Approved Recommendations</h2>
+                    <p className="text-[13px] text-[#64748b]">Generate content for each approved recommendation</p>
+                  </div>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    {/* Proceed to Step 3 Button - Show when at least one recommendation has content generated */}
+                    {(() => {
+                      const generatedCount = recommendations.filter(
+                        rec => rec.isContentGenerated === true
+                      ).length;
+                      
+                      if (generatedCount > 0) {
+                        return (
+                          <button
+                            onClick={async () => {
+                              // Set manual loading flags
+                              isManuallyNavigatingRef.current = true;
+                              setIsManuallyLoading(true);
+                              lastManuallyLoadedStepRef.current = 3;
+                              
+                              try {
+                                setIsLoading(true);
+                                setError(null);
+                                console.log(`📥 [RecommendationsV3] Navigating to Step 3 with ${generatedCount} generated recommendations`);
+                                const response = await getRecommendationsByStepV3(generationId!, 3);
+                                if (response.success && response.data) {
+                                  const recommendationsWithIds = response.data.recommendations
+                                    .filter(rec => rec.id && rec.id.length > 10)
+                                    .map(rec => ({ ...rec, id: rec.id! }));
+                                  
+                                  setRecommendations(recommendationsWithIds);
+                                  
+                                  // Initialize expanded sections for Step 3
+                                  const newExpandedSections = new Map(expandedSections);
+                                  recommendationsWithIds.forEach(rec => {
+                                    if (rec.id && !newExpandedSections.has(rec.id)) {
+                                      newExpandedSections.set(rec.id, { email: true, content: true });
+                                    }
+                                  });
+                                  setExpandedSections(newExpandedSections);
+                                  
+                                  // Load content for all generated recommendations
+                                  const contentPromises = recommendationsWithIds
+                                    .filter(r => r.id && r.isContentGenerated)
+                                    .map(async (rec) => {
+                                      try {
+                                        const contentResponse = await fetchRecommendationContentLatest(rec.id!);
+                                        if (contentResponse.success && contentResponse.data?.content) {
+                                          return { id: rec.id, content: contentResponse.data.content };
+                                        }
+                                      } catch (err) {
+                                        console.error(`Error loading content for ${rec.id}:`, err);
+                                      }
+                                      return null;
+                                    });
+                                  
+                                  const contentResults = await Promise.all(contentPromises);
+                                  const newContentMap = new Map(contentMap);
+                                  contentResults.forEach(result => {
+                                    if (result) {
+                                      newContentMap.set(result.id!, result.content);
+                                    }
+                                  });
+                                  setContentMap(newContentMap);
+                                  
+                                  setCurrentStep(3);
+                                  setError(null);
+                                } else {
+                                  setError(response.error || 'Failed to load Step 3 recommendations');
+                                }
+                              } catch (err: any) {
+                                console.error('Error loading step 3:', err);
+                                setError(err.message || 'Failed to load recommendations');
+                              } finally {
+                                setIsLoading(false);
+                                setTimeout(() => {
+                                  setIsManuallyLoading(false);
+                                  isManuallyNavigatingRef.current = false;
+                                }, 300);
+                              }
+                            }}
+                            disabled={isLoading || !generationId}
+                            className="px-5 py-2.5 bg-[#06c686] text-white rounded-lg text-[13px] font-semibold hover:bg-[#05a870] transition-all shadow-sm hover:shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <IconTrendingUp size={16} />
+                            Proceed to Step 3 ({generatedCount} generated)
+                          </button>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
                 </div>
                 <RecommendationsTableV3
                   recommendations={recommendations}
-                  showActions={false}
+                  showActions={true}
+                  onAction={handleGenerateContent}
+                  generatingContentIds={generatingContentIds}
                 />
               </div>
             )}

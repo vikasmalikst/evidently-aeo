@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Layout } from '../../components/Layout/Layout';
+import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { TopicSelectionModal } from '../../components/Topics/TopicSelectionModal';
 import {
   MessageSquare,
@@ -235,42 +236,55 @@ export const Dashboard = () => {
   return (
     <Layout>
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-        <div className="mb-6">
-          <h1 className="text-[32px] font-bold text-[#1a1d29] mb-2">
-            AI Visibility Dashboard
-          </h1>
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-4">
-              <p className="text-[15px] text-[#393e51]">
-                {overviewSubtitle}
-              </p>
-              {brands.length > 1 && selectedBrandId && (
-                <div className="flex items-center gap-2">
-                  <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
-                    Brand
-                  </label>
-                  <select
-                    id="brand-selector"
-                    value={selectedBrandId}
-                    onChange={(event) => selectBrand(event.target.value)}
-                    className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
-                  >
-                    {brands.map((brandOption) => (
-                      <option key={brandOption.id} value={brandOption.id}>
-                        {brandOption.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-            <DateRangeSelector
-              startDate={startDate}
-              endDate={endDate}
-              onStartDateChange={setStartDate}
-              onEndDateChange={setEndDate}
-              showComparisonInfo={false}
+        <div className="flex items-start gap-6 mb-6">
+          {selectedBrand && (
+            <SafeLogo
+              src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+              domain={selectedBrand.homepage_url || undefined}
+              alt={selectedBrand.name}
+              size={48}
+              className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
             />
+          )}
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <h1 className="text-[32px] font-bold text-[#1a1d29]">
+                AI Visibility Dashboard
+              </h1>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <p className="text-[15px] text-[#393e51]">
+                  {overviewSubtitle}
+                </p>
+                {brands.length > 1 && selectedBrandId && (
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
+                      Brand
+                    </label>
+                    <select
+                      id="brand-selector"
+                      value={selectedBrandId}
+                      onChange={(event) => selectBrand(event.target.value)}
+                      className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
+                    >
+                      {brands.map((brandOption) => (
+                        <option key={brandOption.id} value={brandOption.id}>
+                          {brandOption.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <DateRangeSelector
+                startDate={startDate}
+                endDate={endDate}
+                onStartDateChange={setStartDate}
+                onEndDateChange={setEndDate}
+                showComparisonInfo={false}
+              />
+            </div>
           </div>
         </div>
 

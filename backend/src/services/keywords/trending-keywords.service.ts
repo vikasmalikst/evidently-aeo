@@ -862,7 +862,7 @@ export class TrendingKeywordsService {
           Authorization: `Bearer ${this.cerebrasApiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 30000,
+        timeout: 60000,
       }
     );
 
@@ -907,7 +907,7 @@ export class TrendingKeywordsService {
       },
       {
         headers,
-        timeout: 30000,
+        timeout: 60000,
       }
     );
 

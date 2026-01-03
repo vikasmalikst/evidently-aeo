@@ -36,7 +36,10 @@ export async function fetchBrandIntel(
         country: options.country,
       }),
     },
-    { requiresAuth: true }
+    { 
+      requiresAuth: true,
+      timeout: 90000 // Increase timeout to 90 seconds for AI topic generation
+    }
   );
 }
 
@@ -53,7 +56,10 @@ export async function refreshCompetitors(payload: {
       method: 'POST',
       body: JSON.stringify(payload),
     },
-    { requiresAuth: true }
+    { 
+      requiresAuth: true,
+      timeout: 90000 // Increase timeout to 90 seconds for AI topic generation
+    }
   );
 }
 
@@ -95,7 +101,10 @@ export async function fetchTopicsForBrand(params: {
         website_url: params.website_url
       }),
     },
-    { requiresAuth: true }
+    { 
+      requiresAuth: true,
+      timeout: 90000 // Increase timeout to 90 seconds for AI topic generation
+    }
   );
 }
 
@@ -133,7 +142,10 @@ export async function fetchPromptsForTopics(params: {
         website_url: params.website_url
       }),
     },
-    { requiresAuth: true }
+    { 
+      requiresAuth: true,
+      timeout: 120000 // Increase timeout to 120 seconds for AI prompt generation
+    }
   );
 }
 

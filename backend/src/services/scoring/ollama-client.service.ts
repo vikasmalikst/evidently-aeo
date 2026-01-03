@@ -224,7 +224,9 @@ export async function callOllamaAPI(
     const isComplexPrompt = userMessage.includes('Generate 8-12 recommendations') || 
                             userMessage.includes('actionable recommendations') ||
                             userMessage.includes('comprehensive synonyms') ||
-                            userMessage.includes('commercial products');
+                            userMessage.includes('commercial products') ||
+                            userMessage.includes('Collaboration Email') ||
+                            userMessage.includes('Publishable Content');
     const timeoutMs = isComplexPrompt ? 300000 : 180000; // 300s (5 mins) for complex prompts, 180s (3 mins) for scoring
     
     try {

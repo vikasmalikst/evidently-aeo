@@ -174,24 +174,31 @@ export const Setup = () => {
     );
   }
 
+  const brandData = localStorage.getItem('onboarding_brand');
+
+  if (!brandData) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-xl border border-gray-100 shadow-sm">
+        <h2 className="text-xl font-bold text-gray-900 mb-2">No brand data found</h2>
+        <p className="text-gray-500 mb-6">Please complete the initial brand analysis first.</p>
+        <button
+          onClick={() => navigate('/onboarding')}
+          className="px-6 py-2 bg-[var(--accent-primary)] text-white rounded-lg font-medium hover:opacity-90 transition-all"
+        >
+          Go to Brand Analysis
+        </button>
+      </div>
+    );
+  }
+
+  const brand = JSON.parse(brandData);
+
   return (
     <SetupModal
-      brandName={(() => {
-        const brandData = localStorage.getItem('onboarding_brand');
-        if (brandData) {
-          const brand = JSON.parse(brandData);
-          return brand.companyName || brand.name || 'Your Brand';
-        }
-        return 'Your Brand';
-      })()}
-      industry={(() => {
-        const brandData = localStorage.getItem('onboarding_brand');
-        if (brandData) {
-          const brand = JSON.parse(brandData);
-          return brand.industry || 'Technology';
-        }
-        return 'Technology';
-      })()}
+      brandName={brand.companyName || brand.name || 'Your Brand'}
+      industry={brand.industry || 'Technology'}
+      logo={brand.logo || brand.metadata?.logo || brand.metadata?.brand_logo}
+      domain={brand.domain || brand.website}
       onComplete={handleComplete}
       onClose={handleClose}
       isSubmitting={isSubmitting}

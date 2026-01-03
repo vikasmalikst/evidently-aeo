@@ -9,14 +9,21 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { IconX, IconTarget, IconFilter, IconTrendingUp } from '@tabler/icons-react';
+import { IconX, IconTarget } from '@tabler/icons-react';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { apiClient } from '../lib/apiClient';
-import { ApiResponse } from '../types';
 import { useChartResize } from '../hooks/useChartResize';
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
 
 // Design tokens
 const COLORS = {
@@ -40,7 +47,7 @@ interface KeywordData {
   searchVolume: number;
   ownership: number;
   mentions: number;
-  categories: ('brand' | 'competitor' | 'trending')[];
+  categories: ('brand' | 'competitor' | 'trending' | 'contested')[];
   llmProviders: string[];
   previousPosition?: {
     searchVolume: number;
@@ -307,7 +314,7 @@ const DetailPanel = ({ keyword, onClose }: DetailPanelProps) => (
 
 export const Keywords = () => {
   const authLoading = useAuthStore((state) => state.isLoading);
-  const { selectedBrandId, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  const { selectedBrandId, selectedBrand, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
   const [loading, setLoading] = useState(false);
   const [keywordData, setKeywordData] = useState<KeywordData[]>([]);
   const [selectedKeyword, setSelectedKeyword] = useState<KeywordData | null>(null);
@@ -330,12 +337,12 @@ export const Keywords = () => {
         if (response.success && response.data) {
           const items = response.data.keywords || [];
           // Map to visualization model
-          const maxVolume = items.reduce((m, x) => Math.max(m, x.volume), 1);
-          const mapped: KeywordData[] = items.map((it) => {
+          const maxVolume = items.reduce((m: number, x: KeywordAnalyticsItem) => Math.max(m, x.volume), 1);
+          const mapped: KeywordData[] = items.map((it: KeywordAnalyticsItem) => {
             // Ownership is average brand share across all brand positions (where competitor_name is null)
             const ownership = it.volume > 0 ? Math.round((it.brandPositions / it.volume) * 100) : 0;
             const searchVolume = it.volume; // volume = positions where competitor_name is null (brand positions only)
-            const categories: ('brand' | 'competitor' | 'trending')[] = [];
+            const categories: ('brand' | 'competitor' | 'trending' | 'contested')[] = [];
             if (ownership > 60) categories.push('brand');
             if (ownership > 30 && ownership < 70) categories.push('contested');
             if (ownership < 40) categories.push('competitor');
@@ -478,7 +485,7 @@ export const Keywords = () => {
         max: 100,
       },
     },
-    onClick: (event: any, elements: any[]) => {
+    onClick: (_event: any, elements: any[]) => {
       if (elements.length > 0) {
         const datasetIndex = elements[0].datasetIndex;
         const dataset = chartData.datasets[datasetIndex];
@@ -533,16 +540,29 @@ export const Keywords = () => {
   return (
     <Layout>
       <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <IconTarget size={28} color={COLORS.accentPrimary} />
-            <h1 style={{ fontSize: '28px', fontWeight: '600', color: COLORS.textHeadings, margin: 0 }}>
-              Keyword Strategic Matrix
-            </h1>
+        <div style={{ marginBottom: '32px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '24px', marginBottom: '8px' }}>
+            {selectedBrand && (
+              <SafeLogo
+                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                domain={selectedBrand.homepage_url || undefined}
+                alt={selectedBrand.name}
+                size={48}
+                className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+              />
+            )}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+                <IconTarget size={28} color={COLORS.accentPrimary} />
+                <h1 style={{ fontSize: '28px', fontWeight: '600', color: COLORS.textHeadings, margin: 0 }}>
+                  Keyword Strategic Matrix
+                </h1>
+              </div>
+              <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+                Analyze keyword positioning across search volume and brand ownership to identify strategic opportunities
+              </p>
+            </div>
           </div>
-          <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-            Analyze keyword positioning across search volume and brand ownership to identify strategic opportunities
-          </p>
         </div>
 
         <div

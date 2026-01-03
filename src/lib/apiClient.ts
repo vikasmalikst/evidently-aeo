@@ -33,6 +33,7 @@ const TOKEN_EXPIRY_KEY = 'access_token_expires_at';
 interface RequestConfig {
   requiresAuth?: boolean;
   retry?: boolean;
+  timeout?: number;
 }
 
 interface RefreshResponse {
@@ -129,7 +130,7 @@ class ApiClient {
     };
 
     // Add timeout to prevent hanging requests (30 seconds default)
-    const timeoutMs = 30000; // 30 seconds
+    const timeoutMs = config.timeout || 30000; 
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();

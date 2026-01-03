@@ -104,7 +104,7 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
           Authorization: `Bearer ${this.cerebrasApiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 30000,
+        timeout: 60000,
       }
     );
 
@@ -146,7 +146,7 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
       },
       {
         headers,
-        timeout: 30000,
+        timeout: 60000,
       }
     );
 

@@ -12,6 +12,7 @@ export interface ManualBrandSummary {
   id: string
   name: string
   slug?: string | null
+  homepage_url?: string | null
   status?: 'active' | 'inactive'
   metadata?: Record<string, any>
 }

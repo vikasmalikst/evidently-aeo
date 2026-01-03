@@ -1678,37 +1678,57 @@ export class ConsolidatedScoringService {
       return;
     }
 
-    const citationsToInsert = Object.entries(analysis.citations)
-      .filter(([url, cat]: [string, any]) => {
-        // Filter out invalid entries
-        return url && typeof url === 'string' && cat && cat.category;
-      })
-      .map(([url, cat]: [string, any]) => {
-        // Extract domain from URL
-        let domain = '';
-        try {
-          const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-          domain = urlObj.hostname.replace(/^www\./, '').toLowerCase();
-        } catch {
-          const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
-          domain = match ? match[1].toLowerCase() : url.toLowerCase();
-        }
+    const citationsToInsert = [];
+    for (const [url, cat] of Object.entries(analysis.citations)) {
+      if (!url || typeof url !== 'string' || !cat || !(cat as any).category) {
+        continue;
+      }
 
-        return {
-          customer_id: customerId,
-          brand_id: brandId,
-          query_id: collectorResult.query_id,
-          execution_id: collectorResult.execution_id,
-          collector_result_id: collectorResult.id,
-          url: url,
-          domain: domain,
-          page_name: cat.pageName || null,
-          category: cat.category,
-          metadata: {
-            categorization_source: 'consolidated_analysis',
-          },
-        };
-      });
+      // Extract domain from URL
+      let domain = '';
+      try {
+        const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+        domain = urlObj.hostname.replace(/^www\./, '').toLowerCase();
+      } catch {
+        const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
+        domain = match ? match[1].toLowerCase() : url.toLowerCase();
+      }
+
+      const citation: any = {
+        customer_id: customerId,
+        brand_id: brandId,
+        query_id: collectorResult.query_id,
+        collector_result_id: collectorResult.id,
+        url: url,
+        domain: domain,
+        page_name: (cat as any).pageName || null,
+        category: (cat as any).category,
+        metadata: {
+          categorization_source: 'consolidated_analysis',
+        },
+      };
+
+      // Check if execution_id exists in the executions table to avoid foreign key violations
+      if (collectorResult.execution_id) {
+        try {
+          const { data: execution } = await this.supabase
+            .from('executions')
+            .select('id')
+            .eq('id', collectorResult.execution_id)
+            .maybeSingle();
+          
+          if (execution) {
+            citation.execution_id = collectorResult.execution_id;
+          } else {
+            console.warn(`   ⚠️ [storeCitations] Execution ID ${collectorResult.execution_id} not found in database, skipping for citation`);
+          }
+        } catch (err) {
+          console.warn(`   ⚠️ [storeCitations] Failed to verify execution ID:`, err);
+        }
+      }
+
+      citationsToInsert.push(citation);
+    }
 
     if (citationsToInsert.length === 0) {
       return;
@@ -1780,6 +1800,124 @@ export class ConsolidatedScoringService {
       console.log(`✅ [Resilience] Successfully disabled Ollama for brand ${brandId}. Future requests will use OpenRouter.`);
     } catch (error) {
       console.error(`❌ [Resilience] Failed to disable Ollama for brand ${brandId}:`, error);
+    }
+  }
+
+  /**
+   * Backfill scoring for collector_results that have cached analysis
+   * but are not marked as completed.
+   */
+  async backfillScoringFromCache(limit: number = 100, brandName?: string): Promise<ConsolidatedScoringResult> {
+    console.log(`\n🔄 Starting scoring backfill from cache (limit: ${limit}${brandName ? `, brand: ${brandName}` : ''})...`);
+
+    const result: ConsolidatedScoringResult = {
+      processed: 0,
+      positionsProcessed: 0,
+      sentimentsProcessed: 0,
+      citationsProcessed: 0,
+      errors: [],
+      metrics: {
+        totalCitations: 0,
+        cachedCitations: 0,
+        totalOccurrences: 0,
+        cachedOccurrences: 0,
+      },
+    };
+
+    try {
+      // 1. Find collector_results where they exist in consolidated_analysis_cache
+      // and scoring_status is not 'completed'
+      let query = this.supabase
+        .from('collector_results')
+        .select(`
+          id, 
+          customer_id, 
+          brand_id, 
+          query_id, 
+          question, 
+          execution_id, 
+          collector_type, 
+          raw_answer, 
+          brand, 
+          competitors, 
+          created_at, 
+          metadata, 
+          citations, 
+          urls, 
+          topic,
+          consolidated_analysis_cache!inner(collector_result_id)
+        `)
+        .or('scoring_status.neq.completed,scoring_status.is.null')
+        .not('raw_answer', 'is', null);
+
+      if (brandName) {
+        query = query.eq('brand', brandName);
+      }
+
+      const { data: stuckResults, error: fetchError } = await query
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch stuck results: ${fetchError.message}`);
+      }
+
+      if (!stuckResults || stuckResults.length === 0) {
+        console.log('✅ No stuck collector results found with cached analysis');
+        return result;
+      }
+
+      console.log(`📂 Found ${stuckResults.length} collector results with cached analysis to backfill`);
+
+      // 2. Process each result using the existing processSingleResultWithBatching logic
+      // This handles Step 1 (Analysis), Step 2 (Positions), and Step 3 (Sentiment)
+      // and will use the cache automatically for Step 1.
+      let processedCount = 0;
+      for (const collectorResult of stuckResults) {
+        processedCount++;
+        try {
+          console.log(`\n🛠️ Backfilling collector_result ${collectorResult.id}...`);
+          
+          // Reset status to pending to allow processing (equivalent to claiming)
+          await this.supabase
+            .from('collector_results')
+            .update({ scoring_status: 'pending' })
+            .eq('id', collectorResult.id);
+
+          const success = await this.processSingleResultWithBatching(
+            collectorResult,
+            collectorResult.brand_id,
+            collectorResult.customer_id,
+            result,
+            processedCount,
+            stuckResults.length
+          );
+
+          if (success) {
+            await this.markCollectorResultCompleted(collectorResult.id);
+            console.log(`✅ Successfully backfilled ${collectorResult.id} and marked as completed`);
+          } else {
+            // Error is already added to result.errors inside processSingleResultWithBatching
+            const lastError = result.errors[result.errors.length - 1]?.error || 'Failed to process cached analysis';
+            await this.markCollectorResultError(collectorResult.id, lastError);
+            console.log(`❌ Failed to backfill ${collectorResult.id}: ${lastError}`);
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.error(`❌ Error backfilling ${collectorResult.id}:`, errorMsg);
+          result.errors.push({ 
+            collectorResultId: collectorResult.id, 
+            error: errorMsg 
+          });
+          await this.markCollectorResultError(collectorResult.id, errorMsg);
+        }
+      }
+
+      console.log(`\n✨ Backfill complete! Processed ${result.processed} results.`);
+      return result;
+    } catch (error) {
+      console.error('❌ Backfill operation failed:', error);
+      throw error;
     }
   }
 }

@@ -151,8 +151,8 @@ export async function generateRecommendationsV3(
 ): Promise<GenerateRecommendationsV3Response> {
   try {
     // Use direct fetch with longer timeout for this long-running operation
-    // Increased to 150 seconds to accommodate Ollama local models which can be slower
-    const timeoutMs = 150000; // 150 seconds (2.5 minutes) for local Ollama models
+    // Increased to 180 seconds to accommodate Ollama local models which can be slower
+    const timeoutMs = 180000; // 180 seconds (3 minutes) for local Ollama models
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();
@@ -298,7 +298,7 @@ export async function generateContentBulkV3(
 ): Promise<{ success: boolean; data?: { total: number; successful: number; failed: number; results: any[] }; error?: string }> {
   try {
     // Use direct fetch with longer timeout for bulk content generation (can take 20-30 seconds)
-    const timeoutMs = 120000; // 120 seconds (2 minutes) for bulk generation
+    const timeoutMs = 180000; // 180 seconds (3 minutes) for bulk generation
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();
@@ -360,13 +360,50 @@ export async function generateContentV3(
   request?: GenerateContentV3Request
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
-    // apiClient.post returns the parsed JSON response directly, not wrapped in .data
-    const response = await apiClient.post<{ success: boolean; data?: any; error?: string }>(
-      `/recommendations-v3/${recommendationId}/content`,
-      request || {}
-    );
-    // Response is already the parsed JSON object with { success, data, error }
-    return response;
+    // Increased to 180 seconds to accommodate local Ollama models
+    const timeoutMs = 180000;
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort();
+    }, timeoutMs);
+
+    const url = `${apiClient.baseUrl}/recommendations-v3/${recommendationId}/content`;
+    const accessToken = apiClient.getAccessToken();
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+        },
+        body: JSON.stringify(request || {}),
+        signal: timeoutController.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      
+      // Check if it's a timeout/abort error
+      if (timeoutController.signal.aborted || fetchError.name === 'AbortError' || 
+          fetchError.message?.includes('timeout') || fetchError.message?.includes('timed out')) {
+        console.warn('⚠️ Content generation timed out after 180s.');
+        return {
+          success: false,
+          error: 'Content generation timed out. The process may still be running on the server. Please check back in a moment.'
+        };
+      }
+      throw fetchError;
+    }
   } catch (error: any) {
     console.error('Error generating content:', error);
     return {

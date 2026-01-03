@@ -142,12 +142,6 @@ export const CompetitorGrid = ({
     <div className="onboarding-competitor-grid-content">
       <div className="onboarding-brand-section-wrapper">
         <div className="onboarding-brand-header">
-          <SafeLogo
-            src={brand.logo}
-            domain={brand.domain}
-            alt={brand.companyName}
-            className="onboarding-brand-header__logo"
-          />
           <div className="onboarding-brand-header__info">
             <h2 className="onboarding-brand-header__name">{brand.companyName}</h2>
             <p className="onboarding-brand-header__meta">

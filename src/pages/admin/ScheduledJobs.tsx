@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { useAuthStore } from '../../store/authStore';
+import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -58,7 +59,7 @@ interface JobRun {
 
 export const ScheduledJobs = () => {
   const navigate = useNavigate();
-  const { selectedBrandId, brands, selectBrand } = useManualBrandDashboard();
+  const { selectedBrandId, selectedBrand, brands, selectBrand } = useManualBrandDashboard();
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -66,6 +67,8 @@ export const ScheduledJobs = () => {
   const [showRunsModal, setShowRunsModal] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryResult, setRecoveryResult] = useState<{ processed: number; errors: any[] } | null>(null);
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [backfillLogs, setBackfillLogs] = useState<Array<{ ts: string; level: string; message: string }>>([]);
   const [enrichmentRunning, setEnrichmentRunning] = useState(false);
@@ -513,6 +516,28 @@ export const ScheduledJobs = () => {
     }
   };
 
+  const handleRecoverStuckScoring = async () => {
+    if (!confirm(`Recover stuck scoring jobs? This will check for results with cached analysis that are not marked as completed.`)) {
+      return;
+    }
+    try {
+      setRecovering(true);
+      setRecoveryResult(null);
+      const response = await apiClient.post<ApiResponse<{ processed: number; errors: any[] }>>('/admin/scoring/backfill-from-cache', {
+        limit: 100
+      });
+      if (response.success && response.data) {
+        setRecoveryResult(response.data);
+        alert(`Recovery complete! Processed ${response.data.processed} items.`);
+      }
+    } catch (error: unknown) {
+      console.error('Failed to recover stuck scoring:', error);
+      alert(`Failed to recover stuck scoring: ${getErrorMessage(error)}`);
+    } finally {
+      setRecovering(false);
+    }
+  };
+
   const handleBackfillRawAnswers = () => {
     if (
       !confirm(
@@ -776,6 +801,24 @@ export const ScheduledJobs = () => {
                 >
                   {scoring ? 'Scoring...' : 'Start Scoring'}
                 </button>
+              </div>
+              <div className="bg-white p-4 rounded border border-red-200">
+                <h4 className="font-medium text-gray-900 mb-2">Recover Stuck Scoring</h4>
+                <p className="text-sm text-gray-600 mb-3">
+                  Completes interrupted scoring tasks using existing cache data
+                </p>
+                <button
+                  onClick={handleRecoverStuckScoring}
+                  disabled={collecting || scoring || backfillRunning || recovering}
+                  className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {recovering ? 'Recovering...' : 'Recover Stuck Scoring'}
+                </button>
+                {recoveryResult && (
+                  <div className="mt-2 text-xs text-gray-600">
+                    Last run: {recoveryResult.processed} items recovered, {recoveryResult.errors.length} errors.
+                  </div>
+                )}
               </div>
             </div>
             <div className="mt-4 bg-white p-4 rounded border border-orange-200">

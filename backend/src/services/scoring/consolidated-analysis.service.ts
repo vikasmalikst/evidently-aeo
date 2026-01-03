@@ -67,6 +67,7 @@ export interface ConsolidatedAnalysisResult {
   };
   keywords?: GeneratedKeyword[];
   metrics?: ConsolidatedAnalysisMetrics;
+  rawResponse?: string;
 }
 
 // ============================================================================
@@ -114,7 +115,7 @@ export class ConsolidatedAnalysisService {
     try {
       const { data, error } = await this.supabase
         .from('consolidated_analysis_cache')
-        .select('products, sentiment, llm_provider')
+        .select('products, sentiment, llm_provider, raw_response')
         .eq('collector_result_id', collectorResultId)
         .maybeSingle();
 
@@ -159,6 +160,7 @@ export class ConsolidatedAnalysisService {
         products: data.products || { brand: [], competitors: {} },
         sentiment: data.sentiment || { brand: { label: 'NEUTRAL', score: 60 }, competitors: {} },
         citations: citationsMap, // Citations fetched from citation_categories table
+        rawResponse: data.raw_response || null,
         metrics: {
           totalCitations: citations.length,
           cachedCitations: Object.keys(citationsMap).length,
@@ -181,7 +183,8 @@ export class ConsolidatedAnalysisService {
   private async storeAnalysisInDB(
     collectorResultId: number,
     result: ConsolidatedAnalysisResult,
-    llmProvider: 'ollama' | 'openrouter'
+    llmProvider: 'ollama' | 'openrouter',
+    rawResponse?: string
   ): Promise<void> {
     try {
       // Extract only products and sentiment (citations are stored separately)
@@ -196,6 +199,7 @@ export class ConsolidatedAnalysisService {
           competitors: result.sentiment?.competitors || {},
         },
         llm_provider: llmProvider,
+        raw_response: rawResponse || null,
       };
 
       const { error } = await this.supabase
@@ -337,7 +341,7 @@ export class ConsolidatedAnalysisService {
 
       // Store analysis result in database cache (for fault tolerance and resume capability)
       if (options.collectorResultId) {
-        await this.storeAnalysisInDB(options.collectorResultId, result, llmProvider);
+        await this.storeAnalysisInDB(options.collectorResultId, result, llmProvider, result.rawResponse);
       }
 
       return result;
@@ -574,6 +578,8 @@ Respond with ONLY valid JSON in this exact structure:
       let result: ConsolidatedAnalysisResult;
       try {
         result = JSON.parse(jsonMatch[0]) as ConsolidatedAnalysisResult;
+        // Store the raw full response for post-processing if needed
+        result.rawResponse = fullResponse;
       } catch (parseError) {
         console.error('⚠️ Failed to parse JSON from Ollama. Response preview:', jsonStr.substring(0, 500));
         throw new Error(`Failed to parse JSON from Ollama response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
@@ -591,9 +597,73 @@ Respond with ONLY valid JSON in this exact structure:
   }
 
   /**
+   * Helper to process a single line from OpenRouter stream
+   */
+  private processLine(line: string, onContent: (content: string) => void, onUsage: (usage: any) => void): void {
+    const trimmedLine = line.trim();
+    if (!trimmedLine || !trimmedLine.startsWith('data: ')) return;
+
+    const data = trimmedLine.slice(6);
+    if (data === '[DONE]') return;
+
+    try {
+      const parsed = JSON.parse(data);
+      
+      // Extract content
+      const content = parsed.choices?.[0]?.delta?.content;
+      if (content && typeof content === 'string') {
+        onContent(content);
+      }
+
+      // Extract usage information
+      if (parsed.usage) {
+        onUsage(parsed.usage);
+      }
+    } catch (e) {
+      // Skip invalid JSON lines
+    }
+  }
+
+  /**
    * Call OpenRouter API with best throughput model selection
    */
   private async callOpenRouterAPI(prompt: string): Promise<ConsolidatedAnalysisResult> {
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        console.log(`🔄 Retrying OpenRouter API (attempt ${attempt}/${maxRetries})...`);
+        // Add a small delay before retry
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+
+      try {
+        const result = await this.executeOpenRouterCall(prompt);
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`⚠️ OpenRouter attempt ${attempt + 1} failed: ${lastError.message}`);
+        
+        // If it's a parse error or empty response, it's worth retrying
+        if (lastError.message.includes('Empty response') || 
+            lastError.message.includes('Failed to parse JSON') ||
+            lastError.message.includes('No JSON found')) {
+          continue;
+        }
+        
+        // For other errors (like auth or model not found), don't retry
+        throw lastError;
+      }
+    }
+
+    throw lastError || new Error('OpenRouter API call failed after retries');
+  }
+
+  /**
+   * Internal execution logic for OpenRouter call
+   */
+  private async executeOpenRouterCall(prompt: string): Promise<ConsolidatedAnalysisResult> {
     console.log('🌐 Calling OpenRouter for consolidated analysis (best throughput)...');
 
     const headers: Record<string, string> = {
@@ -630,7 +700,7 @@ Respond with ONLY valid JSON in this exact structure:
             }
           ],
           temperature: 0.1, // Low for consistency
-          max_tokens: 4096,
+          max_tokens: 8192,
           stream: true,
           stream_options: {
             include_usage: true
@@ -654,6 +724,7 @@ Respond with ONLY valid JSON in this exact structure:
       const decoder = new TextDecoder();
       let fullResponse = '';
       let usage: any = null;
+      let lineBuffer = '';
 
       if (!reader) {
         throw new Error('No response body reader available');
@@ -661,42 +732,25 @@ Respond with ONLY valid JSON in this exact structure:
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        if (!value) {
-          continue;
+        if (done) {
+          // Process any remaining data in lineBuffer
+          if (lineBuffer.trim()) {
+            this.processLine(lineBuffer, (content) => { fullResponse += content; }, (u) => { usage = u; });
+          }
+          break;
         }
+
+        if (!value) continue;
 
         const chunk = decoder.decode(value, { stream: true });
-        if (!chunk) {
-          continue;
-        }
+        lineBuffer += chunk;
 
-        const lines = chunk.split('\n').filter(line => line && line.trim() !== '');
+        const lines = lineBuffer.split('\n');
+        // Keep the last partial line in the buffer
+        lineBuffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              
-              // Extract content
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content && typeof content === 'string') {
-                fullResponse += content;
-              }
-
-              // Extract usage information
-              if (parsed.usage) {
-                usage = parsed.usage;
-              }
-            } catch (e) {
-              // Skip invalid JSON lines
-              continue;
-            }
-          }
+          this.processLine(line, (content) => { fullResponse += content; }, (u) => { usage = u; });
         }
       }
 
@@ -733,6 +787,8 @@ Respond with ONLY valid JSON in this exact structure:
       let result: ConsolidatedAnalysisResult;
       try {
         result = JSON.parse(jsonMatch[0]) as ConsolidatedAnalysisResult;
+        // Store the raw full response for post-processing if needed
+        result.rawResponse = fullResponse;
       } catch (parseError) {
         console.error('⚠️ Failed to parse JSON. Response preview:', jsonStr.substring(0, 500));
         throw new Error(`Failed to parse JSON from OpenRouter response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);

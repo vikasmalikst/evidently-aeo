@@ -3,6 +3,7 @@ import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
 import { updateBrandCollectors } from '../api/brandApi';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { 
   IconCheck, 
   IconX, 
@@ -179,14 +180,22 @@ export const ManageCollectors = () => {
     <Layout>
       <SettingsLayout>
         <div className="p-6 max-w-5xl mx-auto">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-[var(--text-headings)] mb-2">
-              Manage Collectors
-            </h1>
-            <p className="text-[var(--text-caption)]">
-              Enable or disable AI data collectors for <strong>{selectedBrand?.name}</strong>. 
-              Only enabled collectors will be used for automated data collection.
-            </p>
+          <div className="mb-8 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {selectedBrand && (
+                <SafeLogo
+                  src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                  domain={selectedBrand.homepage_url || undefined}
+                  alt={selectedBrand.name}
+                  size={48}
+                  className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100"
+                />
+              )}
+              <div>
+                <h1 className="text-2xl font-bold text-[var(--text-headings)] tracking-tight">AI Data Collectors</h1>
+                <p className="text-sm text-[var(--text-caption)] mt-1">Select the AI models you want to monitor for your brand</p>
+              </div>
+            </div>
           </div>
 
           {error && (

@@ -11,6 +11,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import {
   generateRecommendationsV3,
   getGenerationV3,
@@ -36,6 +37,7 @@ export const RecommendationsV3 = () => {
     isLoading: brandsLoading,
     error: brandsError,
     selectedBrandId,
+    selectedBrand,
     selectBrand
   } = useManualBrandDashboard();
 
@@ -1193,10 +1195,23 @@ export const RecommendationsV3 = () => {
         <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
             <div>
-              <h1 className="text-[24px] font-bold text-[#1a1d29] mb-1">Recommendations</h1>
-              <p className="text-[13px] text-[#64748b]">
-                KPI-first approach with 4-step workflow
-              </p>
+              <div className="flex items-center gap-3 mb-1">
+                {selectedBrand && (
+                  <SafeLogo
+                    src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                    domain={selectedBrand.homepage_url || undefined}
+                    alt={selectedBrand.name}
+                    size={48}
+                    className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100"
+                  />
+                )}
+                <div>
+                  <h1 className="text-[24px] font-bold text-[#1a1d29] m-0">Recommendations</h1>
+                  <p className="text-[13px] text-[#64748b]">
+                    KPI-first approach with 4-step workflow
+                  </p>
+                </div>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               {brands && brands.length > 1 && (

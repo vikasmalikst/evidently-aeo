@@ -17,6 +17,7 @@ import {
 import { IconDownload, IconX, IconChevronUp, IconChevronDown, IconAlertCircle, IconChartBar, IconArrowUpRight } from '@tabler/icons-react';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { useAuthStore } from '../store/authStore';
 import { useChartResize } from '../hooks/useChartResize';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
@@ -935,9 +936,20 @@ export const SearchSources = () => {
             marginBottom: '24px'
           }}
         >
-          <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-            Answer Sources
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0 }}>
+              Answer Sources
+            </h1>
+            {selectedBrand && (
+              <SafeLogo
+                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                domain={selectedBrand.homepage_url || undefined}
+                alt={selectedBrand.name}
+                size={28}
+                className="rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100"
+              />
+            )}
+          </div>
           <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
             Understand which sources are cited in AI answers, measure share of answer across prompts, and identify optimization opportunities
           </p>

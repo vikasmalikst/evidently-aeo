@@ -8,6 +8,7 @@ import { jobSchedulerService } from '../services/jobs/job-scheduler.service';
 import { dataCollectionJobService } from '../services/jobs/data-collection-job.service';
 import type { DataCollectionJobResult } from '../services/jobs/data-collection-job.service';
 import { brandProductEnrichmentService } from '../services/onboarding/brand-product-enrichment.service';
+import { consolidatedScoringService } from '../services/scoring/consolidated-scoring.service';
 import { backfillRawAnswerFromSnapshots } from '../scripts/backfill-raw-answer-from-snapshots';
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
@@ -1073,6 +1074,32 @@ router.post('/scheduled-jobs/:jobId/trigger', async (req: Request, res: Response
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to trigger job run',
+    });
+  }
+});
+
+/**
+ * POST /api/admin/scoring/backfill-from-cache
+ * Backfill scoring for results that have cached analysis but are not marked as completed
+ */
+router.post('/scoring/backfill-from-cache', async (req: Request, res: Response) => {
+  try {
+    const { limit = 100 } = req.body;
+    
+    console.log(`\n🔄 API Triggered: Backfilling scoring from cache (limit: ${limit})`);
+    
+    const result = await consolidatedScoringService.backfillScoringFromCache(limit);
+    
+    res.json({
+      success: true,
+      data: result,
+      message: `Successfully processed ${result.processed} items from cache`
+    });
+  } catch (error) {
+    console.error('Error in backfill-from-cache API:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to backfill scoring from cache'
     });
   }
 });

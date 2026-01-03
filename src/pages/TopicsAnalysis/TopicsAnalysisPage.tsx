@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { getLLMIcon } from '../../components/Visibility/LLMIcons';
 import { KpiToggle } from '../../components/Visibility/KpiToggle';
 import { Layout } from '../../components/Layout/Layout';
+import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { CompactMetricsPods } from './components/CompactMetricsPods';
 import { TopicsRankedTable } from './components/TopicsRankedTable';
 import { TopicAnalysisMultiView } from './components/TopicAnalysisMultiView';
@@ -473,14 +474,25 @@ export const TopicsAnalysisPage = ({
             minHeight: '80px'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', height: '100%' }}>
-            <div style={{ flex: 1 }}>
-              <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-                Topics Analysis {brandName && `— ${brandName}`}
-              </h1>
-              <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
-                Monitor your brand's presence across AI search engines by topic
-              </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '24px', height: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '24px', flex: 1 }}>
+              {selectedBrand && (
+                <SafeLogo
+                  src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                  domain={selectedBrand.homepage_url || undefined}
+                  alt={selectedBrand.name}
+                  size={48}
+                  className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+                />
+              )}
+              <div>
+                <h1 className="text-2xl font-bold text-[#1a1d29] tracking-tight m-0 mb-2" style={{ fontFamily: 'Sora, sans-serif' }}>
+                  Topics Analysis {brandName && `— ${brandName}`}
+                </h1>
+                <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
+                  Monitor your brand's presence across AI search engines by topic
+                </p>
+              </div>
             </div>
             <div style={{ flexShrink: 0, alignSelf: 'flex-end', marginBottom: '-24px', paddingBottom: '24px' }}>
               <DateRangePicker

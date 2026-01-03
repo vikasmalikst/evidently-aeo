@@ -1,5 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Layout } from '../components/Layout/Layout';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
+import { useManualBrandDashboard } from '../manual-dashboard';
 import { Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -230,6 +232,7 @@ const generateSourceData = (): SourceData[] => {
 };
 
 export const AISources = () => {
+  const { selectedBrand } = useManualBrandDashboard();
   const [activeTab, setActiveTab] = useState<'sources' | 'coverage'>('sources');
   const [sourceData] = useState<SourceData[]>(generateSourceData());
   const [topicFilter, setTopicFilter] = useState('all');
@@ -402,12 +405,25 @@ export const AISources = () => {
             marginBottom: '24px'
           }}
         >
-          <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: '0 0 8px 0' }}>
-            AI Sources
-          </h1>
-          <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
-            Understand which AI sources cite your brand, measure share of answer across prompts, and identify optimization opportunities
-          </p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '24px', marginBottom: '8px' }}>
+            {selectedBrand && (
+              <SafeLogo
+                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                domain={selectedBrand.homepage_url || undefined}
+                alt={selectedBrand.name}
+                size={48}
+                className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+              />
+            )}
+            <div>
+              <h1 style={{ fontSize: '28px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: '#1a1d29', margin: 0, marginBottom: '4px' }}>
+                AI Sources
+              </h1>
+              <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
+                Understand which AI sources cite your brand, measure share of answer across prompts, and identify optimization opportunities
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Tab Navigation */}

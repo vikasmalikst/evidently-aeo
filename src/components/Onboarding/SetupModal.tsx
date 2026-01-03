@@ -5,15 +5,19 @@ import { AIModelSelection } from './AIModelSelection';
 import { TopicSelectionModal } from '../Topics/TopicSelectionModal';
 import { PromptConfiguration, PromptWithTopic } from './PromptConfiguration';
 import { StepIndicator } from './StepIndicator';
+import { SafeLogo } from './common/SafeLogo';
 import type { Topic } from '../../types/topic';
 import { featureFlags } from '../../config/featureFlags';
 
 interface SetupModalProps {
   brandName: string;
   industry: string;
+  logo?: string;
+  domain?: string;
   onComplete: (data: SetupData) => void;
   onClose: () => void;
   isSubmitting?: boolean;
+  overlay?: React.ReactNode;
 }
 
 export interface SetupData {
@@ -30,9 +34,12 @@ type Step = 'welcome' | 'models' | 'topics' | 'prompts';
 export const SetupModal = ({
   brandName,
   industry,
+  logo,
+  domain,
   onComplete,
   onClose,
   isSubmitting = false,
+  overlay,
 }: SetupModalProps) => {
   // Support direct step access via feature flag (for testing)
   const initialStep: Step = featureFlags.setupStep || featureFlags.onboardingStep || 'welcome';
@@ -88,6 +95,7 @@ export const SetupModal = ({
         <div className="onboarding-modal-container step-welcome" onClick={(e) => e.stopPropagation()}>
           <WelcomeScreen onGetStarted={handleNext} />
         </div>
+        {overlay}
       </div>
     );
   }
@@ -95,16 +103,19 @@ export const SetupModal = ({
   // For topics step, use the existing TopicSelectionModal component
   if (currentStep === 'topics') {
     return (
-      <TopicSelectionModal
-        brandName={brandName}
-        industry={industry}
-        onNext={(topics) => {
-          setSelectedTopics(topics);
-          handleNext();
-        }}
-        onBack={handleBack}
-        onClose={onClose}
-      />
+      <>
+        <TopicSelectionModal
+          brandName={brandName}
+          industry={industry}
+          onNext={(topics) => {
+            setSelectedTopics(topics);
+            handleNext();
+          }}
+          onBack={handleBack}
+          onClose={onClose}
+        />
+        {overlay}
+      </>
     );
   }
 
@@ -128,7 +139,7 @@ export const SetupModal = ({
             <span>Back</span>
           </button>
 
-          <div className="onboarding-header-content">
+          <div className="onboarding-header-content flex items-center gap-3">
             <h2 className="onboarding-modal-title">{getStepTitle()}</h2>
           </div>
         </div>
@@ -182,6 +193,7 @@ export const SetupModal = ({
           </div>
         </div>
       </div>
+      {overlay}
     </div>
   );
 };

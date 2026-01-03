@@ -7,6 +7,7 @@ import { PromptsList } from '../components/Prompts/PromptsList';
 import { ResponseViewer } from '../components/Prompts/ResponseViewer';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { PromptAnalyticsPayload, PromptEntry } from '../types/prompts';
 
 // Performance logging
@@ -43,7 +44,7 @@ export const Prompts = () => {
   const defaultDateRange = getDefaultDateRange();
   const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
   const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
-  const { brands, selectedBrandId, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  const { brands, selectedBrandId, selectedBrand, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
@@ -181,6 +182,16 @@ export const Prompts = () => {
     <Layout>
       <div className="p-6">
         <div className="flex items-start justify-between mb-6">
+        <div className="flex items-start gap-6">
+          {selectedBrand && (
+            <SafeLogo
+              src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+              domain={selectedBrand.homepage_url || undefined}
+              alt={selectedBrand.name}
+              size={48}
+              className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+            />
+          )}
           <div>
             <h1 className="text-3xl font-bold text-[var(--text-headings)] mb-2">
               Prompts
@@ -189,6 +200,7 @@ export const Prompts = () => {
               Analyze AI responses to tracked prompts across topics and platforms
             </p>
           </div>
+        </div>
           <button
             onClick={handleManagePrompts}
             className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"

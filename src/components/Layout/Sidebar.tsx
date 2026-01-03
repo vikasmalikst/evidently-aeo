@@ -14,7 +14,6 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { icon: IconLayoutDashboard, label: 'Performance Overview', path: '/' },
-  { icon: IconTargetArrow, label: 'Movers & Shakers', path: '/movers-shakers' },
   { icon: IconEye, label: 'Metrics Analysis', path: '/search-visibility' },
   { icon: IconTargetArrow, label: 'Citations Sources', path: '/search-sources' },
   { icon: IconFolderSearch, label: 'Topics', path: '/topics' },

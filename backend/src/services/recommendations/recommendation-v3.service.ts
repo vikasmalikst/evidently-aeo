@@ -921,7 +921,7 @@ Respond only with the JSON array.`;
           
           // Add timeout wrapper for OpenRouter call
           const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('OpenRouter request timeout after 90 seconds')), 90000);
+            setTimeout(() => reject(new Error('OpenRouter request timeout after 180 seconds')), 180000);
           });
           
           const openRouterPromise = openRouterCollectorService.executeQuery({

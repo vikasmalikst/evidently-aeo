@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
+import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { useAuthStore } from '../../store/authStore';
 
 interface ApiResponse<T> {
@@ -38,7 +39,7 @@ const isUuid = (value: string) =>
 
 export const DataCollectionStatus = () => {
   const navigate = useNavigate();
-  const { brands, selectedBrandId, selectBrand } = useManualBrandDashboard();
+  const { brands, selectedBrandId, selectedBrand, selectBrand } = useManualBrandDashboard();
   const authUser = useAuthStore((state) => state.user);
 
   const [customerId, setCustomerId] = useState<string | null>(null);
@@ -58,6 +59,8 @@ export const DataCollectionStatus = () => {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<string>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedCollectionError, setSelectedCollectionError] = useState<{
     rowId: string;
     title: string;
@@ -147,6 +150,8 @@ export const DataCollectionStatus = () => {
           customer_id: customerId,
           limit: String(limit),
           offset: String(nextOffset),
+          sort_by: sortBy,
+          sort_order: sortOrder,
         });
 
         if (brandIdFilter) params.append('brand_id', brandIdFilter);
@@ -184,13 +189,25 @@ export const DataCollectionStatus = () => {
       collectionStatus,
       scoringStatus,
       rawAnswer,
+      sortBy,
+      sortOrder,
     ]
   );
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('desc');
+    }
+    setOffset(0);
+  };
 
   useEffect(() => {
     if (!customerId) return;
     load(0);
-  }, [customerId, brandIdFilter, collectorFilter, from, to, collectionStatus, scoringStatus, rawAnswer, load]);
+  }, [customerId, brandIdFilter, collectorFilter, from, to, collectionStatus, scoringStatus, rawAnswer, sortBy, sortOrder, load]);
 
   useEffect(() => {
     if (!customerId) return;
@@ -205,8 +222,22 @@ export const DataCollectionStatus = () => {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Data Collection Status</h1>
+      <div className="flex justify-between items-start mb-8">
+        <div className="flex items-start gap-6">
+          {selectedBrand && (
+            <SafeLogo
+              src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+              domain={selectedBrand.homepage_url || undefined}
+              alt={selectedBrand.name}
+              size={48}
+              className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+            />
+          )}
+          <div>
+            <h1 className="text-2xl font-bold mb-2">Data Collection Status</h1>
+            <p className="text-sm text-gray-500">Monitor and manage the status of data collection and scoring across all collectors</p>
+          </div>
+        </div>
         <div className="flex gap-3">
           <button
             onClick={() => navigate('/admin/scheduled-jobs')}
@@ -441,15 +472,83 @@ export const DataCollectionStatus = () => {
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">ID</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Created</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Brand</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Collector</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">
-                  Data Collection Status
+                <th 
+                  className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('id')}
+                >
+                  <div className="flex items-center gap-1">
+                    ID
+                    {sortBy === 'id' && (
+                      <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Scoring Status</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Raw Answer</th>
+                <th 
+                  className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('createdAt')}
+                >
+                  <div className="flex items-center gap-1">
+                    Created
+                    {sortBy === 'createdAt' && (
+                      <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('brandName')}
+                >
+                  <div className="flex items-center gap-1">
+                    Brand
+                    {sortBy === 'brandName' && (
+                      <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('collectorType')}
+                >
+                  <div className="flex items-center gap-1">
+                    Collector
+                    {sortBy === 'collectorType' && (
+                      <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('status')}
+                >
+                  <div className="flex items-center gap-1">
+                    Data Collection Status
+                    {sortBy === 'status' && (
+                      <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('scoringStatus')}
+                >
+                  <div className="flex items-center gap-1">
+                    Scoring Status
+                    {sortBy === 'scoringStatus' && (
+                      <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('rawAnswerPresent')}
+                >
+                  <div className="flex items-center gap-1">
+                    Raw Answer
+                    {sortBy === 'rawAnswerPresent' && (
+                      <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">

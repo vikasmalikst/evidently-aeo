@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { LoadingScreen } from '../components/common/LoadingScreen';
 import { VisibilityTabs } from '../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../components/Visibility/ChartControls';
@@ -812,14 +813,27 @@ export const SearchVisibility = () => {
       <div className="flex flex-col h-full overflow-hidden bg-[#f4f4f6]">
         <div className="flex-shrink-0 bg-white border-b border-[#dcdfe5]">
           <div className="px-8 pt-8 pb-0">
-            <h1 className="text-3xl font-bold text-[#1a1d29] mb-2">
-              Answer Engine Visibility
-            </h1>
-            <p className="text-base text-[#6c7289] max-w-2xl mb-6">
-              Monitor your brand's presence across AI answer engines including ChatGPT, Claude,
-              Gemini, and Perplexity. Track visibility trends and compare your performance
-              against competitors.
-            </p>
+            <div className="flex items-start gap-6 mb-6">
+              {selectedBrand && (
+                <SafeLogo
+                  src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                  domain={selectedBrand.homepage_url || undefined}
+                  alt={selectedBrand.name}
+                  size={48}
+                  className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+                />
+              )}
+              <div>
+                <h1 className="text-3xl font-bold text-[#1a1d29] mb-2">
+                  Answer Engine Visibility
+                </h1>
+                <p className="text-base text-[#6c7289] max-w-2xl">
+                  Monitor your brand's presence across AI answer engines including ChatGPT, Claude,
+                  Gemini, and Perplexity. Track visibility trends and compare your performance
+                  against competitors.
+                </p>
+              </div>
+            </div>
             {brands.length > 1 && selectedBrandId && (
               <div className="flex items-center gap-2 mb-6">
                 <label

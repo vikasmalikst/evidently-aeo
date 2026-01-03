@@ -43,6 +43,7 @@ export const ManageBrands = () => {
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedBrand, setSelectedBrand] = useState<BrandResponse | null>(null);
   const navigate = useNavigate();
 
   const loadData = useCallback(async () => {
@@ -66,6 +67,11 @@ export const ManageBrands = () => {
           return a.name.localeCompare(b.name);
         });
         setBrands(sortedBrands);
+        
+        // Get active brand from local storage or first active
+        const savedBrandId = localStorage.getItem('selectedBrandId');
+        const brand = sortedBrands.find(b => b.id === savedBrandId) || sortedBrands.find(b => b.status === 'active');
+        if (brand) setSelectedBrand(brand);
       } else {
         setError(brandsRes.error || 'Failed to load brands');
       }
@@ -137,9 +143,11 @@ export const ManageBrands = () => {
       <SettingsLayout>
         <div className="flex flex-col gap-6">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-[var(--text-headings)] tracking-tight">Manage Brands</h1>
-              <p className="text-sm text-[var(--text-caption)] mt-1">View and configure your monitored brands</p>
+            <div className="flex items-center gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-[var(--text-headings)] tracking-tight">Manage Brands</h1>
+                <p className="text-sm text-[var(--text-caption)] mt-1">View and configure your monitored brands</p>
+              </div>
             </div>
             <button
               onClick={handleAddBrand}

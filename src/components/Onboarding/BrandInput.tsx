@@ -207,14 +207,6 @@ export const BrandInput = ({
             className={`onboarding-form ${shake ? 'onboarding-form--shake' : ''}`}
           >
             <div className="onboarding-input-with-logo">
-              {logoUrl && (
-                <SafeLogo
-                  src={logoUrl}
-                  domain={logoDomain}
-                  alt="Brand logo"
-                  className="onboarding-input-logo"
-                />
-              )}
               <Input
                 type="text"
                 placeholder="Enter your brand name or website"
@@ -231,12 +223,6 @@ export const BrandInput = ({
               className="onboarding-brand-header"
               style={{ margin: '24px auto 0', maxWidth: 520 }}
             >
-              <SafeLogo
-                src={brandPreview.logo || logoUrl}
-                domain={brandPreview.domain || logoDomain}
-                alt={brandPreview.companyName}
-                className="onboarding-brand-header__logo"
-              />
               <div className="onboarding-brand-header__info">
                 <h3 className="onboarding-brand-header__name">{brandPreview.companyName}</h3>
                 <p className="onboarding-brand-header__meta">

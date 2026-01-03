@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { Layout } from '../components/Layout/Layout';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
+import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
 import { ReadinessScale } from '../components/PromptSelection/ReadinessScale';
 import { TopicFilterBar } from '../components/PromptSelection/TopicFilterBar';
 import { TopicGroup } from '../components/PromptSelection/TopicGroup';
@@ -13,6 +15,7 @@ const MAX_PROMPTS = 40;
 
 export const PromptSelection = () => {
   const navigate = useNavigate();
+  const { selectedBrand } = useManualBrandDashboard();
   const [topics] = useState(mockPromptSelectionData);
   const [selectedPrompts, setSelectedPrompts] = useState<Set<string>>(new Set());
   const [readinessScore, setReadinessScore] = useState(0);
@@ -119,9 +122,11 @@ export const PromptSelection = () => {
               <div className="progress-dot active"></div>
             </div>
             <div className="prompt-selection-header-content">
-              <h1>Configure Your Prompts</h1>
+              <div className="flex items-center gap-3">
+                <h1>Configure Your Prompts</h1>
+              </div>
               <div className="prompt-selection-count">
-                {selectedPrompts.size}/{MAX_PROMPTS} prompts selected
+                {selectedPrompts.size}/{MAX_PROMPTS} prompts selected for {selectedBrand?.name || 'your brand'}
               </div>
             </div>
             <span className="prompt-selection-step-badge">Step 3 of 3</span>

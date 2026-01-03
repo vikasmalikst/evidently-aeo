@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
@@ -128,7 +129,7 @@ const normalizeDomain = (value: string | null | undefined): string => {
 export const SearchSourcesR2 = () => {
   const [searchParams] = useSearchParams();
   const authLoading = useAuthStore((state) => state.isLoading);
-  const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();
+  const { selectedBrandId, selectedBrand, isLoading: brandsLoading } = useManualBrandDashboard();
   
   // Read date range from URL params if available
   const urlStartDate = searchParams.get('startDate');
@@ -468,10 +469,21 @@ export const SearchSourcesR2 = () => {
   return (
     <Layout>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 8px 18px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Citations Sources</h1>
-            <p style={{ margin: 0, color: '#475569' }}>Understand how your sources perform across visibility, share of answer, sentiment, and citations.</p>
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 8px 18px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24 }}>
+            {selectedBrand && (
+              <SafeLogo
+                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                domain={selectedBrand.homepage_url || undefined}
+                alt={selectedBrand.name}
+                size={48}
+                className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+              />
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Citations Sources</h1>
+              <p style={{ margin: 0, color: '#475569' }}>Understand how your sources perform across visibility, share of answer, sentiment, and citations.</p>
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <DateRangePicker

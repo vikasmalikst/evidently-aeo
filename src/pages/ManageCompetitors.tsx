@@ -121,7 +121,7 @@ const CompetitorRow = ({ competitor, onRemove, onEdit }: CompetitorRowProps) => 
 };
 
 export const ManageCompetitors = () => {
-  const { selectedBrandId } = useManualBrandDashboard();
+  const { selectedBrandId, selectedBrand, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
   const [competitors, setCompetitors] = useState<ManagedCompetitor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -222,9 +222,11 @@ export const ManageCompetitors = () => {
         <div className="flex flex-col gap-6">
           {/* Header Section */}
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-[var(--text-headings)] tracking-tight">Manage Competitors</h1>
-              <p className="text-sm text-[var(--text-caption)] mt-1">Configure competitors to track alongside your brand</p>
+            <div className="flex items-center gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-[var(--text-headings)] tracking-tight">Manage Competitors</h1>
+                <p className="text-sm text-[var(--text-caption)] mt-1">Configure competitors to track alongside your brand</p>
+              </div>
             </div>
             <button
               onClick={() => setShowAddModal(true)}

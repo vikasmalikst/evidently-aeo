@@ -1,5 +1,6 @@
 import { Layout } from '../../components/Layout/Layout';
 import { SettingsLayout } from '../../components/Settings/SettingsLayout';
+import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useManualBrandDashboard } from '../../manual-dashboard/useManualBrandDashboard';
 import {
@@ -26,7 +27,7 @@ import {
 } from '../../api/promptManagementApi';
 
 export const TopicsPromptsConfigV2 = () => {
-  const { selectedBrandId } = useManualBrandDashboard();
+  const { selectedBrandId, selectedBrand } = useManualBrandDashboard();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -600,13 +601,24 @@ export const TopicsPromptsConfigV2 = () => {
     <Layout>
       <SettingsLayout>
         <div className="p-6">
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-[var(--text-headings)]">
-              Topics/Prompts Config V2
-            </h1>
-            <p className="text-sm text-[var(--text-caption)] mt-1">
-              View and edit topics, prompts, locale, and country.
-            </p>
+          <div className="mb-6 flex items-center gap-3">
+            {selectedBrand && (
+              <SafeLogo
+                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                domain={selectedBrand.homepage_url || undefined}
+                alt={selectedBrand.name}
+                size={48}
+                className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100"
+              />
+            )}
+            <div>
+              <h1 className="text-2xl font-bold text-[var(--text-headings)]">
+                Topics/Prompts Config V2
+              </h1>
+              <p className="text-sm text-[var(--text-caption)] mt-1">
+                View and edit topics, prompts, locale, and country.
+              </p>
+            </div>
           </div>
 
           {selectedVersion !== 'Current' && (

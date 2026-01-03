@@ -70,15 +70,6 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
         <div className="onboarding-summary__section">
           <h2 className="onboarding-summary__section-title">Your Brand</h2>
           <div className="onboarding-summary-brand">
-            {(brand.logo || brand.domain) && (
-              <SafeLogo
-                src={brand.logo}
-                domain={brand.domain}
-                alt={brand.companyName}
-                className="onboarding-summary-brand__logo"
-                size={64}
-              />
-            )}
             <div className="onboarding-summary-brand__info">
               <h3 className="onboarding-summary-brand__name">{brand.companyName}</h3>
               <p className="onboarding-summary-brand__meta">

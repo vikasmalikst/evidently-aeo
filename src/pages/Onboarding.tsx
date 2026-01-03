@@ -5,8 +5,8 @@ import { BrandInput } from '../components/Onboarding/BrandInput';
 import { CompetitorGrid } from '../components/Onboarding/CompetitorGrid';
 import { Summary } from '../components/Onboarding/Summary';
 import { OnboardingStepIndicator } from '../components/Onboarding/OnboardingStepIndicator';
+import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { featureFlags } from '../config/featureFlags';
-import { onboardingUtils } from '../utils/onboardingUtils';
 import type { OnboardingBrand, OnboardingCompetitor } from '../types/onboarding';
 
 type OnboardingStep = 'brand' | 'competitors' | 'summary';
@@ -144,7 +144,7 @@ export const Onboarding = () => {
           )}
           {currentStep === 'brand' && <div />}
 
-          <div className="onboarding-header-content">
+          <div className="onboarding-header-content flex items-center gap-3">
             <h2 className="onboarding-modal-title">{getStepTitle()}</h2>
           </div>
         </div>

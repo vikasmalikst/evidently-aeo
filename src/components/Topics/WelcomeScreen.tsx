@@ -9,7 +9,7 @@ export const WelcomeScreen = ({ onGetStarted }: WelcomeScreenProps) => {
   return (
     <div className="onboarding-welcome-card">
       <div className="onboarding-welcome-header">
-        <h2 className="onboarding-welcome-title">Welcome to Evidently</h2>
+        <h2 className="onboarding-welcome-title">Welcome to EvidentlyAEO</h2>
         <p className="onboarding-welcome-subtitle">Let's set up your Answer Intelligence tracking</p>
       </div>
 

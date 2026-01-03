@@ -10,6 +10,8 @@ import { Zap, Activity, BarChart3, Bot, LayoutGrid } from 'lucide-react';
 // Import motion for the particle animation
 import { AnimatePresence, motion } from 'framer-motion';
 
+import logo from '../assets/logo.png';
+
 interface BrandsResponse {
   success: boolean;
   data?: Array<{
@@ -167,10 +169,8 @@ export const AuthPage = () => {
         <div className="space-y-10 lg:sticky lg:top-24 self-center relative lg:border-r lg:border-slate-200/80 lg:pr-20">
           
           <div className="flex items-center gap-3 text-slate-900">
-            <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm shadow-blue-600/20">
-                <LayoutGrid className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-2xl font-bold tracking-tight">Evidently</span>
+            <img src={logo} alt="EvidentlyAEO Logo" className="h-10 w-10 object-contain rounded-lg shadow-sm shadow-blue-600/20" />
+            <span className="text-2xl font-bold tracking-tight">EvidentlyAEO</span>
           </div>
 
           <div className="space-y-5 max-w-lg">

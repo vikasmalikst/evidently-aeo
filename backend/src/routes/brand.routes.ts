@@ -586,11 +586,40 @@ router.get(
       competitorFilter
     );
     
-    res.json({
-      success: true,
-      data: result.topics || result, // Handle both old format (array) and new format (object)
-      availableModels: result.availableModels || []
+    console.log(`📊 [Topics API] Service returned:`, {
+      topicsCount: result.topics?.length || 0,
+      availableModelsCount: result.availableModels?.length || 0,
+      firstTopic: result.topics?.[0] ? {
+        name: result.topics[0].topic_name,
+        totalQueries: result.topics[0].totalQueries,
+        avgSoA: result.topics[0].avgShareOfAnswer
+      } : null
     });
+    
+    // The service always returns { topics: [], availableModels: [] }
+    // Return in the format that frontend expects (object with topics array)
+    const responseData: { topics: any[]; availableModels?: string[]; avgSoADelta?: number } = {
+      topics: result.topics || []
+    };
+    
+    // Include availableModels in the data object for consistency
+    if (result.availableModels && result.availableModels.length > 0) {
+      responseData.availableModels = result.availableModels;
+    }
+    
+    const apiResponse = {
+      success: true,
+      data: responseData,
+      availableModels: result.availableModels || [] // Also include at top level for backward compatibility
+    };
+    
+    console.log(`✅ [Topics API] Sending response:`, {
+      success: apiResponse.success,
+      topicsCount: apiResponse.data.topics.length,
+      availableModels: apiResponse.availableModels
+    });
+    
+    res.json(apiResponse);
   } catch (error) {
     console.error('Error fetching brand topics:', error);
     

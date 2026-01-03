@@ -48,7 +48,7 @@ export class BrandProductEnrichmentService {
     logger(`📊 Found ${competitorNames.length} competitors: ${competitorNames.join(', ')}`);
 
     // 3. Prepare Prompt
-    const systemPrompt = `You are a market research expert. Your task is to identify all common synonyms, abbreviations, and name variations for a brand and its competitors, as well as their main commercial products.
+    const systemPrompt = `You are a market research expert. Your task is to identify all common synonyms, abbreviations, and name variations for a brand and its competitors, as well as their main commercial product names. Make sure the commercial product names are specific and not generic terms liek Burrito for Chipotle or Water Bottle for Larq or Soap for Tide.
 Respond ONLY with valid JSON in this exact structure:
 {
   "brand": {

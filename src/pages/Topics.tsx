@@ -370,10 +370,7 @@ export const Topics = () => {
   }, [filters.startDate, filters.endDate, filters.collectorType, filters.country, filters.competitors]);
 
   const topicsEndpoint = useMemo(() => {
-    if (!selectedBrandId) {
-      console.log('⚠️ [Topics] No selectedBrandId');
-      return null;
-    }
+    if (!selectedBrandId) return null;
     const params = new URLSearchParams();
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
@@ -386,8 +383,6 @@ export const Topics = () => {
     }
     const queryString = params.toString();
     const endpoint = `/brands/${selectedBrandId}/topics${queryString ? `?${queryString}` : ''}`;
-    
-    console.log('🔗 [Topics] Endpoint:', endpoint, { selectedBrandId, filters });
     
     // Only update ref if endpoint actually changed
     if (endpoint !== lastEndpointRef.current) {
@@ -414,17 +409,6 @@ export const Topics = () => {
     }
   );
   
-  // Log fetch status
-  useEffect(() => {
-    console.log('📡 [Topics] Fetch status:', {
-      isLoading,
-      hasError: !!fetchError,
-      error: fetchError,
-      hasResponse: !!response,
-      endpoint: topicsEndpoint
-    });
-  }, [isLoading, fetchError, response, topicsEndpoint]);
-
   // Extract available models from response
   useEffect(() => {
     if (response?.success && response.availableModels) {
@@ -465,16 +449,7 @@ export const Topics = () => {
 
   // Transform and process data
   const topicsData = useMemo(() => {
-    console.log('🔍 [Topics] API Response:', {
-      success: response?.success,
-      hasData: !!response?.data,
-      dataType: Array.isArray(response?.data) ? 'array' : typeof response?.data,
-      dataLength: Array.isArray(response?.data) ? response.data.length : (response?.data as TopicsApiResponse)?.topics?.length || 0,
-      response: response
-    });
-    
     if (!response?.success || !response.data) {
-      console.warn('⚠️ [Topics] No successful response or data:', { response });
       return null;
     }
     
@@ -483,12 +458,6 @@ export const Topics = () => {
       const topicsArray = Array.isArray(response.data) 
         ? response.data 
         : (response.data as TopicsApiResponse)?.topics || [];
-      
-      console.log('📊 [Topics] Topics array after extraction:', {
-        length: topicsArray.length,
-        firstTopic: topicsArray[0],
-        allTopics: topicsArray.map(t => ({ name: t.topic_name || t.topic, totalQueries: t.totalQueries, avgSoA: t.avgShareOfAnswer }))
-      });
       
       // Extract avgSoADelta from response if available
       let avgSoADelta = Array.isArray(response.data) 
@@ -543,14 +512,6 @@ export const Topics = () => {
       }
       
       const transformed = transformTopicsData(topicsArray, topicDeltaMap);
-      
-      console.log('✅ [Topics] Transformed data:', {
-        totalTopics: transformed.topics.length,
-        categories: transformed.categories.length,
-        portfolio: transformed.portfolio,
-        performance: transformed.performance,
-        firstFewTopics: transformed.topics.slice(0, 3).map(t => ({ name: t.name, soA: t.currentSoA, category: t.category }))
-      });
       
       if (avgSoADelta !== undefined) {
         transformed.performance.avgSoADelta = avgSoADelta;

@@ -713,7 +713,12 @@ export async function buildDashboardPayload(
       queryTextMap.set(queryId, queryText)
     }
 
-    const brandShare = Math.max(0, toNumber(row.share_of_answers_brand))
+    // Share of Answers: Keep null as null, only include non-null values in calculations
+    // This matches SQL AVG behavior which excludes NULLs
+    const brandShareRaw = row.share_of_answers_brand
+    const brandShare = (brandShareRaw !== null && brandShareRaw !== undefined)
+      ? Math.max(0, toNumber(brandShareRaw))
+      : null
     const brandVisibility = Math.max(0, toNumber(row.visibility_index))
     
     // Use sentiment_score from extracted_positions table only (no fallback to collector_results)
@@ -777,8 +782,11 @@ export async function buildDashboardPayload(
       }
     }
 
+    // Only push non-null share values (exclude NULLs to match SQL AVG behavior)
     if (isBrandRow || shareArray.length === 0) {
-      shareArray.push(brandShare)
+      if (brandShare !== null && Number.isFinite(brandShare) && brandShare >= 0) {
+        shareArray.push(brandShare)
+      }
     }
 
     if (isBrandRow || visibilityArray.length === 0) {
@@ -806,7 +814,10 @@ export async function buildDashboardPayload(
             topic: null as string | null
           }
 
-        collectorStats.shareValues.push(brandShare)
+        // Only push non-null share values (exclude NULLs to match SQL AVG behavior)
+        if (brandShare !== null && Number.isFinite(brandShare)) {
+          collectorStats.shareValues.push(brandShare)
+        }
         collectorStats.visibilityValues.push(brandVisibility)
         if (hasBrandSentiment) {
           collectorStats.sentimentValues.push(brandSentimentValue)
@@ -861,7 +872,10 @@ export async function buildDashboardPayload(
             topicAggregate.collectorResultsWithBrandPresence.add(row.collector_result_id)
           }
         }
-        topicAggregate.shareValues.push(brandShare)
+        // Only push non-null share values (exclude NULLs to match SQL AVG behavior)
+        if (brandShare !== null && Number.isFinite(brandShare)) {
+          topicAggregate.shareValues.push(brandShare)
+        }
         topicAggregate.visibilityValues.push(brandVisibility)
         if (hasBrandSentiment) {
           topicAggregate.sentimentValues.push(brandSentimentValue)
@@ -894,7 +908,10 @@ export async function buildDashboardPayload(
           })
         }
         const collectorAggregate = collectorAggregates.get(collectorType)!
-        collectorAggregate.shareValues.push(brandShare)
+        // Only push non-null share values (exclude NULLs to match SQL AVG behavior)
+        if (brandShare !== null && Number.isFinite(brandShare)) {
+          collectorAggregate.shareValues.push(brandShare)
+        }
         collectorAggregate.visibilityValues.push(brandVisibility)
         
         // Add sentiment for brand rows only
@@ -1111,23 +1128,30 @@ export async function buildDashboardPayload(
   // Calculate Share of Answers
   // When no filters are applied: use simple average of all share_of_answers_brand values
   // When filters are applied: use simple average of filtered share_of_answers_brand values
+  // IMPORTANT: Exclude NULL values (don't convert to 0) to match SQL AVG behavior
   let shareOfAnswersPercentage = 0
   if (!filtersActive) {
     // Simple average: collect all share_of_answers_brand values from brand rows and average them
+    // Keep null as null, then filter out nulls (don't convert null to 0)
     const allBrandShareValues = positionRows
       .filter(row => !row.competitor_name || row.competitor_name.trim().length === 0) // Only brand rows
-      .map(row => toNumber(row.share_of_answers_brand))
-      .filter(val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0)
+      .map(row => row.share_of_answers_brand) // Keep null as null
+      .filter(val => val !== null && val !== undefined) // Filter out nulls
+      .map(val => toNumber(val)) // Convert to number only for non-null values
+      .filter(val => Number.isFinite(val) && val >= 0) // Filter out invalid numbers
     
     shareOfAnswersPercentage = allBrandShareValues.length > 0
       ? average(allBrandShareValues)
       : 0
   } else {
     // When filters are applied, still use simple average but only from filtered rows
+    // Keep null as null, then filter out nulls (don't convert null to 0)
     const filteredBrandShareValues = positionRows
       .filter(row => !row.competitor_name || row.competitor_name.trim().length === 0) // Only brand rows
-      .map(row => toNumber(row.share_of_answers_brand))
-      .filter(val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0)
+      .map(row => row.share_of_answers_brand) // Keep null as null
+      .filter(val => val !== null && val !== undefined) // Filter out nulls
+      .map(val => toNumber(val)) // Convert to number only for non-null values
+      .filter(val => Number.isFinite(val) && val >= 0) // Filter out invalid numbers
     
     shareOfAnswersPercentage = filteredBrandShareValues.length > 0
       ? average(filteredBrandShareValues)
@@ -2252,15 +2276,21 @@ export async function buildDashboardPayload(
           successfulMatchesByCollector.set(collectorType, (successfulMatchesByCollector.get(collectorType) || 0) + 1)
           const brandVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index) ?? 0))
           // Note: share_of_answers_brand is stored as percentage (0-100), not decimal (0-1)
-          // This matches the main brand share calculation (line 897) and visibility.service.ts (line 82)
-          const brandShare = Math.max(0, toNumber(row.share_of_answers_brand) ?? 0)
+          // Exclude NULL values (don't convert to 0) to match SQL AVG behavior
+          const brandShareRaw = row.share_of_answers_brand
+          const brandShare = (brandShareRaw !== null && brandShareRaw !== undefined)
+            ? Math.max(0, toNumber(brandShareRaw))
+            : null
           const brandSentimentRaw = row.sentiment_score !== null && row.sentiment_score !== undefined
             ? toNumber(row.sentiment_score)
             : null
           const brandSentiment = brandSentimentRaw !== null && Number.isFinite(brandSentimentRaw) ? brandSentimentRaw : null
 
           dayData.visibilityValues.push(brandVisibility)
-          dayData.shareValues.push(brandShare)
+          // Only push non-null share values (exclude NULLs)
+          if (brandShare !== null && Number.isFinite(brandShare)) {
+            dayData.shareValues.push(brandShare)
+          }
           if (brandSentiment !== null) {
             dayData.sentimentValues.push(brandSentiment)
           }
@@ -2446,13 +2476,20 @@ export async function buildDashboardPayload(
 
         const dayData = collectorDates.get(date)!
         const visibility = Math.min(1, Math.max(0, toNumber(bm.visibility_index) ?? 0))
-        const share = Math.max(0, toNumber(bm.share_of_answers) ?? 0)
+        // Exclude NULL values (don't convert to 0) to match SQL AVG behavior
+        const shareRaw = bm.share_of_answers
+        const share = (shareRaw !== null && shareRaw !== undefined)
+          ? Math.max(0, toNumber(shareRaw))
+          : null
         const sentiment = bs?.sentiment_score !== null && bs?.sentiment_score !== undefined
           ? toNumber(bs.sentiment_score)
           : null
 
         dayData.visibilityValues.push(visibility)
-        dayData.shareValues.push(share)
+        // Only push non-null share values (exclude NULLs)
+        if (share !== null && Number.isFinite(share)) {
+          dayData.shareValues.push(share)
+        }
         if (sentiment !== null && Number.isFinite(sentiment)) {
           dayData.sentimentValues.push(sentiment)
         }

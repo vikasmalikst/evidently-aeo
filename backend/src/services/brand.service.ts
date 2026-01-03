@@ -1471,9 +1471,10 @@ export class BrandService {
   }
 
   /**
-   * Get brand topics WITH analytics data - ONLY topics that have collector_results
-   * Queries from generated_queries table (topics that actually have query execution data)
+   * Get brand topics WITH analytics data from new schema
+   * Queries metric_facts table with joins to brand_metrics and brand_sentiment
    * Filters by collector_type (model), country, and date range
+   * Shows no data if data is not present (no fallback to legacy tables)
    */
   async getBrandTopicsWithAnalytics(
     brandId: string,
@@ -1486,7 +1487,7 @@ export class BrandService {
   ): Promise<{ topics: any[]; availableModels: string[] }> {
     const overallStart = performance.now();
     try {
-      console.log(`🎯 Fetching topics WITH analytics (only topics with collector_results) for brand ${brandId}`);
+      console.log(`🎯 Fetching topics WITH analytics from new schema (metric_facts) for brand ${brandId}`);
       
       // Set default date range (last 30 days)
       const end = endDate ? new Date(endDate) : new Date();
@@ -1505,50 +1506,9 @@ export class BrandService {
       
       console.log(`📅 Date range: ${startIso} to ${endIso}`);
       
-      // Initialize feature flag and optimized metrics helper
-      const USE_OPTIMIZED_TOPICS_QUERY = process.env.USE_OPTIMIZED_TOPICS_QUERY === 'true';
       const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
       
-      if (USE_OPTIMIZED_TOPICS_QUERY) {
-        console.log('   ⚡ [Topics] Using optimized query (metric_facts + brand_metrics + brand_sentiment)');
-      } else {
-        console.log('   📋 [Topics] Using legacy query (extracted_positions)');
-      }
-      
-      // Step 1: Try to get queries from generated_queries (optional - topics might be in metadata only)
-      const step1Start = performance.now();
-      let queries: any[] = [];
-      let queryToTopicMap = new Map<string, { topic: string; intent: string }>();
-      
-      try {
-        const { data: queriesData, error: queriesError } = await supabaseAdmin
-          .from('generated_queries')
-          .select('id, topic, intent')
-          .eq('brand_id', brandId)
-          .eq('customer_id', customerId)
-          .not('topic', 'is', null);
-        
-        const step1Time = performance.now() - step1Start;
-        if (queriesError) {
-          console.warn(`⚠️ Warning: Could not fetch queries (will use metadata only) [${step1Time.toFixed(2)}ms]:`, queriesError.message);
-          // Continue - we can still get topics from metadata
-        } else if (queriesData) {
-          queries = queriesData;
-          queries.forEach(q => {
-            if (q.topic) {
-              queryToTopicMap.set(q.id, { topic: q.topic.trim(), intent: q.intent || 'awareness' });
-            }
-          });
-          console.log(`📋 Found ${queries.length} queries in generated_queries [${step1Time.toFixed(2)}ms]`);
-        }
-      } catch (error) {
-        const step1Time = performance.now() - step1Start;
-        console.warn(`⚠️ Warning: Error fetching queries, continuing with metadata extraction [${step1Time.toFixed(2)}ms]:`, error);
-        // Continue - we can still get topics from metadata
-      }
-      
-      // Step 2: Get collector_results (optional - we can query positions directly)
-      // Map collector type(s) if provided (do this early so we can use it for filtering collector_results)
+      // Map collector type(s) if provided
       // Support both single collector type and comma-separated multiple types
       let mappedCollectorTypes: string[] = [];
       if (collectorType && collectorType.trim() !== '') {
@@ -1581,215 +1541,71 @@ export class BrandService {
         console.log(`🔍 Filtering by collector_type(s): ${mappedCollectorTypes.join(', ')} (from input: ${collectorType})`);
       }
       
-      // Step 2: Get collector_results
-      const step2Start = performance.now();
-      let collectorResults: any[] = [];
-      let crToQueryMap = new Map<string, string>();
-      
-      if (queries.length > 0) {
-        try {
-          const queryIds = queries.map(q => q.id);
-          let crQuery = supabaseAdmin
-            .from('collector_results')
-            .select('id, query_id, collector_type')
-            .in('query_id', queryIds);
-          
-          // Filter collector_results by collector_type(s) if provided
-          if (mappedCollectorTypes.length > 0) {
-            if (mappedCollectorTypes.length === 1) {
-              crQuery = crQuery.eq('collector_type', mappedCollectorTypes[0]);
-            } else {
-              crQuery = crQuery.in('collector_type', mappedCollectorTypes);
-            }
-            console.log(`🔍 Filtering collector_results by collector_type(s): ${mappedCollectorTypes.join(', ')}`);
-          }
-          
-          const { data: crData, error: crError } = await crQuery;
-          const step2Time = performance.now() - step2Start;
-          
-          if (crError) {
-            console.warn(`⚠️ Warning: Could not fetch collector_results (will query positions directly) [${step2Time.toFixed(2)}ms]:`, crError.message);
-          } else if (crData) {
-            collectorResults = crData;
-            collectorResults.forEach(cr => {
-              crToQueryMap.set(cr.id, cr.query_id);
-            });
-            console.log(`📋 Found ${collectorResults.length} collector_results${mappedCollectorTypes.length > 0 ? ` for collector_type(s): ${mappedCollectorTypes.join(', ')}` : ''} [${step2Time.toFixed(2)}ms]`);
-          }
-        } catch (error) {
-          const step2Time = performance.now() - step2Start;
-          console.warn(`⚠️ Warning: Error fetching collector_results, continuing with direct position query [${step2Time.toFixed(2)}ms]:`, error);
-        }
-      } else {
-        const step2Time = performance.now() - step2Start;
-        console.log(`⏭️ Skipped collector_results fetch (no queries) [${step2Time.toFixed(2)}ms]`);
-      }
-      
       // Get distinct collector_types (models) available for this brand in the date range
       // Do this BEFORE filtering so we always return all available models, not just the filtered one
-      const step2bStart = performance.now();
+      const step1Start = performance.now();
+      const availableModelsResult = await optimizedMetricsHelper.fetchDistinctCollectorTypes({
+        brandId,
+        startDate: startIso,
+        endDate: endIso,
+      });
+      
+      const step1Time = performance.now() - step1Start;
       let availableModels = new Set<string>();
       
-      if (USE_OPTIMIZED_TOPICS_QUERY) {
-        const result = await optimizedMetricsHelper.fetchDistinctCollectorTypes({
-          brandId,
-          startDate: startIso,
-          endDate: endIso,
-        });
-        
-        if (result.error) {
-          console.warn(`⚠️ Warning: Error fetching distinct collector types from new schema:`, result.error);
-        } else {
-          availableModels = result.data;
-        }
+      if (availableModelsResult.error) {
+        console.warn(`⚠️ Warning: Error fetching distinct collector types:`, availableModelsResult.error);
       } else {
-        const { data: distinctCollectors } = await supabaseAdmin
-          .from('extracted_positions')
-          .select('collector_type')
-          .eq('brand_id', brandId)
-          .eq('customer_id', customerId)
-          .gte('processed_at', startIso)
-          .lte('processed_at', endIso)
-          .not('collector_type', 'is', null);
-        
-        if (distinctCollectors) {
-          distinctCollectors.forEach((pos: any) => {
-            if (pos.collector_type) {
-              availableModels.add(pos.collector_type);
-            }
-          });
-        }
+        availableModels = availableModelsResult.data;
       }
       
-      const step2bTime = performance.now() - step2bStart;
-      console.log(`📊 Available models (before filtering): ${Array.from(availableModels).join(', ')} [${step2bTime.toFixed(2)}ms]`);
+      console.log(`📊 Available models: ${Array.from(availableModels).join(', ') || 'none'} [${step1Time.toFixed(2)}ms]`);
       
-      // Step 3: Get positions for this brand
-      // Include topic column and metrics needed for topic analytics
-      const step3Start = performance.now();
-      let positions: any[] = [];
+      // Get positions from metric_facts (new schema only)
+      const step2Start = performance.now();
+      const result = await optimizedMetricsHelper.fetchTopicPositions({
+        brandId,
+        customerId,
+        startDate: startIso,
+        endDate: endIso,
+        collectorTypes: mappedCollectorTypes.length > 0 ? mappedCollectorTypes : undefined,
+      });
       
-      if (USE_OPTIMIZED_TOPICS_QUERY) {
-        // NEW: Use optimized query (metric_facts + brand_metrics + brand_sentiment)
-        const collectorResultIds = collectorResults.length > 0 && collectorResults.length <= 100
-          ? collectorResults.map(cr => cr.id)
-          : undefined; // Don't filter by IDs if >100 or 0 (query by brand_id instead)
-        
-        if (collectorResultIds) {
-          console.log(`🔍 Using .in() filter with ${collectorResultIds.length} collector_result IDs`);
-        } else if (collectorResults.length > 100) {
-          console.log(`⚠️ Large collector_results set (${collectorResults.length} IDs), querying directly by brand_id + date range to avoid timeout`);
-        } else {
-          console.log('⚠️ No collector_results found, querying positions directly by brand_id');
-        }
-        
-        const result = await optimizedMetricsHelper.fetchTopicPositions({
-          brandId,
-          customerId,
-          startDate: startIso,
-          endDate: endIso,
-          collectorTypes: mappedCollectorTypes.length > 0 ? mappedCollectorTypes : undefined,
-          collectorResultIds,
-        });
-        
-        const step3Time = performance.now() - step3Start;
-        
-        if (result.error) {
-          console.error(`❌ Error fetching positions from new schema [${step3Time.toFixed(2)}ms]:`, result.error);
-          throw new Error(`Failed to fetch positions: ${result.error}`);
-        }
-        
-        // Transform to match legacy format (add metadata field as empty for compatibility)
-        positions = result.data.map(row => ({
-          share_of_answers_brand: row.share_of_answers_brand,
-          sentiment_score: row.sentiment_score,
-          visibility_index: row.visibility_index,
-          has_brand_presence: row.has_brand_presence,
-          processed_at: row.processed_at,
-          collector_result_id: row.collector_result_id,
-          topic: row.topic,
-          metadata: null, // Topic is now directly in metric_facts.topic column
-          collector_type: row.collector_type,
-        }));
-        
-        console.log(`📊 Found ${positions.length} positions${mappedCollectorTypes.length > 0 ? ` (for collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''} [${step3Time.toFixed(2)}ms]`);
-      } else {
-        // LEGACY: Query extracted_positions (original logic preserved)
-        let positionsQuery = supabaseAdmin
-          .from('extracted_positions')
-          .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
-          .eq('brand_id', brandId)
-          .eq('customer_id', customerId)
-          .gte('processed_at', startIso)
-          .lte('processed_at', endIso);
-        
-        // Filter by collector_type(s) (model) if provided and not empty
-        if (mappedCollectorTypes.length > 0) {
-          if (mappedCollectorTypes.length === 1) {
-            positionsQuery = positionsQuery.eq('collector_type', mappedCollectorTypes[0]);
-          } else {
-            positionsQuery = positionsQuery.in('collector_type', mappedCollectorTypes);
-          }
-        }
-        
-        if (collectorResults.length > 0 && collectorResults.length <= 100) {
-          // Only use .in() filtering for small result sets (<=100 IDs)
-          const collectorResultIds = collectorResults.map(cr => cr.id);
-          console.log(`🔍 Using .in() filter with ${collectorResultIds.length} collector_result IDs`);
-          
-          let positionsQueryFiltered = supabaseAdmin
-            .from('extracted_positions')
-            .select('share_of_answers_brand, sentiment_score, visibility_index, has_brand_presence, processed_at, collector_result_id, topic, metadata, collector_type')
-            .eq('brand_id', brandId)
-            .eq('customer_id', customerId)
-            .gte('processed_at', startIso)
-            .lte('processed_at', endIso)
-            .in('collector_result_id', collectorResultIds);
-          
-          if (mappedCollectorTypes.length > 0) {
-            if (mappedCollectorTypes.length === 1) {
-              positionsQueryFiltered = positionsQueryFiltered.eq('collector_type', mappedCollectorTypes[0]);
-            } else {
-              positionsQueryFiltered = positionsQueryFiltered.in('collector_type', mappedCollectorTypes);
-            }
-          }
-          
-          const { data: posData, error: positionsError } = await positionsQueryFiltered;
-          const step3Time = performance.now() - step3Start;
-          
-          if (positionsError) {
-            console.error(`❌ Error fetching extracted_positions [${step3Time.toFixed(2)}ms]:`, positionsError);
-            throw new Error(`Failed to fetch positions: ${positionsError.message || positionsError}`);
-          }
-          positions = posData || [];
-          console.log(`📊 Found ${positions.length} positions after filtering by collector_result_ids${mappedCollectorTypes.length > 0 ? ` (for collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''} [${step3Time.toFixed(2)}ms]`);
-        } else if (collectorResults.length > 100) {
-          console.log(`⚠️ Large collector_results set (${collectorResults.length} IDs), querying directly by brand_id + date range to avoid timeout`);
-          const { data: posData, error: positionsError } = await positionsQuery;
-          const step3Time = performance.now() - step3Start;
-          
-          if (positionsError) {
-            console.error(`❌ Error fetching extracted_positions [${step3Time.toFixed(2)}ms]:`, positionsError);
-            throw new Error(`Failed to fetch positions: ${positionsError.message || positionsError}`);
-          }
-          positions = posData || [];
-          console.log(`📊 Found ${positions.length} positions after querying directly (avoided large .in() clause)${mappedCollectorTypes.length > 0 ? ` (filtered by collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''} [${step3Time.toFixed(2)}ms]`);
-        } else {
-          console.log('⚠️ No collector_results found, querying positions directly by brand_id');
-          const { data: posData, error: positionsError } = await positionsQuery;
-          const step3Time = performance.now() - step3Start;
-          
-          if (positionsError) {
-            console.error(`❌ Error fetching extracted_positions [${step3Time.toFixed(2)}ms]:`, positionsError);
-            throw new Error(`Failed to fetch positions: ${positionsError.message || positionsError}`);
-          }
-          positions = posData || [];
-          console.log(`📊 Found ${positions.length} positions after querying directly${mappedCollectorTypes.length > 0 ? ` (filtered by collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''}`);
-        }
+      const step2Time = performance.now() - step2Start;
+      
+      if (result.error) {
+        console.error(`❌ Error fetching positions from metric_facts [${step2Time.toFixed(2)}ms]:`, result.error);
+        throw new Error(`Failed to fetch positions: ${result.error}`);
+      }
+      
+      // Transform to expected format
+      const positions = result.data.map(row => ({
+        share_of_answers_brand: row.share_of_answers_brand,
+        sentiment_score: row.sentiment_score,
+        visibility_index: row.visibility_index,
+        has_brand_presence: row.has_brand_presence,
+        processed_at: row.processed_at,
+        collector_result_id: row.collector_result_id,
+        topic: row.topic, // Topic comes directly from metric_facts.topic column
+        metadata: null, // Not used in new schema
+        collector_type: row.collector_type,
+      }));
+      
+      // Log detailed info about positions and topics
+      const positionsWithTopics = positions.filter(p => p.topic && p.topic.trim().length > 0);
+      const positionsWithoutTopics = positions.length - positionsWithTopics.length;
+      console.log(`📊 Found ${positions.length} positions from metric_facts${mappedCollectorTypes.length > 0 ? ` (for collector_type(s): ${mappedCollectorTypes.join(', ')})` : ''} [${step2Time.toFixed(2)}ms]`);
+      console.log(`   - Positions with topics: ${positionsWithTopics.length}`);
+      console.log(`   - Positions without topics: ${positionsWithoutTopics}`);
+      if (positions.length > 0 && positionsWithoutTopics > 0) {
+        console.log(`   ⚠️ Warning: ${positionsWithoutTopics} positions will be filtered out because they have no topic`);
       }
       
       if (!positions || positions.length === 0) {
-        console.log(`⚠️ No extracted_positions found${mappedCollectorTypes.length > 0 ? ` for collector_type(s): ${mappedCollectorTypes.join(', ')}` : ''} in date range`);
+        console.log(`⚠️ No extracted_positions found${mappedCollectorTypes.length > 0 ? ` for collector_type(s): ${mappedCollectorTypes.join(', ')}` : ''} in date range ${startIso} to ${endIso}`);
+        console.log(`   - Brand ID: ${brandId}`);
+        console.log(`   - Customer ID: ${customerId}`);
+        console.log(`   - Available models found: ${Array.from(availableModels).join(', ') || 'none'}`);
         // Return empty topics but still return availableModels so the filter dropdown works
         return { topics: [], availableModels: Array.from(availableModels) };
       }
@@ -1869,7 +1685,10 @@ export class BrandService {
         
         const topicData = topicMap.get(normalizedTopicName)!;
         topicData.analytics.push({
-          share_of_answers_brand: pos.share_of_answers_brand || 0,
+          // Keep NULL as NULL (don't convert to 0) to match SQL AVG behavior
+          share_of_answers_brand: pos.share_of_answers_brand !== null && pos.share_of_answers_brand !== undefined
+            ? pos.share_of_answers_brand
+            : null,
           sentiment_score: pos.sentiment_score,
           visibility_index: pos.visibility_index,
           has_brand_presence: pos.has_brand_presence || false,
@@ -1902,10 +1721,24 @@ export class BrandService {
       }
       
       if (topicMap.size === 0) {
-        console.log('⚠️ No topics found with analytics data. Checking metadata format...');
-        // Debug: Check first position's metadata
-        if (positions && positions.length > 0 && positions[0].metadata) {
-          console.log('   Sample metadata:', JSON.stringify(positions[0].metadata, null, 2));
+        console.log('⚠️ No topics found with analytics data.');
+        console.log(`   - Total positions processed: ${positions.length}`);
+        console.log(`   - Positions with topics: ${metadataTopicsCount + queryTopicsCount}`);
+        console.log(`   - Positions without topics: ${noTopicCount}`);
+        console.log(`   - Date range: ${startIso} to ${endIso}`);
+        console.log(`   - Brand ID: ${brandId}`);
+        
+        // Debug: Check first few positions
+        if (positions && positions.length > 0) {
+          console.log('   Sample positions (first 3):');
+          positions.slice(0, 3).forEach((pos, idx) => {
+            console.log(`     [${idx}] topic: ${pos.topic || 'null'}, collector_type: ${pos.collector_type}, processed_at: ${pos.processed_at}`);
+            if (pos.metadata) {
+              console.log(`         metadata:`, JSON.stringify(pos.metadata, null, 2));
+            }
+          });
+        } else {
+          console.log('   ⚠️ No positions were returned from the query at all!');
         }
       }
       
@@ -1929,20 +1762,24 @@ export class BrandService {
 
         // Debug: Log analytics summary for this topic
         if (mappedCollectorTypes.length > 0) {
-          const avgSoA = analytics.length > 0
-            ? analytics.reduce((sum, a) => sum + (a.share_of_answers_brand || 0), 0) / analytics.length
+          // Exclude NULL values for accurate average (matching SQL AVG behavior)
+          const validSoAValues = analytics
+            .map(a => a.share_of_answers_brand)
+            .filter((v: any) => v !== null && v !== undefined && typeof v === 'number' && isFinite(v));
+          const avgSoA = validSoAValues.length > 0
+            ? validSoAValues.reduce((sum, v) => sum + v, 0) / validSoAValues.length
             : 0;
-          console.log(`📊 Topic "${data.topicName}": ${analytics.length} data points, avg SOA: ${avgSoA.toFixed(2)}`);
+          console.log(`📊 Topic "${data.topicName}": ${analytics.length} data points, ${validSoAValues.length} with SOA, avg SOA: ${avgSoA.toFixed(2)}`);
         }
         
         if (analytics.length === 0) {
           return null; // Skip topics with no analytics in date range
         }
         
-        // Calculate metrics
+        // Calculate metrics - Exclude NULL values (matching SQL AVG behavior)
         const soaValues = analytics
           .map(a => a.share_of_answers_brand)
-          .filter((v: any) => typeof v === 'number' && isFinite(v) && v !== null);
+          .filter((v: any) => v !== null && v !== undefined && typeof v === 'number' && isFinite(v));
         
         const sentimentValues = analytics
           .map(a => this.parseFiniteNumber(a.sentiment_score))
@@ -2115,8 +1952,8 @@ export class BrandService {
         return new Map();
       }
 
-      // Check feature flag for optimized queries
-      const USE_OPTIMIZED_TOPICS_QUERY = process.env.USE_OPTIMIZED_TOPICS_QUERY === 'true';
+      // Feature flag: default ON. Set USE_OPTIMIZED_TOPICS_QUERY=false to force legacy behavior.
+      const USE_OPTIMIZED_TOPICS_QUERY = process.env.USE_OPTIMIZED_TOPICS_QUERY !== 'false';
       
       if (USE_OPTIMIZED_TOPICS_QUERY) {
         console.log('   ⚡ [Competitor Averages] Using optimized query (metric_facts + competitor_metrics)');

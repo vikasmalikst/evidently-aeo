@@ -265,8 +265,8 @@ export class SourceAttributionService {
       }> = []
 
       if (collectorResultIds.length > 0) {
-        // Feature flag: Use optimized query (new schema) vs legacy (extracted_positions)
-        const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION === 'true';
+        // Feature flag: default ON. Set USE_OPTIMIZED_SOURCE_ATTRIBUTION=false to force legacy behavior.
+        const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION !== 'false';
 
         if (USE_OPTIMIZED_SOURCE_ATTRIBUTION) {
           console.log('   ⚡ [Source Attribution] Using optimized query (metric_facts + brand_metrics + brand_sentiment)');
@@ -627,8 +627,8 @@ export class SourceAttributionService {
           previousCitations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
         ))
         
-        // Fetch previous period share of answer and sentiment from extracted_positions
-        const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION === 'true';
+        // Feature flag: default ON. Set USE_OPTIMIZED_SOURCE_ATTRIBUTION=false to force legacy behavior.
+        const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION !== 'false';
         let previousPositions: Array<{
           collector_result_id: number | null;
           share_of_answers_brand: number | null;
@@ -1369,8 +1369,8 @@ export class SourceAttributionService {
         citationsData.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
       ))
 
-      // Fetch extracted_positions for share, sentiment, visibility
-      const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION === 'true';
+      // Feature flag: default ON. Set USE_OPTIMIZED_SOURCE_ATTRIBUTION=false to force legacy behavior.
+      const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION !== 'false';
       let positionsData: Array<{
         collector_result_id: number | null;
         share_of_answers_brand: number | null;

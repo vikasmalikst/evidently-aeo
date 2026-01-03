@@ -38,34 +38,35 @@ WHERE mf.brand_id = 'YOUR_BRAND_ID'
 -- If your values don't match, try Method 2 query below
 
 -- Method 1: Simple Average (matches dashboard default calculation)
+-- IMPORTANT: Dashboard converts NULL to 0, so we use COALESCE to match this behavior
 SELECT 
-  ROUND(AVG(bm.share_of_answers), 1) AS share_of_answers_percentage,
+  ROUND(AVG(COALESCE(bm.share_of_answers, 0)), 1) AS share_of_answers_percentage,
   COUNT(*) AS total_records,
   COUNT(bm.share_of_answers) AS records_with_share,
-  MIN(bm.share_of_answers) AS min_share,
-  MAX(bm.share_of_answers) AS max_share
+  COUNT(*) - COUNT(bm.share_of_answers) AS records_with_null_share,
+  MIN(COALESCE(bm.share_of_answers, 0)) AS min_share,
+  MAX(COALESCE(bm.share_of_answers, 0)) AS max_share
 FROM public.metric_facts mf
 INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
 WHERE mf.brand_id = 'YOUR_BRAND_ID'
   AND mf.processed_at >= 'START_DATE'
   AND mf.processed_at <= 'END_DATE'
-  AND bm.share_of_answers IS NOT NULL
-  AND bm.share_of_answers >= 0;
+  AND COALESCE(bm.share_of_answers, 0) >= 0;
 
 -- Method 2: Query-Level Average (average per query, then average those averages)
 -- Use this if Method 1 doesn't match the dashboard
+-- NOTE: Dashboard uses Method 1 (simple average), but this shows query-level for comparison
 WITH query_level_averages AS (
   SELECT 
     mf.query_id,
-    AVG(bm.share_of_answers) AS avg_share_per_query,
+    AVG(COALESCE(bm.share_of_answers, 0)) AS avg_share_per_query,
     COUNT(*) AS records_per_query
   FROM public.metric_facts mf
   INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
   WHERE mf.brand_id = 'YOUR_BRAND_ID'
     AND mf.processed_at >= 'START_DATE'
     AND mf.processed_at <= 'END_DATE'
-    AND bm.share_of_answers IS NOT NULL
-    AND bm.share_of_answers >= 0
+    AND COALESCE(bm.share_of_answers, 0) >= 0
   GROUP BY mf.query_id
 )
 SELECT 
@@ -155,16 +156,16 @@ WITH visibility_data AS (
 ),
 share_data AS (
   -- Simple average (matches dashboard default)
+  -- Dashboard converts NULL to 0, so we use COALESCE to match
   SELECT 
-    AVG(bm.share_of_answers) AS share_of_answers_percentage,
+    AVG(COALESCE(bm.share_of_answers, 0)) AS share_of_answers_percentage,
     COUNT(*) AS share_records
   FROM public.metric_facts mf
   INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
   WHERE mf.brand_id = 'YOUR_BRAND_ID'
     AND mf.processed_at >= 'START_DATE'
     AND mf.processed_at <= 'END_DATE'
-    AND bm.share_of_answers IS NOT NULL
-    AND bm.share_of_answers >= 0
+    AND COALESCE(bm.share_of_answers, 0) >= 0
 ),
 sentiment_data AS (
   SELECT 
@@ -260,19 +261,21 @@ ORDER BY collector_results DESC;
 -- This shows breakdown by collector type, date, and query to identify discrepancies
 
 -- Check 1: Breakdown by Collector Type
+-- Shows NULL values as 0 to match dashboard behavior
 SELECT 
   mf.collector_type,
   COUNT(*) AS record_count,
-  ROUND(AVG(bm.share_of_answers), 1) AS avg_share,
-  MIN(bm.share_of_answers) AS min_share,
-  MAX(bm.share_of_answers) AS max_share
+  ROUND(AVG(COALESCE(bm.share_of_answers, 0)), 1) AS avg_share,
+  COUNT(bm.share_of_answers) AS records_with_non_null_share,
+  COUNT(*) - COUNT(bm.share_of_answers) AS records_with_null_share,
+  MIN(COALESCE(bm.share_of_answers, 0)) AS min_share,
+  MAX(COALESCE(bm.share_of_answers, 0)) AS max_share
 FROM public.metric_facts mf
 INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
 WHERE mf.brand_id = 'YOUR_BRAND_ID'
   AND mf.processed_at >= 'START_DATE'
   AND mf.processed_at <= 'END_DATE'
-  AND bm.share_of_answers IS NOT NULL
-  AND bm.share_of_answers >= 0
+  AND COALESCE(bm.share_of_answers, 0) >= 0
 GROUP BY mf.collector_type
 ORDER BY record_count DESC;
 
@@ -292,25 +295,39 @@ GROUP BY DATE(mf.processed_at)
 ORDER BY date DESC;
 
 -- Check 3: Query-level breakdown (to see if some queries skew the average)
+-- Shows NULL values as 0 to match dashboard behavior
 SELECT 
   mf.query_id,
   COUNT(*) AS collector_results_count,
-  ROUND(AVG(bm.share_of_answers), 1) AS avg_share_per_query,
-  MIN(bm.share_of_answers) AS min_share,
-  MAX(bm.share_of_answers) AS max_share
+  ROUND(AVG(COALESCE(bm.share_of_answers, 0)), 1) AS avg_share_per_query,
+  COUNT(bm.share_of_answers) AS records_with_non_null_share,
+  COUNT(*) - COUNT(bm.share_of_answers) AS records_with_null_share,
+  MIN(COALESCE(bm.share_of_answers, 0)) AS min_share,
+  MAX(COALESCE(bm.share_of_answers, 0)) AS max_share
 FROM public.metric_facts mf
 INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
 WHERE mf.brand_id = 'YOUR_BRAND_ID'
   AND mf.processed_at >= 'START_DATE'
   AND mf.processed_at <= 'END_DATE'
-  AND bm.share_of_answers IS NOT NULL
-  AND bm.share_of_answers >= 0
+  AND COALESCE(bm.share_of_answers, 0) >= 0
 GROUP BY mf.query_id
 ORDER BY collector_results_count DESC
 LIMIT 20;
 
 -- Check 4: Compare simple average vs query-level average
-WITH simple_avg AS (
+-- Also shows impact of NULL values (dashboard converts NULL to 0)
+WITH simple_avg_with_nulls AS (
+  -- Dashboard method: NULL converted to 0
+  SELECT AVG(COALESCE(bm.share_of_answers, 0)) AS value
+  FROM public.metric_facts mf
+  INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
+  WHERE mf.brand_id = 'YOUR_BRAND_ID'
+    AND mf.processed_at >= 'START_DATE'
+    AND mf.processed_at <= 'END_DATE'
+    AND COALESCE(bm.share_of_answers, 0) >= 0
+),
+simple_avg_excluding_nulls AS (
+  -- SQL method: NULL excluded
   SELECT AVG(bm.share_of_answers) AS value
   FROM public.metric_facts mf
   INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
@@ -320,24 +337,25 @@ WITH simple_avg AS (
     AND bm.share_of_answers IS NOT NULL
     AND bm.share_of_answers >= 0
 ),
-query_level_avg AS (
-  SELECT AVG(avg_share) AS value
-  FROM (
-    SELECT mf.query_id, AVG(bm.share_of_answers) AS avg_share
-    FROM public.metric_facts mf
-    INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
-    WHERE mf.brand_id = 'YOUR_BRAND_ID'
-      AND mf.processed_at >= 'START_DATE'
-      AND mf.processed_at <= 'END_DATE'
-      AND bm.share_of_answers IS NOT NULL
-      AND bm.share_of_answers >= 0
-    GROUP BY mf.query_id
-  ) subq
+null_count AS (
+  -- Count how many NULL values exist
+  SELECT 
+    COUNT(*) AS total_records,
+    COUNT(bm.share_of_answers) AS records_with_share,
+    COUNT(*) - COUNT(bm.share_of_answers) AS records_with_null_share
+  FROM public.metric_facts mf
+  INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
+  WHERE mf.brand_id = 'YOUR_BRAND_ID'
+    AND mf.processed_at >= 'START_DATE'
+    AND mf.processed_at <= 'END_DATE'
 )
 SELECT 
-  ROUND(sa.value, 1) AS simple_average,
-  ROUND(qla.value, 1) AS query_level_average,
-  ROUND(ABS(sa.value - qla.value), 1) AS difference
-FROM simple_avg sa
-CROSS JOIN query_level_avg qla;
+  ROUND(san.value, 1) AS dashboard_method_avg_nulls_as_zero,
+  ROUND(sae.value, 1) AS sql_method_excluding_nulls,
+  ROUND(ABS(san.value - sae.value), 1) AS difference,
+  nc.records_with_null_share,
+  ROUND((nc.records_with_null_share::numeric / NULLIF(nc.total_records, 0)) * 100, 1) AS pct_null_values
+FROM simple_avg_with_nulls san
+CROSS JOIN simple_avg_excluding_nulls sae
+CROSS JOIN null_count nc;
 

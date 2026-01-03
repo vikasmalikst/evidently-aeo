@@ -33,6 +33,7 @@ interface CollectorResponse {
   brandMentions: number | null
   productMentions: number | null
   competitorMentions: number | null
+  keywordCount: number | null
 }
 
 interface PromptEntryPayload {
@@ -563,7 +564,8 @@ export class PromptsAnalyticsService {
             lastUpdated: createdAt,
             brandMentions: null,
             productMentions: null,
-            competitorMentions: null
+            competitorMentions: null,
+            keywordCount: null
           })
         }
       }
@@ -599,6 +601,7 @@ export class PromptsAnalyticsService {
     const keywordMap = new Map<string, Set<string>>()
     const sentimentMap = new Map<string, number[]>() // key: query_id or collector:<id> -> sentiment values
     const allowedCollectorResultIds = new Set<number>(allCollectorResultIds)
+    const keywordCountsByCollector = new Map<number, number>() // collector_result_id -> keyword count (declared early for use in keyword processing)
 
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       const keywordRows: Array<{ keyword: string; query_id: string | null; collector_result_id: number | null }> = []
@@ -665,6 +668,10 @@ export class PromptsAnalyticsService {
                 keywordMap.set(collectorKey, new Set<string>())
               }
               keywordMap.get(collectorKey)!.add(keyword)
+              
+              // Count keywords per collector
+              const currentCount = keywordCountsByCollector.get(collectorResultId) || 0
+              keywordCountsByCollector.set(collectorResultId, currentCount + 1)
             }
           }
         })
@@ -728,11 +735,12 @@ export class PromptsAnalyticsService {
 
     // Fetch visibility scores and sentiment scores
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
-    const mentionCountsByCollector = new Map<number, { brand: number; product: number; competitor: number }>()
-    const mentionCountsByQuery = new Map<string, { brand: number; product: number; competitor: number }>()
+    const mentionCountsByCollector = new Map<number, { brand: number; product: number; competitor: number; keywords: number }>()
+    const mentionCountsByQuery = new Map<string, { brand: number; product: number; competitor: number; keywords: number }>()
+    // Note: keywordCountsByCollector is declared earlier (before keyword processing section)
     
-    // Initialize feature flag and optimized metrics helper
-    const USE_OPTIMIZED_PROMPTS_ANALYTICS = process.env.USE_OPTIMIZED_PROMPTS_ANALYTICS === 'true';
+    // Feature flag: default ON. Set USE_OPTIMIZED_PROMPTS_ANALYTICS=false to force legacy behavior.
+    const USE_OPTIMIZED_PROMPTS_ANALYTICS = process.env.USE_OPTIMIZED_PROMPTS_ANALYTICS !== 'false';
     const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
     
     if (USE_OPTIMIZED_PROMPTS_ANALYTICS) {
@@ -767,8 +775,8 @@ export class PromptsAnalyticsService {
             competitor_name: null, // Brand rows don't have competitor_name
             sentiment_score: row.sentiment_score,
             total_brand_mentions: row.total_brand_mentions,
-            total_brand_product_mentions: row.total_brand_product_mentions,
-            competitor_mentions: row.competitor_count, // Use competitor count as mentions
+            total_brand_product_mentions: row.total_brand_product_mentions, // Will be null until product mentions column is added
+            competitor_mentions: row.competitor_count, // This is now SUM of all competitor_mentions from competitor_metrics
             // Add competitor rows separately
             competitor_names: row.competitor_names,
           }));
@@ -830,8 +838,8 @@ export class PromptsAnalyticsService {
       
       // Process rows (same logic for both optimized and legacy)
       if (visibilityRows.length > 0) {
-        // Filter by collector_type if needed (for legacy path)
-        const filteredRows = collectorFilterActive && !USE_OPTIMIZED_PROMPTS_ANALYTICS
+        // Filter by collector_type if needed (applies to BOTH optimized and legacy paths)
+        const filteredRows = collectorFilterActive
           ? visibilityRows.filter((row: any) => {
               const rowCollectorType = normalizeCollectorType(row.collector_type)
               return rowCollectorType && collectorFilter.includes(rowCollectorType)
@@ -868,24 +876,26 @@ export class PromptsAnalyticsService {
           const productMentions = Number.isFinite(productMentionsRaw) ? productMentionsRaw : 0
           const competitorMentions = Number.isFinite(competitorMentionsRaw) ? competitorMentionsRaw : 0
 
-          const applyCounts = (target: { brand: number; product: number; competitor: number }) => {
-            if (isBrandRow) {
-              target.brand += brandMentions
-              target.product += productMentions
-            } else {
-              target.competitor += competitorMentions
-            }
+          // IMPORTANT: Only process brand rows for brand/product counts
+          // Competitor rows are only for highlighting, not for counting (competitor_count is already in brand row)
+          if (collectorResultId !== null && isBrandRow) {
+            // Always set counts from brand rows (even if 0) - don't accumulate (to avoid double counting)
+            // This ensures each collector has its own counts, even if they're all 0
+            mentionCountsByCollector.set(collectorResultId, {
+              brand: brandMentions,
+              product: productMentions,
+              competitor: competitorMentions, // This is competitor_count from brand row
+              keywords: keywordCountsByCollector.get(collectorResultId) || 0
+            })
           }
 
-          if (collectorResultId !== null) {
-            const existing = mentionCountsByCollector.get(collectorResultId) ?? { brand: 0, product: 0, competitor: 0 }
-            applyCounts(existing)
-            mentionCountsByCollector.set(collectorResultId, existing)
-          }
-
-          if (queryId) {
-            const existing = mentionCountsByQuery.get(queryId) ?? { brand: 0, product: 0, competitor: 0 }
-            applyCounts(existing)
+          // Also track by query for fallback (though we shouldn't use it)
+          if (queryId && isBrandRow) {
+            const existing = mentionCountsByQuery.get(queryId) ?? { brand: 0, product: 0, competitor: 0, keywords: 0 }
+            existing.brand = Math.max(existing.brand, brandMentions) // Use max, not sum
+            existing.product = Math.max(existing.product, productMentions)
+            existing.competitor = Math.max(existing.competitor, competitorMentions)
+            // Keywords are per collector, not per query, so don't set here
             mentionCountsByQuery.set(queryId, existing)
           }
           // Add sentiment from extracted_positions if available (same source as dashboard)
@@ -1084,15 +1094,28 @@ export class PromptsAnalyticsService {
         lastUpdated: aggregate.lastUpdated,
         response: aggregate.response,
         responses: sortedResponses.map((response) => {
+          // IMPORTANT: Only use collector-specific counts, don't fallback to query-level
+          // Each collector/LLM should have its own unique counts
+          // If a collector doesn't have counts, default to 0s (prevents UI from hiding badges).
+          const collectorId = response.collectorResultId
           const counts =
-            (response.collectorResultId !== null ? mentionCountsByCollector.get(response.collectorResultId) : null) ??
-            (aggregate.queryId ? mentionCountsByQuery.get(aggregate.queryId) : null) ??
-            null
+            collectorId !== null ? mentionCountsByCollector.get(collectorId) : undefined
+          const keywordCount =
+            collectorId !== null ? (keywordCountsByCollector.get(collectorId) ?? 0) : 0
+          const effectiveCounts = counts ?? {
+            brand: 0,
+            product: 0,
+            competitor: 0,
+            keywords: keywordCount
+          }
+          
           return {
             ...response,
-            brandMentions: counts ? counts.brand : null,
-            productMentions: counts ? counts.product : null,
-            competitorMentions: counts ? counts.competitor : null
+            // Show counts even if they're 0 (0 is a valid count).
+            brandMentions: effectiveCounts.brand,
+            productMentions: effectiveCounts.product,
+            competitorMentions: effectiveCounts.competitor,
+            keywordCount
           }
         }),
         volumeCount: aggregate.count,
@@ -1222,4 +1245,5 @@ export class PromptsAnalyticsService {
 }
 
 export const promptsAnalyticsService = new PromptsAnalyticsService()
+
 

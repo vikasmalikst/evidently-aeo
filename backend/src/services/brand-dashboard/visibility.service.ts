@@ -77,23 +77,14 @@ export class VisibilityService {
         // Calculate Share of Answers per LLM
         // When no filters: use simple average of all share_of_answers_brand values for this collector_type
         // When filters applied: use simple average of filtered values
+        // IMPORTANT: Only use shareValues array (which excludes NULLs) - never fallback to visibility
         let shareOfSearch = 0
-        if (!filtersActive) {
-          // Simple average: average all share values for this collector type
-          shareOfSearch = aggregate.shareValues.length > 0
-            ? round(average(aggregate.shareValues))
-            : 0
-        } else {
-          // When filters are applied, still use simple average but from filtered data
-          shareOfSearch = aggregate.shareValues.length > 0
-            ? round(average(aggregate.shareValues))
-            : 0
+        if (aggregate.shareValues.length > 0) {
+          // Simple average: average all share values for this collector type (NULLs already excluded)
+          shareOfSearch = round(average(aggregate.shareValues))
         }
-        
-        // Fallback to visibility if no share values (for backward compatibility)
-        if (shareOfSearch === 0 && aggregate.shareValues.length === 0) {
-          shareOfSearch = visibilityPercentage
-        }
+        // Do NOT fallback to visibility - if there are no share values, SOA should be 0
+        // This ensures SOA only reflects actual share_of_answers_brand data, not visibility
 
         const normalizedCollectorType = collectorType.toLowerCase().trim()
         const color =

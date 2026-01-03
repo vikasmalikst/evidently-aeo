@@ -9,6 +9,7 @@ import { combinedSentimentService } from './sentiment/combined-sentiment.service
 import { citationExtractionService } from '../citations/citation-extraction.service';
 import { consolidatedScoringService } from './consolidated-scoring.service';
 import { shouldUseOllama } from './ollama-client.service';
+import { supabaseAdmin } from '../../config/database';
 
 // Note: Consolidated scoring service combines all operations in a single API call
 // Set USE_CONSOLIDATED_ANALYSIS=true to use the new approach
@@ -59,13 +60,24 @@ export class BrandScoringService {
   async scoreBrand(options: BrandScoringOptions): Promise<BrandScoringResult> {
     const useConsolidated = USE_CONSOLIDATED_ANALYSIS || (await shouldUseOllama(options.brandId));
 
-    // Use consolidated scoring if enabled (or required for Ollama one-at-a-time mode)
-    if (useConsolidated) {
-      return await this.scoreBrandWithConsolidatedAnalysis(options);
-    }
+    const result = useConsolidated
+      ? await this.scoreBrandWithConsolidatedAnalysis(options)
+      : await this.scoreBrandLegacy(options);
 
-    // Fallback to original approach
-    return await this.scoreBrandLegacy(options);
+    // Keep legacy readers fast/correct: refresh extracted_positions_compat after scoring.
+    // Do this asynchronously so API responses aren't blocked by a materialized view refresh.
+    setImmediate(async () => {
+      try {
+        await supabaseAdmin.rpc('refresh_extracted_positions_compat');
+      } catch (error) {
+        console.warn(
+          `[Scoring] Failed to refresh extracted_positions_compat (brand_id=${options.brandId}):`,
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+    });
+
+    return result;
   }
 
   /**

@@ -129,7 +129,8 @@ export async function buildDashboardPayload(
 
       const metricFactIds = metricFacts.map(mf => mf.id)
 
-      const chunkSize = 200
+      // Larger chunk reduces round trips; queries are still limited by Supabase response sizes.
+      const chunkSize = 500
       const brandMetricsRows: any[] = []
       const competitorMetricsRows: any[] = []
       const brandSentimentRows: any[] = []
@@ -155,49 +156,56 @@ export async function buildDashboardPayload(
       for (let i = 0; i < metricFactIds.length; i += chunkSize) {
         const chunk = metricFactIds.slice(i, i + chunkSize)
 
-        const { data: chunkBrandMetrics, error: brandMetricsError } = await fetchChunkWithRetry(() =>
-          supabaseAdmin.from('brand_metrics').select('*').in('metric_fact_id', chunk)
-        )
-        if (brandMetricsError) {
-          console.error('[Dashboard] Error fetching brand_metrics:', brandMetricsError)
-        }
-        brandMetricsRows.push(...chunkBrandMetrics)
-
-        const { data: chunkCompetitorMetrics, error: competitorMetricsError } = await fetchChunkWithRetry(() =>
-          supabaseAdmin
-            .from('competitor_metrics')
-            .select(`
+        // Run the 4 table fetches in parallel to avoid 4x sequential latency per chunk.
+        const [
+          brandMetricsResult,
+          competitorMetricsResult,
+          brandSentimentResult,
+          competitorSentimentResult,
+        ] = await Promise.all([
+          fetchChunkWithRetry(() => supabaseAdmin.from('brand_metrics').select('*').in('metric_fact_id', chunk)),
+          fetchChunkWithRetry(() =>
+            supabaseAdmin
+              .from('competitor_metrics')
+              .select(
+                `
               *,
               brand_competitors!inner(competitor_name)
-            `)
-            .in('metric_fact_id', chunk)
-        )
-        if (competitorMetricsError) {
-          console.error('[Dashboard] Error fetching competitor_metrics:', competitorMetricsError)
-        }
-        competitorMetricsRows.push(...chunkCompetitorMetrics)
-
-        const { data: chunkBrandSentiment, error: brandSentimentError } = await fetchChunkWithRetry(() =>
-          supabaseAdmin.from('brand_sentiment').select('*').in('metric_fact_id', chunk)
-        )
-        if (brandSentimentError) {
-          console.error('[Dashboard] Error fetching brand_sentiment:', brandSentimentError)
-        }
-        brandSentimentRows.push(...chunkBrandSentiment)
-
-        const { data: chunkCompetitorSentiment, error: competitorSentimentError } = await fetchChunkWithRetry(() =>
-          supabaseAdmin
-            .from('competitor_sentiment')
-            .select(`
+            `
+              )
+              .in('metric_fact_id', chunk)
+          ),
+          fetchChunkWithRetry(() => supabaseAdmin.from('brand_sentiment').select('*').in('metric_fact_id', chunk)),
+          fetchChunkWithRetry(() =>
+            supabaseAdmin
+              .from('competitor_sentiment')
+              .select(
+                `
               *,
               brand_competitors!inner(competitor_name)
-            `)
-            .in('metric_fact_id', chunk)
-        )
-        if (competitorSentimentError) {
-          console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentError)
+            `
+              )
+              .in('metric_fact_id', chunk)
+          ),
+        ])
+
+        if (brandMetricsResult.error) {
+          console.error('[Dashboard] Error fetching brand_metrics:', brandMetricsResult.error)
         }
-        competitorSentimentRows.push(...chunkCompetitorSentiment)
+        if (competitorMetricsResult.error) {
+          console.error('[Dashboard] Error fetching competitor_metrics:', competitorMetricsResult.error)
+        }
+        if (brandSentimentResult.error) {
+          console.error('[Dashboard] Error fetching brand_sentiment:', brandSentimentResult.error)
+        }
+        if (competitorSentimentResult.error) {
+          console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentResult.error)
+        }
+
+        brandMetricsRows.push(...brandMetricsResult.data)
+        competitorMetricsRows.push(...competitorMetricsResult.data)
+        brandSentimentRows.push(...brandSentimentResult.data)
+        competitorSentimentRows.push(...competitorSentimentResult.data)
       }
 
       const brandMetrics = brandMetricsRows
@@ -242,21 +250,23 @@ export async function buildDashboardPayload(
           collector_result_id: mf.collector_result_id,
           collector_type: mf.collector_type,
           competitor_name: null,
-          visibility_index: bm?.visibility_index || null,
+          // IMPORTANT: use nullish coalescing so valid 0 values are preserved (|| would turn 0 into null)
+          visibility_index: bm?.visibility_index ?? null,
           visibility_index_competitor: null,
-          share_of_answers_brand: bm?.share_of_answers || null,
+          // IMPORTANT: preserve 0 (0% SOA is a real value) - don't coerce it to null
+          share_of_answers_brand: bm?.share_of_answers ?? null,
           share_of_answers_competitor: null,
-          sentiment_score: bs?.sentiment_score || null,
-          sentiment_label: bs?.sentiment_label || null,
+          sentiment_score: bs?.sentiment_score ?? null,
+          sentiment_label: bs?.sentiment_label ?? null,
           sentiment_score_competitor: null,
           sentiment_label_competitor: null,
-          total_brand_mentions: bm?.total_brand_mentions || 0,
+          total_brand_mentions: bm?.total_brand_mentions ?? 0,
           competitor_mentions: null,
           processed_at: mf.processed_at,
           created_at: mf.created_at,
-          brand_positions: bm?.brand_positions || [],
+          brand_positions: bm?.brand_positions ?? [],
           competitor_positions: null,
-          has_brand_presence: bm?.has_brand_presence || false,
+          has_brand_presence: bm?.has_brand_presence ?? false,
           topic: mf.topic,
           metadata: null,
         })
@@ -274,19 +284,20 @@ export async function buildDashboardPayload(
             collector_type: mf.collector_type,
             competitor_name: competitorName,
             visibility_index: null,
-            visibility_index_competitor: cm.visibility_index || null,
+            // Preserve 0 values; only coerce null/undefined
+            visibility_index_competitor: cm.visibility_index ?? null,
             share_of_answers_brand: null,
-            share_of_answers_competitor: cm.share_of_answers || null,
+            share_of_answers_competitor: cm.share_of_answers ?? null,
             sentiment_score: null,
             sentiment_label: null,
-            sentiment_score_competitor: cs?.sentiment_score || null,
-            sentiment_label_competitor: cs?.sentiment_label || null,
+            sentiment_score_competitor: cs?.sentiment_score ?? null,
+            sentiment_label_competitor: cs?.sentiment_label ?? null,
             total_brand_mentions: null,
-            competitor_mentions: cm.competitor_mentions || 0,
+            competitor_mentions: cm.competitor_mentions ?? 0,
             processed_at: mf.processed_at,
             created_at: mf.created_at,
             brand_positions: null,
-            competitor_positions: cm.competitor_positions || [],
+            competitor_positions: cm.competitor_positions ?? [],
             has_brand_presence: null,
             topic: mf.topic,
             metadata: null,
@@ -713,7 +724,12 @@ export async function buildDashboardPayload(
       queryTextMap.set(queryId, queryText)
     }
 
-    const brandShare = Math.max(0, toNumber(row.share_of_answers_brand))
+    // Share of Answers: Keep null as null, only include non-null values in calculations
+    // This matches SQL AVG behavior which excludes NULLs
+    const brandShareRaw = row.share_of_answers_brand
+    const brandShare = (brandShareRaw !== null && brandShareRaw !== undefined)
+      ? Math.max(0, toNumber(brandShareRaw))
+      : null
     const brandVisibility = Math.max(0, toNumber(row.visibility_index))
     
     // Use sentiment_score from extracted_positions table only (no fallback to collector_results)
@@ -777,8 +793,11 @@ export async function buildDashboardPayload(
       }
     }
 
+    // Only push non-null share values (exclude NULLs to match SQL AVG behavior)
     if (isBrandRow || shareArray.length === 0) {
-      shareArray.push(brandShare)
+      if (brandShare !== null && Number.isFinite(brandShare) && brandShare >= 0) {
+        shareArray.push(brandShare)
+      }
     }
 
     if (isBrandRow || visibilityArray.length === 0) {
@@ -806,7 +825,10 @@ export async function buildDashboardPayload(
             topic: null as string | null
           }
 
-        collectorStats.shareValues.push(brandShare)
+        // Only push non-null share values (exclude NULLs to match SQL AVG behavior)
+        if (brandShare !== null && Number.isFinite(brandShare)) {
+          collectorStats.shareValues.push(brandShare)
+        }
         collectorStats.visibilityValues.push(brandVisibility)
         if (hasBrandSentiment) {
           collectorStats.sentimentValues.push(brandSentimentValue)
@@ -861,7 +883,10 @@ export async function buildDashboardPayload(
             topicAggregate.collectorResultsWithBrandPresence.add(row.collector_result_id)
           }
         }
-        topicAggregate.shareValues.push(brandShare)
+        // Only push non-null share values (exclude NULLs to match SQL AVG behavior)
+        if (brandShare !== null && Number.isFinite(brandShare)) {
+          topicAggregate.shareValues.push(brandShare)
+        }
         topicAggregate.visibilityValues.push(brandVisibility)
         if (hasBrandSentiment) {
           topicAggregate.sentimentValues.push(brandSentimentValue)
@@ -894,7 +919,10 @@ export async function buildDashboardPayload(
           })
         }
         const collectorAggregate = collectorAggregates.get(collectorType)!
-        collectorAggregate.shareValues.push(brandShare)
+        // Only push non-null share values (exclude NULLs to match SQL AVG behavior)
+        if (brandShare !== null && Number.isFinite(brandShare)) {
+          collectorAggregate.shareValues.push(brandShare)
+        }
         collectorAggregate.visibilityValues.push(brandVisibility)
         
         // Add sentiment for brand rows only
@@ -926,7 +954,10 @@ export async function buildDashboardPayload(
               mentions: 0
             }
           topicStats.occurrences += 1
-          topicStats.shareSum += brandShare
+          // Only add non-null share values (exclude NULLs to match SQL AVG behavior)
+          if (brandShare !== null && Number.isFinite(brandShare)) {
+            topicStats.shareSum += brandShare
+          }
           topicStats.visibilitySum += brandVisibility
           topicStats.mentions += brandMentions > 0 ? brandMentions : 1
           collectorAggregate.topics.set(topicName, topicStats)
@@ -1111,23 +1142,30 @@ export async function buildDashboardPayload(
   // Calculate Share of Answers
   // When no filters are applied: use simple average of all share_of_answers_brand values
   // When filters are applied: use simple average of filtered share_of_answers_brand values
+  // IMPORTANT: Exclude NULL values (don't convert to 0) to match SQL AVG behavior
   let shareOfAnswersPercentage = 0
   if (!filtersActive) {
     // Simple average: collect all share_of_answers_brand values from brand rows and average them
+    // Keep null as null, then filter out nulls (don't convert null to 0)
     const allBrandShareValues = positionRows
       .filter(row => !row.competitor_name || row.competitor_name.trim().length === 0) // Only brand rows
-      .map(row => toNumber(row.share_of_answers_brand))
-      .filter(val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0)
+      .map(row => row.share_of_answers_brand) // Keep null as null
+      .filter(val => val !== null && val !== undefined) // Filter out nulls
+      .map(val => toNumber(val)) // Convert to number only for non-null values
+      .filter(val => Number.isFinite(val) && val >= 0) // Filter out invalid numbers
     
     shareOfAnswersPercentage = allBrandShareValues.length > 0
       ? average(allBrandShareValues)
       : 0
   } else {
     // When filters are applied, still use simple average but only from filtered rows
+    // Keep null as null, then filter out nulls (don't convert null to 0)
     const filteredBrandShareValues = positionRows
       .filter(row => !row.competitor_name || row.competitor_name.trim().length === 0) // Only brand rows
-      .map(row => toNumber(row.share_of_answers_brand))
-      .filter(val => val !== null && val !== undefined && Number.isFinite(val) && val >= 0)
+      .map(row => row.share_of_answers_brand) // Keep null as null
+      .filter(val => val !== null && val !== undefined) // Filter out nulls
+      .map(val => toNumber(val)) // Convert to number only for non-null values
+      .filter(val => Number.isFinite(val) && val >= 0) // Filter out invalid numbers
     
     shareOfAnswersPercentage = filteredBrandShareValues.length > 0
       ? average(filteredBrandShareValues)
@@ -1192,8 +1230,15 @@ export async function buildDashboardPayload(
         citation.category && citation.category.trim().length > 0
           ? citation.category.trim().toLowerCase()
           : 'other'
-      const count = citation.usage_count || 1
-      citationCounts.set(categoryKey, (citationCounts.get(categoryKey) || 0) + count)
+      // Exclude NULL usage_count values (don't convert to 1) to match SQL behavior
+      // Only count citations with valid usage_count values for Source Type Distribution
+      const count = (citation.usage_count !== null && citation.usage_count !== undefined && Number.isFinite(citation.usage_count) && citation.usage_count > 0)
+        ? citation.usage_count
+        : 0
+      // Only add to citationCounts if count > 0 (exclude NULLs from Source Type Distribution)
+      if (count > 0) {
+        citationCounts.set(categoryKey, (citationCounts.get(categoryKey) || 0) + count)
+      }
 
       // COMMENTED OUT: Normalize URL by removing fragments (#) to avoid duplicate entries for same page
       // This was causing URLs that differ only by trailing slash to be deduplicated
@@ -1325,7 +1370,10 @@ export async function buildDashboardPayload(
 
       sourceAggregates.set(sourceKey, existingSource)
 
+      // Only include citations with valid usage_count in visibility aggregation
+      // This ensures visibility-weighted distribution matches citation count distribution
       if (
+        count > 0 && // Only process citations with valid usage_count (exclude NULLs)
         citation.collector_result_id !== null &&
         citation.collector_result_id !== undefined &&
         collectorVisibilityAverage.has(citation.collector_result_id)
@@ -1402,7 +1450,8 @@ export async function buildDashboardPayload(
       })))
   }
 
-  // Calculate category distribution from citations
+  // Calculate category distribution from citations (this is the correct one for Source Type Distribution)
+  // Use citationCounts which only includes non-NULL usage_count values
   const categoryDistribution: DistributionSlice[] = Array.from(citationCounts.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([categoryKey, count], index) => ({
@@ -1412,6 +1461,12 @@ export async function buildDashboardPayload(
         : 0,
       color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
     }))
+  
+  // Update sourceDistribution to use categoryDistribution (citation counts) instead of visibility-weighted
+  // This ensures Source Type Distribution shows citation counts, not visibility-weighted percentages
+  if (categoryDistribution.length > 0) {
+    sourceDistribution = categoryDistribution.slice(0, 6) // Top 6 categories
+  }
 
   // Calculate top 5 sources by source type for tooltip display
   const topSourcesByType: Record<string, Array<{ domain: string; title: string | null; url: string | null; usage: number }>> = {}
@@ -1844,7 +1899,10 @@ export async function buildDashboardPayload(
       }
 
       const prev = previousSourceAggregates.get(sourceKey)!
-      prev.usage += citation.usage_count || 1
+      // Exclude NULL usage_count values (don't convert to 1) to match SQL behavior
+      if (citation.usage_count !== null && citation.usage_count !== undefined && Number.isFinite(citation.usage_count) && citation.usage_count > 0) {
+        prev.usage += citation.usage_count
+      }
 
       if (citation.collector_result_id && typeof citation.collector_result_id === 'number') {
         prev.collectorIds.add(citation.collector_result_id)
@@ -2252,15 +2310,21 @@ export async function buildDashboardPayload(
           successfulMatchesByCollector.set(collectorType, (successfulMatchesByCollector.get(collectorType) || 0) + 1)
           const brandVisibility = Math.min(1, Math.max(0, toNumber(row.visibility_index) ?? 0))
           // Note: share_of_answers_brand is stored as percentage (0-100), not decimal (0-1)
-          // This matches the main brand share calculation (line 897) and visibility.service.ts (line 82)
-          const brandShare = Math.max(0, toNumber(row.share_of_answers_brand) ?? 0)
+          // Exclude NULL values (don't convert to 0) to match SQL AVG behavior
+          const brandShareRaw = row.share_of_answers_brand
+          const brandShare = (brandShareRaw !== null && brandShareRaw !== undefined)
+            ? Math.max(0, toNumber(brandShareRaw))
+            : null
           const brandSentimentRaw = row.sentiment_score !== null && row.sentiment_score !== undefined
             ? toNumber(row.sentiment_score)
             : null
           const brandSentiment = brandSentimentRaw !== null && Number.isFinite(brandSentimentRaw) ? brandSentimentRaw : null
 
           dayData.visibilityValues.push(brandVisibility)
-          dayData.shareValues.push(brandShare)
+          // Only push non-null share values (exclude NULLs)
+          if (brandShare !== null && Number.isFinite(brandShare)) {
+            dayData.shareValues.push(brandShare)
+          }
           if (brandSentiment !== null) {
             dayData.sentimentValues.push(brandSentiment)
           }
@@ -2446,13 +2510,20 @@ export async function buildDashboardPayload(
 
         const dayData = collectorDates.get(date)!
         const visibility = Math.min(1, Math.max(0, toNumber(bm.visibility_index) ?? 0))
-        const share = Math.max(0, toNumber(bm.share_of_answers) ?? 0)
+        // Exclude NULL values (don't convert to 0) to match SQL AVG behavior
+        const shareRaw = bm.share_of_answers
+        const share = (shareRaw !== null && shareRaw !== undefined)
+          ? Math.max(0, toNumber(shareRaw))
+          : null
         const sentiment = bs?.sentiment_score !== null && bs?.sentiment_score !== undefined
           ? toNumber(bs.sentiment_score)
           : null
 
         dayData.visibilityValues.push(visibility)
-        dayData.shareValues.push(share)
+        // Only push non-null share values (exclude NULLs)
+        if (share !== null && Number.isFinite(share)) {
+          dayData.shareValues.push(share)
+        }
         if (sentiment !== null && Number.isFinite(sentiment)) {
           dayData.sentimentValues.push(sentiment)
         }

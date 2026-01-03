@@ -130,8 +130,8 @@ export class OptimizedMetricsHelper {
           created_at: row.created_at,
           
           // brand_metrics fields
-          visibility_index: brandMetrics?.visibility_index || null,
-          share_of_answers: brandMetrics?.share_of_answers || null,
+          visibility_index: brandMetrics?.visibility_index ?? null,
+          share_of_answers: brandMetrics?.share_of_answers ?? null,
           total_brand_mentions: brandMetrics?.total_brand_mentions || 0,
           has_brand_presence: brandMetrics?.has_brand_presence || false,
           brand_positions: brandMetrics?.brand_positions || [],
@@ -283,8 +283,8 @@ export class OptimizedMetricsHelper {
             competitor_name: competitorName,
             
             // competitor_metrics fields
-            visibility_index: cm.visibility_index || null,
-            share_of_answers: cm.share_of_answers || null,
+            visibility_index: cm.visibility_index ?? null,
+            share_of_answers: cm.share_of_answers ?? null,
             competitor_mentions: cm.competitor_mentions || 0,
             competitor_positions: cm.competitor_positions || [],
             
@@ -514,8 +514,8 @@ export class OptimizedMetricsHelper {
           topic: row.topic,
           processed_at: row.processed_at,
           created_at: row.created_at,
-          visibility_index: brandMetrics?.visibility_index || null,
-          share_of_answers: brandMetrics?.share_of_answers || null,
+          visibility_index: brandMetrics?.visibility_index ?? null,
+          share_of_answers: brandMetrics?.share_of_answers ?? null,
           total_brand_mentions: brandMetrics?.total_brand_mentions || 0,
           has_brand_presence: brandMetrics?.has_brand_presence || false,
           brand_positions: brandMetrics?.brand_positions || [],
@@ -638,8 +638,8 @@ export class OptimizedMetricsHelper {
           created_at: metricFact?.created_at || null,
           competitor_id: competitorId,
           competitor_name: null, // Will be populated from brand_competitors if needed
-          visibility_index: row.visibility_index || null,
-          share_of_answers: row.share_of_answers || null,
+          visibility_index: row.visibility_index ?? null,
+          share_of_answers: row.share_of_answers ?? null,
           competitor_mentions: row.competitor_mentions || 0,
           competitor_positions: row.competitor_positions || [],
           ...(includeSentiment && competitorSentiment ? {
@@ -808,10 +808,10 @@ export class OptimizedMetricsHelper {
               const compAny = comp as any; // TypeScript doesn't infer nested select types perfectly
               transformed.push({
                 collector_result_id: row.collector_result_id,
-                share_of_answers_brand: compAny.share_of_answers || null, // Competitor share
+                share_of_answers_brand: compAny.share_of_answers ?? null, // Competitor share
                 total_brand_mentions: 0, // Competitors don't have brand mentions
                 sentiment_score: null, // Competitor sentiment would be in competitor_sentiment table
-                visibility_index: compAny.visibility_index || null, // Competitor visibility
+                visibility_index: compAny.visibility_index ?? null, // Competitor visibility
                 competitor_name: competitor.competitor_name,
                 topic: row.topic,
                 processed_at: row.processed_at,
@@ -1007,8 +1007,8 @@ export class OptimizedMetricsHelper {
           collector_type: row.collector_type,
           topic: row.topic,
           processed_at: row.processed_at,
-          share_of_answers_brand: bm?.share_of_answers || null,
-          visibility_index: bm?.visibility_index || null,
+          share_of_answers_brand: bm?.share_of_answers ?? null,
+          visibility_index: bm?.visibility_index ?? null,
           has_brand_presence: bm?.has_brand_presence || false,
           sentiment_score: bs?.sentiment_score || null,
         };
@@ -1262,14 +1262,14 @@ export class OptimizedMetricsHelper {
           processed_at,
           brand_metrics!inner(
             visibility_index,
-            total_brand_mentions,
-            total_brand_product_mentions
+            total_brand_mentions
           ),
           brand_sentiment(
             sentiment_score
           ),
           competitor_metrics(
             competitor_id,
+            competitor_mentions,
             brand_competitors!inner(
               competitor_name
             )
@@ -1310,13 +1310,23 @@ export class OptimizedMetricsHelper {
         const bs = Array.isArray(row.brand_sentiment) ? row.brand_sentiment[0] : row.brand_sentiment;
         const cms = Array.isArray(row.competitor_metrics) ? row.competitor_metrics : [row.competitor_metrics];
 
-        // Extract competitor names
+        // Extract competitor names and SUM competitor mentions
         const competitorNames: string[] = [];
+        let totalCompetitorMentions = 0;
         cms.forEach((cm: any) => {
           if (cm) {
             const bc = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
             if (bc?.competitor_name) {
               competitorNames.push(bc.competitor_name);
+            }
+            // SUM competitor mentions (each competitor_metrics row has competitor_mentions)
+            if (cm.competitor_mentions !== null && cm.competitor_mentions !== undefined) {
+              const mentions = typeof cm.competitor_mentions === 'number' 
+                ? cm.competitor_mentions 
+                : Number(cm.competitor_mentions);
+              if (Number.isFinite(mentions) && mentions > 0) {
+                totalCompetitorMentions += mentions;
+              }
             }
           }
         });
@@ -1325,12 +1335,13 @@ export class OptimizedMetricsHelper {
           query_id: row.query_id,
           collector_result_id: row.collector_result_id,
           collector_type: row.collector_type,
-          visibility_index: bm?.visibility_index || null,
-          sentiment_score: bs?.sentiment_score || null,
-          total_brand_mentions: bm?.total_brand_mentions || null,
-          total_brand_product_mentions: bm?.total_brand_product_mentions || null,
+          // IMPORTANT: use nullish coalescing to preserve 0 values (0 mentions is valid)
+          visibility_index: bm?.visibility_index ?? null,
+          sentiment_score: bs?.sentiment_score ?? null,
+          total_brand_mentions: bm?.total_brand_mentions ?? null,
+          total_brand_product_mentions: null, // Not available in new schema yet - set to null for now
           competitor_names: competitorNames,
-          competitor_count: competitorNames.length,
+          competitor_count: totalCompetitorMentions, // SUM of all competitor mentions, not count of competitors
         };
       });
 

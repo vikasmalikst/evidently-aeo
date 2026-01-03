@@ -141,6 +141,76 @@ export class DashboardCacheService {
   getAgeMs(computedAt: string | null | undefined): number | null {
     return this.getSnapshotAgeMs(computedAt)
   }
+
+  /**
+   * Invalidate cache entries for a specific brand and date range
+   * Useful when data has been updated and cache needs to be refreshed
+   */
+  async invalidateCache(
+    brandId: string,
+    customerId: string,
+    range: NormalizedDashboardRange
+  ): Promise<void> {
+    try {
+      const { error } = await supabaseAdmin
+        .from('brand_dashboard_snapshots')
+        .delete()
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .eq('range_start', range.startIso)
+        .eq('range_end', range.endIso)
+
+      if (error) {
+        console.warn('[Dashboard] Failed to invalidate cache:', error)
+      } else {
+        console.log(`[Dashboard] Invalidated cache for brand ${brandId}, customer ${customerId}, range ${range.startIso} to ${range.endIso}`)
+      }
+    } catch (error) {
+      console.error('[Dashboard] Unexpected error invalidating cache:', error)
+    }
+  }
+
+  /**
+   * Invalidate all cache entries for a specific brand
+   * Useful when brand data has been significantly updated
+   */
+  async invalidateBrandCache(brandId: string): Promise<void> {
+    try {
+      const { error } = await supabaseAdmin
+        .from('brand_dashboard_snapshots')
+        .delete()
+        .eq('brand_id', brandId)
+
+      if (error) {
+        console.warn('[Dashboard] Failed to invalidate brand cache:', error)
+      } else {
+        console.log(`[Dashboard] Invalidated all cache entries for brand ${brandId}`)
+      }
+    } catch (error) {
+      console.error('[Dashboard] Unexpected error invalidating brand cache:', error)
+    }
+  }
+
+  /**
+   * Invalidate all cache entries older than a specific timestamp
+   * Useful for clearing stale cache after code changes
+   */
+  async invalidateOldCache(beforeTimestamp: string): Promise<void> {
+    try {
+      const { error } = await supabaseAdmin
+        .from('brand_dashboard_snapshots')
+        .delete()
+        .lt('computed_at', beforeTimestamp)
+
+      if (error) {
+        console.warn('[Dashboard] Failed to invalidate old cache:', error)
+      } else {
+        console.log(`[Dashboard] Invalidated cache entries computed before ${beforeTimestamp}`)
+      }
+    } catch (error) {
+      console.error('[Dashboard] Unexpected error invalidating old cache:', error)
+    }
+  }
 }
 
 export const dashboardCacheService = new DashboardCacheService()

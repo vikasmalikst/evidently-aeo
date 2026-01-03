@@ -3,10 +3,19 @@
 -- ============================================================================
 -- This query validates ALL 4 main KPIs in a single execution
 -- Brand ID: 32b3dc03-fe6b-40e6-94ac-9a146ceca60d
--- No date range filter - includes all historical data
+-- 
+-- IMPORTANT: Update the date range below to match your dashboard exactly!
+-- Dashboard shows: "Dec 05, 2025 - Jan 03, 2026"
 -- ============================================================================
 
-WITH
+WITH date_range AS (
+  -- UPDATE THESE DATES to match your dashboard's exact date range
+  SELECT 
+    '2025-12-05'::date AS start_date,  -- Dec 05, 2025
+    '2026-01-03'::date AS end_date     -- Jan 03, 2026
+  -- To use all historical data (no date filter), comment out the above and use:
+  -- SELECT NULL::date AS start_date, NULL::date AS end_date
+),
 -- 1. VISIBILITY INDEX: Average of visibility_index (0-1 scale) * 100
 visibility_data AS (
   SELECT 
@@ -17,26 +26,36 @@ visibility_data AS (
     MAX(bm.visibility_index) * 100 AS max_visibility
   FROM public.metric_facts mf
   INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
-  WHERE mf.brand_id = '32b3dc03-fe6b-40e6-94ac-9a146ceca60d'
+  CROSS JOIN date_range dr
+  WHERE mf.brand_id = 'b1e7af2d-de46-420b-bccf-61d7ad9fde2c'
     AND bm.visibility_index IS NOT NULL
-    -- Optional: Add customer filter
+    -- Date filter: Use processed_at if available, otherwise created_at (matching backend)
+    AND (dr.start_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) >= dr.start_date)
+    AND (dr.end_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) <= dr.end_date)
+    -- Optional: Add customer filter (check backend logs to see if this is used)
     -- AND mf.customer_id = 'YOUR_CUSTOMER_ID'
 ),
 -- 2. SHARE OF ANSWERS: Average of share_of_answers (0-100 scale)
--- NOTE: Dashboard converts NULL to 0, so we use COALESCE to match
+-- IMPORTANT: Backend now EXCLUDES NULL values (doesn't convert to 0)
+-- This matches SQL AVG() behavior which excludes NULLs automatically
 share_data AS (
   SELECT 
-    AVG(COALESCE(bm.share_of_answers, 0)) AS share_of_answers_percentage,
+    AVG(bm.share_of_answers) AS share_of_answers_percentage,
     COUNT(*) AS share_records,
     COUNT(bm.share_of_answers) AS records_with_share,
     COUNT(*) - COUNT(bm.share_of_answers) AS records_with_null_share,
-    MIN(COALESCE(bm.share_of_answers, 0)) AS min_share,
-    MAX(COALESCE(bm.share_of_answers, 0)) AS max_share
+    MIN(bm.share_of_answers) AS min_share,
+    MAX(bm.share_of_answers) AS max_share
   FROM public.metric_facts mf
   INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
-  WHERE mf.brand_id = '32b3dc03-fe6b-40e6-94ac-9a146ceca60d'
-    AND COALESCE(bm.share_of_answers, 0) >= 0
-    -- Optional: Add customer filter
+  CROSS JOIN date_range dr
+  WHERE mf.brand_id = 'b1e7af2d-de46-420b-bccf-61d7ad9fde2c'
+    AND bm.share_of_answers IS NOT NULL  -- Exclude NULLs (matching backend logic)
+    AND bm.share_of_answers >= 0
+    -- Date filter: Use processed_at if available, otherwise created_at (matching backend)
+    AND (dr.start_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) >= dr.start_date)
+    AND (dr.end_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) <= dr.end_date)
+    -- Optional: Add customer filter (check backend logs to see if this is used)
     -- AND mf.customer_id = 'YOUR_CUSTOMER_ID'
 ),
 -- 3. SENTIMENT SCORE: Average of sentiment_score (1-100 scale)
@@ -49,9 +68,13 @@ sentiment_data AS (
     MAX(bs.sentiment_score) AS max_sentiment
   FROM public.metric_facts mf
   INNER JOIN public.brand_sentiment bs ON mf.id = bs.metric_fact_id
-  WHERE mf.brand_id = '32b3dc03-fe6b-40e6-94ac-9a146ceca60d'
+  CROSS JOIN date_range dr
+  WHERE mf.brand_id = 'b1e7af2d-de46-420b-bccf-61d7ad9fde2c'
     AND bs.sentiment_score IS NOT NULL
-    -- Optional: Add customer filter
+    -- Date filter: Use processed_at if available, otherwise created_at (matching backend)
+    AND (dr.start_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) >= dr.start_date)
+    AND (dr.end_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) <= dr.end_date)
+    -- Optional: Add customer filter (check backend logs to see if this is used)
     -- AND mf.customer_id = 'YOUR_CUSTOMER_ID'
 ),
 -- 4. BRAND PRESENCE: (Unique collector results with presence / Total unique collector results) * 100
@@ -61,8 +84,12 @@ presence_data AS (
     COUNT(DISTINCT mf.collector_result_id) AS total_collector_results
   FROM public.metric_facts mf
   LEFT JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
-  WHERE mf.brand_id = '32b3dc03-fe6b-40e6-94ac-9a146ceca60d'
-    -- Optional: Add customer filter
+  CROSS JOIN date_range dr
+  WHERE mf.brand_id = 'b1e7af2d-de46-420b-bccf-61d7ad9fde2c'
+    -- Date filter: Use processed_at if available, otherwise created_at (matching backend)
+    AND (dr.start_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) >= dr.start_date)
+    AND (dr.end_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) <= dr.end_date)
+    -- Optional: Add customer filter (check backend logs to see if this is used)
     -- AND mf.customer_id = 'YOUR_CUSTOMER_ID'
 ),
 -- Additional metadata for validation
@@ -71,11 +98,15 @@ metadata AS (
     COUNT(DISTINCT mf.query_id) AS total_queries,
     COUNT(DISTINCT mf.collector_type) AS total_collector_types,
     COUNT(DISTINCT mf.collector_result_id) AS total_collector_results,
-    MIN(mf.processed_at) AS earliest_date,
-    MAX(mf.processed_at) AS latest_date
+    MIN(COALESCE(mf.processed_at, mf.created_at)) AS earliest_date,
+    MAX(COALESCE(mf.processed_at, mf.created_at)) AS latest_date
   FROM public.metric_facts mf
-  WHERE mf.brand_id = '32b3dc03-fe6b-40e6-94ac-9a146ceca60d'
-    -- Optional: Add customer filter
+  CROSS JOIN date_range dr
+  WHERE mf.brand_id = 'b1e7af2d-de46-420b-bccf-61d7ad9fde2c'
+    -- Date filter: Use processed_at if available, otherwise created_at (matching backend)
+    AND (dr.start_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) >= dr.start_date)
+    AND (dr.end_date IS NULL OR COALESCE(mf.processed_at::date, mf.created_at::date) <= dr.end_date)
+    -- Optional: Add customer filter (check backend logs to see if this is used)
     -- AND mf.customer_id = 'YOUR_CUSTOMER_ID'
 )
 -- Final output: All KPIs in one row
@@ -134,12 +165,13 @@ CROSS JOIN presence_data pd
 CROSS JOIN metadata md;
 
 -- ============================================================================
--- ALTERNATIVE: Share of Answers with NULLs EXCLUDED (for comparison)
+-- ALTERNATIVE: Share of Answers comparison (OLD vs NEW method)
 -- ============================================================================
--- Uncomment this to see the difference between including vs excluding NULLs
+-- Uncomment this to see the difference between OLD (including NULLs as 0) vs NEW (excluding NULLs)
+
 /*
 SELECT 
-  'Including NULLs (Dashboard method)' AS method,
+  'OLD: Including NULLs as 0 (incorrect - old dashboard behavior)' AS method,
   ROUND(AVG(COALESCE(bm.share_of_answers, 0)), 1) AS share_of_answers
 FROM public.metric_facts mf
 INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id
@@ -147,7 +179,7 @@ WHERE mf.brand_id = '32b3dc03-fe6b-40e6-94ac-9a146ceca60d'
   AND COALESCE(bm.share_of_answers, 0) >= 0
 UNION ALL
 SELECT 
-  'Excluding NULLs (SQL method)' AS method,
+  'NEW: Excluding NULLs (correct - matches current backend)' AS method,
   ROUND(AVG(bm.share_of_answers), 1) AS share_of_answers
 FROM public.metric_facts mf
 INNER JOIN public.brand_metrics bm ON mf.id = bm.metric_fact_id

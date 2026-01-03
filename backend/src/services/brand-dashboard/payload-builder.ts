@@ -242,21 +242,23 @@ export async function buildDashboardPayload(
           collector_result_id: mf.collector_result_id,
           collector_type: mf.collector_type,
           competitor_name: null,
-          visibility_index: bm?.visibility_index || null,
+          // IMPORTANT: use nullish coalescing so valid 0 values are preserved (|| would turn 0 into null)
+          visibility_index: bm?.visibility_index ?? null,
           visibility_index_competitor: null,
-          share_of_answers_brand: bm?.share_of_answers || null,
+          // IMPORTANT: preserve 0 (0% SOA is a real value) - don't coerce it to null
+          share_of_answers_brand: bm?.share_of_answers ?? null,
           share_of_answers_competitor: null,
-          sentiment_score: bs?.sentiment_score || null,
-          sentiment_label: bs?.sentiment_label || null,
+          sentiment_score: bs?.sentiment_score ?? null,
+          sentiment_label: bs?.sentiment_label ?? null,
           sentiment_score_competitor: null,
           sentiment_label_competitor: null,
-          total_brand_mentions: bm?.total_brand_mentions || 0,
+          total_brand_mentions: bm?.total_brand_mentions ?? 0,
           competitor_mentions: null,
           processed_at: mf.processed_at,
           created_at: mf.created_at,
-          brand_positions: bm?.brand_positions || [],
+          brand_positions: bm?.brand_positions ?? [],
           competitor_positions: null,
-          has_brand_presence: bm?.has_brand_presence || false,
+          has_brand_presence: bm?.has_brand_presence ?? false,
           topic: mf.topic,
           metadata: null,
         })
@@ -274,19 +276,20 @@ export async function buildDashboardPayload(
             collector_type: mf.collector_type,
             competitor_name: competitorName,
             visibility_index: null,
-            visibility_index_competitor: cm.visibility_index || null,
+            // Preserve 0 values; only coerce null/undefined
+            visibility_index_competitor: cm.visibility_index ?? null,
             share_of_answers_brand: null,
-            share_of_answers_competitor: cm.share_of_answers || null,
+            share_of_answers_competitor: cm.share_of_answers ?? null,
             sentiment_score: null,
             sentiment_label: null,
-            sentiment_score_competitor: cs?.sentiment_score || null,
-            sentiment_label_competitor: cs?.sentiment_label || null,
+            sentiment_score_competitor: cs?.sentiment_score ?? null,
+            sentiment_label_competitor: cs?.sentiment_label ?? null,
             total_brand_mentions: null,
-            competitor_mentions: cm.competitor_mentions || 0,
+            competitor_mentions: cm.competitor_mentions ?? 0,
             processed_at: mf.processed_at,
             created_at: mf.created_at,
             brand_positions: null,
-            competitor_positions: cm.competitor_positions || [],
+            competitor_positions: cm.competitor_positions ?? [],
             has_brand_presence: null,
             topic: mf.topic,
             metadata: null,
@@ -943,7 +946,10 @@ export async function buildDashboardPayload(
               mentions: 0
             }
           topicStats.occurrences += 1
-          topicStats.shareSum += brandShare
+          // Only add non-null share values (exclude NULLs to match SQL AVG behavior)
+          if (brandShare !== null && Number.isFinite(brandShare)) {
+            topicStats.shareSum += brandShare
+          }
           topicStats.visibilitySum += brandVisibility
           topicStats.mentions += brandMentions > 0 ? brandMentions : 1
           collectorAggregate.topics.set(topicName, topicStats)
@@ -1216,8 +1222,15 @@ export async function buildDashboardPayload(
         citation.category && citation.category.trim().length > 0
           ? citation.category.trim().toLowerCase()
           : 'other'
-      const count = citation.usage_count || 1
-      citationCounts.set(categoryKey, (citationCounts.get(categoryKey) || 0) + count)
+      // Exclude NULL usage_count values (don't convert to 1) to match SQL behavior
+      // Only count citations with valid usage_count values for Source Type Distribution
+      const count = (citation.usage_count !== null && citation.usage_count !== undefined && Number.isFinite(citation.usage_count) && citation.usage_count > 0)
+        ? citation.usage_count
+        : 0
+      // Only add to citationCounts if count > 0 (exclude NULLs from Source Type Distribution)
+      if (count > 0) {
+        citationCounts.set(categoryKey, (citationCounts.get(categoryKey) || 0) + count)
+      }
 
       // COMMENTED OUT: Normalize URL by removing fragments (#) to avoid duplicate entries for same page
       // This was causing URLs that differ only by trailing slash to be deduplicated
@@ -1349,7 +1362,10 @@ export async function buildDashboardPayload(
 
       sourceAggregates.set(sourceKey, existingSource)
 
+      // Only include citations with valid usage_count in visibility aggregation
+      // This ensures visibility-weighted distribution matches citation count distribution
       if (
+        count > 0 && // Only process citations with valid usage_count (exclude NULLs)
         citation.collector_result_id !== null &&
         citation.collector_result_id !== undefined &&
         collectorVisibilityAverage.has(citation.collector_result_id)
@@ -1426,7 +1442,8 @@ export async function buildDashboardPayload(
       })))
   }
 
-  // Calculate category distribution from citations
+  // Calculate category distribution from citations (this is the correct one for Source Type Distribution)
+  // Use citationCounts which only includes non-NULL usage_count values
   const categoryDistribution: DistributionSlice[] = Array.from(citationCounts.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([categoryKey, count], index) => ({
@@ -1436,6 +1453,12 @@ export async function buildDashboardPayload(
         : 0,
       color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
     }))
+  
+  // Update sourceDistribution to use categoryDistribution (citation counts) instead of visibility-weighted
+  // This ensures Source Type Distribution shows citation counts, not visibility-weighted percentages
+  if (categoryDistribution.length > 0) {
+    sourceDistribution = categoryDistribution.slice(0, 6) // Top 6 categories
+  }
 
   // Calculate top 5 sources by source type for tooltip display
   const topSourcesByType: Record<string, Array<{ domain: string; title: string | null; url: string | null; usage: number }>> = {}
@@ -1868,7 +1891,10 @@ export async function buildDashboardPayload(
       }
 
       const prev = previousSourceAggregates.get(sourceKey)!
-      prev.usage += citation.usage_count || 1
+      // Exclude NULL usage_count values (don't convert to 1) to match SQL behavior
+      if (citation.usage_count !== null && citation.usage_count !== undefined && Number.isFinite(citation.usage_count) && citation.usage_count > 0) {
+        prev.usage += citation.usage_count
+      }
 
       if (citation.collector_result_id && typeof citation.collector_result_id === 'number') {
         prev.collectorIds.add(citation.collector_result_id)

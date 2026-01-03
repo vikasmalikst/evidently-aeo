@@ -1869,7 +1869,10 @@ export class BrandService {
         
         const topicData = topicMap.get(normalizedTopicName)!;
         topicData.analytics.push({
-          share_of_answers_brand: pos.share_of_answers_brand || 0,
+          // Keep NULL as NULL (don't convert to 0) to match SQL AVG behavior
+          share_of_answers_brand: pos.share_of_answers_brand !== null && pos.share_of_answers_brand !== undefined
+            ? pos.share_of_answers_brand
+            : null,
           sentiment_score: pos.sentiment_score,
           visibility_index: pos.visibility_index,
           has_brand_presence: pos.has_brand_presence || false,
@@ -1929,20 +1932,24 @@ export class BrandService {
 
         // Debug: Log analytics summary for this topic
         if (mappedCollectorTypes.length > 0) {
-          const avgSoA = analytics.length > 0
-            ? analytics.reduce((sum, a) => sum + (a.share_of_answers_brand || 0), 0) / analytics.length
+          // Exclude NULL values for accurate average (matching SQL AVG behavior)
+          const validSoAValues = analytics
+            .map(a => a.share_of_answers_brand)
+            .filter((v: any) => v !== null && v !== undefined && typeof v === 'number' && isFinite(v));
+          const avgSoA = validSoAValues.length > 0
+            ? validSoAValues.reduce((sum, v) => sum + v, 0) / validSoAValues.length
             : 0;
-          console.log(`📊 Topic "${data.topicName}": ${analytics.length} data points, avg SOA: ${avgSoA.toFixed(2)}`);
+          console.log(`📊 Topic "${data.topicName}": ${analytics.length} data points, ${validSoAValues.length} with SOA, avg SOA: ${avgSoA.toFixed(2)}`);
         }
         
         if (analytics.length === 0) {
           return null; // Skip topics with no analytics in date range
         }
         
-        // Calculate metrics
+        // Calculate metrics - Exclude NULL values (matching SQL AVG behavior)
         const soaValues = analytics
           .map(a => a.share_of_answers_brand)
-          .filter((v: any) => typeof v === 'number' && isFinite(v) && v !== null);
+          .filter((v: any) => v !== null && v !== undefined && typeof v === 'number' && isFinite(v));
         
         const sentimentValues = analytics
           .map(a => this.parseFiniteNumber(a.sentiment_score))

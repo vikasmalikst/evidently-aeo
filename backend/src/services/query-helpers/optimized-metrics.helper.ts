@@ -1245,6 +1245,7 @@ export class OptimizedMetricsHelper {
       total_brand_product_mentions: number | null;
       competitor_names: string[];
       competitor_count: number;
+      competitor_product_count: number;
     }>;
     duration_ms: number;
     error?: string;
@@ -1253,97 +1254,239 @@ export class OptimizedMetricsHelper {
     const { brandId, customerId, startDate, endDate, queryIds, collectorResultIds } = options;
 
     try {
-      let query = this.supabase
-        .from('metric_facts')
+      // FIXED: Query from collector_results first, then LEFT JOIN to metric_facts
+      // This ensures ALL collector_results are returned, even if they don't have metric_facts yet
+      // Previously querying from metric_facts with INNER JOIN excluded unscored collector_results
+      
+      // Build base query on collector_results
+      let collectorQuery = this.supabase
+        .from('collector_results')
         .select(`
+          id,
           query_id,
-          collector_result_id,
           collector_type,
-          processed_at,
-          brand_metrics!inner(
-            visibility_index,
-            total_brand_mentions
-          ),
-          brand_sentiment(
-            sentiment_score
-          ),
-          competitor_metrics(
-            competitor_id,
-            competitor_mentions,
-            brand_competitors!inner(
-              competitor_name
+          created_at,
+          metric_facts(
+            query_id,
+            processed_at,
+            brand_metrics(
+              visibility_index,
+              total_brand_mentions,
+              total_brand_product_mentions
+            ),
+            brand_sentiment(
+              sentiment_score
+            ),
+            competitor_metrics(
+              competitor_id,
+              competitor_mentions,
+              total_competitor_product_mentions,
+              brand_competitors(
+                competitor_name
+              )
             )
           )
         `)
         .eq('brand_id', brandId);
 
       if (customerId) {
-        query = query.eq('customer_id', customerId);
+        collectorQuery = collectorQuery.eq('customer_id', customerId);
       }
-      if (startDate) {
-        query = query.gte('processed_at', startDate);
-      }
-      if (endDate) {
-        query = query.lte('processed_at', endDate);
-      }
-      if (queryIds && queryIds.length > 0) {
-        query = query.in('query_id', queryIds);
-      }
+      
+      // IMPORTANT: When collectorResultIds are provided, don't apply date filters
+      // The IDs are already filtered by the calling code, and date filters might exclude valid results
+      // Only apply date filters when querying by queryIds or when no specific IDs are provided
       if (collectorResultIds && collectorResultIds.length > 0) {
-        query = query.in('collector_result_id', collectorResultIds);
+        // When specific IDs are provided, use them directly (no date filter)
+        collectorQuery = collectorQuery.in('id', collectorResultIds);
+      } else {
+        // Only apply date filters when NOT filtering by specific collector_result_ids
+        if (startDate) {
+          collectorQuery = collectorQuery.gte('created_at', startDate);
+        }
+        if (endDate) {
+          collectorQuery = collectorQuery.lte('created_at', endDate);
+        }
+        if (queryIds && queryIds.length > 0) {
+          collectorQuery = collectorQuery.in('query_id', queryIds);
+        }
       }
 
-      const { data, error } = await query;
+      const { data: collectorData, error: collectorError } = await collectorQuery;
 
-      if (error) {
+      if (collectorError) {
+        console.error(`[OptimizedMetrics] Collector query error:`, collectorError);
         return {
           success: false,
           data: [],
           duration_ms: Date.now() - startTime,
-          error: error.message,
+          error: collectorError.message,
         };
       }
 
-      // Transform to match legacy format
-      const transformed = (data || []).map((row: any) => {
-        const bm = Array.isArray(row.brand_metrics) ? row.brand_metrics[0] : row.brand_metrics;
-        const bs = Array.isArray(row.brand_sentiment) ? row.brand_sentiment[0] : row.brand_sentiment;
-        const cms = Array.isArray(row.competitor_metrics) ? row.competitor_metrics : [row.competitor_metrics];
+      // Debug: Log raw Supabase response structure for first few rows
+      if (collectorData && collectorData.length > 0) {
+        console.log(`[OptimizedMetrics] 🔍 Raw Supabase response (first 2 rows):`, 
+          JSON.stringify(collectorData.slice(0, 2).map((cr: any) => ({
+            id: cr.id,
+            collector_type: cr.collector_type,
+            has_metric_facts: !!cr.metric_facts,
+            metric_facts_type: Array.isArray(cr.metric_facts) ? 'array' : typeof cr.metric_facts,
+            metric_facts_length: Array.isArray(cr.metric_facts) ? cr.metric_facts.length : (cr.metric_facts ? 1 : 0),
+            metric_facts_structure: cr.metric_facts ? {
+              id: Array.isArray(cr.metric_facts) ? cr.metric_facts[0]?.id : cr.metric_facts.id,
+              has_brand_metrics: !!(Array.isArray(cr.metric_facts) ? cr.metric_facts[0]?.brand_metrics : cr.metric_facts.brand_metrics),
+              brand_metrics_type: Array.isArray(cr.metric_facts) 
+                ? (Array.isArray(cr.metric_facts[0]?.brand_metrics) ? 'array' : typeof cr.metric_facts[0]?.brand_metrics)
+                : (Array.isArray(cr.metric_facts.brand_metrics) ? 'array' : typeof cr.metric_facts.brand_metrics),
+              brand_metrics_data: Array.isArray(cr.metric_facts)
+                ? (Array.isArray(cr.metric_facts[0]?.brand_metrics) 
+                    ? cr.metric_facts[0].brand_metrics[0] 
+                    : cr.metric_facts[0]?.brand_metrics)
+                : (Array.isArray(cr.metric_facts.brand_metrics)
+                    ? cr.metric_facts.brand_metrics[0]
+                    : cr.metric_facts.brand_metrics)
+            } : null
+          })), null, 2)
+        );
+      }
 
-        // Extract competitor names and SUM competitor mentions
+      // Transform collector_results data to match expected format
+      // Each collector_result may have 0 or 1 metric_facts row
+      const transformed = (collectorData || []).map((cr: any) => {
+        // Get metric_facts (should be array with 0 or 1 element, or single object)
+        const mf = Array.isArray(cr.metric_facts) 
+          ? (cr.metric_facts.length > 0 ? cr.metric_facts[0] : null)
+          : cr.metric_facts;
+        
+        // Extract brand_metrics, brand_sentiment, competitor_metrics from metric_facts
+        const bm = mf?.brand_metrics 
+          ? (Array.isArray(mf.brand_metrics) ? mf.brand_metrics[0] : mf.brand_metrics)
+          : null;
+        const bs = mf?.brand_sentiment
+          ? (Array.isArray(mf.brand_sentiment) ? mf.brand_sentiment[0] : mf.brand_sentiment)
+          : null;
+        const cms = mf?.competitor_metrics
+          ? (Array.isArray(mf.competitor_metrics) ? mf.competitor_metrics : [mf.competitor_metrics])
+          : [];
+
+        // Extract competitor names and SUM competitor mentions and product mentions
         const competitorNames: string[] = [];
         let totalCompetitorMentions = 0;
+        let totalCompetitorProductMentions = 0;
         cms.forEach((cm: any) => {
           if (cm) {
             const bc = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
             if (bc?.competitor_name) {
               competitorNames.push(bc.competitor_name);
             }
-            // SUM competitor mentions (each competitor_metrics row has competitor_mentions)
+            // SUM competitor mentions
             if (cm.competitor_mentions !== null && cm.competitor_mentions !== undefined) {
               const mentions = typeof cm.competitor_mentions === 'number' 
                 ? cm.competitor_mentions 
                 : Number(cm.competitor_mentions);
-              if (Number.isFinite(mentions) && mentions > 0) {
+              if (Number.isFinite(mentions) && mentions >= 0) {
                 totalCompetitorMentions += mentions;
+              }
+            }
+            // SUM competitor product mentions
+            if (cm.total_competitor_product_mentions !== null && cm.total_competitor_product_mentions !== undefined) {
+              const productMentions = typeof cm.total_competitor_product_mentions === 'number' 
+                ? cm.total_competitor_product_mentions 
+                : Number(cm.total_competitor_product_mentions);
+              if (Number.isFinite(productMentions) && productMentions >= 0) {
+                totalCompetitorProductMentions += productMentions;
               }
             }
           }
         });
 
-        return {
-          query_id: row.query_id,
-          collector_result_id: row.collector_result_id,
-          collector_type: row.collector_type,
+        const transformedRow = {
+          query_id: mf?.query_id ?? cr.query_id,
+          collector_result_id: cr.id,
+          collector_type: cr.collector_type,
           // IMPORTANT: use nullish coalescing to preserve 0 values (0 mentions is valid)
           visibility_index: bm?.visibility_index ?? null,
           sentiment_score: bs?.sentiment_score ?? null,
           total_brand_mentions: bm?.total_brand_mentions ?? null,
-          total_brand_product_mentions: null, // Not available in new schema yet - set to null for now
+          total_brand_product_mentions: bm?.total_brand_product_mentions ?? null,
           competitor_names: competitorNames,
-          competitor_count: totalCompetitorMentions, // SUM of all competitor mentions, not count of competitors
+          competitor_count: totalCompetitorMentions,
+          competitor_product_count: totalCompetitorProductMentions,
         };
+
+        // Debug: Log transformation for rows with missing data
+        if (cr.id && (!bm || bm.total_brand_mentions === null || bm.total_brand_mentions === undefined)) {
+          console.log(`[OptimizedMetrics] 🔍 Transformation for collector ${cr.id}:`, {
+            has_metric_facts: !!mf,
+            metric_fact_id: mf?.id,
+            has_brand_metrics: !!bm,
+            brand_metrics_id: bm?.id,
+            raw_brand_mentions: bm?.total_brand_mentions,
+            raw_product_mentions: bm?.total_brand_product_mentions,
+            transformed_brand_mentions: transformedRow.total_brand_mentions,
+            transformed_product_mentions: transformedRow.total_brand_product_mentions,
+            competitor_count: transformedRow.competitor_count
+          });
+        }
+
+        return transformedRow;
       });
+
+      // Log the query being executed (for debugging)
+      console.log(`[OptimizedMetrics] Fetching prompts analytics from collector_results:`, {
+        brandId,
+        customerId,
+        startDate,
+        endDate,
+        queryIdsCount: queryIds?.length || 0,
+        collectorResultIdsCount: collectorResultIds?.length || 0
+      });
+
+      // Debug: Log what we got back
+      console.log(`[OptimizedMetrics] Query returned ${collectorData?.length || 0} collector_results`);
+      if (collectorData && collectorData.length > 0) {
+        const withMetrics = collectorData.filter((cr: any) => {
+          const mf = Array.isArray(cr.metric_facts) ? cr.metric_facts[0] : cr.metric_facts;
+          return mf !== null && mf !== undefined;
+        });
+        const withoutMetrics = collectorData.filter((cr: any) => {
+          const mf = Array.isArray(cr.metric_facts) ? cr.metric_facts[0] : cr.metric_facts;
+          return mf === null || mf === undefined;
+        });
+        console.log(`[OptimizedMetrics] Collector_results with metrics: ${withMetrics.length}, without metrics: ${withoutMetrics.length}`);
+        
+        // Log sample of collector_result_ids that don't have metrics
+        if (withoutMetrics.length > 0 && collectorResultIds && collectorResultIds.length > 0) {
+          const missingIds = withoutMetrics
+            .map((cr: any) => cr.id)
+            .filter((id: any) => id !== null)
+            .slice(0, 10);
+          console.log(`[OptimizedMetrics] Sample collector_result_ids WITHOUT metrics:`, missingIds);
+          
+          // Check if these IDs were requested
+          const requestedButMissing = missingIds.filter((id: number) => collectorResultIds.includes(id));
+          if (requestedButMissing.length > 0) {
+            console.warn(`[OptimizedMetrics] ⚠️ ${requestedButMissing.length} requested collector_result_ids have no metrics:`, requestedButMissing);
+          }
+        }
+        
+        // Log sample of collector_result_ids that DO have metrics
+        if (withMetrics.length > 0) {
+          const withMetricsIds = withMetrics
+            .map((cr: any) => {
+              const mf = Array.isArray(cr.metric_facts) ? cr.metric_facts[0] : cr.metric_facts;
+              const bm = mf?.brand_metrics ? (Array.isArray(mf.brand_metrics) ? mf.brand_metrics[0] : mf.brand_metrics) : null;
+              return {
+                id: cr.id,
+                brand_mentions: bm?.total_brand_mentions ?? null,
+                product_mentions: bm?.total_brand_product_mentions ?? null
+              };
+            })
+            .slice(0, 5);
+          console.log(`[OptimizedMetrics] Sample collector_result_ids WITH metrics:`, withMetricsIds);
+        }
+      }
 
       return {
         success: true,

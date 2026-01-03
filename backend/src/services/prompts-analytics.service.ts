@@ -590,13 +590,22 @@ export class PromptsAnalyticsService {
           .filter((id): id is string => id !== null)
       )
     )
+    // CRITICAL FIX: Collect ALL collector_result_ids from ALL responses, not just the latest one per prompt
+    // This ensures we fetch metrics for all collectors, not just the latest one
     const allCollectorResultIds = Array.from(
       new Set(
         Array.from(promptAggregates.values())
-          .map((agg) => agg.collectorResultId)
-          .filter((id): id is number => id !== null)
+          .flatMap((agg) => 
+            // Get collectorResultId from the aggregate (latest) AND from all responses
+            [
+              agg.collectorResultId,
+              ...agg.responses.map(r => r.collectorResultId)
+            ].filter((id): id is number => id !== null)
+          )
       )
     )
+    
+    console.log(`[PromptsAnalytics] Collecting metrics for ${allCollectorResultIds.length} unique collector_result_ids`);
 
     const keywordMap = new Map<string, Set<string>>()
     const sentimentMap = new Map<string, number[]>() // key: query_id or collector:<id> -> sentiment values
@@ -766,6 +775,25 @@ export class PromptsAnalyticsService {
         if (result.error) {
           console.warn(`Failed to load visibility scores from new schema: ${result.error}`);
         } else {
+          // Debug: Log all data to verify counts are being returned for ALL collectors
+          console.log(`[PromptsAnalytics] Got ${result.data.length} rows from optimized query`);
+          if (result.data && result.data.length > 0) {
+            const collectorIds = new Set(result.data.map((r: any) => r.collector_result_id).filter((id: any) => id !== null));
+            console.log(`[PromptsAnalytics] Unique collector_result_ids in result: ${collectorIds.size}`);
+            
+            // Log first 5 rows with their counts
+            result.data.slice(0, 5).forEach((row: any, idx: number) => {
+              console.log(`[PromptsAnalytics] Row ${idx + 1}:`, {
+                collector_result_id: row.collector_result_id,
+                collector_type: row.collector_type,
+                total_brand_mentions: row.total_brand_mentions,
+                total_brand_product_mentions: row.total_brand_product_mentions,
+                competitor_count: row.competitor_count,
+                competitor_product_count: row.competitor_product_count
+              });
+            });
+          }
+          
           // Transform to match legacy format
           visibilityRows = result.data.map(row => ({
             query_id: row.query_id,
@@ -775,8 +803,9 @@ export class PromptsAnalyticsService {
             competitor_name: null, // Brand rows don't have competitor_name
             sentiment_score: row.sentiment_score,
             total_brand_mentions: row.total_brand_mentions,
-            total_brand_product_mentions: row.total_brand_product_mentions, // Will be null until product mentions column is added
+            total_brand_product_mentions: row.total_brand_product_mentions ?? 0, // Now available from brand_metrics
             competitor_mentions: row.competitor_count, // This is now SUM of all competitor_mentions from competitor_metrics
+            competitor_product_mentions: row.competitor_product_count ?? 0, // SUM of all competitor product mentions
             // Add competitor rows separately
             competitor_names: row.competitor_names,
           }));
@@ -865,12 +894,17 @@ export class PromptsAnalyticsService {
               : typeof row?.total_brand_product_mentions === 'string'
                 ? Number(row.total_brand_product_mentions)
                 : 0
+          // Handle both legacy (competitor_mentions) and new (competitor_count) field names
           const competitorMentionsRaw =
             typeof row?.competitor_mentions === 'number'
               ? row.competitor_mentions
               : typeof row?.competitor_mentions === 'string'
                 ? Number(row.competitor_mentions)
-                : 0
+                : typeof row?.competitor_count === 'number'
+                  ? row.competitor_count
+                  : typeof row?.competitor_count === 'string'
+                    ? Number(row.competitor_count)
+                    : 0
 
           const brandMentions = Number.isFinite(brandMentionsRaw) ? brandMentionsRaw : 0
           const productMentions = Number.isFinite(productMentionsRaw) ? productMentionsRaw : 0
@@ -881,12 +915,35 @@ export class PromptsAnalyticsService {
           if (collectorResultId !== null && isBrandRow) {
             // Always set counts from brand rows (even if 0) - don't accumulate (to avoid double counting)
             // This ensures each collector has its own counts, even if they're all 0
+            const existing = mentionCountsByCollector.get(collectorResultId);
+            if (existing) {
+              console.warn(`[PromptsAnalytics] ⚠️ Overwriting counts for collector ${collectorResultId}. Existing:`, existing, `New:`, {
+                brand: brandMentions,
+                product: productMentions,
+                competitor: competitorMentions
+              });
+            }
             mentionCountsByCollector.set(collectorResultId, {
               brand: brandMentions,
               product: productMentions,
-              competitor: competitorMentions, // This is competitor_count from brand row
+              competitor: competitorMentions, // This is competitor_count from brand row (SUM of all competitor mentions)
               keywords: keywordCountsByCollector.get(collectorResultId) || 0
-            })
+            });
+            
+            // Debug log for ALL counts (including 0) to identify missing data
+            console.log(`[PromptsAnalytics] Set counts for collector ${collectorResultId} (${row?.collector_type || 'unknown'}):`, {
+              brand: brandMentions,
+              product: productMentions,
+              competitor: competitorMentions,
+              keywords: keywordCountsByCollector.get(collectorResultId) || 0,
+              has_metrics: brandMentions > 0 || productMentions > 0 || competitorMentions > 0,
+              raw_data: {
+                total_brand_mentions: row?.total_brand_mentions,
+                total_brand_product_mentions: row?.total_brand_product_mentions,
+                competitor_mentions: row?.competitor_mentions,
+                competitor_count: row?.competitor_count
+              }
+            });
           }
 
           // Also track by query for fallback (though we shouldn't use it)
@@ -1107,6 +1164,11 @@ export class PromptsAnalyticsService {
             product: 0,
             competitor: 0,
             keywords: keywordCount
+          }
+          
+          // Debug: Log when counts are missing (0) to identify data issues
+          if (collectorId !== null && !counts) {
+            console.warn(`[PromptsAnalytics] ⚠️ No counts found for collector ${collectorId} (${response.collectorType}). This collector_result_id was not in the metrics query results.`);
           }
           
           return {

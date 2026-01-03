@@ -45,7 +45,8 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
         lastUpdated: prompt.lastUpdated || new Date().toISOString(),
         brandMentions: null,
         productMentions: null,
-        competitorMentions: null
+        competitorMentions: null,
+        keywordCount: null
       };
       
       // Apply filter if needed (empty array means show all)
@@ -190,21 +191,27 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
                   </div>
                   {(responseItem.brandMentions !== null ||
                     responseItem.productMentions !== null ||
-                    responseItem.competitorMentions !== null) && (
+                    responseItem.competitorMentions !== null ||
+                    responseItem.keywordCount !== null) && (
                     <div className="text-xs text-[var(--text-caption)] flex items-center gap-2 mb-3 flex-wrap">
-                      {responseItem.brandMentions !== null && (
+                      {(responseItem.brandMentions !== null && responseItem.brandMentions !== undefined) && (
                         <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
                           Brand: {responseItem.brandMentions}
                         </span>
                       )}
-                      {responseItem.productMentions !== null && (
+                      {(responseItem.productMentions !== null && responseItem.productMentions !== undefined) && (
                         <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
                           Product: {responseItem.productMentions}
                         </span>
                       )}
-                      {responseItem.competitorMentions !== null && (
+                      {(responseItem.competitorMentions !== null && responseItem.competitorMentions !== undefined) && (
                         <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
                           Competitor: {responseItem.competitorMentions}
+                        </span>
+                      )}
+                      {(responseItem.keywordCount !== null && responseItem.keywordCount !== undefined) && (
+                        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
+                          Keywords: {responseItem.keywordCount}
                         </span>
                       )}
                     </div>

@@ -13,6 +13,7 @@ export interface CollectorResponse {
   brandMentions: number | null
   productMentions: number | null
   competitorMentions: number | null
+  keywordCount: number | null
 }
 
 export interface PromptEntry {

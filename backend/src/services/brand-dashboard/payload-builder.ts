@@ -129,7 +129,8 @@ export async function buildDashboardPayload(
 
       const metricFactIds = metricFacts.map(mf => mf.id)
 
-      const chunkSize = 200
+      // Larger chunk reduces round trips; queries are still limited by Supabase response sizes.
+      const chunkSize = 500
       const brandMetricsRows: any[] = []
       const competitorMetricsRows: any[] = []
       const brandSentimentRows: any[] = []
@@ -155,49 +156,56 @@ export async function buildDashboardPayload(
       for (let i = 0; i < metricFactIds.length; i += chunkSize) {
         const chunk = metricFactIds.slice(i, i + chunkSize)
 
-        const { data: chunkBrandMetrics, error: brandMetricsError } = await fetchChunkWithRetry(() =>
-          supabaseAdmin.from('brand_metrics').select('*').in('metric_fact_id', chunk)
-        )
-        if (brandMetricsError) {
-          console.error('[Dashboard] Error fetching brand_metrics:', brandMetricsError)
-        }
-        brandMetricsRows.push(...chunkBrandMetrics)
-
-        const { data: chunkCompetitorMetrics, error: competitorMetricsError } = await fetchChunkWithRetry(() =>
-          supabaseAdmin
-            .from('competitor_metrics')
-            .select(`
+        // Run the 4 table fetches in parallel to avoid 4x sequential latency per chunk.
+        const [
+          brandMetricsResult,
+          competitorMetricsResult,
+          brandSentimentResult,
+          competitorSentimentResult,
+        ] = await Promise.all([
+          fetchChunkWithRetry(() => supabaseAdmin.from('brand_metrics').select('*').in('metric_fact_id', chunk)),
+          fetchChunkWithRetry(() =>
+            supabaseAdmin
+              .from('competitor_metrics')
+              .select(
+                `
               *,
               brand_competitors!inner(competitor_name)
-            `)
-            .in('metric_fact_id', chunk)
-        )
-        if (competitorMetricsError) {
-          console.error('[Dashboard] Error fetching competitor_metrics:', competitorMetricsError)
-        }
-        competitorMetricsRows.push(...chunkCompetitorMetrics)
-
-        const { data: chunkBrandSentiment, error: brandSentimentError } = await fetchChunkWithRetry(() =>
-          supabaseAdmin.from('brand_sentiment').select('*').in('metric_fact_id', chunk)
-        )
-        if (brandSentimentError) {
-          console.error('[Dashboard] Error fetching brand_sentiment:', brandSentimentError)
-        }
-        brandSentimentRows.push(...chunkBrandSentiment)
-
-        const { data: chunkCompetitorSentiment, error: competitorSentimentError } = await fetchChunkWithRetry(() =>
-          supabaseAdmin
-            .from('competitor_sentiment')
-            .select(`
+            `
+              )
+              .in('metric_fact_id', chunk)
+          ),
+          fetchChunkWithRetry(() => supabaseAdmin.from('brand_sentiment').select('*').in('metric_fact_id', chunk)),
+          fetchChunkWithRetry(() =>
+            supabaseAdmin
+              .from('competitor_sentiment')
+              .select(
+                `
               *,
               brand_competitors!inner(competitor_name)
-            `)
-            .in('metric_fact_id', chunk)
-        )
-        if (competitorSentimentError) {
-          console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentError)
+            `
+              )
+              .in('metric_fact_id', chunk)
+          ),
+        ])
+
+        if (brandMetricsResult.error) {
+          console.error('[Dashboard] Error fetching brand_metrics:', brandMetricsResult.error)
         }
-        competitorSentimentRows.push(...chunkCompetitorSentiment)
+        if (competitorMetricsResult.error) {
+          console.error('[Dashboard] Error fetching competitor_metrics:', competitorMetricsResult.error)
+        }
+        if (brandSentimentResult.error) {
+          console.error('[Dashboard] Error fetching brand_sentiment:', brandSentimentResult.error)
+        }
+        if (competitorSentimentResult.error) {
+          console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentResult.error)
+        }
+
+        brandMetricsRows.push(...brandMetricsResult.data)
+        competitorMetricsRows.push(...competitorMetricsResult.data)
+        brandSentimentRows.push(...brandSentimentResult.data)
+        competitorSentimentRows.push(...competitorSentimentResult.data)
       }
 
       const brandMetrics = brandMetricsRows

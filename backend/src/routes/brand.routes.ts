@@ -5,6 +5,7 @@ import { promptsAnalyticsService } from '../services/prompts-analytics.service';
 import { keywordsAnalyticsService } from '../services/keywords-analytics.service';
 import { sourceAttributionService } from '../services/source-attribution.service';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { responseCacheMiddleware } from '../middleware/response-cache.middleware';
 import { BrandOnboardingRequest, ApiResponse, DatabaseError } from '../types/auth';
 import { supabaseAdmin } from '../config/database';
 import { topicConfigurationService } from '../services/topic-configuration.service';
@@ -481,7 +482,11 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
  * GET /brands/:brandId/prompts
  * Get prompt analytics for a specific brand
  */
-router.get('/:brandId/prompts', authenticateToken, async (req: Request, res: Response) => {
+router.get(
+  '/:brandId/prompts',
+  authenticateToken,
+  responseCacheMiddleware({ ttlMs: 5 * 60 * 1000 }),
+  async (req: Request, res: Response) => {
   try {
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
@@ -537,14 +542,19 @@ router.get('/:brandId/prompts', authenticateToken, async (req: Request, res: Res
       error: error instanceof Error ? error.message : 'Failed to fetch prompt analytics'
     });
   }
-});
+  }
+);
 
 /**
  * GET /brands/:id/topics
  * Get AEO topics for a specific brand with analytics
  * Query params: startDate, endDate (optional, defaults to last 30 days)
  */
-router.get('/:id/topics', authenticateToken, async (req: Request, res: Response) => {
+router.get(
+  '/:id/topics',
+  authenticateToken,
+  responseCacheMiddleware({ ttlMs: 5 * 60 * 1000 }),
+  async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const customerId = req.user!.customer_id;
@@ -597,7 +607,8 @@ router.get('/:id/topics', authenticateToken, async (req: Request, res: Response)
       error: 'Failed to fetch brand topics'
     });
   }
-});
+  }
+);
 
 /**
  * GET /brands/:id/categories
@@ -675,7 +686,11 @@ router.post('/:id/categorize-topics', authenticateToken, async (req: Request, re
  * GET /brands/:brandId/sources
  * Get source attribution data for a specific brand
  */
-router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Response) => {
+router.get(
+  '/:brandId/sources',
+  authenticateToken,
+  responseCacheMiddleware({ ttlMs: 10 * 60 * 1000 }),
+  async (req: Request, res: Response) => {
   const requestStartTime = Date.now();
   const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
@@ -779,7 +794,8 @@ router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Res
       error: error instanceof Error ? error.message : 'Failed to fetch source attribution'
     });
   }
-});
+  }
+);
 
 /**
  * GET /brands/:brandId/sources/impact-score-trends
@@ -789,7 +805,11 @@ router.get('/:brandId/sources', authenticateToken, async (req: Request, res: Res
  * - Optional: pass `sources` (comma-separated) to fetch trends for a custom set (max 10)
  * - Optional: pass `metric` in {impactScore, mentionRate, soa, sentiment, citations}
  */
-router.get('/:brandId/sources/impact-score-trends', authenticateToken, async (req: Request, res: Response) => {
+router.get(
+  '/:brandId/sources/impact-score-trends',
+  authenticateToken,
+  responseCacheMiddleware({ ttlMs: 10 * 60 * 1000 }),
+  async (req: Request, res: Response) => {
   try {
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
@@ -829,7 +849,8 @@ router.get('/:brandId/sources/impact-score-trends', authenticateToken, async (re
       error: error instanceof Error ? error.message : 'Failed to fetch Impact Score trends'
     });
   }
-});
+  }
+);
 
 /**
  * GET /brands/:brandId/topic-configuration/current

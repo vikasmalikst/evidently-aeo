@@ -1505,8 +1505,8 @@ export class BrandService {
       
       console.log(`📅 Date range: ${startIso} to ${endIso}`);
       
-      // Initialize feature flag and optimized metrics helper
-      const USE_OPTIMIZED_TOPICS_QUERY = process.env.USE_OPTIMIZED_TOPICS_QUERY === 'true';
+      // Feature flag: default ON. Set USE_OPTIMIZED_TOPICS_QUERY=false to force legacy behavior.
+      const USE_OPTIMIZED_TOPICS_QUERY = process.env.USE_OPTIMIZED_TOPICS_QUERY !== 'false';
       const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
       
       if (USE_OPTIMIZED_TOPICS_QUERY) {
@@ -2122,8 +2122,8 @@ export class BrandService {
         return new Map();
       }
 
-      // Check feature flag for optimized queries
-      const USE_OPTIMIZED_TOPICS_QUERY = process.env.USE_OPTIMIZED_TOPICS_QUERY === 'true';
+      // Feature flag: default ON. Set USE_OPTIMIZED_TOPICS_QUERY=false to force legacy behavior.
+      const USE_OPTIMIZED_TOPICS_QUERY = process.env.USE_OPTIMIZED_TOPICS_QUERY !== 'false';
       
       if (USE_OPTIMIZED_TOPICS_QUERY) {
         console.log('   ⚡ [Competitor Averages] Using optimized query (metric_facts + competitor_metrics)');

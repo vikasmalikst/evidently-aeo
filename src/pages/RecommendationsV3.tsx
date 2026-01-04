@@ -1139,13 +1139,13 @@ export const RecommendationsV3 = () => {
           </div>
         ) : (
           <>
-            {/* Step 1: Generate & Review */}
+            {/* Step 1: Discovery */}
             {currentStep === 1 && (
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
-                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 1: Generate & Review</h2>
-                    <p className="text-[13px] text-[#64748b]">Review recommendations and set their status</p>
+                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 1: Discovery</h2>
+                    <p className="text-[13px] text-[#64748b]">Review findings and prioritize recommendations</p>
                   </div>
                   <div className="flex items-end gap-3 flex-wrap">
                     {/* Status Filter - Enhanced UI */}
@@ -1161,13 +1161,13 @@ export const RecommendationsV3 = () => {
               </div>
             )}
 
-            {/* Step 2: Approved Recommendations */}
+            {/* Step 2: Action Plan */}
             {currentStep === 2 && (
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
-                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: Approved Recommendations</h2>
-                    <p className="text-[13px] text-[#64748b]">Generate content for each approved recommendation</p>
+                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: Action Plan</h2>
+                    <p className="text-[13px] text-[#64748b]">Approve and generate content for chosen actions</p>
                   </div>
                 </div>
                 <RecommendationsTableV3
@@ -1179,12 +1179,12 @@ export const RecommendationsV3 = () => {
               </div>
             )}
 
-            {/* Step 3: Content Review */}
+            {/* Step 3: Refinement */}
             {currentStep === 3 && (
               <div>
                 <div className="mb-6">
-                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 3: Content Review</h2>
-                  <p className="text-[13px] text-[#64748b] mt-1">Review generated content and mark items as completed</p>
+                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 3: Refinement</h2>
+                  <p className="text-[13px] text-[#64748b] mt-1">Review generated content and finalize for publication</p>
                 </div>
                 <div className="space-y-6">
                   {recommendations.map((rec) => {
@@ -1569,10 +1569,10 @@ export const RecommendationsV3 = () => {
               </div>
             )}
 
-            {/* Step 4: Results Tracking */}
+            {/* Step 4: Impact Analysis */}
             {currentStep === 4 && (
               <div>
-                <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-6">Step 4: Results Tracking</h2>
+                <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-6">Step 4: Impact Analysis</h2>
                 <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full">

@@ -19,7 +19,10 @@ import { StackedRacingChart } from './components/StackedRacingChart';
 import { LLMVisibilityTable } from './components/LLMVisibilityTable';
 import { EmptyState } from './components/EmptyState';
 import { InfoTooltip } from './components/InfoTooltip';
+import { DashboardSkeleton } from './components/DashboardSkeleton';
+import { prefetchOnIdle } from '../../lib/prefetch';
 import type { DashboardScoreMetric, LLMVisibilitySliceUI } from './types';
+import type { ApiResponse, DashboardPayload } from './types';
 
 export const Dashboard = () => {
   const {
@@ -40,6 +43,36 @@ export const Dashboard = () => {
     handleTopicsSelected,
     handleTopicModalClose
   } = useDashboardData();
+
+  // Option 2: Prefetch all brands when select is focused
+  const handleBrandSelectFocus = () => {
+    if (brands.length <= 1 || !selectedBrandId || !startDate || !endDate) {
+      return;
+    }
+
+    const otherBrands = brands.filter((brand) => brand.id !== selectedBrandId);
+    
+    // Prefetch all other brands when dropdown is focused
+    otherBrands.forEach((brand, index) => {
+      // Small delay to avoid blocking UI
+      setTimeout(() => {
+        const params = new URLSearchParams({
+          startDate,
+          endDate,
+        });
+        const endpoint = `/brands/${brand.id}/dashboard?${params.toString()}`;
+        
+        prefetchOnIdle<ApiResponse<DashboardPayload>>(
+          endpoint,
+          {},
+          { requiresAuth: true },
+          500 // 500ms timeout
+        );
+        
+        console.debug(`[DASHBOARD] Prefetched on focus for brand: ${brand.name}`);
+      }, index * 100); // 100ms stagger between prefetches
+    });
+  };
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const findScore = (label: string, data: typeof dashboardData): DashboardScoreMetric | undefined =>
@@ -196,12 +229,7 @@ export const Dashboard = () => {
   if (isLoadingView) {
     return (
       <Layout>
-        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-10 flex flex-col items-center justify-center">
-            <div className="h-12 w-12 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mb-4" />
-            <p className="text-[14px] text-[#64748b]">Loading dashboard insights…</p>
-          </div>
-        </div>
+        <DashboardSkeleton />
       </Layout>
     );
   }
@@ -266,6 +294,7 @@ export const Dashboard = () => {
                       id="brand-selector"
                       value={selectedBrandId}
                       onChange={(event) => selectBrand(event.target.value)}
+                      onFocus={handleBrandSelectFocus}
                       className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
                     >
                       {brands.map((brandOption) => (

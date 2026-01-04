@@ -162,6 +162,7 @@ export class VisibilityService {
             visibility: timeSeries.visibility,
             share: timeSeries.share,
             sentiment: timeSeries.sentiment,
+            brandPresence: timeSeries.brandPresence, // Pass through brand presence time series
             isRealData: timeSeries.isRealData // Pass through isRealData flags
           } : undefined
         }
@@ -202,6 +203,7 @@ export class VisibilityService {
       visibility: number[]
       share: number[]
       sentiment: (number | null)[]
+      brandPresencePercentage: number[]
       isRealData: boolean[] // NEW: true if data from DB, false if interpolated
     }>
   ): CompetitorVisibility[] {
@@ -299,6 +301,7 @@ export class VisibilityService {
             visibility: timeSeries.visibility,
             share: timeSeries.share,
             sentiment: timeSeries.sentiment,
+            brandPresencePercentage: timeSeries.brandPresencePercentage, // Pass through brand presence percentage time series
             isRealData: timeSeries.isRealData // Pass through isRealData flags
           } : undefined
         }

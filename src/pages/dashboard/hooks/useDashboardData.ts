@@ -9,6 +9,7 @@ import type { Topic } from '../../../types/topic';
 import type { ApiResponse, DashboardPayload } from '../types';
 import { getDefaultDateRange } from '../utils';
 import { apiClient } from '../../../lib/apiClient';
+import { prefetchOnIdle } from '../../../lib/prefetch';
 
 export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
@@ -35,6 +36,20 @@ export const useDashboardData = () => {
     selectedBrand,
     selectBrand
   } = useManualBrandDashboard();
+
+  // Track previous selectedBrandId to detect brand changes
+  const previousBrandIdRef = useRef<string | null>(selectedBrandId);
+  const [isBrandSwitching, setIsBrandSwitching] = useState(false);
+
+  // Detect brand changes and set switching flag
+  useEffect(() => {
+    if (previousBrandIdRef.current !== null && previousBrandIdRef.current !== selectedBrandId) {
+      // Brand has changed - set switching flag to show loading state immediately
+      setIsBrandSwitching(true);
+      console.debug(`[useDashboardData] Brand changed from ${previousBrandIdRef.current} to ${selectedBrandId}`);
+    }
+    previousBrandIdRef.current = selectedBrandId;
+  }, [selectedBrandId]);
 
   useEffect(() => {
     if (brandsLoading || brands.length === 0) {
@@ -234,8 +249,19 @@ export const useDashboardData = () => {
     }
   }, [dashboardResponse, dashboardLoading]);
 
+  // Clear switching flag when new data arrives for the current brand
+  useEffect(() => {
+    if (isBrandSwitching && dashboardResponse && !dashboardLoading && dashboardResponse.success) {
+      setIsBrandSwitching(false);
+      console.debug(`[useDashboardData] Brand switch complete, data loaded for ${selectedBrandId}`);
+    }
+  }, [isBrandSwitching, dashboardResponse, dashboardLoading, selectedBrandId]);
+
   const dataProcessStart = useRef(performance.now());
-  const dashboardData: DashboardPayload | null = dashboardResponse?.success ? dashboardResponse.data || null : null;
+  // Clear dashboardData when switching brands to prevent showing stale data
+  const dashboardData: DashboardPayload | null = isBrandSwitching 
+    ? null 
+    : (dashboardResponse?.success ? dashboardResponse.data || null : null);
   const dashboardErrorMsg: string | null = dashboardResponse?.success 
     ? null 
     : (dashboardError?.message || dashboardResponse?.error || dashboardResponse?.message || null);
@@ -256,7 +282,8 @@ export const useDashboardData = () => {
   const brandSelectionPending = !selectedBrandId && brandsLoading;
   const locationState = location.state as { fromOnboarding?: boolean } | null;
   const fromOnboarding = locationState?.fromOnboarding || false;
-  const shouldShowLoading = (authLoading || brandSelectionPending || (dashboardLoading && !dashboardData && !fromOnboarding));
+  // Show loading when: auth loading, brand selection pending, brand switching, or fetching new data
+  const shouldShowLoading = (authLoading || brandSelectionPending || isBrandSwitching || (dashboardLoading && !dashboardData && !fromOnboarding));
 
   
   useEffect(() => {
@@ -265,6 +292,64 @@ export const useDashboardData = () => {
       console.info('[DASHBOARD] Page loaded', { totalTimeMs: Number(totalTime.toFixed(2)) });
     }
   }, [shouldShowLoading, dashboardData, brands.length, dashboardEndpoint, dashboardResponse]);
+
+  // Option 1: Prefetch all other brands after current brand loads
+  const prefetchedBrandsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    // Only prefetch if:
+    // 1. Current brand data has loaded successfully
+    // 2. We have brands available
+    // 3. We have a selected brand
+    // 4. We're not currently switching brands
+    if (
+      dashboardData &&
+      !dashboardLoading &&
+      !isBrandSwitching &&
+      brands.length > 1 &&
+      selectedBrandId &&
+      startDate &&
+      endDate
+    ) {
+      // Wait a bit to avoid blocking the initial render
+      const prefetchTimer = setTimeout(() => {
+        const otherBrands = brands.filter((brand) => brand.id !== selectedBrandId);
+        
+        // Prefetch up to 3 brands at a time to avoid overwhelming the backend
+        const brandsToPrefetch = otherBrands.slice(0, 3);
+        
+        brandsToPrefetch.forEach((brand, index) => {
+          // Skip if already prefetched
+          if (prefetchedBrandsRef.current.has(brand.id)) {
+            return;
+          }
+
+          // Stagger prefetches slightly to avoid burst
+          const delay = index * 200; // 200ms between each prefetch
+          
+          setTimeout(() => {
+            const params = new URLSearchParams({
+              startDate,
+              endDate,
+            });
+            const endpoint = `/brands/${brand.id}/dashboard?${params.toString()}`;
+            
+            // Use prefetchOnIdle to avoid blocking main thread
+            prefetchOnIdle<ApiResponse<DashboardPayload>>(
+              endpoint,
+              {},
+              { requiresAuth: true },
+              1000 // 1 second timeout
+            );
+            
+            prefetchedBrandsRef.current.add(brand.id);
+            console.debug(`[DASHBOARD] Prefetched dashboard for brand: ${brand.name}`);
+          }, delay);
+        });
+      }, 300); // Wait 300ms after current brand loads
+
+      return () => clearTimeout(prefetchTimer);
+    }
+  }, [dashboardData, dashboardLoading, isBrandSwitching, brands, selectedBrandId, startDate, endDate]);
 
   useEffect(() => {
     if (!selectedBrandId) {

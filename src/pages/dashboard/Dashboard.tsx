@@ -19,6 +19,7 @@ import { StackedRacingChart } from './components/StackedRacingChart';
 import { LLMVisibilityTable } from './components/LLMVisibilityTable';
 import { EmptyState } from './components/EmptyState';
 import { InfoTooltip } from './components/InfoTooltip';
+import { DashboardSkeleton } from './components/DashboardSkeleton';
 import type { DashboardScoreMetric, LLMVisibilitySliceUI } from './types';
 
 export const Dashboard = () => {
@@ -196,12 +197,7 @@ export const Dashboard = () => {
   if (isLoadingView) {
     return (
       <Layout>
-        <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-10 flex flex-col items-center justify-center">
-            <div className="h-12 w-12 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mb-4" />
-            <p className="text-[14px] text-[#64748b]">Loading dashboard insights…</p>
-          </div>
-        </div>
+        <DashboardSkeleton />
       </Layout>
     );
   }

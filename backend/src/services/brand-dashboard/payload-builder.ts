@@ -73,7 +73,7 @@ export async function buildDashboardPayload(
    */
   const fetchPositions = async (
     includeCustomer: boolean,
-    useProcessedAt: boolean
+    useCreatedAt: boolean = true
   ) => {
     try {
       const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -90,6 +90,8 @@ export async function buildDashboardPayload(
       }
 
       // Fetch metric_facts with brand info from collector_results
+      // Prefer created_at, but fallback to processed_at if needed for performance
+      const dateColumn = useCreatedAt ? 'created_at' : 'processed_at'
       let metricFactsQuery = supabaseAdmin
         .from('metric_facts')
         .select(`
@@ -105,13 +107,9 @@ export async function buildDashboardPayload(
           collector_results!inner(brand)
         `)
         .eq('brand_id', brand.id)
-
-      const lowerBoundColumn = useProcessedAt ? 'processed_at' : 'created_at'
-      
-      metricFactsQuery = metricFactsQuery
-        .gte(lowerBoundColumn, startIsoBound)
-        .lte(lowerBoundColumn, endIsoBound)
-        .order(lowerBoundColumn, { ascending: true })
+        .gte(dateColumn, startIsoBound)
+        .lte(dateColumn, endIsoBound)
+        .order(dateColumn, { ascending: true })
 
       if (includeCustomer && customerId) {
         metricFactsQuery = metricFactsQuery.eq('customer_id', customerId)
@@ -316,33 +314,34 @@ export async function buildDashboardPayload(
   }
 
   const positionsPromise = (async () => {
-    const primary = await fetchPositions(true, false)
+    // Try created_at first (preferred)
+    const primary = await fetchPositions(true, true)
     if (!primary.error && (primary.data?.length ?? 0) > 0) {
       return primary
     }
 
-    // If nothing came back (likely missing customer_id on rows), retry scoped only by brand
-    const fallbackBrandOnly = await fetchPositions(false, false)
+    // If nothing came back (likely missing customer_id on rows), retry scoped only by brand with created_at
+    const fallbackBrandOnly = await fetchPositions(false, true)
     if (!fallbackBrandOnly.error && (fallbackBrandOnly.data?.length ?? 0) > 0) {
       console.warn(
-        `[Dashboard] Fallback used for extracted_positions (brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+        `[Dashboard] Fallback used for extracted_positions (brand only, created_at) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
       )
       return fallbackBrandOnly
     }
 
-    // If still nothing, try processed_at window (some pipelines only set processed_at)
-    const processedPrimary = await fetchPositions(true, true)
+    // If still nothing with created_at, try processed_at as fallback (for performance/compatibility)
+    const processedPrimary = await fetchPositions(true, false)
     if (!processedPrimary.error && (processedPrimary.data?.length ?? 0) > 0) {
       console.warn(
-        `[Dashboard] Fallback used for extracted_positions (processed_at window, customer scoped) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+        `[Dashboard] Fallback used for extracted_positions (processed_at, customer scoped) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
       )
       return processedPrimary
     }
 
-    const processedFallback = await fetchPositions(false, true)
+    const processedFallback = await fetchPositions(false, false)
     if (!processedFallback.error && (processedFallback.data?.length ?? 0) > 0) {
       console.warn(
-        `[Dashboard] Fallback used for extracted_positions (processed_at window, brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+        `[Dashboard] Fallback used for extracted_positions (processed_at, brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
       )
       return processedFallback
     }
@@ -2263,7 +2262,7 @@ export async function buildDashboardPayload(
   })
 
   // Group positionRows by date, collector type, and competitor
-  // Use processed_at if available and valid (matches query filtering), otherwise fall back to created_at
+  // Always use created_at for date grouping (matches query filtering)
   
   // Track collector types seen in position rows for debugging
   const positionRowCollectorTypes = new Set<string>()
@@ -2273,8 +2272,8 @@ export async function buildDashboardPayload(
   const successfulMatchesByCollector = new Map<string, number>()
   
   positionRows.forEach(row => {
-    // Prefer processed_at if it exists and is not null, otherwise use created_at
-    const timestamp = (row.processed_at && row.processed_at.trim() !== '') ? row.processed_at : row.created_at
+    // Prefer created_at for time series grouping, fallback to processed_at if created_at is missing
+    const timestamp = (row.created_at && row.created_at.trim() !== '') ? row.created_at : row.processed_at
     const date = extractDate(timestamp)
     if (!date || !allDates.includes(date)) {
       skippedRowsCount++
@@ -2436,12 +2435,14 @@ export async function buildDashboardPayload(
 
       // Query metric_facts with brand_metrics and brand_sentiment for lookback period
       // Get the most recent date's aggregated values for each collector
+      // Prefer created_at, but use processed_at for lookback (may have better index coverage)
       const { data: lookbackMetricFacts, error: lookbackError } = await supabaseAdmin
         .from('metric_facts')
         .select(`
           id,
           collector_type,
           processed_at,
+          created_at,
           collector_result_id,
           brand_metrics!inner(
             visibility_index,
@@ -2480,6 +2481,7 @@ export async function buildDashboardPayload(
         const collectorType = mf.collector_type
         if (!collectorType || !collectorTypes.includes(collectorType)) return
 
+        // Use processed_at for lookback (matches query filter)
         const timestamp = mf.processed_at
         const date = extractDate(timestamp)
         if (!date) return
@@ -2721,6 +2723,7 @@ export async function buildDashboardPayload(
       const competitorIdToName = new Map(competitors.map(c => [c.id, c.competitor_name]))
 
       // Query metric_facts with competitor_metrics and competitor_sentiment
+      // Use processed_at for lookback (may have better index coverage)
       const { data: lookbackMetricFacts, error: lookbackError } = await supabaseAdmin
         .from('metric_facts')
         .select(`
@@ -2758,6 +2761,7 @@ export async function buildDashboardPayload(
         const collectorType = mf.collector_type
         if (!collectorType) return
 
+        // Use processed_at for lookback (matches query filter)
         const timestamp = mf.processed_at
         const date = extractDate(timestamp)
         if (!date) return

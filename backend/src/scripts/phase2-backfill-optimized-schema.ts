@@ -73,6 +73,7 @@ interface ExtractedPosition {
   sentiment_positive_sentences_competitor: any;
   sentiment_negative_sentences_competitor: any;
   processed_at: string;
+  created_at: string;
   metadata: any;
 }
 
@@ -84,6 +85,7 @@ interface MetricFact {
   collector_type: string;
   topic: string | null;
   processed_at: string;
+  created_at: string;
 }
 
 interface BrandMetrics {
@@ -206,6 +208,7 @@ async function processBatch(positions: ExtractedPosition[], stats: Stats): Promi
     }
 
     // Prepare metric_fact
+    // Copy created_at from extracted_positions to preserve original creation date
     const metricFact: MetricFact = {
       collector_result_id: collectorResultId,
       brand_id: brandRow.brand_id,
@@ -214,6 +217,7 @@ async function processBatch(positions: ExtractedPosition[], stats: Stats): Promi
       collector_type: brandRow.collector_type,
       topic: brandRow.topic,
       processed_at: brandRow.processed_at,
+      created_at: brandRow.created_at || brandRow.processed_at, // Use created_at, fallback to processed_at if missing
     };
 
     metricFactsToInsert.push(metricFact);

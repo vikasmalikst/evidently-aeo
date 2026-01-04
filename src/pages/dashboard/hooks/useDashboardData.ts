@@ -9,6 +9,7 @@ import type { Topic } from '../../../types/topic';
 import type { ApiResponse, DashboardPayload } from '../types';
 import { getDefaultDateRange } from '../utils';
 import { apiClient } from '../../../lib/apiClient';
+import { prefetchOnIdle } from '../../../lib/prefetch';
 
 export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
@@ -35,6 +36,20 @@ export const useDashboardData = () => {
     selectedBrand,
     selectBrand
   } = useManualBrandDashboard();
+
+  // Track previous selectedBrandId to detect brand changes
+  const previousBrandIdRef = useRef<string | null>(selectedBrandId);
+  const [isBrandSwitching, setIsBrandSwitching] = useState(false);
+
+  // Detect brand changes and set switching flag
+  useEffect(() => {
+    if (previousBrandIdRef.current !== null && previousBrandIdRef.current !== selectedBrandId) {
+      // Brand has changed - set switching flag to show loading state immediately
+      setIsBrandSwitching(true);
+      console.debug(`[useDashboardData] Brand changed from ${previousBrandIdRef.current} to ${selectedBrandId}`);
+    }
+    previousBrandIdRef.current = selectedBrandId;
+  }, [selectedBrandId]);
 
   useEffect(() => {
     if (brandsLoading || brands.length === 0) {
@@ -234,8 +249,19 @@ export const useDashboardData = () => {
     }
   }, [dashboardResponse, dashboardLoading]);
 
+  // Clear switching flag when new data arrives for the current brand
+  useEffect(() => {
+    if (isBrandSwitching && dashboardResponse && !dashboardLoading && dashboardResponse.success) {
+      setIsBrandSwitching(false);
+      console.debug(`[useDashboardData] Brand switch complete, data loaded for ${selectedBrandId}`);
+    }
+  }, [isBrandSwitching, dashboardResponse, dashboardLoading, selectedBrandId]);
+
   const dataProcessStart = useRef(performance.now());
-  const dashboardData: DashboardPayload | null = dashboardResponse?.success ? dashboardResponse.data || null : null;
+  // Clear dashboardData when switching brands to prevent showing stale data
+  const dashboardData: DashboardPayload | null = isBrandSwitching 
+    ? null 
+    : (dashboardResponse?.success ? dashboardResponse.data || null : null);
   const dashboardErrorMsg: string | null = dashboardResponse?.success 
     ? null 
     : (dashboardError?.message || dashboardResponse?.error || dashboardResponse?.message || null);
@@ -256,7 +282,8 @@ export const useDashboardData = () => {
   const brandSelectionPending = !selectedBrandId && brandsLoading;
   const locationState = location.state as { fromOnboarding?: boolean } | null;
   const fromOnboarding = locationState?.fromOnboarding || false;
-  const shouldShowLoading = (authLoading || brandSelectionPending || (dashboardLoading && !dashboardData && !fromOnboarding));
+  // Show loading when: auth loading, brand selection pending, brand switching, or fetching new data
+  const shouldShowLoading = (authLoading || brandSelectionPending || isBrandSwitching || (dashboardLoading && !dashboardData && !fromOnboarding));
 
   
   useEffect(() => {

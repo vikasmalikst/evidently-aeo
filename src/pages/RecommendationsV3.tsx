@@ -13,8 +13,6 @@ import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import {
-  generateRecommendationsV3,
-  getGenerationV3,
   getRecommendationsByStepV3,
   generateContentV3,
   generateContentBulkV3,
@@ -74,7 +72,6 @@ export const RecommendationsV3 = () => {
   const [recommendations, setRecommendations] = useState<RecommendationV3[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedSections, setExpandedSections] = useState<Map<string, { email: boolean; content: boolean }>>(new Map()); // For Step 3: track collapsed/expanded sections
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contentMap, setContentMap] = useState<Map<string, any>>(new Map());
@@ -434,219 +431,7 @@ export const RecommendationsV3 = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep, generationId, recommendations]);
 
-  // Handle generate recommendations
-  const handleGenerate = async () => {
-    if (!selectedBrandId) {
-      setError('Please select a brand first');
-      return;
-    }
 
-    setIsGenerating(true);
-    setError(null);
-
-    try {
-      console.log('🚀 [RecommendationsV3] Starting generation for brand:', selectedBrandId);
-      const response = await generateRecommendationsV3({ brandId: selectedBrandId });
-      
-      console.log('📊 [RecommendationsV3] Generation response:', {
-        success: response.success,
-        hasData: !!response.data,
-        hasGenerationId: !!response.data?.generationId,
-        hasRecommendations: !!response.data?.recommendations,
-        recommendationsCount: response.data?.recommendations?.length || 0,
-        error: response.error
-      });
-      
-      // Use data directly from generate response (no need for second API call)
-      if (response.success && response.data) {
-        const genId = response.data.generationId;
-        if (genId) {
-          console.log('✅ [RecommendationsV3] Setting generationId:', genId);
-          setGenerationId(genId);
-          
-          // Set manual loading flags to prevent useEffect from interfering
-          isManuallyNavigatingRef.current = true;
-          setIsManuallyLoading(true);
-          
-          // ALWAYS fetch from database to ensure we have the latest data with proper IDs
-          console.log('📥 [RecommendationsV3] Fetching recommendations from database to ensure we have latest data...');
-          // Longer delay to ensure database transaction is fully committed
-          // The backend saves recommendations, so we need to wait for the transaction
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          const fullResponse = await getGenerationV3(genId);
-          console.log('📊 [RecommendationsV3] Database fetch response:', {
-            success: fullResponse.success,
-            hasData: !!fullResponse.data,
-            hasRecommendations: !!fullResponse.data?.recommendations,
-            recommendationsCount: fullResponse.data?.recommendations?.length || 0,
-            error: fullResponse.error,
-            fullResponse: fullResponse // Log full response for debugging
-          });
-          
-          if (fullResponse.success && fullResponse.data && fullResponse.data.recommendations) {
-            const recommendationsWithIds = fullResponse.data.recommendations.filter(rec => rec && rec.id && rec.action);
-            if (recommendationsWithIds.length > 0) {
-              console.log(`✅ [RecommendationsV3] Setting ${recommendationsWithIds.length} recommendations from database`);
-              console.log(`📊 [RecommendationsV3] Recommendation IDs:`, recommendationsWithIds.map(r => r.id));
-              setRecommendations(recommendationsWithIds);
-              setAllRecommendations(recommendationsWithIds); // Store all for filtering
-              setCurrentStep(1);
-              setSelectedIds(new Set());
-              setError(null);
-            } else {
-              console.warn('⚠️ [RecommendationsV3] No valid recommendations found in database');
-              // Fallback to response data
-              if (response.data.recommendations && response.data.recommendations.length > 0) {
-                const recsToSet = response.data.recommendations.filter(rec => rec && rec.id && rec.action);
-                if (recsToSet.length > 0) {
-                  console.log(`✅ [RecommendationsV3] Using ${recsToSet.length} recommendations from response (fallback)`);
-                  setRecommendations(recsToSet);
-                  setAllRecommendations(recsToSet); // Store all for filtering
-                  setCurrentStep(1);
-                  setError(null);
-                } else {
-                  setError('Recommendations generated but could not be loaded. Please refresh the page.');
-                }
-              } else {
-                setError('Recommendations generated but could not be loaded. Please refresh the page.');
-              }
-            }
-          } else {
-            console.warn('⚠️ [RecommendationsV3] Failed to fetch from database, trying response data...');
-            console.warn('⚠️ [RecommendationsV3] Full response details:', JSON.stringify(fullResponse, null, 2));
-            // Fallback to response data if database fetch fails
-            if (response.data.recommendations && response.data.recommendations.length > 0) {
-              const recsToSet = response.data.recommendations.filter(rec => rec && rec.id && rec.action);
-              if (recsToSet.length > 0) {
-                console.log(`✅ [RecommendationsV3] Using ${recsToSet.length} recommendations from response (fallback)`);
-                setRecommendations(recsToSet);
-                setCurrentStep(1);
-                setSelectedIds(new Set());
-                setError(null);
-              } else {
-                setError('Recommendations generated but could not be loaded. Please refresh the page.');
-              }
-            } else {
-              setError('Recommendations generated but could not be loaded. Please refresh the page.');
-            }
-          }
-          
-          // Clear manual loading flags after a short delay to allow state to settle
-          setTimeout(() => {
-            setIsManuallyLoading(false);
-            isManuallyNavigatingRef.current = false;
-          }, 100);
-        } else {
-          // No generationId received
-          console.error('❌ [RecommendationsV3] Generation completed but no generationId received');
-          setError('Generation completed but no generation ID received. Please try again.');
-        }
-      } else {
-        // Check if error is timeout - if so, try to fetch latest generation
-        if (response.error?.includes('timeout') || response.error?.includes('timed out')) {
-          setError('Generation is taking longer than expected. Please wait a moment and refresh, or check if recommendations were generated.');
-        } else {
-          setError(response.error || 'Failed to generate recommendations');
-        }
-      }
-    } catch (err: any) {
-      console.error('Error generating recommendations:', err);
-      const errorMsg = err.message || 'Failed to generate recommendations';
-      
-      // If timeout, try to poll for latest generation
-      if (errorMsg.includes('timeout') || errorMsg.includes('timed out')) {
-        setError('Generation is taking longer than expected. Checking for completed generation...');
-        // Try to find the latest generation for this brand
-        await pollForLatestGeneration(selectedBrandId);
-      } else {
-        setError(errorMsg);
-      }
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  // Poll for generation completion
-  const pollForGeneration = async (genId: string, attempt: number = 0, maxAttempts: number = 10) => {
-    if (attempt >= maxAttempts) {
-      setError('Generation is taking longer than expected. Please refresh the page in a moment.');
-      return;
-    }
-
-    // Wait before polling (exponential backoff: 2s, 4s, 6s, etc.)
-    await new Promise(resolve => setTimeout(resolve, 2000 + (attempt * 2000)));
-
-    try {
-      const response = await getGenerationV3(genId);
-      if (response.success && response.data) {
-        if (response.data.recommendations && response.data.recommendations.length > 0) {
-          setKpis(response.data.kpis || []);
-          // Ensure all recommendations have IDs
-          const recommendationsWithIds = response.data.recommendations.map((rec, idx) => ({
-            ...rec,
-            id: rec.id || `rec-${genId}-${idx}-${Date.now()}`
-          }));
-          setRecommendations(recommendationsWithIds);
-          setCurrentStep(1);
-          setSelectedIds(new Set());
-          setError(null);
-        } else {
-          // Still no data, poll again
-          await pollForGeneration(genId, attempt + 1, maxAttempts);
-        }
-      } else {
-        // Poll again
-        await pollForGeneration(genId, attempt + 1, maxAttempts);
-      }
-    } catch (err) {
-      console.error('Error polling for generation:', err);
-      // Poll again
-      await pollForGeneration(genId, attempt + 1, maxAttempts);
-    }
-  };
-
-  // Poll for latest generation by brand
-  const pollForLatestGeneration = async (brandId: string, attempt: number = 0, maxAttempts: number = 5) => {
-    if (attempt >= maxAttempts) {
-      setError('Unable to find completed generation. Please try generating again.');
-      return;
-    }
-
-    // Wait before polling (exponential backoff: 3s, 5s, 7s, etc.)
-    await new Promise(resolve => setTimeout(resolve, 3000 + (attempt * 2000)));
-
-    try {
-      const response = await getLatestGenerationV3(brandId);
-      
-      if (response.success && response.data) {
-        if (response.data.recommendations && response.data.recommendations.length > 0) {
-          setGenerationId(response.data.generationId);
-          setKpis(response.data.kpis || []);
-          // Ensure all recommendations have IDs
-          const recommendationsWithIds = response.data.recommendations.map((rec, idx) => ({
-            ...rec,
-            id: rec.id || `rec-${response.data?.generationId || 'latest'}-${idx}-${Date.now()}`
-          }));
-          setRecommendations(recommendationsWithIds);
-          setCurrentStep(1);
-          setSelectedIds(new Set());
-          setError(null);
-          return;
-        } else {
-          // Still no data, poll again
-          await pollForLatestGeneration(brandId, attempt + 1, maxAttempts);
-        }
-      } else {
-        // Poll again
-        await pollForLatestGeneration(brandId, attempt + 1, maxAttempts);
-      }
-    } catch (err) {
-      console.error('Error polling for latest generation:', err);
-      // Poll again
-      await pollForLatestGeneration(brandId, attempt + 1, maxAttempts);
-    }
-  };
 
   // Handle status change for a recommendation
   const handleStatusChange = async (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected') => {
@@ -1227,23 +1012,6 @@ export const RecommendationsV3 = () => {
                   ))}
                 </select>
               )}
-              <button
-                onClick={handleGenerate}
-                disabled={isGenerating || !selectedBrandId}
-                className="px-4 py-2 bg-[#00bcdc] text-white rounded-md text-[13px] font-medium hover:bg-[#0096b0] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-              >
-                {isGenerating ? (
-                  <>
-                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <IconSparkles size={16} />
-                    Generate Recommendations
-                  </>
-                )}
-              </button>
             </div>
           </div>
 
@@ -1363,10 +1131,10 @@ export const RecommendationsV3 = () => {
           <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-12 text-center">
             <IconSparkles size={48} className="mx-auto mb-4 text-[#00bcdc] opacity-80" />
             <h3 className="text-[20px] font-semibold text-[#1a1d29] mb-2">
-              Ready to generate recommendations
+              No recommendations found
             </h3>
             <p className="text-[13px] text-[#64748b] max-w-md mx-auto">
-              Click "Generate Recommendations" to identify KPIs and create actionable recommendations.
+              Recommendations are generated automatically. Please check back later.
             </p>
           </div>
         ) : (
@@ -2018,4 +1786,3 @@ export const RecommendationsV3 = () => {
     </Layout>
   );
 };
-

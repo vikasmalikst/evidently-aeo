@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
+import { generateRecommendationsV3 } from '../../api/recommendationsV3Api';
 import { useAuthStore } from '../../store/authStore';
-import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -59,7 +59,7 @@ interface JobRun {
 
 export const ScheduledJobs = () => {
   const navigate = useNavigate();
-  const { selectedBrandId, selectedBrand, brands, selectBrand } = useManualBrandDashboard();
+  const { selectedBrandId, brands, selectBrand } = useManualBrandDashboard();
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -74,6 +74,55 @@ export const ScheduledJobs = () => {
   const [enrichmentRunning, setEnrichmentRunning] = useState(false);
   const [enrichmentLogs, setEnrichmentLogs] = useState<Array<{ ts: string; message: string }>>([]);
   const [enrichAllBrands, setEnrichAllBrands] = useState(false);
+  const [generatingRecommendations, setGeneratingRecommendations] = useState(false);
+  const [generateRecsForAllBrands, setGenerateRecsForAllBrands] = useState(false);
+
+  const handleGenerateRecommendations = async () => {
+    if (!selectedBrandId && !generateRecsForAllBrands) return;
+    
+    if (!confirm(`Generate recommendations for ${generateRecsForAllBrands ? 'ALL active brands' : 'the selected brand'}? This may take a while.`)) {
+        return;
+    }
+
+    setGeneratingRecommendations(true);
+    try {
+        if (generateRecsForAllBrands) {
+            let successCount = 0;
+            let failCount = 0;
+            
+            // Filter out empty IDs just in case
+            const targetBrands = brands.filter(b => b.id);
+            
+            for (const brand of targetBrands) {
+                 console.log(`Generating for ${brand.name}...`);
+                 try {
+                     const result = await generateRecommendationsV3({ brandId: brand.id });
+                     if (result.success) successCount++;
+                     else {
+                         console.error(`Failed for ${brand.name}:`, result.error);
+                         failCount++;
+                     }
+                 } catch (e) {
+                     console.error(`Exception for ${brand.name}:`, e);
+                     failCount++;
+                 }
+            }
+            alert(`Generation complete. Success: ${successCount}, Failed: ${failCount}`);
+        } else {
+            const result = await generateRecommendationsV3({ brandId: selectedBrandId! });
+            if (result.success) {
+                alert('Recommendations generated successfully!');
+            } else {
+                alert(`Failed to generate recommendations: ${result.error}`);
+            }
+        }
+    } catch (error) {
+        console.error('Error generating recommendations:', error);
+        alert('An error occurred while generating recommendations.');
+    } finally {
+        setGeneratingRecommendations(false);
+    }
+  };
 
   const handleRefreshBrandProducts = async () => {
     if (!selectedBrandId && !enrichAllBrands) return;
@@ -744,6 +793,39 @@ export const ScheduledJobs = () => {
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white p-4 rounded border border-indigo-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-gray-900 text-indigo-800">Generate Recommendations</h4>
+                  <div className="flex items-center">
+                      <label className="flex items-center cursor-pointer">
+                        <div className="relative">
+                          <input 
+                            type="checkbox" 
+                            className="sr-only" 
+                            checked={generateRecsForAllBrands}
+                            onChange={(e) => setGenerateRecsForAllBrands(e.target.checked)}
+                          />
+                          <div className={`block w-10 h-6 rounded-full transition-colors ${generateRecsForAllBrands ? 'bg-indigo-600' : 'bg-gray-400'}`}></div>
+                          <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${generateRecsForAllBrands ? 'transform translate-x-4' : ''}`}></div>
+                        </div>
+                        <div className="ml-3 text-gray-700 text-xs font-medium">
+                          All Brands
+                        </div>
+                      </label>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-600 mb-3">
+                  Generate V3 recommendations (KPI-first approach).
+                </p>
+                <button
+                  onClick={handleGenerateRecommendations}
+                  disabled={generatingRecommendations || collecting || scoring || backfillRunning}
+                  className="w-full px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {generatingRecommendations ? 'Generating...' : generateRecsForAllBrands ? 'Generate All' : 'Generate Recommendations'}
+                </button>
+              </div>
+
               <div className="bg-white p-4 rounded border border-blue-200">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-medium text-gray-900 text-blue-800">Refresh Brand Products</h4>

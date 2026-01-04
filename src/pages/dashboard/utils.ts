@@ -3,7 +3,7 @@ export const formatDateForInput = (date: Date): string => date.toISOString().spl
 export const getDefaultDateRange = () => {
   const end = new Date();
   const start = new Date(end);
-  start.setDate(start.getDate() - 29);
+  start.setDate(start.getDate() - 6);
   return {
     start: formatDateForInput(start),
     end: formatDateForInput(end)

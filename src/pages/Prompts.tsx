@@ -28,7 +28,7 @@ const getDefaultDateRange = () => {
   const end = new Date();
   end.setUTCHours(23, 59, 59, 999);
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 29);
+  start.setUTCDate(start.getUTCDate() - 6);
   start.setUTCHours(0, 0, 0, 0);
   return {
     start: start.toISOString().split('T')[0],

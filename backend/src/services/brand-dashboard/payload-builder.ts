@@ -2220,6 +2220,8 @@ export async function buildDashboardPayload(
     visibilityValues: number[]
     shareValues: number[]
     sentimentValues: number[]
+    collectorResultsWithCompetitorPresence: Set<number>
+    uniqueCollectorResults: Set<number>
   }>>()
 
   // Initialize time-series structure for all collectors and dates
@@ -2245,17 +2247,27 @@ export async function buildDashboardPayload(
   })
 
   // Initialize time-series structure for all competitors and dates
+  // Track all collector results per day for brand presence percentage calculation
+  const allCollectorResultsByDate = new Map<string, Set<number>>()
+  allDates.forEach(date => {
+    allCollectorResultsByDate.set(date, new Set<number>())
+  })
+
   knownCompetitors.forEach((competitorName) => {
     const dailyData = new Map<string, {
       visibilityValues: number[]
       shareValues: number[]
       sentimentValues: number[]
+      collectorResultsWithCompetitorPresence: Set<number>
+      uniqueCollectorResults: Set<number>
     }>()
     allDates.forEach(date => {
       dailyData.set(date, {
         visibilityValues: [],
         shareValues: [],
-        sentimentValues: []
+        sentimentValues: [],
+        collectorResultsWithCompetitorPresence: new Set<number>(),
+        uniqueCollectorResults: new Set<number>()
       })
     })
     timeSeriesByCompetitor.set(competitorName, dailyData)
@@ -2366,6 +2378,25 @@ export async function buildDashboardPayload(
           if (competitorSentiment !== null) {
             dayData.sentimentValues.push(competitorSentiment)
           }
+
+          // Track collector results for competitor presence percentage
+          // A competitor has presence if visibility > 0 or share > 0 or mentions > 0
+          if (typeof row.collector_result_id === 'number' && Number.isFinite(row.collector_result_id)) {
+            dayData.uniqueCollectorResults.add(row.collector_result_id)
+            // Track all collector results for this date (needed for percentage calculation)
+            const allCollectorResultsForDate = allCollectorResultsByDate.get(date)
+            if (allCollectorResultsForDate) {
+              allCollectorResultsForDate.add(row.collector_result_id)
+            }
+            // Competitor has presence if any metric is > 0
+            const hasCompetitorPresence = 
+              competitorVisibility > 0 || 
+              (competitorShare !== null && competitorShare > 0) ||
+              (row.competitor_mentions !== null && row.competitor_mentions > 0)
+            if (hasCompetitorPresence) {
+              dayData.collectorResultsWithCompetitorPresence.add(row.collector_result_id)
+            }
+          }
         }
       } else {
         // Collector type in row doesn't match any initialized collector
@@ -2373,6 +2404,14 @@ export async function buildDashboardPayload(
         if (processedBrandRowsCount === 0) {
           console.warn(`[TimeSeries] Brand row with collector_type='${collectorType}' not found in timeSeriesByCollector map. Available keys: ${Array.from(timeSeriesByCollector.keys()).join(', ')}`)
         }
+      }
+    }
+
+    // Also track brand rows' collector results for total count per day
+    if (isBrandRow && typeof row.collector_result_id === 'number' && Number.isFinite(row.collector_result_id)) {
+      const allCollectorResultsForDate = allCollectorResultsByDate.get(date)
+      if (allCollectorResultsForDate) {
+        allCollectorResultsForDate.add(row.collector_result_id)
       }
     }
   })
@@ -2878,6 +2917,7 @@ export async function buildDashboardPayload(
     visibility: number[]
     share: number[]
     sentiment: (number | null)[]
+    brandPresencePercentage: number[]
     isRealData: boolean[] // NEW: true if data from DB, false if interpolated
   }>()
 
@@ -2886,6 +2926,7 @@ export async function buildDashboardPayload(
     const visibility: number[] = []
     const share: number[] = []
     const sentiment: (number | null)[] = []
+    const brandPresencePercentage: number[] = []
     const isRealData: boolean[] = [] // Track which data points are real vs interpolated
 
     // Initialize carry-forward from lookback (if available)
@@ -2895,6 +2936,7 @@ export async function buildDashboardPayload(
     let lastVisibility = 0
     let lastShare = 0
     let lastSentiment: number | null = null
+    let lastBrandPresencePercentage = 0
 
     // Try to get initial values from lookback (use first collector's values if available)
     if (competitorLookback && competitorLookback.size > 0) {
@@ -2906,14 +2948,18 @@ export async function buildDashboardPayload(
 
     allDates.forEach(date => {
       const dayData = dailyData.get(date)
+      const allCollectorResultsForDate = allCollectorResultsByDate.get(date)
+      const totalCollectorResults = allCollectorResultsForDate?.size ?? 0
+      
       if (dayData) {
         dates.push(date)
         const hasVisibility = dayData.visibilityValues.length > 0
         const hasShare = dayData.shareValues.length > 0
         const hasSentiment = dayData.sentimentValues.length > 0
+        const hasCompetitorPresenceData = dayData.collectorResultsWithCompetitorPresence.size > 0
 
         // Determine if this is real data or interpolated
-        const isReal = hasVisibility || hasShare || hasSentiment
+        const isReal = hasVisibility || hasShare || hasSentiment || hasCompetitorPresenceData
 
         const avgVisibility = hasVisibility
           ? round(average(dayData.visibilityValues) * 100)
@@ -2929,9 +2975,16 @@ export async function buildDashboardPayload(
         const avgSentiment = hasSentiment ? average(dayData.sentimentValues) : 0
         const normalizedSentiment = hasSentiment ? round(avgSentiment, 2) : lastSentiment
 
+        // Calculate competitor brand presence percentage: (collector results with competitor presence / total collector results) * 100
+        const collectorResultsWithPresence = dayData.collectorResultsWithCompetitorPresence.size
+        const competitorBrandPresencePercentage = totalCollectorResults > 0 && hasCompetitorPresenceData
+          ? round((collectorResultsWithPresence / totalCollectorResults) * 100)
+          : lastBrandPresencePercentage
+
         visibility.push(avgVisibility)
         share.push(avgShare)
         sentiment.push(normalizedSentiment)
+        brandPresencePercentage.push(competitorBrandPresencePercentage)
         isRealData.push(isReal) // Mark as real data if any metric has actual values
 
         lastVisibility = avgVisibility
@@ -2939,12 +2992,13 @@ export async function buildDashboardPayload(
         if (normalizedSentiment !== null) {
           lastSentiment = normalizedSentiment
         }
+        lastBrandPresencePercentage = competitorBrandPresencePercentage
       }
     })
 
     // Only include timeSeries if there's actual data (not all empty arrays)
     if (dates.length > 0) {
-      competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment, isRealData })
+      competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment, brandPresencePercentage, isRealData })
     }
   })
   

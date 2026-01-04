@@ -293,6 +293,64 @@ export const useDashboardData = () => {
     }
   }, [shouldShowLoading, dashboardData, brands.length, dashboardEndpoint, dashboardResponse]);
 
+  // Option 1: Prefetch all other brands after current brand loads
+  const prefetchedBrandsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    // Only prefetch if:
+    // 1. Current brand data has loaded successfully
+    // 2. We have brands available
+    // 3. We have a selected brand
+    // 4. We're not currently switching brands
+    if (
+      dashboardData &&
+      !dashboardLoading &&
+      !isBrandSwitching &&
+      brands.length > 1 &&
+      selectedBrandId &&
+      startDate &&
+      endDate
+    ) {
+      // Wait a bit to avoid blocking the initial render
+      const prefetchTimer = setTimeout(() => {
+        const otherBrands = brands.filter((brand) => brand.id !== selectedBrandId);
+        
+        // Prefetch up to 3 brands at a time to avoid overwhelming the backend
+        const brandsToPrefetch = otherBrands.slice(0, 3);
+        
+        brandsToPrefetch.forEach((brand, index) => {
+          // Skip if already prefetched
+          if (prefetchedBrandsRef.current.has(brand.id)) {
+            return;
+          }
+
+          // Stagger prefetches slightly to avoid burst
+          const delay = index * 200; // 200ms between each prefetch
+          
+          setTimeout(() => {
+            const params = new URLSearchParams({
+              startDate,
+              endDate,
+            });
+            const endpoint = `/brands/${brand.id}/dashboard?${params.toString()}`;
+            
+            // Use prefetchOnIdle to avoid blocking main thread
+            prefetchOnIdle<ApiResponse<DashboardPayload>>(
+              endpoint,
+              {},
+              { requiresAuth: true },
+              1000 // 1 second timeout
+            );
+            
+            prefetchedBrandsRef.current.add(brand.id);
+            console.debug(`[DASHBOARD] Prefetched dashboard for brand: ${brand.name}`);
+          }, delay);
+        });
+      }, 300); // Wait 300ms after current brand loads
+
+      return () => clearTimeout(prefetchTimer);
+    }
+  }, [dashboardData, dashboardLoading, isBrandSwitching, brands, selectedBrandId, startDate, endDate]);
+
   useEffect(() => {
     if (!selectedBrandId) {
       setIsDataCollectionInProgress(false);

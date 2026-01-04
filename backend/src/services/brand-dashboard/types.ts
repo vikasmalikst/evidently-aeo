@@ -86,6 +86,7 @@ export interface LlmVisibilitySlice {
     visibility: number[] // Daily visibility scores
     share: number[] // Daily share of search
     sentiment: number[] | null[] // Daily sentiment scores
+    brandPresence: number[] // Daily brand presence percentages
   }
 }
 
@@ -130,6 +131,7 @@ export interface CompetitorVisibility {
     visibility: number[] // Daily visibility scores
     share: number[] // Daily share of search
     sentiment: number[] | null[] // Daily sentiment scores
+    brandPresencePercentage: number[] // Daily brand presence percentages
   }
 }
 

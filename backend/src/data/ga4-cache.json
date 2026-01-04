@@ -86,46 +86,42 @@
         "dimension": "date",
         "days": 7,
         "dateRange": {
-          "startDate": "2025-12-19",
-          "endDate": "2025-12-26"
+          "startDate": "2025-12-28",
+          "endDate": "2026-01-04"
         },
         "data": [
           {
-            "date": "20251224",
-            "eventCount": 524
+            "date": "20260103",
+            "eventCount": 920
           },
           {
-            "date": "20251222",
-            "eventCount": 346
+            "date": "20260102",
+            "eventCount": 880
           },
           {
-            "date": "20251223",
-            "eventCount": 312
+            "date": "20251231",
+            "eventCount": 872
           },
           {
-            "date": "20251221",
-            "eventCount": 283
+            "date": "20260101",
+            "eventCount": 752
           },
           {
-            "date": "20251219",
-            "eventCount": 227
+            "date": "20251230",
+            "eventCount": 367
           },
           {
-            "date": "20251225",
-            "eventCount": 218
+            "date": "20251229",
+            "eventCount": 242
           },
           {
-            "date": "20251220",
-            "eventCount": 111
-          },
-          {
-            "date": "20251226",
-            "eventCount": 28
+            "date": "20251228",
+            "eventCount": 166
           }
         ],
         "total": 0
       },
-      "expires_at": "2025-12-26T19:15:31.200Z"
+      "expires_at": "2026-01-04T02:30:57.842Z"
     },
     {
       "brand_id": "default-brand",
@@ -134,36 +130,44 @@
         "events": [
           {
             "name": "page_view",
-            "count": 1113
+            "count": 2201
           },
           {
             "name": "scroll",
-            "count": 488
+            "count": 799
           },
           {
             "name": "user_engagement",
-            "count": 283
+            "count": 506
+          },
+          {
+            "name": "page_view_with_referrer",
+            "count": 405
           },
           {
             "name": "session_start",
-            "count": 108
+            "count": 189
           },
           {
             "name": "form_start",
-            "count": 32
+            "count": 60
           },
           {
             "name": "first_visit",
-            "count": 24
+            "count": 29
           },
           {
             "name": "click",
-            "count": 1
+            "count": 7
+          },
+          {
+            "name": "referrer_tracking",
+            "count": 3
           }
         ],
-        "total": 2049
+        "total": 4199
       },
-      "expires_at": "2025-12-26T19:15:31.606Z"
+      "expires_at": "2026-01-04T02:30:59.111Z"
     },
     {
       "brand_id": "default-brand",
@@ -172,18 +176,33 @@
         "trafficSources": [
           {
             "source": "(direct)",
-            "sessions": 104,
+            "sessions": 169,
             "percentage": 0
           },
           {
             "source": "(not set)",
+            "sessions": 19,
+            "percentage": 0
+          },
+          {
+            "source": "perplexity",
             "sessions": 5,
+            "percentage": 0
+          },
+          {
+            "source": "perplexity.ai",
+            "sessions": 2,
+            "percentage": 0
+          },
+          {
+            "source": "chatgpt.com",
+            "sessions": 1,
             "percentage": 0
           }
         ],
         "totalSessions": 0
       },
-      "expires_at": "2025-12-26T19:15:32.028Z"
+      "expires_at": "2026-01-04T02:31:00.509Z"
     }
   ]
 }

@@ -6,7 +6,7 @@ import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
 import type { EnhancedSource } from '../components/SourcesR2/EnhancedQuadrantMatrix';
-import { ValueScoreTable } from '../components/SourcesR2/ValueScoreTable';
+import { ValueScoreTable, type ValueScoreSource } from '../components/SourcesR2/ValueScoreTable';
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrendsChart';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
@@ -33,6 +33,8 @@ interface SourceData {
   topics: string[];
   prompts: string[];
   pages: string[];
+  value?: number;
+  visibility?: number;
 }
 
 interface SourceAttributionResponse {
@@ -126,6 +128,58 @@ const normalizeDomain = (value: string | null | undefined): string => {
   return raw.replace(/^www\./, '').split('/')[0];
 };
 
+const computeEnhancedSources = (sourceData: SourceData[]): EnhancedSource[] => {
+  if (!sourceData.length) return [];
+
+  const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
+  const maxTopics = Math.max(...sourceData.map((s) => s.topics.length), 1);
+  const maxSentiment = Math.max(...sourceData.map((s) => s.sentiment), 1);
+  const mentionMedian = median(sourceData.map((s) => s.mentionRate));
+  const soaMedian = median(sourceData.map((s) => s.soa));
+  const sentimentMedian = median(sourceData.map((s) => (maxSentiment > 0 ? s.sentiment / maxSentiment : 0)));
+  const citationsMedian = median(sourceData.map((s) => (maxCitations > 0 ? s.citations / maxCitations : 0)));
+
+  const compositeScores = sourceData.map((s) => {
+    const mentionNorm = s.mentionRate / 100;
+    const soaNorm = s.soa / 100;
+    const sentimentNorm = maxSentiment > 0 ? Math.min(1, s.sentiment / maxSentiment) : 0;
+    const citationsNorm = maxCitations > 0 ? s.citations / maxCitations : 0;
+    return mentionNorm * 0.35 + soaNorm * 0.35 + sentimentNorm * 0.2 + citationsNorm * 0.1;
+  });
+
+  const compositeMedian = median(compositeScores);
+  const compositeTopQuartile = percentile(compositeScores, 75);
+
+  return sourceData.map((s) => {
+    const valueScore = valueScoreForSource(s, maxCitations, maxTopics, maxSentiment);
+    return {
+      name: s.name,
+      type: s.type,
+      mentionRate: s.mentionRate,
+      soa: s.soa,
+      sentiment: s.sentiment,
+      citations: s.citations,
+      valueScore,
+      quadrant: classifyQuadrant(
+        s.mentionRate,
+        s.soa,
+        s.sentiment,
+        s.citations,
+        {
+          mentionMedian,
+          soaMedian,
+          sentimentMedian,
+          citationsMedian,
+          compositeMedian,
+          compositeTopQuartile
+        },
+        maxCitations,
+        maxSentiment
+      )
+    };
+  });
+};
+
 export const SearchSourcesR2 = () => {
   const [searchParams] = useSearchParams();
   const authLoading = useAuthStore((state) => state.isLoading);
@@ -141,7 +195,7 @@ export const SearchSourcesR2 = () => {
     const end = new Date();
     end.setUTCHours(23, 59, 59, 999);
     const start = new Date(end);
-    start.setUTCDate(start.getUTCDate() - 29);
+    start.setUTCDate(start.getUTCDate() - 6);
     start.setUTCHours(0, 0, 0, 0);
     return start.toISOString().split('T')[0];
   });
@@ -186,100 +240,113 @@ export const SearchSourcesR2 = () => {
 
   const sourceData: SourceData[] = response?.success && response.data ? response.data.sources : [];
 
-  const enhancedSources = useMemo(() => {
-    if (!sourceData.length) return [] as EnhancedSource[];
+  const [processedSources, setProcessedSources] = useState<EnhancedSource[] | null>(null);
 
-    const maxCitations = Math.max(...sourceData.map((s) => s.citations), 1);
-    const maxTopics = Math.max(...sourceData.map((s) => s.topics.length), 1);
-    const maxSentiment = Math.max(...sourceData.map((s) => s.sentiment), 1);
-    const mentionMedian = median(sourceData.map((s) => s.mentionRate));
-    const soaMedian = median(sourceData.map((s) => s.soa));
-    // Use raw sentiment values for median calculation (no normalization)
-    const sentimentMedian = median(sourceData.map((s) => maxSentiment > 0 ? s.sentiment / maxSentiment : 0));
-    const citationsMedian = median(sourceData.map((s) => (maxCitations > 0 ? s.citations / maxCitations : 0)));
+  useEffect(() => {
+    setProcessedSources(null);
+    setActiveQuadrant(null);
+    if (!sourceData.length) return;
 
-    const compositeScores = sourceData.map((s) => {
-      const mentionNorm = s.mentionRate / 100;
-      const soaNorm = s.soa / 100;
-      // Use raw sentiment value, normalize relative to max sentiment in dataset (no fixed range normalization)
-      const sentimentNorm = maxSentiment > 0 ? Math.min(1, s.sentiment / maxSentiment) : 0;
-      const citationsNorm = maxCitations > 0 ? s.citations / maxCitations : 0;
-      return (
-        mentionNorm * 0.35 +
-        soaNorm * 0.35 +
-        sentimentNorm * 0.2 +
-        citationsNorm * 0.1
-      );
-    });
+    const compute = () => {
+      setProcessedSources(computeEnhancedSources(sourceData));
+    };
 
-    const compositeMedian = median(compositeScores);
-    const compositeTopQuartile = percentile(compositeScores, 75);
+    const requestIdle = (window as any).requestIdleCallback as
+      | ((cb: () => void, opts?: { timeout?: number }) => number)
+      | undefined;
+    const cancelIdle = (window as any).cancelIdleCallback as ((id: number) => void) | undefined;
 
-    return sourceData.map((s) => {
-      const valueScore = valueScoreForSource(s, maxCitations, maxTopics, maxSentiment);
-      return {
-        name: s.name,
-        type: s.type,
-        mentionRate: s.mentionRate,
-        soa: s.soa,
-        sentiment: s.sentiment,
-        citations: s.citations,
-        valueScore,
-        quadrant: classifyQuadrant(s.mentionRate, s.soa, s.sentiment, s.citations, {
-          mentionMedian,
-          soaMedian,
-          sentimentMedian,
-          citationsMedian,
-          compositeMedian,
-          compositeTopQuartile
-        }, maxCitations, maxSentiment)
-      };
-    });
+    if (requestIdle) {
+      const id = requestIdle(compute, { timeout: 1500 });
+      return () => cancelIdle?.(id);
+    }
+
+    const t = window.setTimeout(compute, 50);
+    return () => window.clearTimeout(t);
   }, [sourceData]);
 
-  const filteredSources = useMemo(() => {
-    if (!activeQuadrant) return enhancedSources;
-    return enhancedSources.filter((s) => s.quadrant === activeQuadrant);
-  }, [enhancedSources, activeQuadrant]);
+  const isProcessedReady = !!processedSources;
+
+  const urlByName = useMemo(() => {
+    return new Map(sourceData.map((s) => [s.name, s.url] as const));
+  }, [sourceData]);
+
+  const rawTableSources: ValueScoreSource[] = useMemo(() => {
+    return sourceData.map((s) => ({
+      name: s.name,
+      type: s.type,
+      mentionRate: s.mentionRate,
+      soa: s.soa,
+      sentiment: s.sentiment,
+      citations: s.citations,
+      valueScore: typeof s.value === 'number' && Number.isFinite(s.value) ? s.value : 0,
+      quadrant: '—'
+    }));
+  }, [sourceData]);
+
+  const processedTableSources: ValueScoreSource[] = useMemo(() => {
+    if (!processedSources) return [];
+    return processedSources.map((s) => ({
+      name: s.name,
+      type: s.type,
+      mentionRate: s.mentionRate,
+      soa: s.soa,
+      sentiment: s.sentiment,
+      citations: s.citations,
+      valueScore: s.valueScore,
+      quadrant: s.quadrant
+    }));
+  }, [processedSources]);
+
+  const sourcesForFilters = isProcessedReady ? processedTableSources : rawTableSources;
 
   const quadrantCounts = useMemo(() => {
-    return enhancedSources.reduce(
+    if (!processedSources) {
+      return { priority: 0, reputation: 0, growth: 0, monitor: 0 };
+    }
+    return processedSources.reduce(
       (acc, s) => {
         acc[s.quadrant] = (acc[s.quadrant] || 0) + 1;
         return acc;
       },
-      { priority: 0, reputation: 0, growth: 0, monitor: 0 }
+      { priority: 0, reputation: 0, growth: 0, monitor: 0 } as Record<string, number>
     );
-  }, [enhancedSources]);
+  }, [processedSources]);
+
+  const quadrantFilteredSources = useMemo(() => {
+    if (!isProcessedReady || !activeQuadrant) return sourcesForFilters;
+    return sourcesForFilters.filter((s) => s.quadrant === activeQuadrant);
+  }, [sourcesForFilters, isProcessedReady, activeQuadrant]);
 
   const searchFilteredSources = useMemo(() => {
-    const base = filteredSources;
+    const base = quadrantFilteredSources;
     if (!sourceSearchQuery.trim()) return base;
     const q = sourceSearchQuery.trim().toLowerCase();
     const filtered = base.filter((s) => {
       const nameMatch = s.name.toLowerCase().includes(q);
-      const urlMatch = sourceData.find((src) => src.name === s.name)?.url?.toLowerCase().includes(q);
-      return nameMatch || urlMatch;
+      const urlMatch = urlByName.get(s.name)?.toLowerCase().includes(q);
+      return nameMatch || !!urlMatch;
     });
-    
-    // If we have a highlighted source, prioritize it at the top
+
     if (highlightSource) {
       const highlighted = filtered.find((s) => {
         const normalizedName = normalizeDomain(s.name);
         const normalizedHighlight = normalizeDomain(highlightSource);
-        return normalizedName === normalizedHighlight ||
-               s.name.toLowerCase().includes(highlightSource.toLowerCase()) ||
-               highlightSource.toLowerCase().includes(s.name.toLowerCase());
+        return (
+          normalizedName === normalizedHighlight ||
+          s.name.toLowerCase().includes(highlightSource.toLowerCase()) ||
+          highlightSource.toLowerCase().includes(s.name.toLowerCase())
+        );
       });
-      
+
       if (highlighted) {
-        const others = filtered.filter(s => s.name !== highlighted.name);
+        const others = filtered.filter((s) => s.name !== highlighted.name);
         return [highlighted, ...others];
       }
     }
-    
+
     return filtered;
-  }, [filteredSources, sourceSearchQuery, sourceData, highlightSource]);
+  }, [quadrantFilteredSources, sourceSearchQuery, urlByName, highlightSource]);
 
   const displayedSources = searchFilteredSources;
 
@@ -291,15 +358,16 @@ export const SearchSourcesR2 = () => {
       return;
     }
     if (hasInitializedTrendSelection) return;
-    if (!enhancedSources.length) return;
+    const sourcesForInit = (isProcessedReady ? processedTableSources : rawTableSources);
+    if (!sourcesForInit.length) return;
 
-    const top10 = [...enhancedSources]
+    const top10 = [...sourcesForInit]
       .sort((a, b) => b.valueScore - a.valueScore)
       .slice(0, 10)
       .map((s) => s.name);
     setSelectedTrendSources(top10);
     setHasInitializedTrendSelection(true);
-  }, [selectedBrandId, enhancedSources, hasInitializedTrendSelection]);
+  }, [selectedBrandId, hasInitializedTrendSelection, isProcessedReady, processedTableSources, rawTableSources]);
 
   // Fetch Impact Score trends data (follows selected date range)
   const trendsEndpoint = useMemo(() => {
@@ -340,12 +408,9 @@ export const SearchSourcesR2 = () => {
     }
 
     if (!trendsResponse?.success || !trendsResponse.data) {
-      // Fallback to current sources if trends data not available
-      if (!enhancedSources.length) return [];
-      
-      // Only use selected sources
-      const selectedSet = new Set(selectedTrendSources);
-      const byName = new Map(enhancedSources.map((s) => [s.name, s.valueScore] as const));
+      if (!sourcesForFilters.length) return [];
+
+      const byName = new Map(sourcesForFilters.map((s) => [s.name, s.valueScore] as const));
       return selectedTrendSources
         .filter(name => byName.has(name))
         .map((name) => ({
@@ -363,7 +428,7 @@ export const SearchSourcesR2 = () => {
         valueScore: source.data[source.data.length - 1] || 0, // Current value (last day)
         trendData: source.data // Historical data
       }));
-  }, [trendsResponse, enhancedSources, selectedTrendSources]);
+  }, [trendsResponse, sourcesForFilters, selectedTrendSources]);
 
   const trendSelectedSet = useMemo(() => new Set(selectedTrendSources), [selectedTrendSources]);
   const toggleTrendSource = (name: string) => {
@@ -503,19 +568,48 @@ export const SearchSourcesR2 = () => {
           </div>
         )}
 
-        <SummaryCards
-          counts={quadrantCounts}
-          active={activeQuadrant}
-          onSelect={(key) => {
-            setActiveQuadrant(key as EnhancedSource['quadrant'] | null);
-          }}
-        />
+        {isProcessedReady ? (
+          <SummaryCards
+            counts={quadrantCounts}
+            active={activeQuadrant}
+            onSelect={(key) => {
+              setActiveQuadrant(key as EnhancedSource['quadrant'] | null);
+            }}
+          />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            {[
+              { label: 'Priority Partnerships', color: '#06c686' },
+              { label: 'Reputation Management', color: '#f97373' },
+              { label: 'Growth Opportunities', color: '#498cf9' },
+              { label: 'Monitor', color: '#cbd5e1' }
+            ].map((meta) => (
+              <div
+                key={meta.label}
+                style={{
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 12,
+                  padding: '12px 14px',
+                  background: '#fff',
+                  boxShadow: '0 8px 18px rgba(15,23,42,0.05)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: meta.color }} />
+                  <span style={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>{meta.label}</span>
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#cbd5e1' }}>—</div>
+                <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 2 }}>sources</div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {isLoading ? (
           <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, color: '#94a3b8', textAlign: 'center', boxShadow: '0 8px 18px rgba(15,23,42,0.05)' }}>
             Loading sources…
           </div>
-        ) : enhancedSources.length === 0 ? (
+        ) : sourceData.length === 0 ? (
           <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, color: '#94a3b8', textAlign: 'center', boxShadow: '0 8px 18px rgba(15,23,42,0.05)' }}>
             No source data available for the selected range.
           </div>
@@ -570,10 +664,17 @@ export const SearchSourcesR2 = () => {
                   {displayedSources.length} source{displayedSources.length !== 1 ? 's' : ''} matching "{sourceSearchQuery}"
                 </div>
               )}
+              {!isProcessedReady && (
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
+                  Loading categories in the background. Sorting and category filters will be enabled shortly.
+                </div>
+              )}
             </div>
             <ValueScoreTable
               sources={displayedSources}
               maxHeight="520px"
+              disableSorting={!isProcessedReady}
+              pagination={{ pageSize: 10 }}
               trendSelection={{
                 selectedNames: trendSelectedSet,
                 maxSelected: 10,
@@ -724,4 +825,3 @@ export const SearchSourcesR2 = () => {
     </Layout>
   );
 };
-

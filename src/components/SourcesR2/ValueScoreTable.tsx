@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export interface ValueScoreSource {
   name: string;
@@ -35,6 +35,10 @@ interface ValueScoreTableProps {
    * Optional source name to highlight (e.g., from deep link)
    */
   highlightedSourceName?: string | null;
+  disableSorting?: boolean;
+  pagination?: {
+    pageSize: number;
+  };
 }
 
 type SortKey = 'name' | 'type' | 'valueScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' | 'quadrant';
@@ -63,9 +67,13 @@ const normalizeDomain = (value: string | null | undefined): string => {
   return raw.replace(/^www\./, '').split('/')[0];
 };
 
-export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection, highlightedSourceName }: ValueScoreTableProps) => {
+export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection, highlightedSourceName, disableSorting, pagination }: ValueScoreTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('valueScore');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
+
+  const pageSize = pagination?.pageSize ?? 0;
+  const isPaging = !!pagination && pageSize > 0;
 
   const metricRanges = useMemo(() => {
     const getRange = (values: number[]) => {
@@ -74,14 +82,21 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
       return { min: Math.min(...valid), max: Math.max(...valid) };
     };
 
+    const rangeBasis = (() => {
+      if (!isPaging) return sources;
+      const pageCount = Math.max(1, Math.ceil(sources.length / pageSize));
+      const safePage = Math.min(Math.max(1, page), pageCount);
+      return sources.slice((safePage - 1) * pageSize, safePage * pageSize);
+    })();
+
     return {
-      valueScore: getRange(sources.map((s) => s.valueScore)),
-      mentionRate: getRange(sources.map((s) => s.mentionRate)),
-      soa: getRange(sources.map((s) => s.soa)),
-      sentiment: getRange(sources.map((s) => s.sentiment)), // Use raw sentiment values, no multiplication
-      citations: getRange(sources.map((s) => s.citations))
+      valueScore: getRange(rangeBasis.map((s) => s.valueScore)),
+      mentionRate: getRange(rangeBasis.map((s) => s.mentionRate)),
+      soa: getRange(rangeBasis.map((s) => s.soa)),
+      sentiment: getRange(rangeBasis.map((s) => s.sentiment)),
+      citations: getRange(rangeBasis.map((s) => s.citations))
     };
-  }, [sources]);
+  }, [sources, isPaging, page, pageSize]);
 
   const heatmapStyle = (metric: keyof typeof metricRanges, value: number) => {
     const range = metricRanges[metric];
@@ -121,6 +136,7 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   };
 
   const toggleSort = (key: SortKey) => {
+    if (disableSorting) return;
     if (sortKey === key) {
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -131,6 +147,8 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   };
 
   const sortedSources = useMemo(() => {
+    if (disableSorting) return sources;
+
     const list = [...sources];
     list.sort((a, b) => {
       // First, prioritize selected sources (if trendSelection is active)
@@ -152,19 +170,34 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
       return (Number(aVal) - Number(bVal)) * dir;
     });
     return list;
-  }, [sources, sortKey, sortDir, trendSelection]);
+  }, [sources, sortKey, sortDir, trendSelection, disableSorting]);
 
-  const sortIndicator = (key: SortKey) => (sortKey === key ? (sortDir === 'asc' ? '↑' : '↓') : '');
+  const sortIndicator = (key: SortKey) => {
+    if (disableSorting) return '';
+    return sortKey === key ? (sortDir === 'asc' ? '↑' : '↓') : '';
+  };
 
   const displayedSources = useMemo(() => {
+    if (isPaging) {
+      const count = sortedSources.length;
+      const pageCount = Math.max(1, Math.ceil(count / pageSize));
+      const safePage = Math.min(Math.max(1, page), pageCount);
+      return sortedSources.slice((safePage - 1) * pageSize, safePage * pageSize);
+    }
     if (!maxRows || maxRows <= 0) return sortedSources;
     return sortedSources.slice(0, maxRows);
-  }, [sortedSources, maxRows]);
+  }, [sortedSources, maxRows, isPaging, page, pageSize]);
+
+  useEffect(() => {
+    if (!isPaging) return;
+    const pageCount = Math.max(1, Math.ceil(sortedSources.length / pageSize));
+    if (page > pageCount) setPage(pageCount);
+  }, [isPaging, page, pageSize, sortedSources.length]);
 
   const headerCellBase: React.CSSProperties = {
     padding: '10px 8px',
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: disableSorting ? 'default' : 'pointer',
     position: 'sticky',
     top: 0,
     zIndex: 2,
@@ -174,6 +207,9 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   };
 
   const selectedCount = trendSelection ? trendSelection.selectedNames.size : 0;
+  const totalCount = sortedSources.length;
+  const pageCount = isPaging ? Math.max(1, Math.ceil(totalCount / pageSize)) : 1;
+  const safePage = isPaging ? Math.min(Math.max(1, page), pageCount) : 1;
 
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, height: '100%', boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
@@ -231,6 +267,47 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
           />
         </div>
       </div>
+      {isPaging && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+            Page {safePage} of {pageCount}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 8,
+                border: '1px solid #e5e7eb',
+                background: safePage <= 1 ? '#f1f5f9' : '#fff',
+                color: safePage <= 1 ? '#94a3b8' : '#64748b',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: safePage <= 1 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              disabled={safePage >= pageCount}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 8,
+                border: '1px solid #e5e7eb',
+                background: safePage >= pageCount ? '#f1f5f9' : '#fff',
+                color: safePage >= pageCount ? '#94a3b8' : '#64748b',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: safePage >= pageCount ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
       <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
@@ -409,4 +486,3 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
     </div>
   );
 };
-

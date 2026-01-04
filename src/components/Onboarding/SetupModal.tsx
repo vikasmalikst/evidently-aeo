@@ -5,9 +5,9 @@ import { AIModelSelection } from './AIModelSelection';
 import { TopicSelectionModal } from '../Topics/TopicSelectionModal';
 import { PromptConfiguration, PromptWithTopic } from './PromptConfiguration';
 import { StepIndicator } from './StepIndicator';
-import { SafeLogo } from './common/SafeLogo';
 import type { Topic } from '../../types/topic';
 import { featureFlags } from '../../config/featureFlags';
+import evidentlyLogo from '../../assets/logo.png';
 
 interface SetupModalProps {
   brandName: string;
@@ -92,6 +92,7 @@ export const SetupModal = ({
   if (currentStep === 'welcome') {
     return (
       <div className="onboarding-modal-overlay">
+        <img src={evidentlyLogo} alt="EvidentlyAEO" className="onboarding-overlay-logo" />
         <div className="onboarding-modal-container step-welcome" onClick={(e) => e.stopPropagation()}>
           <WelcomeScreen onGetStarted={handleNext} />
         </div>
@@ -122,6 +123,7 @@ export const SetupModal = ({
   // For models and prompts steps, use the new layout
   return (
     <div className="onboarding-modal-overlay">
+      <img src={evidentlyLogo} alt="EvidentlyAEO" className="onboarding-overlay-logo" />
       <div
         className={`onboarding-modal-container step-${currentStep}`}
         onClick={(e) => e.stopPropagation()}
@@ -139,7 +141,7 @@ export const SetupModal = ({
             <span>Back</span>
           </button>
 
-          <div className="onboarding-header-content flex items-center gap-3">
+          <div className="onboarding-header-content flex items-center justify-center">
             <h2 className="onboarding-modal-title">{getStepTitle()}</h2>
           </div>
         </div>

@@ -3,10 +3,11 @@ import { ChevronLeft } from 'lucide-react';
 import { WelcomeScreen } from '../Topics/WelcomeScreen';
 import { AIModelSelection } from './AIModelSelection';
 import { TopicSelectionModal } from '../Topics/TopicSelectionModal';
-import { PromptConfiguration } from './PromptConfiguration';
+import { PromptConfiguration, type PromptWithTopic } from './PromptConfiguration';
 import { StepIndicator } from './StepIndicator';
 import type { Topic } from '../../types/topic';
 import { featureFlags } from '../../config/featureFlags';
+import evidentlyLogo from '../../assets/logo.png';
 
 interface SetupModalProps {
   brandName: string;
@@ -18,7 +19,7 @@ interface SetupModalProps {
 export interface SetupData {
   models: string[];
   topics: Topic[];
-  prompts: string[];
+  prompts: PromptWithTopic[];
 }
 
 // Keep OnboardingData as alias for backward compatibility
@@ -37,7 +38,7 @@ export const SetupModal = ({
   const [currentStep, setCurrentStep] = useState<Step>(initialStep);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);
-  const [selectedPrompts, setSelectedPrompts] = useState<string[]>([]);
+  const [selectedPrompts, setSelectedPrompts] = useState<PromptWithTopic[]>([]);
 
   const handleBack = () => {
     if (currentStep === 'models') setCurrentStep('welcome');
@@ -77,6 +78,7 @@ export const SetupModal = ({
   if (currentStep === 'welcome') {
     return (
       <div className="onboarding-modal-overlay" onClick={onClose}>
+        <img src={evidentlyLogo} alt="EvidentlyAEO" className="onboarding-overlay-logo" />
         <div className="onboarding-modal-container step-welcome" onClick={(e) => e.stopPropagation()}>
           <WelcomeScreen onGetStarted={handleNext} />
         </div>
@@ -103,6 +105,7 @@ export const SetupModal = ({
   // For models and prompts steps, use the new layout
   return (
     <div className="onboarding-modal-overlay" onClick={onClose}>
+      <img src={evidentlyLogo} alt="EvidentlyAEO" className="onboarding-overlay-logo" />
       <div
         className={`onboarding-modal-container step-${currentStep}`}
         onClick={(e) => e.stopPropagation()}

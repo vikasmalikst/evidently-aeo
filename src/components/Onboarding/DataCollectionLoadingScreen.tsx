@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { CheckCircle2, TrendingUp, Globe } from 'lucide-react';
 import { apiClient } from '../../lib/apiClient';
 import type { ApiResponse, DashboardPayload } from '../../pages/dashboard/types';
+import evidentlyLogo from '../../assets/logo.png';
 
-// Fix for useParams
 export const DataCollectionLoadingScreenRoute = () => {
   const { brandId } = useParams<{ brandId: string }>();
   if (!brandId) return <div>Invalid brand ID</div>;
   return <DataCollectionLoadingScreen brandId={brandId} />;
 };
-import { CheckCircle2, TrendingUp, Globe } from 'lucide-react';
 
 interface ProgressData {
   queries: {
@@ -217,6 +217,11 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#f9f9fb' }}>
+      <img
+        src={evidentlyLogo}
+        alt="EvidentlyAEO"
+        className="fixed top-6 left-6 h-20 w-20 object-contain z-50"
+      />
       <div className="flex items-center justify-center min-h-screen p-6">
         <div className="max-w-2xl w-full">
           {/* Main card */}
@@ -360,4 +365,3 @@ export const useDataCollectionProgress = (brandId: string) => {
 
   return { showLoading, startDataCollection };
 };
-

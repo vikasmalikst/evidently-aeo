@@ -7,6 +7,7 @@ import { CustomTopicInput } from './CustomTopicInput';
 import { SelectedTopicsSummary } from './SelectedTopicsSummary';
 import { StepIndicator } from '../Onboarding/StepIndicator';
 import { Spinner } from '../Onboarding/common/Spinner';
+import evidentlyLogo from '../../assets/logo.png';
 
 interface TopicSelectionModalProps {
   brandName: string;
@@ -234,6 +235,7 @@ export const TopicSelectionModal = ({
 
   return (
     <div className="topic-modal-overlay">
+      <img src={evidentlyLogo} alt="EvidentlyAEO" className="topic-overlay-logo" />
       <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
         <StepIndicator currentStep="topics" />
         

@@ -30,6 +30,18 @@
     transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
                 transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
+
+  .w-8 {
+    width: 3rem;
+  }
+
+  .h-8 {
+    height: 3rem;
+  }
+
+  .px-8 {
+    padding-left: 1rem;
+  }
 }
 
 @keyframes spin {

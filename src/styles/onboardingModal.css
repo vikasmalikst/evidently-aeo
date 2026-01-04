@@ -12,6 +12,16 @@
   padding: 24px;
 }
 
+.onboarding-overlay-logo {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  z-index: 1001;
+}
+
 /* Modal Container */
 .onboarding-modal-container {
   background: var(--bg-primary);

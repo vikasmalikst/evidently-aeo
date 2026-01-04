@@ -1,4 +1,3 @@
-import { IconInfoCircle } from '@tabler/icons-react';
 
 interface WelcomeScreenProps {
   onGetStarted: () => void;

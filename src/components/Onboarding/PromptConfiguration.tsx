@@ -1,13 +1,9 @@
 import { IconInfoCircle, IconPlus, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Topic } from '../../types/topic';
+import type { OnboardingCompetitor } from '../../types/onboarding';
 import { fetchPromptsForTopics } from '../../api/onboardingApi';
 import { Spinner } from './common/Spinner';
-
-interface PromptWithTopic {
-  prompt: string;
-  topic: string; // Topic name
-}
 
 export interface PromptWithTopic {
   prompt: string;
@@ -20,19 +16,8 @@ interface PromptConfigurationProps {
   onPromptsChange: (prompts: PromptWithTopic[]) => void;
 }
 
-interface TopicPrompt {
-  topicId: string;
-  prompt: string;
-}
-
 function isCustomPrompt(prompt: string, customPrompts: Record<string, string[]>): boolean {
   return Object.values(customPrompts).some(prompts => prompts.includes(prompt));
-}
-
-interface CustomPromptData {
-  text: string;
-  topicId: string;
-  isCustom: boolean;
 }
 
 export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPromptsChange }: PromptConfigurationProps) => {
@@ -65,7 +50,9 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
       const brandData = localStorage.getItem('onboarding_brand');
       const competitorsData = localStorage.getItem('onboarding_competitors');
       const brand = brandData ? JSON.parse(brandData) : {};
-      const competitors = competitorsData ? JSON.parse(competitorsData) : [];
+      const competitors: Array<Partial<OnboardingCompetitor> & { companyName?: string }> = competitorsData
+        ? JSON.parse(competitorsData)
+        : [];
 
       const topicsPayload = selectedTopics.filter((topic) => topicsToFetch.includes(topic.id));
       if (topicsPayload.length === 0) {
@@ -80,7 +67,7 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
       const response = await fetchPromptsForTopics({
         brand_name: brand.companyName || brand.name || 'Brand',
         industry: brand.industry || 'General',
-        competitors: competitors.map((c: any) => c.name || c.companyName || ''),
+        competitors: competitors.map((c) => c.name || c.companyName || ''),
         topics: topicsPayload.map((topic) => topic.name),
         locale: 'en-US',
         country: 'US',
@@ -203,10 +190,6 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
     setShowCustomModal(false);
     setCustomPrompt('');
     setSelectedTopicForCustom('');
-  };
-
-  const handleRemovePrompt = (prompt: string, topicName: string) => {
-    onPromptsChange(selectedPrompts.filter(p => !(p.prompt === prompt && p.topic === topicName)));
   };
 
   const getSelectedCountForTopic = (topic: Topic): number => {

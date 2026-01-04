@@ -57,7 +57,7 @@ export const StepIndicator = ({ currentStep, onStepClick, attentionSteps }: Step
                   ${active 
                     ? 'bg-white shadow-md border border-[#00bcdc]/20 ring-1 ring-[#00bcdc]/10' 
                     : complete
-                    ? 'bg-[#f0fdf4] hover:bg-[#dcfce7] border border-transparent'
+                    ? 'bg-white border border-[#e2e8f0]/50 hover:bg-[#f0fdf4]'
                     : 'hover:bg-white/60 border border-transparent'
                   }
                 `}
@@ -68,7 +68,7 @@ export const StepIndicator = ({ currentStep, onStepClick, attentionSteps }: Step
                   ${active 
                     ? 'bg-[#00bcdc] text-white' 
                     : complete
-                    ? 'bg-[#06c686] text-white'
+                    ? 'bg-white border border-[#06c686] text-[#06c686]'
                     : 'bg-white border border-[#e2e8f0] text-[#94a3b8]'
                   }
                 `}>

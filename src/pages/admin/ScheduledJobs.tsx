@@ -19,6 +19,11 @@ interface QueriesDiagnosticPayload {
   };
   collectorResults?: {
     count?: number;
+    recent?: Array<{
+      id: string;
+      created_at: string;
+      status: string;
+    }>;
     statusCounts?: Record<string, number>;
     pendingOver2hCount?: number;
     pendingOver8hCount?: number;
@@ -27,6 +32,11 @@ interface QueriesDiagnosticPayload {
     hasActiveQueries?: boolean;
     canCollectData?: boolean;
   };
+}
+
+interface ScoringDiagnosticPayload {
+  pendingScoringCount: number;
+  lastScoredAt: string | null;
 }
 
 interface ScheduledJob {
@@ -76,6 +86,27 @@ export const ScheduledJobs = () => {
   const [enrichAllBrands, setEnrichAllBrands] = useState(false);
   const [generatingRecommendations, setGeneratingRecommendations] = useState(false);
   const [generateRecsForAllBrands, setGenerateRecsForAllBrands] = useState(false);
+  const [showCollectionModal, setShowCollectionModal] = useState(false);
+  const [collectionPreview, setCollectionPreview] = useState<{
+    brandName: string;
+    prompts: number;
+    collectors: number;
+    totalPrompts: number;
+    costCents: number;
+    costDollars: number;
+    lastCollectedAt: string | null;
+    brandId: string;
+  } | null>(null);
+
+  const [showScoringModal, setShowScoringModal] = useState(false);
+  const [scoringPreview, setScoringPreview] = useState<{
+    brandName: string;
+    pendingCount: number;
+    llmProvider: 'OpenRouter' | 'Local LLM';
+    costDollars: number;
+    lastScoredAt: string | null;
+    brandId: string;
+  } | null>(null);
 
   const handleGenerateRecommendations = async () => {
     if (!selectedBrandId && !generateRecsForAllBrands) return;
@@ -515,9 +546,75 @@ export const ScheduledJobs = () => {
   };
 
   const handleCollectDataNow = async (brandId: string) => {
-    if (!confirm(`Start data collection for this brand now? This will use all active queries from onboarding.`)) {
+    if (!brandId) {
+      alert('Please select a brand first');
       return;
     }
+
+    const brand = brands.find(b => b.id === brandId);
+    const brandName = brand?.name || 'Selected Brand';
+    
+    let currentDiagnostic = diagnostic;
+    
+    // If diagnostic is not loaded or for a different brand, try to load it now
+    if ((!currentDiagnostic || selectedBrandId !== brandId) && brandId && customerId) {
+      try {
+        const response = await apiClient.get<ApiResponse<QueriesDiagnosticPayload>>(
+          `/admin/brands/${brandId}/queries-diagnostic?customer_id=${customerId}`
+        );
+        if (response.success && response.data) {
+          currentDiagnostic = response.data;
+          setDiagnostic(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to load diagnostic for warning:', error);
+      }
+    }
+
+    // Calculate collectors count
+    let collectorsCount = 0;
+    const metadata = brand?.metadata;
+    const aiModelsValue =
+      typeof metadata === 'object' && metadata !== null && 'ai_models' in metadata
+        ? (metadata as { ai_models?: unknown }).ai_models
+        : undefined;
+
+    if (Array.isArray(aiModelsValue)) {
+      collectorsCount = aiModelsValue.length;
+    } else {
+      // Default to 7 if not specified (based on AVAILABLE_COLLECTORS in ManageCollectors.tsx)
+      collectorsCount = 7;
+    }
+
+    const activeQueries = currentDiagnostic?.queries?.active || 0;
+    const totalQueries = activeQueries * collectorsCount;
+    
+    // Calculate expected cost: 1000 queries cost 150 cents (Corrected per user request)
+    const expectedCostCents = (totalQueries / 1000) * 150;
+    const expectedCostDollars = expectedCostCents / 100;
+
+    // Get last collection date
+    const lastCollectedAt = currentDiagnostic?.collectorResults?.recent?.[0]?.created_at || null;
+
+    setCollectionPreview({
+      brandName,
+      prompts: activeQueries,
+      collectors: collectorsCount,
+      totalPrompts: totalQueries,
+      costCents: expectedCostCents,
+      costDollars: expectedCostDollars,
+      lastCollectedAt,
+      brandId
+    });
+    setShowCollectionModal(true);
+  };
+
+  const confirmCollectDataNow = async () => {
+    if (!collectionPreview) return;
+    
+    const { brandId } = collectionPreview;
+    setShowCollectionModal(false);
+
     try {
       setCollecting(true);
       const response = await apiClient.post<ApiResponse<{ queriesExecuted: number }>>(
@@ -538,17 +635,57 @@ export const ScheduledJobs = () => {
   };
 
   const handleScoreNow = async (brandId: string) => {
+    if (!brandId) {
+      alert('Please select a brand first');
+      return;
+    }
     if (!customerId) {
       alert('Customer ID not available. Please select a brand.');
       return;
     }
-    if (
-      !confirm(
-        `Start scoring for this brand now? This will process all unprocessed collector results. The process runs in the background and may take 5-30 minutes.`
-      )
-    ) {
-      return;
+
+    const brand = brands.find(b => b.id === brandId);
+    const brandName = brand?.name || 'Selected Brand';
+    
+    let scoringDiag: ScoringDiagnosticPayload | null = null;
+    
+    try {
+      setScoring(true);
+      const response = await apiClient.get<ApiResponse<ScoringDiagnosticPayload>>(
+        `/admin/brands/${brandId}/scoring-diagnostic?customer_id=${customerId}`
+      );
+      if (response.success && response.data) {
+        scoringDiag = response.data;
+      }
+    } catch (error) {
+      console.error('Failed to load scoring diagnostic:', error);
+    } finally {
+      setScoring(false);
     }
+
+    const pendingCount = scoringDiag?.pendingScoringCount || 0;
+    const llmProvider = ollamaSettings.useOllama ? 'Local LLM' : 'OpenRouter';
+    
+    // Cost calculation: 1.5 USD for 1000 results for OpenRouter, 0 for Local LLM
+    const costDollars = ollamaSettings.useOllama ? 0 : (pendingCount / 1000) * 1.5;
+
+    setScoringPreview({
+      brandName,
+      pendingCount,
+      llmProvider,
+      costDollars,
+      lastScoredAt: scoringDiag?.lastScoredAt || null,
+      brandId
+    });
+    setShowScoringModal(true);
+  };
+
+  const confirmScoreNow = async () => {
+    if (!scoringPreview) return;
+    
+    const { brandId } = scoringPreview;
+    setShowScoringModal(false);
+
     try {
       setScoring(true);
       const response = await apiClient.post<ApiResponse<unknown>>(`/admin/brands/${brandId}/score-now`, {
@@ -1349,6 +1486,250 @@ export const ScheduledJobs = () => {
           }}
         />
       )}
+
+      {/* Collection Confirmation Modal */}
+      {showCollectionModal && collectionPreview && (
+        <CollectionConfirmationModal
+          preview={collectionPreview}
+          onClose={() => setShowCollectionModal(false)}
+          onConfirm={confirmCollectDataNow}
+        />
+      )}
+
+      {/* Scoring Confirmation Modal */}
+      {showScoringModal && scoringPreview && (
+        <ScoringConfirmationModal
+          preview={scoringPreview}
+          onClose={() => setShowScoringModal(false)}
+          onConfirm={confirmScoreNow}
+        />
+      )}
+    </div>
+  );
+};
+
+// Collection Confirmation Modal Component
+const CollectionConfirmationModal = ({
+  preview,
+  onClose,
+  onConfirm,
+}: {
+  preview: {
+    brandName: string;
+    prompts: number;
+    collectors: number;
+    totalPrompts: number;
+    costCents: number;
+    costDollars: number;
+    lastCollectedAt: string | null;
+  };
+  onClose: () => void;
+  onConfirm: () => void;
+}) => {
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return 'Never';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch (e) {
+      return 'Unknown';
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200">
+        <div className="bg-amber-50 px-6 py-4 border-b border-amber-100">
+          <h2 className="text-xl font-bold text-amber-800 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            Data Collection Warning
+          </h2>
+        </div>
+        
+        <div className="p-6 space-y-4">
+          <p className="text-gray-600 font-medium">
+            BrightData Collection will start for the following brand:
+          </p>
+          
+          <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-100">
+            <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+              <span className="text-sm font-semibold text-gray-500">Brand Name</span>
+              <span className="font-bold text-gray-900">{preview.brandName}</span>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 py-2">
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Number of Prompts</span>
+                <span className="text-lg font-bold text-gray-800">{preview.prompts}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Number of Collectors</span>
+                <span className="text-lg font-bold text-gray-800">{preview.collectors}</span>
+              </div>
+            </div>
+            
+            <div className="flex justify-between items-center py-2 border-t border-gray-200">
+              <span className="text-sm font-semibold text-gray-500">Total Number of Prompts</span>
+              <span className="text-lg font-extrabold text-indigo-600">{preview.totalPrompts}</span>
+            </div>
+            
+            <div className="flex justify-between items-center py-2 border-t border-gray-200">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-gray-500">Expected Cost</span>
+                <span className="text-xs text-gray-400">(Rate: 150 cents / 1000 queries)</span>
+              </div>
+              <div className="text-right">
+                <div className="text-xl font-black text-emerald-600">${preview.costDollars.toFixed(2)}</div>
+                <div className="text-xs font-medium text-emerald-500">{preview.costCents.toFixed(0)} cents</div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+              <span className="text-sm font-semibold text-gray-500">Last Data Collected</span>
+              <span className="text-sm font-medium text-gray-700 italic">{formatDate(preview.lastCollectedAt)}</span>
+            </div>
+          </div>
+          
+          <p className="text-sm text-gray-500 italic text-center">
+            This action will incur costs on your BrightData account.
+          </p>
+        </div>
+        
+        <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-bold text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold rounded-lg shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+          >
+            Start Collection
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ScoringConfirmationModal = ({
+  preview,
+  onClose,
+  onConfirm,
+}: {
+  preview: {
+    brandName: string;
+    pendingCount: number;
+    llmProvider: 'OpenRouter' | 'Local LLM';
+    costDollars: number;
+    lastScoredAt: string | null;
+  };
+  onClose: () => void;
+  onConfirm: () => void;
+}) => {
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return 'Never';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch (e) {
+      return 'Unknown';
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200">
+        <div className="bg-indigo-50 px-6 py-4 border-b border-indigo-100">
+          <h2 className="text-xl font-bold text-indigo-800 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Start Scoring Warning
+          </h2>
+        </div>
+        
+        <div className="p-6 space-y-4">
+          <p className="text-gray-600 font-medium">
+            Scoring will start for the following brand:
+          </p>
+          
+          <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-100">
+            <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+              <span className="text-sm font-semibold text-gray-500">Brand Name</span>
+              <span className="font-bold text-gray-900">{preview.brandName}</span>
+            </div>
+            
+            <div className="flex justify-between items-center py-2">
+              <span className="text-sm font-semibold text-gray-500">Collector results to be scored</span>
+              <span className="text-lg font-bold text-gray-800">{preview.pendingCount}</span>
+            </div>
+            
+            <div className="flex justify-between items-center py-2 border-t border-gray-200">
+              <span className="text-sm font-semibold text-gray-500">LLM Provider</span>
+              <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
+                preview.llmProvider === 'Local LLM' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+              }`}>
+                {preview.llmProvider}
+              </span>
+            </div>
+            
+            <div className="flex justify-between items-center py-2 border-t border-gray-200">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-gray-500">Estimated Cost</span>
+                <span className="text-xs text-gray-400">
+                  {preview.llmProvider === 'OpenRouter' ? '(Rate: $1.50 / 1000 results)' : '(Free with local LLM)'}
+                </span>
+              </div>
+              <div className="text-right">
+                <div className={`text-xl font-black ${preview.costDollars > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
+                  ${preview.costDollars.toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+              <span className="text-sm font-semibold text-gray-500">Last Date for Scoring</span>
+              <span className="text-sm font-medium text-gray-700 italic">{formatDate(preview.lastScoredAt)}</span>
+            </div>
+          </div>
+          
+          <p className="text-sm text-gray-500 italic text-center">
+            The scoring process runs in the background and may take some time depending on the volume.
+          </p>
+        </div>
+        
+        <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-bold text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+          >
+            Start Scoring
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

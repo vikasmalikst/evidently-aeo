@@ -1279,6 +1279,60 @@ router.get('/job-runs/:runId', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/admin/brands/:brandId/scoring-diagnostic
+ * Get diagnostic info specifically for scoring
+ */
+router.get('/brands/:brandId/scoring-diagnostic', async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const { customer_id } = req.query;
+
+    if (!customer_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'customer_id query parameter is required',
+      });
+    }
+
+    // 1. Get count of results to be scored
+    const { count: pendingScoringCount, error: pendingError } = await supabase
+      .from('collector_results')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brandId)
+      .eq('customer_id', customer_id)
+      .neq('status', 'failed')
+      .not('status', 'eq', 'running')
+      .or('scoring_status.is.null,scoring_status.neq.completed');
+
+    // 2. Get last scoring date from consolidated_analysis_cache
+    // We need to join with collector_results to filter by brand
+    const { data: lastScored, error: lastScoredError } = await supabase
+      .from('consolidated_analysis_cache')
+      .select('created_at, collector_results!inner(brand_id)')
+      .eq('collector_results.brand_id', brandId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (pendingError) throw pendingError;
+
+    res.json({
+      success: true,
+      data: {
+        pendingScoringCount: pendingScoringCount || 0,
+        lastScoredAt: lastScored?.created_at || null,
+      }
+    });
+  } catch (error) {
+    console.error('Error in scoring diagnostic:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get scoring diagnostic',
+    });
+  }
+});
+
+/**
  * GET /api/admin/brands/:brandId/topics-queries
  * Get active topics and queries for a brand (from onboarding)
  */

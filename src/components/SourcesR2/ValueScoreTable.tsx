@@ -211,6 +211,31 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
   const pageCount = isPaging ? Math.max(1, Math.ceil(totalCount / pageSize)) : 1;
   const safePage = isPaging ? Math.min(Math.max(1, page), pageCount) : 1;
 
+  // Helper to generate page numbers with ellipses
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const delta = 2; // Number of pages to show around current page
+
+    for (let i = 1; i <= pageCount; i++) {
+      if (
+        i === 1 || // Always show first
+        i === pageCount || // Always show last
+        (i >= safePage - delta && i <= safePage + delta) // Show around current
+      ) {
+        pages.push(i);
+      } else if (
+        (i === safePage - delta - 1 && i > 1) ||
+        (i === safePage + delta + 1 && i < pageCount)
+      ) {
+        pages.push('...');
+      }
+    }
+    return pages;
+  };
+
+  const startItem = (safePage - 1) * pageSize + 1;
+  const endItem = Math.min(safePage * pageSize, totalCount);
+
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, height: '100%', boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -268,42 +293,119 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
         </div>
       </div>
       {isPaging && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-          <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
-            Page {safePage} of {pageCount}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
+          <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>
+            Showing <span style={{ color: '#0f172a', fontWeight: 700 }}>{startItem}-{endItem}</span> of <span style={{ color: '#0f172a', fontWeight: 700 }}>{totalCount}</span> sources
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              onClick={() => setPage(1)}
+              disabled={safePage <= 1}
+              title="First Page"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                border: '1px solid #e5e7eb',
+                background: safePage <= 1 ? '#f8fafc' : '#fff',
+                color: safePage <= 1 ? '#cbd5e1' : '#64748b',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: safePage <= 1 ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              «
+            </button>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={safePage <= 1}
               style={{
-                padding: '6px 10px',
-                borderRadius: 8,
+                padding: '0 10px',
+                height: 32,
+                borderRadius: 6,
                 border: '1px solid #e5e7eb',
-                background: safePage <= 1 ? '#f1f5f9' : '#fff',
-                color: safePage <= 1 ? '#94a3b8' : '#64748b',
+                background: safePage <= 1 ? '#f8fafc' : '#fff',
+                color: safePage <= 1 ? '#cbd5e1' : '#64748b',
                 fontSize: 12,
                 fontWeight: 700,
-                cursor: safePage <= 1 ? 'not-allowed' : 'pointer'
+                cursor: safePage <= 1 ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s'
               }}
             >
               Prev
             </button>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '0 4px' }}>
+              {getPageNumbers().map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => typeof p === 'number' && setPage(p)}
+                  disabled={typeof p !== 'number'}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: 32,
+                    height: 32,
+                    padding: '0 6px',
+                    borderRadius: 6,
+                    border: p === safePage ? '1px solid #0f172a' : '1px solid #e5e7eb',
+                    background: p === safePage ? '#0f172a' : (typeof p !== 'number' ? 'transparent' : '#fff'),
+                    color: p === safePage ? '#fff' : (typeof p !== 'number' ? '#94a3b8' : '#64748b'),
+                    fontSize: 12,
+                    fontWeight: p === safePage ? 700 : 600,
+                    cursor: typeof p !== 'number' ? 'default' : 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
             <button
               onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
               disabled={safePage >= pageCount}
               style={{
-                padding: '6px 10px',
-                borderRadius: 8,
+                padding: '0 10px',
+                height: 32,
+                borderRadius: 6,
                 border: '1px solid #e5e7eb',
-                background: safePage >= pageCount ? '#f1f5f9' : '#fff',
-                color: safePage >= pageCount ? '#94a3b8' : '#64748b',
+                background: safePage >= pageCount ? '#f8fafc' : '#fff',
+                color: safePage >= pageCount ? '#cbd5e1' : '#64748b',
                 fontSize: 12,
                 fontWeight: 700,
-                cursor: safePage >= pageCount ? 'not-allowed' : 'pointer'
+                cursor: safePage >= pageCount ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s'
               }}
             >
               Next
+            </button>
+            <button
+              onClick={() => setPage(pageCount)}
+              disabled={safePage >= pageCount}
+              title="Last Page"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                border: '1px solid #e5e7eb',
+                background: safePage >= pageCount ? '#f8fafc' : '#fff',
+                color: safePage >= pageCount ? '#cbd5e1' : '#64748b',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: safePage >= pageCount ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              »
             </button>
           </div>
         </div>

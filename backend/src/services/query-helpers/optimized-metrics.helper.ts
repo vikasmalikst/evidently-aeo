@@ -1243,9 +1243,11 @@ export class OptimizedMetricsHelper {
       sentiment_score: number | null;
       total_brand_mentions: number | null;
       total_brand_product_mentions: number | null;
+      brand_positions: number[];
       competitor_names: string[];
       competitor_count: number;
       competitor_product_count: number;
+      competitor_positions: number[];
     }>;
     duration_ms: number;
     error?: string;
@@ -1272,7 +1274,8 @@ export class OptimizedMetricsHelper {
             brand_metrics(
               visibility_index,
               total_brand_mentions,
-              total_brand_product_mentions
+              total_brand_product_mentions,
+              brand_positions
             ),
             brand_sentiment(
               sentiment_score
@@ -1281,6 +1284,7 @@ export class OptimizedMetricsHelper {
               competitor_id,
               competitor_mentions,
               total_competitor_product_mentions,
+              competitor_positions,
               brand_competitors(
                 competitor_name
               )
@@ -1374,6 +1378,8 @@ export class OptimizedMetricsHelper {
         const competitorNames: string[] = [];
         let totalCompetitorMentions = 0;
         let totalCompetitorProductMentions = 0;
+        let allCompetitorPositions: number[] = [];
+
         cms.forEach((cm: any) => {
           if (cm) {
             const bc = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
@@ -1398,6 +1404,10 @@ export class OptimizedMetricsHelper {
                 totalCompetitorProductMentions += productMentions;
               }
             }
+            // Collect competitor positions
+            if (cm.competitor_positions && Array.isArray(cm.competitor_positions)) {
+              allCompetitorPositions = [...allCompetitorPositions, ...cm.competitor_positions];
+            }
           }
         });
 
@@ -1410,9 +1420,11 @@ export class OptimizedMetricsHelper {
           sentiment_score: bs?.sentiment_score ?? null,
           total_brand_mentions: bm?.total_brand_mentions ?? null,
           total_brand_product_mentions: bm?.total_brand_product_mentions ?? null,
+          brand_positions: bm?.brand_positions ?? [],
           competitor_names: competitorNames,
           competitor_count: totalCompetitorMentions,
           competitor_product_count: totalCompetitorProductMentions,
+          competitor_positions: allCompetitorPositions,
         };
 
         // Debug: Log transformation for rows with missing data

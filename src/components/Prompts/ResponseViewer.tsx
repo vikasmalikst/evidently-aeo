@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { PromptEntry } from '../../types/prompts';
-import { KeywordHighlighter } from './KeywordHighlighter';
+import { PositionHighlighter } from './PositionHighlighter';
 import { getLLMIcon } from '../Visibility/LLMIcons';
 
 interface ResponseViewerProps {
@@ -10,8 +10,6 @@ interface ResponseViewerProps {
 
 export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
-  const [highlightProducts, setHighlightProducts] = useState(true);
-  const [highlightKeywords, setHighlightKeywords] = useState(true);
   const [highlightCompetitors, setHighlightCompetitors] = useState(true);
 
   // Get all responses, filtered by selectedLLM if specified
@@ -44,9 +42,11 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
         response: prompt.response,
         lastUpdated: prompt.lastUpdated || new Date().toISOString(),
         brandMentions: null,
-        productMentions: null,
         competitorMentions: null,
-        keywordCount: null
+        productMentions: null,
+        keywordCount: null,
+        brandPositions: [],
+        competitorPositions: []
       };
       
       // Apply filter if needed (empty array means show all)
@@ -123,24 +123,6 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={highlightProducts}
-                onChange={() => setHighlightProducts(!highlightProducts)}
-                className="w-3 h-3 rounded border-2 border-[#AC59FB] text-[#AC59FB] focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-medium text-[#AC59FB]">Product</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={highlightKeywords}
-                onChange={() => setHighlightKeywords(!highlightKeywords)}
-                className="w-3 h-3 rounded border-2 border-[#10B981] text-[#10B981] focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-medium text-[#10B981]">Keywords</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
                 checked={highlightCompetitors}
                 onChange={() => setHighlightCompetitors(!highlightCompetitors)}
                 className="w-3 h-3 rounded border-2 border-[#F59E0B] text-[#F59E0B] focus:ring-0 focus:ring-offset-0"
@@ -190,18 +172,11 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
                     )}
                   </div>
                   {(responseItem.brandMentions !== null ||
-                    responseItem.productMentions !== null ||
-                    responseItem.competitorMentions !== null ||
-                    responseItem.keywordCount !== null) && (
+                    responseItem.competitorMentions !== null) && (
                     <div className="text-xs text-[var(--text-caption)] flex items-center gap-2 mb-3 flex-wrap">
                       {(responseItem.brandMentions !== null && responseItem.brandMentions !== undefined) && (
                         <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
                           Brand: {responseItem.brandMentions}
-                        </span>
-                      )}
-                      {(responseItem.productMentions !== null && responseItem.productMentions !== undefined) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
-                          Product: {responseItem.productMentions}
                         </span>
                       )}
                       {(responseItem.competitorMentions !== null && responseItem.competitorMentions !== undefined) && (
@@ -209,21 +184,16 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
                           Competitor: {responseItem.competitorMentions}
                         </span>
                       )}
-                      {(responseItem.keywordCount !== null && responseItem.keywordCount !== undefined) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
-                          Keywords: {responseItem.keywordCount}
-                        </span>
-                      )}
                     </div>
                   )}
                   <div className="text-sm text-[var(--text-body)]">
-                    <KeywordHighlighter
+                    <PositionHighlighter
                       text={responseItem.response}
-                      keywords={prompt.highlights}
+                      brandPositions={responseItem.brandPositions ?? []}
+                      competitorPositions={responseItem.competitorPositions ?? []}
                       highlightBrand={highlightBrand}
-                      highlightProducts={highlightProducts}
-                      highlightKeywords={highlightKeywords}
                       highlightCompetitors={highlightCompetitors}
+                      className="text-sm text-[var(--text-body)]"
                     />
                   </div>
                 </div>

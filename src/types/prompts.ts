@@ -14,6 +14,8 @@ export interface CollectorResponse {
   productMentions: number | null
   competitorMentions: number | null
   keywordCount: number | null
+  brandPositions?: number[]
+  competitorPositions?: number[]
 }
 
 export interface PromptEntry {

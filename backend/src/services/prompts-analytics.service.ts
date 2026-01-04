@@ -34,6 +34,8 @@ interface CollectorResponse {
   productMentions: number | null
   competitorMentions: number | null
   keywordCount: number | null
+  brandPositions?: number[]
+  competitorPositions?: number[]
 }
 
 interface PromptEntryPayload {
@@ -744,7 +746,14 @@ export class PromptsAnalyticsService {
 
     // Fetch visibility scores and sentiment scores
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
-    const mentionCountsByCollector = new Map<number, { brand: number; product: number; competitor: number; keywords: number }>()
+    const mentionCountsByCollector = new Map<number, { 
+      brand: number; 
+      product: number; 
+      competitor: number; 
+      keywords: number;
+      brandPositions?: number[];
+      competitorPositions?: number[];
+    }>()
     const mentionCountsByQuery = new Map<string, { brand: number; product: number; competitor: number; keywords: number }>()
     // Note: keywordCountsByCollector is declared earlier (before keyword processing section)
     
@@ -808,6 +817,9 @@ export class PromptsAnalyticsService {
             competitor_product_mentions: row.competitor_product_count ?? 0, // SUM of all competitor product mentions
             // Add competitor rows separately
             competitor_names: row.competitor_names,
+            // Pass through positions
+            brand_positions: row.brand_positions ?? [],
+            competitor_positions: row.competitor_positions ?? [],
           }));
           
           // Add competitor rows (one per competitor)
@@ -927,7 +939,9 @@ export class PromptsAnalyticsService {
               brand: brandMentions,
               product: productMentions,
               competitor: competitorMentions, // This is competitor_count from brand row (SUM of all competitor mentions)
-              keywords: keywordCountsByCollector.get(collectorResultId) || 0
+              keywords: keywordCountsByCollector.get(collectorResultId) || 0,
+              brandPositions: Array.isArray(row.brand_positions) ? row.brand_positions : [],
+              competitorPositions: Array.isArray(row.competitor_positions) ? row.competitor_positions : []
             });
             
             // Debug log for ALL counts (including 0) to identify missing data
@@ -1163,7 +1177,9 @@ export class PromptsAnalyticsService {
             brand: 0,
             product: 0,
             competitor: 0,
-            keywords: keywordCount
+            keywords: keywordCount,
+            brandPositions: [],
+            competitorPositions: []
           }
           
           // Debug: Log when counts are missing (0) to identify data issues
@@ -1177,7 +1193,9 @@ export class PromptsAnalyticsService {
             brandMentions: effectiveCounts.brand,
             productMentions: effectiveCounts.product,
             competitorMentions: effectiveCounts.competitor,
-            keywordCount
+            keywordCount,
+            brandPositions: effectiveCounts.brandPositions ?? [],
+            competitorPositions: effectiveCounts.competitorPositions ?? []
           }
         }),
         volumeCount: aggregate.count,

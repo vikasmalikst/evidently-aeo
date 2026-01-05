@@ -226,7 +226,7 @@ class RecommendationService {
     this.cerebrasApiKey = getCerebrasKey();
     this.cerebrasModel = getCerebrasModel();
     this.openaiApiKey = process.env.OPENAI_API_KEY || null;
-    this.openaiModel = process.env.OPENAI_MODEL || 'openai/gpt-oss-20b';
+    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     
     if (!this.cerebrasApiKey) {
       console.warn('⚠️ [RecommendationService] CEREBRAS_API_KEY not configured');

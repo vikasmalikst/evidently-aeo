@@ -2825,7 +2825,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'openai/gpt-oss-20b',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',

@@ -751,7 +751,7 @@ export class PriorityCollectorService {
     const apiUrl = 'https://api.openai.com/v1/chat/completions';
     
     // Use newer model if available, fallback to gpt-3.5-turbo
-    const openaiModel = getEnvVar('OPENAI_MODEL', 'openai/gpt-oss-20b');
+    const openaiModel = getEnvVar('OPENAI_MODEL', 'gpt-4o-mini');
     
     const requestBody = {
       model: openaiModel,

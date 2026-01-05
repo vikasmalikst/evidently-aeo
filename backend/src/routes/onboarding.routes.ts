@@ -389,20 +389,19 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       }
     });
 
-    // Get trending topics as additional variety (optional)
+    // Get trending topics as additional variety (optional, non-blocking)
+    // Don't await - return response immediately, trending topics can be empty initially
     let trendingTopics: any[] = [];
-    try {
-      const trendingResult = await trendingKeywordsService.getTrendingKeywords({
-        brand: brand_name,
-        industry: brandIndustry || 'General',
-        competitors: brandCompetitors,
-        locale,
-        country,
-        max_keywords: 6
-      });
-
+    const trendingPromise = trendingKeywordsService.getTrendingKeywords({
+      brand: brand_name,
+      industry: brandIndustry || 'General',
+      competitors: brandCompetitors,
+      locale,
+      country,
+      max_keywords: 6
+    }).then((trendingResult) => {
       if (trendingResult.success && trendingResult.data) {
-        trendingTopics = trendingResult.data.keywords.slice(0, 6).map((kw: any, index: number) => ({
+        return trendingResult.data.keywords.slice(0, 6).map((kw: any, index: number) => ({
           id: `trend-${index}`,
           name: kw.keyword,
           source: 'trending' as const,
@@ -410,8 +409,21 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
           trendingIndicator: kw.trend_score > 0.85 ? 'rising' : 'stable'
         }));
       }
-    } catch (trendingError) {
+      return [];
+    }).catch((trendingError) => {
       console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
+      return [];
+    });
+    
+    // Wait for trending topics with a timeout (max 5 seconds) to avoid blocking too long
+    try {
+      trendingTopics = await Promise.race([
+        trendingPromise,
+        new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 5000)) // 5 second timeout
+      ]);
+    } catch (error) {
+      console.warn('⚠️ Trending topics timeout or error, continuing without them');
+      trendingTopics = [];
     }
 
     // Add minimal preset topics (keep a small set for fallback)
@@ -565,7 +577,7 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
 
     // Use OpenRouter as primary, Cerebras as secondary, Gemini as tertiary for prompt generation
     const openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-    const openRouterModel = process.env['OPENROUTER_MODEL'] || 'openai/gpt-oss-20b';
+    const openRouterModel = process.env['OPENROUTER_MODEL'] || 'qwen/qwen3-235b-a22b-2507';
     const openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
     const openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
     const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];

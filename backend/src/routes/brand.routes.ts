@@ -1191,7 +1191,7 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
     // For backward compatibility, we check if all results have been scored
     // This is a simplified check - ideally we'd check each scoring type separately
     const allScoringComplete = total > 0 && scored >= total;
-    
+
     res.json({
       success: true,
       data: {

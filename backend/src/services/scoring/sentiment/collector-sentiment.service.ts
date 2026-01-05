@@ -698,7 +698,7 @@ ${prompt}`;
   }
 
   /**
-   * Analyze sentiment using OpenRouter (primary: gpt-oss-120b:free, fallback: OPENROUTER_MODEL)
+   * Analyze sentiment using OpenRouter (primary: openai/gpt-oss-20b, fallback: OPENROUTER_MODEL)
    */
   private async analyzeSentimentWithOpenRouter(text: string): Promise<SentimentAnalysis> {
     if (!openRouterApiKey) {
@@ -769,8 +769,8 @@ Respond with ONLY valid JSON in this exact format:
       };
     };
 
-    // Try primary model first: gpt-oss-120b:free
-    const primaryModel = 'openai/gpt-oss-120b:free';
+    // Try primary model first: openai/gpt-oss-20b
+    const primaryModel = 'openai/gpt-oss-20b';
     try {
       return await callOpenRouter(primaryModel);
     } catch (error) {

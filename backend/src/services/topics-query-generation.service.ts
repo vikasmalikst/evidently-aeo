@@ -38,7 +38,20 @@ class TopicsQueryGenerationService {
   private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
   private cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
   private openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-  private openRouterModel = process.env['OPENROUTER_TOPICS_MODEL'] || 'openai/gpt-oss-20b';
+  private openRouterModel = (() => {
+    const envModel = process.env['OPENROUTER_TOPICS_MODEL'];
+    const defaultModel = 'qwen/qwen3-235b-a22b-2507';
+    const model = envModel || defaultModel;
+    
+    // Ensure we never use gpt-4o-mini for topic generation
+    if (model.includes('gpt-4o-mini') || model.includes('4o-mini')) {
+      console.warn(`⚠️ [TOPICS] Detected gpt-4o-mini in model "${model}", overriding to qwen model`);
+      return defaultModel;
+    }
+    
+    console.log(`📋 [TOPICS] Using OpenRouter model: ${model}`);
+    return model;
+  })();
   private openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
   private openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
 
@@ -262,8 +275,9 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
    * Call OpenRouter as primary provider
    */
   private async generateWithOpenRouter(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
-    console.log('🌐 Generating topics and queries with OpenRouter (primary)...');
-    console.log('📝 Topics prompt preview:', this.previewForLog(prompt));
+    console.log('🌐 [TOPICS] Generating topics and queries with OpenRouter (primary)...');
+    console.log(`🤖 [TOPICS] Using model: ${this.openRouterModel}`);
+    console.log('📝 [TOPICS] Topics prompt preview:', this.previewForLog(prompt));
 
     const response = await axios.post<any>(
       'https://openrouter.ai/api/v1/chat/completions',

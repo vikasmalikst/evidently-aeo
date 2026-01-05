@@ -103,7 +103,7 @@ export async function fetchTopicsForBrand(params: {
     },
     { 
       requiresAuth: true,
-      timeout: 90000 // Increase timeout to 90 seconds for AI topic generation
+      timeout: 120000 // Increase timeout to 120 seconds for AI topic generation (includes trending topics fetch)
     }
   );
 }

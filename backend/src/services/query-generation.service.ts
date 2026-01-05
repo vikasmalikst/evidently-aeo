@@ -945,7 +945,7 @@ Generate a single query as JSON:
     try {
       if (request.llm_provider === 'openai' && this.openai) {
         const completion = await this.openai.chat.completions.create({
-          model: 'openai/gpt-oss-20b',
+          model: 'gpt-4o-mini',
           messages: [
             { role: 'system', content: 'You are an expert SEO specialist generating unique, topic-specific search queries.' },
             { role: 'user', content: prompt }
@@ -1828,7 +1828,7 @@ CRITICAL VALIDATION BEFORE RETURNING:
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'openai/gpt-oss-20b',
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }

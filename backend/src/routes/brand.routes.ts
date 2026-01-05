@@ -1087,28 +1087,49 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
       return;
     }
 
-    // Get total queries for this brand
-    const { count: totalQueries } = await supabaseAdmin
+    // Fetch counts in parallel to reduce endpoint latency (important for polling)
+    const [
+      { count: totalQueries, error: totalError },
+      { count: collectedCount, error: collectedError },
+      { count: scoredCount, error: scoredError },
+    ] = await Promise.all([
+      supabaseAdmin
       .from('generated_queries')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brandId)
-      .eq('customer_id', customerId);
-
-    // Get completed collector results (Data Collection)
-    const { count: collectedCount } = await supabaseAdmin
+        .eq('customer_id', customerId),
+      supabaseAdmin
       .from('collector_results')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
-      .eq('status', 'completed');
-
-    // Get scored results (Score Calculation)
-    const { count: scoredCount } = await supabaseAdmin
+        .eq('status', 'completed'),
+      supabaseAdmin
       .from('collector_results')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
-      .eq('scoring_status', 'completed');
+        .eq('scoring_status', 'completed'),
+    ]);
+
+    if (totalError || collectedError || scoredError) {
+      console.error('Error fetching onboarding progress counts:', {
+        totalError,
+        collectedError,
+        scoredError,
+        brandId,
+        customerId,
+      });
+      res.status(500).json({
+        success: false,
+        error:
+          totalError?.message ||
+          collectedError?.message ||
+          scoredError?.message ||
+          'Failed to fetch progress',
+      });
+      return;
+    }
 
     const total = totalQueries || 0;
     const collected = collectedCount || 0;

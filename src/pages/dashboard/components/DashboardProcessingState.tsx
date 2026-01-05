@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Layout } from '../../../components/Layout/Layout';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -9,6 +9,9 @@ import {
   Database,
   ArrowRight
 } from 'lucide-react';
+import { apiClient } from '../../../lib/apiClient';
+import { getDefaultDateRange, formatMetricValue } from '../utils';
+import type { ApiResponse, DashboardPayload, DashboardScoreMetric } from '../types';
 
 interface DashboardProcessingStateProps {
   progressData: {
@@ -22,6 +25,7 @@ interface DashboardProcessingStateProps {
     currentOperation: 'collecting' | 'scoring' | 'finalizing';
   } | null;
   brandName?: string;
+  brandId?: string;
   onMinimize?: () => void;
 }
 
@@ -33,8 +37,91 @@ const TIPS = [
   "Citations are key to AEO. We track which sources AI models are using to define your brand."
 ];
 
-export const DashboardProcessingState = ({ progressData, brandName, onMinimize }: DashboardProcessingStateProps) => {
+export const DashboardProcessingState = ({ progressData, brandName, brandId, onMinimize }: DashboardProcessingStateProps) => {
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
+  const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
+  const [hasShownInitialData, setHasShownInitialData] = useState(false);
+  const [dashboardFetchError, setDashboardFetchError] = useState<string | null>(null);
+  const defaultDateRange = useRef(getDefaultDateRange());
+  const dashboardFetchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Find score metrics helper (same as dashboard)
+  const findScore = (label: string, data: typeof dashboardData): DashboardScoreMetric | undefined =>
+    data?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
+
+  const visibilityMetric = findScore('Visibility Index', dashboardData);
+  const shareMetric = findScore('Share of Answers', dashboardData);
+  const sentimentMetric = findScore('Sentiment Score', dashboardData);
+
+  // Fetch dashboard data using same API and date range as loading screen
+  const fetchDashboardData = useCallback(async () => {
+    if (!brandId) return;
+
+    try {
+      const { start, end } = defaultDateRange.current;
+      const endpoint = `/brands/${brandId}/dashboard?startDate=${start}&endDate=${end}&skipCache=true&cacheBust=${Date.now()}`;
+      const data = await apiClient.request<ApiResponse<DashboardPayload>>(
+        endpoint,
+        {},
+        { requiresAuth: true, timeout: 30000 }
+      );
+
+      if (data.success && data.data) {
+        if (data.data.brandId && data.data.brandId !== brandId) {
+          return;
+        }
+        setDashboardData(data.data);
+        setHasShownInitialData(true);
+        setDashboardFetchError(null);
+      } else {
+        console.warn('[DashboardProcessingState] Dashboard response not successful');
+        setDashboardFetchError('Dashboard data not available yet');
+      }
+    } catch (error) {
+      console.error('[DashboardProcessingState] Error fetching dashboard data:', error);
+      setDashboardFetchError(error instanceof Error ? error.message : 'Failed to fetch dashboard data');
+    }
+  }, [brandId]);
+
+  // Poll for dashboard data updates every 15 seconds (same as loading screen)
+  // Note: Progress data is polled separately by useDashboardData hook (every 5 seconds)
+  // This ensures progress updates continue even when this modal is minimized
+  useEffect(() => {
+    if (!brandId) return;
+
+    // Immediate fetch if scoring has started or completed
+    const shouldFetchImmediately = 
+      progressData?.stages?.scoring?.status === 'active' ||
+      progressData?.stages?.scoring?.status === 'completed' ||
+      progressData?.currentOperation === 'scoring' ||
+      progressData?.currentOperation === 'finalizing';
+
+    if (shouldFetchImmediately) {
+      // Fetch immediately if scoring is in progress or done
+      fetchDashboardData();
+    } else {
+      // Otherwise wait 2 seconds before first fetch
+      const initialTimeout = setTimeout(() => {
+        fetchDashboardData();
+      }, 2000);
+
+      return () => {
+        clearTimeout(initialTimeout);
+      };
+    }
+
+    // Then poll every 15 seconds to update KPI preview
+    dashboardFetchIntervalRef.current = setInterval(() => {
+      fetchDashboardData();
+    }, 15000);
+
+    return () => {
+      if (dashboardFetchIntervalRef.current) {
+        clearInterval(dashboardFetchIntervalRef.current);
+        dashboardFetchIntervalRef.current = null;
+      }
+    };
+  }, [brandId, fetchDashboardData, progressData?.stages?.scoring?.status, progressData?.currentOperation]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -197,6 +284,55 @@ export const DashboardProcessingState = ({ progressData, brandName, onMinimize }
                 </div>
               ))}
             </div>
+
+            {/* Available Data Section - Always show when scoring has started */}
+            {(progressData?.stages?.scoring?.status === 'active' || 
+              progressData?.stages?.scoring?.status === 'completed' ||
+              progressData?.currentOperation === 'scoring' ||
+              progressData?.currentOperation === 'finalizing' ||
+              hasShownInitialData) && (
+              <div className="mt-8 rounded-lg p-4 bg-gray-50 border border-gray-200">
+                <p className="font-semibold mb-3 text-sm text-gray-900">Available Data</p>
+                <div className="grid grid-cols-3 gap-3 text-center mb-3">
+                  {/* Share of Answer */}
+                  <div className="rounded-lg p-3 bg-white shadow-sm">
+                    <p className="text-xs mb-1 text-gray-600">Share of Answer</p>
+                    <p className="font-bold text-lg text-gray-900">
+                      {dashboardData ? formatMetricValue(shareMetric, '%') : '—'}
+                    </p>
+                  </div>
+                  {/* Visibility */}
+                  <div className="rounded-lg p-3 bg-white shadow-sm">
+                    <p className="text-xs mb-1 text-gray-600">Visibility</p>
+                    <p className="font-bold text-lg text-gray-900">
+                      {dashboardData ? formatMetricValue(visibilityMetric, '') : '—'}
+                    </p>
+                  </div>
+                  {/* Sentiment */}
+                  <div className="rounded-lg p-3 bg-white shadow-sm">
+                    <p className="text-xs mb-1 text-gray-600">Sentiment</p>
+                    <p className="font-bold text-lg text-gray-900">
+                      {dashboardData ? formatMetricValue(sentimentMetric, '') : '—'}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs mt-3 text-center text-gray-500">
+                  {!dashboardData && !dashboardFetchError
+                    ? 'Loading dashboard data...'
+                    : dashboardFetchError
+                    ? `Unable to load data: ${dashboardFetchError}`
+                    : progressData?.currentOperation === 'finalizing' || 
+                      (progressData?.stages?.finalization?.status === 'completed')
+                    ? 'Data is being finalized. Dashboard will update shortly.'
+                    : 'You can minimize this and continue exploring while collection finishes in the background.'}
+                </p>
+                {dashboardFetchError && (
+                  <div className="mt-2 rounded p-2 text-xs bg-amber-50 border border-amber-200 text-amber-800">
+                    <div className="opacity-90">We'll keep trying to fetch the latest data.</div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Tips Section */}

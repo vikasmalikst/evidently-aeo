@@ -116,9 +116,14 @@ class ApiClient {
 
     if (requiresAuth) {
       const accessToken = this.getAccessToken();
-      if (accessToken) {
-        headers.set('Authorization', `Bearer ${accessToken}`);
+      if (!accessToken) {
+        // Check if we're in dev bypass mode (handled by backend)
+        // Otherwise, throw error immediately
+        const error = new Error('Authentication required. Please sign in to continue.');
+        error.name = 'AuthenticationError';
+        throw error;
       }
+        headers.set('Authorization', `Bearer ${accessToken}`);
     }
     
     // Log slow requests (>5 seconds) for debugging
@@ -196,12 +201,17 @@ class ApiClient {
       throw error;
     }
 
-    if (response.status === 401 && requiresAuth && retry) {
+    if (response.status === 401 && requiresAuth) {
+      if (retry) {
       const refreshed = await this.tryRefreshToken();
       if (refreshed) {
         return this.request<T>(endpoint, options, { requiresAuth, retry: false });
       }
-      throw this.buildError(response, 'Session expired. Please sign in again.');
+      }
+      // Clear tokens if refresh failed or retry is disabled
+      this.clearAuthTokens();
+      const errorMessage = await this.buildError(response, 'Session expired. Please sign in again.');
+      throw errorMessage;
     }
 
     if (!response.ok) {

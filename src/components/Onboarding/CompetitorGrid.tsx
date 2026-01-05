@@ -142,21 +142,30 @@ export const CompetitorGrid = ({
     <div className="onboarding-competitor-grid-content">
       <div className="onboarding-brand-section-wrapper">
         <div className="onboarding-brand-header">
-          <div className="onboarding-brand-header__info">
-            <h2 className="onboarding-brand-header__name">{brand.companyName}</h2>
-            <p className="onboarding-brand-header__meta">
-              {brand.industry || 'General'}
-              {brand.headquarters ? ` • ${brand.headquarters}` : ''}
-              {brand.founded ? ` • Founded ${brand.founded}` : ''}
-              {brand.metadata?.ceo ? ` • CEO: ${brand.metadata.ceo}` : ''}
-            </p>
-            {brand.description ? (
-              <p className="onboarding-brand-header__description">{brand.description}</p>
-            ) : (
-              <p className="onboarding-brand-header__description" style={{ fontStyle: 'italic', color: '#64748b' }}>
-                {brand.website ? `Website: ${brand.website}` : 'No additional information available'}
+          <div className="onboarding-brand-header__info" style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+            <SafeLogo
+              src={brand.logo || brand.metadata?.logo || brand.metadata?.brand_logo}
+              domain={brand.domain || brand.website?.replace(/^https?:\/\//, '').split('/')[0]}
+              alt={brand.companyName}
+              size={64}
+              className="w-16 h-16 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+            />
+            <div style={{ flex: 1 }}>
+              <h2 className="onboarding-brand-header__name">{brand.companyName}</h2>
+              <p className="onboarding-brand-header__meta">
+                {brand.industry || 'General'}
+                {brand.headquarters ? ` • ${brand.headquarters}` : ''}
+                {brand.founded ? ` • Founded ${brand.founded}` : ''}
+                {brand.metadata?.ceo ? ` • CEO: ${brand.metadata.ceo}` : ''}
               </p>
-            )}
+              {brand.description ? (
+                <p className="onboarding-brand-header__description">{brand.description}</p>
+              ) : (
+                <p className="onboarding-brand-header__description" style={{ fontStyle: 'italic', color: '#64748b' }}>
+                  {brand.website ? `Website: ${brand.website}` : 'No additional information available'}
+                </p>
+              )}
+            </div>
           </div>
         </div>
         <div className="onboarding-selection-count">

@@ -74,24 +74,40 @@ router.post('/brand-intel', authenticateToken, async (req: Request, res: Respons
           // Get full competitor details from database if available
           let competitorDetails: any[] = [];
           if (existingBrand.brand_competitors && Array.isArray(existingBrand.brand_competitors)) {
-            competitorDetails = existingBrand.brand_competitors.map((comp: any) => ({
-              name: comp.competitor_name,
-              logo: `https://logo.clearbit.com/${(comp.competitor_url || comp.competitor_name).replace(/^https?:\/\//, '').split('/')[0]}`,
-              relevance: 'Direct Competitor',
-              industry: existingBrand.industry || '',
-              domain: comp.competitor_url?.replace(/^https?:\/\//, '').split('/')[0] || comp.competitor_name.toLowerCase().replace(/\s+/g, '') + '.com',
-              url: comp.competitor_url || `https://${comp.competitor_name.toLowerCase().replace(/\s+/g, '')}.com`,
-              priority: comp.priority || 999
-            }));
+            competitorDetails = existingBrand.brand_competitors.map((comp: any) => {
+              // Build competitor domain with proper fallback
+              const compUrlDomain = comp.competitor_url?.replace(/^https?:\/\//, '').split('/')[0] || '';
+              const compNameDomain = comp.competitor_name.toLowerCase().replace(/\s+/g, '');
+              const compDomain = compUrlDomain || (compNameDomain ? `${compNameDomain}.com` : '');
+              const compLogo = compDomain ? `https://logo.clearbit.com/${compDomain}` : '';
+              
+              return {
+                name: comp.competitor_name,
+                logo: compLogo,
+                relevance: 'Direct Competitor',
+                industry: existingBrand.industry || '',
+                domain: compDomain,
+                url: comp.competitor_url || (compDomain ? `https://${compDomain}` : ''),
+                priority: comp.priority || 999
+              };
+            });
           }
           
           // Format response with existing data - include all available fields
+          // Build logo URL with proper fallback to brand name (same format as dashboard)
+          const brandDomain = existingBrand.homepage_url?.replace(/^https?:\/\//, '').split('/')[0] || '';
+          const brandNameDomain = existingBrand.name.toLowerCase().replace(/\s+/g, '');
+          const logoDomain = brandDomain || (brandNameDomain ? `${brandNameDomain}.com` : '');
+          // Use same logo format as dashboard: metadata.logo or metadata.brand_logo
+          const logoUrl = existingBrand.metadata?.logo || existingBrand.metadata?.brand_logo || 
+            (logoDomain ? `https://logo.clearbit.com/${logoDomain}` : '');
+
           const brandIntel = {
             verified: true,
             companyName: existingBrand.name,
             website: existingBrand.homepage_url || input,
-            domain: existingBrand.homepage_url?.replace(/^https?:\/\//, '').split('/')[0] || '',
-            logo: existingBrand.metadata?.brand_logo || existingBrand.metadata?.logo || `https://logo.clearbit.com/${existingBrand.homepage_url?.replace(/^https?:\/\//, '').split('/')[0]}`,
+            domain: brandDomain || logoDomain,
+            logo: logoUrl,
             industry: existingBrand.industry || 'General',
             headquarters: existingBrand.headquarters || existingBrand.metadata?.headquarters || '',
             founded: existingBrand.founded_year || existingBrand.metadata?.founded_year || null,
@@ -99,6 +115,8 @@ router.post('/brand-intel', authenticateToken, async (req: Request, res: Respons
             description: existingBrand.summary || existingBrand.description || existingBrand.metadata?.description || '',
             metadata: {
               ...(existingBrand.metadata || {}),
+              logo: logoUrl, // Add logo to metadata for dashboard compatibility
+              brand_logo: logoUrl, // Also add as brand_logo for compatibility
               ceo: existingBrand.ceo || existingBrand.metadata?.ceo,
               headquarters: existingBrand.headquarters || existingBrand.metadata?.headquarters,
               founded_year: existingBrand.founded_year || existingBrand.metadata?.founded_year,
@@ -545,7 +563,11 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
       }
     }
 
-    // Use Cerebras as primary, Gemini as secondary for prompt generation
+    // Use OpenRouter as primary, Cerebras as secondary, Gemini as tertiary for prompt generation
+    const openRouterApiKey = process.env['OPENROUTER_API_KEY'];
+    const openRouterModel = process.env['OPENROUTER_MODEL'] || 'openai/gpt-4o-mini';
+    const openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
+    const openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
     const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
     const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
     // Standardize on GOOGLE_GEMINI_API_KEY (fallback to GEMINI_API_KEY for compatibility)
@@ -614,15 +636,84 @@ Format:
 
 Generate queries that real users would type into Google. Make them specific, actionable, and NEUTRAL (no brand mentions).`;
 
+    let openRouterFailed = false;
     let cerebrasFailed = false;
     let geminiFailed = false;
 
     console.log('📝 Prompts generation prompt preview:', prompt.substring(0, 500) + '...');
     
-    // Try Cerebras first (primary)
-    if (cerebrasApiKey && cerebrasApiKey !== 'your_cerebras_api_key_here') {
+    // Try OpenRouter first (primary)
+    if (openRouterApiKey && openRouterApiKey !== 'your_openrouter_api_key_here') {
       try {
-        console.log('🧠 [PROMPTS FLOW] Step 1: Attempting prompt generation with Cerebras (primary)...');
+        console.log('🌐 [PROMPTS FLOW] Step 1: Attempting prompt generation with OpenRouter (primary)...');
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${openRouterApiKey}`,
+          'Content-Type': 'application/json',
+        };
+        if (openRouterSiteUrl) {
+          headers['HTTP-Referer'] = openRouterSiteUrl;
+        }
+        if (openRouterSiteTitle) {
+          headers['X-Title'] = openRouterSiteTitle;
+        }
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: openRouterModel,
+            messages: [
+              { role: 'system', content: 'You are an SEO expert. Always respond with valid JSON arrays only. No explanations, no markdown, no code blocks.' },
+              { role: 'user', content: prompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 2000,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          const generatedText = data.choices?.[0]?.message?.content || '';
+          
+          if (generatedText) {
+            const jsonStr = extractJsonArray(generatedText);
+            if (jsonStr) {
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  generatedQueries = parsed;
+                  console.log(`✅ [PROMPTS FLOW] Step 1 SUCCESS: Generated ${parsed.length} queries using OpenRouter`);
+                  console.log(`🔍 [PROMPTS FLOW] OpenRouter response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
+                }
+              } catch (parseError) {
+                console.error('❌ Failed to parse OpenRouter JSON response:', parseError);
+                openRouterFailed = true;
+              }
+            } else {
+              console.warn('⚠️ No valid JSON array found in OpenRouter response');
+              openRouterFailed = true;
+            }
+          } else {
+            openRouterFailed = true;
+          }
+        } else {
+          const errorText = await response.text();
+          console.error(`❌ [PROMPTS FLOW] Step 1 FAILED: OpenRouter API error: ${response.status} ${errorText}`);
+          openRouterFailed = true;
+        }
+      } catch (openRouterError) {
+        console.error('❌ [PROMPTS FLOW] Step 1 FAILED: OpenRouter API request failed:', openRouterError);
+        openRouterFailed = true;
+      }
+    } else {
+      console.warn('⚠️ [PROMPTS FLOW] Step 1 SKIPPED: OpenRouter API key not configured');
+      openRouterFailed = true;
+    }
+
+    // Fallback to Cerebras if OpenRouter failed
+    if (generatedQueries.length === 0 && cerebrasApiKey && cerebrasApiKey !== 'your_cerebras_api_key_here') {
+      try {
+        console.log('🧠 [PROMPTS FLOW] Step 2: Attempting prompt generation with Cerebras (secondary)...');
         const response = await fetch('https://api.cerebras.ai/v1/completions', {
           method: 'POST',
           headers: {
@@ -649,7 +740,7 @@ Generate queries that real users would type into Google. Make them specific, act
                 const parsed = JSON.parse(jsonStr);
                 if (Array.isArray(parsed) && parsed.length > 0) {
                   generatedQueries = parsed;
-                  console.log(`✅ [PROMPTS FLOW] Step 1 SUCCESS: Generated ${parsed.length} queries using Cerebras`);
+                  console.log(`✅ [PROMPTS FLOW] Step 2 SUCCESS: Generated ${parsed.length} queries using Cerebras`);
                   console.log(`🔍 [PROMPTS FLOW] Cerebras response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
                 }
               } catch (parseError) {
@@ -664,22 +755,22 @@ Generate queries that real users would type into Google. Make them specific, act
             cerebrasFailed = true;
           }
         } else {
-          console.error(`❌ [PROMPTS FLOW] Step 1 FAILED: Cerebras API error: ${response.status} ${response.statusText}`);
+          console.error(`❌ [PROMPTS FLOW] Step 2 FAILED: Cerebras API error: ${response.status} ${response.statusText}`);
           cerebrasFailed = true;
         }
       } catch (cerebrasError) {
-        console.error('❌ [PROMPTS FLOW] Step 1 FAILED: Cerebras API request failed:', cerebrasError);
+        console.error('❌ [PROMPTS FLOW] Step 2 FAILED: Cerebras API request failed:', cerebrasError);
         cerebrasFailed = true;
       }
-    } else {
-      console.warn('⚠️ [PROMPTS FLOW] Step 1 SKIPPED: Cerebras API key not configured');
+    } else if (generatedQueries.length === 0) {
+      console.warn('⚠️ [PROMPTS FLOW] Step 2 SKIPPED: Cerebras API key not configured');
       cerebrasFailed = true;
     }
 
-    // Fallback to Gemini if Cerebras failed
+    // Fallback to Gemini if both OpenRouter and Cerebras failed
     if (generatedQueries.length === 0 && geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
       try {
-        console.log('🤖 [PROMPTS FLOW] Step 2: Attempting prompt generation with Gemini (fallback)...');
+        console.log('🤖 [PROMPTS FLOW] Step 3: Attempting prompt generation with Gemini (tertiary fallback)...');
         const geminiModel = process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash-002';
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
@@ -712,7 +803,7 @@ Generate queries that real users would type into Google. Make them specific, act
                 const parsed = JSON.parse(jsonStr);
                 if (Array.isArray(parsed) && parsed.length > 0) {
                   generatedQueries = parsed;
-                  console.log(`✅ [PROMPTS FLOW] Step 2 SUCCESS: Generated ${parsed.length} queries using Gemini`);
+                  console.log(`✅ [PROMPTS FLOW] Step 3 SUCCESS: Generated ${parsed.length} queries using Gemini`);
                   console.log(`🔍 [PROMPTS FLOW] Gemini response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
                 }
               } catch (parseError) {
@@ -728,21 +819,21 @@ Generate queries that real users would type into Google. Make them specific, act
           }
         } else {
           const errorText = await response.text();
-          console.error(`❌ [PROMPTS FLOW] Step 2 FAILED: Gemini API error: ${response.status} ${errorText}`);
+          console.error(`❌ [PROMPTS FLOW] Step 3 FAILED: Gemini API error: ${response.status} ${errorText}`);
           geminiFailed = true;
         }
       } catch (geminiError) {
-        console.error('❌ [PROMPTS FLOW] Step 2 FAILED: Gemini API request failed:', geminiError);
+        console.error('❌ [PROMPTS FLOW] Step 3 FAILED: Gemini API request failed:', geminiError);
         geminiFailed = true;
       }
     } else if (generatedQueries.length === 0) {
-      console.warn('⚠️ [PROMPTS FLOW] Step 2 SKIPPED: Gemini API key not configured');
+      console.warn('⚠️ [PROMPTS FLOW] Step 3 SKIPPED: Gemini API key not configured');
       geminiFailed = true;
     }
 
-    // If both providers failed, throw error
+    // If all providers failed, throw error
     if (generatedQueries.length === 0) {
-      const errorMsg = 'Prompt generation failed: Both providers failed';
+      const errorMsg = 'Prompt generation failed: All providers (OpenRouter, Cerebras, Gemini) failed';
       console.error(`❌ ${errorMsg}`);
       throw new Error(errorMsg);
     }

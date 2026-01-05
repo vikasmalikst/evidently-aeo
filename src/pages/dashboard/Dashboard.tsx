@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Layout } from '../../components/Layout/Layout';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import {
@@ -18,9 +18,7 @@ import { StackedRacingChart } from './components/StackedRacingChart';
 import { LLMVisibilityTable } from './components/LLMVisibilityTable';
 import { EmptyState } from './components/EmptyState';
 import { InfoTooltip } from './components/InfoTooltip';
-import { DashboardProcessingState } from './components/DashboardProcessingState';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
-import { GlobalProgressWidget } from './components/GlobalProgressWidget';
 import { prefetchOnIdle } from '../../lib/prefetch';
 import type { DashboardScoreMetric, LLMVisibilitySliceUI } from './types';
 import type { ApiResponse, DashboardPayload } from './types';
@@ -44,7 +42,8 @@ export const Dashboard = () => {
     progressData
   } = useDashboardData();
 
-  const [showFullProcessing, setShowFullProcessing] = useState(true);
+  // Progress UI is now accessed via the Header bell (minimizable modal)
+  // so we no longer render a separate full-screen processing state here.
 
   const handleBrandSelectFocus = () => {
     if (brands.length <= 1 || !selectedBrandId || !startDate || !endDate) {
@@ -223,24 +222,10 @@ export const Dashboard = () => {
   );
 
   if (isDataCollectionInProgress && !dashboardData) {
-    if (showFullProcessing) {
-      return (
-        <DashboardProcessingState
-          progressData={progressData}
-          brandName={selectedBrand?.name}
-          onMinimize={() => setShowFullProcessing(false)}
-        />
-      );
-    }
-
     return (
-      <>
+      <Layout>
         <DashboardSkeleton />
-        <GlobalProgressWidget
-          progressData={progressData}
-          onExpand={() => setShowFullProcessing(true)}
-        />
-      </>
+      </Layout>
     );
   }
 

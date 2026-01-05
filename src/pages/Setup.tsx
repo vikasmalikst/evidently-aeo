@@ -14,6 +14,8 @@ import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
 import { PromptConfiguration, PromptWithTopic } from '../components/Onboarding/PromptConfiguration';
 import type { Topic } from '../types/topic';
 import type { OnboardingCompetitor } from '../types/onboarding';
+import { apiClient } from '../lib/apiClient';
+import { useAuthStore } from '../store/authStore';
 
 export interface SetupData {
   models: string[];
@@ -27,6 +29,7 @@ export const Setup = () => {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { isAuthenticated } = useAuthStore();
 
   const initialStep: Step = featureFlags.setupStep || featureFlags.onboardingStep || 'welcome';
   const [currentStep, setCurrentStep] = useState<Step>(initialStep);
@@ -101,6 +104,20 @@ export const Setup = () => {
     setIsSubmitting(true);
     setSubmitError(null);
 
+    // Check authentication before submitting
+    const accessToken = apiClient.getAccessToken();
+    if (!accessToken && !featureFlags.bypassAuthInDev) {
+      const errorMsg = 'Your session has expired. Please sign in again to continue.';
+      console.error('❌ Authentication required:', errorMsg);
+      setSubmitError(errorMsg);
+      setIsSubmitting(false);
+      // Redirect to login after a short delay
+      setTimeout(() => {
+        navigate('/auth?redirect=/setup', { replace: true });
+      }, 2000);
+      return;
+    }
+
     try {
       const competitorPayload = competitors.map((c: any, i: number) => {
         const rawDomainOrUrl = (c?.domain ?? c?.url ?? '') as string;
@@ -166,9 +183,9 @@ export const Setup = () => {
         if (brandId) {
           localStorage.setItem('current_brand_id', brandId);
           localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
-          navigate('/dashboard', { 
-            replace: true,
-            state: { fromOnboarding: true, autoSelectBrandId: brandId }
+          // Navigate to loading screen instead of dashboard
+          navigate(`/onboarding/loading/${brandId}`, { 
+            replace: true
           });
         } else {
           navigate('/dashboard');
@@ -178,8 +195,27 @@ export const Setup = () => {
       }
     } catch (error) {
       console.error('❌ Onboarding submission failed:', error);
-      setSubmitError(error instanceof Error ? error.message : 'Failed to complete onboarding');
+      
+      // Check if it's an authentication error
+      const errorMessage = error instanceof Error ? error.message : 'Failed to complete onboarding';
+      const isAuthError = errorMessage.includes('401') || 
+                         errorMessage.includes('Unauthorized') || 
+                         errorMessage.includes('Session expired') ||
+                         errorMessage.includes('Authentication failed') ||
+                         errorMessage.includes('Access token required');
+      
+      if (isAuthError) {
+        const authErrorMsg = 'Your session has expired. Please sign in again to continue.';
+        setSubmitError(authErrorMsg);
+        setIsSubmitting(false);
+        // Redirect to login after showing error
+        setTimeout(() => {
+          navigate('/auth?redirect=/setup', { replace: true });
+        }, 2000);
+      } else {
+        setSubmitError(errorMessage);
       setIsSubmitting(false);
+      }
     }
   };
 
@@ -318,6 +354,22 @@ export const Setup = () => {
       onBack={handleBack}
     >
       {renderStepContent()}
+      
+      {submitError && (
+        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3 flex-1">
+              <h3 className="text-sm font-medium text-red-800">Error</h3>
+              <p className="mt-1 text-sm text-red-700">{submitError}</p>
+            </div>
+          </div>
+        </div>
+      )}
       
       {currentStep !== 'topicChoice' && currentStep !== 'review' && currentStep !== 'summary' && (
         <div className="mt-8 pt-8 border-t border-gray-200 flex justify-end">

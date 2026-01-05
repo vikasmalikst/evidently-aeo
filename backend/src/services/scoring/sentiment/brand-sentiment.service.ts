@@ -12,6 +12,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const openRouterApiKey = process.env.OPENROUTER_API_KEY;
 const openRouterSiteUrl = process.env.OPENROUTER_SITE_URL;
 const openRouterSiteTitle = process.env.OPENROUTER_SITE_TITLE;
+const openRouterModel = process.env.OPENROUTER_MODEL;
 
 const sentimentDelayMs = parseInt(process.env.SENTIMENT_DELAY_MS || '0', 10);
 const brandGroupLimit = parseInt(process.env.BRAND_SENTIMENT_GROUP_LIMIT || '20', 10);
@@ -219,7 +220,12 @@ Respond with ONLY valid JSON in this exact format:
       return response.json() as Promise<any>;
     };
 
-    const models = ['openai/gpt-oss-120b:free', 'openai/gpt-5-nano'];
+    // Primary: gpt-oss-120b:free, Fallback: OPENROUTER_MODEL (if configured), then gpt-5-nano
+    const models = [
+      'openai/gpt-oss-120b:free',
+      ...(openRouterModel ? [openRouterModel] : []),
+      'openai/gpt-5-nano'
+    ];
     let lastError: Error | null = null;
     let data: any = null;
 

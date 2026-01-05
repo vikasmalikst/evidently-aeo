@@ -12,6 +12,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const openRouterApiKey = process.env.OPENROUTER_API_KEY;
 const openRouterSiteUrl = process.env.OPENROUTER_SITE_URL;
 const openRouterSiteTitle = process.env.OPENROUTER_SITE_TITLE;
+const openRouterModel = process.env.OPENROUTER_MODEL;
 
 const { getSentimentScoringKey, getGeminiKey, getGeminiModel, getCerebrasModel } = require('../../../utils/api-key-resolver');
 const cerebrasApiKey = getSentimentScoringKey();
@@ -697,7 +698,7 @@ ${prompt}`;
   }
 
   /**
-   * Analyze sentiment using OpenRouter (GPT-5 Nano)
+   * Analyze sentiment using OpenRouter (primary: gpt-oss-120b:free, fallback: OPENROUTER_MODEL)
    */
   private async analyzeSentimentWithOpenRouter(text: string): Promise<SentimentAnalysis> {
     if (!openRouterApiKey) {
@@ -724,47 +725,72 @@ Respond with ONLY valid JSON in this exact format:
   "negativeSentences": ["sentence 1", "sentence 2"]
 }`;
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterApiKey}`,
-        'Content-Type': 'application/json',
-        ...(openRouterSiteUrl ? { 'HTTP-Referer': openRouterSiteUrl } : {}),
-        ...(openRouterSiteTitle ? { 'X-Title': openRouterSiteTitle } : {}),
-      },
-      body: JSON.stringify({
-        model: 'openai/gpt-oss-120b:free',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt }
-            ]
-          }
-        ],
-        temperature: 0.2,
-        max_tokens: 1500
-      })
-    });
+    const callOpenRouter = async (model: string) => {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openRouterApiKey}`,
+          'Content-Type': 'application/json',
+          ...(openRouterSiteUrl ? { 'HTTP-Referer': openRouterSiteUrl } : {}),
+          ...(openRouterSiteTitle ? { 'X-Title': openRouterSiteTitle } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt }
+              ]
+            }
+          ],
+          temperature: 0.2,
+          max_tokens: 1500
+        })
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
-    }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+      }
 
-    const data = await response.json() as any;
-    const content = data.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found in OpenRouter response');
-    }
-    const result = JSON.parse(jsonMatch[0]);
-    return {
-      label: result.label?.toUpperCase() || 'NEUTRAL',
-      score: Math.max(-1, Math.min(1, parseFloat(result.score) || 0)),
-      positiveSentences: Array.isArray(result.positiveSentences) ? result.positiveSentences : [],
-      negativeSentences: Array.isArray(result.negativeSentences) ? result.negativeSentences : [],
+      const data = await response.json() as any;
+      const content = data.choices?.[0]?.message?.content || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No JSON found in OpenRouter response');
+      }
+      const result = JSON.parse(jsonMatch[0]);
+      return {
+        label: result.label?.toUpperCase() || 'NEUTRAL',
+        score: Math.max(-1, Math.min(1, parseFloat(result.score) || 0)),
+        positiveSentences: Array.isArray(result.positiveSentences) ? result.positiveSentences : [],
+        negativeSentences: Array.isArray(result.negativeSentences) ? result.negativeSentences : [],
+      };
     };
+
+    // Try primary model first: gpt-oss-120b:free
+    const primaryModel = 'openai/gpt-oss-120b:free';
+    try {
+      return await callOpenRouter(primaryModel);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`⚠️ OpenRouter sentiment failed with primary model "${primaryModel}": ${errorMsg}`);
+      
+      // Fallback to OPENROUTER_MODEL if configured
+      if (openRouterModel) {
+        try {
+          console.log(`🔄 Retrying with OPENROUTER_MODEL: ${openRouterModel}`);
+          return await callOpenRouter(openRouterModel);
+        } catch (fallbackError) {
+          const fallbackErrorMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          throw new Error(`OpenRouter sentiment failed with both primary and fallback models. Primary: ${errorMsg}, Fallback: ${fallbackErrorMsg}`);
+        }
+      }
+      
+      // If no fallback model configured, throw the original error
+      throw error;
+    }
   }
 
   /**

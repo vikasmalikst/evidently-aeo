@@ -9,6 +9,7 @@ import type { ApiResponse, DashboardPayload } from '../types';
 import { getDefaultDateRange } from '../utils';
 import { apiClient } from '../../../lib/apiClient';
 import { prefetchOnIdle } from '../../../lib/prefetch';
+import { onboardingProgressTracker } from '../../../lib/onboardingProgressTracker';
 
 export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
@@ -40,6 +41,15 @@ export const useDashboardData = () => {
     selectBrand,
     reload: reloadBrands
   } = useManualBrandDashboard();
+
+  // Sync selectedBrandId to current_brand_id for Bell/NotificationBell compatibility
+  useEffect(() => {
+    if (selectedBrandId) {
+      localStorage.setItem('current_brand_id', selectedBrandId);
+    } else {
+      localStorage.removeItem('current_brand_id');
+    }
+  }, [selectedBrandId]);
 
   const previousBrandIdRef = useRef<string | null>(selectedBrandId);
   const [isBrandSwitching, setIsBrandSwitching] = useState(false);
@@ -332,6 +342,7 @@ export const useDashboardData = () => {
     }
 
     const storageKey = `data_collection_in_progress_${selectedBrandId}`;
+    const completedAtKey = `data_collection_completed_at_${selectedBrandId}`;
     const inProgress = localStorage.getItem(storageKey) === 'true';
     setIsDataCollectionInProgress(inProgress);
 
@@ -342,112 +353,40 @@ export const useDashboardData = () => {
 
     let isMounted = true;
 
-    const checkProgress = async () => {
-      try {
-        const data = await apiClient.request<ApiResponse<{
-          stages?: {
-            collection: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
-            scoring: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
-            finalization: { status: 'pending' | 'active' | 'completed' };
-          };
-          queries: { total: number; completed: number };
-          scoring: { positions: boolean; sentiments: boolean; citations: boolean };
-          currentOperation: 'collecting' | 'scoring' | 'finalizing';
-        }>>(
-          `/brands/${selectedBrandId}/onboarding-progress`,
-          {},
-          { requiresAuth: true }
-        );
+    // Shared poller (single interval per brand) used across bell + modal + dashboard
+    const unsubscribe = onboardingProgressTracker.subscribe(selectedBrandId, (snapshot) => {
+      if (!isMounted) return;
 
-        if (!isMounted) {
-          return;
-        }
-
-        if (!data?.success || !data?.data) {
-          console.warn('[DASHBOARD] Progress check failed or no data');
-          return;
-        }
-
-        const progressUpdate = {
-          stages: data.data.stages,
-          queries: data.data.queries,
-          scoring: data.data.scoring,
-          currentOperation: data.data.currentOperation || 'collecting'
-        };
-
-        // Update progress data
-        setProgressData(progressUpdate);
-
-        // Check if complete
-        const isComplete =
-          data.data.queries.completed >= data.data.queries.total &&
-          data.data.scoring.positions &&
-          data.data.scoring.sentiments &&
-          data.data.scoring.citations;
-
-        if (isComplete) {
-          localStorage.removeItem(storageKey);
-          setIsDataCollectionInProgress(false);
-          // Trigger immediate dashboard data refresh when collection completes
-          refetchDashboard().catch((err) => {
-            console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
-          });
-          // Keep progress data for a moment to show completion, then clear
-          setTimeout(() => {
-            if (isMounted) {
-              setProgressData(null);
-            }
-          }, 3000);
-        }
-      } catch (error) {
-        // Only log non-critical errors
-        if (error instanceof Error) {
-          const errorMsg = error.message.toLowerCase();
-          if (!errorMsg.includes('fetch') && 
-              !errorMsg.includes('json') && 
-              !errorMsg.includes('unexpected token') &&
-              !errorMsg.includes('doctype')) {
-            console.error('[DASHBOARD] Error checking data collection progress:', error);
-          }
-        }
+      if (snapshot.data) {
+        setProgressData({
+          stages: snapshot.data.stages,
+          queries: snapshot.data.queries,
+          scoring: snapshot.data.scoring,
+          currentOperation: snapshot.data.currentOperation || 'collecting',
+        });
       }
-    };
 
-    // Poll every 20 seconds for progress updates
-    const interval = window.setInterval(() => {
-      checkProgress().catch((err) => {
-        // Only log non-critical errors
-        if (err instanceof Error) {
-          const errorMsg = err.message.toLowerCase();
-          if (!errorMsg.includes('fetch') && 
-              !errorMsg.includes('json') && 
-              !errorMsg.includes('unexpected token') &&
-              !errorMsg.includes('doctype')) {
-            console.error('[DASHBOARD] Error in progress polling interval:', err);
+      if (snapshot.isComplete) {
+        localStorage.removeItem(storageKey);
+        localStorage.setItem(completedAtKey, new Date().toISOString());
+        setIsDataCollectionInProgress(false);
+
+        refetchDashboard().catch((err) => {
+          console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
+        });
+
+        // Keep progress data for a moment to show completion, then clear
+        setTimeout(() => {
+          if (isMounted) {
+            setProgressData(null);
           }
-        }
-      });
-    }, 20000);
-    // Initial check after 2 seconds
-    const initialTimeout = setTimeout(() => {
-      checkProgress().catch((err) => {
-        // Only log non-critical errors
-        if (err instanceof Error) {
-          const errorMsg = err.message.toLowerCase();
-          if (!errorMsg.includes('fetch') && 
-              !errorMsg.includes('json') && 
-              !errorMsg.includes('unexpected token') &&
-              !errorMsg.includes('doctype')) {
-            console.error('[DASHBOARD] Error in initial progress check:', err);
-          }
-        }
-      });
-    }, 2000);
+        }, 3000);
+      }
+    });
 
     return () => {
       isMounted = false;
-      window.clearInterval(interval);
-      clearTimeout(initialTimeout);
+      unsubscribe();
     };
   }, [selectedBrandId, refetchDashboard]);
 

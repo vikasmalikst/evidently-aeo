@@ -322,7 +322,40 @@ export const mockCitationSourcesData = {
   analysisId: "analysis_12345"
 };
 
-export type DomainData = typeof mockCitationSourcesData.domainsData[0];
-export type URLData = typeof mockCitationSourcesData.urlsData[0];
+export type TrendDirection = 'up' | 'down' | 'stable';
+
+export interface TrendData {
+  direction: TrendDirection;
+  percent: number;
+}
+
+export interface DomainData {
+  id: string;
+  domain: string;
+  type: string;
+  typeColor: string;
+  isYourDomain: boolean;
+  isCompetitor: boolean;
+  competitorName: string | null;
+  usedPercentage: number;
+  avgCitations: number;
+  trend: TrendData;
+  topTopic: string;
+  urlCount: number;
+  competitiveComparison: { delta: number; interpretation: string } | null;
+}
+
+export interface URLData {
+  url: string;
+  domain: string;
+  brandMentioned: string;
+  usedTotal: number;
+  avgCitations: number;
+  brandsMentioned: string[];
+  topics: string[];
+  trend: TrendData;
+  competitorMentioned: string | null;
+}
+
 export type CitationInsightsData = typeof mockCitationSourcesData.insights;
 export type SourceTypeDistribution = typeof mockCitationSourcesData.sourceTypeDistribution[0];

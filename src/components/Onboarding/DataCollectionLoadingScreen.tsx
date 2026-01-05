@@ -120,8 +120,6 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
 
   // Progress bar animation - transition from collecting to scoring
   useEffect(() => {
-    let progressInterval: NodeJS.Timeout;
-    
     // Animate progress bar smoothly based on elapsed time
     const updateProgress = () => {
       if (elapsedTime < 30) {
@@ -147,7 +145,7 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
     updateProgress();
     
     // Update progress every 100ms for smooth animation
-    progressInterval = setInterval(updateProgress, 100);
+    const progressInterval = setInterval(updateProgress, 100);
 
     return () => {
       clearInterval(progressInterval);
@@ -162,10 +160,8 @@ export const DataCollectionLoadingScreen = ({ brandId }: DataCollectionLoadingSc
 
   // Poll for progress updates only (no auto-redirect on completion - let dashboard handle that)
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-
     // Poll for progress updates to update the UI
-    interval = setInterval(async () => {
+    const interval = setInterval(async () => {
       try {
         const data = await apiClient.request<ApiResponse<ProgressData>>(
           `/brands/${brandId}/onboarding-progress`,

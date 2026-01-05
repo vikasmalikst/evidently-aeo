@@ -2,21 +2,24 @@ import { IconCircleCheck } from '@tabler/icons-react';
 import { useRef, useEffect, useState } from 'react';
 
 interface StepIndicatorProps {
-  currentStep: 'models' | 'topics' | 'prompts';
+  currentStep: 'welcome' | 'models' | 'topicChoice' | 'topics' | 'prompts' | 'review' | 'summary' | 'progress';
 }
 
 export const StepIndicator = ({ currentStep }: StepIndicatorProps) => {
   const steps = [
     { id: 'models', label: 'Models', labelWithSelect: 'Select Models' },
-    { id: 'topics', label: 'Topics', labelWithSelect: 'Select Topics' },
-    { id: 'prompts', label: 'Prompts', labelWithSelect: 'Select Prompts' },
+    { id: 'topics', label: 'Configuration', labelWithSelect: 'Configure Topics & Prompts' },
+    { id: 'summary', label: 'Summary', labelWithSelect: 'Final Summary' },
   ] as const;
 
   const textRef = useRef<HTMLDivElement>(null);
   const [pillWidth, setPillWidth] = useState<number>(0);
 
-  const getStepIndex = (stepId: string) => {
-    return steps.findIndex((s) => s.id === stepId);
+  const getStepIndex = (stepId: StepIndicatorProps['currentStep']) => {
+    if (stepId === 'welcome' || stepId === 'models') return 0;
+    if (['topicChoice', 'topics', 'prompts', 'review'].includes(stepId)) return 1;
+    if (stepId === 'summary' || stepId === 'progress') return 2;
+    return 0;
   };
 
   const currentIndex = getStepIndex(currentStep);

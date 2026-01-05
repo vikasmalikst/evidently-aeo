@@ -5,6 +5,7 @@ import { trendingKeywordsService } from '../services/keywords/trending-keywords.
 import { aeoCategorizationService } from '../services/aeo-categorization.service';
 import { brandService } from '../services/brand.service';
 import { topicsQueryGenerationService } from '../services/topics-query-generation.service';
+import { brandProductEnrichmentService } from '../services/onboarding/brand-product-enrichment.service';
 
 const router = Router();
 
@@ -191,6 +192,40 @@ router.post('/competitors', authenticateToken, async (req: Request, res: Respons
         error instanceof Error
           ? error.message
           : 'Failed to generate competitor suggestions',
+    });
+  }
+});
+
+router.post('/brand-products/preview', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brand_name, industry, competitors } = req.body ?? {};
+
+    if (!brand_name || typeof brand_name !== 'string') {
+      res.status(400).json({ success: false, error: 'brand_name is required' });
+      return;
+    }
+
+    const competitorNames: string[] = Array.isArray(competitors)
+      ? competitors
+          .map((c: any) => (typeof c === 'string' ? c : c?.name))
+          .filter((c: any) => typeof c === 'string' && c.trim().length > 0)
+      : [];
+
+    const result = await brandProductEnrichmentService.previewEnrichment(
+      {
+        brandName: brand_name,
+        industry: typeof industry === 'string' ? industry : undefined,
+        competitors: competitorNames,
+      },
+      (msg: string) => console.log(msg)
+    );
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('❌ Brand products preview failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to generate brand products preview',
     });
   }
 });
@@ -770,4 +805,3 @@ Generate queries that real users would type into Google. Make them specific, act
 });
 
 export default router;
-

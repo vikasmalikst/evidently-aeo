@@ -110,7 +110,7 @@ export const CompetitorComparisonChart = ({ sources }: CompetitorComparisonChart
           color: 'var(--chart-label)',
           font: {
             size: 14,
-            weight: '500'
+            weight: 500
           }
         }
       }

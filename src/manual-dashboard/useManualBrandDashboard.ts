@@ -88,7 +88,9 @@ export const useManualBrandDashboard = (
       setError(null)
 
       try {
-        const response = await cachedRequest<ApiResponse<ManualBrandSummary[]>>('/brands', {}, { requiresAuth: true })
+        // Force refresh if this is a reload (token > 0), otherwise use cache strategy
+        const endpoint = reloadToken > 0 ? '/brands?skipCache=true' : '/brands'
+        const response = await cachedRequest<ApiResponse<ManualBrandSummary[]>>(endpoint, {}, { requiresAuth: true })
 
         if (!response.success || !response.data) {
           throw new Error(response.error || response.message || 'Failed to load brands')

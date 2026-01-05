@@ -10,6 +10,7 @@ import { BrandOnboardingRequest, ApiResponse, DatabaseError } from '../types/aut
 import { supabaseAdmin } from '../config/database';
 import { topicConfigurationService } from '../services/topic-configuration.service';
 import { competitorCrudService, competitorVersioningService } from '../services/competitor-management';
+import { brandProductEnrichmentService, EnrichmentResult } from '../services/onboarding/brand-product-enrichment.service';
 
 const router = Router();
 
@@ -42,6 +43,48 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to create brand'
+    });
+  }
+});
+
+router.post('/:brandId/brand-products', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { brandId } = req.params;
+    const customerId = req.user!.customer_id;
+
+    if (!brandId) {
+      res.status(400).json({ success: false, error: 'Brand ID is required' });
+      return;
+    }
+
+    const brand = await brandService.getBrandById(brandId, customerId);
+    if (!brand) {
+      res.status(404).json({ success: false, error: 'Brand not found' });
+      return;
+    }
+
+    const enrichment = (req.body?.enrichment ?? req.body) as EnrichmentResult;
+    const isValid =
+      enrichment &&
+      enrichment.brand &&
+      Array.isArray(enrichment.brand.synonyms) &&
+      Array.isArray(enrichment.brand.products) &&
+      enrichment.competitors &&
+      typeof enrichment.competitors === 'object';
+
+    if (!isValid) {
+      res.status(400).json({ success: false, error: 'Invalid enrichment payload' });
+      return;
+    }
+
+    await brandProductEnrichmentService.saveEnrichmentToDatabase(brandId, enrichment, (msg: string) => console.log(msg));
+
+    res.json({ success: true, data: { brand_id: brandId } });
+  } catch (error) {
+    console.error('Error saving brand products:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to save brand products'
     });
   }
 });
@@ -1051,93 +1094,82 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
       .eq('brand_id', brandId)
       .eq('customer_id', customerId);
 
-    // Get completed collector results
-    const { count: completedResults } = await supabaseAdmin
+    // Get completed collector results (Data Collection)
+    const { count: collectedCount } = await supabaseAdmin
       .from('collector_results')
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
       .eq('status', 'completed');
 
-    // Get currently running collector (for display)
-    const { data: runningResult } = await supabaseAdmin
+    // Get scored results (Score Calculation)
+    const { count: scoredCount } = await supabaseAdmin
       .from('collector_results')
-      .select('collector_type')
+      .select('id', { count: 'exact', head: true })
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
-      .in('status', ['pending', 'running'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .eq('scoring_status', 'completed');
 
-    // Check scoring status
-    // Position extraction - check if positions exist
-    const { count: positionCount } = await supabaseAdmin
-      .from('extracted_positions')
-      .select('id', { count: 'exact', head: true })
-      .eq('brand_id', brandId);
-
-    // Sentiment scoring - check if sentiments exist
-    const { data: sentimentResults } = await supabaseAdmin
-      .from('collector_results')
-      .select('sentiment_label')
-      .eq('brand_id', brandId)
-      .eq('customer_id', customerId)
-      .not('sentiment_label', 'is', null)
-      .limit(1);
-
-    // Citation extraction - check if citations exist
-    const { count: citationCount } = await supabaseAdmin
-      .from('citations')
-      .select('id', { count: 'exact', head: true })
-      .eq('brand_id', brandId);
-
-    // Determine current operation
-    let currentOperation: 'collecting' | 'scoring' | 'finalizing' = 'collecting';
-    const completedQueries = completedResults || 0;
     const total = totalQueries || 0;
+    const collected = collectedCount || 0;
+    const scored = scoredCount || 0;
 
-    if (completedQueries >= total && total > 0) {
-      const positionsDone = (positionCount || 0) > 0;
-      const sentimentsDone = (sentimentResults?.length || 0) > 0;
-      const citationsDone = (citationCount || 0) > 0;
+    // Determine Stage Statuses
+    let collectionStatus: 'pending' | 'active' | 'completed' = 'pending';
+    if (total > 0) {
+      if (collected >= total) collectionStatus = 'completed';
+      else collectionStatus = 'active';
+    }
 
-      if (positionsDone && sentimentsDone && citationsDone) {
+    let scoringStatus: 'pending' | 'active' | 'completed' = 'pending';
+    // Scoring is active if we have collected something
+    if (collected > 0) {
+       if (scored >= total && total > 0) scoringStatus = 'completed';
+       else scoringStatus = 'active';
+    }
+
+    let finalizationStatus: 'pending' | 'active' | 'completed' = 'pending';
+    if (collectionStatus === 'completed' && scoringStatus === 'completed') {
+       finalizationStatus = 'active';
+    }
+
+    // Determine current operation (backward compatibility + high level state)
+    let currentOperation: 'collecting' | 'scoring' | 'finalizing' = 'collecting';
+    if (collectionStatus === 'completed') {
+      if (scoringStatus === 'completed') {
         currentOperation = 'finalizing';
       } else {
         currentOperation = 'scoring';
       }
     }
 
-    // Estimate time remaining (rough calculation)
-    const estimatedTimeRemaining = Math.max(
-      0,
-      Math.ceil(
-        ((total - completedQueries) * 3) + // 3 seconds per query remaining
-        ((positionCount || 0) === 0 ? 30 : 0) + // 30s for positions
-        ((sentimentResults?.length || 0) === 0 ? 30 : 0) + // 30s for sentiments
-        ((citationCount || 0) === 0 ? 20 : 0) // 20s for citations
-      )
-    );
-
-    const progress = {
-      queries: {
-        total: total || 0,
-        completed: completedQueries,
-        current: runningResult?.collector_type || undefined,
-      },
-      scoring: {
-        positions: (positionCount || 0) > 0,
-        sentiments: (sentimentResults?.length || 0) > 0,
-        citations: (citationCount || 0) > 0,
-      },
-      currentOperation,
-      estimatedTimeRemaining,
-    };
-
     res.json({
       success: true,
-      data: progress,
+      data: {
+        stages: {
+          collection: {
+            total: total,
+            completed: collected,
+            status: collectionStatus
+          },
+          scoring: {
+            total: total,
+            completed: scored,
+            status: scoringStatus
+          },
+          finalization: {
+            status: finalizationStatus
+          }
+        },
+        // Keep backward compatibility
+        queries: { total: total, completed: collected },
+        scoring: { 
+          positions: scored > 0, 
+          sentiments: scored > 0, 
+          citations: scored > 0 
+        },
+        currentOperation
+      }
     });
   } catch (error) {
     console.error('Error fetching onboarding progress:', error);

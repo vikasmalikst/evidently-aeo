@@ -5,7 +5,6 @@ import { useManualBrandDashboard } from '../../../manual-dashboard';
 import { useCachedData } from '../../../hooks/useCachedData';
 import { featureFlags } from '../../../config/featureFlags';
 import { onboardingUtils } from '../../../utils/onboardingUtils';
-import type { Topic } from '../../../types/topic';
 import type { ApiResponse, DashboardPayload } from '../types';
 import { getDefaultDateRange } from '../utils';
 import { apiClient } from '../../../lib/apiClient';
@@ -20,9 +19,13 @@ export const useDashboardData = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
-  const [showTopicModal, setShowTopicModal] = useState(false);
   const [isDataCollectionInProgress, setIsDataCollectionInProgress] = useState(false);
   const [progressData, setProgressData] = useState<{
+    stages?: {
+      collection: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
+      scoring: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
+      finalization: { status: 'pending' | 'active' | 'completed' };
+    };
     queries: { total: number; completed: number };
     scoring: { positions: boolean; sentiments: boolean; citations: boolean };
     currentOperation: 'collecting' | 'scoring' | 'finalizing';
@@ -34,17 +37,16 @@ export const useDashboardData = () => {
     error: brandsError,
     selectedBrandId,
     selectedBrand,
-    selectBrand
+    selectBrand,
+    reload: reloadBrands
   } = useManualBrandDashboard();
 
-  // Track previous selectedBrandId to detect brand changes
   const previousBrandIdRef = useRef<string | null>(selectedBrandId);
   const [isBrandSwitching, setIsBrandSwitching] = useState(false);
+  const [hasRetriedBrandLoad, setHasRetriedBrandLoad] = useState(false);
 
-  // Detect brand changes and set switching flag
   useEffect(() => {
     if (previousBrandIdRef.current !== null && previousBrandIdRef.current !== selectedBrandId) {
-      // Brand has changed - set switching flag to show loading state immediately
       setIsBrandSwitching(true);
       console.debug(`[useDashboardData] Brand changed from ${previousBrandIdRef.current} to ${selectedBrandId}`);
     }
@@ -52,7 +54,7 @@ export const useDashboardData = () => {
   }, [selectedBrandId]);
 
   useEffect(() => {
-    if (brandsLoading || brands.length === 0) {
+    if (brandsLoading) {
       return;
     }
 
@@ -62,24 +64,32 @@ export const useDashboardData = () => {
       const brandToSelect = locationState.autoSelectBrandId;
       const brandExists = brands.some(brand => brand.id === brandToSelect);
       
+      if (!brandExists && !hasRetriedBrandLoad) {
+        console.log(`[useDashboardData] Brand ${brandToSelect} not found in cache, reloading brands list...`);
+        setHasRetriedBrandLoad(true);
+        reloadBrands();
+        return;
+      }
+
       if (brandExists && selectedBrandId !== brandToSelect) {
         selectBrand(brandToSelect);
-        window.history.replaceState({}, document.title);
-      } else if (!brandExists) {
+        // Don't clear state yet, we might need it if we re-render
+        // window.history.replaceState({}, document.title); 
+      } else if (!brandExists && brands.length > 0) {
+        // Fallback only if we've already retried or decided not to
         const latestBrand = brands[0];
         if (latestBrand && selectedBrandId !== latestBrand.id) {
+          console.warn(`[useDashboardData] Brand ${brandToSelect} not found after reload, defaulting to ${latestBrand.name}`);
           selectBrand(latestBrand.id);
-          window.history.replaceState({}, document.title);
         }
       }
     } else if (locationState?.fromOnboarding && !selectedBrandId && brands.length > 0) {
       const latestBrand = brands[0];
       if (latestBrand) {
         selectBrand(latestBrand.id);
-        window.history.replaceState({}, document.title);
       }
     }
-  }, [brands, brandsLoading, selectedBrandId, selectBrand, location.state]);
+  }, [brands, brandsLoading, selectedBrandId, selectBrand, location.state, reloadBrands, hasRetriedBrandLoad]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -104,51 +114,14 @@ export const useDashboardData = () => {
     }
 
     const hasBackendBrands = brands.length > 0;
-    const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
-    const hasCompletedTopicSelection = onboardingUtils.getOnboardingTopics();
-    const hasCompletedPromptSelection = onboardingUtils.getOnboardingPrompts();
-
-    if (!hasBackendBrands && !hasCompletedSetup) {
-      navigate('/setup');
-      return () => clearTimer();
-    }
-
     if (hasBackendBrands) {
-      setShowTopicModal(false);
       return () => clearTimer();
     }
 
-    if (featureFlags.enableTestingMode && featureFlags.isDevelopment) {
-      timer = setTimeout(() => {
-        setShowTopicModal(true);
-      }, 500);
-      return () => clearTimer();
-    }
-
-    if (!hasCompletedTopicSelection) {
-      timer = setTimeout(() => {
-        setShowTopicModal(true);
-      }, 500);
-      return () => clearTimer();
-    } else if (!hasCompletedPromptSelection) {
-      timer = setTimeout(() => {
-        navigate('/prompt-selection');
-      }, 500);
-      return () => clearTimer();
-    }
-
+    const hasCompletedOnboarding = onboardingUtils.isOnboardingComplete();
+    navigate(hasCompletedOnboarding ? '/setup' : '/onboarding');
     return () => clearTimer();
   }, [brands, brandsLoading, navigate]);
-
-  const handleTopicsSelected = (selectedTopics: Topic[]) => {
-    localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
-    setShowTopicModal(false);
-    navigate('/prompt-selection');
-  };
-
-  const handleTopicModalClose = () => {
-    setShowTopicModal(false);
-  };
 
   const dashboardEndpoint = useMemo(() => {
     // Wait for brands to load before creating endpoint to prevent 404 errors
@@ -372,6 +345,11 @@ export const useDashboardData = () => {
     const checkProgress = async () => {
       try {
         const data = await apiClient.request<ApiResponse<{
+          stages?: {
+            collection: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
+            scoring: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
+            finalization: { status: 'pending' | 'active' | 'completed' };
+          };
           queries: { total: number; completed: number };
           scoring: { positions: boolean; sentiments: boolean; citations: boolean };
           currentOperation: 'collecting' | 'scoring' | 'finalizing';
@@ -391,6 +369,7 @@ export const useDashboardData = () => {
         }
 
         const progressUpdate = {
+          stages: data.data.stages,
           queries: data.data.queries,
           scoring: data.data.scoring,
           currentOperation: data.data.currentOperation || 'collecting'
@@ -470,7 +449,7 @@ export const useDashboardData = () => {
       window.clearInterval(interval);
       clearTimeout(initialTimeout);
     };
-  }, [selectedBrandId]);
+  }, [selectedBrandId, refetchDashboard]);
 
   return {
     pageMountTime,
@@ -482,8 +461,6 @@ export const useDashboardData = () => {
     reloadKey,
     navigate,
     location,
-    showTopicModal,
-    setShowTopicModal,
     isDataCollectionInProgress,
     setIsDataCollectionInProgress,
     progressData,
@@ -498,8 +475,5 @@ export const useDashboardData = () => {
     dashboardLoading,
     shouldShowLoading,
     handleRetryFetch,
-    handleTopicsSelected,
-    handleTopicModalClose
   };
 };
-

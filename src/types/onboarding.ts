@@ -31,3 +31,13 @@ export interface BrandIntelResponse {
   error?: string;
 }
 
+export interface BrandProductsEnrichment {
+  brand: {
+    synonyms: string[];
+    products: string[];
+  };
+  competitors: Record<string, {
+    synonyms: string[];
+    products: string[];
+  }>;
+}

@@ -1,5 +1,5 @@
 export type TopicSource = 'trending' | 'ai_generated' | 'preset' | 'custom';
-export type TopicCategory = 'awareness' | 'comparison' | 'purchase' | 'support';
+export type TopicCategory = 'general' | 'awareness' | 'comparison' | 'purchase' | 'support';
 export type TrendingIndicator = 'rising' | 'stable' | 'declining';
 
 export interface Topic {

@@ -273,8 +273,7 @@ export const TopicsAnalysisPage = ({
     fetchCompetitors();
   }, [selectedBrandId, externalCompetitors]);
 
-  // Use external handlers if provided, otherwise create internal ones
-  const handleCompetitorToggle = externalOnCompetitorToggle || useCallback((competitorName: string) => {
+  const internalHandleCompetitorToggle = useCallback((competitorName: string) => {
     setInternalSelectedCompetitors((prev) => {
       const allCompetitorKeys = new Set(internalCompetitors.map(c => c.name.toLowerCase()));
       const isAllSelected = prev.size === internalCompetitors.length && 
@@ -302,23 +301,27 @@ export const TopicsAnalysisPage = ({
       });
       return newSet;
     });
-  }, [internalCompetitors, onFiltersChange, externalOnCompetitorToggle]);
+  }, [internalCompetitors, onFiltersChange]);
 
-  const handleSelectAllCompetitors = externalOnSelectAllCompetitors || useCallback(() => {
+  const internalHandleSelectAllCompetitors = useCallback(() => {
     const allSelected = new Set(internalCompetitors.map(c => c.name.toLowerCase()));
     setInternalSelectedCompetitors(allSelected);
     onFiltersChange?.({
       competitors: Array.from(allSelected),
     });
-  }, [internalCompetitors, onFiltersChange, externalOnSelectAllCompetitors]);
+  }, [internalCompetitors, onFiltersChange]);
 
-  const handleDeselectAllCompetitors = externalOnDeselectAllCompetitors || useCallback(() => {
+  const internalHandleDeselectAllCompetitors = useCallback(() => {
     const allSelected = new Set(internalCompetitors.map(c => c.name.toLowerCase()));
     setInternalSelectedCompetitors(allSelected);
     onFiltersChange?.({
       competitors: Array.from(allSelected),
     });
-  }, [internalCompetitors, onFiltersChange, externalOnDeselectAllCompetitors]);
+  }, [internalCompetitors, onFiltersChange]);
+
+  const handleCompetitorToggle = externalOnCompetitorToggle ?? internalHandleCompetitorToggle;
+  const handleSelectAllCompetitors = externalOnSelectAllCompetitors ?? internalHandleSelectAllCompetitors;
+  const handleDeselectAllCompetitors = externalOnDeselectAllCompetitors ?? internalHandleDeselectAllCompetitors;
   
   // Get brand favicon from selected brand, or use undefined if not available
   // In real app, get from brand configuration
@@ -565,11 +568,7 @@ export const TopicsAnalysisPage = ({
             topics={data.topics}
             metricType={metricType}
             onPodClick={(podId: PodId) => {
-              // Handle pod clicks - could filter table or scroll to section
-              if (podId === 'gaps') {
-                // Filter table to show gaps
-              } else if (podId === 'momentum') {
-              }
+              void podId;
             }}
           />
         </div>
@@ -636,4 +635,3 @@ export const TopicsAnalysisPage = ({
 
 // Export default with mock data for development/testing
 export default TopicsAnalysisPage;
-

@@ -44,7 +44,6 @@ export const PromptConfigPanel = ({
         <>
           <PendingChangesIndicator changes={pendingChanges} />
           <RecalibrationWarning
-            isExpanded={isExplanationExpanded}
             onToggleExplanation={onToggleExplanation}
             onPreviewClick={onPreviewClick}
           />
@@ -61,4 +60,3 @@ export const PromptConfigPanel = ({
     </div>
   );
 };
-

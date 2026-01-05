@@ -203,13 +203,13 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
           titleColor: '#ffffff',
           titleFont: {
             size: 13,
-            weight: '600',
+            weight: 600,
             family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
           },
           bodyColor: '#ffffff',
           bodyFont: {
             size: 12,
-            weight: '500',
+            weight: 500,
             family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
           },
           borderColor: '#00bcdc',
@@ -243,12 +243,7 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
             padding: 20,
             maxWidth: 100, // Limit width to force wrapping
             autoSkip: false, // Show all labels
-            callback: function(value: any, index: number) {
-              // Labels are already wrapped with '\n' in chartData
-              const label = this.getLabelForValue(value);
-              // Return wrapped label - Chart.js will handle '\n' as line break
-              return label;
-            },
+            callback: (_value: unknown, index: number) => chartData.labels?.[index] ?? '',
           },
         },
         y: {
@@ -259,7 +254,7 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
             color: 'var(--chart-label)',
             font: {
               size: isMobile ? 11 : 13,
-              weight: '600',
+              weight: 600,
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
             },
             padding: {
@@ -290,7 +285,7 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
         },
       },
     };
-  }, [sortedTopics, onBarClick, isMobile, metricType, calculatedMax]);
+  }, [sortedTopics, onBarClick, isMobile, metricType, calculatedMax, chartData.labels]);
 
   return (
     <div className="p-3 sm:p-4 lg:p-6">
@@ -300,4 +295,3 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
     </div>
   );
 };
-

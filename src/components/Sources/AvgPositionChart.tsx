@@ -67,7 +67,7 @@ export const AvgPositionChart = ({ sources }: AvgPositionChartProps) => {
           color: 'var(--chart-label)',
           font: {
             size: 14,
-            weight: '500'
+            weight: 500
           }
         }
       },

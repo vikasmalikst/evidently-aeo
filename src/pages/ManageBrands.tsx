@@ -119,7 +119,7 @@ export const ManageBrands = () => {
   };
 
   const filteredBrands = useMemo(() => {
-    let result = [...brands];
+    const result = [...brands];
     
     // Always sort by status first (active at top), then by name
     result.sort((a, b) => {

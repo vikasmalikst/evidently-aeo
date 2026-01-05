@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { Layout } from '../../components/Layout/Layout';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
-import { TopicSelectionModal } from '../../components/Topics/TopicSelectionModal';
 import {
   MessageSquare,
   Activity,
@@ -30,7 +29,6 @@ export const Dashboard = () => {
     endDate,
     setStartDate,
     setEndDate,
-    showTopicModal,
     brands,
     brandsError,
     selectedBrandId,
@@ -40,11 +38,13 @@ export const Dashboard = () => {
     dashboardErrorMsg,
     shouldShowLoading,
     handleRetryFetch,
-    handleTopicsSelected,
-    handleTopicModalClose
+    isDataCollectionInProgress,
+    progressData
   } = useDashboardData();
 
-  // Option 2: Prefetch all brands when select is focused
+  // Progress UI is now accessed via the Header bell (minimizable modal)
+  // so we no longer render a separate full-screen processing state here.
+
   const handleBrandSelectFocus = () => {
     if (brands.length <= 1 || !selectedBrandId || !startDate || !endDate) {
       return;
@@ -86,7 +86,10 @@ export const Dashboard = () => {
   const brandPresencePercentage = totalBrandRows > 0 
     ? Math.min(100, Math.round((brandPresenceRows / totalBrandRows) * 100))
     : 0;
-  const competitorEntries = dashboardData?.competitorVisibility ?? [];
+  const competitorEntries = useMemo(
+    () => dashboardData?.competitorVisibility ?? [],
+    [dashboardData?.competitorVisibility]
+  );
   const brandLabel = selectedBrand?.name ?? dashboardData?.brandName ?? 'Your Brand';
 
   const toSentimentDisplay = (value: number | null | undefined) => {
@@ -94,117 +97,119 @@ export const Dashboard = () => {
     return value; // values are already in 1-100 range
   };
 
-  const buildComparisons = (metric: 'visibility' | 'share' | 'sentiment' | 'brandPresence') => {
-    const brandValue =
-      metric === 'visibility'
-        ? visibilityMetric?.value ?? null
-        : metric === 'share'
-          ? shareMetric?.value ?? null
-          : metric === 'sentiment'
-            ? toSentimentDisplay(sentimentMetric?.value) ?? null
-            : brandPresencePercentage ?? null;
+  const metricCards = useMemo(
+    () => {
+      const comparisonSuffix = {
+        visibility: '',
+        share: '%',
+        sentiment: '',
+        brandPresence: '%'
+      };
 
-    const competitorValues = competitorEntries
-      .map((entry) => {
-        const value =
+      const buildComparisons = (metric: 'visibility' | 'share' | 'sentiment' | 'brandPresence') => {
+        const brandValue =
           metric === 'visibility'
-            ? entry.visibility
+            ? visibilityMetric?.value ?? null
             : metric === 'share'
-              ? entry.share
+              ? shareMetric?.value ?? null
               : metric === 'sentiment'
-                ? toSentimentDisplay(entry.sentiment)
-                : entry.brandPresencePercentage;
+                ? toSentimentDisplay(sentimentMetric?.value) ?? null
+                : brandPresencePercentage ?? null;
 
-        if (!Number.isFinite(value)) {
-          return null;
+        const competitorValues = competitorEntries
+          .map((entry) => {
+            const value =
+              metric === 'visibility'
+                ? entry.visibility
+                : metric === 'share'
+                  ? entry.share
+                  : metric === 'sentiment'
+                    ? toSentimentDisplay(entry.sentiment)
+                    : entry.brandPresencePercentage;
+
+            if (!Number.isFinite(value)) {
+              return null;
+            }
+
+            return {
+              label: entry.competitor,
+              value: value as number,
+              isBrand: false
+            };
+          })
+          .filter(Boolean) as Array<{ label: string; value: number; isBrand: boolean }>;
+
+        const combined = [
+          ...(brandValue !== null && Number.isFinite(brandValue)
+            ? [{ label: brandLabel, value: brandValue as number, isBrand: true }]
+            : []),
+          ...competitorValues
+        ];
+
+        const ranked = combined.sort((a, b) => b.value - a.value).slice(0, 3);
+
+        if (brandValue !== null && Number.isFinite(brandValue) && !ranked.some((item) => item.isBrand)) {
+          return [...ranked, { label: brandLabel, value: brandValue as number, isBrand: true }].slice(0, 4);
         }
 
-        return {
-          label: entry.competitor,
-          value: value as number,
-          isBrand: false
-        };
-      })
-      .filter(Boolean) as Array<{ label: string; value: number; isBrand: boolean }>;
+        return ranked;
+      };
 
-    const combined = [
-      ...(brandValue !== null && Number.isFinite(brandValue)
-        ? [{ label: brandLabel, value: brandValue as number, isBrand: true }]
-        : []),
-      ...competitorValues
-    ];
-
-    const ranked = combined.sort((a, b) => b.value - a.value).slice(0, 3);
-
-    if (brandValue !== null && Number.isFinite(brandValue) && !ranked.some((item) => item.isBrand)) {
-      return [...ranked, { label: brandLabel, value: brandValue as number, isBrand: true }].slice(0, 4);
-    }
-
-    return ranked;
-  };
-
-  const comparisonSuffix = {
-    visibility: '',
-    share: '%',
-    sentiment: '',
-    brandPresence: '%'
-  };
-
-  const metricCards = useMemo(
-    () => [
-      {
-        key: 'visibility-index',
-        title: 'Visibility Score',
-        value: formatMetricValue(visibilityMetric, ''),
-        subtitle: '',
-        trend: computeTrend(visibilityMetric?.delta),
-        icon: <Eye size={20} />,
-        color: '#498cf9',
-        linkTo: '/search-visibility',
-        comparisons: buildComparisons('visibility'),
-        comparisonSuffix: comparisonSuffix.visibility,
-        description: 'How prominent is your brand in LLM answers.(based on number of appearances and positions)'
-      },
-      {
-        key: 'share-of-answers',
-        title: 'Share of Answers',
-        value: formatMetricValue(shareMetric),
-        subtitle: '',
-        trend: computeTrend(shareMetric?.delta),
-        icon: <Target size={20} />,
-        color: '#06c686',
-        linkTo: '/search-visibility?kpi=share',
-        comparisons: buildComparisons('share'),
-        comparisonSuffix: comparisonSuffix.share,
-        description: '% of time you brand appeaars compared to your defined competitors. '
-      },
-      {
-        key: 'sentiment-score',
-        title: 'Sentiment Score',
-        value: sentimentMetric ? formatNumber(sentimentMetric.value, 1) : '—',
-        subtitle: '',
-        trend: computeTrend(sentimentMetric?.delta),
-        icon: <MessageSquare size={20} />,
-        color: '#00bcdc',
-        linkTo: '/search-visibility?kpi=sentiment',
-        comparisons: buildComparisons('sentiment'),
-        comparisonSuffix: comparisonSuffix.sentiment,
-        description: 'Tone of the answers cited by LLMs from Brand\'s perspective (scaled 1-100)'
-      },
-      {
-        key: 'brand-presence',
-        title: 'Brand Presence',
-        value: `${brandPresencePercentage}%`,
-        subtitle: '',
-        trend: computeTrend(dashboardData?.trendPercentage),
-        icon: <Activity size={20} />,
-        color: '#7c3aed',
-        linkTo: '/search-visibility?kpi=brandPresence',
-        comparisons: buildComparisons('brandPresence'),
-        comparisonSuffix: comparisonSuffix.brandPresence,
-        description: '% of Answers that mention your brand\'s name in the answers.'
-      }
-    ],
+      return [
+        {
+          key: 'visibility-index',
+          title: 'Visibility Score',
+          value: formatMetricValue(visibilityMetric, ''),
+          subtitle: '',
+          trend: computeTrend(visibilityMetric?.delta),
+          icon: <Eye size={20} />,
+          color: '#498cf9',
+          linkTo: '/search-visibility',
+          comparisons: buildComparisons('visibility'),
+          comparisonSuffix: comparisonSuffix.visibility,
+          description: 'How prominent is your brand in LLM answers.(based on number of appearances and positions)'
+        },
+        {
+          key: 'share-of-answers',
+          title: 'Share of Answers',
+          value: formatMetricValue(shareMetric),
+          subtitle: '',
+          trend: computeTrend(shareMetric?.delta),
+          icon: <Target size={20} />,
+          color: '#06c686',
+          linkTo: '/search-visibility?kpi=share',
+          comparisons: buildComparisons('share'),
+          comparisonSuffix: comparisonSuffix.share,
+          description: '% of time you brand appeaars compared to your defined competitors. '
+        },
+        {
+          key: 'sentiment-score',
+          title: 'Sentiment Score',
+          value: sentimentMetric ? formatNumber(sentimentMetric.value, 1) : '—',
+          subtitle: '',
+          trend: computeTrend(sentimentMetric?.delta),
+          icon: <MessageSquare size={20} />,
+          color: '#00bcdc',
+          linkTo: '/search-visibility?kpi=sentiment',
+          comparisons: buildComparisons('sentiment'),
+          comparisonSuffix: comparisonSuffix.sentiment,
+          description: 'Tone of the answers cited by LLMs from Brand\'s perspective (scaled 1-100)'
+        },
+        {
+          key: 'brand-presence',
+          title: 'Brand Presence',
+          value: `${brandPresencePercentage}%`,
+          subtitle: '',
+          trend: computeTrend(dashboardData?.trendPercentage),
+          icon: <Activity size={20} />,
+          color: '#7c3aed',
+          linkTo: '/search-visibility?kpi=brandPresence',
+          comparisons: buildComparisons('brandPresence'),
+          comparisonSuffix: comparisonSuffix.brandPresence,
+          description: '% of Answers that mention your brand\'s name in the answers.'
+        }
+      ];
+    },
     [
       visibilityMetric,
       shareMetric,
@@ -215,6 +220,14 @@ export const Dashboard = () => {
       brandLabel
     ]
   );
+
+  if (isDataCollectionInProgress && !dashboardData) {
+    return (
+      <Layout>
+        <DashboardSkeleton />
+      </Layout>
+    );
+  }
 
   const overviewSubtitle = (selectedBrand?.name ?? dashboardData?.brandName)
     ? `Here's your AI visibility performance overview for ${selectedBrand?.name ?? dashboardData?.brandName}`
@@ -398,16 +411,6 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {showTopicModal && (
-          <TopicSelectionModal
-            brandName={getBrandData().name}
-            industry={getBrandData().industry}
-            onNext={handleTopicsSelected}
-            onBack={() => {}}
-            onClose={handleTopicModalClose}
-          />
-      )}
     </Layout>
   );
 };
-

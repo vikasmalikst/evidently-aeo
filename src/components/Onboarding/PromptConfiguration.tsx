@@ -29,7 +29,6 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
   const [promptsByTopic, setPromptsByTopic] = useState<Record<string, string[]>>({});
   const [loadingTopics, setLoadingTopics] = useState<Set<string>>(new Set());
   const topicRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const modalButtonRef = useRef<HTMLButtonElement>(null);
 
   const prefetchTopicPrompts = useCallback(async (topicIds: string[]) => {
     const topicsToFetch = topicIds.filter(
@@ -227,7 +226,6 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
         <div className="prompt-header-right">
           <div className="prompt-header-right-content">
             <button
-              ref={modalButtonRef}
               className="onboarding-button-primary"
               onClick={handleOpenCustomModal}
             >
@@ -240,6 +238,73 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
           </div>
         </div>
       </div>
+
+      {showCustomModal && (
+        <div className="mt-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-semibold text-gray-900">Add Custom Prompt</div>
+            <button
+              type="button"
+              className="text-sm font-semibold text-gray-700 hover:text-gray-900"
+              onClick={handleCloseCustomModal}
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Topic</label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                value={selectedTopicForCustom}
+                onChange={(e) => setSelectedTopicForCustom(e.target.value)}
+              >
+                {selectedTopics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Prompt</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                placeholder="Enter your custom search query..."
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomPrompt();
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end gap-3">
+            <button
+              className="px-4 py-2 border border-gray-300 text-gray-800 rounded-lg font-semibold hover:bg-white transition-all"
+              onClick={handleCloseCustomModal}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
+              onClick={handleAddCustomPrompt}
+              disabled={!customPrompt.trim() || !selectedTopicForCustom}
+              type="button"
+            >
+              Add Prompt
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="prompt-topics-accordion">
         {selectedTopics.map((topic) => {
@@ -347,73 +412,6 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
           );
         })}
       </div>
-
-      {showCustomModal && (
-        <div className="prompt-custom-modal-overlay" onClick={handleCloseCustomModal}>
-          <div
-            className="prompt-custom-modal"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: 'absolute',
-              bottom: modalButtonRef.current ? `${window.innerHeight - modalButtonRef.current.getBoundingClientRect().top + 8}px` : '50%',
-              left: '50%',
-              transform: 'translateX(-50%)'
-            }}
-          >
-            <div className="prompt-custom-modal-header">
-              <h3>Add Custom Prompt</h3>
-            </div>
-            <div className="prompt-custom-modal-body">
-              <div className="prompt-custom-form-group">
-                <label className="prompt-custom-label">Select Topic</label>
-                <select
-                  className="prompt-custom-select"
-                  value={selectedTopicForCustom}
-                  onChange={(e) => setSelectedTopicForCustom(e.target.value)}
-                >
-                  {selectedTopics.map((topic) => (
-                    <option key={topic.id} value={topic.id}>
-                      {topic.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="prompt-custom-form-group">
-                <label className="prompt-custom-label">Custom Prompt</label>
-                <input
-                  type="text"
-                  className="prompt-custom-modal-input"
-                  placeholder="Enter your custom search query..."
-                  value={customPrompt}
-                  onChange={(e) => setCustomPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddCustomPrompt();
-                    }
-                  }}
-                  autoFocus
-                />
-              </div>
-            </div>
-            <div className="prompt-custom-modal-footer">
-              <button
-                className="prompt-custom-cancel-button"
-                onClick={handleCloseCustomModal}
-              >
-                Cancel
-              </button>
-              <button
-                className="prompt-custom-submit-button"
-                onClick={handleAddCustomPrompt}
-                disabled={!customPrompt.trim() || !selectedTopicForCustom}
-              >
-                Add Prompt
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

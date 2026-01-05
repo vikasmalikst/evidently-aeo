@@ -1,4 +1,7 @@
-import type { SetupData, OnboardingData } from '../components/Onboarding/SetupModal';
+import type { SetupData } from '../pages/Setup';
+
+// Keep OnboardingData as alias for backward compatibility
+export type OnboardingData = SetupData;
 
 /**
  * Utility functions for managing onboarding state in localStorage
@@ -67,4 +70,3 @@ export const onboardingUtils = {
     console.log(`✅ Onboarding reset to step: ${step}`);
   },
 };
-

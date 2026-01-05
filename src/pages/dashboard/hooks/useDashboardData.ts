@@ -5,11 +5,11 @@ import { useManualBrandDashboard } from '../../../manual-dashboard';
 import { useCachedData } from '../../../hooks/useCachedData';
 import { featureFlags } from '../../../config/featureFlags';
 import { onboardingUtils } from '../../../utils/onboardingUtils';
-import type { Topic } from '../../../types/topic';
 import type { ApiResponse, DashboardPayload } from '../types';
 import { getDefaultDateRange } from '../utils';
 import { apiClient } from '../../../lib/apiClient';
 import { prefetchOnIdle } from '../../../lib/prefetch';
+import { onboardingProgressTracker } from '../../../lib/onboardingProgressTracker';
 
 export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
@@ -20,9 +20,13 @@ export const useDashboardData = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
-  const [showTopicModal, setShowTopicModal] = useState(false);
   const [isDataCollectionInProgress, setIsDataCollectionInProgress] = useState(false);
   const [progressData, setProgressData] = useState<{
+    stages?: {
+      collection: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
+      scoring: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
+      finalization: { status: 'pending' | 'active' | 'completed' };
+    };
     queries: { total: number; completed: number };
     scoring: { positions: boolean; sentiments: boolean; citations: boolean };
     currentOperation: 'collecting' | 'scoring' | 'finalizing';
@@ -34,17 +38,25 @@ export const useDashboardData = () => {
     error: brandsError,
     selectedBrandId,
     selectedBrand,
-    selectBrand
+    selectBrand,
+    reload: reloadBrands
   } = useManualBrandDashboard();
 
-  // Track previous selectedBrandId to detect brand changes
+  // Sync selectedBrandId to current_brand_id for Bell/NotificationBell compatibility
+  useEffect(() => {
+    if (selectedBrandId) {
+      localStorage.setItem('current_brand_id', selectedBrandId);
+    } else {
+      localStorage.removeItem('current_brand_id');
+    }
+  }, [selectedBrandId]);
+
   const previousBrandIdRef = useRef<string | null>(selectedBrandId);
   const [isBrandSwitching, setIsBrandSwitching] = useState(false);
+  const [hasRetriedBrandLoad, setHasRetriedBrandLoad] = useState(false);
 
-  // Detect brand changes and set switching flag
   useEffect(() => {
     if (previousBrandIdRef.current !== null && previousBrandIdRef.current !== selectedBrandId) {
-      // Brand has changed - set switching flag to show loading state immediately
       setIsBrandSwitching(true);
       console.debug(`[useDashboardData] Brand changed from ${previousBrandIdRef.current} to ${selectedBrandId}`);
     }
@@ -52,7 +64,7 @@ export const useDashboardData = () => {
   }, [selectedBrandId]);
 
   useEffect(() => {
-    if (brandsLoading || brands.length === 0) {
+    if (brandsLoading) {
       return;
     }
 
@@ -62,24 +74,32 @@ export const useDashboardData = () => {
       const brandToSelect = locationState.autoSelectBrandId;
       const brandExists = brands.some(brand => brand.id === brandToSelect);
       
+      if (!brandExists && !hasRetriedBrandLoad) {
+        console.log(`[useDashboardData] Brand ${brandToSelect} not found in cache, reloading brands list...`);
+        setHasRetriedBrandLoad(true);
+        reloadBrands();
+        return;
+      }
+
       if (brandExists && selectedBrandId !== brandToSelect) {
         selectBrand(brandToSelect);
-        window.history.replaceState({}, document.title);
-      } else if (!brandExists) {
+        // Don't clear state yet, we might need it if we re-render
+        // window.history.replaceState({}, document.title); 
+      } else if (!brandExists && brands.length > 0) {
+        // Fallback only if we've already retried or decided not to
         const latestBrand = brands[0];
         if (latestBrand && selectedBrandId !== latestBrand.id) {
+          console.warn(`[useDashboardData] Brand ${brandToSelect} not found after reload, defaulting to ${latestBrand.name}`);
           selectBrand(latestBrand.id);
-          window.history.replaceState({}, document.title);
         }
       }
     } else if (locationState?.fromOnboarding && !selectedBrandId && brands.length > 0) {
       const latestBrand = brands[0];
       if (latestBrand) {
         selectBrand(latestBrand.id);
-        window.history.replaceState({}, document.title);
       }
     }
-  }, [brands, brandsLoading, selectedBrandId, selectBrand, location.state]);
+  }, [brands, brandsLoading, selectedBrandId, selectBrand, location.state, reloadBrands, hasRetriedBrandLoad]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -104,51 +124,14 @@ export const useDashboardData = () => {
     }
 
     const hasBackendBrands = brands.length > 0;
-    const hasCompletedSetup = onboardingUtils.isOnboardingComplete();
-    const hasCompletedTopicSelection = onboardingUtils.getOnboardingTopics();
-    const hasCompletedPromptSelection = onboardingUtils.getOnboardingPrompts();
-
-    if (!hasBackendBrands && !hasCompletedSetup) {
-      navigate('/setup');
-      return () => clearTimer();
-    }
-
     if (hasBackendBrands) {
-      setShowTopicModal(false);
       return () => clearTimer();
     }
 
-    if (featureFlags.enableTestingMode && featureFlags.isDevelopment) {
-      timer = setTimeout(() => {
-        setShowTopicModal(true);
-      }, 500);
-      return () => clearTimer();
-    }
-
-    if (!hasCompletedTopicSelection) {
-      timer = setTimeout(() => {
-        setShowTopicModal(true);
-      }, 500);
-      return () => clearTimer();
-    } else if (!hasCompletedPromptSelection) {
-      timer = setTimeout(() => {
-        navigate('/prompt-selection');
-      }, 500);
-      return () => clearTimer();
-    }
-
+    const hasCompletedOnboarding = onboardingUtils.isOnboardingComplete();
+    navigate(hasCompletedOnboarding ? '/setup' : '/onboarding');
     return () => clearTimer();
   }, [brands, brandsLoading, navigate]);
-
-  const handleTopicsSelected = (selectedTopics: Topic[]) => {
-    localStorage.setItem('onboarding_topics', JSON.stringify(selectedTopics));
-    setShowTopicModal(false);
-    navigate('/prompt-selection');
-  };
-
-  const handleTopicModalClose = () => {
-    setShowTopicModal(false);
-  };
 
   const dashboardEndpoint = useMemo(() => {
     // Wait for brands to load before creating endpoint to prevent 404 errors
@@ -359,6 +342,7 @@ export const useDashboardData = () => {
     }
 
     const storageKey = `data_collection_in_progress_${selectedBrandId}`;
+    const completedAtKey = `data_collection_completed_at_${selectedBrandId}`;
     const inProgress = localStorage.getItem(storageKey) === 'true';
     setIsDataCollectionInProgress(inProgress);
 
@@ -369,50 +353,28 @@ export const useDashboardData = () => {
 
     let isMounted = true;
 
-    const checkProgress = async () => {
-      try {
-        const data = await apiClient.request<ApiResponse<{
-          queries: { total: number; completed: number };
-          scoring: { positions: boolean; sentiments: boolean; citations: boolean };
-          currentOperation: 'collecting' | 'scoring' | 'finalizing';
-        }>>(
-          `/brands/${selectedBrandId}/onboarding-progress`,
-          {},
-          { requiresAuth: true }
-        );
+    // Shared poller (single interval per brand) used across bell + modal + dashboard
+    const unsubscribe = onboardingProgressTracker.subscribe(selectedBrandId, (snapshot) => {
+      if (!isMounted) return;
 
-        if (!isMounted) {
-          return;
-        }
+      if (snapshot.data) {
+        setProgressData({
+          stages: snapshot.data.stages,
+          queries: snapshot.data.queries,
+          scoring: snapshot.data.scoring,
+          currentOperation: snapshot.data.currentOperation || 'collecting',
+        });
+      }
 
-        if (!data?.success || !data?.data) {
-          console.warn('[DASHBOARD] Progress check failed or no data');
-          return;
-        }
-
-        const progressUpdate = {
-          queries: data.data.queries,
-          scoring: data.data.scoring,
-          currentOperation: data.data.currentOperation || 'collecting'
-        };
-
-        // Update progress data
-        setProgressData(progressUpdate);
-
-        // Check if complete
-        const isComplete =
-          data.data.queries.completed >= data.data.queries.total &&
-          data.data.scoring.positions &&
-          data.data.scoring.sentiments &&
-          data.data.scoring.citations;
-
-        if (isComplete) {
+      if (snapshot.isComplete) {
           localStorage.removeItem(storageKey);
+        localStorage.setItem(completedAtKey, new Date().toISOString());
           setIsDataCollectionInProgress(false);
-          // Trigger immediate dashboard data refresh when collection completes
+
           refetchDashboard().catch((err) => {
             console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
           });
+
           // Keep progress data for a moment to show completion, then clear
           setTimeout(() => {
             if (isMounted) {
@@ -420,57 +382,13 @@ export const useDashboardData = () => {
             }
           }, 3000);
         }
-      } catch (error) {
-        // Only log non-critical errors
-        if (error instanceof Error) {
-          const errorMsg = error.message.toLowerCase();
-          if (!errorMsg.includes('fetch') && 
-              !errorMsg.includes('json') && 
-              !errorMsg.includes('unexpected token') &&
-              !errorMsg.includes('doctype')) {
-            console.error('[DASHBOARD] Error checking data collection progress:', error);
-          }
-        }
-      }
-    };
-
-    // Poll every 20 seconds for progress updates
-    const interval = window.setInterval(() => {
-      checkProgress().catch((err) => {
-        // Only log non-critical errors
-        if (err instanceof Error) {
-          const errorMsg = err.message.toLowerCase();
-          if (!errorMsg.includes('fetch') && 
-              !errorMsg.includes('json') && 
-              !errorMsg.includes('unexpected token') &&
-              !errorMsg.includes('doctype')) {
-            console.error('[DASHBOARD] Error in progress polling interval:', err);
-          }
-        }
-      });
-    }, 20000);
-    // Initial check after 2 seconds
-    const initialTimeout = setTimeout(() => {
-      checkProgress().catch((err) => {
-        // Only log non-critical errors
-        if (err instanceof Error) {
-          const errorMsg = err.message.toLowerCase();
-          if (!errorMsg.includes('fetch') && 
-              !errorMsg.includes('json') && 
-              !errorMsg.includes('unexpected token') &&
-              !errorMsg.includes('doctype')) {
-            console.error('[DASHBOARD] Error in initial progress check:', err);
-          }
-        }
-      });
-    }, 2000);
+    });
 
     return () => {
       isMounted = false;
-      window.clearInterval(interval);
-      clearTimeout(initialTimeout);
+      unsubscribe();
     };
-  }, [selectedBrandId]);
+  }, [selectedBrandId, refetchDashboard]);
 
   return {
     pageMountTime,
@@ -482,8 +400,6 @@ export const useDashboardData = () => {
     reloadKey,
     navigate,
     location,
-    showTopicModal,
-    setShowTopicModal,
     isDataCollectionInProgress,
     setIsDataCollectionInProgress,
     progressData,
@@ -498,8 +414,5 @@ export const useDashboardData = () => {
     dashboardLoading,
     shouldShowLoading,
     handleRetryFetch,
-    handleTopicsSelected,
-    handleTopicModalClose
   };
 };
-

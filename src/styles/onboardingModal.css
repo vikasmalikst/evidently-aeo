@@ -71,6 +71,12 @@
   max-height: 85vh;
 }
 
+.onboarding-modal-container.step-review {
+  width: 75vw;
+  max-width: 1400px;
+  height: 88vh;
+}
+
 @keyframes modalScale {
   from {
     opacity: 0;

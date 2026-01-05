@@ -98,13 +98,19 @@ export const BrandInput = ({
 
       // If brand exists in database, use that data
       if (existingBrandData) {
+        // Build logo URL with proper fallback to brand name
+        const brandDomain = existingBrandData.homepage_url?.replace(/^https?:\/\//, '').split('/')[0] || '';
+        const brandNameDomain = existingBrandData.name.toLowerCase().replace(/\s+/g, '');
+        const logoDomain = brandDomain || (brandNameDomain ? `${brandNameDomain}.com` : '');
+        const logoUrl = existingBrandData.metadata?.brand_logo || existingBrandData.metadata?.logo || 
+          (logoDomain ? `https://logo.clearbit.com/${logoDomain}` : '');
+
         const brandIntel: OnboardingBrand = {
           verified: true,
           companyName: existingBrandData.name,
           website: existingBrandData.homepage_url || input,
-          domain: existingBrandData.homepage_url?.replace(/^https?:\/\//, '').split('/')[0] || '',
-          logo: existingBrandData.metadata?.brand_logo || existingBrandData.metadata?.logo || 
-                `https://logo.clearbit.com/${existingBrandData.homepage_url?.replace(/^https?:\/\//, '').split('/')[0] || existingBrandData.name.toLowerCase().replace(/\s+/g, '')}`,
+          domain: brandDomain || logoDomain,
+          logo: logoUrl,
           industry: existingBrandData.industry || 'General',
           headquarters: existingBrandData.headquarters || existingBrandData.metadata?.headquarters || '',
           founded: existingBrandData.founded_year || existingBrandData.metadata?.founded_year || null,
@@ -112,6 +118,8 @@ export const BrandInput = ({
                       existingBrandData.metadata?.description || '',
           metadata: {
             ...(existingBrandData.metadata || {}),
+            logo: logoUrl, // Add logo to metadata for dashboard compatibility
+            brand_logo: logoUrl, // Also add as brand_logo for compatibility
             ceo: existingBrandData.ceo || existingBrandData.metadata?.ceo,
             headquarters: existingBrandData.headquarters || existingBrandData.metadata?.headquarters,
             founded_year: existingBrandData.founded_year || existingBrandData.metadata?.founded_year,
@@ -223,23 +231,32 @@ export const BrandInput = ({
               className="onboarding-brand-header"
               style={{ margin: '24px auto 0', maxWidth: 520 }}
             >
-              <div className="onboarding-brand-header__info">
-                <h3 className="onboarding-brand-header__name">{brandPreview.companyName}</h3>
-                <p className="onboarding-brand-header__meta">
-                  {brandPreview.industry || 'General'}
-                  {brandPreview.headquarters ? ` • ${brandPreview.headquarters}` : ''}
-                  {brandPreview.founded ? ` • Founded ${brandPreview.founded}` : ''}
-                  {brandPreview.metadata?.ceo ? ` • CEO: ${brandPreview.metadata.ceo}` : ''}
-                </p>
-                {brandPreview.description ? (
-                  <p className="onboarding-brand-header__description">
-                    {brandPreview.description}
+              <div className="onboarding-brand-header__info" style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                <SafeLogo
+                  src={brandPreview.logo || brandPreview.metadata?.logo || brandPreview.metadata?.brand_logo}
+                  domain={brandPreview.domain || brandPreview.website?.replace(/^https?:\/\//, '').split('/')[0]}
+                  alt={brandPreview.companyName}
+                  size={64}
+                  className="w-16 h-16 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+                />
+                <div style={{ flex: 1 }}>
+                  <h3 className="onboarding-brand-header__name">{brandPreview.companyName}</h3>
+                  <p className="onboarding-brand-header__meta">
+                    {brandPreview.industry || 'General'}
+                    {brandPreview.headquarters ? ` • ${brandPreview.headquarters}` : ''}
+                    {brandPreview.founded ? ` • Founded ${brandPreview.founded}` : ''}
+                    {brandPreview.metadata?.ceo ? ` • CEO: ${brandPreview.metadata.ceo}` : ''}
                   </p>
-                ) : (
-                  <p className="onboarding-brand-header__description" style={{ fontStyle: 'italic', color: '#64748b' }}>
-                    {brandPreview.website ? `Website: ${brandPreview.website}` : 'No additional information available'}
-                  </p>
-                )}
+                  {brandPreview.description ? (
+                    <p className="onboarding-brand-header__description">
+                      {brandPreview.description}
+                    </p>
+                  ) : (
+                    <p className="onboarding-brand-header__description" style={{ fontStyle: 'italic', color: '#64748b' }}>
+                      {brandPreview.website ? `Website: ${brandPreview.website}` : 'No additional information available'}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}

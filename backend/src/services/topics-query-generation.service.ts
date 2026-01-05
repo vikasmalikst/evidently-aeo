@@ -38,7 +38,7 @@ class TopicsQueryGenerationService {
   private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
   private cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
   private openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-  private openRouterModel = process.env['OPENROUTER_TOPICS_MODEL'] || 'openai/gpt-4o-mini';
+  private openRouterModel = process.env['OPENROUTER_TOPICS_MODEL'] || 'openai/gpt-oss-20b';
   private openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
   private openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
 

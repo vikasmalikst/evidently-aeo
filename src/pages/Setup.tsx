@@ -1,80 +1,149 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SetupModal, type SetupData } from '../components/Onboarding/SetupModal';
 import { onboardingUtils } from '../utils/onboardingUtils';
 import { featureFlags } from '../config/featureFlags';
-import { submitBrandOnboarding } from '../api/brandApi';
+import { submitBrandOnboarding, upsertBrandProducts } from '../api/brandApi';
+import { SetupLayout } from './SetupLayout';
+import { WelcomeScreen } from '../components/Topics/WelcomeScreen';
+import { AIModelSelection } from '../components/Onboarding/AIModelSelection';
+import { TopicChoiceStep } from '../components/Onboarding/TopicChoiceStep';
+import { ReviewStep, type ReviewRow } from '../components/Onboarding/ReviewStep';
+import { SummaryStep } from '../components/Onboarding/SummaryStep';
+import { CollectionProgressStep } from '../components/Onboarding/CollectionProgressStep';
+import { TopicSelectionModal } from '../components/Topics/TopicSelectionModal';
+import { PromptConfiguration, PromptWithTopic } from '../components/Onboarding/PromptConfiguration';
+import type { Topic } from '../types/topic';
+import type { OnboardingCompetitor } from '../types/onboarding';
+import { apiClient } from '../lib/apiClient';
+import { useAuthStore } from '../store/authStore';
+
+export interface SetupData {
+  models: string[];
+  topics: Topic[];
+  prompts: PromptWithTopic[];
+}
+
+type Step = 'welcome' | 'models' | 'topicChoice' | 'topics' | 'prompts' | 'review' | 'summary' | 'progress';
 
 export const Setup = () => {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isPreparingRedirect, setIsPreparingRedirect] = useState(false);
+  const { isAuthenticated } = useAuthStore();
 
-  // Redirect to dashboard if skip setup check is enabled
+  const initialStep: Step = featureFlags.setupStep || featureFlags.onboardingStep || 'welcome';
+  const [currentStep, setCurrentStep] = useState<Step>(initialStep);
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);
+  const [selectedPrompts, setSelectedPrompts] = useState<PromptWithTopic[]>([]);
+  const [reviewData, setReviewData] = useState<ReviewRow[]>([]);
+  const [competitors, setCompetitors] = useState<OnboardingCompetitor[]>([]);
+  
+  const brandData = localStorage.getItem('onboarding_brand');
+  const brand = brandData ? JSON.parse(brandData) : {};
+
   useEffect(() => {
     if (featureFlags.skipSetupCheck) {
       console.log('🚀 Setup page: Skipping setup check - redirecting to dashboard');
       navigate('/dashboard', { replace: true });
     }
+    
+    const competitorsData = localStorage.getItem('onboarding_competitors');
+    if (competitorsData) {
+      try {
+        setCompetitors(JSON.parse(competitorsData));
+      } catch (e) {
+        console.error('Failed to parse competitors from localStorage', e);
+      }
+    }
   }, [navigate]);
 
-  const handleComplete = async (data: SetupData) => {
-    if (isSubmitting) {
-      return;
+  const handleBack = () => {
+    if (currentStep === 'models') setCurrentStep('welcome');
+    else if (currentStep === 'topicChoice') setCurrentStep('models');
+    else if (currentStep === 'topics') setCurrentStep('topicChoice');
+    else if (currentStep === 'prompts') setCurrentStep('topics');
+    else if (currentStep === 'review') {
+      if (reviewData.length > 0 && selectedTopics.length === 0) {
+        setCurrentStep('topicChoice');
+      } else {
+        setCurrentStep('prompts');
+      }
     }
+    else if (currentStep === 'summary') setCurrentStep('review');
+  };
+
+  const handleNext = () => {
+    if (isSubmitting) return;
+    if (currentStep === 'welcome') setCurrentStep('models');
+    else if (currentStep === 'models') setCurrentStep('topicChoice');
+    else if (currentStep === 'topicChoice') setCurrentStep('topics');
+    else if (currentStep === 'topics') setCurrentStep('prompts');
+    else if (currentStep === 'prompts') {
+      const initialReviewData: ReviewRow[] = selectedPrompts.map(p => ({
+        topic: p.topic,
+        prompt: p.prompt,
+        country: 'US',
+        locale: 'en-US'
+      }));
+      setReviewData(initialReviewData);
+      setCurrentStep('review');
+    }
+    else if (currentStep === 'review') setCurrentStep('summary');
+    else if (currentStep === 'summary') {
+      handleComplete({
+        models: selectedModels,
+        topics: selectedTopics,
+        prompts: selectedPrompts,
+      });
+    }
+  };
+  
+  const handleComplete = async (data: SetupData) => {
+    if (isSubmitting) return;
     setIsSubmitting(true);
-    setIsPreparingRedirect(true);
     setSubmitError(null);
 
+    // Check authentication before submitting
+    const accessToken = apiClient.getAccessToken();
+    if (!accessToken && !featureFlags.bypassAuthInDev) {
+      const errorMsg = 'Your session has expired. Please sign in again to continue.';
+      console.error('❌ Authentication required:', errorMsg);
+      setSubmitError(errorMsg);
+      setIsSubmitting(false);
+      // Redirect to login after a short delay
+      setTimeout(() => {
+        navigate('/auth?redirect=/setup', { replace: true });
+      }, 2000);
+      return;
+    }
+
     try {
-      // Gather all onboarding data from localStorage
-      const brandData = localStorage.getItem('onboarding_brand');
-      const competitorsData = localStorage.getItem('onboarding_competitors');
+      const competitorPayload = competitors.map((c: any, i: number) => {
+        const rawDomainOrUrl = (c?.domain ?? c?.url ?? '') as string;
+        const normalizedDomain = rawDomainOrUrl
+          .toString()
+          .trim()
+          .replace(/^https?:\/\//i, '')
+          .replace(/^www\./i, '')
+          .split('/')[0] || '';
 
-      if (!brandData) {
-        throw new Error('Brand data not found. Please complete the brand selection first.');
-      }
-
-      const brand = JSON.parse(brandData);
-      const competitors = competitorsData ? JSON.parse(competitorsData) : [];
-
-      console.log('📦 Gathering onboarding data:', {
-        brand: brand.companyName,
-        competitors: competitors.length,
-        models: data.models.length,
-        topics: data.topics.length,
-      });
-
-      // Prepare the complete onboarding payload
-      const competitorPayload = competitors.map((competitor: any, index: number) => {
-        const name =
-          competitor?.name ||
-          competitor?.companyName ||
-          competitor?.domain ||
-          `Competitor ${index + 1}`;
-        const normalizedDomain =
-          (competitor?.domain || competitor?.url || '')
-            .toString()
-            .trim()
-            .replace(/^https?:\/\//i, '')
-            .replace(/^www\./i, '')
-            .split('/')[0] || '';
-        const url =
-          competitor?.url && competitor.url.startsWith('http')
-            ? competitor.url
+        const rawUrl = (c?.url ?? '') as string;
+        const normalizedUrl =
+          rawUrl && rawUrl.toString().startsWith('http')
+            ? rawUrl.toString()
             : normalizedDomain
-            ? `https://${normalizedDomain}`
-            : '';
+              ? `https://${normalizedDomain}`
+              : '';
 
         return {
-          name: name,
+          name: c?.name || c?.companyName || c?.domain || `Competitor ${i + 1}`,
           domain: normalizedDomain,
-          url,
-          relevance: competitor?.relevance || 'Direct Competitor',
-          industry: competitor?.industry || '',
-          logo: competitor?.logo || '',
-          source: competitor?.source || 'onboarding',
+          url: normalizedUrl,
+          relevance: c?.relevance || 'Direct Competitor',
+          industry: c?.industry || '',
+          logo: c?.logo || '',
+          source: c?.source || 'onboarding',
         };
       });
 
@@ -84,19 +153,18 @@ export const Setup = () => {
         description: brand.description || '',
         industry: brand.industry || 'Technology',
         competitors: competitorPayload,
-        aeo_topics: data.topics.map((topic) => ({
-          label: topic.name,
-          weight: topic.relevance / 100 || 1.0,
-          source: topic.source,
-          category: topic.category
+        aeo_topics: data.topics.map(t => ({
+          label: t.name,
+          weight: t.relevance / 100 || 1.0,
+          source: t.source,
+          category: t.category
         })),
-        ai_models: data.models, // Selected AI models (chatgpt, perplexity, etc.)
+        ai_models: data.models,
         metadata: {
           ceo: brand.metadata?.ceo || brand.ceo,
           headquarters: brand.headquarters,
           founded_year: brand.founded,
-          prompts: data.prompts, // Now includes topic information: { prompt: string, topic: string }[]
-          prompts_with_topics: data.prompts, // Explicit field for prompts with topics
+          prompts: data.prompts,
           logo: brand.logo || brand.metadata?.brand_logo,
           domain: brand.domain || '',
           competitors_detail: competitorPayload,
@@ -107,33 +175,19 @@ export const Setup = () => {
         },
       };
 
-      console.log('🚀 Submitting complete onboarding data to API...');
-
-      // Submit to backend - this will:
-      // 1. Create brand in database
-      // 2. Save competitors
-      // 3. Save topics and categorize with AI
-      // 4. Trigger Cerebras AI query generation
-      // 5. Store AI models in metadata
       const response = await submitBrandOnboarding(onboardingPayload);
 
       if (response.success) {
-        console.log('✅ Onboarding completed successfully!');
-
-        // Save to localStorage for backward compatibility
         onboardingUtils.setOnboardingComplete(data);
-
         const brandId = response.data?.brand?.id;
-
         if (brandId) {
-          // Remember this brand for dashboard + mark data collection in progress
           localStorage.setItem('current_brand_id', brandId);
           localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
-
-          console.log('🎯 Redirecting to loading screen for brand:', brandId);
-          navigate(`/onboarding/loading/${brandId}`, { replace: true });
+          // Navigate to loading screen instead of dashboard
+          navigate(`/onboarding/loading/${brandId}`, { 
+            replace: true
+          });
         } else {
-          console.warn('⚠️ No brand ID returned from onboarding response, sending user to dashboard directly');
           navigate('/dashboard');
         }
       } else {
@@ -141,77 +195,193 @@ export const Setup = () => {
       }
     } catch (error) {
       console.error('❌ Onboarding submission failed:', error);
-      setSubmitError(error instanceof Error ? error.message : 'Failed to complete onboarding');
-      setIsPreparingRedirect(false);
+      
+      // Check if it's an authentication error
+      const errorMessage = error instanceof Error ? error.message : 'Failed to complete onboarding';
+      const isAuthError = errorMessage.includes('401') || 
+                         errorMessage.includes('Unauthorized') || 
+                         errorMessage.includes('Session expired') ||
+                         errorMessage.includes('Authentication failed') ||
+                         errorMessage.includes('Access token required');
+      
+      if (isAuthError) {
+        const authErrorMsg = 'Your session has expired. Please sign in again to continue.';
+        setSubmitError(authErrorMsg);
+        setIsSubmitting(false);
+        // Redirect to login after showing error
+        setTimeout(() => {
+          navigate('/auth?redirect=/setup', { replace: true });
+        }, 2000);
+      } else {
+        setSubmitError(errorMessage);
       setIsSubmitting(false);
+      }
     }
   };
 
-  const handleClose = () => {
-    navigate('/dashboard');
+  const canProceed = () => {
+    if (currentStep === 'models') return selectedModels.length > 0;
+    if (currentStep === 'topicChoice') return false; 
+    if (currentStep === 'topics') return selectedTopics.length >= 1;
+    if (currentStep === 'prompts') return selectedPrompts.length > 0;
+    return true;
   };
 
-  // Don't render setup if skip check is enabled
-  if (featureFlags.skipSetupCheck) {
+  const getStepTitle = () => {
+    if (currentStep === 'models') return 'Select AI Models';
+    if (currentStep === 'topicChoice') return 'Choose Setup Method';
+    if (currentStep === 'topics') return 'Select Topics';
+    if (currentStep === 'prompts') return 'Configure Prompts';
+    if (currentStep === 'review') return 'Review & Edit';
+    if (currentStep === 'summary') return 'Configuration Summary';
     return null;
-  }
+  };
 
-  // Show error if submission failed
-  if (submitError) {
+  if (featureFlags.skipSetupCheck) return null;
+
+  if (!brandData) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 max-w-md mx-4">
-          <h2 className="text-xl font-semibold text-red-600 mb-4">Onboarding Failed</h2>
-          <p className="text-gray-700 mb-4">{submitError}</p>
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center p-8 bg-white rounded-xl shadow-md">
+          <h2 className="text-xl font-bold text-gray-900 mb-2">No brand data found</h2>
+          <p className="text-gray-500 mb-6">Please complete the initial brand analysis first.</p>
           <button
-            onClick={() => setSubmitError(null)}
-            className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            onClick={() => navigate('/onboarding')}
+            className="px-6 py-2 bg-[var(--accent-primary)] text-white rounded-lg font-medium hover:opacity-90 transition-all"
           >
-            Try Again
+            Go to Brand Analysis
           </button>
         </div>
       </div>
     );
   }
-
-  const brandData = localStorage.getItem('onboarding_brand');
-
-  if (!brandData) {
+  
+  if (currentStep === 'welcome') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-xl border border-gray-100 shadow-sm">
-        <h2 className="text-xl font-bold text-gray-900 mb-2">No brand data found</h2>
-        <p className="text-gray-500 mb-6">Please complete the initial brand analysis first.</p>
-        <button
-          onClick={() => navigate('/onboarding')}
-          className="px-6 py-2 bg-[var(--accent-primary)] text-white rounded-lg font-medium hover:opacity-90 transition-all"
-        >
-          Go to Brand Analysis
-        </button>
-      </div>
+      <SetupLayout currentStep="welcome" title={null}>
+        <div className="max-w-2xl mx-auto">
+          <WelcomeScreen onGetStarted={handleNext} />
+        </div>
+      </SetupLayout>
     );
   }
 
-  const brand = JSON.parse(brandData);
+  if (currentStep === 'topics') {
+    return (
+      <TopicSelectionModal
+        brandName={brand.companyName || brand.name}
+        industry={brand.industry}
+        mode="fullscreen"
+        onNext={(topics) => {
+          setSelectedTopics(topics);
+          handleNext();
+        }}
+        onBack={handleBack}
+        onClose={() => navigate('/dashboard')}
+      />
+    );
+  }
+
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 'models':
+        return (
+          <AIModelSelection
+            selectedModels={selectedModels}
+            onModelToggle={(modelId) => {
+              setSelectedModels(prev => 
+                prev.includes(modelId) ? prev.filter(m => m !== modelId) : [...prev, modelId]
+              );
+            }}
+          />
+        );
+      case 'topicChoice':
+        return (
+          <TopicChoiceStep
+            onChoice={(choice, data) => {
+              if (choice === 'ai') handleNext();
+              else if (data) {
+                setReviewData(data);
+                setCurrentStep('review');
+              }
+            }}
+            onBack={handleBack}
+          />
+        );
+      case 'prompts':
+        return (
+          <PromptConfiguration
+            selectedTopics={selectedTopics}
+            selectedPrompts={selectedPrompts}
+            onPromptsChange={setSelectedPrompts}
+          />
+        );
+      case 'review':
+        return (
+          <ReviewStep
+            initialData={reviewData}
+            onBack={handleBack}
+            onConfirm={(data) => {
+              setSelectedTopics(data.topics);
+              setSelectedPrompts(data.prompts);
+              handleNext();
+            }}
+          />
+        );
+      case 'summary':
+        return (
+          <SummaryStep
+            brandName={brand.companyName || brand.name}
+            domain={brand.domain}
+            competitors={competitors}
+            models={selectedModels}
+            topics={selectedTopics}
+            prompts={selectedPrompts}
+            onBack={handleBack}
+            onConfirm={handleNext}
+            isSubmitting={isSubmitting}
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
-    <SetupModal
-      brandName={brand.companyName || brand.name || 'Your Brand'}
-      industry={brand.industry || 'Technology'}
-      logo={brand.logo || brand.metadata?.logo || brand.metadata?.brand_logo}
-      domain={brand.domain || brand.website}
-      onComplete={handleComplete}
-      onClose={handleClose}
-      isSubmitting={isSubmitting}
-      overlay={
-        isPreparingRedirect ? (
-          <div className="fixed inset-0 flex items-center justify-center bg-white/80 z-[9999]">
-            <div className="bg-white border border-gray-200 shadow-lg rounded-xl px-6 py-4 flex items-center gap-3">
-              <div className="h-6 w-6 border-2 border-[#00bcdc] border-t-transparent rounded-full animate-spin" />
-              <div className="text-sm text-gray-700">Preparing data collection…</div>
+    <SetupLayout
+      currentStep={currentStep}
+      title={getStepTitle()}
+      onBack={handleBack}
+    >
+      {renderStepContent()}
+      
+      {submitError && (
+        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3 flex-1">
+              <h3 className="text-sm font-medium text-red-800">Error</h3>
+              <p className="mt-1 text-sm text-red-700">{submitError}</p>
             </div>
           </div>
-        ) : null
-      }
-    />
+        </div>
+      )}
+      
+      {currentStep !== 'topicChoice' && currentStep !== 'review' && currentStep !== 'summary' && (
+        <div className="mt-8 pt-8 border-t border-gray-200 flex justify-end">
+          <button
+            className="px-8 py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
+            onClick={handleNext}
+            disabled={!canProceed() || isSubmitting}
+          >
+            {isSubmitting ? 'Submitting...' : 'Next'}
+          </button>
+        </div>
+      )}
+    </SetupLayout>
   );
 };

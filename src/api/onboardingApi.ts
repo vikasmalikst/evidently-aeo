@@ -1,5 +1,5 @@
 import { apiClient } from '../lib/apiClient';
-import type { OnboardingBrand, OnboardingCompetitor } from '../types/onboarding';
+import type { BrandProductsEnrichment, OnboardingBrand, OnboardingCompetitor } from '../types/onboarding';
 import type { Topic } from '../types/topic';
 
 export interface BrandIntelResult {
@@ -149,3 +149,27 @@ export async function fetchPromptsForTopics(params: {
   );
 }
 
+export interface BrandProductsPreviewResponse {
+  success: boolean;
+  data?: BrandProductsEnrichment;
+  error?: string;
+}
+
+export async function fetchBrandProductsPreview(params: {
+  brand_name: string;
+  industry?: string;
+  competitors: Array<string | { name: string }>;
+}): Promise<BrandProductsPreviewResponse> {
+  return apiClient.request<BrandProductsPreviewResponse>(
+    '/onboarding/brand-products/preview',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        brand_name: params.brand_name,
+        industry: params.industry,
+        competitors: params.competitors,
+      }),
+    },
+    { requiresAuth: true, timeout: 120000 }
+  );
+}

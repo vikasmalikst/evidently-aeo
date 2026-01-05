@@ -76,6 +76,7 @@ export const DataCollectionProgressBar = ({
     }
     return 'Processing your data...';
   };
+  const statusText = getStatusText();
 
   return (
     <div className="mb-6 bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-4">
@@ -96,10 +97,9 @@ export const DataCollectionProgressBar = ({
             {isComplete ? 'Data Collection Complete' : 'Collecting and Scoring Your Data'}
           </h3>
           <p className="text-[13px] mb-3" style={{ color: '#64748b' }}>
-            {getStatusText()}
+            {statusText}{isLoading ? ' (updating)' : ''}
           </p>
           
-          {/* Progress Bar */}
           <div className="mb-2">
             <div className="flex justify-between items-center mb-2">
               <span className="text-[12px] font-medium" style={{ color: '#393e51' }}>
@@ -120,7 +120,6 @@ export const DataCollectionProgressBar = ({
             </div>
           </div>
 
-          {/* Detailed Progress */}
           {!isComplete && (
             <div className="grid grid-cols-2 gap-2 mt-3 text-[12px]">
               <div style={{ color: '#64748b' }}>
@@ -144,4 +143,3 @@ export const DataCollectionProgressBar = ({
     </div>
   );
 };
-

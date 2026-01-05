@@ -124,7 +124,7 @@ export const TopicPerformanceBubbleChart = ({ topics }: TopicPerformanceBubbleCh
           color: '#393e51',
           font: {
             size: 13,
-            weight: '600',
+            weight: 600,
             family: 'Sora, sans-serif'
           }
         },
@@ -151,7 +151,7 @@ export const TopicPerformanceBubbleChart = ({ topics }: TopicPerformanceBubbleCh
           color: '#393e51',
           font: {
             size: 13,
-            weight: '600',
+            weight: 600,
             family: 'Sora, sans-serif'
           }
         },

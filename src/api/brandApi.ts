@@ -1,17 +1,28 @@
 import { apiClient } from '../lib/apiClient';
 import { ApiResponse } from '../pages/dashboard/types';
 import { invalidateCache, cachedRequest } from '../lib/apiCache';
+import type { BrandProductsEnrichment } from '../types/onboarding';
 
 export interface BrandOnboardingData {
   brand_name: string;
   website_url: string;
   description?: string;
   industry?: string;
-  competitors?: string[];
+  competitors?: Array<{
+    name: string;
+    domain?: string;
+    url?: string;
+    relevance?: string;
+    industry?: string;
+    logo?: string;
+    source?: string;
+  }> | string[];
   keywords?: string[];
   aeo_topics?: Array<{
     label: string;
     weight: number;
+    source?: any;
+    category?: any;
   }>;
   ai_models?: string[];
   metadata?: Record<string, any>;
@@ -166,6 +177,11 @@ export async function submitBrandOnboarding(
     );
 
     console.log('✅ Brand onboarding successful:', response);
+    
+    // Invalidate brands cache so the new brand appears in the list immediately
+    invalidateCache('/brands');
+    invalidateCache('/brands/stats');
+    
     return response;
   } catch (error) {
     console.error('❌ Brand onboarding failed:', error);
@@ -220,3 +236,21 @@ export async function getBrandById(brandId: string): Promise<{ success: boolean;
   }
 }
 
+export async function upsertBrandProducts(
+  brandId: string,
+  enrichment: BrandProductsEnrichment
+): Promise<ApiResponse<{ brand_id: string }>> {
+  try {
+    return apiClient.request<ApiResponse<{ brand_id: string }>>(
+      `/brands/${brandId}/brand-products`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ enrichment }),
+      },
+      { requiresAuth: true, timeout: 120000 }
+    );
+  } catch (error) {
+    console.error('❌ Save brand products failed:', error);
+    throw error;
+  }
+}

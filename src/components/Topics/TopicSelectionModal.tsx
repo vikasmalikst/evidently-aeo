@@ -8,6 +8,7 @@ import { SelectedTopicsSummary } from './SelectedTopicsSummary';
 import { StepIndicator } from '../Onboarding/StepIndicator';
 import { Spinner } from '../Onboarding/common/Spinner';
 import evidentlyLogo from '../../assets/logo.png';
+import { SetupLayout } from '../../pages/SetupLayout';
 
 interface TopicSelectionModalProps {
   brandName: string;
@@ -15,6 +16,7 @@ interface TopicSelectionModalProps {
   onNext: (selectedTopics: Topic[]) => void;
   onBack: () => void;
   onClose: () => void;
+  mode?: 'modal' | 'fullscreen';
 }
 
 const MAX_TOPICS = 10;
@@ -26,6 +28,7 @@ export const TopicSelectionModal = ({
   onNext,
   onBack,
   onClose,
+  mode = 'modal',
 }: TopicSelectionModalProps) => {
   const [availableTopics, setAvailableTopics] = useState<{
     trending: Topic[];
@@ -45,7 +48,7 @@ export const TopicSelectionModal = ({
   const [topicsError, setTopicsError] = useState<string | null>(null);
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
   const [customTopics, setCustomTopics] = useState<Topic[]>([]);
-  const [activeAICategory, setActiveAICategory] = useState<TopicCategory>('awareness');
+  const [activeAICategory, setActiveAICategory] = useState<Exclude<TopicCategory, 'general'>>('awareness');
   const [qualityScore, setQualityScore] = useState(0);
 
   useEffect(() => {
@@ -233,60 +236,40 @@ export const TopicSelectionModal = ({
     return 'poor';
   };
 
-  return (
-    <div className="topic-modal-overlay">
-      <img src={evidentlyLogo} alt="EvidentlyAEO" className="topic-overlay-logo" />
-      <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
-        <StepIndicator currentStep="topics" />
-        
-        <div className="topic-modal-header">
-          <button className="topic-modal-back" onClick={onBack} aria-label="Back">
-            <ChevronLeft size={20} />
-            <span>Back</span>
-          </button>
-          <div className="topic-modal-header-content">
-            <div>
-              <h2 className="topic-modal-title">Select Topics</h2>
-              <div className="topic-count-inline">
-                {selectedTopics.size}/{MAX_TOPICS} topics selected
+  const body = (
+    <>
+      {isLoadingTopics ? (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+          <Spinner size="large" message="Loading topics from AI..." />
+        </div>
+      ) : (
+        <>
+          {topicsError && (
+            <div style={{ 
+              padding: '12px 16px', 
+              marginBottom: '16px', 
+              backgroundColor: '#fef3c7', 
+              border: '1px solid #fbbf24', 
+              borderRadius: '8px',
+              color: '#92400e',
+              fontSize: '14px'
+            }}>
+              ⚠️ {topicsError}. You can still add custom topics below.
+            </div>
+          )}
+          <div className="topic-quality-section">
+            <div className="topic-quality-indicator-main">
+              <span className="topic-quality-label">Selection Quality: {getQualityLabel()}</span>
+              <div className="topic-quality-bar">
+                <div
+                  className={`topic-quality-fill ${getQualityClass()}`}
+                  style={{ width: `${qualityScore}%` }}
+                ></div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="topic-modal-body">
-          {isLoadingTopics ? (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-              <Spinner size="large" message="Loading topics from AI..." />
-            </div>
-          ) : (
-            <>
-              {topicsError && (
-                <div style={{ 
-                  padding: '12px 16px', 
-                  marginBottom: '16px', 
-                  backgroundColor: '#fef3c7', 
-                  border: '1px solid #fbbf24', 
-                  borderRadius: '8px',
-                  color: '#92400e',
-                  fontSize: '14px'
-                }}>
-                  ⚠️ {topicsError}. You can still add custom topics below.
-                </div>
-              )}
-              <div className="topic-quality-section">
-                <div className="topic-quality-indicator-main">
-                  <span className="topic-quality-label">Selection Quality: {getQualityLabel()}</span>
-                  <div className="topic-quality-bar">
-                    <div
-                      className={`topic-quality-fill ${getQualityClass()}`}
-                      style={{ width: `${qualityScore}%` }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="topic-sections-container">
+          <div className="topic-sections-container">
             <TopicSection
               title="Trending Topics"
               description={`Popular topics for ${brandName} from Google AI Overviews`}
@@ -309,7 +292,7 @@ export const TopicSelectionModal = ({
               showTabs={true}
               tabs={['awareness', 'comparison', 'purchase', 'support']}
               activeTab={activeAICategory}
-              onTabChange={(tab) => setActiveAICategory(tab as TopicCategory)}
+              onTabChange={(tab) => setActiveAICategory(tab as Exclude<TopicCategory, 'general'>)}
             />
 
             <TopicSection
@@ -338,12 +321,70 @@ export const TopicSelectionModal = ({
             )}
           </div>
 
-              <SelectedTopicsSummary
-                selectedTopics={getSelectedTopicsList()}
-                onRemoveTopic={handleRemoveTopic}
-              />
-            </>
-          )}
+          <SelectedTopicsSummary
+            selectedTopics={getSelectedTopicsList()}
+            onRemoveTopic={handleRemoveTopic}
+          />
+        </>
+      )}
+    </>
+  );
+
+  if (mode === 'fullscreen') {
+    return (
+      <SetupLayout currentStep="topics" title="Select Topics" onBack={onBack}>
+        <div className="flex items-center justify-between mb-6">
+          <div className="text-sm text-gray-600">
+            {selectedTopics.size}/{MAX_TOPICS} topics selected
+          </div>
+        </div>
+
+        {body}
+
+        <div className="mt-8 pt-8 border-t border-gray-200 flex items-center justify-between">
+          <button
+            className="px-8 py-3 border border-gray-300 text-gray-800 rounded-lg font-semibold hover:bg-gray-50 transition-all"
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="px-8 py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
+            onClick={handleNext}
+            disabled={!isValid}
+            type="button"
+          >
+            Next: Configure Prompts
+          </button>
+        </div>
+      </SetupLayout>
+    );
+  }
+
+  return (
+    <div className="topic-modal-overlay">
+      <img src={evidentlyLogo} alt="EvidentlyAEO" className="topic-overlay-logo" />
+      <div className="topic-modal-container" onClick={(e) => e.stopPropagation()}>
+        <StepIndicator currentStep="topics" />
+        
+        <div className="topic-modal-header">
+          <button className="topic-modal-back" onClick={onBack} aria-label="Back">
+            <ChevronLeft size={20} />
+            <span>Back</span>
+          </button>
+          <div className="topic-modal-header-content">
+            <div>
+              <h2 className="topic-modal-title">Select Topics</h2>
+              <div className="topic-count-inline">
+                {selectedTopics.size}/{MAX_TOPICS} topics selected
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="topic-modal-body">
+          {body}
         </div>
 
         <div className="topic-modal-footer">

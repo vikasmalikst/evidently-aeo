@@ -261,7 +261,7 @@ const DatePickerMultiView = ({
     const endDate = new Date(today);
     endDate.setFullYear(endDate.getFullYear() + 2);
 
-    let currentWeekStart = new Date(startDate);
+    const currentWeekStart = new Date(startDate);
     while (currentWeekStart <= endDate) {
       const weekEnd = new Date(currentWeekStart);
       weekEnd.setDate(currentWeekStart.getDate() + 6);

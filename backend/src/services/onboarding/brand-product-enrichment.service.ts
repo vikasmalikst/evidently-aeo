@@ -87,11 +87,11 @@ Please provide comprehensive synonyms (legal names, abbreviations, common misspe
       return this.parseEnrichmentResponse(response, logger);
     }
 
-    logger(`🌐 Using OpenRouter (gpt-4o-mini) for enrichment...`);
+    logger(`🌐 Using OpenRouter (gpt-oss-20b) for enrichment...`);
     const orResult = await this.openRouterService.executeQuery({
       prompt: userPrompt,
       systemPrompt: systemPrompt,
-      model: 'openai/gpt-4o-mini',
+      model: 'openai/gpt-oss-20b',
       collectorType: 'content',
     });
     return this.parseEnrichmentResponse(orResult.response, logger);

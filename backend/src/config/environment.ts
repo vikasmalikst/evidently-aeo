@@ -65,7 +65,7 @@ export const config = {
   // OpenAI
   openai: {
     apiKey: process.env['OPENAI_API_KEY'],
-    model: process.env['MODEL'] || 'gpt-4o-mini',
+    model: process.env['MODEL'] || 'openai/gpt-oss-20b',
     useWebSearch: process.env['USE_OPENAI_WEBSEARCH'] === 'true',
   },
   

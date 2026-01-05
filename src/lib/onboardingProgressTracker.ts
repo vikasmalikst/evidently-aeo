@@ -64,11 +64,35 @@ const REQUEST_TIMEOUT_MS = 45000;
 
 const computeIsComplete = (progress: OnboardingProgressData | null): boolean => {
   if (!progress) return false;
+  
   const total = progress.queries?.total ?? 0;
   const completed = progress.queries?.completed ?? 0;
   const scoring = progress.scoring;
-
-  if (total > 0 && completed < total) return false;
+  
+  // If no queries exist yet, not complete
+  if (total === 0) return false;
+  
+  // If queries exist but not all collected, not complete
+  if (completed < total) return false;
+  
+  // Check stages for more accurate completion detection
+  const collectionStatus = progress.stages?.collection?.status;
+  const scoringStatus = progress.stages?.scoring?.status;
+  
+  // If using stages data, use it for more accurate completion check
+  if (collectionStatus && scoringStatus) {
+    // Both collection and scoring must be completed
+    if (collectionStatus === 'completed' && scoringStatus === 'completed') {
+      // Also verify scoring flags as a double-check
+      if (scoring) {
+        return Boolean(scoring.positions && scoring.sentiments && scoring.citations);
+      }
+      return true; // If stages say complete but no scoring object, trust stages
+    }
+    return false;
+  }
+  
+  // Fallback to legacy scoring flags check
   if (!scoring) return false;
   return Boolean(scoring.positions && scoring.sentiments && scoring.citations);
 };

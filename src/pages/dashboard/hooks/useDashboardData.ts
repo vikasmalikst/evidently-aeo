@@ -367,21 +367,21 @@ export const useDashboardData = () => {
       }
 
       if (snapshot.isComplete) {
-        localStorage.removeItem(storageKey);
+          localStorage.removeItem(storageKey);
         localStorage.setItem(completedAtKey, new Date().toISOString());
-        setIsDataCollectionInProgress(false);
+          setIsDataCollectionInProgress(false);
 
-        refetchDashboard().catch((err) => {
-          console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
-        });
+          refetchDashboard().catch((err) => {
+            console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
+          });
 
-        // Keep progress data for a moment to show completion, then clear
-        setTimeout(() => {
-          if (isMounted) {
-            setProgressData(null);
-          }
-        }, 3000);
-      }
+          // Keep progress data for a moment to show completion, then clear
+          setTimeout(() => {
+            if (isMounted) {
+              setProgressData(null);
+            }
+          }, 3000);
+        }
     });
 
     return () => {

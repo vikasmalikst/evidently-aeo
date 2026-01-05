@@ -1088,10 +1088,12 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
     }
 
     // Fetch counts in parallel to reduce endpoint latency (important for polling)
+    // IMPORTANT: Count unique query_ids, not total collector_results
+    // (One query can have multiple collector_results - one per collector type)
     const [
       { count: totalQueries, error: totalError },
-      { count: collectedCount, error: collectedError },
-      { count: scoredCount, error: scoredError },
+      { data: collectedResults, error: collectedError },
+      { data: scoredResults, error: scoredError },
     ] = await Promise.all([
       supabaseAdmin
       .from('generated_queries')
@@ -1100,16 +1102,18 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         .eq('customer_id', customerId),
       supabaseAdmin
       .from('collector_results')
-      .select('id', { count: 'exact', head: true })
+      .select('query_id')
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
-        .eq('status', 'completed'),
+        .eq('status', 'completed')
+        .not('query_id', 'is', null),
       supabaseAdmin
       .from('collector_results')
-      .select('id', { count: 'exact', head: true })
+      .select('query_id')
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
-        .eq('scoring_status', 'completed'),
+        .eq('scoring_status', 'completed')
+        .not('query_id', 'is', null),
     ]);
 
     if (totalError || collectedError || scoredError) {
@@ -1130,10 +1134,29 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
       });
       return;
     }
+    
+    // Handle null/undefined data arrays
+    const collectedData = collectedResults || [];
+    const scoredData = scoredResults || [];
 
     const total = totalQueries || 0;
-    const collected = collectedCount || 0;
-    const scored = scoredCount || 0;
+    
+    // Count unique query_ids (not total collector_results)
+    // This prevents showing "8/6" when one query has multiple collector results
+    // (e.g., 6 queries × 3 collectors = 18 collector_results, but should show 6/6)
+    const uniqueCollectedQueryIds = new Set(
+      collectedData
+        .map((r: any) => r.query_id)
+        .filter((id: any) => id != null)
+    );
+    const collected = uniqueCollectedQueryIds.size;
+    
+    const uniqueScoredQueryIds = new Set(
+      scoredData
+        .map((r: any) => r.query_id)
+        .filter((id: any) => id != null)
+    );
+    const scored = uniqueScoredQueryIds.size;
 
     // Determine Stage Statuses
     let collectionStatus: 'pending' | 'active' | 'completed' = 'pending';
@@ -1164,6 +1187,11 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
       }
     }
 
+    // Check if all scoring types are complete (more accurate than just scored > 0)
+    // For backward compatibility, we check if all results have been scored
+    // This is a simplified check - ideally we'd check each scoring type separately
+    const allScoringComplete = total > 0 && scored >= total;
+    
     res.json({
       success: true,
       data: {
@@ -1185,9 +1213,11 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         // Keep backward compatibility
         queries: { total: total, completed: collected },
         scoring: { 
-          positions: scored > 0, 
-          sentiments: scored > 0, 
-          citations: scored > 0 
+          // Only mark as complete if ALL results are scored (scored >= total)
+          // This prevents premature completion detection
+          positions: allScoringComplete, 
+          sentiments: allScoringComplete, 
+          citations: allScoringComplete 
         },
         currentOperation
       }

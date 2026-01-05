@@ -36,7 +36,6 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
   const [minTimePassed, setMinTimePassed] = useState(mode === 'modal'); // modal should not gate UX
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
-  const [hasShownInitialData, setHasShownInitialData] = useState(false);
   const [dashboardFetchError, setDashboardFetchError] = useState<string | null>(null);
   const redirectScheduledRef = useRef(false);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,7 +81,6 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
 
       if (data.success && data.data) {
         setDashboardData(data.data);
-        setHasShownInitialData(true);
         setDashboardFetchError(null);
       } else {
         setDashboardFetchError(data.error || data.message || 'Dashboard preview not available yet.');
@@ -92,14 +90,14 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
     }
   }, [brandId]);
 
-  // Dashboard preview polling (both modes)
+  // Dashboard preview polling (both modes) - fetch immediately, no delay
   useEffect(() => {
     if (!brandId) return;
-    // Kick it once quickly
-    const initial = setTimeout(() => fetchDashboardData(), 1500);
+    // Fetch immediately on mount
+    fetchDashboardData();
+    // Then poll at regular intervals
     const interval = setInterval(fetchDashboardData, DASHBOARD_PREVIEW_REFRESH_INTERVAL_MS);
     return () => {
-      clearTimeout(initial);
       clearInterval(interval);
     };
   }, [brandId, fetchDashboardData]);
@@ -170,23 +168,22 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
     return Math.max(0, Math.floor((Date.now() - lastUpdatedAt) / 1000));
   }, [lastUpdatedAt]);
 
-  const content = (
-    <div className={mode === 'modal' ? 'w-full bg-white rounded-2xl shadow-2xl' : 'w-full'}>
-      {/* Header section - always visible at top */}
-      <div className={`text-center ${mode === 'modal' ? 'px-6 pt-6 pb-4 border-b' : 'mb-8'}`} style={mode === 'modal' ? { borderColor: '#e8e9ed' } : {}}>
-        <div className="flex justify-center mb-4">
-          <img src={evidentlyLogo} alt="EvidentlyAEO" className="h-12 w-12 object-contain" />
-        </div>
-        <h1 className="text-2xl font-bold mb-2" style={{ color: '#1a1d29' }}>
-          {mode === 'fullpage' ? 'Collecting your AI visibility data' : 'Data collection in progress'}
-        </h1>
-        <p className="text-sm" style={{ color: '#64748b' }}>
-          {brandName ? `Brand: ${brandName}` : 'Please wait while we gather and analyze your data in real-time.'}
-        </p>
+  const headerContent = (
+    <div className="text-center mb-6">
+      <div className="flex justify-center mb-4">
+        <img src={evidentlyLogo} alt="EvidentlyAEO" className="h-10 w-10 object-contain" />
       </div>
+      <h1 className="text-xl md:text-2xl font-bold mb-2 px-4 break-words" style={{ color: '#1a1d29' }}>
+        {mode === 'fullpage' ? 'Collecting your AI visibility data' : 'Data collection in progress'}
+      </h1>
+      <p className="text-sm px-4" style={{ color: '#64748b' }}>
+        {brandName ? `Brand: ${brandName}` : 'Please wait while we gather and analyze your data in real-time.'}
+      </p>
+    </div>
+  );
 
-      {/* Content area - scrollable in modal mode, card background in fullpage */}
-      <div className={mode === 'modal' ? 'px-6 py-6 max-h-[calc(100vh-280px)] overflow-y-auto' : 'bg-white rounded-2xl shadow-lg border p-6'} style={mode === 'fullpage' ? { borderColor: '#e8e9ed' } : {}}>
+  const mainContent = (
+    <div className="bg-white rounded-xl border p-6" style={{ borderColor: '#e8e9ed' }}>
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm font-semibold" style={{ color: '#1a1d29' }}>
             Progress
@@ -245,39 +242,37 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           </div>
         )}
 
-        {/* Available Data */}
-        {hasShownInitialData && (
-          <div className="mt-6 rounded-lg p-4" style={{ backgroundColor: '#f9f9fb', border: '1px solid #e8e9ed' }}>
-            <p className="font-semibold mb-3 text-[13px]" style={{ color: '#1a1d29' }}>Available Data</p>
-            <div className="grid grid-cols-3 gap-3 text-center mb-3">
-              <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
-                <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Share of Answer</p>
-                <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
-                  {dashboardData ? formatMetricValue(shareMetric, '%') : '—'}
-                </p>
-              </div>
-              <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
-                <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Visibility</p>
-                <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
-                  {dashboardData ? formatMetricValue(visibilityMetric, '') : '—'}
-                </p>
-              </div>
-              <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
-                <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Sentiment</p>
-                <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
-                  {dashboardData ? formatMetricValue(sentimentMetric, '') : '—'}
-                </p>
-              </div>
+        {/* Available Data - Always show (loads immediately, no delay) */}
+        <div className="mt-6 rounded-lg p-4" style={{ backgroundColor: '#f9f9fb', border: '1px solid #e8e9ed' }}>
+          <p className="font-semibold mb-3 text-[13px]" style={{ color: '#1a1d29' }}>Available Data</p>
+          <div className="grid grid-cols-3 gap-3 text-center mb-3">
+            <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
+              <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Share of Answer</p>
+              <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
+                {dashboardData ? formatMetricValue(shareMetric, '%') : '—'}
+              </p>
             </div>
-
-            {dashboardFetchError && (
-              <div className="mt-3 rounded-lg p-3 text-[12px]" style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}>
-                <div className="font-semibold mb-1">Dashboard preview not available yet</div>
-                <div className="opacity-90">{dashboardFetchError}</div>
-              </div>
-            )}
+            <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
+              <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Visibility</p>
+              <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
+                {dashboardData ? formatMetricValue(visibilityMetric, '') : '—'}
+              </p>
+            </div>
+            <div className="rounded-lg p-2" style={{ backgroundColor: '#ffffff' }}>
+              <p className="text-[12px] mb-1" style={{ color: '#64748b' }}>Sentiment</p>
+              <p className="font-bold text-base" style={{ color: '#1a1d29' }}>
+                {dashboardData ? formatMetricValue(sentimentMetric, '') : '—'}
+              </p>
+            </div>
           </div>
-        )}
+
+          {dashboardFetchError && (
+            <div className="mt-3 rounded-lg p-3 text-[12px]" style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}>
+              <div className="font-semibold mb-1">Dashboard preview not available yet</div>
+              <div className="opacity-90">{dashboardFetchError}</div>
+            </div>
+          )}
+        </div>
 
         {/* Stats */}
         <div className="flex items-center justify-between text-[13px] border-t pt-6 mt-6" style={{ borderColor: '#e8e9ed' }}>
@@ -319,8 +314,19 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           </div>
         )}
 
+        {mode === 'modal' && (
+          <div className="mt-5 flex justify-center">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-semibold"
+              style={{ backgroundColor: '#1a1d29', color: '#ffffff' }}
+            >
+              Close
+            </button>
+          </div>
+        )}
 
-        {!isComplete && !hasShownInitialData && (
+        {!isComplete && !dashboardData && (
           <div className="mt-6 text-center">
             <p className="text-[13px]" style={{ color: '#64748b' }}>
               This may take a few minutes. We're collecting and analyzing data from multiple AI sources…
@@ -337,37 +343,28 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           </div>
         )}
       </div>
-      
-      {/* Footer with close button for modal mode */}
-      {mode === 'modal' && (
-        <div className="px-6 py-4 border-t flex justify-center" style={{ borderColor: '#e8e9ed' }}>
-          <button
-            onClick={onClose}
-            className="px-6 py-2 rounded-lg text-sm font-semibold transition-colors hover:opacity-90"
-            style={{ backgroundColor: '#1a1d29', color: '#ffffff' }}
-          >
-            Close
-          </button>
-        </div>
-      )}
-    </div>
   );
 
   if (mode === 'fullpage') {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4 py-8" style={{ backgroundColor: '#f9f9fb' }}>
-        <div className="w-full max-w-3xl">
-          {content}
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#f9f9fb' }}>
+        <div className="w-full max-w-3xl mx-auto">
+          {headerContent}
+          {mainContent}
         </div>
       </div>
     );
   }
 
-  // Modal mode (overlay)
+  // Modal mode (overlay with blurred backdrop)
   return (
     <div 
-      className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-8 overflow-y-auto"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto"
+      style={{ 
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)'
+      }}
       onClick={(e) => {
         // Close on backdrop click
         if (e.target === e.currentTarget && onClose) {
@@ -375,24 +372,24 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
         }
       }}
     >
-      {/* Backdrop blur effect */}
-      <div 
-        className="fixed inset-0 backdrop-blur-sm -z-10"
-        style={{ backgroundColor: 'rgba(0,0,0,0.3)' }}
-      />
-      
-      <div className="w-full max-w-3xl relative my-auto">
-        {/* Close button - positioned inside modal */}
-        <button
-          onClick={onClose}
-          className="absolute -top-12 right-0 text-white/90 hover:text-white transition-colors z-10"
-          aria-label="Close progress modal"
-        >
-          <X className="w-6 h-6" />
-        </button>
-        
-        {/* Modal content */}
-        {content}
+      <div className="w-full max-w-3xl my-auto">
+        <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden">
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 z-10 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label="Close progress modal"
+            style={{ color: '#64748b' }}
+          >
+            <X className="w-5 h-5" />
+          </button>
+          
+          {/* Content with proper padding */}
+          <div className="p-6 pt-8">
+            {headerContent}
+            {mainContent}
+          </div>
+        </div>
       </div>
     </div>
   );

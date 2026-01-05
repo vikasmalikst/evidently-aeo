@@ -565,7 +565,7 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
 
     // Use OpenRouter as primary, Cerebras as secondary, Gemini as tertiary for prompt generation
     const openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-    const openRouterModel = process.env['OPENROUTER_MODEL'] || 'openai/gpt-4o-mini';
+    const openRouterModel = process.env['OPENROUTER_MODEL'] || 'openai/gpt-oss-20b';
     const openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
     const openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
     const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];

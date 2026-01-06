@@ -72,9 +72,8 @@ export class TrendingKeywordsService {
     this.cerebrasApiKey = getEnvVar('CEREBRAS_API_KEY', '');
     this.cerebrasModel = getEnvVar('CEREBRAS_MODEL', 'qwen-3-235b-a22b-instruct-2507');
     this.openRouterApiKey = getEnvVar('OPENROUTER_API_KEY', '');
-    this.openRouterModel = "openai/gpt-oss-20b";
-    // this.openRouterSiteUrl = getEnvVar('OPENROUTER_SITE_URL', undefined);
-    // this.openRouterSiteTitle = getEnvVar('OPENROUTER_SITE_TITLE', undefined);
+    this.openRouterModel = getEnvVar('OPENROUTER_TOPICS_MODEL', 'openai/gpt-4o-mini');
+   
     console.log('🔧 Trending Keywords Service initialized with:');
     console.log(`  - Gemini: ${this.geminiApiKey ? '✅ Configured' : '❌ Not configured'}`);
     console.log(`  - Gemini Model: ${this.geminiModel}`);
@@ -92,35 +91,51 @@ export class TrendingKeywordsService {
     let sourcesUsed: TrendingSource[] = [];
     let lastError: unknown;
 
-    // Primary: Cerebras
-    if (this.cerebrasApiKey) {
+    // Primary: OpenRouter
+    if (this.openRouterApiKey) {
       try {
-        const result = await this.fetchFromCerebras(prompt);
-        keywords = result.keywords;
-        prompts = result.prompts;
-        sourcesUsed.push('cerebras');
+        const result = await this.fetchFromOpenRouter(prompt);
+        if (result.keywords && result.keywords.length > 0) {
+          keywords = result.keywords;
+          prompts = result.prompts;
+          sourcesUsed.push('openrouter');
+          console.log(`✅ [TRENDING] OpenRouter returned ${keywords.length} keywords`);
+        } else {
+          console.warn('⚠️ [TRENDING] OpenRouter returned empty keywords, trying fallback...');
+          lastError = new Error('OpenRouter returned empty keywords');
+        }
       } catch (error) {
-        this.logProviderError('Cerebras', error);
-        lastError = error;
+        this.logProviderError('OpenRouter', error);
+        lastError = lastError || error;
+        console.warn('⚠️ [TRENDING] OpenRouter failed, trying fallback...');
       }
     } else {
+      console.warn('⚠️ OPENROUTER_API_KEY not configured. Skipping OpenRouter for trending topics.');
+    }
+
+    // Fallback: Cerebras (only if OpenRouter failed or returned empty)
+    if ((!keywords || keywords.length === 0) && this.cerebrasApiKey) {
+      try {
+        const result = await this.fetchFromCerebras(prompt);
+        if (result.keywords && result.keywords.length > 0) {
+          keywords = result.keywords;
+          prompts = result.prompts;
+          sourcesUsed.push('cerebras');
+          console.log(`✅ [TRENDING] Cerebras returned ${keywords.length} keywords`);
+        } else {
+          console.warn('⚠️ [TRENDING] Cerebras returned empty keywords');
+          lastError = lastError || new Error('Cerebras returned empty keywords');
+        }
+      } catch (error) {
+        this.logProviderError('Cerebras', error);
+        lastError = lastError || error;
+      }
+    } else if (!this.cerebrasApiKey && (!keywords || keywords.length === 0)) {
       console.warn('⚠️ CEREBRAS_API_KEY not configured. Skipping Cerebras for trending topics.');
     }
 
     // Fallback: OpenRouter
-    if ((!keywords || keywords.length === 0) && this.openRouterApiKey) {
-      try {
-        const result = await this.fetchFromOpenRouter(prompt);
-        keywords = result.keywords;
-        prompts = result.prompts;
-        sourcesUsed.push('openrouter');
-      } catch (error) {
-        this.logProviderError('OpenRouter', error);
-        lastError = lastError || error;
-      }
-    } else if (!this.openRouterApiKey) {
-      console.warn('⚠️ OPENROUTER_API_KEY not configured. Skipping OpenRouter fallback for trending topics.');
-    }
+    
 
     // Final fallback: Gemini (existing behavior)
     if ((!keywords || keywords.length === 0) && this.geminiApiKey) {
@@ -146,6 +161,8 @@ export class TrendingKeywordsService {
     const sorted = this.deduplicateKeywords(keywords)
       .sort((a, b) => b.trend_score - a.trend_score)
       .slice(0, max_keywords);
+    
+    console.log(`📊 [TRENDING] Final result: ${sorted.length} keywords after deduplication and sorting (requested: ${max_keywords})`);
 
     // Store in database if brandId and customerId are provided
     if (brandId && customerId) {
@@ -497,9 +514,9 @@ export class TrendingKeywordsService {
     // Reject question marks
     if (keywordTrimmed.includes('?')) return false;
     
-    // Check word count (must be 1-4 words)
+    // Check word count (must be 1-5 words, allow 5 for comparison queries like "X vs Y")
     const wordCount = keywordTrimmed.split(/\s+/).filter(w => w.length > 0).length;
-    if (wordCount > 4) {
+    if (wordCount > 5) {
       console.log(`🚫 Rejected keyword (too many words: ${wordCount}): "${keywordTrimmed}"`);
       return false;
     }
@@ -902,8 +919,8 @@ export class TrendingKeywordsService {
         ],
         temperature: 0.5,
         max_tokens: 2000,
-        reasoning: { enabled: true },
-        provider: { sort: 'throughput' }
+        // reasoning: { enabled: true },
+        // provider: { sort: 'throughput' }
       },
       {
         headers,
@@ -970,8 +987,23 @@ export class TrendingKeywordsService {
     }
 
     const now = new Date().toISOString();
-    const keywords: TrendingKeyword[] = (parsed.keywords || [])
-      .filter((k: any) => typeof k?.keyword === 'string' && k.keyword.trim().length >= 3 && this.isValidKeyword(k.keyword.trim(), ''))
+    const rawKeywords = parsed.keywords || [];
+    console.log(`📊 [TRENDING] Parsed ${rawKeywords.length} raw keywords from ${source}`);
+    
+    const keywords: TrendingKeyword[] = rawKeywords
+      .filter((k: any) => {
+        const keyword = k?.keyword?.trim();
+        if (!keyword || typeof keyword !== 'string' || keyword.length < 3) {
+          if (keyword) console.log(`🚫 [TRENDING] Rejected (too short or invalid): "${keyword}"`);
+          return false;
+        }
+        // Pass empty brand string for trending keywords (they're general, not brand-specific)
+        const isValid = this.isValidKeyword(keyword, '');
+        if (!isValid) {
+          console.log(`🚫 [TRENDING] Rejected (validation failed): "${keyword}"`);
+        }
+        return isValid;
+      })
       .slice(0, 12)
       .map((k: any) => ({
         keyword: k.keyword.trim(),
@@ -983,6 +1015,8 @@ export class TrendingKeywordsService {
         related_queries: [],
         last_updated: now
       }));
+    
+    console.log(`✅ [TRENDING] After filtering: ${keywords.length} valid keywords from ${source} (rejected ${rawKeywords.length - keywords.length})`);
 
     const prompts: TrendingPrompt[] = (parsed.prompts || [])
       .filter((p: any) => typeof p?.prompt === 'string' && p.prompt.trim().length >= 5)

@@ -10,7 +10,7 @@ export class LLMBrandIntelService {
     process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
   private openRouterApiKey = process.env['OPENROUTER_API_KEY'];
   private openRouterModel =
-    "openai/gpt-oss-20b";
+    "qwen/qwen3-235b-a22b-instruct-2507";
   private openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
   private openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
 
@@ -43,14 +43,27 @@ IMPORTANT: You must respond with a valid JSON object containing these exact fiel
 
 Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
 
-    console.log('📝 Brand intel prompt (system+user) preview:', this.previewForLog(systemPrompt), '|| user:', `Analyze this brand: ${rawInput}`);
+    const userMessage = `Analyze this brand: ${rawInput}`;
+
+    // Log the full prompt being sent to LLM
+    console.log('📝 [BRAND-INTEL] Full prompt being sent to LLM:');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔹 System Prompt:');
+    console.log(systemPrompt);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔹 User Message:');
+    console.log(userMessage);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📋 Input Parameters:');
+    console.log(JSON.stringify({ rawInput, companyName, domain }, null, 2));
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     let lastError: unknown;
 
     // Primary: OpenRouter Parasail
     if (this.openRouterApiKey) {
       try {
-        const content = await this.generateWithOpenRouter(systemPrompt, rawInput);
+        const content = await this.generateWithOpenRouter(systemPrompt, userMessage);
         const parsed = this.parseBrandIntel(content);
         if (parsed) return parsed;
         console.warn('⚠️ OpenRouter returned no usable JSON, trying Cerebras fallback if available.');
@@ -66,7 +79,7 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
     // Fallback: Cerebras
     if (this.cerebrasApiKey) {
       try {
-        const content = await this.generateWithCerebras(systemPrompt, rawInput);
+        const content = await this.generateWithCerebras(systemPrompt, userMessage);
         const parsed = this.parseBrandIntel(content);
         if (parsed) return parsed;
         console.warn('⚠️ Cerebras returned no usable JSON.');
@@ -85,8 +98,18 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
     return {};
   }
 
-  private async generateWithCerebras(systemPrompt: string, rawInput: string): Promise<string> {
-    console.log('🚀 Calling Cerebras for brand intel with model:', this.cerebrasModel);
+  private async generateWithCerebras(systemPrompt: string, userMessage: string): Promise<string> {
+    console.log('🚀 [BRAND-INTEL] Calling Cerebras for brand intel with model:', this.cerebrasModel);
+    console.log('📤 [BRAND-INTEL] Cerebras Request Payload:');
+    console.log(JSON.stringify({
+      model: this.cerebrasModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: 0.3,
+      max_tokens: 2000,
+    }, null, 2));
 
     const response = await axios.post<any>(
       'https://api.cerebras.ai/v1/chat/completions',
@@ -94,7 +117,7 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
         model: this.cerebrasModel,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Analyze this brand: ${rawInput}` }
+          { role: 'user', content: userMessage }
         ],
         temperature: 0.3,
         max_tokens: 2000,
@@ -116,8 +139,8 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
     return content;
   }
 
-  private async generateWithOpenRouter(systemPrompt: string, rawInput: string): Promise<string> {
-    console.log('🌐 Calling OpenRouter (parasail) for brand intel with model:', this.openRouterModel);
+  private async generateWithOpenRouter(systemPrompt: string, userMessage: string): Promise<string> {
+    console.log('🌐 [BRAND-INTEL] Calling OpenRouter for brand intel with model:', this.openRouterModel);
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.openRouterApiKey}`,
@@ -131,27 +154,47 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
       headers['X-Title'] = this.openRouterSiteTitle;
     }
 
+    const requestPayload = {
+      model: this.openRouterModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: 0.3,
+      max_tokens: 1000,
+    };
+
+    console.log('📤 [BRAND-INTEL] OpenRouter Request Payload:');
+    console.log(JSON.stringify(requestPayload, null, 2));
+    console.log('📤 [BRAND-INTEL] OpenRouter Request Headers (excluding Authorization):');
+    console.log(JSON.stringify({ ...headers, Authorization: '***REDACTED***' }, null, 2));
+
     const response = await axios.post<any>(
       'https://openrouter.ai/api/v1/chat/completions',
-      {
-        model: this.openRouterModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Analyze this brand: ${rawInput}` }
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
-        reasoning: { enabled: true },
-        provider: { sort: 'throughput' }
-      },
+      requestPayload,
       {
         headers,
         timeout: 60000,
       }
     );
 
-    const content = response.data?.choices?.[0]?.message?.content ?? '';
+    // Handle different response structures (including reasoning responses)
+    const message = response.data?.choices?.[0]?.message;
+    let content = '';
+    
+    if (typeof message?.content === 'string') {
+      content = message.content;
+    } else if (Array.isArray(message?.content)) {
+      // Handle array content (e.g., from reasoning responses)
+      content = message.content
+        .map((part: any) => part?.text || part?.content || '')
+        .join('\n');
+    } else if (message?.content) {
+      content = String(message.content);
+    }
+    
     if (!content.trim()) {
+      console.error('❌ OpenRouter response structure:', JSON.stringify(response.data, null, 2));
       throw new Error('No content in OpenRouter response');
     }
     console.log('🔍 OpenRouter response preview:', this.previewForLog(content));

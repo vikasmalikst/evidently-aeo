@@ -220,10 +220,10 @@ Respond with ONLY valid JSON in this exact format:
       return response.json() as Promise<any>;
     };
 
-    // Primary: gpt-oss-120b:free, Fallback: OPENROUTER_MODEL (if configured), then gpt-5-nano
+    // Primary: openai/gpt-oss-20b, Fallback: OPENROUTER_MODEL (if configured and different), then gpt-5-nano
     const models = [
-      'openai/gpt-oss-120b:free',
-      ...(openRouterModel ? [openRouterModel] : []),
+      'openai/gpt-oss-20b',
+      ...(openRouterModel && openRouterModel !== 'openai/gpt-oss-20b' ? [openRouterModel] : []),
       'openai/gpt-5-nano'
     ];
     let lastError: Error | null = null;

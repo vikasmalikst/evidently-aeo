@@ -141,7 +141,7 @@ export class AEOCategorizationService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'openai/gpt-oss-20b',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',

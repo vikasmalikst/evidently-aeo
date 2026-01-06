@@ -64,7 +64,7 @@ export class AnalysisService {
   private async callOpenAI(prompt: string, domain: string, url: string): Promise<MoverItem[]> {
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'openai/gpt-oss-20b',
+        model: 'gpt-4o-mini', // or 'openai/gpt-4o-mini' for OpenRouter
         messages: [
           { role: 'system', content: 'You are a helpful JSON extractor.' },
           { role: 'user', content: prompt }

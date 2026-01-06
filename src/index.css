@@ -94,3 +94,26 @@
   height: 260px;
   animation-duration: 14s;
 }
+
+/* FAQ Answer Content Styling */
+.faq-answer-content ul {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-left: 1.5rem;
+}
+
+.faq-answer-content li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.6;
+}
+
+.faq-answer-content strong {
+  font-weight: 600;
+  color: #1a1d29;
+}
+
+.faq-answer-content p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}

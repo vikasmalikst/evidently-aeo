@@ -327,15 +327,49 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       }
     }
 
-    // Use new topics-query-generation service (always use new approach)
-    const topicsAndQueriesResult = await topicsQueryGenerationService.generateTopicsAndQueries({
-      brandName: brand_name,
-      industry: brandIndustry || industry || 'General',
-      competitors: brandCompetitors,
-      maxTopics: 20
-    });
+    // Fetch topics and trending keywords in PARALLEL (not sequential)
+    const [topicsAndQueriesResult, trendingResult] = await Promise.all([
+      // Primary: Generate AI topics
+      topicsQueryGenerationService.generateTopicsAndQueries({
+        brandName: brand_name,
+        industry: brandIndustry || industry || 'General',
+        competitors: brandCompetitors,
+        maxTopics: 20
+      }),
+      // Parallel: Fetch trending keywords (with timeout to not block too long)
+      Promise.race([
+        trendingKeywordsService.getTrendingKeywords({
+          brand: brand_name,
+          industry: brandIndustry || 'General',
+          competitors: brandCompetitors,
+          locale,
+          country,
+          max_keywords: 6
+        }).then((result) => {
+          if (result.success && result.data) {
+            return result.data.keywords.slice(0, 6).map((kw: any, index: number) => ({
+              id: `trend-${index}`,
+              name: kw.keyword,
+              source: 'trending' as const,
+              relevance: Math.round((kw.trend_score || 0.9) * 100),
+              trendingIndicator: (kw.trend_score || 0.9) > 0.85 ? 'rising' : 'stable'
+            }));
+          }
+          return [];
+        }).catch((trendingError) => {
+          console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
+          return [];
+        }),
+        // 15 second timeout (increased from 10 to give more time)
+        new Promise<any[]>((resolve) => setTimeout(() => {
+          console.warn('⏱️ [TRENDING] Timeout after 15s, returning empty trending topics');
+          resolve([]);
+        }, 15000))
+      ])
+    ]);
 
     console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics with queries using new service`);
+    console.log(`📊 [TRENDING] Received ${trendingResult.length} trending topics for frontend`);
 
     // Organize topics by category using intent archetype mapping
     const aiGenerated: Record<string, any[]> = {
@@ -354,7 +388,6 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
           id: `ai-${index}`,
           name: topicWithQuery.topic,
           description: topicWithQuery.description,
-          query: topicWithQuery.query, // Store the query for later use
           source: 'ai_generated' as const,
           category: category,
           relevance: topicWithQuery.priority * 20, // Convert 1-5 priority to 20-100 relevance
@@ -389,43 +422,6 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       }
     });
 
-    // Get trending topics as additional variety (optional, non-blocking)
-    // Don't await - return response immediately, trending topics can be empty initially
-    let trendingTopics: any[] = [];
-    const trendingPromise = trendingKeywordsService.getTrendingKeywords({
-      brand: brand_name,
-      industry: brandIndustry || 'General',
-      competitors: brandCompetitors,
-      locale,
-      country,
-      max_keywords: 6
-    }).then((trendingResult) => {
-      if (trendingResult.success && trendingResult.data) {
-        return trendingResult.data.keywords.slice(0, 6).map((kw: any, index: number) => ({
-          id: `trend-${index}`,
-          name: kw.keyword,
-          source: 'trending' as const,
-          relevance: Math.round(kw.trend_score * 100),
-          trendingIndicator: kw.trend_score > 0.85 ? 'rising' : 'stable'
-        }));
-      }
-      return [];
-    }).catch((trendingError) => {
-      console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
-      return [];
-    });
-    
-    // Wait for trending topics with a timeout (max 5 seconds) to avoid blocking too long
-    try {
-      trendingTopics = await Promise.race([
-        trendingPromise,
-        new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 5000)) // 5 second timeout
-      ]);
-    } catch (error) {
-      console.warn('⚠️ Trending topics timeout or error, continuing without them');
-      trendingTopics = [];
-    }
-
     // Add minimal preset topics (keep a small set for fallback)
     const preset = [
       { id: 'preset-1', name: 'Product features', source: 'preset' as const, relevance: 85 },
@@ -443,7 +439,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
     };
 
     const response = {
-      trending: trendingTopics,
+      trending: trendingResult, // Use trending topics from parallel fetch
       aiGenerated: aiGeneratedForFrontend,
       preset,
       existing_count: existingTopics.length,
@@ -575,9 +571,10 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
       }
     }
 
-    // Use OpenRouter as primary, Cerebras as secondary, Gemini as tertiary for prompt generation
+    // Use OpenRouter as primary (gpt-4o-mini), fallback to gpt-5-nano, then Cerebras, then Gemini
     const openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-    const openRouterModel = process.env['OPENROUTER_MODEL'] || 'qwen/qwen3-235b-a22b-2507';
+    const openRouterModel = process.env['OPENROUTER_MODEL'] || 'openai/gpt-4o-mini';
+    const openRouterFallbackModel = 'openai/gpt-5-nano-2025-08-07';
     const openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
     const openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
     const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
@@ -627,6 +624,16 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
       ? `Competitors: ${brandCompetitors.join(', ')}. ` 
       : '';
     
+    // Extract topic names from topic objects (topics can be strings or objects with 'name' property)
+    const topicNames = topics.map((t: any) => {
+      if (typeof t === 'string') return t;
+      if (t && typeof t === 'object' && t.name) return t.name;
+      if (t && typeof t === 'object' && t.topic) return t.topic;
+      return String(t);
+    });
+
+    console.log(`📝 [PROMPTS] Extracted ${topicNames.length} topic names:`, topicNames.slice(0, 5), topicNames.length > 5 ? '...' : '');
+    
     const prompt = `You are an SEO expert. Generate 3-5 realistic, neutral search queries for each topic in the ${finalIndustry} industry. ${finalCompetitors}
 
 CRITICAL RULES:
@@ -637,7 +644,7 @@ CRITICAL RULES:
 - Think from customer perspective: "How would someone search when researching ${finalIndustry} options?"
 
 Topics:
-${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+${topicNames.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 
 CRITICAL: Return ONLY a valid JSON array. No explanations, no markdown, no code blocks. Just the JSON array.
 Format:
@@ -722,10 +729,67 @@ Generate queries that real users would type into Google. Make them specific, act
       openRouterFailed = true;
     }
 
+    // Fallback to OpenRouter with gpt-5-nano-2025-08-07 if primary failed
+    if (generatedQueries.length === 0 && openRouterApiKey && openRouterApiKey !== 'your_openrouter_api_key_here') {
+      try {
+        console.log(`🔄 [PROMPTS FLOW] Step 2: Attempting prompt generation with OpenRouter fallback (${openRouterFallbackModel})...`);
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${openRouterApiKey}`,
+          'Content-Type': 'application/json',
+        };
+        if (openRouterSiteUrl) {
+          headers['HTTP-Referer'] = openRouterSiteUrl;
+        }
+        if (openRouterSiteTitle) {
+          headers['X-Title'] = openRouterSiteTitle;
+        }
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: openRouterFallbackModel,
+            messages: [
+              { role: 'system', content: 'You are an SEO expert. Always respond with valid JSON arrays only. No explanations, no markdown, no code blocks.' },
+              { role: 'user', content: prompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 2000,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          const generatedText = data.choices?.[0]?.message?.content || '';
+          
+          if (generatedText) {
+            const jsonStr = extractJsonArray(generatedText);
+            if (jsonStr) {
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  generatedQueries = parsed;
+                  console.log(`✅ [PROMPTS FLOW] Step 2 SUCCESS: Generated ${parsed.length} queries using OpenRouter fallback (${openRouterFallbackModel})`);
+                  console.log(`🔍 [PROMPTS FLOW] OpenRouter fallback response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
+                }
+              } catch (parseError) {
+                console.error('❌ Failed to parse OpenRouter fallback JSON response:', parseError);
+              }
+            }
+          }
+        } else {
+          const errorText = await response.text();
+          console.error(`❌ [PROMPTS FLOW] Step 2 FAILED: OpenRouter fallback API error: ${response.status} ${errorText}`);
+        }
+      } catch (fallbackError) {
+        console.error('❌ [PROMPTS FLOW] Step 2 FAILED: OpenRouter fallback API request failed:', fallbackError);
+      }
+    }
+
     // Fallback to Cerebras if OpenRouter failed
     if (generatedQueries.length === 0 && cerebrasApiKey && cerebrasApiKey !== 'your_cerebras_api_key_here') {
       try {
-        console.log('🧠 [PROMPTS FLOW] Step 2: Attempting prompt generation with Cerebras (secondary)...');
+        console.log('🧠 [PROMPTS FLOW] Step 3: Attempting prompt generation with Cerebras (tertiary)...');
         const response = await fetch('https://api.cerebras.ai/v1/completions', {
           method: 'POST',
           headers: {

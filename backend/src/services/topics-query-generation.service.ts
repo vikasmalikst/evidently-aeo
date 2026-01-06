@@ -17,7 +17,6 @@ export interface TopicWithQuery {
   intentArchetype: string;
   topic: string;
   description: string;
-  query: string;
   priority: number;
 }
 
@@ -36,18 +35,12 @@ export interface TopicsAndQueriesRequest {
 
 class TopicsQueryGenerationService {
   private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
-  private cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
+  private cerebrasModel = process.env['CEREBRAS_MODEL'] || 'gpt-4o-mini';
   private openRouterApiKey = process.env['OPENROUTER_API_KEY'];
   private openRouterModel = (() => {
     const envModel = process.env['OPENROUTER_TOPICS_MODEL'];
-    const defaultModel = 'qwen/qwen3-235b-a22b-2507';
+    const defaultModel = 'openai/gpt-4o-mini';
     const model = envModel || defaultModel;
-    
-    // Ensure we never use gpt-4o-mini for topic generation
-    if (model.includes('gpt-4o-mini') || model.includes('4o-mini')) {
-      console.warn(`⚠️ [TOPICS] Detected gpt-4o-mini in model "${model}", overriding to qwen model`);
-      return defaultModel;
-    }
     
     console.log(`📋 [TOPICS] Using OpenRouter model: ${model}`);
     return model;
@@ -65,19 +58,30 @@ class TopicsQueryGenerationService {
     const prompt = this.buildPrompt(request);
     let lastError: unknown;
 
-    // Primary: OpenRouter
+    // Primary: OpenRouter (gpt-4o-mini)
     if (this.openRouterApiKey) {
       try {
         return await this.generateWithOpenRouter(prompt, maxTopics);
       } catch (error) {
-        console.error('❌ OpenRouter topics generation failed, attempting Cerebras fallback...', error);
+        console.error('❌ OpenRouter topics generation failed, attempting fallback...', error);
         lastError = error;
       }
     } else {
       console.warn('⚠️ OPENROUTER_API_KEY is not configured. Skipping primary provider.');
     }
 
-    // Fallback: Cerebras
+    // Fallback: OpenRouter with gpt-5-nano-2025-08-07
+    if (this.openRouterApiKey) {
+      try {
+        console.log('🔄 [TOPICS] Retrying with gpt-5-nano-2025-08-07 fallback...');
+        return await this.generateWithOpenRouterFallback(prompt, maxTopics);
+      } catch (error) {
+        console.error('❌ OpenRouter fallback (gpt-5-nano-2025-08-07) also failed, attempting Cerebras...', error);
+        lastError = lastError || error;
+      }
+    }
+
+    // Final Fallback: Cerebras
     if (this.cerebrasApiKey) {
       try {
         return await this.generateWithCerebras(prompt, maxTopics);
@@ -102,8 +106,8 @@ class TopicsQueryGenerationService {
   private buildPrompt(request: TopicsAndQueriesRequest): string {
     const { brandName, industry, competitors, description } = request;
 
-    return `You are an AEO (Answer Engine Optimization) Topic & Query Architect.  
-Your job: generate a structured list of meaningful Topics for the brand the user will input — then, based on those Topics, produce **natural-language user queries/prompts** that real users might type into an LLM/search.
+    return `You are an AEO (Answer Engine Optimization) Topic Architect.  
+Your job: generate a structured list of meaningful Topics for the brand the user will input.
 
 The user provides: **Brand Name: ${brandName}**
 ${industry ? `Industry: ${industry}` : ''}
@@ -139,19 +143,12 @@ Your tasks:
 
 4. For each Topic include a **1–2 sentence description** explaining what the topic is about.
 
-5. For each Topic, create **one natural-language user query/prompt** (the question a typical user might type into an LLM/search).  
-   - The query must:  
-     - Be phrased like a real user question (e.g., "What is…", "How do I…", "Which … is best for …").  
-     - **Not include the brand name.**  
-     - Reflect the Topic and Intent.  
-   - Provide the query right after the description in the output for each topic.
-
-6. For each Topic, assign a **priority score (1-5)** based on:
+5. For each Topic, assign a **priority score (1-5)** based on:
    - Relevance to the brand's primary domain
    - Likely user search volume
    - Business value potential
 
-7. **Output format (CRITICAL - Return ONLY valid JSON):**
+6. **Output format (CRITICAL - Return ONLY valid JSON):**
 \`\`\`json
 {
   "primaryDomain": "1-2 sentence description of the brand's primary domain of value",
@@ -160,7 +157,6 @@ Your tasks:
       "intentArchetype": "best_of|comparison|alternatives|pricing_or_value|use_case|how_to|problem_solving|beginner_explain|expert_explain|technical_deep_dive",
       "topic": "short descriptive phrase (2-5 words)",
       "description": "1-2 sentence explanation",
-      "query": "natural language question without brand name",
       "priority": 1-5
     }
   ]
@@ -170,7 +166,6 @@ Your tasks:
 CRITICAL REQUIREMENTS:
 - Return ONLY the JSON object. No markdown code fences, no explanations, no text before or after.
 - Generate topics that are specific to this brand and industry
-- Ensure queries are natural, user-focused, and don't mention the brand name
 - Prioritize topics that are most relevant to the brand's primary domain
 - Total topics should be between 20-50 (aim for quality over quantity)
 
@@ -209,14 +204,12 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
           t.intentArchetype && 
           t.topic && 
           t.description && 
-          t.query &&
           typeof t.priority === 'number'
         )
         .map((t: any) => ({
           intentArchetype: t.intentArchetype,
           topic: t.topic.trim(),
           description: t.description.trim(),
-          query: t.query.trim(),
           priority: Math.max(1, Math.min(5, Math.round(t.priority))), // Clamp to 1-5
         }));
 
@@ -272,10 +265,10 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
   }
 
   /**
-   * Call OpenRouter as primary provider
+   * Call OpenRouter as primary provider (gpt-4o-mini)
    */
   private async generateWithOpenRouter(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
-    console.log('🌐 [TOPICS] Generating topics and queries with OpenRouter (primary)...');
+    console.log('🌐 [TOPICS] Generating topics and queries with OpenRouter (primary: gpt-4o-mini)...');
     console.log(`🤖 [TOPICS] Using model: ${this.openRouterModel}`);
     console.log('📝 [TOPICS] Topics prompt preview:', this.previewForLog(prompt));
 
@@ -307,6 +300,44 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
     }
 
     console.log('🔍 OpenRouter topics response preview:', this.previewForLog(content));
+    return this.processResponse(content, maxTopics);
+  }
+
+  /**
+   * Call OpenRouter with fallback model (gpt-5-nano-2025-08-07)
+   */
+  private async generateWithOpenRouterFallback(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
+    const fallbackModel = 'openai/gpt-5-nano-2025-08-07';
+    console.log(`🔄 [TOPICS] Generating topics with OpenRouter fallback model: ${fallbackModel}`);
+
+    const response = await axios.post<any>(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: fallbackModel,
+        messages: [
+          { role: 'system', content: 'You are an AEO (Answer Engine Optimization) Topic & Query Architect. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.openRouterApiKey}`,
+          'Content-Type': 'application/json',
+          ...(this.openRouterSiteUrl ? { 'HTTP-Referer': this.openRouterSiteUrl } : {}),
+          ...(this.openRouterSiteTitle ? { 'X-Title': this.openRouterSiteTitle } : {}),
+        },
+        timeout: 90000,
+      }
+    );
+
+    const content = response.data?.choices?.[0]?.message?.content ?? '';
+    if (!content.trim()) {
+      throw new Error('Empty response from OpenRouter fallback API');
+    }
+
+    console.log('🔍 OpenRouter fallback topics response preview:', this.previewForLog(content));
     return this.processResponse(content, maxTopics);
   }
 

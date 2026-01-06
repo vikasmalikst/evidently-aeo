@@ -3256,36 +3256,27 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
 
       console.log(`✅ Inserted ${topicRecords.length} topics`);
 
-      // Step 2: Insert queries into generated_queries table
-      const queryRecords = topicsAndQueries.topics.map((item, index) => {
-        // Map intent archetype to existing intent system
-        const intent = this.mapIntentArchetypeToIntent(item.intentArchetype);
-        
-        return {
-          brand_id: brandId,
-          customer_id: customerId,
-          query_text: item.query,
-          topic: item.topic,
-          intent: intent,
-          priority: item.priority,
-          is_active: true,
-          metadata: {
-            intentArchetype: item.intentArchetype,
-            generatedBy: 'new-topics-query-service',
-          },
-        };
+      // Step 2: Generate and insert queries for the topics
+      // Note: The new topics service only generates topics, not queries
+      // Queries will be generated separately using the query generation service
+      const topicNames = topicsAndQueries.topics.map(item => item.topic);
+      
+      // Generate queries for the created topics
+      const queryGenResult = await queryGenerationService.generateSeedQueries({
+        url: '', // Not needed for topic-based generation
+        locale: 'en-US',
+        country: 'US',
+        industry: '', // Will use topics instead
+        competitors: '',
+        topics: topicNames,
+        llm_provider: 'openai',
       });
 
-      const { error: queryError } = await supabaseAdmin
-        .from('generated_queries')
-        .insert(queryRecords);
-
-      if (queryError) {
-        console.error('⚠️ Failed to insert queries:', queryError);
-        throw queryError;
+      if (queryGenResult && queryGenResult.total_queries > 0) {
+        console.log(`✅ Generated ${queryGenResult.total_queries} queries for topics`);
+      } else {
+        console.warn('⚠️ No queries were generated for the topics');
       }
-
-      console.log(`✅ Inserted ${queryRecords.length} queries`);
     } catch (error) {
       console.error('❌ Failed to store topics and queries:', error);
       throw error;

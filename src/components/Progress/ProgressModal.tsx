@@ -5,6 +5,7 @@ import { useOnboardingProgress } from '../../hooks/useOnboardingProgress';
 import type { DashboardPayload, DashboardScoreMetric } from '../../pages/dashboard/types';
 import { formatMetricValue, getDefaultDateRange } from '../../pages/dashboard/utils';
 import evidentlyLogo from '../../assets/logo.png';
+import { FAQSection } from './FAQSection';
 
 interface ProgressModalProps {
   brandId: string;
@@ -351,6 +352,8 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
         <div className="w-full max-w-3xl mx-auto">
           {headerContent}
           {mainContent}
+          {/* FAQ Section - Only in fullpage mode, show after 2 seconds */}
+          {elapsedTime >= 2 && <FAQSection delay={2000} />}
         </div>
       </div>
     );

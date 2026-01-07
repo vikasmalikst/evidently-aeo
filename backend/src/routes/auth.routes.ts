@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { authService } from '../services/auth/auth.service';
 import { emailAuthService, EmailAuthRequest } from '../services/auth/email-auth.service';
+import { emailService } from '../services/email/email.service';
+import { otpService } from '../services/auth/otp.service';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { AuthRequest, ApiResponse } from '../types/auth';
 
@@ -269,6 +271,134 @@ router.get('/health', (req: Request, res: Response) => {
     message: 'Auth service is healthy',
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * POST /auth/forgot-password
+ * Initiate password reset: check email and send OTP
+ */
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      res.status(400).json({
+        success: false,
+        error: 'Email is required'
+      });
+      return;
+    }
+
+    // Generate and store OTP
+    const otp = await otpService.createOTP(email);
+
+    // Send OTP via email
+    const sent = await emailService.sendOTP(email, otp);
+
+    if (!sent) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to send OTP email'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'OTP sent successfully'
+    });
+
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to process request'
+    });
+  }
+});
+
+/**
+ * POST /auth/verify-otp
+ * Verify OTP code
+ */
+router.post('/verify-otp', async (req: Request, res: Response) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      res.status(400).json({
+        success: false,
+        error: 'Email and OTP are required'
+      });
+      return;
+    }
+
+    const isValid = otpService.verifyOTP(email, otp);
+
+    if (!isValid) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid or expired OTP'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'OTP verified successfully'
+    });
+
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Verification failed'
+    });
+  }
+});
+
+/**
+ * POST /auth/reset-password
+ * Reset password with valid OTP
+ */
+router.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { email, otp, password } = req.body;
+
+    if (!email || !otp || !password) {
+      res.status(400).json({
+        success: false,
+        error: 'Email, OTP, and password are required'
+      });
+      return;
+    }
+
+    // Verify OTP again (consume it)
+    const consumed = otpService.consumeOTP(email, otp);
+
+    if (!consumed) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid or expired OTP'
+      });
+      return;
+    }
+
+    // Reset password in Supabase
+    await emailAuthService.resetPassword(email, password);
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Password reset failed'
+    });
+  }
 });
 
 export default router;

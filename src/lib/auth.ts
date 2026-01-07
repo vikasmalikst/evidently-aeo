@@ -202,11 +202,52 @@ export const authService = {
     }
   },
 
-  async resetPassword(_email: string): Promise<AuthResponse> {
-    return {
-      success: false,
-      error: 'Password reset is not yet available in the new backend.',
-    };
+  async resetPassword(email: string): Promise<AuthResponse> {
+    try {
+      const response = await apiClient.request<BackendResponse<any>>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }, { requiresAuth: false });
+
+      if (response.success) {
+        return { success: true };
+      }
+      return { success: false, error: response.error || response.message };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to send reset email' };
+    }
+  },
+
+  async verifyOTP(email: string, otp: string): Promise<AuthResponse> {
+    try {
+      const response = await apiClient.request<BackendResponse<any>>('/auth/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp }),
+      }, { requiresAuth: false });
+
+      if (response.success) {
+        return { success: true };
+      }
+      return { success: false, error: response.error || response.message };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Verification failed' };
+    }
+  },
+
+  async confirmPasswordReset(email: string, otp: string, password: string): Promise<AuthResponse> {
+    try {
+      const response = await apiClient.request<BackendResponse<any>>('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp, password }),
+      }, { requiresAuth: false });
+
+      if (response.success) {
+        return { success: true };
+      }
+      return { success: false, error: response.error || response.message };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Password reset failed' };
+    }
   },
 
   async updatePassword(_newPassword: string): Promise<AuthResponse> {

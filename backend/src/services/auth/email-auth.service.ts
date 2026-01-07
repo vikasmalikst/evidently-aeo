@@ -274,6 +274,44 @@ export class EmailAuthService {
       throw new AuthError('Login failed');
     }
   }
+  async resetPassword(email: string, newPassword: string): Promise<void> {
+    try {
+      // 1. Find the user by email in Supabase Auth
+      // Note: listUsers is not efficient for large user bases but Supabase Admin API 
+      // doesn't expose getUserByEmail directly in all versions.
+      // Optimally we would store auth_user_id in our customers table.
+      
+      const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+      
+      if (listError) {
+        throw new AuthError(`Failed to list users: ${listError.message}`);
+      }
+
+      // Explicitly type user or cast to any to avoid TS error with never
+      const user = (users as any[]).find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+
+      if (!user) {
+        throw new AuthError('User not found');
+      }
+
+      // 2. Update the user's password
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        user.id,
+        { password: newPassword }
+      );
+
+      if (updateError) {
+        throw new AuthError(`Failed to update password: ${updateError.message}`);
+      }
+
+    } catch (error) {
+      console.error('Password reset error:', error);
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Password reset failed');
+    }
+  }
 }
 
 export const emailAuthService = new EmailAuthService();

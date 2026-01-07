@@ -106,13 +106,12 @@ export const AuthPage = () => {
       return;
     }
 
-    if (!hasCompletedOnboarding) {
-      navigate('/onboarding');
-    } else if (!hasCompletedSetup) {
-      navigate('/setup');
-    } else {
-      navigate('/dashboard');
+    // If no brand exists, force onboarding regardless of local storage state
+    // This handles cases where user aborted onboarding or has stale local storage
+    if (localStorage.getItem('onboarding_complete') === 'true') {
+      localStorage.removeItem('onboarding_complete');
     }
+    navigate('/onboarding');
   };
 
   return (

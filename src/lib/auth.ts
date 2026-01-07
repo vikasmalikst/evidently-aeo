@@ -189,6 +189,14 @@ export const authService = {
       // Clear API cache to prevent cross-customer data leakage
       const { clearApiCache } = await import('./apiCache');
       clearApiCache();
+      
+      // Clear onboarding state
+      localStorage.removeItem('onboarding_complete');
+      localStorage.removeItem('onboarding_data');
+      localStorage.removeItem('onboarding_topics');
+      localStorage.removeItem('onboarding_prompts');
+      localStorage.removeItem('onboarding_brand');
+      
       apiClient.clearAuthTokens();
       persistUser(null);
     }

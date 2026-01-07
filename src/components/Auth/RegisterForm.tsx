@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { authService } from '../../lib/auth';
 import { useAuthStore } from '../../store/authStore';
-import { Mail, Lock, User, AlertCircle, CheckCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, CheckCircle, ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react';
 // 1. Import 'Variants' type specifically
 import { motion, Variants } from 'framer-motion';
 
@@ -18,10 +18,12 @@ interface RegisterFormProps {
 }
 
 export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) => {
+  const [step, setStep] = useState<'details' | 'otp'>('details');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -42,32 +44,53 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
     setError('');
     setSuccess('');
 
-    const passwordError = validatePassword(password);
-    if (passwordError) {
-      setError(passwordError);
-      return;
-    }
+    if (step === 'details') {
+      const passwordError = validatePassword(password);
+      if (passwordError) {
+        setError(passwordError);
+        return;
+      }
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
 
-    setIsLoading(true);
+      setIsLoading(true);
 
-    const result = await authService.register(email, password, fullName);
+      const result = await authService.sendSignupOTP(email);
 
-    if (result.success && result.user) {
-      setSuccess('Account created successfully! Please check your email to verify your account.');
-      setUser(result.user);
-      setTimeout(() => {
-        onSuccess?.();
-      }, 2000);
+      if (result.success) {
+        setStep('otp');
+        setSuccess('Verification code sent! Please check your email.');
+      } else {
+        setError(result.error || 'Failed to send verification code');
+      }
+
+      setIsLoading(false);
     } else {
-      setError(result.error || 'Registration failed');
-    }
+      // Verify OTP and Register
+      if (otp.length !== 6) {
+        setError('Please enter a valid 6-digit code');
+        return;
+      }
 
-    setIsLoading(false);
+      setIsLoading(true);
+
+      const result = await authService.register(email, password, fullName, otp);
+
+      if (result.success && result.user) {
+        setSuccess('Account created successfully!');
+        setUser(result.user);
+        setTimeout(() => {
+          onSuccess?.();
+        }, 2000);
+      } else {
+        setError(result.error || 'Registration failed');
+      }
+
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -79,8 +102,14 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
       className="w-full space-y-6"
     >
       <div className="text-center space-y-2">
-        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Create an Account</h2>
-        <p className="text-slate-500">Start your journey with intelligent decision making</p>
+        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
+          {step === 'details' ? 'Create an Account' : 'Verify Email'}
+        </h2>
+        <p className="text-slate-500">
+          {step === 'details' 
+            ? 'Start your journey with intelligent decision making' 
+            : `We sent a 6-digit code to ${email}`}
+        </p>
       </div>
 
       {error && (
@@ -98,83 +127,120 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Full Name Input */}
-        <div>
-          <div className="relative">
-            <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input
-              id="fullName"
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-              className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
-              placeholder="Full Name"
-            />
-          </div>
-        </div>
+        {step === 'details' ? (
+          <>
+            {/* Full Name Input */}
+            <div>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  id="fullName"
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+                  placeholder="Full Name"
+                />
+              </div>
+            </div>
 
-        {/* Email Input */}
-        <div>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
-              placeholder="Email"
-            />
-          </div>
-        </div>
+            {/* Email Input */}
+            <div>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+                  placeholder="Email"
+                />
+              </div>
+            </div>
 
-        {/* Password Input */}
-        <div>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full pl-10 pr-12 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
-              placeholder="Create Password"
-            />
-             <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 focus:outline-none rounded-md hover:bg-slate-100 transition-colors"
-            >
-              {showPassword ? (
-                <EyeOff className="w-5 h-5" />
-              ) : (
-                <Eye className="w-5 h-5" />
-              )}
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-slate-500 ml-1">
-            Must be at least 8 characters with 1 uppercase, 1 number, and 1 special character.
-          </p>
-        </div>
+            {/* Password Input */}
+            <div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full pl-10 pr-12 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+                  placeholder="Create Password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 focus:outline-none rounded-md hover:bg-slate-100 transition-colors"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-500 ml-1">
+                Must be at least 8 characters with 1 uppercase, 1 number, and 1 special character.
+              </p>
+            </div>
 
-        {/* Confirm Password Input */}
-        <div>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input
-              id="confirmPassword"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
-              placeholder="Confirm Password"
-            />
+            {/* Confirm Password Input */}
+            <div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+                  placeholder="Confirm Password"
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          /* OTP Input Step */
+          <div className="space-y-4">
+            <div>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  id="otp"
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  required
+                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all text-center tracking-[0.5em] font-mono text-lg"
+                  placeholder="000000"
+                  maxLength={6}
+                  autoFocus
+                />
+              </div>
+              <p className="mt-2 text-xs text-slate-500 text-center">
+                Enter the 6-digit code sent to your email
+              </p>
+            </div>
+            
+            <div className="text-center">
+              <button 
+                type="button" 
+                onClick={() => setStep('details')}
+                className="text-sm text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+              >
+                Change email address
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <button
           type="submit"
@@ -185,11 +251,11 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
           {isLoading ? (
             <div className="flex items-center gap-2">
               <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Creating account...</span>
+              <span>{step === 'details' ? 'Sending Code...' : 'Creating account...'}</span>
             </div>
           ) : (
             <>
-              Create Account <ArrowRight className="w-5 h-5 ml-2" />
+              {step === 'details' ? 'Continue' : 'Verify & Create Account'} <ArrowRight className="w-5 h-5 ml-2" />
             </>
           )}
         </button>

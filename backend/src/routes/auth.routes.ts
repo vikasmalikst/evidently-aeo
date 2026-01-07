@@ -41,17 +41,49 @@ router.post('/google/callback', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /auth/signup-otp
+ * Initiate signup by sending OTP
+ */
+router.post('/signup-otp', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      res.status(400).json({
+        success: false,
+        error: 'Email is required'
+      });
+      return;
+    }
+
+    await emailAuthService.sendSignupOTP(email);
+
+    res.json({
+      success: true,
+      message: 'Verification code sent to your email'
+    });
+
+  } catch (error) {
+    console.error('Signup OTP error:', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to send verification code'
+    });
+  }
+});
+
+/**
  * POST /auth/register
  * Register a new user with email and password
  */
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, otp } = req.body;
 
-    if (!email || !password) {
+    if (!email || !password || !otp) {
       res.status(400).json({
         success: false,
-        error: 'Email and password are required'
+        error: 'Email, password, and verification code are required'
       });
       return;
     }
@@ -59,7 +91,8 @@ router.post('/register', async (req: Request, res: Response) => {
     const authResponse = await emailAuthService.register({
       email,
       password,
-      name
+      name,
+      otp
     });
 
     res.json({

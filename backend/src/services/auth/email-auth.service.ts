@@ -2,11 +2,14 @@ import { supabaseAdmin, supabaseClient } from '../../config/database';
 import { generateToken, generateRefreshToken } from '../../utils/jwt';
 import { User, UserProfile, Customer, AuthResponse, DatabaseError, AuthError } from '../../types/auth';
 import { v4 as uuidv4 } from 'uuid';
+import { otpService } from './otp.service';
+import { emailService } from '../email/email.service';
 
 export interface EmailAuthRequest {
   email: string;
   password: string;
   name?: string; // For signup
+  otp?: string; // For signup verification
 }
 
 export class EmailAuthService {
@@ -22,14 +25,52 @@ export class EmailAuthService {
   }
 
   /**
+   * Send OTP for signup verification
+   */
+  async sendSignupOTP(email: string): Promise<void> {
+    // 1. Check domain
+    if (this.isPublicEmailDomain(email)) {
+      throw new AuthError('Please use your corporate email address. Public email domains are not allowed.');
+    }
+
+    // 2. Check if user already exists
+    const { data: existingUser } = await supabaseAdmin
+      .from('customers')
+      .select('id')
+      .eq('email', email)
+      .single();
+
+    if (existingUser) {
+      throw new AuthError('User with this email already exists');
+    }
+
+    // 3. Generate and send OTP
+    const otp = await otpService.createOTP(email);
+    const sent = await emailService.sendOTP(email, otp, 'signup');
+
+    if (!sent) {
+      throw new AuthError('Failed to send verification email. Please try again.');
+    }
+  }
+
+  /**
    * Register a new user with email and password using Supabase Auth
    */
   async register(request: EmailAuthRequest): Promise<AuthResponse> {
     try {
-      const { email, password, name } = request;
+      const { email, password, name, otp } = request;
 
       if (this.isPublicEmailDomain(email)) {
         throw new AuthError('Please use your corporate email address. Public email domains are not allowed.');
+      }
+
+      // Verify OTP if provided (enforcing OTP flow)
+      if (!otp) {
+        throw new AuthError('Verification code is required');
+      }
+
+      if (!otpService.consumeOTP(email, otp)) {
+        throw new AuthError('Invalid or expired verification code');
       }
 
       // Use Supabase Auth to create user
@@ -49,7 +90,12 @@ export class EmailAuthService {
 
       // Create customer first
       const customerId = uuidv4();
-      const customerSlug = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
+      // Generate a unique slug by appending a random string to the email prefix
+      // This prevents "duplicate key value violates unique constraint" errors for users with same email prefix
+      const baseSlug = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const randomSuffix = uuidv4().split('-')[0].substring(0, 6); // 6 char random hex
+      const customerSlug = `${baseSlug}-${randomSuffix}`;
+
       const { data: newCustomer, error: customerError } = await supabaseAdmin
         .from('customers')
         .insert({
@@ -63,6 +109,17 @@ export class EmailAuthService {
 
       if (customerError || !newCustomer) {
         console.error('Customer creation error:', customerError);
+        
+        // Handle specific database errors
+        if (customerError?.code === '23505') { // unique_violation
+          if (customerError.message?.includes('customers_slug_key')) {
+             throw new DatabaseError('Unable to create account handle. Please try again.');
+          }
+          if (customerError.message?.includes('customers_email_key')) {
+             throw new AuthError('User with this email already exists');
+          }
+        }
+        
         throw new DatabaseError(`Failed to create customer: ${customerError?.message || 'Unknown error'}`);
       }
 
@@ -175,7 +232,11 @@ export class EmailAuthService {
           console.log(`Customer record not found for ${email}, creating one...`);
           
           const customerId = uuidv4();
-          const customerSlug = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
+          // Generate unique slug
+          const baseSlug = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
+          const randomSuffix = uuidv4().split('-')[0].substring(0, 6);
+          const customerSlug = `${baseSlug}-${randomSuffix}`;
+          
           const { data: newCustomer, error: createError } = await supabaseAdmin
             .from('customers')
             .insert({

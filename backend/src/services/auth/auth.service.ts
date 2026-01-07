@@ -146,7 +146,12 @@ export class AuthService {
         if (!authData.email) {
           throw new DatabaseError('Email is required');
         }
-        const emailSlug = authData.email.split('@')[0]?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'unknown';
+        
+        // Generate unique slug
+        const baseSlug = authData.email.split('@')[0]?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'unknown';
+        const randomSuffix = uuidv4().split('-')[0].substring(0, 6);
+        const emailSlug = `${baseSlug}-${randomSuffix}`;
+        
         const { data: newCustomer, error: newCustomerError } = await supabaseAdmin
           .from('customers')
           .insert({

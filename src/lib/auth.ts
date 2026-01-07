@@ -97,31 +97,41 @@ export const authService = {
     return loadUser();
   },
 
-  async register(email: string, password: string, fullName: string): Promise<AuthResponse> {
+  async sendSignupOTP(email: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await apiClient.request<BackendResponse<BackendAuthSuccess>>(
-        '/auth/register',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            email,
-            password,
-            name: fullName,
-          }),
-        },
-        { requiresAuth: false }
-      );
+      const response = await apiClient.request<BackendResponse<any>>('/auth/signup-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }, { requiresAuth: false });
 
-      if (!response.success || !response.data) {
-        throw new Error(response.error || response.message || 'Registration failed');
+      if (response.success) {
+        return { success: true };
+      }
+      return { success: false, error: response.error };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  },
+
+  async register(email: string, password: string, fullName: string, otp: string): Promise<AuthResponse> {
+    try {
+      const response = await apiClient.request<BackendResponse<BackendAuthSuccess>>('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, name: fullName, otp }),
+      }, { requiresAuth: false });
+
+      if (response.success && response.data) {
+        return handleAuthSuccess(response.data);
       }
 
-      return handleAuthSuccess(response.data);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Registration failed';
       return {
         success: false,
-        error: message,
+        error: response.error || 'Registration failed',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Registration failed',
       };
     }
   },

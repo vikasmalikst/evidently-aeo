@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { config } from '../../config/environment';
+import { getOTPTemplate } from './templates';
 
 export class EmailService {
   private transporter: nodemailer.Transporter;
@@ -32,7 +33,7 @@ export class EmailService {
     });
   }
 
-  async sendOTP(to: string, otp: string): Promise<boolean> {
+  async sendOTP(to: string, otp: string, type: 'signup' | 'reset' = 'reset'): Promise<boolean> {
     try {
       if (!this.transporter) {
         this.initTransporter();
@@ -44,21 +45,17 @@ export class EmailService {
         return false;
       }
 
+      const subject = type === 'signup' 
+        ? 'Verify your email - EvidentlyAEO' 
+        : 'Your Password Reset Code - EvidentlyAEO';
+
+      const html = getOTPTemplate(otp, type);
+
       const mailOptions = {
-        from: user, // sender address
+        from: `"EvidentlyAEO" <${user}>`, // Use friendly name
         to: to, // receiver address
-        subject: 'Your Password Reset Code - AnswerIntel',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2>Password Reset Request</h2>
-            <p>You requested to reset your password. Please use the following code to proceed:</p>
-            <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-              <h1 style="letter-spacing: 5px; color: #333; margin: 0;">${otp}</h1>
-            </div>
-            <p>This code is valid for 10 minutes.</p>
-            <p>If you did not request this, please ignore this email.</p>
-          </div>
-        `
+        subject: subject,
+        html: html
       };
 
       const info = await this.transporter.sendMail(mailOptions);

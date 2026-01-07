@@ -879,12 +879,30 @@
   resize: vertical;
   font-family: inherit;
   transition: all 0.2s ease;
+  line-height: 1.5;
+}
+
+.onboarding-grid-input:hover:not(:disabled) {
+  border-color: var(--accent200);
+  background: var(--bg-primary);
 }
 
 .onboarding-grid-input:focus {
   outline: none;
   border-color: var(--accent-primary);
   box-shadow: 0 0 0 2px rgba(0, 188, 220, 0.1);
+  background: var(--bg-primary);
+}
+
+.onboarding-grid-input:disabled {
+  background: var(--bg-secondary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.onboarding-grid-input::placeholder {
+  color: var(--text-caption);
+  font-style: italic;
 }
 
 .onboarding-success {

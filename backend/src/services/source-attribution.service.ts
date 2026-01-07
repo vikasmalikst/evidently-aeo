@@ -347,16 +347,21 @@ export class SourceAttributionService {
         if (position.collector_result_id) {
           const collectorId = position.collector_result_id
           
-          // Collect share of answer values
-          if (position.share_of_answers_brand !== null) {
+          // Determine if this is a brand row (not a competitor row)
+          const isBrandRow =
+            !position.competitor_name ||
+            (typeof position.competitor_name === 'string' && position.competitor_name.trim().length === 0)
+          
+          // Collect share of answer values (brand rows only, same as visibility)
+          if (isBrandRow && position.share_of_answers_brand !== null) {
             if (!shareOfAnswerByCollectorResult.has(collectorId)) {
               shareOfAnswerByCollectorResult.set(collectorId, [])
             }
             shareOfAnswerByCollectorResult.get(collectorId)!.push(toNumber(position.share_of_answers_brand))
           }
           
-          // Collect mention counts (from extracted_positions, not collector_results)
-          if (position.total_brand_mentions !== null && position.total_brand_mentions !== undefined) {
+          // Collect mention counts (brand rows only, from extracted_positions, not collector_results)
+          if (isBrandRow && position.total_brand_mentions !== null && position.total_brand_mentions !== undefined) {
             if (!mentionCountsByCollectorResult.has(collectorId)) {
               mentionCountsByCollectorResult.set(collectorId, [])
             }
@@ -364,9 +369,6 @@ export class SourceAttributionService {
           }
 
           // Collect visibility values (brand rows only, visibility_index is 0-1, convert to 0-100)
-          const isBrandRow =
-            !position.competitor_name ||
-            (typeof position.competitor_name === 'string' && position.competitor_name.trim().length === 0)
           if (isBrandRow && position.visibility_index !== null && position.visibility_index !== undefined) {
             if (!visibilityByCollectorResult.has(collectorId)) {
               visibilityByCollectorResult.set(collectorId, [])
@@ -523,34 +525,37 @@ export class SourceAttributionService {
             }
           }
           
-          // Get share of answer from extracted_positions (this is the correct source)
-          const avgShare = avgShareByCollectorResult.get(citation.collector_result_id)
-          if (avgShare !== undefined) {
-            aggregate.shareValues.push(avgShare)
-          }
-
-          // Collect all raw sentiment values for this source (not averages) for simple average calculation
-          // Only add sentiment values once per collector_result_id to avoid duplicates
+          // Get metrics from extracted_positions (SOA, sentiment, visibility, mention counts)
+          // Only add values once per collector_result_id to avoid duplicates when same collector_result_id appears multiple times
           if (!aggregate.processedCollectorResultIds.has(citation.collector_result_id)) {
+            // Add SOA value (once per collector_result_id)
+            const avgShare = avgShareByCollectorResult.get(citation.collector_result_id)
+            if (avgShare !== undefined) {
+              aggregate.shareValues.push(avgShare)
+            }
+
+            // Collect all raw sentiment values for this source (not averages) for simple average calculation
             const rawSentimentValues = sentimentValuesByCollectorResult.get(citation.collector_result_id)
             if (rawSentimentValues && rawSentimentValues.length > 0) {
               // Add all raw sentiment values, not the average
               aggregate.sentimentValues.push(...rawSentimentValues)
-              aggregate.processedCollectorResultIds.add(citation.collector_result_id)
             }
-          }
 
-          // Add visibility from extracted_positions
-          const avgVisibility = avgVisibilityByCollectorResult.get(citation.collector_result_id)
-          if (avgVisibility !== undefined) {
-            aggregate.visibilityValues.push(avgVisibility)
-          }
-          
-          // Get mention counts from extracted_positions (average if multiple)
-          const mentionCounts = mentionCountsByCollectorResult.get(citation.collector_result_id)
-          if (mentionCounts && mentionCounts.length > 0) {
-            const avgMentions = average(mentionCounts)
-            aggregate.mentionCounts.push(Math.round(avgMentions))
+            // Add visibility from extracted_positions (once per collector_result_id)
+            const avgVisibility = avgVisibilityByCollectorResult.get(citation.collector_result_id)
+            if (avgVisibility !== undefined) {
+              aggregate.visibilityValues.push(avgVisibility)
+            }
+            
+            // Get mention counts from extracted_positions (once per collector_result_id)
+            const mentionCounts = mentionCountsByCollectorResult.get(citation.collector_result_id)
+            if (mentionCounts && mentionCounts.length > 0) {
+              const avgMentions = average(mentionCounts)
+              aggregate.mentionCounts.push(Math.round(avgMentions))
+            }
+
+            // Mark this collector_result_id as processed for all metrics
+            aggregate.processedCollectorResultIds.add(citation.collector_result_id)
           }
           
           if (collectorResult) {
@@ -584,12 +589,13 @@ export class SourceAttributionService {
         }
       }
       
-      // Debug: Log aggregation results (first 3 sources)
-      const sourceKeys = Array.from(sourceAggregates.keys()).slice(0, 3);
-      console.log(`   📊 [Source Attribution] Sample aggregation results (first 3 sources):`);
+      // Debug: Log aggregation results (first 5 sources) with detailed SOA info
+      const sourceKeys = Array.from(sourceAggregates.keys()).slice(0, 5);
+      console.log(`   📊 [Source Attribution] Sample aggregation results (first 5 sources):`);
       for (const key of sourceKeys) {
         const agg = sourceAggregates.get(key)!;
-        console.log(`      ${key}: citations=${agg.citations}, collectorResults=${agg.collectorResultIds.size}, shareValues=[${agg.shareValues.length} values: ${agg.shareValues.slice(0,3).join(', ')}...], sentimentValues=[${agg.sentimentValues.length} values]`);
+        const avgSOA = agg.shareValues.length > 0 ? average(agg.shareValues) : 0;
+        console.log(`      ${key}: citations=${agg.citations}, collectorResults=${agg.collectorResultIds.size}, SOA values=[${agg.shareValues.length} values: ${agg.shareValues.slice(0,5).map(v => v.toFixed(1)).join(', ')}${agg.shareValues.length > 5 ? '...' : ''}], avgSOA=${avgSOA.toFixed(1)}%, sentimentValues=[${agg.sentimentValues.length} values]`);
       }
 
       // Step 10: Calculate previous period for change metrics

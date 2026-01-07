@@ -1650,6 +1650,11 @@ class RecommendationService {
       }
     }
 
+    // Extract competitor names for explicit exclusion
+    const competitorNames = context.competitors && context.competitors.length > 0
+      ? context.competitors.map(c => c.name).filter(Boolean)
+      : [];
+
     return `You are a Brand/AEO expert. Use the data below to create one recommendation per detected problem (max 10). Return ONLY a JSON array.
 
 RULES (short)
@@ -1658,6 +1663,8 @@ RULES (short)
 - Sentiment banding (1–100): <55 negative, 55–65 watch, >65 good.
 - **CRITICAL**: Every "reason" field MUST start with the problem ID in brackets like "[P1]", "[P2]", etc. Example: "[P1] Visibility is 0.4% vs 0.5% avg. Targeting reddit.com will improve citations."
 - Each reason must reference the problem ID and real numbers; tie the action to a domain + content focus that moves the KPI.
+- **CRITICAL**: Do NOT mention any competitor names in your recommendations. Do NOT include competitor names in the action, reason, explanation, contentFocus, or any other field. Focus solely on the brand's own strategies and improvements.
+${competitorNames.length > 0 ? `- **EXPLICIT EXCLUSION**: The following competitor names must NOT appear anywhere in your recommendations: ${competitorNames.join(', ')}` : ''}
 
 Brand
 - Name: ${context.brandName}

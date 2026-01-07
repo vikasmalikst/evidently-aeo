@@ -306,6 +306,7 @@ CONSTRAINTS:
 - Do NOT invent clinical studies, certifications, or regulatory claims. Put them under requiredInputs if needed.
 - Do NOT promise outcomes; speak in probabilities.
 - Do NOT mention internal tool/provider names.
+- **CRITICAL**: Do NOT mention any competitor names in the generated content. Do NOT include competitor names in the collaboration email, publishable content, key points, or any other field. Focus solely on the brand's own value proposition, features, and benefits.
 - Keep content aligned to the recommendation, KPI, focus area, and citation source.
 ${contentConstraints ? `- ${contentConstraints}` : ''}
 - Collaboration email should be professional, concise, and value-focused.`;

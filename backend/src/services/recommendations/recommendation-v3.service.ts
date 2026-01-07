@@ -809,6 +809,11 @@ Respond only with the JSON array.`;
       ? context.sourceMetrics.slice(0, 10).map(s => s.domain)
       : [];
 
+    // Extract competitor names for explicit exclusion
+    const competitorNames = context.competitors && context.competitors.length > 0
+      ? context.competitors.map(c => c.name).filter(Boolean)
+      : [];
+
     const prompt = `You are a Brand/AEO expert. Generate 8-12 actionable recommendations to improve brand performance. Return ONLY a JSON array.
 
 RULES
@@ -821,6 +826,8 @@ RULES
 - focusArea must be: "visibility", "soa", or "sentiment"
 - priority must be: "High", "Medium", or "Low"
 - effort must be: "Low", "Medium", or "High"
+- **CRITICAL**: Do NOT mention any competitor names in your recommendations. Do NOT include competitor names in the action, reason, explanation, contentFocus, or any other field. Focus solely on the brand's own strategies and improvements.
+${competitorNames.length > 0 ? `- **EXPLICIT EXCLUSION**: The following competitor names must NOT appear anywhere in your recommendations: ${competitorNames.join(', ')}` : ''}
 
 Brand Performance
 - Name: ${context.brandName}
@@ -1212,6 +1219,11 @@ Respond only with the JSON array.`;
       `[KPI ${idx + 1}] ${kpi.kpiName}\n  Current: ${kpi.currentValue ?? 'N/A'}\n  Target: ${kpi.targetValue ?? 'N/A'}\n  Why: ${kpi.kpiDescription}`
     ).join('\n\n');
 
+    // Extract competitor names for explicit exclusion
+    const competitorNames = context.competitors && context.competitors.length > 0
+      ? context.competitors.map(c => c.name).filter(Boolean)
+      : [];
+
     const prompt = `You are a Brand/AEO expert. Generate 2-3 actionable recommendations for EACH identified KPI below.
 
 Return ONLY a JSON array. Each recommendation must:
@@ -1219,6 +1231,8 @@ Return ONLY a JSON array. Each recommendation must:
 - Target one of the identified KPIs
 - Reference actual citation sources from the "Top Citation Sources" list
 - Include effort level (Low/Medium/High) and priority (High/Medium/Low)
+- **CRITICAL**: Do NOT mention any competitor names in your recommendations. Do NOT include competitor names in the action, reason, explanation, contentFocus, or any other field. Focus solely on the brand's own strategies and improvements.
+${competitorNames.length > 0 ? `- **EXPLICIT EXCLUSION**: The following competitor names must NOT appear anywhere in your recommendations: ${competitorNames.join(', ')}` : ''}
 
 Brand
 - Name: ${context.brandName}

@@ -20,6 +20,19 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
 
+  // Draft text so the textarea behaves normally (no auto-trim/join while typing).
+  const [draftInitialized, setDraftInitialized] = useState(false);
+  const [draftBrandSynonyms, setDraftBrandSynonyms] = useState('');
+  const [draftBrandProducts, setDraftBrandProducts] = useState('');
+  const [draftCompetitorSynonyms, setDraftCompetitorSynonyms] = useState<Record<string, string>>({});
+  const [draftCompetitorProducts, setDraftCompetitorProducts] = useState<Record<string, string>>({});
+
+  const sanitizeListForSave = (items: string[]): string[] =>
+    items.map((s) => s.trim()).filter(Boolean);
+
+  const parseCommaListForSave = (value: string): string[] =>
+    sanitizeListForSave(value.split(','));
+
   // When enrichment is loaded or cached, initialize editedEnrichment
   useEffect(() => {
     if (enrichment && !editedEnrichment) {
@@ -27,32 +40,24 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
     }
   }, [enrichment, editedEnrichment]);
 
-  const handleUpdateBrand = (field: 'synonyms' | 'products', value: string) => {
-    if (!editedEnrichment) return;
-    const items = value.split(',').map(s => s.trim()).filter(Boolean);
-    setEditedEnrichment({
-      ...editedEnrichment,
-      brand: {
-        ...editedEnrichment.brand,
-        [field]: items
-      }
-    });
-  };
+  // Initialize draft text once we have editedEnrichment, so inputs are editable
+  // without reformatting/cursor jumps on each keystroke.
+  useEffect(() => {
+    if (!editedEnrichment || draftInitialized) return;
 
-  const handleUpdateCompetitor = (name: string, field: 'synonyms' | 'products', value: string) => {
-    if (!editedEnrichment) return;
-    const items = value.split(',').map(s => s.trim()).filter(Boolean);
-    setEditedEnrichment({
-      ...editedEnrichment,
-      competitors: {
-        ...editedEnrichment.competitors,
-        [name]: {
-          ...(editedEnrichment.competitors?.[name] || { synonyms: [], products: [] }),
-          [field]: items
-        }
-      }
+    setDraftBrandSynonyms((editedEnrichment.brand?.synonyms || []).join(', '));
+    setDraftBrandProducts((editedEnrichment.brand?.products || []).join(', '));
+
+    const compSyn: Record<string, string> = {};
+    const compProd: Record<string, string> = {};
+    Object.entries(editedEnrichment.competitors || {}).forEach(([name, data]) => {
+      compSyn[name] = (data?.synonyms || []).join(', ');
+      compProd[name] = (data?.products || []).join(', ');
     });
-  };
+    setDraftCompetitorSynonyms(compSyn);
+    setDraftCompetitorProducts(compProd);
+    setDraftInitialized(true);
+  }, [editedEnrichment, draftInitialized]);
 
   const competitorNames = useMemo(
     () => competitors.map((c) => c.name).filter(Boolean),
@@ -79,6 +84,7 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
       }
 
       setEnrichment(response.data);
+      setDraftInitialized(false);
       localStorage.setItem(
         previewCacheKey,
         JSON.stringify({
@@ -103,7 +109,26 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
     setIsSubmitting(true);
     setLoadingMessage('Saving your approval...');
     try {
-      localStorage.setItem('onboarding_brand_products', JSON.stringify(editedEnrichment));
+      // Clean up any empty items (e.g., from trailing commas) before saving.
+      const cleaned: BrandProductsEnrichment = {
+        ...editedEnrichment,
+        brand: {
+          ...editedEnrichment.brand,
+          synonyms: parseCommaListForSave(draftBrandSynonyms),
+          products: parseCommaListForSave(draftBrandProducts),
+        },
+        competitors: Object.fromEntries(
+          competitorNames.map((name) => [
+            name,
+            {
+              synonyms: parseCommaListForSave(draftCompetitorSynonyms[name] || ''),
+              products: parseCommaListForSave(draftCompetitorProducts[name] || ''),
+            },
+          ])
+        ),
+      };
+
+      localStorage.setItem('onboarding_brand_products', JSON.stringify(cleaned));
       localStorage.setItem('onboarding_brand_products_approved', 'true');
 
       setShowSuccess(true);
@@ -156,8 +181,8 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
         type: 'Brand' as const,
         logo: brand.logo,
         domain: brand.domain,
-        synonyms: editedEnrichment.brand.synonyms,
-        products: editedEnrichment.brand.products,
+        synonymsText: draftBrandSynonyms,
+        productsText: draftBrandProducts,
       },
       ...competitorNames.map((name) => {
         const comp = competitors.find((c) => c.name === name);
@@ -166,12 +191,21 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
           type: 'Competitor' as const,
           logo: comp?.logo || '',
           domain: comp?.domain || '',
-          synonyms: editedEnrichment.competitors?.[name]?.synonyms || [],
-          products: editedEnrichment.competitors?.[name]?.products || [],
+          synonymsText: draftCompetitorSynonyms[name] || '',
+          productsText: draftCompetitorProducts[name] || '',
         };
       }),
     ];
-  }, [brand, competitors, competitorNames, editedEnrichment]);
+  }, [
+    brand,
+    competitors,
+    competitorNames,
+    editedEnrichment,
+    draftBrandSynonyms,
+    draftBrandProducts,
+    draftCompetitorSynonyms,
+    draftCompetitorProducts,
+  ]);
 
   if (showSuccess) {
     return (
@@ -217,6 +251,17 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
 
           {editedEnrichment ? (
             <div style={{ marginTop: 12 }}>
+              <div style={{ 
+                padding: '12px 16px', 
+                background: 'var(--accent50)', 
+                borderLeft: '3px solid var(--accent500)',
+                borderRadius: '4px',
+                marginBottom: '16px',
+                fontSize: '14px',
+                color: 'var(--text-body)'
+              }}>
+                <strong>Tip:</strong> Click any field below to edit synonyms or products. Separate multiple items with commas.
+              </div>
               <table className="onboarding-grid-table">
                 <thead>
                   <tr>
@@ -243,25 +288,35 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
                       <td>
                         <textarea
                           className="onboarding-grid-input"
-                          value={row.synonyms.join(', ')}
-                          onChange={(e) =>
-                            row.type === 'Brand'
-                              ? handleUpdateBrand('synonyms', e.target.value)
-                              : handleUpdateCompetitor(row.name, 'synonyms', e.target.value)
-                          }
+                          value={row.synonymsText}
+                          onChange={(e) => {
+                            if (row.type === 'Brand') {
+                              setDraftBrandSynonyms(e.target.value);
+                            } else {
+                              setDraftCompetitorSynonyms((prev) => ({ ...prev, [row.name]: e.target.value }));
+                            }
+                          }}
                           placeholder="Add synonyms separated by commas..."
+                          disabled={isSubmitting}
+                          rows={3}
+                          spellCheck={false}
                         />
                       </td>
                       <td>
                         <textarea
                           className="onboarding-grid-input"
-                          value={row.products.join(', ')}
-                          onChange={(e) =>
-                            row.type === 'Brand'
-                              ? handleUpdateBrand('products', e.target.value)
-                              : handleUpdateCompetitor(row.name, 'products', e.target.value)
-                          }
+                          value={row.productsText}
+                          onChange={(e) => {
+                            if (row.type === 'Brand') {
+                              setDraftBrandProducts(e.target.value);
+                            } else {
+                              setDraftCompetitorProducts((prev) => ({ ...prev, [row.name]: e.target.value }));
+                            }
+                          }}
                           placeholder="Add products separated by commas..."
+                          disabled={isSubmitting}
+                          rows={3}
+                          spellCheck={false}
                         />
                       </td>
                     </tr>

@@ -10,12 +10,27 @@ export interface EmailAuthRequest {
 }
 
 export class EmailAuthService {
+  private isPublicEmailDomain(email: string): boolean {
+    const publicDomains = [
+      'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 
+      'aol.com', 'icloud.com', 'protonmail.com', 'zoho.com',
+      'yandex.com', 'mail.com', 'gmx.com', 'live.com', 'msn.com',
+      'me.com', 'mac.com', 'inbox.com', 'fastmail.com'
+    ];
+    const domain = email.split('@')[1]?.toLowerCase();
+    return publicDomains.includes(domain);
+  }
+
   /**
    * Register a new user with email and password using Supabase Auth
    */
   async register(request: EmailAuthRequest): Promise<AuthResponse> {
     try {
       const { email, password, name } = request;
+
+      if (this.isPublicEmailDomain(email)) {
+        throw new AuthError('Please use your corporate email address. Public email domains are not allowed.');
+      }
 
       // Use Supabase Auth to create user
       const { data: authData, error: authError } = await supabaseClient.auth.signUp({
@@ -110,6 +125,7 @@ export class EmailAuthService {
   async login(request: EmailAuthRequest): Promise<AuthResponse> {
     try {
       const { email, password } = request;
+      console.log('Login attempt for:', email);
 
       // Use Supabase Auth to sign in
       const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
@@ -118,8 +134,11 @@ export class EmailAuthService {
       });
 
       if (authError || !authData.user) {
+        console.error('Supabase login error:', authError?.message);
         throw new AuthError('Invalid email or password');
       }
+
+      console.log('Supabase login success for:', email);
 
       // Get customer directly from email (using customer as main hierarchy)
       const { data: customer, error: customerError } = await supabaseAdmin

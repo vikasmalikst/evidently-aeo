@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { authService } from '../../lib/auth';
 import { useAuthStore } from '../../store/authStore';
-import { Mail, Lock, AlertCircle, ArrowRight, Chrome, Apple, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
 // Import motion for animation
 import { motion, type Variants } from 'framer-motion';
 
@@ -58,25 +58,6 @@ export const LoginForm = ({ onSuccess, onSwitchToRegister, onForgotPassword }: L
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Sign In</h2>
         <p className="text-slate-500">Enter your credentials to access your account</p>
-      </div>
-
-      {/* Social Buttons */}
-      <div className="flex space-x-4 pt-2">
-        <button className="flex-1 flex items-center justify-center p-3 border border-slate-200 rounded-xl text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 transition-all">
-          <Chrome className="w-5 h-5 mr-2" />
-          Google
-        </button>
-        <button className="flex-1 flex items-center justify-center p-3 border border-slate-200 rounded-xl text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 transition-all">
-          <Apple className="w-5 h-5 mr-2" />
-          Apple
-        </button>
-      </div>
-
-      {/* Divider */}
-      <div className="relative flex items-center py-2">
-        <div className="flex-grow border-t border-slate-200" />
-        <span className="flex-shrink mx-4 text-xs uppercase text-slate-400 font-medium">OR CONTINUE WITH EMAIL</span>
-        <div className="flex-grow border-t border-slate-200" />
       </div>
 
       {error && (

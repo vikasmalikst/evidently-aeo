@@ -589,6 +589,40 @@ export class PositionExtractionService {
       competitorMetadataMap.set(row.competitor_name.toLowerCase(), row.metadata);
     });
 
+    // 🆕 Fetch brand_products table data (KB: synonyms and products)
+    let brandProductsData: any = null;
+    try {
+      const { data: enrichedData } = await this.supabase
+        .from('brand_products')
+        .select('brand_synonyms, brand_products, competitor_data')
+        .eq('brand_id', result.brand_id)
+        .maybeSingle();
+      brandProductsData = enrichedData;
+      if (brandProductsData) {
+        console.log(`   📚 Loaded KB data: ${brandProductsData.brand_synonyms?.length || 0} brand synonyms, ${brandProductsData.brand_products?.length || 0} brand products`);
+      }
+    } catch (error) {
+      console.warn(`   ⚠️ Failed to fetch brand_products for brand ${result.brand_id}, continuing without KB data`);
+    }
+
+    // 🆕 Fetch consolidated_analysis_cache (LLM-extracted products)
+    let consolidatedCacheData: any = null;
+    if (result.id) {
+      try {
+        const { data: cacheData } = await this.supabase
+          .from('consolidated_analysis_cache')
+          .select('products')
+          .eq('collector_result_id', result.id)
+          .maybeSingle();
+        consolidatedCacheData = cacheData;
+        if (consolidatedCacheData?.products) {
+          console.log(`   💾 Loaded cache data: ${consolidatedCacheData.products.brand?.length || 0} brand products from cache`);
+        }
+      } catch (error) {
+        console.warn(`   ⚠️ Failed to fetch consolidated_analysis_cache for collector_result ${result.id}`);
+      }
+    }
+
     // Get product names (with caching or consolidated analysis)
     let productNames: string[] = [];
     let competitorProductsMap: Record<string, string[]> = {};
@@ -650,36 +684,55 @@ export class PositionExtractionService {
       );
     }
 
+    // 🆕 Combine brand terms from all sources (must be done before using in metadata)
+    const brandTerms = this.combineBrandTerms(
+      parsedBrand.name,
+      brandProductsData,
+      consolidatedCacheData,
+      productNames // LLM-extracted products from consolidated analysis or fallback
+    );
+
     // Build position metadata with topic and product names
     const positionMetadata: Record<string, any> = {};
     if (topicName) {
       positionMetadata.topic_name = topicName;
     }
-    if (productNames.length > 0) {
-      positionMetadata.product_names = productNames;
-      positionMetadata.productNames = productNames; // Support both naming conventions
-      positionMetadata.products = productNames;
+    // 🆕 Include combined product information in metadata
+    const allBrandProducts = brandTerms.brandProducts;
+    if (allBrandProducts.length > 0) {
+      positionMetadata.product_names = allBrandProducts;
+      positionMetadata.productNames = allBrandProducts; // Support both naming conventions
+      positionMetadata.products = allBrandProducts;
+      positionMetadata.brand_synonyms = brandTerms.brandSynonyms; // Include synonyms in metadata
     }
 
+    // 🆕 Combine competitor terms from all sources
     const enrichedCompetitors = normalizedCompetitors.map((comp) => {
-      // Use products from consolidated analysis if available, otherwise from metadata
-      let productNames: string[] = [];
-      if (USE_CONSOLIDATED_ANALYSIS && competitorProductsMap[comp.competitor_name]) {
-        productNames = competitorProductsMap[comp.competitor_name];
-      } else {
-        const metadata = competitorMetadataMap.get(comp.competitor_name.toLowerCase()) || null;
-        productNames = this.extractProductNamesFromMetadata(metadata);
-      }
+      // Get LLM-extracted products for this competitor
+      const llmProducts = USE_CONSOLIDATED_ANALYSIS && competitorProductsMap[comp.competitor_name]
+        ? competitorProductsMap[comp.competitor_name]
+        : [];
+
+      // Combine all competitor terms using helper method
+      const competitorTerms = this.combineCompetitorTerms(
+        comp.competitor_name,
+        brandProductsData,
+        consolidatedCacheData,
+        llmProducts
+      );
+
       return {
-        competitor_name: comp.competitor_name,
-        productNames,
+        competitor_name: competitorTerms.competitorName,
+        competitorSynonyms: competitorTerms.competitorSynonyms,
+        productNames: competitorTerms.competitorProducts,
       };
     });
 
-    // Extract positions using LLM
+    // 🆕 Extract positions using combined terms from all sources
     const positions = this.calculateWordPositions(
-      parsedBrand.name,
-      productNames,
+      brandTerms.brandName,
+      brandTerms.brandSynonyms,
+      brandTerms.brandProducts,
       enrichedCompetitors,
       result.raw_answer
     );
@@ -706,12 +759,20 @@ export class PositionExtractionService {
       competitorProductPositions[name] = productPositionArray;
     }
 
-    const totalBrandMentions = positions.brand.all.length;
+    // 🆕 Calculate mentions - positions.brand.all includes name + synonyms + products
+    const totalBrandMentions = positions.brand.all.length; // Counts all brand mentions (name + synonyms + products)
     const totalCompetitorMentions = Object.values(competitorPositionMap)
       .reduce((sum, posArray) => sum + posArray.length, 0);
-    const totalBrandProductMentions = positions.brandProducts.length;
+    const totalBrandProductMentions = positions.brandProducts.length; // Product-only mentions
     const totalCompetitorProductMentions = Object.values(competitorProductPositions)
       .reduce((sum, posArray) => sum + posArray.length, 0);
+
+    // 🆕 Debug logging for data sources used
+    console.log(`   📊 Position calculation summary for collector_result ${result.id}:`);
+    console.log(`      - Brand terms: ${brandTerms.brandName} + ${brandTerms.brandSynonyms.length} synonyms + ${brandTerms.brandProducts.length} products`);
+    console.log(`      - Total brand mentions: ${totalBrandMentions} (positions: ${positions.brand.all.length})`);
+    console.log(`      - Brand product mentions: ${totalBrandProductMentions}`);
+    console.log(`      - Competitors processed: ${enrichedCompetitors.length}`);
 
     const processedAt = new Date().toISOString();
     const hasBrandPresence = totalBrandMentions > 0;
@@ -888,10 +949,16 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
   // LOCAL POSITION CALCULATION
   // ============================================================================
 
+  /**
+   * 🆕 Calculate word positions using all data sources:
+   * - Brand name + synonyms + products (from KB + cache)
+   * - Competitor names + synonyms + products (from KB + cache)
+   */
   private calculateWordPositions(
     brandName: string,
-    productNames: string[],
-    competitors: Array<{ competitor_name: string; productNames: string[] }>,
+    brandSynonyms: string[],
+    brandProducts: string[],
+    competitors: Array<{ competitor_name: string; competitorSynonyms: string[]; productNames: string[] }>,
     rawAnswer: string
   ): {
     brand: { first: number | null; all: number[] };
@@ -902,55 +969,81 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
   } {
     const { tokens, normalizedTokens } = this.tokenizeWords(rawAnswer);
 
-    const brandTermTokens = [brandName, ...productNames]
+    // 🆕 Combine all brand terms: name + synonyms + products
+    const allBrandTerms = [brandName, ...brandSynonyms, ...brandProducts];
+    const brandTermTokens = allBrandTerms
       .map(term => this.normalizeTerm(term))
       .filter(termTokens => termTokens.length > 0);
 
+    // Find positions for all brand terms (name + synonyms + products)
     const brandPositionsSet = new Set<number>();
     const brandProductPositionsSet = new Set<number>();
-    for (const termTokens of brandTermTokens) {
-      this.findTermPositions(normalizedTokens, termTokens).forEach(position => {
-        brandPositionsSet.add(position);
-      });
+    
+    // Search for brand name and synonyms (these count as brand mentions)
+    const brandNameAndSynonyms = [brandName, ...brandSynonyms];
+    for (const term of brandNameAndSynonyms) {
+      const termTokens = this.normalizeTerm(term);
+      if (termTokens.length > 0) {
+        this.findTermPositions(normalizedTokens, termTokens).forEach(position => {
+          brandPositionsSet.add(position);
+        });
+      }
     }
 
-    for (const productName of productNames) {
+    // Search for brand products (separate tracking for product mentions)
+    for (const productName of brandProducts) {
       const productTokens = this.normalizeTerm(productName);
-      this.findTermPositions(normalizedTokens, productTokens).forEach(position => {
-        brandProductPositionsSet.add(position);
-      });
+      if (productTokens.length > 0) {
+        this.findTermPositions(normalizedTokens, productTokens).forEach(position => {
+          brandPositionsSet.add(position); // Products also count as brand mentions
+          brandProductPositionsSet.add(position); // Separate tracking for products
+        });
+      }
     }
 
     const brandPositions = Array.from(brandPositionsSet).sort((a, b) => a - b);
     const brandFirst = brandPositions.length > 0 ? brandPositions[0] : null;
     const brandProductPositions = Array.from(brandProductPositionsSet).sort((a, b) => a - b);
 
+    // 🆕 Calculate competitor positions using name + synonyms + products
     const competitorPositions: Record<string, number[]> = {};
     const competitorProductPositions: Record<string, number[]> = {};
+    
     for (const competitor of competitors) {
-      const termTokensList = [competitor.competitor_name, ...competitor.productNames]
-        .map((term) => this.normalizeTerm(term))
-        .filter((tokens) => tokens.length > 0);
+      // Combine all competitor terms: name + synonyms + products
+      const allCompetitorTerms = [
+        competitor.competitor_name,
+        ...(competitor.competitorSynonyms || []),
+        ...(competitor.productNames || [])
+      ];
 
       const combinedPositionSet = new Set<number>();
-      for (const termTokens of termTokensList) {
-        this.findTermPositions(normalizedTokens, termTokens).forEach((position) => {
-          combinedPositionSet.add(position);
-        });
+      const productPositionSet = new Set<number>();
+
+      // Search for competitor name and synonyms
+      const competitorNameAndSynonyms = [competitor.competitor_name, ...(competitor.competitorSynonyms || [])];
+      for (const term of competitorNameAndSynonyms) {
+        const termTokens = this.normalizeTerm(term);
+        if (termTokens.length > 0) {
+          this.findTermPositions(normalizedTokens, termTokens).forEach((position) => {
+            combinedPositionSet.add(position);
+          });
+        }
+      }
+
+      // Search for competitor products
+      for (const productName of (competitor.productNames || [])) {
+        const productTokens = this.normalizeTerm(productName);
+        if (productTokens.length > 0) {
+          this.findTermPositions(normalizedTokens, productTokens).forEach((position) => {
+            combinedPositionSet.add(position); // Products also count as competitor mentions
+            productPositionSet.add(position); // Separate tracking for products
+          });
+        }
       }
 
       competitorPositions[competitor.competitor_name] = Array.from(combinedPositionSet).sort((a, b) => a - b);
-
-      const productPositionSet = new Set<number>();
-      for (const productName of competitor.productNames) {
-        const productTokens = this.normalizeTerm(productName);
-        this.findTermPositions(normalizedTokens, productTokens).forEach((position) => {
-          productPositionSet.add(position);
-        });
-      }
       competitorProductPositions[competitor.competitor_name] = Array.from(productPositionSet).sort((a, b) => a - b);
-    }
-    for (const [competitor, pos] of Object.entries(competitorPositions)) {
     }
 
     return {
@@ -1066,6 +1159,111 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     }
 
     return Array.from(new Set(candidates));
+  }
+
+  /**
+   * 🆕 Combine brand terms from multiple sources:
+   * - Brand name (primary)
+   * - Brand synonyms from KB (brand_products.brand_synonyms)
+   * - Brand products from KB (brand_products.brand_products)
+   * - Brand products from cache (consolidated_analysis_cache.products.brand)
+   */
+  private combineBrandTerms(
+    brandName: string,
+    brandProductsData: any,
+    consolidatedCacheData: any,
+    llmExtractedProducts: string[]
+  ): { brandName: string; brandSynonyms: string[]; brandProducts: string[] } {
+    const brandSynonyms = Array.isArray(brandProductsData?.brand_synonyms) 
+      ? brandProductsData.brand_synonyms.filter((s: string) => s && typeof s === 'string')
+      : [];
+
+    // Get products from KB
+    const kbProducts = Array.isArray(brandProductsData?.brand_products)
+      ? brandProductsData.brand_products.filter((p: string) => p && typeof p === 'string')
+      : [];
+
+    // Get products from cache (LLM-extracted)
+    const cacheProducts = Array.isArray(consolidatedCacheData?.products?.brand)
+      ? consolidatedCacheData.products.brand.filter((p: string) => p && typeof p === 'string')
+      : [];
+
+    // Get products from LLM extraction (if not using consolidated analysis)
+    const llmProducts = Array.isArray(llmExtractedProducts)
+      ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
+      : [];
+
+    // Combine all products and deduplicate
+    const allProducts = Array.from(new Set([
+      ...kbProducts,
+      ...cacheProducts,
+      ...llmProducts
+    ]));
+
+    return {
+      brandName,
+      brandSynonyms,
+      brandProducts: allProducts
+    };
+  }
+
+  /**
+   * 🆕 Combine competitor terms from multiple sources:
+   * - Competitor name (primary)
+   * - Competitor synonyms from KB (brand_products.competitor_data[competitorName].synonyms)
+   * - Competitor products from KB (brand_products.competitor_data[competitorName].products)
+   * - Competitor products from cache (consolidated_analysis_cache.products.competitors[competitorName])
+   */
+  private combineCompetitorTerms(
+    competitorName: string,
+    brandProductsData: any,
+    consolidatedCacheData: any,
+    llmExtractedProducts: string[]
+  ): { competitorName: string; competitorSynonyms: string[]; competitorProducts: string[] } {
+    // Get competitor data from KB (case-insensitive lookup)
+    let competitorData: any = null;
+    if (brandProductsData?.competitor_data) {
+      // Try exact match first
+      competitorData = brandProductsData.competitor_data[competitorName];
+      // If not found, try case-insensitive match
+      if (!competitorData) {
+        const entry = Object.entries(brandProductsData.competitor_data).find(
+          ([key]) => key.toLowerCase() === competitorName.toLowerCase()
+        );
+        competitorData = entry?.[1] || null;
+      }
+    }
+
+    const kbSynonyms = Array.isArray(competitorData?.synonyms)
+      ? competitorData.synonyms.filter((s: string) => s && typeof s === 'string')
+      : [];
+
+    const kbProducts = Array.isArray(competitorData?.products)
+      ? competitorData.products.filter((p: string) => p && typeof p === 'string')
+      : [];
+
+    // Get products from cache (LLM-extracted)
+    const cacheProducts = Array.isArray(consolidatedCacheData?.products?.competitors?.[competitorName])
+      ? consolidatedCacheData.products.competitors[competitorName].filter((p: string) => p && typeof p === 'string')
+      : [];
+
+    // Get products from LLM extraction (if not using consolidated analysis)
+    const llmProducts = Array.isArray(llmExtractedProducts)
+      ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
+      : [];
+
+    // Combine all products and deduplicate
+    const allProducts = Array.from(new Set([
+      ...kbProducts,
+      ...cacheProducts,
+      ...llmProducts
+    ]));
+
+    return {
+      competitorName,
+      competitorSynonyms: kbSynonyms,
+      competitorProducts: allProducts
+    };
   }
 
   private calculateVisibilityIndex(occurrences: number, positions: number[], totalWords: number): number | null {

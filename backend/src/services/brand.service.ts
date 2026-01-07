@@ -382,6 +382,36 @@ export class BrandService {
         }
       }
 
+      // 🎯 PHASE 2.5: Automatic brand enrichment (synonyms and products)
+      // Only run for newly created brands, not updates (to avoid overwriting user edits)
+      if (!existingBrand && verifiedCompetitors.length > 0) {
+        try {
+          console.log(`🔄 Triggering automatic brand enrichment for new brand ${newBrand.id}...`);
+          // Import and trigger enrichment asynchronously (non-blocking)
+          const { brandProductEnrichmentService } = await import('./onboarding/brand-product-enrichment.service');
+          
+          // Run in background to not block brand creation response
+          setTimeout(async () => {
+            try {
+              await brandProductEnrichmentService.enrichBrand(newBrand.id, (msg: string) => console.log(`   [Enrichment] ${msg}`));
+              console.log(`✅ Automatic brand enrichment completed for brand ${newBrand.id}`);
+            } catch (enrichmentError) {
+              console.warn(`⚠️ Automatic brand enrichment failed for brand ${newBrand.id} (non-critical):`, enrichmentError);
+              // Don't throw - enrichment failure shouldn't block brand creation
+            }
+          }, 500); // Small delay to ensure brand creation response is sent first
+          
+          console.log(`✅ Automatic brand enrichment triggered for brand ${newBrand.id} (running in background)`);
+        } catch (enrichmentError) {
+          console.warn(`⚠️ Failed to trigger brand enrichment for brand ${newBrand.id} (non-blocking):`, enrichmentError);
+          // Don't throw - enrichment failure shouldn't block brand creation
+        }
+      } else if (existingBrand) {
+        console.log(`ℹ️ Skipping automatic enrichment for existing brand ${newBrand.id} (update, not new creation)`);
+      } else if (verifiedCompetitors.length === 0) {
+        console.log(`ℹ️ Skipping automatic enrichment for brand ${newBrand.id} (no competitors provided)`);
+      }
+
       // Create initial competitor configuration version if competitors exist
       if (verifiedCompetitors.length > 0) {
         try {

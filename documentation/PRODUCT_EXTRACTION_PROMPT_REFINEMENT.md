@@ -7,7 +7,7 @@ I'm working on a **brand intelligence and competitive analysis platform** called
 **Key Use Case:**
 - We collect answers/responses from various sources (web scraping, APIs, etc.)
 - We need to identify where specific brands and their products are mentioned in text
-- We use this data to calculate brand visibility, share of voice, and competitive positioning
+- We use this data to calculate brand visibility, Share of Answer, and competitive positioning
 - Product names are critical because they help us track not just brand mentions, but specific product mentions (e.g., "Excedrin Migraine" vs just "Excedrin")
 
 ## Current Problem

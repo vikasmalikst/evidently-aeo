@@ -74,6 +74,7 @@ export const Onboarding = () => {
   };
 
   const handleCompetitorsContinue = (selectedCompetitors: OnboardingCompetitor[]) => {
+    console.log('🚀 Onboarding: handleCompetitorsContinue called with:', selectedCompetitors);
     setCompetitors(selectedCompetitors);
     setCurrentStep('summary');
   };

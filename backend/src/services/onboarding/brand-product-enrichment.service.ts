@@ -30,6 +30,9 @@ export class BrandProductEnrichmentService {
     competitors: string[];
   }): { systemPrompt: string; userPrompt: string } {
     const systemPrompt = `You are a market research expert. Your task is to identify all common synonyms, abbreviations, and name variations for a brand and its competitors, as well as their main commercial product names. Make sure the commercial product names are specific and not generic terms liek Burrito for Chipotle or Water Bottle for Larq or Soap for Tide.
+
+IMPORTANT: You MUST return a JSON object containing keys for the main brand AND EVERY SINGLE COMPETITOR listed in the prompt, even if you have to leave their lists empty. Do not skip any competitor.
+
 Respond ONLY with valid JSON in this exact structure:
 {
   "brand": {
@@ -37,10 +40,11 @@ Respond ONLY with valid JSON in this exact structure:
     "products": ["product1", "product2"]
   },
   "competitors": {
-    "Competitor Name": {
+    "Competitor Name 1": {
       "synonyms": ["name1", "name2"],
       "products": ["product1", "product2"]
-    }
+    },
+    "Competitor Name 2": { ... }
   }
 }`;
 
@@ -48,7 +52,7 @@ Respond ONLY with valid JSON in this exact structure:
 Industry: ${params.industry || 'General'}
 Competitors: ${params.competitors.join(', ')}
 
-Please provide comprehensive synonyms (legal names, abbreviations, common misspellings) and commercial products for the brand and each competitor.`;
+Please provide comprehensive synonyms (legal names, abbreviations, common misspellings) and commercial products for the brand and EACH of the ${params.competitors.length} competitors listed above.`;
 
     return { systemPrompt, userPrompt };
   }
@@ -74,6 +78,7 @@ Please provide comprehensive synonyms (legal names, abbreviations, common misspe
     forceOpenRouter?: boolean;
     brandIdForOllamaDecision?: string;
   }, logger: (msg: string) => void): Promise<EnrichmentResult> {
+    logger(`🔍 Enrichment requested for brand "${params.brandName}" with ${params.competitors.length} competitors: ${params.competitors.join(', ')}`);
     const { systemPrompt, userPrompt } = this.buildPrompts(params);
 
     const canUseOllama =

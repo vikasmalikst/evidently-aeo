@@ -218,6 +218,12 @@ router.post('/brand-products/preview', authenticateToken, async (req: Request, r
   try {
     const { brand_name, industry, competitors } = req.body ?? {};
 
+    console.log('🔍 [BACKEND] Received brand-products/preview request:', {
+      brand_name,
+      competitors_count: Array.isArray(competitors) ? competitors.length : 0,
+      competitors: competitors
+    });
+
     if (!brand_name || typeof brand_name !== 'string') {
       res.status(400).json({ success: false, error: 'brand_name is required' });
       return;

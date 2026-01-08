@@ -49,6 +49,22 @@ interface RefreshResponse {
 class ApiClient {
   private refreshingPromise: Promise<void> | null = null;
 
+  private isSessionAuthErrorMessage(message: string): boolean {
+    const m = (message || '').toLowerCase();
+    // Backend / auth middleware / jwt messages
+    return (
+      m.includes('access token required') ||
+      m.includes('authentication required') ||
+      m.includes('authentication failed') ||
+      m.includes('invalid token') ||
+      m.includes('token expired') ||
+      m.includes('invalid refresh token') ||
+      m.includes('refresh token expired') ||
+      m.includes('invalid token or user not found') ||
+      m.includes('session expired')
+    );
+  }
+
   private isAbortError(error: unknown): boolean {
     // In browsers, aborts can surface as DOMException (not always instanceof Error)
     // or as an Error-like object with name/message.
@@ -202,16 +218,24 @@ class ApiClient {
     }
 
     if (response.status === 401 && requiresAuth) {
-      if (retry) {
-      const refreshed = await this.tryRefreshToken();
-      if (refreshed) {
-        return this.request<T>(endpoint, options, { requiresAuth, retry: false });
+      // Build error first so we can decide if this 401 is actually an auth/session failure.
+      // Some endpoints may return 401 for reasons unrelated to user session (e.g., upstream provider creds).
+      const err = await this.buildError(response, 'Session expired. Please sign in again.');
+      const isSessionAuthError = this.isSessionAuthErrorMessage(err.message);
+
+      if (retry && isSessionAuthError) {
+        const refreshed = await this.tryRefreshToken();
+        if (refreshed) {
+          return this.request<T>(endpoint, options, { requiresAuth, retry: false });
+        }
       }
+
+      // Only clear tokens if it's truly a session/auth failure.
+      if (isSessionAuthError) {
+        this.clearAuthTokens();
       }
-      // Clear tokens if refresh failed or retry is disabled
-      this.clearAuthTokens();
-      const errorMessage = await this.buildError(response, 'Session expired. Please sign in again.');
-      throw errorMessage;
+
+      throw err;
     }
 
     if (!response.ok) {

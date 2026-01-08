@@ -315,8 +315,8 @@ export const authService = {
                          errorMessage.includes('Access token required');
       
       if (isAuthError) {
-        apiClient.clearAuthTokens();
-        persistUser(null);
+      apiClient.clearAuthTokens();
+      persistUser(null);
       }
       
       return null;

@@ -37,7 +37,13 @@ router.get('/brightdata/countries', async (_req: Request, res: Response) => {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '')
-      return res.status(response.status).json({
+      // IMPORTANT:
+      // BrightData may return 401/403 for *their* credentials. That is not the same as
+      // our app session being invalid. If we forward 401, the frontend will treat it
+      // as "session expired" and log the user out. Map upstream auth failures to 502.
+      const upstreamStatus = response.status
+      const statusToReturn = upstreamStatus === 401 || upstreamStatus === 403 ? 502 : upstreamStatus
+      return res.status(statusToReturn).json({
         success: false,
         error: `Failed to load BrightData countries: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`
       })

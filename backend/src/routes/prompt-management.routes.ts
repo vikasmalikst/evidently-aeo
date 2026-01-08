@@ -5,6 +5,7 @@
 
 import express, { Request, Response } from 'express'
 import { authenticateToken } from '../middleware/auth.middleware'
+import { getEnvVar, loadEnvironment } from '../utils/env-utils'
 import {
   promptCrudService,
   promptVersioningService,
@@ -20,7 +21,9 @@ router.use(authenticateToken)
 
 router.get('/brightdata/countries', async (_req: Request, res: Response) => {
   try {
-    const apiKey = process.env.BRIGHTDATA_API_KEY || ''
+    // Load environment variables from .env file (same as data collection services)
+    loadEnvironment()
+    const apiKey = getEnvVar('BRIGHTDATA_API_KEY', '')
     if (!apiKey) {
       return res.status(500).json({
         success: false,

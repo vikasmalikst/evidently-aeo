@@ -1664,7 +1664,8 @@ RULES (short)
 - **CRITICAL**: Every "reason" field MUST start with the problem ID in brackets like "[P1]", "[P2]", etc. Example: "[P1] Visibility is 0.4% vs 0.5% avg. Targeting reddit.com will improve citations."
 - Each reason must reference the problem ID and real numbers; tie the action to a domain + content focus that moves the KPI.
 - **CRITICAL**: Do NOT mention any competitor names in your recommendations. Do NOT include competitor names in the action, reason, explanation, contentFocus, or any other field. Focus solely on the brand's own strategies and improvements.
-${competitorNames.length > 0 ? `- **EXPLICIT EXCLUSION**: The following competitor names must NOT appear anywhere in your recommendations: ${competitorNames.join(', ')}` : ''}
+- **PUBLISHING RULE**: Publishing content on a competitor's website is NOT an option. Do not suggest guest posting, commenting, or any form of content placement on domains that belong to competitors.
+${competitorNames.length > 0 ? `- **EXPLICIT EXCLUSION**: The following competitor names and their domains must NOT appear anywhere in your recommendations: ${competitorNames.join(', ')}` : ''}
 
 Brand
 - Name: ${context.brandName}

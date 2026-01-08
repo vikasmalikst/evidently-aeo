@@ -827,7 +827,8 @@ RULES
 - priority must be: "High", "Medium", or "Low"
 - effort must be: "Low", "Medium", or "High"
 - **CRITICAL**: Do NOT mention any competitor names in your recommendations. Do NOT include competitor names in the action, reason, explanation, contentFocus, or any other field. Focus solely on the brand's own strategies and improvements.
-${competitorNames.length > 0 ? `- **EXPLICIT EXCLUSION**: The following competitor names must NOT appear anywhere in your recommendations: ${competitorNames.join(', ')}` : ''}
+- **PUBLISHING RULE**: Publishing content on a competitor's website is NOT an option. Do not suggest guest posting, commenting, or any form of content placement on domains that belong to competitors.
+${competitorNames.length > 0 ? `- **EXPLICIT EXCLUSION**: The following competitor names and their domains must NOT appear anywhere in your recommendations: ${competitorNames.join(', ')}` : ''}
 
 Brand Performance
 - Name: ${context.brandName}

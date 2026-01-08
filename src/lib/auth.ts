@@ -303,8 +303,22 @@ export const authService = {
       return user;
     } catch (error) {
       console.warn('Failed to restore authenticated user:', error);
-      apiClient.clearAuthTokens();
-      persistUser(null);
+      
+      // Only clear tokens if it's an actual authentication error (401)
+      // Don't clear on network errors or other issues
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isAuthError = errorMessage.includes('401') || 
+                         errorMessage.includes('Unauthorized') ||
+                         errorMessage.includes('Token expired') ||
+                         errorMessage.includes('Invalid token') ||
+                         errorMessage.includes('Authentication failed') ||
+                         errorMessage.includes('Access token required');
+      
+      if (isAuthError) {
+        apiClient.clearAuthTokens();
+        persistUser(null);
+      }
+      
       return null;
     }
   },

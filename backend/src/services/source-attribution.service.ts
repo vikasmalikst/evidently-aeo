@@ -292,15 +292,6 @@ export class SourceAttributionService {
             }));
             stepTimings['extracted_positions_query'] = result.duration_ms;
             console.log(`   ⚡ [Source Attribution] Optimized query completed in ${result.duration_ms}ms (${extractedPositions.length} rows)`);
-            
-            // Debug: Count brand vs competitor rows
-            const brandRows = extractedPositions.filter(p => !p.competitor_name || p.competitor_name.trim() === '');
-            const compRows = extractedPositions.filter(p => p.competitor_name && p.competitor_name.trim() !== '');
-            const withSOA = brandRows.filter(p => p.share_of_answers_brand !== null && p.share_of_answers_brand !== undefined);
-            const withSentiment = brandRows.filter(p => p.sentiment_score !== null && p.sentiment_score !== undefined);
-            console.log(`   📊 [Source Attribution] Row breakdown: ${brandRows.length} brand rows, ${compRows.length} competitor rows`);
-            console.log(`   📊 [Source Attribution] Data quality: ${withSOA.length} with SOA, ${withSentiment.length} with sentiment`);
-            console.log(`   📊 [Source Attribution] Requested ${collectorResultIds.length} collector_result_ids, got data for ${new Set(extractedPositions.map(p => p.collector_result_id)).size} unique IDs`);
           }
         } else {
           console.log('   📋 [Source Attribution] Using legacy query (extracted_positions)');
@@ -582,21 +573,6 @@ export class SourceAttributionService {
       }
 
       stepTimings['aggregation'] = Date.now() - aggregationStartTime;
-      
-      // Debug: Check prompts per source
-      for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
-        if (aggregate.prompts.size === 0) {
-        }
-      }
-      
-      // Debug: Log aggregation results (first 5 sources) with detailed SOA info
-      const sourceKeys = Array.from(sourceAggregates.keys()).slice(0, 5);
-      console.log(`   📊 [Source Attribution] Sample aggregation results (first 5 sources):`);
-      for (const key of sourceKeys) {
-        const agg = sourceAggregates.get(key)!;
-        const avgSOA = agg.shareValues.length > 0 ? average(agg.shareValues) : 0;
-        console.log(`      ${key}: citations=${agg.citations}, collectorResults=${agg.collectorResultIds.size}, SOA values=[${agg.shareValues.length} values: ${agg.shareValues.slice(0,5).map(v => v.toFixed(1)).join(', ')}${agg.shareValues.length > 5 ? '...' : ''}], avgSOA=${avgSOA.toFixed(1)}%, sentimentValues=[${agg.sentimentValues.length} values]`);
-      }
 
       // Step 10: Calculate previous period for change metrics
       // Compare the most recent day in the current period to the previous day

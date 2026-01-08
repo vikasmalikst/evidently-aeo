@@ -64,9 +64,17 @@ deploy_backend() {
         exit 1
     fi
     
-    # Restart PM2 process
-    print_info "Restarting backend with PM2..."
-    pm2 restart evidently-backend || pm2 start ecosystem.config.js
+    # Restart all PM2 processes from ecosystem.config.js
+    print_info "Restarting all backend processes with PM2..."
+    
+    # Stop and delete all existing processes to ensure clean restart
+    pm2 delete all 2>/dev/null || true
+    
+    # Start all processes from ecosystem.config.js
+    pm2 start ecosystem.config.js
+    
+    # Save PM2 process list
+    pm2 save
     
     print_info "Backend deployment complete!"
 }

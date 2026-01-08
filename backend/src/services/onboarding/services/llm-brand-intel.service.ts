@@ -9,8 +9,8 @@ export class LLMBrandIntelService {
   private cerebrasModel =
     process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
   private openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-  private openRouterModel =
-    "qwen/qwen3-235b-a22b-instruct-2507";
+  private openRouterModel =process.env['OPENROUTER_MODEL'] || 'openai/gpt-4o-mini';
+    
   private openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
   private openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
 
@@ -32,7 +32,7 @@ Assign an industry/vertical (1–3 words).
 IMPORTANT: You must respond with a valid JSON object containing these exact fields:
 {
   "brandName": "string",
-  "homepageUrl": "string (full URL with https://)",
+  "homepageUrl": "string (domain name)",
   "summary": "string (max 4 sentences)",
   "ceo": "string or null",
   "headquarters": "string (city, country)",
@@ -51,12 +51,12 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
     console.log('🔹 System Prompt:');
     console.log(systemPrompt);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔹 User Message:');
-    console.log(userMessage);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('📋 Input Parameters:');
-    console.log(JSON.stringify({ rawInput, companyName, domain }, null, 2));
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    // console.log('🔹 User Message:');
+    // console.log(userMessage);
+    // console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    // console.log('📋 Input Parameters:');
+    // console.log(JSON.stringify({ rawInput, companyName, domain }, null, 2));
+    // console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     let lastError: unknown;
 
@@ -267,6 +267,7 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
     }
 
     return {
+      brandName: parsed.brandName || parsed.name || undefined,
       summary: parsed.summary || parsed.description || undefined,
       industry: parsed.industry || parsed.sector || parsed.vertical || undefined,
       headquarters: parsed.headquarters || parsed.location || parsed.hq || undefined,

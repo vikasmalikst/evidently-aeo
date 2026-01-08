@@ -48,6 +48,7 @@ export interface CompetitorGenerationParams {
 }
 
 export interface LLMBrandIntelResult {
+  brandName?: string;
   summary?: string;
   industry?: string;
   headquarters?: string;

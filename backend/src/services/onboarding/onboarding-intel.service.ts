@@ -44,8 +44,9 @@ export class OnboardingIntelService {
     const companyName = clearbitService.buildCompanyName(matchedSuggestion, trimmedInput);
     let domain = clearbitService.buildDomain(matchedSuggestion, trimmedInput);
     let website = domain ? ensureHttps(domain) : '';
-    let logo =
-      matchedSuggestion?.logo ?? (domain ? `https://logo.clearbit.com/${domain}` : '');
+    // Store original Clearbit logo if available
+    const clearbitLogo = matchedSuggestion?.logo;
+    let logo = clearbitLogo ?? (domain ? `https://logo.clearbit.com/${domain}` : '');
 
     // Step 2: Generate brand intelligence using LLM
     let llmBrandIntel = null;
@@ -56,6 +57,7 @@ export class OnboardingIntelService {
         domain
       );
       console.log('✅ LLM brand intelligence generated:', {
+        hasBrandName: !!llmBrandIntel?.brandName,
         hasSummary: !!llmBrandIntel?.summary,
         hasIndustry: !!llmBrandIntel?.industry,
         competitorsCount: llmBrandIntel?.competitors?.length || 0,
@@ -64,13 +66,16 @@ export class OnboardingIntelService {
       console.error('❌ LLM generation failed:', llmError);
     }
 
+    // Use LLM's brandName if available, otherwise fall back to Clearbit's companyName
+    const finalCompanyName = llmBrandIntel?.brandName || companyName;
+
     // Step 3: Fetch Wikipedia summary as fallback/enhancement
-    const wikipediaSummary = await wikipediaService.fetchSummary(companyName);
+    const wikipediaSummary = await wikipediaService.fetchSummary(finalCompanyName);
     let description =
       llmBrandIntel?.summary || wikipediaSummary?.extract?.trim() || '';
 
     if (!description) {
-      description = `Information about ${companyName}${domain ? ` (${domain})` : ''}`;
+      description = `Information about ${finalCompanyName}${domain ? ` (${domain})` : ''}`;
     }
 
     // Step 4: Extract and merge company information
@@ -93,29 +98,35 @@ export class OnboardingIntelService {
       extractFoundedYear(wikipediaSummary?.description ?? '') ||
       null;
 
-    // Use LLM-generated homepage URL if available
+    // Use LLM-generated homepage URL if available (prefer LLM's domain as it's more accurate)
+    const originalDomain = domain;
     if (llmBrandIntel?.homepageUrl) {
       const llmDomain = stripProtocol(llmBrandIntel.homepageUrl);
-      if (llmDomain && !domain) {
+      if (llmDomain) {
+        // Always prefer LLM's domain when available (it's more accurate than Clearbit's guess)
         domain = llmDomain;
-        website = llmBrandIntel.homepageUrl;
+        website = ensureHttps(llmDomain);
+        console.log(`✅ Using LLM domain: ${domain} (from homepageUrl: ${llmBrandIntel.homepageUrl})`);
       }
     }
 
     // Step 5: Build brand object
     // Ensure we have a domain and logo even if Clearbit/LLM miss
     if (!domain) {
-      const fallbackDomain = `${companyName.toLowerCase().replace(/\s+/g, '')}.com`;
+      const fallbackDomain = `${finalCompanyName.toLowerCase().replace(/\s+/g, '')}.com`;
       domain = fallbackDomain;
       website = ensureHttps(fallbackDomain);
     }
-    if (!logo && domain) {
-      logo = `https://logo.clearbit.com/${domain}`;
-    }
+    
+    // Always rebuild logo with the final domain to ensure consistency
+    // LLM's homepageUrl is more accurate, so use it for logo even if we had a Clearbit logo
+    // This ensures the logo matches the actual domain we're using
+    logo = `https://logo.clearbit.com/${domain}`;
+    console.log(`🖼️ Logo URL built with final domain: ${logo}`);
 
     const brand: BrandIntel = {
       verified: Boolean(domain),
-      companyName,
+      companyName: finalCompanyName,
       website,
       domain,
       logo,
@@ -171,7 +182,7 @@ export class OnboardingIntelService {
       console.log('⚠️ No competitors from LLM, using separate competitor generation...');
       try {
         competitors = await competitorService.generateCompetitors({
-          companyName,
+          companyName: finalCompanyName,
           industry: derivedIndustry,
           domain,
           locale,

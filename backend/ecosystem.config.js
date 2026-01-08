@@ -86,6 +86,13 @@ if (missingVars.length > 0) {
   console.error('✅ All required environment variables loaded successfully');
 }
 
+// Log important optional environment variables (for debugging)
+console.error('🔍 Checking for important optional environment variables...');
+const optionalVars = ['BRIGHTDATA_API_KEY', 'OPENAI_API_KEY', 'OXYLABS_USERNAME', 'DATAFORSEO_USERNAME'];
+optionalVars.forEach(v => {
+  console.error('   ', v, ':', process.env[v] ? '✅ FOUND' : '⚠️ NOT SET');
+});
+
 module.exports = {
   apps: [
     {

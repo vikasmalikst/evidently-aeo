@@ -173,34 +173,43 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
   }, [brand.companyName, competitorNames.join('|')]);
 
   const rows = useMemo(() => {
-    if (!editedEnrichment) return [];
+    console.log('📊 Summary: Generating rows. Competitors prop:', competitors);
 
-    return [
-      {
-        name: brand.companyName,
-        type: 'Brand' as const,
-        logo: brand.logo,
-        domain: brand.domain,
-        synonymsText: draftBrandSynonyms,
-        productsText: draftBrandProducts,
-      },
-      ...competitorNames.map((name) => {
-        const comp = competitors.find((c) => c.name === name);
-        return {
-          name,
-          type: 'Competitor' as const,
-          logo: comp?.logo || '',
-          domain: comp?.domain || '',
-          synonymsText: draftCompetitorSynonyms[name] || '',
-          productsText: draftCompetitorProducts[name] || '',
-        };
-      }),
-    ];
+    const brandRow = {
+      name: brand.companyName,
+      type: 'Brand' as const,
+      logo: brand.logo,
+      domain: brand.domain,
+      synonymsText: draftBrandSynonyms,
+      productsText: draftBrandProducts,
+    };
+
+    // If we have enrichment data, we can filter/sort, 
+    // but we must ensure ALL selected competitors are shown.
+    // We map over the `competitors` prop to ensure no one is left out.
+    const competitorRows = competitors.map((comp) => {
+      const row = {
+        name: comp.name,
+        type: 'Competitor' as const,
+        logo: comp.logo || '',
+        domain: comp.domain || '',
+        synonymsText: draftCompetitorSynonyms[comp.name] || '',
+        productsText: draftCompetitorProducts[comp.name] || '',
+      };
+      
+      if (!draftCompetitorSynonyms[comp.name] && !draftCompetitorProducts[comp.name]) {
+        console.warn(`⚠️ Competitor "${comp.name}" has no enrichment data. Showing empty row.`);
+      }
+      
+      return row;
+    });
+
+    const result = [brandRow, ...competitorRows];
+    console.log('✅ Summary: Generated rows:', result);
+    return result;
   }, [
     brand,
     competitors,
-    competitorNames,
-    editedEnrichment,
     draftBrandSynonyms,
     draftBrandProducts,
     draftCompetitorSynonyms,

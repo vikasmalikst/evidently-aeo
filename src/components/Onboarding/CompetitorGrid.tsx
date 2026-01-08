@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Card } from './common/Card';
 import { Input } from './common/Input';
@@ -30,6 +30,7 @@ export const CompetitorGrid = ({
   const [isLoading, setIsLoading] = useState(true);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customName, setCustomName] = useState('');
+  const hasLoadedRef = useRef(false);
 
   const getCompetitorKey = (competitor: OnboardingCompetitor) =>
     (competitor.domain || competitor.name || '').toLowerCase();
@@ -44,12 +45,24 @@ export const CompetitorGrid = ({
   }, [externalSelected]);
 
   useEffect(() => {
+    // If we have already loaded the initial competitors and we have local changes,
+    // prevent overwriting local state with the echoed prop from parent.
+    // This fixes the issue where adding a custom competitor updates parent, 
+    // which then updates prop, causing a reset here.
+    if (hasLoadedRef.current && competitors.length > 0) {
+      return;
+    }
+
     const loadCompetitors = async () => {
       setIsLoading(true);
       try {
         if (initialCompetitors && initialCompetitors.length > 0) {
           setCompetitors(initialCompetitors);
-          onCompetitorsLoaded?.(initialCompetitors);
+          hasLoadedRef.current = true;
+          
+          // Only notify if we haven't already (to avoid loops)
+          // onCompetitorsLoaded?.(initialCompetitors); 
+          
           if (!externalSelected || externalSelected.size === 0) {
             const autoSelect = new Set(
               initialCompetitors.slice(0, 5).map((competitor) => getCompetitorKey(competitor))
@@ -58,10 +71,13 @@ export const CompetitorGrid = ({
             onSelectionChange?.(autoSelect);
           }
         } else {
-          setCompetitors([]);
-          onCompetitorsLoaded?.([]);
-          if (!externalSelected || externalSelected.size === 0) {
-            setSelected(new Set());
+          // Only reset if we really have nothing
+          if (!hasLoadedRef.current) {
+             setCompetitors([]);
+             onCompetitorsLoaded?.([]);
+             if (!externalSelected || externalSelected.size === 0) {
+               setSelected(new Set());
+             }
           }
         }
       } finally {
@@ -116,17 +132,26 @@ export const CompetitorGrid = ({
     };
 
     const updatedCompetitors = [customCompetitor, ...competitors];
+    console.log('➕ Added custom competitor:', customCompetitor);
     setCompetitors(updatedCompetitors);
-    // Notify parent of updated competitors list
-    if (onCompetitorsLoaded) {
-      onCompetitorsLoaded(updatedCompetitors);
-    }
+    
+    // Add to selection automatically
+    const key = getCompetitorKey(customCompetitor);
+    const newSelected = new Set(selected);
+    newSelected.add(key);
+    setSelected(newSelected);
+    
+    // Notify parent of both the new list and the new selection
+    onCompetitorsLoaded?.(updatedCompetitors);
+    onSelectionChange?.(newSelected);
+
     setCustomName('');
     setShowCustomForm(false);
   };
 
   const handleContinue = () => {
     // All remaining competitors are considered selected
+    console.log('🚀 CompetitorGrid: handleContinue called with competitors:', competitors);
     onContinue(competitors);
   };
 

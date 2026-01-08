@@ -31,8 +31,8 @@ export class BrightDataGeminiService extends BaseBrightDataService {
         input: [{
           url: 'https://gemini.google.com/',
           prompt: request.prompt,
-          // Enforce country parameter: default to 'US' if not provided (per strict requirement)
-          country: 'US',
+          // Set country to blank as requested
+          country: '',
           index: 1
         }]
       };
@@ -99,7 +99,7 @@ export class BrightDataGeminiService extends BaseBrightDataService {
           async: true,
           brand: request.brand,
           locale: request.locale,
-          country: 'US'
+          country: ''
         }
       };
 

@@ -114,6 +114,7 @@ module.exports = {
         DATAFORSEO_PASSWORD: process.env.DATAFORSEO_PASSWORD,
         OXYLABS_USERNAME: process.env.OXYLABS_USERNAME,
         OXYLABS_PASSWORD: process.env.OXYLABS_PASSWORD,
+        BRIGHTDATA_API_KEY: process.env.BRIGHTDATA_API_KEY,
         // Add any other environment variables your app needs
       },
       // Logging

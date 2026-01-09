@@ -147,12 +147,24 @@ export const Setup = () => {
         };
       });
 
+      // Get enrichment data from local storage
+      const enrichmentDataStr = localStorage.getItem('onboarding_brand_products');
+      let enrichmentData = null;
+      if (enrichmentDataStr) {
+        try {
+          enrichmentData = JSON.parse(enrichmentDataStr);
+        } catch (e) {
+          console.warn('Failed to parse enrichment data:', e);
+        }
+      }
+
       const onboardingPayload = {
         brand_name: brand.companyName || brand.name,
         website_url: brand.website || brand.domain || 'https://example.com',
         description: brand.description || '',
         industry: brand.industry || 'Technology',
         competitors: competitorPayload,
+        enrichment_data: enrichmentData,
         aeo_topics: data.topics.map(t => ({
           label: t.name,
           weight: t.relevance / 100 || 1.0,

@@ -135,6 +135,24 @@ Please provide comprehensive synonyms (legal names, abbreviations, common misspe
     if (upsertError) throw upsertError;
   }
 
+  /**
+   * Check if enrichment data exists for a brand
+   */
+  async hasEnrichment(brandId: string): Promise<boolean> {
+    const { data, error } = await supabaseAdmin
+      .from('brand_products')
+      .select('brand_id')
+      .eq('brand_id', brandId)
+      .maybeSingle();
+    
+    if (error) {
+      console.warn(`Error checking enrichment status for brand ${brandId}:`, error);
+      return false;
+    }
+    
+    return !!data;
+  }
+
   async enrichBrand(brandId: string, logger: (msg: string) => void): Promise<void> {
     logger(`🚀 Starting enrichment for brand ID: ${brandId}`);
 

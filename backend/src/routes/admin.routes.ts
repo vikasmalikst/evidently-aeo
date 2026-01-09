@@ -1877,6 +1877,18 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
       };
 
       try {
+        // Ensure brand enrichment (synonyms/products) exists before data collection
+        // This is critical for scoring accuracy
+        try {
+          const hasEnrichment = await brandProductEnrichmentService.hasEnrichment(brandId);
+          if (!hasEnrichment) {
+            console.log(`[Admin] ⚠️ Enrichment missing for brand ${brandId}. Running enrichment now...`);
+            await brandProductEnrichmentService.enrichBrand(brandId, (msg) => console.log(`[Admin-LazyEnrichment] ${msg}`));
+          }
+        } catch (enrichError) {
+           console.warn(`[Admin] ⚠️ Lazy enrichment failed, proceeding anyway:`, enrichError);
+        }
+
         // Step 1: Determine which collectors to use
         let collectorsToUse = collectors;
         

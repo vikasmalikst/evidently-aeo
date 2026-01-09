@@ -6,6 +6,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { dataCollectionService, QueryExecutionRequest } from '../data-collection/data-collection.service';
+import { brandProductEnrichmentService } from '../onboarding/brand-product-enrichment.service';
 
 loadEnvironment();
 
@@ -40,6 +41,17 @@ export class DataCollectionJobService {
     }
   ): Promise<DataCollectionJobResult> {
     console.log(`\n🔍 Starting data collection for brand ${brandId} (customer: ${customerId})`);
+
+    // Ensure enrichment exists before running job (Lazy Load)
+    try {
+      const hasEnrichment = await brandProductEnrichmentService.hasEnrichment(brandId);
+      if (!hasEnrichment) {
+        console.log(`[Job] ⚠️ Enrichment missing for brand ${brandId}. Running enrichment now...`);
+        await brandProductEnrichmentService.enrichBrand(brandId, (msg) => console.log(`[Job-LazyEnrichment] ${msg}`));
+      }
+    } catch (err) {
+      console.warn(`[Job] ⚠️ Lazy enrichment failed, proceeding anyway:`, err);
+    }
 
     const result: DataCollectionJobResult = {
       queriesExecuted: 0,

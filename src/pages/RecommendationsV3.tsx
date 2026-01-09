@@ -73,7 +73,7 @@ export const RecommendationsV3 = () => {
   const [kpis, setKpis] = useState<IdentifiedKPI[]>([]); // Keep for potential future use, but not displayed in UI
   const [recommendations, setRecommendations] = useState<RecommendationV3[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [expandedSections, setExpandedSections] = useState<Map<string, { email: boolean; content: boolean }>>(new Map()); // For Step 3: track collapsed/expanded sections
+  const [expandedSections, setExpandedSections] = useState<Map<string, { content: boolean }>>(new Map()); // For Step 3: track collapsed/expanded content section only
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contentMap, setContentMap] = useState<Map<string, any>>(new Map());
@@ -110,6 +110,13 @@ export const RecommendationsV3 = () => {
     }
     return safeJsonParse(contentRecordOrRaw);
   }, [safeJsonParse]);
+
+  // Backend stores JSON strings with escaped newlines (\\n) to keep JSON valid.
+  // For display/copy we want real line breaks.
+  const unescapeNewlines = useCallback((value: any): any => {
+    if (typeof value !== 'string') return value;
+    return value.replace(/\\n/g, '\n');
+  }, []);
 
   useEffect(() => {
     // Reset per-generation artifacts when generation changes
@@ -237,7 +244,7 @@ export const RecommendationsV3 = () => {
             recommendationsWithIds.forEach(rec => {
               if (rec.id && !newExpandedSections.has(rec.id)) {
                 // Default to both sections expanded
-                newExpandedSections.set(rec.id, { email: true, content: true });
+                newExpandedSections.set(rec.id, { content: true });
               }
             });
             setExpandedSections(newExpandedSections);
@@ -652,7 +659,7 @@ export const RecommendationsV3 = () => {
             step3Recs.forEach(rec => {
               if (rec.id && !newExpandedSections.has(rec.id)) {
                 // Default to both sections expanded
-                newExpandedSections.set(rec.id, { email: true, content: true });
+                newExpandedSections.set(rec.id, { content: true });
               }
             });
             setExpandedSections(newExpandedSections);
@@ -910,7 +917,7 @@ export const RecommendationsV3 = () => {
               const newExpandedSections = new Map(expandedSections);
               recommendationsWithIds.forEach(rec => {
                 if (rec.id && !newExpandedSections.has(rec.id)) {
-                  newExpandedSections.set(rec.id, { email: true, content: true });
+                  newExpandedSections.set(rec.id, { content: true });
                 }
               });
               setExpandedSections(newExpandedSections);
@@ -1191,7 +1198,7 @@ export const RecommendationsV3 = () => {
                         const newExpandedSections = new Map(expandedSections);
                         recommendationsWithIds.forEach(rec => {
                           if (rec.id && !newExpandedSections.has(rec.id)) {
-                            newExpandedSections.set(rec.id, { email: true, content: true });
+                            newExpandedSections.set(rec.id, { content: true });
                           }
                         });
                         setExpandedSections(newExpandedSections);
@@ -1647,30 +1654,18 @@ export const RecommendationsV3 = () => {
                             // Handle v2.0 format (new structure with separate sections)
                             if (parsedContent && parsedContent.version === '2.0') {
                               const v2Content = parsedContent as any;
-                              const collaborationEmail = v2Content.collaborationEmail;
                               const publishableContent = v2Content.publishableContent;
                               const sourceType = v2Content.targetSource?.sourceType || 'other';
                               
-                              // Get expanded state for this recommendation (default to both expanded)
-                              const sectionState = expandedSections.get(rec.id || '') || { email: true, content: true };
-                              const isEmailExpanded = sectionState.email;
+                              // Get expanded state for this recommendation
+                              const sectionState = expandedSections.get(rec.id || '') || { content: true };
                               const isContentExpanded = sectionState.content;
-                              
-                              // Toggle function for email section
-                              const toggleEmail = () => {
-                                setExpandedSections(prev => {
-                                  const next = new Map(prev);
-                                  const current = next.get(rec.id || '') || { email: true, content: true };
-                                  next.set(rec.id || '', { ...current, email: !current.email });
-                                  return next;
-                                });
-                              };
                               
                               // Toggle function for content section
                               const toggleContent = () => {
                                 setExpandedSections(prev => {
                                   const next = new Map(prev);
-                                  const current = next.get(rec.id || '') || { email: true, content: true };
+                                  const current = next.get(rec.id || '') || { content: true };
                                   next.set(rec.id || '', { ...current, content: !current.content });
                                   return next;
                                 });
@@ -1678,64 +1673,6 @@ export const RecommendationsV3 = () => {
                               
                               return (
                                 <div className="space-y-6">
-                                  {/* Collaboration Email Section - Collapsible */}
-                                  {collaborationEmail && collaborationEmail.emailBody && (
-                                    <div className="bg-gradient-to-br from-[#fef3c7] to-[#fde68a] rounded-lg border border-[#fbbf24] shadow-sm overflow-hidden">
-                                      {/* Header - Clickable to toggle */}
-                                      <div 
-                                        onClick={toggleEmail}
-                                        className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#fde68a]/50 transition-colors border-b border-[#f59e0b]"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          {isEmailExpanded ? (
-                                            <IconChevronUp size={18} className="text-[#92400e]" />
-                                          ) : (
-                                            <IconChevronDown size={18} className="text-[#92400e]" />
-                                          )}
-                                          <div className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]"></div>
-                                          <h4 className="text-[13px] font-semibold text-[#92400e] uppercase tracking-wider">Collaboration Email</h4>
-                                        </div>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation(); // Prevent toggle when clicking copy
-                                            const emailText = `Subject: ${collaborationEmail.subjectLine || ''}\n\n${collaborationEmail.emailBody || ''}\n\n${collaborationEmail.cta || ''}`;
-                                            navigator.clipboard.writeText(emailText);
-                                          }}
-                                          className="px-3 py-1.5 bg-[#f59e0b] text-white rounded text-[11px] font-medium hover:bg-[#d97706] transition-colors flex items-center gap-1.5"
-                                        >
-                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                          </svg>
-                                          Copy Email
-                                        </button>
-                                      </div>
-                                      
-                                      {/* Content - Collapsible */}
-                                      {isEmailExpanded && (
-                                        <div className="p-6">
-                                          {collaborationEmail.subjectLine && (
-                                            <div className="mb-3">
-                                              <div className="text-[11px] font-semibold text-[#92400e] mb-1">Subject Line:</div>
-                                              <div className="text-[14px] font-semibold text-[#78350f]">{collaborationEmail.subjectLine}</div>
-                                            </div>
-                                          )}
-                                          <div className="mb-3">
-                                            <div className="text-[11px] font-semibold text-[#92400e] mb-2">Email Body:</div>
-                                            <div className="text-[14px] text-[#78350f] leading-relaxed whitespace-pre-wrap font-sans">
-                                              {collaborationEmail.emailBody}
-                                            </div>
-                                          </div>
-                                          {collaborationEmail.cta && (
-                                            <div className="pt-3 border-t border-[#f59e0b]">
-                                              <div className="text-[11px] font-semibold text-[#92400e] mb-1">Call to Action:</div>
-                                              <div className="text-[14px] text-[#78350f] font-medium">{collaborationEmail.cta}</div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                  
                                   {/* Publishable Content Section - Collapsible */}
                                   {publishableContent && publishableContent.content && (
                                     <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
@@ -1766,7 +1703,7 @@ export const RecommendationsV3 = () => {
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation(); // Prevent toggle when clicking copy
-                                            navigator.clipboard.writeText(publishableContent.content || '');
+                                            navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''));
                                           }}
                                           className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
                                         >
@@ -1839,7 +1776,7 @@ export const RecommendationsV3 = () => {
                                             <div className={`text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans ${
                                               publishableContent.type === 'video_script' ? 'font-mono' : ''
                                             }`}>
-                                              {publishableContent.content}
+                                              {unescapeNewlines(publishableContent.content)}
                                             </div>
                                           </div>
                                         </div>

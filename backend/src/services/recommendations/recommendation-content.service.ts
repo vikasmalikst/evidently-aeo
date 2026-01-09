@@ -75,6 +75,8 @@ type GeneratedContentJsonV2 = {
     mode: 'post_on_source' | 'pitch_collaboration';
     rationale: string;
   };
+  // Deprecated: we no longer generate collaboration emails, but keep parsing support
+  // for existing stored content.
   collaborationEmail?: {
     subjectLine: string;
     emailBody: string;
@@ -108,6 +110,7 @@ type GeneratedContentJsonV2 = {
 };
 
 type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2;
+type GeneratedAnyJson = GeneratedContentJson | GeneratedGuideJsonV1;
 
 // Cold-start guide format (Step 2/3 for cold_start)
 type GeneratedGuideJsonV1 = {
@@ -275,12 +278,25 @@ Your content should help the customer's brand improve the targeted KPI by execut
     // Build content type
     const contentTypeValue = isYouTube ? 'video_script' : isArticleSite ? 'article' : 'other';
 
-    // Build content description
-    const contentDesc = isYouTube
-      ? 'Structured video script with timing: [Scene 1: Hook 0:00-0:15] Opening hook... [Scene 2: Introduction 0:15-0:45] Introduction... [Scene 3: Main Content 0:45-4:00] Main content... [Scene 4: CTA 4:00-4:30] Call-to-action...'
+    // NOTE: We intentionally avoid putting "placeholder instructions" into the JSON template
+    // for publishableContent.content. The model must fill that field with real content.
+    const contentStyleGuide = isYouTube
+      ? `VIDEO SCRIPT REQUIREMENTS:
+- Output a complete script (not notes), written for an expert but friendly host.
+- Include 4-6 scenes with timestamps (e.g., 0:00-0:15).
+- Include spoken dialogue + on-screen text cues + suggested visuals.
+- No made-up stats; if numbers are required, put them in requiredInputs.`
       : isArticleSite
-        ? 'Full article content ready to publish. Include: Compelling introduction, Well-structured body with clear sections, Conclusion. Keep it 600-800 words, citation-friendly, authoritative.'
-        : 'Content ready to publish, formatted appropriately for the target source';
+        ? `ARTICLE REQUIREMENTS:
+- Output a complete publishable article draft in Markdown, ~900-1200 words.
+- Use a strong angle that matches the recommendation action + KPI + target source.
+- Include these sections with headings: TL;DR, Why this matters, Step-by-step, Checklist, Common mistakes, FAQs, CTA.
+- Ground claims in the provided evidence/metrics where possible. Do NOT invent metrics, quotes, or customer names.
+- CRITICAL: Do NOT introduce any new proper nouns or org names besides the brand and the target source domain. If you need a customer, use "a customer" (anonymous) and list missing specifics in requiredInputs.
+- If the action mentions "case study" but customer details are not provided, write a \"Case Study Kit\" instead: an anonymized case-study skeleton + interview questions + proof checklist (still publishable, but clearly framed as a template).`
+        : `CONTENT REQUIREMENTS:
+- Output a complete publishable draft in the most appropriate format for the target source.
+- Do NOT invent customer names or hard numbers; list missing facts in requiredInputs.`;
 
     // Build metadata template
     const metadataTemplate = isYouTube
@@ -288,11 +304,6 @@ Your content should help the customer's brand improve the targeted KPI by execut
       : isArticleSite
         ? '"h1": "<main heading>", "h2": ["<subheading 1>", "<subheading 2>"], "faq": ["<FAQ 1>"], "snippetSummary": "<summary>"'
         : '';
-
-    // Build collaboration email section
-    const collaborationEmailSection = preferredMode === 'pitch_collaboration'
-      ? '"collaborationEmail": {"subjectLine": "<compelling subject>", "emailBody": "<professional email body, 200-300 words>", "cta": "<clear call-to-action>"},'
-      : '';
 
     // Build content constraints
     const contentConstraints = isYouTube
@@ -373,10 +384,15 @@ CRITICAL: You MUST return ONLY valid JSON. Do NOT include markdown code blocks, 
 SOURCE TYPE: ${sourceTypeDesc}
 
 GOAL:
-- Generate TWO separate sections: (1) Collaboration Email (for pitching/outreach) and (2) Publishable Content (ready to publish/post)
-- For YouTube: Generate video script with scenes and timing
-- For article sites: Generate full article with H1/H2/FAQ structure
-- For collaboration targets: Generate professional email pitch + article content
+- Generate ONE section: Publishable Content (ready to publish/post). Do NOT generate any email or outreach copy.
+- For YouTube: Generate video script with scenes and timing.
+- For article sites: Generate full article with H1/H2/FAQ structure.
+
+OUTPUT RULES (to ensure valid JSON):
+- You MUST escape newlines in any string values using \\n (no literal newlines inside JSON strings).
+- Do NOT use placeholders like [Client], [Company], or <insert>. If a detail is missing, omit it and add it to requiredInputs.
+- Do NOT invent customer names, certifications, study results, or performance claims. If missing, put in requiredInputs.
+- CRITICAL: Do NOT introduce any new brand/company/community names besides the brandName and the citation source domain. Use "a customer" if needed.
 
 STRICT FORMAT v2.0 (must match exactly):
 {
@@ -386,14 +402,13 @@ STRICT FORMAT v2.0 (must match exactly):
   "targetSource": {
     "domain": "${rec.citation_source || ''}",
     "sourceType": "${detectedSourceType}",
-    "mode": "${preferredMode}",
-    "rationale": "<1-2 sentences explaining mode selection>"
+    "mode": "post_on_source",
+    "rationale": "<1-2 sentences explaining why this content format will help achieve the KPI on this source>"
   },
-  ${collaborationEmailSection}
   "publishableContent": {
     "type": "${contentTypeValue}",
     "title": "<compelling title for the content>",
-    "content": "${contentDesc}",
+    "content": "<FULL, READY-TO-PUBLISH DRAFT HERE (escape newlines as \\n)>",
     "metadata": {
       ${metadataTemplate}
     }
@@ -407,10 +422,11 @@ CONSTRAINTS:
 - Do NOT invent clinical studies, certifications, or regulatory claims. Put them under requiredInputs if needed.
 - Do NOT promise outcomes; speak in probabilities.
 - Do NOT mention internal tool/provider names.
-- **CRITICAL**: Do NOT mention any competitor names in the generated content. Do NOT include competitor names in the collaboration email, publishable content, key points, or any other field. Focus solely on the brand's own value proposition, features, and benefits.
+- **CRITICAL**: Do NOT mention any competitor names in the generated content (any field). Focus solely on the brand's own value proposition, features, and benefits.
 - Keep content aligned to the recommendation, KPI, focus area, and citation source.
 ${contentConstraints ? `- ${contentConstraints}` : ''}
-- Collaboration email should be professional, concise, and value-focused.`;
+${contentStyleGuide}
+`;
 
     const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${isColdStartGuide ? guideInstructions : contentInstructions}`;
 
@@ -495,6 +511,39 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
       console.warn('⚠️ [RecommendationContentService] LLM did not return valid JSON. Storing raw response.');
     }
 
+    // If parsed but low quality, do one deterministic rewrite pass (non-cold-start only)
+    const isParsedV2 = parsed && typeof parsed === 'object' && (parsed as any).version === '2.0';
+    const shouldRewriteV2 = !isColdStartGuide && isParsedV2 && this.isLowQualityV2(parsed as any);
+    if (shouldRewriteV2) {
+      console.warn('⚠️ [RecommendationContentService] Detected low-quality v2 content. Attempting one rewrite pass...');
+      const rewritePrompt = `${projectContext}\n\n${recommendationContext}\n\nYou previously generated JSON but it failed quality requirements.\n\nQUALITY REQUIREMENTS (must satisfy all):\n- Do NOT invent any customer/org/community names (no \"Tech Club\" style names). Only mention the brand and the target source domain.\n- Do NOT invent metrics or specific results. If missing, add to requiredInputs.\n- Must be publishable and structured with headings: TL;DR, Why this matters, Step-by-step, Checklist, Common mistakes, FAQs, CTA.\n- Must be Markdown and escape newlines as \\\\n in JSON strings.\n- Keep the same JSON v2.0 schema.\n\nHere is the previous JSON:\n${JSON.stringify(parsed, null, 2)}\n\nReturn ONLY the corrected JSON object.`;
+
+      try {
+        const orRewrite = await openRouterCollectorService.executeQuery({
+          collectorType: 'content',
+          prompt: rewritePrompt,
+          maxTokens: 2600,
+          temperature: 0.2,
+          topP: 0.9,
+          enableWebSearch: false
+        });
+        const rewritten = orRewrite.response || null;
+        if (rewritten) {
+          const rewrittenParsed = this.parseGeneratedContentJson(rewritten);
+          if (rewrittenParsed && (rewrittenParsed as any).version === '2.0') {
+            console.log('✅ [RecommendationContentService] Rewrite pass succeeded');
+            // Prefer rewritten
+            (parsed as any).publishableContent = (rewrittenParsed as any).publishableContent;
+            (parsed as any).keyPoints = (rewrittenParsed as any).keyPoints;
+            (parsed as any).requiredInputs = (rewrittenParsed as any).requiredInputs;
+            (parsed as any).complianceNotes = (rewrittenParsed as any).complianceNotes;
+          }
+        }
+      } catch (e) {
+        console.error('❌ [RecommendationContentService] Rewrite pass failed:', e);
+      }
+    }
+
     const now = new Date().toISOString();
 
     const { data: inserted, error: insertError } = await supabaseAdmin
@@ -514,7 +563,13 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
           source: rec.citation_source,
           kpi: rec.kpi,
           focus_area: rec.focus_area,
-          format: parsed ? (parsed.version === '2.0' ? 'json_v2' : 'json_v1') : 'raw_text',
+          format: parsed
+            ? ((parsed as any).version === '2.0'
+                ? 'json_v2'
+                : (parsed as any).version === 'guide_v1'
+                  ? 'guide_v1'
+                  : 'json_v1')
+            : 'raw_text',
           raw_response: parsed ? content : undefined
         },
         created_at: now,
@@ -576,7 +631,7 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
     }
   }
 
-  private parseGeneratedContentJson(raw: string): GeneratedContentJson | null {
+  private parseGeneratedContentJson(raw: string): GeneratedAnyJson | null {
     if (!raw || typeof raw !== 'string') return null;
 
     // Strategy 1: Try direct JSON parse
@@ -843,6 +898,36 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
     return null;
   }
 
+  private isLowQualityV2(parsed: any): boolean {
+    try {
+      const publishable = parsed?.publishableContent;
+      const content = String(publishable?.content || '');
+      const title = String(publishable?.title || '');
+
+      // Too short / obviously not a full draft
+      if (content.length < 1200) return true;
+
+      // Placeholder-ish artifacts
+      if (/\[[^\]]+\]/.test(content) || /<[^>]+>/.test(content) || /\bTBD\b/i.test(content)) return true;
+
+      // Must contain key headings (case-insensitive)
+      const mustHave = ['tl;dr', 'why this matters', 'step-by-step', 'checklist', 'common mistakes', 'faq', 'cta'];
+      const lower = `${title}\n${content}`.toLowerCase();
+      const missing = mustHave.filter(h => !lower.includes(h));
+      if (missing.length >= 2) return true;
+
+      // Avoid introducing new org/community names (best-effort heuristic)
+      // If the draft says "Case Study: X's Journey" and X is not the brand name, likely fabricated.
+      const brandName = String(parsed?.brandName || '').toLowerCase();
+      const caseStudyTitle = title.toLowerCase();
+      if (caseStudyTitle.includes('case study:') && brandName && !caseStudyTitle.includes(brandName)) return true;
+
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
   private isValidGeneratedContent(parsed: any): boolean {
     if (!parsed || typeof parsed !== 'object') return false;
     
@@ -875,7 +960,7 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
     return false;
   }
 
-  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedGuideJsonV1>): GeneratedContentJson | GeneratedGuideJsonV1 {
+  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedGuideJsonV1>): GeneratedAnyJson {
     const version = parsed.version || '1.0';
 
     // Handle guide_v1 (cold-start implementation guides)
@@ -898,11 +983,12 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
     
     // Handle v1.0 format (backward compatibility)
     if (version === '1.0') {
-      const keyPoints = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
+      const p1 = parsed as Partial<GeneratedContentJsonV1>;
+      const keyPoints = Array.isArray(p1.keyPoints) ? p1.keyPoints : [];
       const h2 = Array.isArray((parsed as any).seoAeo?.h2) ? (parsed as any).seoAeo.h2 : [];
       const faq = Array.isArray((parsed as any).seoAeo?.faq) ? (parsed as any).seoAeo.faq : [];
-      const requiredInputs = Array.isArray(parsed.requiredInputs) ? parsed.requiredInputs : [];
-      const complianceNotes = Array.isArray(parsed.complianceNotes) ? parsed.complianceNotes : [];
+      const requiredInputs = Array.isArray(p1.requiredInputs) ? p1.requiredInputs : [];
+      const complianceNotes = Array.isArray(p1.complianceNotes) ? p1.complianceNotes : [];
 
       return {
         version: '1.0',
@@ -935,11 +1021,10 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
     }
     
     // Handle v2.0 format
-    const keyPoints = Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [];
-    const requiredInputs = Array.isArray(parsed.requiredInputs) ? parsed.requiredInputs : [];
-    const complianceNotes = Array.isArray(parsed.complianceNotes) ? parsed.complianceNotes : [];
-    
     const v2Parsed = parsed as Partial<GeneratedContentJsonV2>;
+    const keyPoints = Array.isArray(v2Parsed.keyPoints) ? v2Parsed.keyPoints : [];
+    const requiredInputs = Array.isArray(v2Parsed.requiredInputs) ? v2Parsed.requiredInputs : [];
+    const complianceNotes = Array.isArray(v2Parsed.complianceNotes) ? v2Parsed.complianceNotes : [];
     const publishableContent = v2Parsed.publishableContent || {} as any;
     const metadata = publishableContent.metadata || {};
     

@@ -26,6 +26,7 @@ export interface BrandOnboardingData {
   }>;
   ai_models?: string[];
   metadata?: Record<string, any>;
+  enrichment_data?: BrandProductsEnrichment;
 }
 
 export interface BrandResponse {

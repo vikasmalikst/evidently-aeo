@@ -1845,7 +1845,7 @@ export class ConsolidatedScoringService {
           citations, 
           urls, 
           topic,
-          consolidated_analysis_cache!inner(collector_result_id)
+          consolidated_analysis_cache(collector_result_id)
         `)
         .or('scoring_status.neq.completed,scoring_status.is.null')
         .not('raw_answer', 'is', null);
@@ -1901,6 +1901,115 @@ export class ConsolidatedScoringService {
             const lastError = result.errors[result.errors.length - 1]?.error || 'Failed to process cached analysis';
             await this.markCollectorResultError(collectorResult.id, lastError);
             console.log(`❌ Failed to backfill ${collectorResult.id}: ${lastError}`);
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.error(`❌ Error backfilling ${collectorResult.id}:`, errorMsg);
+          result.errors.push({ 
+            collectorResultId: collectorResult.id, 
+            error: errorMsg 
+          });
+          await this.markCollectorResultError(collectorResult.id, errorMsg);
+        }
+      }
+
+      console.log(`\n✨ Backfill complete! Processed ${result.processed} results.`);
+      return result;
+    } catch (error) {
+      console.error('❌ Backfill operation failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Backfill scoring for a specific brand and time period.
+   * Resets status to pending and re-runs scoring using cached analysis.
+   */
+  async backfillScoringForPeriod(brandId: string, startDate: string, endDate: string): Promise<ConsolidatedScoringResult> {
+    console.log(`\n🔄 Starting scoring backfill for brand ${brandId} from ${startDate} to ${endDate}...`);
+
+    const result: ConsolidatedScoringResult = {
+      processed: 0,
+      positionsProcessed: 0,
+      sentimentsProcessed: 0,
+      citationsProcessed: 0,
+      errors: [],
+      metrics: {
+        totalCitations: 0,
+        cachedCitations: 0,
+        totalOccurrences: 0,
+        cachedOccurrences: 0,
+      },
+    };
+
+    try {
+      // 1. Find collector_results in the time range with cached analysis
+      const { data: resultsToProcess, error: fetchError } = await this.supabase
+        .from('collector_results')
+        .select(`
+          id, 
+          customer_id, 
+          brand_id, 
+          query_id, 
+          question, 
+          execution_id, 
+          collector_type, 
+          raw_answer, 
+          brand, 
+          competitors, 
+          created_at, 
+          metadata, 
+          citations, 
+          urls, 
+          topic,
+          consolidated_analysis_cache!inner(collector_result_id)
+        `)
+        .eq('brand_id', brandId)
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .not('raw_answer', 'is', null)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch results for backfill: ${fetchError.message}`);
+      }
+
+      if (!resultsToProcess || resultsToProcess.length === 0) {
+        console.log('✅ No collector results found with cached analysis for this period');
+        return result;
+      }
+
+      console.log(`📂 Found ${resultsToProcess.length} collector results to backfill`);
+
+      // 2. Process each result
+      let processedCount = 0;
+      for (const collectorResult of resultsToProcess) {
+        processedCount++;
+        try {
+          console.log(`\n🛠️ Backfilling collector_result ${collectorResult.id}...`);
+          
+          // Reset status to pending to force re-processing
+          await this.supabase
+            .from('collector_results')
+            .update({ scoring_status: 'pending' })
+            .eq('id', collectorResult.id);
+
+          const success = await this.processSingleResultWithBatching(
+            collectorResult,
+            collectorResult.brand_id,
+            collectorResult.customer_id,
+            result,
+            processedCount,
+            resultsToProcess.length
+          );
+
+          if (success) {
+            await this.markCollectorResultCompleted(collectorResult.id);
+            console.log(`✅ Successfully backfilled ${collectorResult.id}`);
+          } else {
+             const lastError = result.errors[result.errors.length - 1]?.error || 'Failed to process';
+             await this.markCollectorResultError(collectorResult.id, lastError);
+             console.log(`❌ Failed to backfill ${collectorResult.id}: ${lastError}`);
           }
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);

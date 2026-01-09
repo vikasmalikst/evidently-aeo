@@ -23,6 +23,8 @@ type NormalizedCompetitor = {
   source?: string;
 };
 
+import { brandProductEnrichmentService } from './onboarding/brand-product-enrichment.service';
+
 export class BrandService {
   private parseFiniteNumber(value: any): number | null {
     if (value === null || value === undefined) return null;
@@ -859,6 +861,25 @@ export class BrandService {
           brandData_keys: Object.keys(brandData),
           metadata_keys: (brandData as any).metadata ? Object.keys((brandData as any).metadata) : 'no metadata'
         });
+      }
+
+      // 🎯 PHASE 4.5: Store Enrichment Data (Synchronous)
+      // If enrichment data is provided in the request, save it immediately.
+      // This ensures that subsequent scoring/collection steps have access to this critical data.
+      if (brandData.enrichment_data) {
+        console.log(`💾 Saving provided enrichment data for brand ${newBrand.id}...`);
+        try {
+          await brandProductEnrichmentService.saveEnrichmentToDatabase(
+            newBrand.id, 
+            brandData.enrichment_data,
+            (msg) => console.log(`[EnrichmentStorage] ${msg}`)
+          );
+          console.log(`✅ Enrichment data saved successfully for brand ${newBrand.id}`);
+        } catch (enrichmentError) {
+          console.error(`❌ Failed to save enrichment data for brand ${newBrand.id}:`, enrichmentError);
+          // User Requirement: If enrichment data can't be stored, do not proceed.
+          throw new DatabaseError(`Failed to save enrichment data: ${enrichmentError instanceof Error ? enrichmentError.message : 'Unknown error'}`);
+        }
       }
 
       // 🎯 PHASE 5: Trigger scoring for new brand (position extraction, sentiment scoring, citation extraction)

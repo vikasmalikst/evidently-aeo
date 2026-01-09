@@ -129,6 +129,21 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
       const message = error instanceof Error ? error.message : 'Failed to generate products and synonyms';
       console.error(message, error);
       setEnrichmentError(message);
+      
+      // On error, initialize empty enrichment to allow manual entry
+      // This ensures the user is not blocked if the LLM call fails
+      const emptyEnrichment: BrandProductsEnrichment = {
+        brand: { synonyms: [], products: [] },
+        competitors: Object.fromEntries(
+          competitorNames.map((name) => [
+            name,
+            { synonyms: [], products: [] }
+          ])
+        ),
+      };
+      setEnrichment(emptyEnrichment);
+      setEditedEnrichment(emptyEnrichment);
+      setDraftInitialized(false);
     } finally {
       setIsSubmitting(false);
       setLoadingMessage(null);

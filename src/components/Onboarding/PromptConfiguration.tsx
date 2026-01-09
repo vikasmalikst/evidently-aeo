@@ -1,4 +1,4 @@
-import { IconInfoCircle, IconPlus, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { IconInfoCircle, IconPlus, IconChevronDown, IconChevronUp, IconX, IconCheck } from '@tabler/icons-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Topic } from '../../types/topic';
 import type { OnboardingCompetitor } from '../../types/onboarding';
@@ -29,6 +29,10 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
   const [promptsByTopic, setPromptsByTopic] = useState<Record<string, string[]>>({});
   const [loadingTopics, setLoadingTopics] = useState<Set<string>>(new Set());
   const topicRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Inline custom prompt state
+  const [inlineInputTopicId, setInlineInputTopicId] = useState<string | null>(null);
+  const [inlineInputText, setInlineInputText] = useState('');
 
   const prefetchTopicPrompts = useCallback(async (topicIds: string[]) => {
     const topicsToFetch = topicIds.filter(
@@ -191,6 +195,40 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
     setSelectedTopicForCustom('');
   };
 
+  const handleStartInlineAdd = (topicId: string) => {
+    if (!expandedTopics.has(topicId)) {
+      toggleTopic(topicId);
+    }
+    setInlineInputTopicId(topicId);
+    setInlineInputText('');
+  };
+
+  const handleSaveInlineAdd = () => {
+    if (!inlineInputTopicId || !inlineInputText.trim()) return;
+
+    const topic = selectedTopics.find(t => t.id === inlineInputTopicId);
+    if (!topic) return;
+
+    const promptText = inlineInputText.trim();
+    
+    // Add to custom prompts if not exists
+    if (!selectedPrompts.some(p => p.prompt === promptText && p.topic === topic.name)) {
+      setCustomPromptsByTopic(prev => ({
+        ...prev,
+        [inlineInputTopicId]: [...(prev[inlineInputTopicId] || []), promptText]
+      }));
+      onPromptsChange([...selectedPrompts, { prompt: promptText, topic: topic.name }]);
+    }
+
+    setInlineInputTopicId(null);
+    setInlineInputText('');
+  };
+
+  const handleCancelInlineAdd = () => {
+    setInlineInputTopicId(null);
+    setInlineInputText('');
+  };
+
   const getSelectedCountForTopic = (topic: Topic): number => {
     return selectedPrompts.filter(p => p.topic === topic.name).length;
   };
@@ -351,6 +389,27 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
                   )}
                 </div>
                 <div className="prompt-topic-header-right">
+                  <button
+                    className="prompt-icon-button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartInlineAdd(topic.id);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      borderRadius: '4px',
+                      marginRight: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      color: 'var(--accent500)',
+                    }}
+                    title="Add custom prompt for this topic"
+                  >
+                    <IconPlus size={18} />
+                  </button>
                   {isLoading ? (
                     <span className="onboarding-spinner onboarding-spinner--small" style={{ 
                       width: '16px', 
@@ -380,6 +439,51 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
               
               {isExpanded && !isLoading && (
                 <div className="prompt-topic-content">
+                  {inlineInputTopicId === topic.id && (
+                    <div className="prompt-custom-input-wrapper" style={{ marginBottom: '16px' }}>
+                      <input
+                        type="text"
+                        className="prompt-custom-input"
+                        placeholder="Enter custom prompt..."
+                        value={inlineInputText}
+                        onChange={(e) => setInlineInputText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveInlineAdd();
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            handleCancelInlineAdd();
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleSaveInlineAdd}
+                        disabled={!inlineInputText.trim()}
+                        className="prompt-add-button"
+                        style={{ padding: '8px 12px' }}
+                        title="Save prompt"
+                      >
+                        <IconCheck size={18} />
+                      </button>
+                      <button
+                        onClick={handleCancelInlineAdd}
+                        className="prompt-add-button"
+                        style={{ 
+                          padding: '8px 12px', 
+                          background: 'var(--bg-secondary)', 
+                          color: 'var(--text-body)', 
+                          border: '1px solid var(--border-default)', 
+                          boxShadow: 'none' 
+                        }}
+                        title="Cancel"
+                      >
+                        <IconX size={18} />
+                      </button>
+                    </div>
+                  )}
+
                   {topicPrompts.length === 0 ? (
                     <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
                       No prompts available for this topic. Try adding a custom prompt.

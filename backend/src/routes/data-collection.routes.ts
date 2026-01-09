@@ -6,6 +6,7 @@
 import { Router, Request, Response } from 'express';
 import { dataCollectionService, QueryExecutionRequest } from '../services/data-collection/data-collection.service';
 import { priorityCollectorService } from '../services/data-collection/priority-collector.service';
+import { brandProductEnrichmentService } from '../services/onboarding/brand-product-enrichment.service';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
@@ -50,6 +51,21 @@ router.post('/execute', async (req: Request, res: Response) => {
         success: false,
         error: 'Brand ID is required and must be a valid UUID'
       });
+    }
+
+    // Ensure brand enrichment (synonyms/products) exists before data collection
+    // This is critical for scoring accuracy
+    try {
+      const hasEnrichment = await brandProductEnrichmentService.hasEnrichment(brandId);
+      if (!hasEnrichment) {
+        console.log(`⚠️ Enrichment missing for brand ${brandId} during data collection trigger. Running enrichment now...`);
+        // We await this to ensure data is present before collectors run
+        // This fixes the race condition where scoring fails due to missing product data
+        await brandProductEnrichmentService.enrichBrand(brandId, (msg) => console.log(`[LazyEnrichment] ${msg}`));
+      }
+    } catch (enrichError) {
+      console.warn(`⚠️ Lazy enrichment failed for brand ${brandId}, proceeding anyway (scoring may be degraded):`, enrichError);
+      // We don't block execution if enrichment fails, but we log it
     }
 
     // Temporarily bypass auth - use a default customer ID

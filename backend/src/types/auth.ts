@@ -91,6 +91,16 @@ export interface BrandOnboardingRequest {
   ai_models?: string[]; // Selected AI models (chatgpt, perplexity, gemini, etc.)
   status?: 'active' | 'inactive';
   metadata?: Record<string, any>; // Additional metadata
+  enrichment_data?: {
+    brand: {
+      synonyms: string[];
+      products: string[];
+    };
+    competitors: Record<string, {
+      synonyms: string[];
+      products: string[];
+    }>;
+  };
 }
 
 export interface BrandOnboardingResponse {

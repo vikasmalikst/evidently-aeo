@@ -153,13 +153,49 @@ app.get('/', (_req, res) => {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start server
+// Start server with error handling
 const PORT = config.port;
-app.listen(PORT, () => {
-  console.log(`🚀 AnswerIntel Backend running on port ${PORT}`);
-  console.log(`📊 Environment: ${config.nodeEnv}`);
-  console.log(`🔗 CORS enabled for: ${config.cors.origin}`);
-  console.log(`📝 API Documentation: http://localhost:${PORT}/api`);
-});
+
+try {
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 AnswerIntel Backend running on port ${PORT}`);
+    console.log(`📊 Environment: ${config.nodeEnv}`);
+    console.log(`🔗 CORS enabled for: ${config.cors.origin}`);
+    console.log(`📝 API Documentation: http://localhost:${PORT}/api`);
+  });
+
+  // Handle server errors
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} is already in use`);
+      console.error('   Please stop the process using this port or change the PORT environment variable');
+    } else {
+      console.error('❌ Server error:', error);
+    }
+    process.exit(1);
+  });
+
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (error: Error) => {
+    console.error('❌ Uncaught Exception:', error);
+    console.error(error.stack);
+    process.exit(1);
+  });
+
+  // Handle unhandled promise rejections
+  process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
+    console.error('❌ Unhandled Rejection at:', promise);
+    console.error('❌ Reason:', reason);
+    process.exit(1);
+  });
+
+} catch (error) {
+  console.error('❌ Failed to start server:', error);
+  if (error instanceof Error) {
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Stack trace:', error.stack);
+  }
+  process.exit(1);
+}
 
 export default app;

@@ -80,7 +80,12 @@ if (missingVars.length > 0) {
   console.error('❌ ERROR: Missing required environment variables:', missingVars.join(', '));
   if (loadedPath) {
     console.error('   Check your .env file at:', loadedPath);
+  } else {
+    console.error('   .env file was not found. Expected locations:');
+    envPaths.forEach(p => console.error('     -', p));
   }
+  console.error('   Backend will NOT start without these variables!');
+  // Don't exit - let PM2 show the error, but mark vars as missing for later check
 } else {
   // Log success (to stderr so PM2 shows it)
   console.error('✅ All required environment variables loaded successfully');

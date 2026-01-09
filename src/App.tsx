@@ -20,6 +20,7 @@ import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2';
 import MoversAndShakers from './pages/MoversAndShakers';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
+import { DomainReadinessPage } from './pages/DomainReadiness/DomainReadinessPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
@@ -98,6 +99,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/domain-readiness"
+          element={
+            <ProtectedRoute>
+              <DomainReadinessPage />
             </ProtectedRoute>
           }
         />

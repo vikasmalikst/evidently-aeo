@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconLayoutDashboard, IconTargetArrow, IconSparkles } from '@tabler/icons-react';
+import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconLayoutDashboard, IconTargetArrow, IconSparkles, IconShieldCheck } from '@tabler/icons-react';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../lib/auth';
 import { useManualBrandDashboard } from '../../manual-dashboard';
@@ -19,6 +19,7 @@ const navItems: NavItem[] = [
   { icon: IconFolderSearch, label: 'Topics', path: '/topics' },
   { icon: IconForms, label: 'Prompts', path: '/prompts' },
   { icon: IconKey, label: 'Keywords', path: '/keywords' },
+  { icon: IconShieldCheck, label: 'Domain Readiness', path: '/domain-readiness' },
   { icon: IconSparkles, label: 'Recommendations', path: '/recommendations' },
 ];
 

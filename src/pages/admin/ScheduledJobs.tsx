@@ -240,6 +240,13 @@ export const ScheduledJobs = () => {
   const [testLoading, setTestLoading] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
 
+  // Backfill Scoring state
+  const [showBackfillModal, setShowBackfillModal] = useState(false);
+  const [backfillStartDate, setBackfillStartDate] = useState('');
+  const [backfillEndDate, setBackfillEndDate] = useState('');
+  const [scoringBackfillRunning, setScoringBackfillRunning] = useState(false);
+  const [scoringBackfillLogs, setScoringBackfillLogs] = useState<Array<{ ts: string; message: string }>>([]);
+
   // Get customer_id from auth store or fetch from brand
   const authUser = useAuthStore((state) => state.user);
 
@@ -724,6 +731,83 @@ export const ScheduledJobs = () => {
     }
   };
 
+  const handleOpenBackfillModal = () => {
+    if (!selectedBrandId) {
+      alert('Please select a brand first');
+      return;
+    }
+    setScoringBackfillLogs([]);
+    setShowBackfillModal(true);
+  };
+
+  const handleRunBackfillScoring = async () => {
+    if (!selectedBrandId || !backfillStartDate || !backfillEndDate) {
+      alert('Please select a brand and both start and end dates');
+      return;
+    }
+
+    if (!confirm(`Run scoring backfill for ${brands.find(b => b.id === selectedBrandId)?.name} from ${backfillStartDate} to ${backfillEndDate}? This will use existing cached analysis.`)) {
+      return;
+    }
+
+    setScoringBackfillRunning(true);
+    setScoringBackfillLogs([]);
+    
+    try {
+      const response = await fetch(`${apiClient.baseUrl}/admin/brands/${selectedBrandId}/backfill-scoring`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiClient.getAccessToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: backfillStartDate,
+          endDate: backfillEndDate,
+        }),
+      });
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Failed to read response stream');
+
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ')) {
+            try {
+              const dataStr = trimmedLine.substring(6);
+              if (dataStr === '[DONE]') {
+                setScoringBackfillRunning(false);
+                break;
+              }
+              if (dataStr === '[ERROR]') {
+                setScoringBackfillRunning(false);
+                break;
+              }
+
+              const data = JSON.parse(dataStr);
+              if (data.message) {
+                setScoringBackfillLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), message: data.message }]);
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Backfill error:', error);
+      setScoringBackfillLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), message: `Error: ${error instanceof Error ? error.message : 'Failed to connect'}` }]);
+      setScoringBackfillRunning(false);
+    }
+  };
+
   const handleBackfillRawAnswers = () => {
     if (
       !confirm(
@@ -1060,9 +1144,104 @@ export const ScheduledJobs = () => {
                 </div>
               ) : null}
             </div>
+
+            {/* Scoring Backfill Panel */}
+            <div className="mt-4 bg-white p-4 rounded border border-teal-200">
+              <h4 className="font-medium text-gray-900 mb-2">Backfill Scoring</h4>
+              <p className="text-sm text-gray-600 mb-3">
+                Re-calculate scores for a specific time period using cached analysis (no LLM cost)
+              </p>
+              <button
+                onClick={handleOpenBackfillModal}
+                disabled={collecting || scoring || backfillRunning || scoringBackfillRunning}
+                className="w-full px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {scoringBackfillRunning ? 'Backfilling Scoring...' : 'Start Scoring Backfill'}
+              </button>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Backfill Scoring Modal */}
+      {showBackfillModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3 text-center">
+              <h3 className="text-lg leading-6 font-medium text-gray-900">Backfill Scoring</h3>
+              <div className="mt-2 px-7 py-3">
+                <p className="text-sm text-gray-500 mb-4">
+                  Select time period for {brands.find(b => b.id === selectedBrandId)?.name}.
+                  This will re-run scoring using existing analysis data.
+                </p>
+                <div className="mb-4 text-left">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                    value={backfillStartDate}
+                    onChange={(e) => setBackfillStartDate(e.target.value)}
+                  />
+                </div>
+                <div className="mb-4 text-left">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                    value={backfillEndDate}
+                    onChange={(e) => setBackfillEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="items-center px-4 py-3">
+                <button
+                  onClick={handleRunBackfillScoring}
+                  disabled={scoringBackfillRunning || !backfillStartDate || !backfillEndDate}
+                  className="px-4 py-2 bg-teal-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-300 disabled:opacity-50 mb-2"
+                >
+                  {scoringBackfillRunning ? 'Running...' : 'Start Backfill'}
+                </button>
+                <button
+                  onClick={() => setShowBackfillModal(false)}
+                  disabled={scoringBackfillRunning}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(scoringBackfillRunning || scoringBackfillLogs.length > 0) && (
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-bold text-gray-900">Scoring Backfill Logs</h2>
+            <button
+              onClick={() => setScoringBackfillLogs([])}
+              disabled={scoringBackfillRunning || scoringBackfillLogs.length === 0}
+              className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="h-64 overflow-auto border rounded bg-gray-900 text-teal-400 p-3 font-mono text-xs whitespace-pre-wrap shadow-inner">
+            {scoringBackfillLogs.length === 0
+              ? 'Initializing scoring backfill...'
+              : scoringBackfillLogs.map((l, i) => (
+                  <div key={i} className="mb-1">
+                    <span className="text-gray-500">[{l.ts}]</span> {l.message}
+                  </div>
+                ))}
+            {scoringBackfillRunning && <div className="animate-pulse inline-block w-2 h-4 bg-teal-400 ml-1"></div>}
+          </div>
+        </div>
+      )}
 
       {(enrichmentRunning || enrichmentLogs.length > 0) && (
         <div className="bg-white rounded-lg shadow p-4 mb-6">

@@ -2005,4 +2005,57 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
   }
 });
 
+/**
+ * POST /api/admin/brands/:brandId/backfill-scoring
+ * Trigger scoring backfill for a specific brand and time period
+ */
+router.post('/brands/:brandId/backfill-scoring', async (req: Request, res: Response) => {
+  const { brandId } = req.params;
+  const { startDate, endDate } = req.body;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+
+  // Set up SSE for real-time logging
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendLog = (message: string) => {
+    const data = JSON.stringify({ message, timestamp: new Date().toISOString() });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  try {
+    sendLog(`🚀 Starting scoring backfill for brand ${brandId}...`);
+    sendLog(`📅 Period: ${startDate} to ${endDate}`);
+
+    const result = await consolidatedScoringService.backfillScoringForPeriod(brandId, startDate, endDate);
+
+    sendLog(`\n✨ Backfill complete!`);
+    sendLog(`Processed: ${result.processed}`);
+    sendLog(`Positions: ${result.positionsProcessed}`);
+    sendLog(`Sentiments: ${result.sentimentsProcessed}`);
+    sendLog(`Citations: ${result.citationsProcessed}`);
+    sendLog(`Errors: ${result.errors.length}`);
+
+    if (result.errors.length > 0) {
+      sendLog(`\n❌ Errors occurred:`);
+      result.errors.forEach(err => {
+        sendLog(`- Result ${err.collectorResultId}: ${err.error}`);
+      });
+    }
+
+    res.write(`data: [DONE]\n\n`);
+    res.end();
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('Error in backfill scoring:', error);
+    sendLog(`❌ Critical error: ${errorMsg}`);
+    res.write(`data: [ERROR]\n\n`);
+    res.end();
+  }
+});
+
 export default router;

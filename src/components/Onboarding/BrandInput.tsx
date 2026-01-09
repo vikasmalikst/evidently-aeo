@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, ChevronDown } from 'lucide-react';
 import { Input } from './common/Input';
 import { Spinner } from './common/Spinner';
 import { fetchBrandIntel } from '../../api/onboardingApi';
 import { searchBrand } from '../../api/brandApi';
+import { getBrightdataCountries, type BrightdataCountry } from '../../api/promptManagementApi';
 import type { OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 import { SafeLogo } from './common/SafeLogo';
+import { CountryFlag } from '../CountryFlag';
 
 interface BrandInputProps {
   onSuccess: (brand: OnboardingBrand, competitors: OnboardingCompetitor[]) => void;
@@ -23,12 +25,57 @@ export const BrandInput = ({
   onAnalysisComplete,
 }: BrandInputProps) => {
   const [input, setInput] = useState(externalInput || '');
+  const [url, setUrl] = useState('');
+  const [country, setCountry] = useState('US');
+  const [countries, setCountries] = useState<BrightdataCountry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
   const [logoDomain, setLogoDomain] = useState('');
   const [brandPreview, setBrandPreview] = useState<OnboardingBrand | null>(null);
+  const [isCountryOpen, setIsCountryOpen] = useState(false);
+  const countryDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (countryDropdownRef.current && !countryDropdownRef.current.contains(event.target as Node)) {
+        setIsCountryOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Fetch countries on mount
+  useEffect(() => {
+    const loadCountries = async () => {
+      try {
+        const fetchedCountries = await getBrightdataCountries();
+        setCountries(fetchedCountries);
+      } catch (err) {
+        console.error('Failed to fetch countries:', err);
+        // Fallback to basic list if fetch fails
+        setCountries([
+          { code: 'US', name: 'United States' },
+          { code: 'GB', name: 'United Kingdom' },
+          { code: 'CA', name: 'Canada' },
+          { code: 'IN', name: 'India' },
+          { code: 'JP', name: 'Japan' },
+          { code: 'CN', name: 'China' },
+          { code: 'KR', name: 'South Korea' },
+          { code: 'AU', name: 'Australia' },
+          { code: 'DE', name: 'Germany' },
+          { code: 'FR', name: 'France' },
+        ]);
+      }
+    };
+    loadCountries();
+  }, []);
 
   // Sync with external input if provided
   useEffect(() => {
@@ -68,7 +115,21 @@ export const BrandInput = ({
 
   const handleSubmit = async () => {
     if (input.trim().length < 2) {
-      setError('Please enter at least 2 characters');
+      setError('Please enter a valid brand name');
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+      return;
+    }
+
+    if (!url.trim()) {
+      setError('Please enter a website URL');
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+      return;
+    }
+
+    if (!country) {
+      setError('Please select a country');
       setShake(true);
       setTimeout(() => setShake(false), 500);
       return;
@@ -84,7 +145,7 @@ export const BrandInput = ({
       
       try {
         const searchResult = await searchBrand({
-          url: isUrl ? input : undefined,
+          url: url || (isUrl ? input : undefined),
           name: !isUrl ? input : undefined,
         });
         
@@ -161,7 +222,11 @@ export const BrandInput = ({
       }
 
       // If brand doesn't exist, use onboarding intel service
-      const response = await fetchBrandIntel(input, { locale: navigator.language, country: 'US' });
+      const response = await fetchBrandIntel(input, { 
+        locale: navigator.language, 
+        country: country,
+        url: url 
+      });
 
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Unable to resolve brand details');
@@ -215,14 +280,111 @@ export const BrandInput = ({
             className={`onboarding-form ${shake ? 'onboarding-form--shake' : ''}`}
           >
             <div className="onboarding-input-with-logo">
-              <Input
-                type="text"
-                placeholder="Enter your brand name or website"
-                value={input}
-                onChange={(e) => handleInputChange(e.target.value)}
-                error={error}
-                autoFocus
-              />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '16px', alignItems: 'start' }}>
+                <Input
+                  type="text"
+                  placeholder="Enter your brand name"
+                  value={input}
+                  onChange={(e) => handleInputChange(e.target.value)}
+                  error={error}
+                  autoFocus
+                  label="Brand Name"
+                />
+
+                <div className="onboarding-input-wrapper" ref={countryDropdownRef} style={{ position: 'relative' }}>
+                  <label className="onboarding-input-label">Country</label>
+                  <div
+                    className="onboarding-input"
+                    onClick={() => setIsCountryOpen(!isCountryOpen)}
+                    style={{
+                      height: '48px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      paddingRight: '12px',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CountryFlag countryCode={country} />
+                      <span>{country}</span>
+                    </div>
+                    <ChevronDown size={16} className={`transition-transform duration-200 ${isCountryOpen ? 'rotate-180' : ''}`} />
+                  </div>
+
+                  {isCountryOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        maxHeight: '240px',
+                        overflowY: 'auto',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-default)',
+                        borderRadius: '8px',
+                        marginTop: '4px',
+                        zIndex: 10,
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+                      }}
+                    >
+                      {countries.length > 0 ? (
+                        countries.map((c) => (
+                          <div
+                            key={c.code}
+                            onClick={() => {
+                              setCountry(c.code);
+                              setIsCountryOpen(false);
+                            }}
+                            title={c.name}
+                            style={{
+                              padding: '8px 8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              cursor: 'pointer',
+                              background: country === c.code ? 'var(--bg-secondary)' : 'transparent',
+                              fontSize: '14px',
+                              transition: 'background-color 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (country !== c.code) e.currentTarget.style.background = 'var(--bg-secondary)';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (country !== c.code) e.currentTarget.style.background = 'transparent';
+                            }}
+                          >
+                            <CountryFlag countryCode={c.code} />
+                            <span style={{ fontWeight: 500, minWidth: '24px' }}>{c.code}</span>
+                            <span style={{ 
+                              color: '#64748b', 
+                              fontSize: '12px', 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis', 
+                              whiteSpace: 'nowrap' 
+                            }}>{c.name}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontSize: '14px' }}>Loading...</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div style={{ marginTop: '16px' }}>
+                <Input
+                  type="url"
+                  placeholder="e.g. brand.com"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  label="Website URL"
+                  error={error}
+                />
+              </div>
             </div>
           </form>
 

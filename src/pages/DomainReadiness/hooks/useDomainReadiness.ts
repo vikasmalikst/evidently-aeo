@@ -1,0 +1,280 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { domainReadinessApi, type DomainReadinessStreamEvent } from '../../../api/domainReadinessApi';
+import { AeoAuditResult, BotAccessStatus, TestResult } from '../types/types';
+import { useManualBrandDashboard } from '../../../manual-dashboard/useManualBrandDashboard';
+
+type DomainReadinessBucket = 'technicalCrawlability' | 'contentQuality' | 'semanticStructure' | 'accessibilityAndBrand' | 'botAccess';
+
+type DomainReadinessProgress = {
+  active: boolean;
+  total: number;
+  completed: number;
+  buckets: Record<DomainReadinessBucket, { total: number; completed: number }>;
+};
+
+const createEmptyAudit = (brandId: string, domain: string): AeoAuditResult => ({
+  brandId,
+  domain,
+  timestamp: new Date().toISOString(),
+  overallScore: 0,
+  scoreBreakdown: {
+    technicalCrawlability: 0,
+    contentQuality: 0,
+    semanticStructure: 0,
+    accessibilityAndBrand: 0
+  },
+  detailedResults: {
+    technicalCrawlability: { score: 0, weight: 0.25, tests: [], recommendations: [] },
+    contentQuality: { score: 0, weight: 0.35, tests: [], recommendations: [] },
+    semanticStructure: { score: 0, weight: 0.25, tests: [], recommendations: [] },
+    accessibilityAndBrand: { score: 0, weight: 0.15, tests: [], recommendations: [] }
+  },
+  botAccessStatus: [],
+  criticalIssues: [],
+  improvementPriorities: [],
+  metadata: {
+    auditTrigger: 'manual',
+    executionTimeMs: 0
+  }
+});
+
+const calculateScore = (tests: TestResult[]) => {
+  if (tests.length === 0) return 0;
+  const sum = tests.reduce((acc, t) => acc + t.score, 0);
+  return Math.round(sum / tests.length);
+};
+
+export function useDomainReadiness() {
+  const {
+    brands,
+    isLoading: brandsLoading,
+    error: brandsError,
+    selectedBrandId,
+    selectedBrand,
+    selectBrand,
+    reload: reloadBrands
+  } = useManualBrandDashboard();
+
+  const [audit, setAudit] = useState<AeoAuditResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<DomainReadinessProgress>({
+    active: false,
+    total: 13,
+    completed: 0,
+    buckets: {
+      technicalCrawlability: { total: 5, completed: 0 },
+      contentQuality: { total: 3, completed: 0 },
+      semanticStructure: { total: 2, completed: 0 },
+      accessibilityAndBrand: { total: 2, completed: 0 },
+      botAccess: { total: 1, completed: 0 }
+    }
+  });
+
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setAudit(null);
+    setError(null);
+    setProgress({
+      active: false,
+      total: 13,
+      completed: 0,
+      buckets: {
+        technicalCrawlability: { total: 5, completed: 0 },
+        contentQuality: { total: 3, completed: 0 },
+        semanticStructure: { total: 2, completed: 0 },
+        accessibilityAndBrand: { total: 2, completed: 0 },
+        botAccess: { total: 1, completed: 0 }
+      }
+    });
+  }, [selectedBrandId, selectedBrand?.homepage_url]);
+
+  const fetchLatestAudit = useCallback(async () => {
+    if (!selectedBrandId) {
+      setAudit(null);
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await domainReadinessApi.getLatestAudit(selectedBrandId);
+      if (response.success && response.data) {
+        setAudit(response.data);
+      } else if (response.error) {
+        // If error is "Brand not found" or similar, just set null (no audit yet)
+        setAudit(null);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to fetch audit');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedBrandId]);
+
+  const runAudit = useCallback(async () => {
+    if (!selectedBrandId) {
+      setError('Select a brand to run a domain audit.');
+      return;
+    }
+    
+    streamAbortRef.current?.abort();
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+
+    setLoading(true);
+    setError(null);
+    setProgress({
+      active: true,
+      total: 13,
+      completed: 0,
+      buckets: {
+        technicalCrawlability: { total: 5, completed: 0 },
+        contentQuality: { total: 3, completed: 0 },
+        semanticStructure: { total: 2, completed: 0 },
+        accessibilityAndBrand: { total: 2, completed: 0 },
+        botAccess: { total: 1, completed: 0 }
+      }
+    });
+
+    try {
+      const seedDomain = selectedBrand?.homepage_url || '';
+      setAudit(createEmptyAudit(selectedBrandId, seedDomain));
+
+      const handleEvent = (event: DomainReadinessStreamEvent) => {
+        if (event.type === 'error') {
+          setError(event.error || 'Audit failed');
+          return;
+        }
+
+        if (event.type === 'progress') {
+          setProgress((prev) => {
+            const bucketKey = event.bucket as DomainReadinessBucket;
+            const next = {
+              ...prev,
+              active: true,
+              total: event.total,
+              completed: event.completed,
+              buckets: {
+                ...prev.buckets,
+                [bucketKey]: {
+                  ...prev.buckets[bucketKey],
+                  completed: Math.min(prev.buckets[bucketKey].total, prev.buckets[bucketKey].completed + 1)
+                }
+              }
+            };
+            return next;
+          });
+
+          if (event.bucket === 'botAccess') {
+            const botAccessStatus = event.botAccessStatus as BotAccessStatus[];
+            setAudit((prev) => {
+              if (!prev) return prev;
+              return { ...prev, botAccessStatus };
+            });
+            return;
+          }
+
+          const incomingTests = event.tests as TestResult[];
+          const bucket = event.bucket;
+
+          setAudit((prev) => {
+            if (!prev) return prev;
+
+            const existing = prev.detailedResults[bucket].tests;
+            const nextTests =
+              bucket === 'semanticStructure' && event.analyzer === 'analyzeHtmlStructure'
+                ? incomingTests.filter((t) => t.name !== 'Content Depth')
+                : incomingTests;
+
+            const merged = [...existing, ...nextTests];
+
+            const nextDetailedResults = {
+              ...prev.detailedResults,
+              [bucket]: {
+                ...prev.detailedResults[bucket],
+                tests: merged
+              }
+            } as AeoAuditResult['detailedResults'];
+
+            const techScore = calculateScore(nextDetailedResults.technicalCrawlability.tests);
+            const contentScore = calculateScore(nextDetailedResults.contentQuality.tests);
+            const semanticScore = calculateScore(nextDetailedResults.semanticStructure.tests);
+            const accessScore = calculateScore(nextDetailedResults.accessibilityAndBrand.tests);
+
+            const overallScore = Math.round(
+              techScore * 0.25 + contentScore * 0.35 + semanticScore * 0.25 + accessScore * 0.15
+            );
+
+            return {
+              ...prev,
+              overallScore,
+              scoreBreakdown: {
+                technicalCrawlability: techScore,
+                contentQuality: contentScore,
+                semanticStructure: semanticScore,
+                accessibilityAndBrand: accessScore
+              },
+              detailedResults: {
+                technicalCrawlability: { ...nextDetailedResults.technicalCrawlability, score: techScore },
+                contentQuality: { ...nextDetailedResults.contentQuality, score: contentScore },
+                semanticStructure: { ...nextDetailedResults.semanticStructure, score: semanticScore },
+                accessibilityAndBrand: { ...nextDetailedResults.accessibilityAndBrand, score: accessScore }
+              }
+            };
+          });
+          return;
+        }
+
+        if (event.type === 'final') {
+          setAudit(event.result);
+          setProgress((prev) => ({ ...prev, active: false, completed: prev.total }));
+        }
+      };
+
+      await domainReadinessApi.runAuditStream(selectedBrandId, handleEvent, abortController.signal);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return;
+      }
+      console.error(err);
+      setError(err.message || 'Failed to run audit');
+    } finally {
+      streamAbortRef.current = null;
+      setLoading(false);
+      setProgress((prev) => ({ ...prev, active: false }));
+    }
+  }, [selectedBrandId]);
+
+  useEffect(() => {
+    fetchLatestAudit();
+  }, [fetchLatestAudit]);
+
+  useEffect(() => {
+    if (selectedBrandId) {
+      localStorage.setItem('current_brand_id', selectedBrandId);
+    } else {
+      localStorage.removeItem('current_brand_id');
+    }
+  }, [selectedBrandId]);
+
+  return {
+    brands,
+    brandsLoading,
+    brandsError,
+    selectedBrandId,
+    selectedBrand,
+    selectBrand,
+    reloadBrands,
+    audit,
+    loading,
+    error,
+    progress,
+    runAudit,
+    brandDomain: selectedBrand?.homepage_url || ''
+  };
+}

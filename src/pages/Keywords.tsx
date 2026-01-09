@@ -17,6 +17,7 @@ import { useAuthStore } from '../store/authStore';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { apiClient } from '../lib/apiClient';
 import { useChartResize } from '../hooks/useChartResize';
+import { getLLMIcon } from '../components/Visibility/LLMIcons';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -41,6 +42,14 @@ const COLORS = {
 };
 
 const LLM_PROVIDERS = ['ChatGPT', 'Claude', 'Gemini', 'Perplexity', 'Bing Copilot', 'Grok'];
+const LLM_PROVIDER_TO_COLLECTOR_TYPE: Record<string, string> = {
+  'ChatGPT': 'chatgpt',
+  'Claude': 'claude',
+  'Gemini': 'gemini',
+  'Perplexity': 'perplexity',
+  'Bing Copilot': 'copilot',
+  'Grok': 'grok',
+};
 
 interface KeywordData {
   keyword: string;
@@ -74,6 +83,8 @@ interface KeywordAnalyticsPayload {
   startDate?: string;
   endDate?: string;
 }
+
+type SortKey = 'keyword' | 'searchVolume' | 'ownership';
 
 const getKeywordColor = (keyword: KeywordData): string => {
   if (keyword.categories.includes('brand')) return COLORS.brand;
@@ -320,8 +331,10 @@ export const Keywords = () => {
   const [selectedKeyword, setSelectedKeyword] = useState<KeywordData | null>(null);
   const [showMovement, setShowMovement] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [llmFilter, setLlmFilter] = useState<string>('all');
+  const [selectedLlms, setSelectedLlms] = useState<string[]>([]);
   const [quadrantFilter, setQuadrantFilter] = useState<string>('all');
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const chartRef = useRef<any>(null);
 
   // Fetch real keyword analytics
@@ -329,8 +342,17 @@ export const Keywords = () => {
     const fetchKeywords = async () => {
       if (authLoading || brandsLoading || !selectedBrandId) return;
       setLoading(true);
+      setKeywordData([]);
       try {
         const params = new URLSearchParams();
+        if (selectedLlms.length > 0) {
+          const collectorTypes = selectedLlms
+            .map((llm) => LLM_PROVIDER_TO_COLLECTOR_TYPE[llm] || llm)
+            .filter((t) => t.trim().length > 0);
+          if (collectorTypes.length > 0) {
+            params.set('collectorTypes', collectorTypes.join(','));
+          }
+        }
         // optional: add date range later
         const endpoint = `/brands/${selectedBrandId}/keywords?${params.toString()}`;
         const response = await apiClient.request<ApiResponse<KeywordAnalyticsPayload>>(endpoint);
@@ -374,16 +396,55 @@ export const Keywords = () => {
       }
     };
     fetchKeywords();
-  }, [authLoading, brandsLoading, selectedBrandId]);
+  }, [authLoading, brandsLoading, selectedBrandId, selectedLlms]);
 
   const filteredData = useMemo(() => {
     return keywordData.filter((kw) => {
       if (categoryFilter !== 'all' && !kw.categories.includes(categoryFilter as any)) return false;
-      if (llmFilter !== 'all' && !kw.llmProviders.includes(llmFilter)) return false;
+      if (selectedLlms.length > 0) {
+        const matchesSelectedLlm = selectedLlms.some((selected) => {
+          const selectedCompact = selected.toLowerCase().replace(/[\s_-]/g, '');
+          return kw.llmProviders.some((provider) => {
+            const providerCompact = provider.toLowerCase().replace(/[\s_-]/g, '');
+            return providerCompact === selectedCompact || providerCompact.includes(selectedCompact) || selectedCompact.includes(providerCompact);
+          });
+        });
+        if (!matchesSelectedLlm) return false;
+      }
       if (quadrantFilter !== 'all' && getQuadrant(kw) !== quadrantFilter) return false;
       return true;
     });
-  }, [keywordData, categoryFilter, llmFilter, quadrantFilter]);
+  }, [keywordData, categoryFilter, selectedLlms, quadrantFilter]);
+
+  const sortedData = useMemo(() => {
+    if (!sortKey) return filteredData;
+
+    const directionFactor = sortDirection === 'asc' ? 1 : -1;
+    return [...filteredData].sort((a, b) => {
+      if (sortKey === 'keyword') {
+        return a.keyword.localeCompare(b.keyword, undefined, { sensitivity: 'base' }) * directionFactor;
+      }
+      return (a[sortKey] - b[sortKey]) * directionFactor;
+    });
+  }, [filteredData, sortKey, sortDirection]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection(key === 'keyword' ? 'asc' : 'desc');
+  };
+
+  const getSortIndicator = (key: SortKey) => {
+    if (sortKey !== key) return null;
+    return (
+      <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: '6px' }}>
+        {sortDirection === 'asc' ? '▲' : '▼'}
+      </span>
+    );
+  };
 
   // Handle chart resize on window resize (e.g., when dev tools open/close)
   useChartResize(chartRef, !loading && filteredData.length > 0);
@@ -625,30 +686,6 @@ export const Keywords = () => {
 
             <div>
               <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
-                LLM Source
-              </label>
-              <select
-                value={llmFilter}
-                onChange={(e) => setLlmFilter(e.target.value)}
-                style={{
-                  padding: '8px 12px',
-                  border: `1px solid ${COLORS.gridLines}`,
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  backgroundColor: COLORS.bgPrimary,
-                  color: COLORS.textBody,
-                  cursor: 'pointer',
-                }}
-              >
-                <option value="all">All Sources</option>
-                {LLM_PROVIDERS.map((provider) => (
-                  <option key={provider} value={provider}>{provider}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
                 Quadrant
               </label>
               <select
@@ -713,18 +750,94 @@ export const Keywords = () => {
             Keyword Details
           </h2>
 
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedLlms([])}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: '999px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  border: `1px solid ${selectedLlms.length === 0 ? COLORS.brand : COLORS.gridLines}`,
+                  backgroundColor: selectedLlms.length === 0 ? '#e6f7f1' : COLORS.bgPrimary,
+                  color: selectedLlms.length === 0 ? '#027a48' : '#64748b',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+                title="All Models"
+                aria-label="Show all models"
+              >
+                All
+              </button>
+              {LLM_PROVIDERS.map((llm) => {
+                const isActive = selectedLlms.includes(llm);
+                return (
+                  <button
+                    key={llm}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLlms((prev) => {
+                        const currentlyActive = prev.includes(llm);
+                        if (currentlyActive) return prev.filter((m) => m !== llm);
+                        return [...prev, llm];
+                      });
+                    }}
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '999px',
+                      border: `1px solid ${isActive ? COLORS.brand : COLORS.gridLines}`,
+                      backgroundColor: isActive ? '#e6f7f1' : COLORS.bgPrimary,
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    title={llm}
+                    aria-label={`Filter by ${llm}`}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px' }}>
+                      {getLLMIcon(llm)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: `2px solid ${COLORS.gridLines}` }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>
-                    Keyword
+                  <th
+                    onClick={() => handleSort('keyword')}
+                    style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <span>
+                      Keyword
+                      {getSortIndicator('keyword')}
+                    </span>
                   </th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>
-                    Volume
+                  <th
+                    onClick={() => handleSort('searchVolume')}
+                    style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <span>
+                      Volume
+                      {getSortIndicator('searchVolume')}
+                    </span>
                   </th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>
-                    Ownership
+                  <th
+                    onClick={() => handleSort('ownership')}
+                    style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <span>
+                      Brand Association
+                      {getSortIndicator('ownership')}
+                    </span>
                   </th>
                   <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>
                     LLM Sources
@@ -732,7 +845,7 @@ export const Keywords = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredData.map((kw, idx) => (
+                {sortedData.map((kw, idx) => (
                   <tr
                     key={kw.keyword}
                     onClick={() => setSelectedKeyword(kw)}

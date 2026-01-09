@@ -7,6 +7,7 @@ interface PositionHighlighterProps {
   competitorPositions?: number[];
   highlightBrand?: boolean;
   highlightCompetitors?: boolean;
+  selectionText?: string;
   className?: string;
 }
 
@@ -16,10 +17,29 @@ export const PositionHighlighter: React.FC<PositionHighlighterProps> = ({
   competitorPositions = [],
   highlightBrand = false,
   highlightCompetitors = false,
+  selectionText = '',
   className = '',
 }) => {
   const ranges = useMemo(() => {
     const calculatedRanges: { start: number; end: number; type: string }[] = [];
+
+    const normalizedSelection = selectionText.trim();
+    if (normalizedSelection.length >= 2) {
+      const haystackLower = text.toLocaleLowerCase();
+      const needleLower = normalizedSelection.toLocaleLowerCase();
+      let searchFrom = 0;
+
+      while (searchFrom < haystackLower.length) {
+        const matchIndex = haystackLower.indexOf(needleLower, searchFrom);
+        if (matchIndex === -1) break;
+        calculatedRanges.push({
+          start: matchIndex,
+          end: matchIndex + normalizedSelection.length,
+          type: 'selection'
+        });
+        searchFrom = matchIndex + normalizedSelection.length;
+      }
+    }
 
     // Position-based ranges
     if ((highlightBrand && brandPositions.length > 0) || (highlightCompetitors && competitorPositions.length > 0)) {
@@ -37,63 +57,71 @@ export const PositionHighlighter: React.FC<PositionHighlighterProps> = ({
     }
 
     return calculatedRanges;
-  }, [text, brandPositions, competitorPositions, highlightBrand, highlightCompetitors]);
+  }, [text, brandPositions, competitorPositions, highlightBrand, highlightCompetitors, selectionText]);
 
-  // Resolve overlaps
-  const resolvedRanges = useMemo(() => {
-    const priorityOf = (type: string) => {
-      if (type === 'brand') return 4; // Position-based matches are highest confidence
-      if (type === 'competitor') return 4;
-      return 0;
-    };
+  const segments = useMemo(() => {
+    if (ranges.length === 0) return [];
 
-    const sorted = ranges.slice().sort((a, b) => {
-      const pr = priorityOf(b.type) - priorityOf(a.type);
-      if (pr !== 0) return pr;
-      const lenDiff = (b.end - b.start) - (a.end - a.start);
-      if (lenDiff !== 0) return lenDiff;
-      return a.start - b.start;
-    });
-
-    const result: { start: number; end: number; type: string }[] = [];
-    const intersects = (x: { start: number; end: number }, y: { start: number; end: number }) =>
-      !(x.end <= y.start || x.start >= y.end);
-
-    for (const h of sorted) {
-      if (!result.some(r => intersects(h, r))) {
-        result.push(h);
-      }
+    const boundarySet = new Set<number>([0, text.length]);
+    for (const range of ranges) {
+      const start = Math.max(0, Math.min(text.length, range.start));
+      const end = Math.max(0, Math.min(text.length, range.end));
+      boundarySet.add(start);
+      boundarySet.add(end);
     }
-    return result.sort((a, b) => a.start - b.start);
-  }, [ranges]);
 
-  if (resolvedRanges.length === 0) {
+    const boundaries = Array.from(boundarySet).sort((a, b) => a - b);
+
+    return boundaries
+      .slice(0, -1)
+      .map((start, idx) => {
+        const end = boundaries[idx + 1];
+        if (end <= start) return null;
+
+        const activeTypes = new Set<string>();
+        for (const r of ranges) {
+          if (r.start < end && r.end > start) {
+            activeTypes.add(r.type);
+          }
+        }
+        return { start, end, activeTypes };
+      })
+      .filter((segment): segment is { start: number; end: number; activeTypes: Set<string> } => segment !== null);
+  }, [ranges, text]);
+
+  if (segments.length === 0) {
     return <div className={`whitespace-pre-wrap ${className}`}>{text}</div>;
   }
 
-  const elements: React.ReactNode[] = [];
-  let lastIndex = 0;
+  const elements = segments.map((segment) => {
+    const chunk = text.slice(segment.start, segment.end);
+    const hasSelection = segment.activeTypes.has('selection');
+    const hasBrand = segment.activeTypes.has('brand');
+    const hasCompetitor = segment.activeTypes.has('competitor');
 
-  resolvedRanges.forEach((range, i) => {
-    if (range.start > lastIndex) {
-      elements.push(text.slice(lastIndex, range.start));
+    if (!hasSelection && !hasBrand && !hasCompetitor) {
+      return chunk;
     }
 
-    const chunk = text.slice(range.start, range.end);
-    if (range.type === 'brand') {
-       elements.push(<span key={`r-${i}`} className="bg-blue-100 text-blue-800 font-medium px-0.5 rounded">{chunk}</span>);
-    } else if (range.type === 'competitor') {
-       elements.push(<span key={`r-${i}`} className="bg-orange-100 text-orange-800 font-medium px-0.5 rounded">{chunk}</span>);
-    } else {
-       elements.push(chunk);
+    let highlightClassName = '';
+    if (hasSelection && hasBrand) {
+      highlightClassName = 'bg-yellow-200 text-blue-800 font-medium px-0.5 rounded';
+    } else if (hasSelection && hasCompetitor) {
+      highlightClassName = 'bg-yellow-200 text-orange-800 font-medium px-0.5 rounded';
+    } else if (hasBrand) {
+      highlightClassName = 'bg-blue-100 text-blue-800 font-medium px-0.5 rounded';
+    } else if (hasCompetitor) {
+      highlightClassName = 'bg-orange-100 text-orange-800 font-medium px-0.5 rounded';
+    } else if (hasSelection) {
+      highlightClassName = 'bg-yellow-200 px-0.5 rounded';
     }
-    
-    lastIndex = range.end;
+
+    return (
+      <span key={`seg-${segment.start}-${segment.end}`} className={highlightClassName}>
+        {chunk}
+      </span>
+    );
   });
-
-  if (lastIndex < text.length) {
-    elements.push(text.slice(lastIndex));
-  }
 
   return <div className={`whitespace-pre-wrap ${className}`}>{elements}</div>;
 };

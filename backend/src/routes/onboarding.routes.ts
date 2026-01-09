@@ -156,6 +156,7 @@ router.post('/brand-intel', authenticateToken, async (req: Request, res: Respons
       input,
       locale,
       country,
+      url: req.body?.url,
     });
 
     res.json({

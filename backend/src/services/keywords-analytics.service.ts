@@ -22,28 +22,48 @@ export const keywordsAnalyticsService = {
     startDate?: string;
     endDate?: string;
     collectorType?: string;
+    collectorTypes?: string[];
   }): Promise<KeywordAnalyticsPayload> {
-    const { brandId, customerId, startDate, endDate, collectorType } = params;
+    const { brandId, customerId, startDate, endDate, collectorType, collectorTypes } = params;
     
     // Check feature flag status
     const USE_OPTIMIZED_KEYWORDS_QUERY = process.env.USE_OPTIMIZED_KEYWORDS_QUERY === 'true';
     console.log(`🔍 [Keywords Analytics] Feature flag USE_OPTIMIZED_KEYWORDS_QUERY: ${USE_OPTIMIZED_KEYWORDS_QUERY}`);
 
-    // Map collector type if provided (for filtering)
-    let mappedCollectorType: string | undefined = undefined;
-    if (collectorType && collectorType.trim() !== '') {
-      const collectorTypeMap: Record<string, string> = {
-        'chatgpt': 'chatgpt',
-        'claude': 'claude',
-        'gemini': 'gemini',
-        'perplexity': 'perplexity',
-        'copilot': 'copilot',
-        'deepseek': 'deepseek',
-        'mistral': 'mistral',
-        'grok': 'grok'
-      };
-      mappedCollectorType = collectorTypeMap[collectorType.toLowerCase()] || collectorType.toLowerCase();
-      console.log(`🔍 Filtering keywords by collector_type: ${mappedCollectorType}`);
+    const normalizeCollectorType = (value: string): string | null => {
+      const compact = value.toLowerCase().trim().replace(/[\s_-]/g, '');
+      if (compact.length === 0) return null;
+      if (compact === 'chatgpt' || compact === 'gpt' || compact.startsWith('openai')) return 'chatgpt';
+      if (compact === 'claude' || compact.startsWith('anthropic')) return 'claude';
+      if (compact === 'gemini') return 'gemini';
+      if (compact === 'perplexity') return 'perplexity';
+      if (compact === 'copilot' || compact === 'bingcopilot' || compact === 'microsoftcopilot') return 'copilot';
+      if (compact === 'deepseek') return 'deepseek';
+      if (compact === 'mistral') return 'mistral';
+      if (compact === 'grok' || compact === 'xai' || compact === 'x-ai') return 'grok';
+      return value.toLowerCase().trim();
+    };
+
+    const requestedCollectorTypesRaw =
+      Array.isArray(collectorTypes) && collectorTypes.length > 0
+        ? collectorTypes
+        : typeof collectorType === 'string' && collectorType.trim().length > 0
+          ? [collectorType]
+          : [];
+
+    const mappedCollectorTypes =
+      requestedCollectorTypesRaw.length > 0
+        ? Array.from(
+            new Set(
+              requestedCollectorTypesRaw
+                .map((t) => normalizeCollectorType(t))
+                .filter((t): t is string => typeof t === 'string' && t.length > 0)
+            )
+          )
+        : undefined;
+
+    if (mappedCollectorTypes && mappedCollectorTypes.length > 0) {
+      console.log(`🔍 Filtering keywords by collector_type(s): ${mappedCollectorTypes.join(', ')}`);
     }
 
     // 1) Pull keywords for this brand/customer in range
@@ -88,8 +108,8 @@ export const keywordsAnalyticsService = {
         .select('id, collector_type')
         .in('id', collectorIdList);
       
-      if (mappedCollectorType) {
-        collectorQuery = collectorQuery.eq('collector_type', mappedCollectorType);
+      if (mappedCollectorTypes && mappedCollectorTypes.length > 0) {
+        collectorQuery = collectorQuery.in('collector_type', mappedCollectorTypes);
       }
 
       const { data: collectorRows, error: collectorError } = await collectorQuery;
@@ -112,7 +132,14 @@ export const keywordsAnalyticsService = {
       }
 
       // Filter keywordToCollectorIds to only include valid collector IDs
-      if (mappedCollectorType && validCollectorIds.size > 0) {
+      if (mappedCollectorTypes && mappedCollectorTypes.length > 0) {
+        if (validCollectorIds.size === 0) {
+          return {
+            keywords: [],
+            startDate,
+            endDate
+          };
+        }
         keywordToCollectorIds.forEach((ids, kw) => {
           const validIds = new Set<number>();
           ids.forEach(id => {
@@ -153,8 +180,8 @@ export const keywordsAnalyticsService = {
           .in('collector_result_id', filteredCollectorIdList)
 
         // Filter by collector_type if provided
-        if (mappedCollectorType) {
-          query = query.eq('collector_type', mappedCollectorType)
+        if (mappedCollectorTypes && mappedCollectorTypes.length > 0) {
+          query = query.in('collector_type', mappedCollectorTypes)
         }
 
         if (startDate) query = query.gte('created_at', startDate)
@@ -186,8 +213,8 @@ export const keywordsAnalyticsService = {
           .is('competitor_name', null) // Only count brand positions for volume
 
         // Filter by collector_type from extracted_positions if provided
-        if (mappedCollectorType) {
-          positionsQuery = positionsQuery.eq('collector_type', mappedCollectorType)
+        if (mappedCollectorTypes && mappedCollectorTypes.length > 0) {
+          positionsQuery = positionsQuery.in('collector_type', mappedCollectorTypes)
         }
 
         if (startDate) positionsQuery = positionsQuery.gte('created_at', startDate)
@@ -262,5 +289,4 @@ export const keywordsAnalyticsService = {
     };
   }
 };
-
 

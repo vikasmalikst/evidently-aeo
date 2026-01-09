@@ -24,6 +24,7 @@ export async function fetchBrandIntel(
   options: {
     locale?: string;
     country?: string;
+    url?: string;
   } = {}
 ): Promise<BrandIntelApiResponse> {
   return apiClient.request<BrandIntelApiResponse>(
@@ -34,6 +35,7 @@ export async function fetchBrandIntel(
         input,
         locale: options.locale,
         country: options.country,
+        url: options.url,
       }),
     },
     { 

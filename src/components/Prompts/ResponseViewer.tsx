@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { PromptEntry } from '../../types/prompts';
 import { PositionHighlighter } from './PositionHighlighter';
 import { getLLMIcon } from '../Visibility/LLMIcons';
@@ -11,6 +11,25 @@ interface ResponseViewerProps {
 export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
   const [highlightCompetitors, setHighlightCompetitors] = useState(true);
+  const [selectionText, setSelectionText] = useState('');
+  const responseContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleResponseMouseUp = () => {
+    const container = responseContainerRef.current;
+    if (!container) return;
+
+    const selection = window.getSelection?.();
+    if (!selection) return;
+
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+
+    if (anchorNode && !container.contains(anchorNode)) return;
+    if (focusNode && !container.contains(focusNode)) return;
+
+    const nextSelection = selection.toString().trim();
+    setSelectionText(nextSelection);
+  };
 
   // Get all responses, filtered by selectedLLM if specified
   const filteredResponses = useMemo(() => {
@@ -141,7 +160,12 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 font-data" style={{ maxHeight: 'calc(100vh - 450px)' }}>
+      <div
+        ref={responseContainerRef}
+        onMouseUp={handleResponseMouseUp}
+        className="flex-1 overflow-y-auto p-6 font-data"
+        style={{ maxHeight: 'calc(100vh - 450px)' }}
+      >
         {filteredResponses.length === 0 ? (
           <p className="text-sm text-[var(--text-caption)]">
             {selectedLLMs.length > 0
@@ -193,6 +217,7 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
                       competitorPositions={responseItem.competitorPositions ?? []}
                       highlightBrand={highlightBrand}
                       highlightCompetitors={highlightCompetitors}
+                      selectionText={selectionText}
                       className="text-sm text-[var(--text-body)]"
                     />
                   </div>

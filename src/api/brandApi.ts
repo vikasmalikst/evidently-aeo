@@ -93,6 +93,27 @@ export async function updateBrandStatus(brandId: string, status: 'active' | 'ina
   }
 }
 
+export async function updateBrandWebsiteUrl(brandId: string, websiteUrl: string): Promise<ApiResponse<BrandResponse>> {
+  try {
+    const response = await apiClient.request<ApiResponse<BrandResponse>>(
+      `/brands/${brandId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ website_url: websiteUrl }),
+      },
+      { requiresAuth: true }
+    );
+
+    invalidateCache(`/brands/${brandId}`);
+    invalidateCache('/brands');
+
+    return response;
+  } catch (error) {
+    console.error('❌ Update brand website URL failed:', error);
+    throw error;
+  }
+}
+
 /**
  * Update brand collectors (AI models)
  */

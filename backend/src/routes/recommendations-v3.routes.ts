@@ -116,6 +116,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
           success: true,
           data: {
             generationId: result.generationId || null,
+            dataMaturity: result.dataMaturity || null,
             kpis: result.kpis || [],
             recommendations: [],
             message: result.message || 'No recommendations generated at this time.'
@@ -128,6 +129,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
         success: true,
         data: {
           generationId: result.generationId,
+          dataMaturity: result.dataMaturity || null,
           kpis: result.kpis,
           recommendations: result.recommendations,
           generatedAt: result.generatedAt,
@@ -280,6 +282,7 @@ router.get('/:generationId', authenticateToken, async (req, res) => {
       success: true,
       data: {
         generationId: generation.id,
+        dataMaturity: (generation as any)?.metadata?.dataMaturity || null,
         kpis,
         recommendations,
         generatedAt: generation.generated_at,
@@ -331,7 +334,7 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
     // Verify generation belongs to customer
     const { data: generation } = await supabaseAdmin
       .from('recommendation_generations')
-      .select('id, customer_id')
+      .select('id, customer_id, metadata')
       .eq('id', generationId)
       .eq('customer_id', customerId)
       .single();
@@ -464,6 +467,7 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
       success: true,
       data: {
         step: stepNum,
+        dataMaturity: (generation as any)?.metadata?.dataMaturity || null,
         recommendations
       }
     });
@@ -816,6 +820,139 @@ router.post('/generate-content-bulk', authenticateToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to generate content'
+    });
+  }
+});
+
+/**
+ * POST /api/recommendations-v3/generate-guides-bulk
+ *
+ * Cold-start Step 2: Generate implementation guides for approved recommendations.
+ * Guides are execution checklists + deliverables + success criteria (NOT outreach emails / publishable content).
+ */
+router.post('/generate-guides-bulk', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    const { generationId } = req.body;
+
+    if (!generationId) {
+      return res.status(400).json({
+        success: false,
+        error: 'generationId is required'
+      });
+    }
+
+    // Get all approved recommendations for this generation that haven't had a guide/content generated yet
+    const { data: recommendations, error: recError } = await supabaseAdmin
+      .from('recommendations')
+      .select('id, generation_id, brand_id, customer_id')
+      .eq('generation_id', generationId)
+      .eq('customer_id', customerId)
+      .eq('is_approved', true)
+      .eq('is_content_generated', false);
+
+    if (recError) {
+      console.error('❌ [RecommendationsV3 Bulk Guides] Error fetching recommendations:', recError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch recommendations'
+      });
+    }
+
+    if (!recommendations || recommendations.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No approved recommendations found for this generation'
+      });
+    }
+
+    console.log(`📘 [RecommendationsV3 Bulk Guides] Generating guides for ${recommendations.length} recommendation(s)...`);
+
+    const guidePromises = recommendations.map(async (rec) => {
+      try {
+        const result = await recommendationContentService.generateContent(
+          rec.id,
+          customerId,
+          { contentType: 'cold_start_guide' }
+        );
+
+        if (result?.record) {
+          // Mark recommendation as "generated" so it moves to Step 3.
+          // For cold_start we use Step 3 as the guide review step (instead of email/publishable content).
+          await supabaseAdmin
+            .from('recommendations')
+            .update({ is_content_generated: true })
+            .eq('id', rec.id)
+            .eq('customer_id', customerId);
+
+          // Parse JSON guide if possible; otherwise return raw record
+          let guideData: any = result.record;
+          try {
+            if (typeof result.record.content === 'string') {
+              try {
+                const parsed = JSON.parse(result.record.content);
+                guideData = { ...result.record, content: parsed };
+              } catch {
+                guideData = result.record;
+              }
+            }
+          } catch (err) {
+            console.warn(`⚠️ [RecommendationsV3 Bulk Guides] Could not parse guide for ${rec.id}, using raw:`, err);
+            guideData = result.record;
+          }
+
+          return {
+            recommendationId: rec.id,
+            success: true,
+            guide: guideData,
+            providerUsed: result.providerUsed,
+            modelUsed: result.modelUsed
+          };
+        }
+
+        return {
+          recommendationId: rec.id,
+          success: false,
+          error: 'Failed to generate guide - no record returned'
+        };
+      } catch (error: any) {
+        console.error(`❌ [RecommendationsV3 Bulk Guides] Error generating guide for ${rec.id}:`, error);
+        return {
+          recommendationId: rec.id,
+          success: false,
+          error: error.message || 'Failed to generate guide'
+        };
+      }
+    });
+
+    const results = await Promise.all(guidePromises);
+    const successful = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
+
+    console.log(`✅ [RecommendationsV3 Bulk Guides] Generated guides for ${successful.length}/${recommendations.length}`);
+
+    return res.json({
+      success: true,
+      data: {
+        total: recommendations.length,
+        successful: successful.length,
+        failed: failed.length,
+        results
+      }
+    });
+  } catch (error) {
+    console.error('❌ [RecommendationsV3 Bulk Guides] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to generate guides'
     });
   }
 });
@@ -1195,7 +1332,7 @@ router.get('/brand/:brandId/latest', authenticateToken, async (req, res) => {
     // Get latest generation for this brand
     const { data: generation, error: genError } = await supabaseAdmin
       .from('recommendation_generations')
-      .select('id, brand_id, generated_at')
+      .select('id, brand_id, generated_at, metadata')
       .eq('brand_id', brandId)
       .eq('customer_id', customerId)
       .order('generated_at', { ascending: false })
@@ -1268,6 +1405,7 @@ router.get('/brand/:brandId/latest', authenticateToken, async (req, res) => {
       success: true,
       data: {
         generationId: generation.id,
+        dataMaturity: (generation as any)?.metadata?.dataMaturity || null,
         kpis,
         recommendations,
         generatedAt: generation.generated_at,

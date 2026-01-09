@@ -109,6 +109,41 @@ type GeneratedContentJsonV2 = {
 
 type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2;
 
+// Cold-start guide format (Step 2/3 for cold_start)
+type GeneratedGuideJsonV1 = {
+  version: 'guide_v1';
+  recommendationId: string;
+  brandName: string;
+  summary?: {
+    goal?: string;
+    whyThisMatters?: string;
+    timeEstimate?: string;
+    effortLevel?: string;
+  };
+  prerequisites?: string[];
+  implementationPlan?: Array<{
+    phase: string;
+    steps: Array<{
+      title: string;
+      howTo: string;
+      deliverable?: string;
+      qualityChecks?: string[];
+    }>;
+  }>;
+  templatesAndExamples?: Array<{ name: string; content: string }>;
+  successCriteria?: {
+    whatToMeasure?: string[];
+    expectedDirection?: string;
+    checkInCadence?: string;
+  };
+  ifAlreadyDone?: {
+    verificationSteps?: string[];
+    upgradePath?: string[];
+  };
+  commonMistakes?: string[];
+  nextBestActions?: string[];
+};
+
 // Source detection utility
 function detectSourceType(domain: string): 'youtube' | 'article_site' | 'collaboration_target' | 'other' {
   const domainLower = domain.toLowerCase().trim();
@@ -212,6 +247,7 @@ class RecommendationContentService {
       .single();
 
     const contentType = request.contentType || 'draft';
+    const isColdStartGuide = contentType === 'cold_start_guide';
 
     const projectContext = `You are generating content for AnswerIntel (Evidently): a platform that helps brands improve their visibility in AI answers.
 We track brand performance across AI models (visibility, Share of Answers, sentiment) and citation sources.
@@ -265,7 +301,72 @@ Your content should help the customer's brand improve the targeted KPI by execut
         ? 'Article must be authoritative, well-researched, and citation-friendly with proper structure.'
         : '';
 
-    const instructions = `You are a senior marketing consultant and AEO strategist.
+    const guideInstructions = `You are a senior marketing consultant and AEO strategist.
+
+CRITICAL: You MUST return ONLY valid JSON. Do NOT include markdown code blocks, do NOT include any text before or after the JSON. Return ONLY the raw JSON object starting with { and ending with }.
+
+TASK:
+Create a step-by-step, execution-ready implementation guide for the approved recommendation. This is for a cold-start brand (low evidence), so the guide should focus on fundamentals and creating measurable signals quickly.
+
+OUTPUT SIZE LIMITS (to avoid truncation / invalid JSON):
+- Max 3 phases in implementationPlan
+- Max 3 steps per phase
+- Max 3 qualityChecks per step
+- Keep each "howTo" under 500 characters and DO NOT include literal newlines inside strings
+- Keep arrays short (no long lists)
+
+STRICT FORMAT (must match exactly):
+{
+  "version": "guide_v1",
+  "recommendationId": "${rec.id}",
+  "brandName": "${brand?.name || 'Brand'}",
+  "summary": {
+    "goal": "<1 sentence goal aligned to KPI>",
+    "whyThisMatters": "<1-2 sentences grounded in the recommendation reason>",
+    "timeEstimate": "<e.g., 2-4 hours, 1-2 days, 2-4 weeks>",
+    "effortLevel": "${rec.effort || 'Medium'}"
+  },
+  "prerequisites": ["<what you need before starting>"],
+  "implementationPlan": [
+    {
+      "phase": "<Phase name>",
+      "steps": [
+        {
+          "title": "<step title>",
+          "howTo": "<2-6 sentences with concrete instructions>",
+          "deliverable": "<what artifact should exist after this step>",
+          "qualityChecks": ["<check 1>", "<check 2>"]
+        }
+      ]
+    }
+  ],
+  "templatesAndExamples": [
+    {
+      "name": "<template name>",
+      "content": "<short template text / outline / checklist>"
+    }
+  ],
+  "successCriteria": {
+    "whatToMeasure": ["<metric 1>", "<metric 2>"],
+    "expectedDirection": "<what should improve and when>",
+    "checkInCadence": "<e.g., weekly for 4 weeks>"
+  },
+  "ifAlreadyDone": {
+    "verificationSteps": ["<how to verify it's actually done correctly>"],
+    "upgradePath": ["<how to improve it beyond the basics>"]
+  },
+  "commonMistakes": ["<mistake 1>", "<mistake 2>"],
+  "nextBestActions": ["<what to do next after completing this>"]
+}
+
+CONSTRAINTS:
+- Do NOT mention internal tool/provider names.
+- **CRITICAL**: Do NOT mention any competitor names in any field.
+- Keep everything aligned to the recommendation action, KPI, focus area, and citation source.
+- Be specific: name pages, sections, checklists, and concrete deliverables.
+`;
+
+    const contentInstructions = `You are a senior marketing consultant and AEO strategist.
 
 CRITICAL: You MUST return ONLY valid JSON. Do NOT include markdown code blocks, do NOT include any text before or after the JSON, do NOT include explanations. Return ONLY the raw JSON object starting with { and ending with }.
 
@@ -311,7 +412,7 @@ CONSTRAINTS:
 ${contentConstraints ? `- ${contentConstraints}` : ''}
 - Collaboration email should be professional, concise, and value-focused.`;
 
-    const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${instructions}`;
+    const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${isColdStartGuide ? guideInstructions : contentInstructions}`;
 
     // Call providers - Ollama (if enabled) → OpenRouter → Cerebras
     let content: string | null = null;
@@ -323,7 +424,9 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
     if (useOllama) {
       try {
         console.log('🦙 [RecommendationContentService] Attempting Ollama API (primary for this brand)...');
-        const systemMessage = 'You are a senior marketing consultant and AEO strategist. Generate content for recommendations. Respond only with valid JSON, no markdown code blocks, no explanations.';
+        const systemMessage = isColdStartGuide
+          ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides for recommendations. Respond only with valid JSON, no markdown code blocks, no explanations.'
+          : 'You are a senior marketing consultant and AEO strategist. Generate content for recommendations. Respond only with valid JSON, no markdown code blocks, no explanations.';
         const ollamaResponse = await callOllamaAPI(systemMessage, prompt, rec.brand_id);
         
         // Ollama returns JSON string, may need parsing
@@ -362,8 +465,8 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
         const or = await openRouterCollectorService.executeQuery({
           collectorType: 'content',
           prompt,
-          maxTokens: 2000, // Increased from 900 to handle v2.0 format with multiple sections
-          temperature: 0.6,
+          maxTokens: isColdStartGuide ? 2600 : 2000, // Guides are longer than content drafts
+          temperature: isColdStartGuide ? 0.4 : 0.6,
           topP: 0.9,
           enableWebSearch: false
         });
@@ -745,11 +848,14 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
     
     // Check version
     const version = parsed.version;
-    if (version !== '1.0' && version !== '2.0') return false;
+    if (version !== '1.0' && version !== '2.0' && version !== 'guide_v1') return false;
     
     // Common required fields
     if (!parsed.recommendationId || !parsed.brandName) return false;
-    if (!parsed.targetSource?.domain || !parsed.targetSource?.mode) return false;
+    // Content formats require targetSource; guides do not
+    if (version !== 'guide_v1') {
+      if (!parsed.targetSource?.domain || !parsed.targetSource?.mode) return false;
+    }
     
     // Version-specific validation
     if (version === '1.0') {
@@ -759,13 +865,36 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
       if (!parsed.publishableContent?.content || !parsed.publishableContent?.type) return false;
       // Collaboration email is optional even for collaboration mode
       return true;
+    } else if (version === 'guide_v1') {
+      // Guide v1: require at least an implementation plan or success criteria to be useful
+      const hasPlan = Array.isArray(parsed.implementationPlan) && parsed.implementationPlan.length > 0;
+      const hasSuccess = !!parsed.successCriteria;
+      return hasPlan || hasSuccess;
     }
     
     return false;
   }
 
-  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2>): GeneratedContentJson {
+  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedGuideJsonV1>): GeneratedContentJson | GeneratedGuideJsonV1 {
     const version = parsed.version || '1.0';
+
+    // Handle guide_v1 (cold-start implementation guides)
+    if (version === 'guide_v1') {
+      const g = parsed as Partial<GeneratedGuideJsonV1>;
+      return {
+        version: 'guide_v1',
+        recommendationId: String(g.recommendationId || ''),
+        brandName: String(g.brandName || ''),
+        summary: g.summary || undefined,
+        prerequisites: Array.isArray(g.prerequisites) ? g.prerequisites : [],
+        implementationPlan: Array.isArray(g.implementationPlan) ? g.implementationPlan : [],
+        templatesAndExamples: Array.isArray(g.templatesAndExamples) ? g.templatesAndExamples : [],
+        successCriteria: g.successCriteria || undefined,
+        ifAlreadyDone: g.ifAlreadyDone || undefined,
+        commonMistakes: Array.isArray(g.commonMistakes) ? g.commonMistakes : [],
+        nextBestActions: Array.isArray(g.nextBestActions) ? g.nextBestActions : []
+      };
+    }
     
     // Handle v1.0 format (backward compatibility)
     if (version === '1.0') {

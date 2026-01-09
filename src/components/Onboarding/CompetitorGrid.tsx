@@ -30,6 +30,7 @@ export const CompetitorGrid = ({
   const [isLoading, setIsLoading] = useState(true);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customName, setCustomName] = useState('');
+  const [customUrl, setCustomUrl] = useState('');
   const hasLoadedRef = useRef(false);
 
   const getCompetitorKey = (competitor: OnboardingCompetitor) =>
@@ -117,17 +118,28 @@ export const CompetitorGrid = ({
   };
 
   const handleAddCustom = () => {
-    if (!customName.trim()) return;
+    if (!customName.trim() || !customUrl.trim()) return;
 
-    const customDomain = customName.toLowerCase().replace(/\s+/g, '');
-    const domain = `${customDomain}.com`;
+    let domain = customUrl.trim().toLowerCase();
+    try {
+      // Add protocol if missing for URL parsing
+      const urlToParse = domain.startsWith('http') ? domain : `https://${domain}`;
+      const urlObj = new URL(urlToParse);
+      domain = urlObj.hostname;
+    } catch (e) {
+      // fallback to raw string if parsing fails
+    }
+    
+    // Remove www. if present for cleaner domain
+    domain = domain.replace(/^www\./, '');
+
     const customCompetitor: OnboardingCompetitor = {
       name: customName,
       logo: `https://logo.clearbit.com/${domain}`,
       industry: brand.industry,
       relevance: 'Custom',
       domain,
-      url: `https://${domain}`,
+      url: customUrl.startsWith('http') ? customUrl : `https://${customUrl}`,
       source: 'custom',
     };
 
@@ -146,6 +158,7 @@ export const CompetitorGrid = ({
     onSelectionChange?.(newSelected);
 
     setCustomName('');
+    setCustomUrl('');
     setShowCustomForm(false);
   };
 
@@ -214,11 +227,18 @@ export const CompetitorGrid = ({
       </div>
 
       {showCustomForm && (
-        <div className="onboarding-custom-form">
+        <div className="onboarding-custom-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '16px', alignItems: 'end', marginBottom: '24px' }}>
           <Input
+            label="Competitor Name"
             placeholder="Enter competitor name"
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
+          />
+          <Input
+            label="Competitor URL"
+            placeholder="e.g. example.com"
+            value={customUrl}
+            onChange={(e) => setCustomUrl(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -229,7 +249,8 @@ export const CompetitorGrid = ({
           <button
             className="onboarding-button-primary"
             onClick={handleAddCustom}
-            disabled={!customName.trim()}
+            disabled={!customName.trim() || !customUrl.trim()}
+            style={{ marginBottom: '2px', height: '42px' }}
           >
             Add
           </button>

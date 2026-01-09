@@ -19,7 +19,7 @@ export class LLMBrandIntelService {
     companyName: string,
     domain?: string
   ): Promise<LLMBrandIntelResult> {
-    const systemPrompt = `You are a brand intelligence researcher. Given a brand name OR a URL:
+    const systemPrompt = `You are a brand intelligence researcher. Given a brand name "${rawInput}"${domain ? ` and website "${domain}"` : ''}:
 
 Identify the brand, canonical homepage URL, short neutral summary (max 4 sentences).
 
@@ -41,9 +41,9 @@ IMPORTANT: You must respond with a valid JSON object containing these exact fiel
   "competitors": ["string1", "string2", "string3", "string4", "string5"]
 }
 
-Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}.`;
+Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}${domain ? ` (Website: ${domain})` : ''}.`;
 
-    const userMessage = `Analyze this brand: ${rawInput}`;
+    const userMessage = `Analyze this brand: ${rawInput}${domain ? ` (Website: ${domain})` : ''}`;
 
     // Log the full prompt being sent to LLM
     console.log('📝 [BRAND-INTEL] Full prompt being sent to LLM:');

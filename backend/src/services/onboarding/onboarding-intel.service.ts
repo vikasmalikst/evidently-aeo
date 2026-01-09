@@ -24,8 +24,9 @@ export class OnboardingIntelService {
     input: string;
     locale?: string;
     country?: string;
+    url?: string;
   }): Promise<BrandIntelPayload> {
-    const { input, locale = 'en-US', country = 'US' } = params;
+    const { input, locale = 'en-US', country = 'US', url } = params;
     const trimmedInput = input.trim();
 
     if (!trimmedInput) {
@@ -43,6 +44,16 @@ export class OnboardingIntelService {
 
     const companyName = clearbitService.buildCompanyName(matchedSuggestion, trimmedInput);
     let domain = clearbitService.buildDomain(matchedSuggestion, trimmedInput);
+
+    // Override with user provided URL if available
+    if (url) {
+      const providedDomain = stripProtocol(url);
+      if (providedDomain) {
+        domain = providedDomain;
+        console.log(`✅ Using user provided domain: ${domain}`);
+      }
+    }
+
     let website = domain ? ensureHttps(domain) : '';
     // Store original Clearbit logo if available
     const clearbitLogo = matchedSuggestion?.logo;

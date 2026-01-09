@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Spinner } from './common/Spinner';
-import { CheckCircle, Sparkles } from 'lucide-react';
+import { CheckCircle, Sparkles, Edit2, Save, X } from 'lucide-react';
 import { SafeLogo } from './common/SafeLogo';
+import { Input } from './common/Input';
 import { fetchBrandProductsPreview } from '../../api/onboardingApi';
 import type { BrandProductsEnrichment, OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 
@@ -10,15 +11,45 @@ interface SummaryProps {
   competitors: OnboardingCompetitor[];
   onComplete: () => void;
   onBack: () => void;
+  onUpdateBrand?: (brand: OnboardingBrand) => void;
 }
 
-export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps) => {
+export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand }: SummaryProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [enrichment, setEnrichment] = useState<BrandProductsEnrichment | null>(null);
   const [editedEnrichment, setEditedEnrichment] = useState<BrandProductsEnrichment | null>(null);
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+
+  // Brand editing state
+  const [isEditingBrand, setIsEditingBrand] = useState(false);
+  const [editIndustry, setEditIndustry] = useState('');
+  const [editWebsite, setEditWebsite] = useState('');
+
+  // Initialize edit state when entering edit mode
+  useEffect(() => {
+    if (isEditingBrand) {
+      setEditIndustry(brand.industry || '');
+      setEditWebsite(brand.domain || '');
+    }
+  }, [isEditingBrand, brand]);
+
+  const handleCancelEdit = () => {
+    setIsEditingBrand(false);
+  };
+
+  const handleSaveBrandDetails = () => {
+    if (onUpdateBrand) {
+      onUpdateBrand({
+        ...brand,
+        industry: editIndustry,
+        domain: editWebsite,
+        website: editWebsite.startsWith('http') ? editWebsite : `https://${editWebsite}`,
+      });
+    }
+    setIsEditingBrand(false);
+  };
 
   // Draft text so the textarea behaves normally (no auto-trim/join while typing).
   const [draftInitialized, setDraftInitialized] = useState(false);
@@ -252,6 +283,69 @@ export const Summary = ({ brand, competitors, onComplete, onBack }: SummaryProps
         </div>
 
         <div className="onboarding-summary__section">
+          <div className="onboarding-brand-details" style={{ marginBottom: '24px', padding: '20px', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-default)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-headings)' }}>Brand Information</h3>
+              {!isEditingBrand && onUpdateBrand && (
+                <button
+                  onClick={() => setIsEditingBrand(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: 'none', color: 'var(--accent500)', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}
+                >
+                  <Edit2 size={14} />
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {isEditingBrand ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <Input
+                  label="Industry"
+                  value={editIndustry}
+                  onChange={(e) => setEditIndustry(e.target.value)}
+                  placeholder="e.g. SaaS, E-commerce"
+                />
+                <Input
+                  label="Website"
+                  value={editWebsite}
+                  onChange={(e) => setEditWebsite(e.target.value)}
+                  placeholder="e.g. brand.com"
+                />
+                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="onboarding-button-secondary"
+                    style={{ height: '36px', padding: '0 16px' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveBrandDetails}
+                    className="onboarding-button-primary"
+                    style={{ height: '36px', padding: '0 16px' }}
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-caption)', marginBottom: '4px' }}>Brand Name</div>
+                  <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-body)' }}>{brand.companyName}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-caption)', marginBottom: '4px' }}>Industry</div>
+                  <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-body)' }}>{brand.industry || '-'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-caption)', marginBottom: '4px' }}>Website</div>
+                  <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-body)' }}>{brand.website || '-'}</div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {enrichmentError && (
             <div style={{ color: 'var(--text-error)', fontSize: 14, marginBottom: 16 }}>
               {enrichmentError}

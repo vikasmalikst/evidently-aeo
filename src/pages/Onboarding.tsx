@@ -79,6 +79,11 @@ export const Onboarding = () => {
     setCurrentStep('summary');
   };
 
+  const handleUpdateBrand = (updatedBrand: OnboardingBrand) => {
+    setBrand(updatedBrand);
+    // Also update local storage if needed, though handleOnboardingComplete does it at the end.
+  };
+
   const handleOnboardingComplete = () => {
     // Save onboarding data
     if (brand) {
@@ -157,6 +162,7 @@ export const Onboarding = () => {
             competitors={competitors}
             onComplete={handleOnboardingComplete}
             onBack={handleBack}
+            onUpdateBrand={handleUpdateBrand}
           />
         )}
       </div>

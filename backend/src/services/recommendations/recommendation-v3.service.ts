@@ -17,6 +17,15 @@ import { OptimizedMetricsHelper } from '../query-helpers/optimized-metrics.helpe
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
 import { shouldUseOllama, callOllamaAPI } from '../scoring/ollama-client.service';
 import { sourceAttributionService } from '../source-attribution.service';
+import {
+  buildCompetitorExclusionList,
+  filterCompetitorSources,
+  filterCompetitorRecommendations,
+  type CompetitorExclusionList
+} from './competitor-filter.service';
+import { generateColdStartRecommendations } from './cold-start-templates';
+import { filterLowQualityRecommendationsV3 } from './recommendation-quality.service';
+import { rankRecommendationsV3 } from './recommendation-ranking.service';
 
 // ============================================================================
 // TYPES
@@ -61,6 +70,7 @@ export interface RecommendationV3 {
   expectedBoost?: string;
   timeline?: string;
   confidence?: number;
+  calculatedScore?: number; // Deterministic ranking score (stored in DB as calculated_score)
   
   // Workflow flags
   isApproved?: boolean;
@@ -77,6 +87,7 @@ export interface RecommendationV3 {
 export interface RecommendationV3Response {
   success: boolean;
   generationId?: string;
+  dataMaturity?: 'cold_start' | 'low_data' | 'normal';
   kpis: IdentifiedKPI[];
   recommendations: RecommendationV3[];
   message?: string;
@@ -91,6 +102,7 @@ export interface RecommendationV3Response {
 interface BrandContextV3 {
   brandId: string;
   brandName: string;
+  brandSummary?: string;
   industry?: string;
   visibilityIndex?: number;
   shareOfAnswers?: number;
@@ -115,6 +127,16 @@ interface BrandContextV3 {
     impactScore: number;
     visibility: number;
   }>;
+  // Internal fields for competitor filtering (not exposed in prompt)
+  _competitorExclusionList?: CompetitorExclusionList;
+  _competitorAvgMetrics?: {
+    visibility?: number;
+    soa?: number;
+    sentiment?: number;
+    count: number;
+  };
+  // Internal: data maturity classification (computed)
+  _dataMaturity?: 'cold_start' | 'low_data' | 'normal';
 }
 
 type CerebrasChatResponse = {
@@ -141,6 +163,346 @@ class RecommendationV3Service {
       console.warn('⚠️ [RecommendationV3Service] CEREBRAS_API_KEY not configured');
     }
     console.log(`🤖 [RecommendationV3Service] Initialized with OpenRouter as primary (Cerebras as fallback)`);
+  }
+
+  private getFeatureFlags() {
+    return {
+      coldStartMode: process.env.RECS_V3_COLD_START_MODE !== 'false',
+      coldStartPersonalize: process.env.RECS_V3_COLD_START_PERSONALIZE !== 'false',
+      qualityContract: process.env.RECS_V3_QUALITY_CONTRACT !== 'false',
+      deterministicRanking: process.env.RECS_V3_DETERMINISTIC_RANKING !== 'false'
+    };
+  }
+
+  private computeDataMaturity(context: BrandContextV3): BrandContextV3['_dataMaturity'] {
+    const visibility = this.normalizePercent(context.visibilityIndex ?? null); // 0-100
+    const soa = this.normalizePercent(context.shareOfAnswers ?? null); // 0-100
+    const sources = context.sourceMetrics ?? [];
+    const totalCitations = sources.reduce((sum, s) => sum + (s.citations || 0), 0);
+    const uniqueDomains = sources.length;
+
+    // Conservative defaults (tune later)
+    const N1 = 50; // citations
+    const N2 = 5;  // unique domains
+    const N4 = 5;  // visibility
+    const N5 = 5;  // SOA
+
+    const isColdStart =
+      totalCitations < N1 ||
+      uniqueDomains < N2 ||
+      (visibility !== null && visibility < N4) ||
+      (soa !== null && soa < N5);
+
+    if (isColdStart) return 'cold_start';
+
+    const isLowData =
+      totalCitations < 100 ||
+      (visibility !== null && visibility < 15);
+
+    return isLowData ? 'low_data' : 'normal';
+  }
+
+  private attachSourceMetrics(context: BrandContextV3, recommendations: RecommendationV3[]): RecommendationV3[] {
+    const normalizeSentiment100 = (value: number | null | undefined) =>
+      value === null || value === undefined ? null : Math.max(0, Math.min(100, ((value + 1) / 2) * 100));
+
+    const formatValue = (value: number | null | undefined, decimals: number = 1): string | null => {
+      if (value === null || value === undefined) return null;
+      return String(Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals));
+    };
+
+    const metricsByDomain = new Map((context.sourceMetrics ?? []).map(s => [s.domain, s]));
+
+    return recommendations.map(rec => {
+      const matchingSource = metricsByDomain.get(rec.citationSource || '');
+      return {
+        ...rec,
+        impactScore: matchingSource ? formatValue(matchingSource.impactScore, 1) : rec.impactScore ?? null,
+        mentionRate:
+          matchingSource && Number.isFinite(matchingSource.mentionRate)
+            ? formatValue(matchingSource.mentionRate, 1)
+            : rec.mentionRate ?? null,
+        soa:
+          matchingSource && matchingSource.soa !== null && matchingSource.soa !== undefined
+            ? formatValue(matchingSource.soa, 1)
+            : rec.soa ?? null,
+        sentiment:
+          matchingSource && matchingSource.sentiment !== null && matchingSource.sentiment !== undefined
+            ? formatValue(matchingSource.sentiment, 2)
+            : rec.sentiment ?? null,
+        visibilityScore:
+          matchingSource && matchingSource.visibility !== null && matchingSource.visibility !== undefined
+            ? String(Math.round(matchingSource.visibility))
+            : rec.visibilityScore ?? null,
+        citationCount: matchingSource ? matchingSource.citations : rec.citationCount ?? 0,
+        // Ensure these exist
+        explanation: rec.explanation || rec.reason || rec.action,
+        focusSources: rec.focusSources || rec.citationSource,
+        contentFocus: rec.contentFocus || rec.action,
+        timeline: rec.timeline || '2-4 weeks',
+        confidence: rec.confidence || 70
+      };
+    });
+  }
+
+  private postProcessRecommendations(context: BrandContextV3, recommendations: RecommendationV3[]): RecommendationV3[] {
+    const flags = this.getFeatureFlags();
+    console.log(`🔍 [RecommendationV3Service] Post-processing ${recommendations.length} recommendation(s)`);
+
+    // Attach metrics first (so quality/ranking can rely on them)
+    let recs = this.attachSourceMetrics(context, recommendations);
+    console.log(`   ✓ After attachSourceMetrics: ${recs.length} recommendation(s)`);
+
+    // Competitor filter (already implemented; keep as a safety gate)
+    const exclusionList = context._competitorExclusionList || {
+      names: new Set<string>(),
+      domains: new Set<string>(),
+      nameVariations: new Set<string>(),
+      baseDomains: new Set<string>()
+    };
+    const competitorFilterResult = filterCompetitorRecommendations(recs, exclusionList);
+    if (competitorFilterResult.removed.length > 0) {
+      console.warn(`   ⚠️ Competitor filter removed ${competitorFilterResult.removed.length} recommendation(s)`);
+      competitorFilterResult.removed.slice(0, 5).forEach(r => {
+        console.warn(`      - Removed: "${r.recommendation.action?.substring(0, 60)}..." Reason: ${r.reason}`);
+      });
+    }
+    recs = competitorFilterResult.filtered;
+    console.log(`   ✓ After competitor filter: ${recs.length} recommendation(s)`);
+
+    // Quality contract
+    if (flags.qualityContract) {
+      const { kept, removed } = filterLowQualityRecommendationsV3(recs);
+      if (removed.length > 0) {
+        console.warn(`   ⚠️ Quality filter removed ${removed.length} recommendation(s)`);
+        removed.slice(0, 10).forEach(r => {
+          console.warn(`      - Removed: "${r.recommendation.action?.substring(0, 60)}..." Reasons: ${r.reasons.join('; ')}`);
+        });
+      }
+      recs = kept;
+      console.log(`   ✓ After quality filter: ${recs.length} recommendation(s)`);
+    } else {
+      console.log(`   ⏭️  Quality contract disabled (skipping quality filter)`);
+    }
+
+    // Deterministic ranking + confidence
+    if (flags.deterministicRanking) {
+      recs = rankRecommendationsV3(recs, { sourceMetrics: context.sourceMetrics });
+      console.log(`   ✓ After ranking: ${recs.length} recommendation(s)`);
+    } else {
+      console.log(`   ⏭️  Deterministic ranking disabled (skipping ranking)`);
+    }
+
+    console.log(`✅ [RecommendationV3Service] Post-processing complete: ${recs.length} recommendation(s) remaining`);
+    return recs;
+  }
+
+  private async personalizeColdStartRecommendations(
+    context: BrandContextV3,
+    templates: RecommendationV3[]
+  ): Promise<RecommendationV3[]> {
+    const flags = this.getFeatureFlags();
+    if (!flags.coldStartPersonalize) return templates;
+
+    const systemMessage =
+      'You are a senior marketing consultant and AEO expert. You transform baseline tasks into concrete, high-quality recommendations. Respond ONLY with valid JSON.';
+
+    const templatesJson = JSON.stringify(
+      templates.map(t => ({
+        action: t.action,
+        citationSource: t.citationSource,
+        focusArea: t.focusArea,
+        priority: t.priority,
+        effort: t.effort,
+        kpi: t.kpi,
+        reason: t.reason,
+        explanation: t.explanation,
+        expectedBoost: t.expectedBoost,
+        timeline: t.timeline,
+        confidence: t.confidence,
+        focusSources: t.focusSources,
+        contentFocus: t.contentFocus
+      })),
+      null,
+      2
+    );
+
+    const prompt = `Context:
+- Brand: ${context.brandName}
+- Industry: ${context.industry || 'Unknown'}
+- Brand summary: ${context.brandSummary || 'Unknown'}
+- Data maturity: cold_start
+
+Task:
+You will receive baseline cold-start recommendations. Improve them using these rules:
+1) If the brand is likely established or already has the basics, DO NOT output naive "create pricing page" style items. Instead rewrite as "audit/verify/optimize" with concrete checks.
+2) Remove any items that are clearly redundant for an established brand (but keep if uncertain and rewrite as an audit).
+3) Rewrite each kept recommendation into a concrete deliverable (specific page names, outlines, checklist steps, directory copy bullets).
+4) Add explicit success criteria inside explanation (what to measure, and when).
+5) Keep citationSource as one of: "owned-site" | "directories"
+6) Keep fields: action, citationSource, focusArea, priority, effort, kpi, reason, explanation, expectedBoost, timeline, confidence, focusSources, contentFocus
+7) Output 5-10 recommendations max. Return ONLY a JSON array.
+
+Baseline recommendations JSON:
+${templatesJson}`;
+
+    // Call provider (Ollama → OpenRouter → Cerebras), similar to generateRecommendationsDirect
+    let content: string | null = null;
+
+    const useOllama = await shouldUseOllama(context.brandId);
+    if (useOllama) {
+      try {
+        console.log('🦙 [RecommendationV3Service] Personalization: attempting Ollama...');
+        const ollamaResponse = await callOllamaAPI(systemMessage, prompt, context.brandId);
+        content = ollamaResponse || null;
+      } catch (e: any) {
+        console.error('❌ [RecommendationV3Service] Personalization Ollama failed:', e.message || e);
+      }
+    }
+
+    if (!content) {
+      try {
+        console.log('🚀 [RecommendationV3Service] Personalization: attempting OpenRouter...');
+        const or = await openRouterCollectorService.executeQuery({
+          collectorType: 'content',
+          prompt,
+          maxTokens: 2500,
+          temperature: 0.3,
+          topP: 0.9,
+          enableWebSearch: false
+        });
+        content = or.response || null;
+      } catch (e: any) {
+        console.error('❌ [RecommendationV3Service] Personalization OpenRouter failed:', e.message || e);
+      }
+    }
+
+    if (!content && this.cerebrasApiKey) {
+      try {
+        console.log('🔄 [RecommendationV3Service] Personalization: trying Cerebras fallback...');
+        const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.cerebrasApiKey}`
+          },
+          body: JSON.stringify({
+            model: this.cerebrasModel,
+            messages: [
+              { role: 'system', content: systemMessage },
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: 2500,
+            temperature: 0.3
+          })
+        });
+        if (response.ok) {
+          const data = (await response.json()) as CerebrasChatResponse;
+          content = data?.choices?.[0]?.message?.content || null;
+        }
+      } catch (e) {
+        console.error('❌ [RecommendationV3Service] Personalization Cerebras failed:', e);
+      }
+    }
+
+    if (!content) {
+      console.warn('⚠️ [RecommendationV3Service] Personalization LLM call failed, returning original templates');
+      return templates;
+    }
+
+    // Parse JSON array (reuse the same robust cleaning approach used elsewhere in this service)
+    console.log('📝 [RecommendationV3Service] Personalization response (first 500 chars):', content.substring(0, 500));
+    
+    let cleaned = content.trim();
+    
+    // Remove markdown code blocks
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.slice(7);
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.slice(3);
+    }
+    if (cleaned.endsWith('```')) {
+      cleaned = cleaned.slice(0, -3);
+    }
+    cleaned = cleaned.trim();
+
+    // Try to extract JSON array if there's extra text
+    let jsonStart = cleaned.indexOf('[');
+    let jsonEnd = cleaned.lastIndexOf(']');
+    
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+    }
+
+    // Try parsing
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (parseError) {
+      console.error('❌ [RecommendationV3Service] Personalization JSON parse error. Attempting to fix...');
+      console.error('Cleaned content (first 1000 chars):', cleaned.substring(0, 1000));
+      
+      // Try to fix common JSON issues
+      // Remove trailing commas before closing brackets
+      cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
+      
+      // Fix extra closing braces before closing bracket
+      cleaned = cleaned.replace(/\}\s*\}\s*\]/g, '}]');
+      cleaned = cleaned.replace(/(\})\s*\}(\s*\])/g, '$1$2');
+      
+      // Try to extract just the array part more aggressively
+      const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        cleaned = arrayMatch[0];
+      }
+      
+      // Final cleanup: remove any standalone closing braces before ]
+      const lastBraceIndex = cleaned.lastIndexOf('}');
+      const lastBracketIndex = cleaned.lastIndexOf(']');
+      if (lastBraceIndex !== -1 && lastBracketIndex !== -1 && lastBraceIndex < lastBracketIndex) {
+        const beforeBracket = cleaned.substring(lastBraceIndex, lastBracketIndex);
+        const braceCount = (beforeBracket.match(/\}/g) || []).length;
+        if (braceCount > 1) {
+          cleaned = cleaned.substring(0, lastBraceIndex) + 
+                   cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
+        }
+      }
+      
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (secondError) {
+        console.error('❌ [RecommendationV3Service] Failed to parse personalization JSON after fixes:', secondError);
+        console.error('Cleaned content (last 200 chars):', cleaned.substring(Math.max(0, cleaned.length - 200)));
+        console.warn('⚠️ [RecommendationV3Service] Returning original templates due to JSON parse failure');
+        return templates;
+      }
+    }
+
+    if (!Array.isArray(parsed)) {
+      console.warn('⚠️ [RecommendationV3Service] Personalization returned non-array, returning original templates');
+      return templates;
+    }
+    
+    if (parsed.length === 0) {
+      console.warn('⚠️ [RecommendationV3Service] Personalization returned empty array, returning original templates');
+      return templates;
+    }
+
+    return parsed.map((rec: any) => ({
+      action: String(rec.action || ''),
+      citationSource: rec.citationSource === 'directories' ? 'directories' : 'owned-site',
+      focusArea: rec.focusArea === 'soa' ? 'soa' : rec.focusArea === 'sentiment' ? 'sentiment' : 'visibility',
+      priority: rec.priority === 'High' ? 'High' : rec.priority === 'Low' ? 'Low' : 'Medium',
+      effort: rec.effort === 'High' ? 'High' : rec.effort === 'Low' ? 'Low' : 'Medium',
+      kpi: rec.kpi || 'Visibility Index',
+      reason: rec.reason,
+      explanation: rec.explanation || rec.reason,
+      expectedBoost: rec.expectedBoost,
+      timeline: rec.timeline || '2-4 weeks',
+      confidence: typeof rec.confidence === 'number' ? rec.confidence : 55,
+      focusSources: rec.focusSources,
+      contentFocus: rec.contentFocus
+    }));
   }
 
   /**
@@ -326,13 +688,43 @@ class RecommendationV3Service {
       };
 
       // Get competitors from brand_competitors (new schema)
-      const { data: competitors } = await supabaseAdmin
+      // Fetch with metadata to get domains for filtering
+      // Note: brand_competitors doesn't have is_active column, so we fetch all competitors
+      const { data: competitors, error: competitorError } = await supabaseAdmin
         .from('brand_competitors')
-        .select('id, competitor_name')
+        .select('id, competitor_name, competitor_url, metadata')
         .eq('brand_id', brandId)
-        .eq('is_active', true)
         .order('priority', { ascending: true })
-        .limit(5);
+        .limit(10); // Increased limit to catch more competitors
+      
+      if (competitorError) {
+        console.error(`❌ [RecommendationV3Service] Error fetching competitors:`, competitorError);
+      }
+      
+      // Debug: Log raw competitor data
+      if (competitors && competitors.length > 0) {
+        console.log(`🔍 [RecommendationV3Service] Found ${competitors.length} active competitor(s):`);
+        competitors.forEach((comp, idx) => {
+          const domain = comp.metadata?.domain || (comp.competitor_url ? new URL(comp.competitor_url).hostname.replace(/^www\./, '') : 'N/A');
+          console.log(`   ${idx + 1}. ${comp.competitor_name} - URL: ${comp.competitor_url || 'N/A'}, Domain: ${domain}, Metadata: ${JSON.stringify(comp.metadata)}`);
+        });
+      } else {
+        console.warn(`⚠️ [RecommendationV3Service] No active competitors found for brand ${brandId}`);
+      }
+      
+      // Build competitor exclusion list for filtering (Layer 1: Pre-generation filtering)
+      const competitorExclusionList = competitors && competitors.length > 0
+        ? buildCompetitorExclusionList(competitors)
+        : { names: new Set<string>(), domains: new Set<string>(), nameVariations: new Set<string>(), baseDomains: new Set<string>() };
+      
+      if (competitors && competitors.length > 0) {
+        console.log(`🚫 [RecommendationV3Service] Built competitor exclusion list: ${competitors.length} competitors`);
+        console.log(`   - Competitor names: ${Array.from(competitorExclusionList.names).join(', ') || 'N/A'}`);
+        console.log(`   - Competitor domains: ${Array.from(competitorExclusionList.domains).join(', ') || 'N/A'}`);
+        console.log(`   - Competitor name variations: ${Array.from(competitorExclusionList.nameVariations).slice(0, 10).join(', ') || 'N/A'}`);
+      } else {
+        console.warn(`⚠️ [RecommendationV3Service] Competitor exclusion list is EMPTY - no competitors found or no domains stored`);
+      }
 
       const competitorData: BrandContextV3['competitors'] = [];
       
@@ -466,8 +858,21 @@ class RecommendationV3Service {
           });
         }
 
-        console.log(`✅ [RecommendationV3Service] Using ${sourceMetrics.length} sources from source-attribution service (exact same as Citations Sources page)`);
-        console.log(`📊 [RecommendationV3Service] Top sources by Value score:`);
+        // LAYER 1: Filter out competitor sources before prompt generation
+        const originalSourceCount = sourceMetrics.length;
+        const filteredSourceMetrics = filterCompetitorSources(sourceMetrics, competitorExclusionList);
+        const filteredCount = originalSourceCount - filteredSourceMetrics.length;
+        
+        if (filteredCount > 0) {
+          console.log(`🚫 [RecommendationV3Service] Filtered out ${filteredCount} competitor source(s) from available citation sources`);
+        }
+        
+        // Use filtered sources
+        sourceMetrics.length = 0;
+        sourceMetrics.push(...filteredSourceMetrics);
+
+        console.log(`✅ [RecommendationV3Service] Using ${sourceMetrics.length} sources from source-attribution service (exact same as Citations Sources page, competitor sources filtered)`);
+        console.log(`📊 [RecommendationV3Service] Top sources by Value score (after competitor filtering):`);
         sourceMetrics.forEach((s, idx) => {
           console.log(`  ${idx + 1}. ${s.domain} - Value: ${s.impactScore}, Citations: ${s.citations}, SOA: ${s.soa}%, Visibility: ${s.visibility}, Sentiment: ${s.sentiment}`);
         });
@@ -475,16 +880,36 @@ class RecommendationV3Service {
         console.warn('⚠️ [RecommendationV3Service] No sources found from source-attribution service');
       }
 
+      // Calculate aggregated competitor metrics (without names) for context
+      const competitorAvgVisibility = competitorData.length > 0
+        ? competitorData.reduce((sum, c) => sum + (c.visibilityIndex || 0), 0) / competitorData.filter(c => c.visibilityIndex !== undefined).length
+        : undefined;
+      const competitorAvgSoa = competitorData.length > 0
+        ? competitorData.reduce((sum, c) => sum + (c.shareOfAnswers || 0), 0) / competitorData.filter(c => c.shareOfAnswers !== undefined).length
+        : undefined;
+      const competitorAvgSentiment = competitorData.length > 0
+        ? competitorData.reduce((sum, c) => sum + (c.sentimentScore || 0), 0) / competitorData.filter(c => c.sentimentScore !== undefined).length
+        : undefined;
+
       return {
         brandId: brand.id,
         brandName: brand.name,
+        brandSummary: (brand as any).summary || undefined,
         industry: brand.industry || undefined,
         visibilityIndex,
         shareOfAnswers,
         sentimentScore,
         trends,
-        competitors: competitorData,
-        sourceMetrics: sourceMetrics.slice(0, 10) // Already sorted by Value score (top 10 only)
+        competitors: competitorData, // Keep for internal use, but won't include names in prompt
+        sourceMetrics: sourceMetrics.slice(0, 10), // Already sorted by Value score (top 10 only), competitor sources filtered
+        // Store exclusion list and aggregated metrics for use in prompt generation
+        _competitorExclusionList: competitorExclusionList,
+        _competitorAvgMetrics: {
+          visibility: competitorAvgVisibility,
+          soa: competitorAvgSoa,
+          sentiment: competitorAvgSentiment,
+          count: competitorData.length
+        }
       };
 
     } catch (error) {
@@ -805,14 +1230,24 @@ Respond only with the JSON array.`;
       : 'No source data available';
     
     // Create a simple list of exact domain names for strict matching (top 10 only)
+    // Note: These sources are already filtered to exclude competitor domains (Layer 1)
     const exactDomains = context.sourceMetrics && context.sourceMetrics.length > 0
       ? context.sourceMetrics.slice(0, 10).map(s => s.domain)
       : [];
 
-    // Extract competitor names for explicit exclusion
-    const competitorNames = context.competitors && context.competitors.length > 0
-      ? context.competitors.map(c => c.name).filter(Boolean)
-      : [];
+    // LAYER 1: Use aggregated competitor metrics instead of competitor names
+    // This prevents the LLM from being primed with competitor names
+    const competitorContext = context._competitorAvgMetrics && context._competitorAvgMetrics.count > 0
+      ? `Industry Benchmark (${context._competitorAvgMetrics.count} competitors analyzed):
+- Average Visibility: ${context._competitorAvgMetrics.visibility !== undefined ? Math.round(context._competitorAvgMetrics.visibility * 10) / 10 : 'N/A'}
+- Average SOA: ${context._competitorAvgMetrics.soa !== undefined ? Math.round(context._competitorAvgMetrics.soa * 10) / 10 : 'N/A'}%
+- Average Sentiment: ${context._competitorAvgMetrics.sentiment !== undefined ? Math.round(context._competitorAvgMetrics.sentiment * 10) / 10 : 'N/A'}`
+      : 'No industry benchmark data available';
+
+    const lowDataMode = context._dataMaturity === 'low_data';
+    const lowDataGuidance = lowDataMode
+      ? `\nLOW-DATA MODE (important):\n- The brand has limited evidence/signals. Avoid making strong assumptions.\n- Prefer owned-site actions and foundational improvements that reliably create measurable signals.\n- If recommending external work, keep it conservative and tied to the provided safe sources list.\n- Use “audit/verify/optimize” language where you suspect basics already exist.\n`
+      : '';
 
     const prompt = `You are a Brand/AEO expert. Generate 8-12 actionable recommendations to improve brand performance. Return ONLY a JSON array.
 
@@ -826,17 +1261,21 @@ RULES
 - focusArea must be: "visibility", "soa", or "sentiment"
 - priority must be: "High", "Medium", or "Low"
 - effort must be: "Low", "Medium", or "High"
-- **CRITICAL**: Do NOT mention any competitor names in your recommendations. Do NOT include competitor names in the action, reason, explanation, contentFocus, or any other field. Focus solely on the brand's own strategies and improvements.
+- **CRITICAL**: Do NOT mention any competitor names, competitor brands, or competitor companies in your recommendations. Do NOT include competitor names in the action, reason, explanation, contentFocus, or any other field. Focus solely on the brand's own strategies and improvements.
 - **PUBLISHING RULE**: Publishing content on a competitor's website is NOT an option. Do not suggest guest posting, commenting, or any form of content placement on domains that belong to competitors.
-${competitorNames.length > 0 ? `- **EXPLICIT EXCLUSION**: The following competitor names and their domains must NOT appear anywhere in your recommendations: ${competitorNames.join(', ')}` : ''}
+- **COMPETITOR EXCLUSION**: Competitor sources have already been filtered out from the available citation sources list. All domains in the list are safe to use.
+${lowDataGuidance}
 
 Brand Performance
 - Name: ${context.brandName}
 - Industry: ${context.industry || 'Not specified'}
 ${brandLines.join('\n')}
 
+${competitorContext}
+
 Available Citation Sources (you MUST use ONLY these exact domains - copy them EXACTLY):
-These are the top 10 sources from the Citations Sources page, sorted by Value score (composite of Visibility, SOA, Sentiment, and Citations).
+These are the top sources from the Citations Sources page, sorted by Value score (composite of Visibility, SOA, Sentiment, and Citations).
+Competitor sources have been automatically excluded from this list.
 ${exactDomains.length > 0 ? exactDomains.map((d, i) => `${i + 1}. ${d}`).join('\n') : 'No sources available'}
 
 Source Details:
@@ -1170,6 +1609,8 @@ Respond only with the JSON array.`;
       console.log(`✅ [RecommendationV3Service] Generated ${recommendations.length} recommendations`);
       console.log(`📊 [RecommendationV3Service] Source data matched: ${matchedSources}, unmatched: ${unmatchedSources}`);
       
+      // Note: competitor filtering, quality contract, and deterministic ranking are applied
+      // in `generateRecommendations()` via `postProcessRecommendations()`.
       return recommendations;
 
     } catch (error) {
@@ -1420,30 +1861,158 @@ Respond only with the JSON array.`;
           console.error('❌ [RecommendationV3Service] Failed to parse JSON after fixes:', secondError);
           console.error('Cleaned content (last 200 chars):', cleaned.substring(Math.max(0, cleaned.length - 200)));
           
-          // Last resort: try to manually extract array elements
+          // Last resort: try to manually extract array elements with improved parsing
           try {
             const elements: any[] = [];
-            // For recommendations, look for objects with "action" field
-            const elementMatches = cleaned.match(/\{[^}]*"action"[^}]*\}/g);
-            if (elementMatches && elementMatches.length > 0) {
-              for (const match of elementMatches) {
-                try {
-                  const element = JSON.parse(match);
-                  elements.push(element);
-                } catch (e) {
-                  // Skip malformed elements
+            
+            // Strategy 1: Try to extract complete objects using a more sophisticated approach
+            // Find all object starts (opening braces followed by quotes and "action")
+            const objectStarts: number[] = [];
+            let searchIndex = 0;
+            while (true) {
+              const actionIndex = cleaned.indexOf('"action"', searchIndex);
+              if (actionIndex === -1) break;
+              
+              // Find the opening brace before "action"
+              let braceIndex = actionIndex;
+              while (braceIndex >= 0 && cleaned[braceIndex] !== '{') {
+                braceIndex--;
+              }
+              if (braceIndex >= 0) {
+                objectStarts.push(braceIndex);
+              }
+              searchIndex = actionIndex + 1;
+            }
+            
+            // For each object start, try to extract the complete object
+            for (const startIndex of objectStarts) {
+              try {
+                // Find the matching closing brace
+                let depth = 0;
+                let inString = false;
+                let escapeNext = false;
+                let endIndex = -1; // Use -1 to indicate not found
+                
+                for (let i = startIndex; i < cleaned.length; i++) {
+                  const char = cleaned[i];
+                  
+                  if (escapeNext) {
+                    escapeNext = false;
+                    continue;
+                  }
+                  
+                  if (char === '\\') {
+                    escapeNext = true;
+                    continue;
+                  }
+                  
+                  if (char === '"' && !escapeNext) {
+                    inString = !inString;
+                    continue;
+                  }
+                  
+                  if (!inString) {
+                    if (char === '{') {
+                      depth++;
+                    } else if (char === '}') {
+                      depth--;
+                      if (depth === 0) {
+                        endIndex = i;
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                if (endIndex > startIndex) {
+                  const objectStr = cleaned.substring(startIndex, endIndex + 1);
+                  try {
+                    const element = JSON.parse(objectStr);
+                    // Validate it has required fields
+                    if (element.action && element.citationSource) {
+                      elements.push(element);
+                    }
+                  } catch (e) {
+                    // Try to fix common issues in this object
+                    let fixedStr = objectStr;
+                    // Close unterminated strings (handle cases like: "timeline": "2-4 we)
+                    fixedStr = fixedStr.replace(/: "([^"]*)$/gm, ': "$1"');
+                    // Remove trailing commas
+                    fixedStr = fixedStr.replace(/,(\s*[}\]])/g, '$1');
+                    // Ensure object is properly closed
+                    if (!fixedStr.trim().endsWith('}')) {
+                      const openCount = (fixedStr.match(/\{/g) || []).length;
+                      const closeCount = (fixedStr.match(/\}/g) || []).length;
+                      const missing = openCount - closeCount;
+                      if (missing > 0) {
+                        fixedStr = fixedStr.trim() + '}'.repeat(missing);
+                      }
+                    }
+                    try {
+                      const element = JSON.parse(fixedStr);
+                      if (element.action && element.citationSource) {
+                        elements.push(element);
+                      }
+                    } catch (e2) {
+                      // Skip this object
+                    }
+                  }
+                } else if (endIndex === -1) {
+                  // Object is incomplete/truncated (no closing brace found), try to salvage it
+                  const incompleteStr = cleaned.substring(startIndex);
+                  let fixedStr = incompleteStr;
+                  
+                  // Close any unterminated strings (handle cases like: "timeline": "2-4 we)
+                  fixedStr = fixedStr.replace(/: "([^"]*)$/gm, ': "$1"');
+                  // Remove trailing commas
+                  fixedStr = fixedStr.replace(/,(\s*$)/g, '');
+                  // Add missing closing braces
+                  const openCount = (fixedStr.match(/\{/g) || []).length;
+                  const closeCount = (fixedStr.match(/\}/g) || []).length;
+                  const missing = openCount - closeCount;
+                  if (missing > 0) {
+                    fixedStr = fixedStr.trim() + '}'.repeat(missing);
+                  }
+                  
+                  try {
+                    const element = JSON.parse(fixedStr);
+                    if (element.action && element.citationSource) {
+                      elements.push(element);
+                    }
+                  } catch (e3) {
+                    // Skip incomplete object
+                  }
+                }
+              } catch (e) {
+                // Skip this object
+              }
+            }
+            
+            // Strategy 2: If Strategy 1 didn't work, try regex-based extraction (fallback)
+            if (elements.length === 0) {
+              const elementMatches = cleaned.match(/\{[^{}]*"action"[^{}]*\}/g);
+              if (elementMatches && elementMatches.length > 0) {
+                for (const match of elementMatches) {
+                  try {
+                    const element = JSON.parse(match);
+                    if (element.action && element.citationSource) {
+                      elements.push(element);
+                    }
+                  } catch (e) {
+                    // Skip malformed elements
+                  }
                 }
               }
-              if (elements.length > 0) {
-                console.log(`⚠️ [RecommendationV3Service] Manually extracted ${elements.length} recommendations from malformed JSON`);
-                parsed = elements;
-              } else {
-                throw secondError;
-              }
+            }
+            
+            if (elements.length > 0) {
+              console.log(`⚠️ [RecommendationV3Service] Manually extracted ${elements.length} recommendation(s) from malformed/truncated JSON`);
+              parsed = elements;
             } else {
               throw secondError;
             }
           } catch (manualError) {
+            console.error('❌ [RecommendationV3Service] Manual extraction also failed');
             console.error('Full content length:', content.length);
             console.error('Cleaned content length:', cleaned.length);
             return [];
@@ -1460,13 +2029,23 @@ Respond only with the JSON array.`;
         // Find matching KPI
         const matchingKpi = kpis.find(k => k.kpiName === rec.kpi);
         
+        // Determine kpi: use rec.kpi if provided, otherwise match by focusArea, otherwise default
+        let kpiValue = rec.kpi || matchingKpi?.kpiName;
+        if (!kpiValue) {
+          // Fallback based on focusArea
+          const focusArea = rec.focusArea === 'soa' ? 'soa' : rec.focusArea === 'sentiment' ? 'sentiment' : 'visibility';
+          if (focusArea === 'soa') kpiValue = 'SOA %';
+          else if (focusArea === 'sentiment') kpiValue = 'Sentiment Score';
+          else kpiValue = 'Visibility Index';
+        }
+        
         return {
           action: String(rec.action || ''),
           citationSource: String(rec.citationSource || ''),
           focusArea: rec.focusArea === 'soa' ? 'soa' : rec.focusArea === 'sentiment' ? 'sentiment' : 'visibility',
           priority: rec.priority === 'High' ? 'High' : rec.priority === 'Low' ? 'Low' : 'Medium',
           effort: rec.effort === 'High' ? 'High' : rec.effort === 'Low' ? 'Low' : 'Medium',
-          kpi: rec.kpi || matchingKpi?.kpiName,
+          kpi: kpiValue,
           reason: rec.reason,
           expectedBoost: rec.expectedBoost,
           timeline: rec.timeline || '2-4 weeks',
@@ -1524,18 +2103,47 @@ Respond only with the JSON array.`;
         };
       }
 
-      // Step 2: Generate recommendations directly (no KPI identification)
-      console.log('📝 [RecommendationV3Service] Step 2: Generating recommendations with LLM...');
-      const llmStartTime = Date.now();
-      const recommendations = await this.generateRecommendationsDirect(context);
-      console.log(`✅ [RecommendationV3Service] LLM generation completed in ${Date.now() - llmStartTime}ms`);
+      const flags = this.getFeatureFlags();
+      context._dataMaturity = this.computeDataMaturity(context);
+      console.log(`🧪 [RecommendationV3Service] Data maturity: ${context._dataMaturity}`);
+
+      // Step 2: Generate recommendations (cold-start templates OR LLM)
+      let recommendations: RecommendationV3[] = [];
+      if (flags.coldStartMode && context._dataMaturity === 'cold_start') {
+        console.log('🧊 [RecommendationV3Service] Step 2: Using cold-start baseline recommendations (template-driven)...');
+        const templates = generateColdStartRecommendations({ brandName: context.brandName, industry: context.industry });
+        console.log(`   📋 Generated ${templates.length} cold-start template(s)`);
+        // Already-done checks + personalization (AI rewrite + prune)
+        recommendations = await this.personalizeColdStartRecommendations(context, templates);
+        console.log(`✅ [RecommendationV3Service] Cold-start personalization produced ${recommendations.length} recommendation(s)`);
+        if (recommendations.length === 0) {
+          console.error(`❌ [RecommendationV3Service] Cold-start personalization returned 0 recommendations! Falling back to templates.`);
+          recommendations = templates;
+        }
+      } else {
+        console.log('📝 [RecommendationV3Service] Step 2: Generating recommendations with LLM...');
+        const llmStartTime = Date.now();
+        recommendations = await this.generateRecommendationsDirect(context);
+        console.log(`✅ [RecommendationV3Service] LLM generation completed in ${Date.now() - llmStartTime}ms, produced ${recommendations.length} recommendation(s)`);
+        if (recommendations.length === 0) {
+          console.error(`❌ [RecommendationV3Service] LLM generation returned 0 recommendations!`);
+        }
+      }
+
+      // Unified post-processing (competitor safety, quality contract, deterministic ranking)
+      console.log(`📊 [RecommendationV3Service] Before post-processing: ${recommendations.length} recommendation(s)`);
+      recommendations = this.postProcessRecommendations(context, recommendations);
+      console.log(`📊 [RecommendationV3Service] After post-processing: ${recommendations.length} recommendation(s)`);
 
       if (recommendations.length === 0) {
+        console.error(`❌ [RecommendationV3Service] All recommendations were filtered out during post-processing`);
+        console.error(`   - Data maturity: ${context._dataMaturity}`);
+        console.error(`   - Feature flags:`, flags);
         return {
           success: false,
           kpis: [],
           recommendations: [],
-          message: 'No recommendations generated at this time.'
+          message: 'No recommendations generated at this time. All recommendations were filtered out during post-processing.'
         };
       }
 
@@ -1561,6 +2169,7 @@ Respond only with the JSON array.`;
       return {
         success: true,
         generationId,
+        dataMaturity: context._dataMaturity,
         kpis: [],
         recommendations: recommendationsWithIds, // Only return recommendations with IDs
         generatedAt: new Date().toISOString(),
@@ -1603,7 +2212,8 @@ Respond only with the JSON array.`;
           metadata: {
             version: 'v3',
             brandName: context.brandName,
-            industry: context.industry
+            industry: context.industry,
+            dataMaturity: context._dataMaturity
           }
         })
         .select('id')
@@ -1648,8 +2258,55 @@ Respond only with the JSON array.`;
         });
       }
 
-      // Save recommendations
-      const recommendationsToInsert = recommendations.map((rec, index) => {
+      // LAYER 2: Final validation before database save (extra safety net)
+      const exclusionList = context._competitorExclusionList || {
+        names: new Set<string>(),
+        domains: new Set<string>(),
+        nameVariations: new Set<string>(),
+        baseDomains: new Set<string>()
+      };
+      
+      const { filtered: finalRecommendations, removed: finalRemoved } = filterCompetitorRecommendations(
+        recommendations,
+        exclusionList
+      );
+      
+      if (finalRemoved.length > 0) {
+        console.error(`🚫 [RecommendationV3Service] Layer 2 final validation: Removed ${finalRemoved.length} recommendation(s) before database save`);
+        finalRemoved.forEach(({ reason }) => {
+          console.error(`   - ${reason}`);
+        });
+      }
+
+      const flags = this.getFeatureFlags();
+      let finalForInsert = finalRecommendations;
+
+      // Final quality gate (deterministic). We don't re-rank here; ranking is handled earlier.
+      if (flags.qualityContract) {
+        const { kept, removed } = filterLowQualityRecommendationsV3(finalForInsert);
+        if (removed.length > 0) {
+          console.warn(`⚠️ [RecommendationV3Service] Final quality gate removed ${removed.length} recommendation(s) before database save`);
+          removed.slice(0, 10).forEach(r => {
+            console.warn(`   - Removed: "${r.recommendation.action?.substring(0, 80)}..." Reasons: ${r.reasons.join('; ')}`);
+          });
+        }
+        finalForInsert = kept;
+      }
+      
+      if (finalForInsert.length === 0) {
+        console.error('❌ [RecommendationV3Service] All recommendations were filtered out before database save');
+        console.error(`   - Started with ${recommendations.length} recommendation(s)`);
+        console.error(`   - After competitor filter: ${finalRecommendations.length} recommendation(s)`);
+        console.error(`   - After quality filter: ${finalForInsert.length} recommendation(s)`);
+        console.error(`   - Data maturity: ${context._dataMaturity}`);
+        console.error(`   - Feature flags:`, flags);
+        return null;
+      }
+      
+      console.log(`💾 [RecommendationV3Service] Saving ${finalForInsert.length} recommendation(s) to database (started with ${recommendations.length})`);
+      
+      // Save recommendations (only the filtered ones)
+      const recommendationsToInsert = finalForInsert.map((rec, index) => {
         const kpiId = rec.kpi ? kpiIdMap.get(rec.kpi) : null;
         
         return {
@@ -1675,7 +2332,7 @@ Respond only with the JSON array.`;
           confidence: rec.confidence || 70,
           priority: rec.priority,
           focus_area: rec.focusArea,
-          calculated_score: null,
+          calculated_score: rec.calculatedScore ?? null,
           display_order: index,
           kpi_id: kpiId,
           is_approved: false,
@@ -1694,19 +2351,31 @@ Respond only with the JSON array.`;
         return null;
       }
 
-      // Map database IDs back to recommendations
-      if (insertedRecommendations && insertedRecommendations.length === recommendations.length) {
-        for (let i = 0; i < recommendations.length; i++) {
+      // Map database IDs back to recommendations (use finalRecommendations, not original recommendations)
+      if (insertedRecommendations && insertedRecommendations.length === finalForInsert.length) {
+        for (let i = 0; i < finalForInsert.length; i++) {
           if (insertedRecommendations[i]?.id) {
-            recommendations[i].id = insertedRecommendations[i].id;
+            finalForInsert[i].id = insertedRecommendations[i].id;
             console.log(`✅ [RecommendationV3Service] Mapped ID ${insertedRecommendations[i].id} to recommendation ${i + 1}`);
           }
         }
+        
+        // Also update the original recommendations array for return value
+        // Find matching recommendations and update their IDs
+        finalForInsert.forEach((finalRec, idx) => {
+          const originalIdx = recommendations.findIndex(r => 
+            r.action === finalRec.action && 
+            r.citationSource === finalRec.citationSource
+          );
+          if (originalIdx >= 0 && insertedRecommendations[idx]?.id) {
+            recommendations[originalIdx].id = insertedRecommendations[idx].id;
+          }
+        });
       } else {
-        console.warn(`⚠️ [RecommendationV3Service] ID count mismatch: ${insertedRecommendations?.length || 0} inserted vs ${recommendations.length} recommendations`);
+        console.warn(`⚠️ [RecommendationV3Service] ID count mismatch: ${insertedRecommendations?.length || 0} inserted vs ${finalForInsert.length} recommendations`);
       }
 
-      console.log(`💾 [RecommendationV3Service] Saved ${kpis.length} KPIs and ${recommendations.length} recommendations`);
+      console.log(`💾 [RecommendationV3Service] Saved ${kpis.length} KPIs and ${finalForInsert.length} recommendations (${recommendations.length - finalForInsert.length} filtered out)`);
       return generationId;
 
     } catch (error) {

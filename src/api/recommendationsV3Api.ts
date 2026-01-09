@@ -69,6 +69,7 @@ export interface GenerateRecommendationsV3Response {
   success: boolean;
   data?: {
     generationId: string;
+    dataMaturity?: 'cold_start' | 'low_data' | 'normal' | null;
     kpis: IdentifiedKPI[];
     recommendations: RecommendationV3[];
     generatedAt: string;
@@ -85,6 +86,7 @@ export interface GetGenerationV3Response {
   success: boolean;
   data?: {
     generationId: string;
+    dataMaturity?: 'cold_start' | 'low_data' | 'normal' | null;
     kpis: IdentifiedKPI[];
     recommendations: RecommendationV3[];
     generatedAt: string;
@@ -101,6 +103,7 @@ export interface GetByStepV3Response {
   success: boolean;
   data?: {
     step: number;
+    dataMaturity?: 'cold_start' | 'low_data' | 'normal' | null;
     recommendations: RecommendationV3[];
   };
   error?: string;
@@ -352,6 +355,67 @@ export async function generateContentBulkV3(
 }
 
 /**
+ * Generate implementation guides for all approved recommendations in bulk (Cold-start Step 2)
+ */
+export async function generateGuidesBulkV3(
+  generationId: string
+): Promise<{ success: boolean; data?: { total: number; successful: number; failed: number; results: any[] }; error?: string }> {
+  try {
+    const timeoutMs = 180000; // 3 minutes
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort();
+    }, timeoutMs);
+
+    const url = `${apiClient.baseUrl}/recommendations-v3/generate-guides-bulk`;
+    const accessToken = apiClient.getAccessToken();
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        },
+        body: JSON.stringify({ generationId }),
+        signal: timeoutController.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (
+        timeoutController.signal.aborted ||
+        fetchError.name === 'AbortError' ||
+        fetchError.message?.includes('timeout') ||
+        fetchError.message?.includes('timed out')
+      ) {
+        console.warn('⚠️ Bulk guide generation timed out after 180s. Backend may have completed.');
+        return {
+          success: false,
+          error: 'Request timed out. Guide generation may still be in progress. Please try again in a moment.'
+        };
+      }
+      throw fetchError;
+    }
+  } catch (error: any) {
+    console.error('Error generating guides bulk V3:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to generate guides'
+    };
+  }
+}
+
+/**
  * Generate content for a recommendation (Step 2 → Step 3)
  * @deprecated Use generateContentBulkV3 for bulk generation
  */
@@ -411,6 +475,15 @@ export async function generateContentV3(
       error: error.response?.data?.error || error.message || 'Failed to generate content'
     };
   }
+}
+
+/**
+ * Generate a cold-start implementation guide for a single approved recommendation (Step 2 → Step 3)
+ */
+export async function generateGuideV3(
+  recommendationId: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  return generateContentV3(recommendationId, { contentType: 'cold_start_guide' });
 }
 
 /**

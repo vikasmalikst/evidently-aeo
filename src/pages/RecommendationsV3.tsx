@@ -16,6 +16,7 @@ import {
   getRecommendationsByStepV3,
   generateContentV3,
   generateContentBulkV3,
+  generateGuideV3,
   completeRecommendationV3,
   getKPIsV3,
   getLatestGenerationV3,
@@ -68,18 +69,59 @@ export const RecommendationsV3 = () => {
   // State
   const [currentStep, setCurrentStep] = useState<number>(() => getPersistedStep(selectedBrandId));
   const [generationId, setGenerationId] = useState<string | null>(null);
+  const [dataMaturity, setDataMaturity] = useState<'cold_start' | 'low_data' | 'normal' | null>(null);
   const [kpis, setKpis] = useState<IdentifiedKPI[]>([]); // Keep for potential future use, but not displayed in UI
   const [recommendations, setRecommendations] = useState<RecommendationV3[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [expandedSections, setExpandedSections] = useState<Map<string, { email: boolean; content: boolean }>>(new Map()); // For Step 3: track collapsed/expanded sections
+  const [expandedSections, setExpandedSections] = useState<Map<string, { content: boolean }>>(new Map()); // For Step 3: track collapsed/expanded content section only
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contentMap, setContentMap] = useState<Map<string, any>>(new Map());
+  const [guideMap, setGuideMap] = useState<Map<string, any>>(new Map());
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
   const [allRecommendations, setAllRecommendations] = useState<RecommendationV3[]>([]); // Store all Step 1 recommendations for local filtering
   const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
   const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
   const [hasCompletedForStep4, setHasCompletedForStep4] = useState(false); // Drives Step 4 "attention" animation after marking completed
+
+  const isColdStart = dataMaturity === 'cold_start';
+
+  // Helper: safely parse JSON-ish strings without crashing the UI
+  const safeJsonParse = useCallback((value: any): any => {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    if (!trimmed) return value;
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return value;
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return value; // keep raw if invalid/truncated
+    }
+  }, []);
+
+  const extractGuideObject = useCallback((contentRecordOrRaw: any): any => {
+    // contentRecordOrRaw can be:
+    // - RecommendationGeneratedContent record { content: "<json>" }
+    // - already parsed object
+    // - raw string
+    if (contentRecordOrRaw && typeof contentRecordOrRaw === 'object' && 'content' in contentRecordOrRaw) {
+      return safeJsonParse((contentRecordOrRaw as any).content);
+    }
+    return safeJsonParse(contentRecordOrRaw);
+  }, [safeJsonParse]);
+
+  // Backend stores JSON strings with escaped newlines (\\n) to keep JSON valid.
+  // For display/copy we want real line breaks.
+  const unescapeNewlines = useCallback((value: any): any => {
+    if (typeof value !== 'string') return value;
+    return value.replace(/\\n/g, '\n');
+  }, []);
+
+  useEffect(() => {
+    // Reset per-generation artifacts when generation changes
+    setGuideMap(new Map());
+  }, [generationId]);
 
   // Track if we're manually loading data to prevent useEffect from interfering
   const [isManuallyLoading, setIsManuallyLoading] = useState(false);
@@ -129,6 +171,9 @@ export const RecommendationsV3 = () => {
         });
         
         if (response.success && response.data) {
+          if (response.data.dataMaturity !== undefined) {
+            setDataMaturity((response.data.dataMaturity as any) || null);
+          }
           // Recommendations from database should already have IDs
           // Log if any are missing IDs for debugging
           const missingIds = response.data.recommendations.filter(rec => !rec.id);
@@ -155,6 +200,8 @@ export const RecommendationsV3 = () => {
             if (notApproved.length > 0) {
               console.error(`❌ [RecommendationsV3] ERROR: Step 2 contains ${notApproved.length} unapproved recommendations!`, notApproved);
             }
+            // Debug: Log dataMaturity state
+            console.log(`🧊 [RecommendationsV3] Step 2 - dataMaturity: ${dataMaturity}, isColdStart: ${isColdStart}`);
           }
           
           if (recommendationsWithIds.length === 0 && response.data.recommendations.length > 0) {
@@ -187,14 +234,17 @@ export const RecommendationsV3 = () => {
             setError(null);
           }
           
-          // For Step 3, load content for each recommendation
+          // For Step 3, load content/guides for each recommendation
           if (currentStep === 3) {
+            const isColdStartForThisStep =
+              (response.data?.dataMaturity === 'cold_start') || isColdStart;
+
             // Initialize all recommendations to have expanded sections by default
             const newExpandedSections = new Map(expandedSections);
             recommendationsWithIds.forEach(rec => {
               if (rec.id && !newExpandedSections.has(rec.id)) {
                 // Default to both sections expanded
-                newExpandedSections.set(rec.id, { email: true, content: true });
+                newExpandedSections.set(rec.id, { content: true });
               }
             });
             setExpandedSections(newExpandedSections);
@@ -214,13 +264,23 @@ export const RecommendationsV3 = () => {
               });
             
             const contentResults = await Promise.all(contentPromises);
-            const newContentMap = new Map(contentMap);
-            contentResults.forEach(result => {
-              if (result) {
-                newContentMap.set(result.id!, result.content);
-              }
-            });
-            setContentMap(newContentMap);
+            if (isColdStartForThisStep) {
+              const newGuideMap = new Map(guideMap);
+              contentResults.forEach(result => {
+                if (result) {
+                  newGuideMap.set(result.id!, extractGuideObject(result.content));
+                }
+              });
+              setGuideMap(newGuideMap);
+            } else {
+              const newContentMap = new Map(contentMap);
+              contentResults.forEach(result => {
+                if (result) {
+                  newContentMap.set(result.id!, result.content);
+                }
+              });
+              setContentMap(newContentMap);
+            }
           }
         } else {
           // If no recommendations found, set empty array instead of error
@@ -314,6 +374,7 @@ export const RecommendationsV3 = () => {
     setSelectedIds(new Set());
     setContentMap(new Map());
     setExpandedSections(new Map());
+    setDataMaturity(null);
     setError(null);
     setStatusFilter('all'); // Reset filter
     
@@ -339,6 +400,9 @@ export const RecommendationsV3 = () => {
         
         if (response.success && response.data && response.data.generationId) {
           const genId = response.data.generationId;
+          if (response.data.dataMaturity !== undefined) {
+            setDataMaturity((response.data.dataMaturity as any) || null);
+          }
           
           // Check if this is a different generation than what we currently have
           const isDifferentGeneration = genId !== generationId;
@@ -595,7 +659,7 @@ export const RecommendationsV3 = () => {
             step3Recs.forEach(rec => {
               if (rec.id && !newExpandedSections.has(rec.id)) {
                 // Default to both sections expanded
-                newExpandedSections.set(rec.id, { email: true, content: true });
+                newExpandedSections.set(rec.id, { content: true });
               }
             });
             setExpandedSections(newExpandedSections);
@@ -744,6 +808,75 @@ export const RecommendationsV3 = () => {
     }
   };
 
+  // Cold-start Step 2: Generate a guide for a single recommendation (Step 2 → Step 3)
+  const handleGenerateGuide = async (recommendation: RecommendationV3, action: string) => {
+    if (!recommendation.id || action !== 'generate-guide') return;
+    if (generatingContentIds.has(recommendation.id)) return; // Prevent duplicate requests
+
+    setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
+    setError(null);
+
+    try {
+      console.log(`📘 [RecommendationsV3] Generating guide for recommendation ${recommendation.id}...`);
+      const response = await generateGuideV3(recommendation.id);
+
+      if (response.success && response.data) {
+        // Store parsed guide into guideMap (Step 3)
+        try {
+          const record = response.data.content;
+          const raw = record?.content ?? record;
+          if (typeof raw === 'string') {
+            let parsed: any = raw;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              // Keep as raw string if JSON is invalid/truncated
+              parsed = raw;
+            }
+            setGuideMap(prev => new Map(prev).set(recommendation.id!, parsed));
+          } else {
+            setGuideMap(prev => new Map(prev).set(recommendation.id!, raw));
+          }
+        } catch (e) {
+          console.warn('⚠️ [RecommendationsV3] Could not store guide content, proceeding:', e);
+        }
+
+        // Navigate to Step 3 (guide review)
+        setHasGeneratedContentForStep3(true);
+        if (generationId) {
+          isManuallyNavigatingRef.current = true;
+          setIsManuallyLoading(true);
+          lastManuallyLoadedStepRef.current = 3;
+          try {
+            const step3Response = await getRecommendationsByStepV3(generationId, 3);
+            if (step3Response.success && step3Response.data) {
+              const recommendationsWithIds = step3Response.data.recommendations
+                .filter(rec => rec.id && rec.id.length > 10)
+                .map(rec => ({ ...rec, id: rec.id! }));
+              setRecommendations(recommendationsWithIds);
+              setCurrentStep(3);
+              setHasGeneratedContentForStep3(false);
+            }
+          } finally {
+            setIsManuallyLoading(false);
+            isManuallyNavigatingRef.current = false;
+          }
+        }
+      } else {
+        setError(response.error || 'Failed to generate guide');
+      }
+    } catch (err: any) {
+      console.error('Error generating guide:', err);
+      setError(err.message || 'Failed to generate guide');
+    } finally {
+      setGeneratingContentIds(prev => {
+        const next = new Set(prev);
+        next.delete(recommendation.id!);
+        return next;
+      });
+    }
+  };
+
   // Handle generate content for single recommendation
   const handleGenerateContent = async (recommendation: RecommendationV3, action: string) => {
     if (!recommendation.id || action !== 'generate-content') return;
@@ -784,7 +917,7 @@ export const RecommendationsV3 = () => {
               const newExpandedSections = new Map(expandedSections);
               recommendationsWithIds.forEach(rec => {
                 if (rec.id && !newExpandedSections.has(rec.id)) {
-                  newExpandedSections.set(rec.id, { email: true, content: true });
+                  newExpandedSections.set(rec.id, { content: true });
                 }
               });
               setExpandedSections(newExpandedSections);
@@ -1043,6 +1176,12 @@ export const RecommendationsV3 = () => {
                     console.log(`📥 [RecommendationsV3] Manual step navigation to Step ${step}`);
                     const response = await getRecommendationsByStepV3(generationId, step);
                     if (response.success && response.data) {
+                      // Update dataMaturity if provided
+                      if (response.data.dataMaturity !== undefined) {
+                        const newMaturity = (response.data.dataMaturity as any) || null;
+                        setDataMaturity(newMaturity);
+                        console.log(`🧊 [RecommendationsV3] Step ${step} - Updated dataMaturity to: ${newMaturity}`);
+                      }
                       const recommendationsWithIds = response.data.recommendations
                         .filter(rec => rec.id && rec.id.length > 10)
                         .map(rec => ({ ...rec, id: rec.id! }));
@@ -1052,13 +1191,14 @@ export const RecommendationsV3 = () => {
                       setRecommendations(recommendationsWithIds);
                       setError(null);
                       
-                      // Load content for Step 3
+                      // Load content/guides for Step 3
                       if (step === 3) {
                         setHasGeneratedContentForStep3(false);
+                        const isColdStartForThisStep = (response.data?.dataMaturity === 'cold_start') || isColdStart;
                         const newExpandedSections = new Map(expandedSections);
                         recommendationsWithIds.forEach(rec => {
                           if (rec.id && !newExpandedSections.has(rec.id)) {
-                            newExpandedSections.set(rec.id, { email: true, content: true });
+                            newExpandedSections.set(rec.id, { content: true });
                           }
                         });
                         setExpandedSections(newExpandedSections);
@@ -1078,13 +1218,23 @@ export const RecommendationsV3 = () => {
                           });
                         
                         const contentResults = await Promise.all(contentPromises);
-                        const newContentMap = new Map(contentMap);
-                        contentResults.forEach(result => {
-                          if (result) {
-                            newContentMap.set(result.id!, result.content);
-                          }
-                        });
-                        setContentMap(newContentMap);
+                        if (isColdStartForThisStep) {
+                          const newGuideMap = new Map(guideMap);
+                          contentResults.forEach(result => {
+                            if (result) {
+                              newGuideMap.set(result.id!, extractGuideObject(result.content));
+                            }
+                          });
+                          setGuideMap(newGuideMap);
+                        } else {
+                          const newContentMap = new Map(contentMap);
+                          contentResults.forEach(result => {
+                            if (result) {
+                              newContentMap.set(result.id!, result.content);
+                            }
+                          });
+                          setContentMap(newContentMap);
+                        }
                       }
 
                       // Clear "completed" attention once user visits Step 4
@@ -1167,13 +1317,20 @@ export const RecommendationsV3 = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
                     <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: Action Plan</h2>
-                    <p className="text-[13px] text-[#64748b]">Approve and generate content for chosen actions</p>
+                    <p className="text-[13px] text-[#64748b]">
+                      {isColdStart
+                        ? 'Generate an execution-ready implementation guide for each approved action (checklists, deliverables, success criteria).'
+                        : 'Approve and generate content for chosen actions'}
+                    </p>
                   </div>
                 </div>
                 <RecommendationsTableV3
                   recommendations={recommendations}
                   showActions={true}
-                  onAction={handleGenerateContent}
+                  onAction={isColdStart ? handleGenerateGuide : handleGenerateContent}
+                  actionLabel={isColdStart ? 'Generate Guide' : 'Generate'}
+                  actionType={isColdStart ? 'generate-guide' : 'generate-content'}
+                  generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
                   generatingContentIds={generatingContentIds}
                 />
               </div>
@@ -1184,10 +1341,230 @@ export const RecommendationsV3 = () => {
               <div>
                 <div className="mb-6">
                   <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 3: Refinement</h2>
-                  <p className="text-[13px] text-[#64748b] mt-1">Review generated content and finalize for publication</p>
+                  <p className="text-[13px] text-[#64748b] mt-1">
+                    {isColdStart
+                      ? 'Cold-start brands skip content generation. Use Step 2 to review implementation guides, then execute and track results in Step 4.'
+                      : 'Review generated content and finalize for publication'}
+                  </p>
                 </div>
-                <div className="space-y-6">
-                  {recommendations.map((rec) => {
+                {isColdStart && (
+                  <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6">
+                    <p className="text-[13px] text-[#0f172a]">
+                      This step is not used for <span className="font-semibold">cold_start</span>. Your execution guides live in Step 2.
+                    </p>
+                    <div className="mt-4 flex gap-3">
+                      <button
+                        onClick={() => setCurrentStep(2)}
+                        className="px-4 py-2 bg-[#00bcdc] text-white rounded-lg text-[13px] font-semibold hover:bg-[#00a8c6] transition-colors"
+                      >
+                        Go to Step 2
+                      </button>
+                      <button
+                        onClick={() => setCurrentStep(4)}
+                        className="px-4 py-2 bg-white border border-[#e2e8f0] text-[#0f172a] rounded-lg text-[13px] font-semibold hover:bg-[#f8fafc] transition-colors"
+                      >
+                        Go to Step 4
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {isColdStart ? (
+                  <div className="space-y-6">
+                    {recommendations.map((rec) => {
+                      const guideRaw = rec.id ? guideMap.get(rec.id) : null;
+                      const guideObj = extractGuideObject(guideRaw);
+                      const isGuide = Boolean(guideObj && typeof guideObj === 'object' && guideObj.version === 'guide_v1');
+
+                      return (
+                        <div key={rec.id} className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden">
+                          {/* Header */}
+                          <div className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <h3 className="text-[16px] font-semibold text-[#1a1d29] leading-tight">{rec.action}</h3>
+                                <p className="text-[12px] text-[#64748b] mt-1">
+                                  KPI: {rec.kpi} · Source: {rec.citationSource} · Effort: {rec.effort} · Timeline: {rec.timeline}
+                                </p>
+                              </div>
+                              {!rec.isCompleted ? (
+                                <button
+                                  onClick={() => handleToggleComplete(rec)}
+                                  className="shrink-0 px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-semibold hover:bg-[#05a870] transition-colors"
+                                >
+                                  Mark as Completed
+                                </button>
+                              ) : (
+                                <span className="shrink-0 inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-[#d1fae5] text-[#065f46]">
+                                  ✓ Completed
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Body */}
+                          <div className="p-6">
+                            {!guideRaw ? (
+                              <div className="bg-[#fff7ed] border border-[#fed7aa] rounded-lg p-4">
+                                <p className="text-[13px] text-[#9a3412] font-semibold">Guide not generated yet</p>
+                                <p className="text-[12px] text-[#7c2d12] mt-1">
+                                  Go back to Step 2 and click <span className="font-semibold">Generate Guide</span> for this recommendation.
+                                </p>
+                                <button
+                                  onClick={() => setCurrentStep(2)}
+                                  className="mt-3 px-4 py-2 bg-[#00bcdc] text-white rounded-lg text-[13px] font-semibold hover:bg-[#00a8c6] transition-colors"
+                                >
+                                  Go to Step 2
+                                </button>
+                              </div>
+                            ) : isGuide ? (
+                              <div className="space-y-6">
+                                {/* Summary */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-4">
+                                    <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Goal</p>
+                                    <p className="text-[13px] text-[#0f172a]">{guideObj?.summary?.goal || '—'}</p>
+                                  </div>
+                                  <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-4">
+                                    <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Why this matters</p>
+                                    <p className="text-[13px] text-[#0f172a]">{guideObj?.summary?.whyThisMatters || '—'}</p>
+                                  </div>
+                                </div>
+
+                                {/* Prerequisites */}
+                                {Array.isArray(guideObj?.prerequisites) && guideObj.prerequisites.length > 0 && (
+                                  <div>
+                                    <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Prerequisites</p>
+                                    <ul className="list-disc pl-5 space-y-1">
+                                      {guideObj.prerequisites.map((p: string, idx: number) => (
+                                        <li key={idx} className="text-[13px] text-[#0f172a]">{p}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {/* Implementation plan */}
+                                {Array.isArray(guideObj?.implementationPlan) && guideObj.implementationPlan.length > 0 && (
+                                  <div>
+                                    <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-3">Implementation Plan</p>
+                                    <div className="space-y-4">
+                                      {guideObj.implementationPlan.map((phase: any, pIdx: number) => (
+                                        <div key={pIdx} className="border border-[#e2e8f0] rounded-lg p-4">
+                                          <p className="text-[13px] font-semibold text-[#0f172a] mb-2">{phase.phase}</p>
+                                          <div className="space-y-3">
+                                            {(phase.steps || []).map((step: any, sIdx: number) => (
+                                              <div key={sIdx} className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-3">
+                                                <p className="text-[13px] font-semibold text-[#0f172a]">{step.title}</p>
+                                                <p className="text-[13px] text-[#334155] mt-1 whitespace-pre-line">{step.howTo}</p>
+                                                {step.deliverable && (
+                                                  <p className="text-[12px] text-[#475569] mt-2">
+                                                    <span className="font-semibold">Deliverable:</span> {step.deliverable}
+                                                  </p>
+                                                )}
+                                                {Array.isArray(step.qualityChecks) && step.qualityChecks.length > 0 && (
+                                                  <ul className="list-disc pl-5 mt-2 space-y-1">
+                                                    {step.qualityChecks.map((c: string, cIdx: number) => (
+                                                      <li key={cIdx} className="text-[12px] text-[#0f172a]">{c}</li>
+                                                    ))}
+                                                  </ul>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Success criteria */}
+                                {guideObj?.successCriteria && (
+                                  <div className="bg-[#f0f9ff] border border-[#bae6fd] rounded-lg p-4">
+                                    <p className="text-[12px] font-semibold text-[#0369a1] uppercase tracking-wide mb-2">Success Criteria</p>
+                                    {Array.isArray(guideObj.successCriteria.whatToMeasure) && (
+                                      <ul className="list-disc pl-5 space-y-1">
+                                        {guideObj.successCriteria.whatToMeasure.map((m: string, idx: number) => (
+                                          <li key={idx} className="text-[13px] text-[#0f172a]">{m}</li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                    {guideObj.successCriteria.expectedDirection && (
+                                      <p className="text-[13px] text-[#0f172a] mt-2">{guideObj.successCriteria.expectedDirection}</p>
+                                    )}
+                                    {guideObj.successCriteria.checkInCadence && (
+                                      <p className="text-[12px] text-[#475569] mt-2">
+                                        <span className="font-semibold">Check-in cadence:</span> {guideObj.successCriteria.checkInCadence}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* If already done */}
+                                {guideObj?.ifAlreadyDone && (
+                                  <div className="bg-[#fff7ed] border border-[#fed7aa] rounded-lg p-4">
+                                    <p className="text-[12px] font-semibold text-[#9a3412] uppercase tracking-wide mb-2">If you think this is already done</p>
+                                    {Array.isArray(guideObj.ifAlreadyDone.verificationSteps) && (
+                                      <>
+                                        <p className="text-[12px] font-semibold text-[#475569] mb-1">Verification steps</p>
+                                        <ul className="list-disc pl-5 space-y-1">
+                                          {guideObj.ifAlreadyDone.verificationSteps.map((v: string, idx: number) => (
+                                            <li key={idx} className="text-[13px] text-[#0f172a]">{v}</li>
+                                          ))}
+                                        </ul>
+                                      </>
+                                    )}
+                                    {Array.isArray(guideObj.ifAlreadyDone.upgradePath) && guideObj.ifAlreadyDone.upgradePath.length > 0 && (
+                                      <>
+                                        <p className="text-[12px] font-semibold text-[#475569] mt-3 mb-1">Upgrade path</p>
+                                        <ul className="list-disc pl-5 space-y-1">
+                                          {guideObj.ifAlreadyDone.upgradePath.map((u: string, idx: number) => (
+                                            <li key={idx} className="text-[13px] text-[#0f172a]">{u}</li>
+                                          ))}
+                                        </ul>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Common mistakes */}
+                                {Array.isArray(guideObj?.commonMistakes) && guideObj.commonMistakes.length > 0 && (
+                                  <div>
+                                    <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide mb-2">Common mistakes</p>
+                                    <ul className="list-disc pl-5 space-y-1">
+                                      {guideObj.commonMistakes.map((m: string, idx: number) => (
+                                        <li key={idx} className="text-[13px] text-[#0f172a]">{m}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {!isGuide && (
+                                  <div className="text-[13px] text-[#0f172a]">
+                                    <p className="text-[12px] text-[#64748b] mb-2">Guide generated (raw):</p>
+                                    <pre className="whitespace-pre-wrap text-[12px] bg-[#0b1220] text-[#e2e8f0] rounded-lg p-4 overflow-auto">
+                                      {typeof guideRaw === 'string' ? guideRaw : JSON.stringify(guideRaw, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4">
+                                <p className="text-[13px] text-[#991b1b] font-semibold">Guide JSON is invalid / truncated</p>
+                                <p className="text-[12px] text-[#7f1d1d] mt-1">
+                                  This can happen if the model output is cut off mid-response. Please go back to Step 2 and click Generate Guide again.
+                                </p>
+                                <pre className="mt-3 whitespace-pre-wrap text-[12px] bg-[#0b1220] text-[#e2e8f0] rounded-lg p-4 overflow-auto">
+                                  {typeof guideRaw === 'string' ? guideRaw : JSON.stringify(guideRaw, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {recommendations.map((rec) => {
                     const content = rec.id ? contentMap.get(rec.id) : null;
                     return (
                       <div key={rec.id} className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden">
@@ -1277,30 +1654,18 @@ export const RecommendationsV3 = () => {
                             // Handle v2.0 format (new structure with separate sections)
                             if (parsedContent && parsedContent.version === '2.0') {
                               const v2Content = parsedContent as any;
-                              const collaborationEmail = v2Content.collaborationEmail;
                               const publishableContent = v2Content.publishableContent;
                               const sourceType = v2Content.targetSource?.sourceType || 'other';
                               
-                              // Get expanded state for this recommendation (default to both expanded)
-                              const sectionState = expandedSections.get(rec.id || '') || { email: true, content: true };
-                              const isEmailExpanded = sectionState.email;
+                              // Get expanded state for this recommendation
+                              const sectionState = expandedSections.get(rec.id || '') || { content: true };
                               const isContentExpanded = sectionState.content;
-                              
-                              // Toggle function for email section
-                              const toggleEmail = () => {
-                                setExpandedSections(prev => {
-                                  const next = new Map(prev);
-                                  const current = next.get(rec.id || '') || { email: true, content: true };
-                                  next.set(rec.id || '', { ...current, email: !current.email });
-                                  return next;
-                                });
-                              };
                               
                               // Toggle function for content section
                               const toggleContent = () => {
                                 setExpandedSections(prev => {
                                   const next = new Map(prev);
-                                  const current = next.get(rec.id || '') || { email: true, content: true };
+                                  const current = next.get(rec.id || '') || { content: true };
                                   next.set(rec.id || '', { ...current, content: !current.content });
                                   return next;
                                 });
@@ -1308,64 +1673,6 @@ export const RecommendationsV3 = () => {
                               
                               return (
                                 <div className="space-y-6">
-                                  {/* Collaboration Email Section - Collapsible */}
-                                  {collaborationEmail && collaborationEmail.emailBody && (
-                                    <div className="bg-gradient-to-br from-[#fef3c7] to-[#fde68a] rounded-lg border border-[#fbbf24] shadow-sm overflow-hidden">
-                                      {/* Header - Clickable to toggle */}
-                                      <div 
-                                        onClick={toggleEmail}
-                                        className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#fde68a]/50 transition-colors border-b border-[#f59e0b]"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          {isEmailExpanded ? (
-                                            <IconChevronUp size={18} className="text-[#92400e]" />
-                                          ) : (
-                                            <IconChevronDown size={18} className="text-[#92400e]" />
-                                          )}
-                                          <div className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]"></div>
-                                          <h4 className="text-[13px] font-semibold text-[#92400e] uppercase tracking-wider">Collaboration Email</h4>
-                                        </div>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation(); // Prevent toggle when clicking copy
-                                            const emailText = `Subject: ${collaborationEmail.subjectLine || ''}\n\n${collaborationEmail.emailBody || ''}\n\n${collaborationEmail.cta || ''}`;
-                                            navigator.clipboard.writeText(emailText);
-                                          }}
-                                          className="px-3 py-1.5 bg-[#f59e0b] text-white rounded text-[11px] font-medium hover:bg-[#d97706] transition-colors flex items-center gap-1.5"
-                                        >
-                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                          </svg>
-                                          Copy Email
-                                        </button>
-                                      </div>
-                                      
-                                      {/* Content - Collapsible */}
-                                      {isEmailExpanded && (
-                                        <div className="p-6">
-                                          {collaborationEmail.subjectLine && (
-                                            <div className="mb-3">
-                                              <div className="text-[11px] font-semibold text-[#92400e] mb-1">Subject Line:</div>
-                                              <div className="text-[14px] font-semibold text-[#78350f]">{collaborationEmail.subjectLine}</div>
-                                            </div>
-                                          )}
-                                          <div className="mb-3">
-                                            <div className="text-[11px] font-semibold text-[#92400e] mb-2">Email Body:</div>
-                                            <div className="text-[14px] text-[#78350f] leading-relaxed whitespace-pre-wrap font-sans">
-                                              {collaborationEmail.emailBody}
-                                            </div>
-                                          </div>
-                                          {collaborationEmail.cta && (
-                                            <div className="pt-3 border-t border-[#f59e0b]">
-                                              <div className="text-[11px] font-semibold text-[#92400e] mb-1">Call to Action:</div>
-                                              <div className="text-[14px] text-[#78350f] font-medium">{collaborationEmail.cta}</div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                  
                                   {/* Publishable Content Section - Collapsible */}
                                   {publishableContent && publishableContent.content && (
                                     <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
@@ -1396,7 +1703,7 @@ export const RecommendationsV3 = () => {
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation(); // Prevent toggle when clicking copy
-                                            navigator.clipboard.writeText(publishableContent.content || '');
+                                            navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''));
                                           }}
                                           className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
                                         >
@@ -1469,7 +1776,7 @@ export const RecommendationsV3 = () => {
                                             <div className={`text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans ${
                                               publishableContent.type === 'video_script' ? 'font-mono' : ''
                                             }`}>
-                                              {publishableContent.content}
+                                              {unescapeNewlines(publishableContent.content)}
                                             </div>
                                           </div>
                                         </div>
@@ -1564,8 +1871,9 @@ export const RecommendationsV3 = () => {
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1585,19 +1893,19 @@ export const RecommendationsV3 = () => {
                             Domain/Source
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Current Visibility
+                            Benchmarked Visibility
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
                             New Visibility
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Current SOA
+                            Benchmarked SOA
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
                             New SOA
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Current Sentiment
+                            Benchmarked Sentiment
                           </th>
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
                             New Sentiment

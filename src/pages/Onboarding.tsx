@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BrandInput } from '../components/Onboarding/BrandInput';
 import { CompetitorGrid } from '../components/Onboarding/CompetitorGrid';
 import { Summary } from '../components/Onboarding/Summary';
 import { featureFlags } from '../config/featureFlags';
 import { OnboardingLayout } from './OnboardingLayout';
+import { onboardingCache } from '../utils/onboardingCache';
 import type { OnboardingBrand, OnboardingCompetitor } from '../types/onboarding';
 
 type OnboardingStep = 'brand' | 'competitors' | 'summary';
@@ -16,12 +17,48 @@ export const Onboarding = () => {
   const [competitors, setCompetitors] = useState<OnboardingCompetitor[]>([]);
   const [allCompetitors, setAllCompetitors] = useState<OnboardingCompetitor[]>([]);
   const [selectedCompetitorDomains, setSelectedCompetitorDomains] = useState<Set<string>>(new Set());
+  const [isCacheLoaded, setIsCacheLoaded] = useState(false);
+
   const getCompetitorKey = (competitor: OnboardingCompetitor) =>
     (competitor.domain || competitor.name || '').toLowerCase();
 
   const [brandInput, setBrandInput] = useState('');
   const [isAnalyzingBrand, setIsAnalyzingBrand] = useState(false);
   const [brandInputResetKey, setBrandInputResetKey] = useState(0);
+
+  // Load from cache on mount
+  useEffect(() => {
+    const cachedData = onboardingCache.load();
+    if (cachedData) {
+      setBrand(cachedData.brand);
+      setCompetitors(cachedData.competitors);
+      setAllCompetitors(cachedData.allCompetitors);
+      setSelectedCompetitorDomains(new Set(cachedData.selectedCompetitorDomains));
+      setBrandInput(cachedData.brandInput);
+      setCurrentStep(cachedData.step);
+      
+      // If we loaded brand data but are on brand step, verify if we should be further along
+      if (cachedData.step === 'brand' && cachedData.brand) {
+        // Optional: auto-advance or let user decide. Keeping it simple for now.
+      }
+    }
+    setIsCacheLoaded(true);
+  }, []);
+
+  // Save to cache on changes
+  useEffect(() => {
+    if (!isCacheLoaded) return;
+
+    onboardingCache.save({
+      step: currentStep,
+      brand,
+      competitors,
+      allCompetitors,
+      selectedCompetitorDomains: Array.from(selectedCompetitorDomains),
+      brandInput,
+    });
+  }, [currentStep, brand, competitors, allCompetitors, selectedCompetitorDomains, brandInput, isCacheLoaded]);
+
 
   // Redirect if skip onboarding check is enabled
   useEffect(() => {
@@ -91,6 +128,9 @@ export const Onboarding = () => {
     }
     localStorage.setItem('onboarding_competitors', JSON.stringify(competitors));
     localStorage.setItem('onboarding_complete', 'true');
+    
+    // Clear the progress cache
+    onboardingCache.clear();
     
     // Navigate to setup flow
     navigate('/setup');

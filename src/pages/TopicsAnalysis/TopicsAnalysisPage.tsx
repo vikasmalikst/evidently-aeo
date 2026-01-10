@@ -97,20 +97,30 @@ export const TopicsAnalysisPage = ({
   // Manage selected category state (shared between chart and table)
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  const defaultEnd = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const defaultEnd = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
   const defaultStart = useMemo(() => {
     const end = new Date();
-    end.setUTCHours(23, 59, 59, 999);
+    end.setHours(23, 59, 59, 999);
     const start = new Date(end);
-    start.setUTCDate(start.getUTCDate() - 29);
-    start.setUTCHours(0, 0, 0, 0);
-    return start.toISOString().split('T')[0];
+    start.setDate(start.getDate() - 29);
+    start.setHours(0, 0, 0, 0);
+
+    const year = start.getFullYear();
+    const month = String(start.getMonth() + 1).padStart(2, '0');
+    const day = String(start.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }, []);
 
   // Track if user is actively changing dates to prevent parent override
   const isUserChangingDates = useRef(false);
   const isInitialMount = useRef(true);
-  
+
   // Initialize with props if available, otherwise use defaults
   const [startDate, setStartDate] = useState<string>(() => {
     const initial = currentStartDate || defaultStart;
@@ -276,12 +286,12 @@ export const TopicsAnalysisPage = ({
   const internalHandleCompetitorToggle = useCallback((competitorName: string) => {
     setInternalSelectedCompetitors((prev) => {
       const allCompetitorKeys = new Set(internalCompetitors.map(c => c.name.toLowerCase()));
-      const isAllSelected = prev.size === internalCompetitors.length && 
+      const isAllSelected = prev.size === internalCompetitors.length &&
         internalCompetitors.every(c => prev.has(c.name.toLowerCase()));
-      
+
       const key = competitorName.toLowerCase();
       let newSet: Set<string>;
-      
+
       if (isAllSelected) {
         newSet = new Set([key]);
       } else {
@@ -295,7 +305,7 @@ export const TopicsAnalysisPage = ({
           newSet.add(key);
         }
       }
-      
+
       onFiltersChange?.({
         competitors: Array.from(newSet),
       });
@@ -322,10 +332,10 @@ export const TopicsAnalysisPage = ({
   const handleCompetitorToggle = externalOnCompetitorToggle ?? internalHandleCompetitorToggle;
   const handleSelectAllCompetitors = externalOnSelectAllCompetitors ?? internalHandleSelectAllCompetitors;
   const handleDeselectAllCompetitors = externalOnDeselectAllCompetitors ?? internalHandleDeselectAllCompetitors;
-  
+
   // Get brand favicon from selected brand, or use undefined if not available
   // In real app, get from brand configuration
-  const brandFavicon = (selectedBrand as any)?.domain 
+  const brandFavicon = (selectedBrand as any)?.domain
     ? `https://www.google.com/s2/favicons?domain=${(selectedBrand as any).domain}&sz=12`
     : undefined;
 
@@ -354,18 +364,18 @@ export const TopicsAnalysisPage = ({
   // Debounced filter update - prevents multiple rapid API calls
   useEffect(() => {
     if (!onFiltersChange) return;
-    
+
     // Clear any pending debounce
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
-    
+
     const collectorType = normalizedModels.join(',');
     const filterKey = `${startDate || ''}|${endDate || ''}|${collectorType}`;
-    
+
     // If filter key hasn't changed, don't send
     if (filterKey === lastSentFilters.current) return;
-    
+
     // Debounce the filter update by 300ms to batch rapid changes
     debounceTimerRef.current = setTimeout(() => {
       lastSentFilters.current = filterKey;
@@ -375,7 +385,7 @@ export const TopicsAnalysisPage = ({
         collectorType: collectorType || undefined,
       });
     }, 300);
-    
+
     // Cleanup on unmount or when dependencies change
     return () => {
       if (debounceTimerRef.current) {
@@ -438,7 +448,7 @@ export const TopicsAnalysisPage = ({
 
   // Always show the page structure, even with empty data
   // Components will handle their own empty states
-  
+
   // Only show true empty state if we've never loaded any data at all
   if (!data) {
     return (
@@ -449,7 +459,7 @@ export const TopicsAnalysisPage = ({
       </Layout>
     );
   }
-  
+
   // If no data, still show the full page structure with empty charts/tables
   // Don't show the "No topics found" empty state - let components handle their own empty states
 
@@ -518,17 +528,16 @@ export const TopicsAnalysisPage = ({
             onChange={(value) => setMetricType(value as TopicsMetricType)}
             allowedMetricTypes={['share', 'visibility', 'sentiment']}
           />
-          
+
           {/* LLM Selector/Filter Icons - aligned to the right */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setSelectedModels([])}
-              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
-                selectedModels.length === 0
-                  ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
-                  : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
-              }`}
+              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${selectedModels.length === 0
+                ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
+                : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
+                }`}
             >
               All
             </button>
@@ -543,11 +552,10 @@ export const TopicsAnalysisPage = ({
                       prev.includes(model) ? prev.filter((m) => m !== model) : [...prev, model]
                     )
                   }
-                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${
-                    isActive
-                      ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
-                      : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-                  }`}
+                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${isActive
+                    ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
+                    : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
+                    }`}
                   title={model}
                   aria-label={`Filter by ${model}`}
                 >

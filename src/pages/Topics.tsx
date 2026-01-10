@@ -68,7 +68,7 @@ const toSentimentScore0To100 = (value: number | null | undefined): number | null
 function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<string, number>): TopicsAnalysisData {
   const totalSearchVolume = 0;
   const uniqueCategories = new Set(backendTopics.map(t => t.category));
-  
+
   // Include active topics (relaxed filter - show topics even if totalQueries is 0 or undefined)
   // This allows showing topics that might not have analytics data yet
   const topicsWithData = backendTopics
@@ -76,7 +76,7 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
     .map((t, index) => {
       const soAPercentage = t.avgShareOfAnswer || 0;
       const soAMultiplier = soAPercentage / 20;
-      
+
       const sentimentScore = t.avgSentiment;
       let sentiment: 'positive' | 'neutral' | 'negative' = 'neutral';
       if (sentimentScore !== null && sentimentScore !== undefined) {
@@ -86,7 +86,7 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
 
       const currentVisibility = toVisibilityScore0To100(t.avgVisibility);
       const currentSentiment = toSentimentScore0To100(t.avgSentiment);
-      
+
       // Transform topSources from backend format to TopicSource format
       const sources: TopicSource[] = (t.topSources || []).map(source => ({
         name: source.name,
@@ -103,18 +103,18 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
 
       const industryAvgVisibility = toVisibilityScore0To100(t.industryAvgVisibility);
       const industryAvgSentiment = toSentimentScore0To100(t.industryAvgSentiment);
-      
+
       // Debug logging for competitor SOA
-      
+
       // Use competitor trend if available, otherwise default to neutral
       const industryTrend = t.industryAvgSoATrend || { direction: 'neutral' as const, delta: 0 };
 
       // Get delta for this topic if available
       const topicKey = t.topic_name || t.topic || '';
       const topicDelta = topicDeltaMap?.get(topicKey) || 0;
-      const trendDirection: 'up' | 'down' | 'neutral' = 
+      const trendDirection: 'up' | 'down' | 'neutral' =
         topicDelta > 0 ? 'up' : topicDelta < 0 ? 'down' : 'neutral';
-      
+
       return {
         id: t.id || `topic-${index}`,
         rank: 0, // Will be assigned after sorting
@@ -182,26 +182,26 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
   });
 
   const soAValues = topics.map(t => t.soA).filter(v => v > 0);
-  const avgSoA = soAValues.length > 0 
-    ? soAValues.reduce((sum, v) => sum + v, 0) / soAValues.length 
+  const avgSoA = soAValues.length > 0
+    ? soAValues.reduce((sum, v) => sum + v, 0) / soAValues.length
     : 0;
   const maxSoA = soAValues.length > 0 ? Math.max(...soAValues) : 0;
   const minSoA = soAValues.length > 0 ? Math.min(...soAValues) : 0;
 
   // Find the topic with the highest positive delta (trending/gaining topic)
   // If no positive deltas, find the one with the least negative delta
-  const weeklyGainer = topics.length > 0 
+  const weeklyGainer = topics.length > 0
     ? topics.reduce((best, current) => {
-        const currentDelta = current.trend?.delta || 0;
-        const bestDelta = best.trend?.delta || 0;
-        
-        // Prefer positive deltas
-        if (currentDelta > 0 && bestDelta <= 0) return current;
-        if (bestDelta > 0 && currentDelta <= 0) return best;
-        
-        // If both positive or both negative, pick the one with higher delta
-        return currentDelta > bestDelta ? current : best;
-      }, topics[0])
+      const currentDelta = current.trend?.delta || 0;
+      const bestDelta = best.trend?.delta || 0;
+
+      // Prefer positive deltas
+      if (currentDelta > 0 && bestDelta <= 0) return current;
+      if (bestDelta > 0 && currentDelta <= 0) return best;
+
+      // If both positive or both negative, pick the one with higher delta
+      return currentDelta > bestDelta ? current : best;
+    }, topics[0])
     : { name: 'N/A', category: 'N/A', trend: { delta: 0 } };
 
   return {
@@ -237,13 +237,21 @@ interface TopicsFilters {
 
 const getDefaultDateRange = () => {
   const end = new Date();
-  end.setUTCHours(23, 59, 59, 999);
+  end.setHours(23, 59, 59, 999);
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 6);
-  start.setUTCHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - 6);
+  start.setHours(0, 0, 0, 0);
+
+  const formatDate = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0],
+    start: formatDate(start),
+    end: formatDate(end),
   };
 };
 
@@ -255,7 +263,7 @@ export const Topics = () => {
   });
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const lastEndpointRef = useRef<string | null>(null);
-  
+
   // Define updateFilters first so it can be used in competitor handlers
   const updateFilters = useCallback((next: TopicsFilters) => {
     setFilters((prev) => {
@@ -267,12 +275,12 @@ export const Topics = () => {
       return updated;
     });
   }, []);
-  
+
   // Fetch competitors early to avoid delay in TopicsAnalysisPage
   const [competitors, setCompetitors] = useState<ManagedCompetitor[]>([]);
   const [selectedCompetitors, setSelectedCompetitors] = useState<Set<string>>(new Set());
   const [isLoadingCompetitors, setIsLoadingCompetitors] = useState(false);
-  
+
   useEffect(() => {
     const fetchCompetitors = async () => {
       if (!selectedBrandId) {
@@ -305,16 +313,16 @@ export const Topics = () => {
 
     fetchCompetitors();
   }, [selectedBrandId]);
-  
+
   const handleCompetitorToggle = useCallback((competitorName: string) => {
     setSelectedCompetitors((prev) => {
       const allCompetitorKeys = new Set(competitors.map(c => c.name.toLowerCase()));
-      const isAllSelected = prev.size === competitors.length && 
+      const isAllSelected = prev.size === competitors.length &&
         competitors.every(c => prev.has(c.name.toLowerCase()));
-      
+
       const key = competitorName.toLowerCase();
       let newSet: Set<string>;
-      
+
       // If all are selected and user clicks a competitor, select only that competitor
       if (isAllSelected) {
         newSet = new Set([key]);
@@ -331,7 +339,7 @@ export const Topics = () => {
           newSet.add(key);
         }
       }
-      
+
       // Update filters to trigger API call
       updateFilters({
         competitors: Array.from(newSet),
@@ -369,11 +377,38 @@ export const Topics = () => {
     });
   }, [filters.startDate, filters.endDate, filters.collectorType, filters.country, filters.competitors]);
 
+  // Convert date strings to ISO format for API
+  // Treat startDate/endDate as calendar dates (YYYY-MM-DD) and convert to UTC boundaries
+  const isoDateRange = useMemo(() => {
+    if (!filters.startDate || !filters.endDate) return null;
+
+    // Parse calendar dates (YYYY-MM-DD)
+    const [startYear, startMonth, startDay] = filters.startDate.split('-').map(Number);
+    const [endYear, endMonth, endDay] = filters.endDate.split('-').map(Number);
+
+    // Create local date boundaries
+    const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+    const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+
+    return {
+      startDate: start.toISOString(),
+      endDate: end.toISOString()
+    };
+  }, [filters.startDate, filters.endDate]);
+
   const topicsEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
     const params = new URLSearchParams();
-    if (filters.startDate) params.append('startDate', filters.startDate);
-    if (filters.endDate) params.append('endDate', filters.endDate);
+
+    // Use ISO strings if available, otherwise fallback (though should be available)
+    if (isoDateRange) {
+      params.append('startDate', isoDateRange.startDate);
+      params.append('endDate', isoDateRange.endDate);
+    } else {
+      if (filters.startDate) params.append('startDate', filters.startDate);
+      if (filters.endDate) params.append('endDate', filters.endDate);
+    }
+
     // Use 'collectors' parameter (same as Prompts page) instead of 'collectorType'
     if (filters.collectorType) params.append('collectors', filters.collectorType);
     if (filters.country) params.append('country', filters.country);
@@ -383,13 +418,13 @@ export const Topics = () => {
     }
     const queryString = params.toString();
     const endpoint = `/brands/${selectedBrandId}/topics${queryString ? `?${queryString}` : ''}`;
-    
+
     // Only update ref if endpoint actually changed
     if (endpoint !== lastEndpointRef.current) {
       lastEndpointRef.current = endpoint;
     }
     return endpoint;
-  }, [selectedBrandId, filtersKey]);
+  }, [selectedBrandId, isoDateRange, filters.collectorType, filters.country, filters.competitors]);
 
   // Use cached data hook - refetch when filters change
   // Response can be either BackendTopic[] (old format) or { topics: BackendTopic[], availableModels: string[], avgSoADelta?: number } (new format)
@@ -401,21 +436,21 @@ export const Topics = () => {
     topicsEndpoint,
     {},
     { requiresAuth: true },
-    { 
-      enabled: !brandsLoading && !!topicsEndpoint, 
+    {
+      enabled: !brandsLoading && !!topicsEndpoint,
       // Avoid forcing a refetch on every mount; rely on cache for fast navigation.
       // Users can change filters (or add an explicit refresh) to revalidate.
       refetchOnMount: false
     }
   );
-  
+
   // Extract available models from response
   useEffect(() => {
     if (response?.success && response.availableModels) {
       setAvailableModels(response.availableModels);
     }
   }, [response]);
-  
+
   // Calculate previous period date range for comparison
   const previousPeriodRange = useMemo(() => {
     if (!filters.startDate || !filters.endDate) return null;
@@ -425,9 +460,17 @@ export const Topics = () => {
   // Build previous period endpoint
   const previousPeriodEndpoint = useMemo(() => {
     if (!selectedBrandId || !previousPeriodRange) return null;
+
+    // Convert previous period dates to ISO strings
+    const [startYear, startMonth, startDay] = previousPeriodRange.start.split('-').map(Number);
+    const [endYear, endMonth, endDay] = previousPeriodRange.end.split('-').map(Number);
+
+    const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+    const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+
     const params = new URLSearchParams();
-    params.append('startDate', previousPeriodRange.start);
-    params.append('endDate', previousPeriodRange.end);
+    params.append('startDate', start.toISOString());
+    params.append('endDate', end.toISOString());
     if (filters.collectorType) params.append('collectors', filters.collectorType);
     if (filters.country) params.append('country', filters.country);
     return `/brands/${selectedBrandId}/topics?${params.toString()}`;
@@ -441,8 +484,8 @@ export const Topics = () => {
     previousPeriodEndpoint,
     {},
     { requiresAuth: true },
-    { 
-      enabled: !brandsLoading && !!previousPeriodEndpoint, 
+    {
+      enabled: !brandsLoading && !!previousPeriodEndpoint,
       refetchOnMount: false
     }
   );
@@ -452,26 +495,26 @@ export const Topics = () => {
     if (!response?.success || !response.data) {
       return null;
     }
-    
+
     try {
       // Handle both old format (array) and new format (object with topics array)
-      const topicsArray = Array.isArray(response.data) 
-        ? response.data 
+      const topicsArray = Array.isArray(response.data)
+        ? response.data
         : (response.data as TopicsApiResponse)?.topics || [];
-      
+
       // Extract avgSoADelta from response if available
-      let avgSoADelta = Array.isArray(response.data) 
-        ? undefined 
+      let avgSoADelta = Array.isArray(response.data)
+        ? undefined
         : (response.data as TopicsApiResponse)?.avgSoADelta;
-      
+
       // Calculate avgSoADelta from previous period if not provided by backend
       // Also calculate per-topic deltas for trending topic calculation
       const topicDeltaMap = new Map<string, number>();
       if (avgSoADelta === undefined && previousResponse?.success && previousResponse.data) {
-        const previousTopicsArray = Array.isArray(previousResponse.data) 
-          ? previousResponse.data 
+        const previousTopicsArray = Array.isArray(previousResponse.data)
+          ? previousResponse.data
           : (previousResponse.data as TopicsApiResponse)?.topics || [];
-        
+
         // Create a map of previous period topics by topic_name for quick lookup
         const previousTopicsMap = new Map<string, BackendTopic>();
         previousTopicsArray.forEach((t: BackendTopic) => {
@@ -480,7 +523,7 @@ export const Topics = () => {
             previousTopicsMap.set(key, t);
           }
         });
-        
+
         // Calculate per-topic deltas
         topicsArray.forEach((t: BackendTopic) => {
           const key = t.topic_name || t.topic || '';
@@ -490,33 +533,33 @@ export const Topics = () => {
           const delta = currentSoA - previousSoA;
           topicDeltaMap.set(key, delta);
         });
-        
+
         // Calculate current period avg SOA
         const currentSoAValues = topicsArray
           .map(t => t.avgShareOfAnswer || 0)
           .filter(v => v > 0);
-        const currentAvgSoA = currentSoAValues.length > 0 
-          ? currentSoAValues.reduce((sum, v) => sum + v, 0) / currentSoAValues.length 
+        const currentAvgSoA = currentSoAValues.length > 0
+          ? currentSoAValues.reduce((sum, v) => sum + v, 0) / currentSoAValues.length
           : 0;
-        
+
         // Calculate previous period avg SOA
         const previousSoAValues = previousTopicsArray
           .map(t => t.avgShareOfAnswer || 0)
           .filter(v => v > 0);
-        const previousAvgSoA = previousSoAValues.length > 0 
-          ? previousSoAValues.reduce((sum, v) => sum + v, 0) / previousSoAValues.length 
+        const previousAvgSoA = previousSoAValues.length > 0
+          ? previousSoAValues.reduce((sum, v) => sum + v, 0) / previousSoAValues.length
           : 0;
-        
+
         // Calculate delta (percentage points difference)
         avgSoADelta = currentAvgSoA - previousAvgSoA;
       }
-      
+
       const transformed = transformTopicsData(topicsArray, topicDeltaMap);
-      
+
       if (avgSoADelta !== undefined) {
         transformed.performance.avgSoADelta = avgSoADelta;
       }
-      
+
       return transformed;
     } catch (e) {
       console.error('Error transforming topics data:', e);
@@ -574,7 +617,7 @@ export const Topics = () => {
           </div>
         </div>
       )}
-      
+
       <TopicsAnalysisPage
         data={dataToShow}
         isLoading={false}

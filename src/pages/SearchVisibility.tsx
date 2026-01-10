@@ -152,13 +152,21 @@ import { formatDateLabel } from '../utils/dateFormatting';
 // Get default date range (last 7 days)
 const getDefaultDateRange = () => {
   const end = new Date();
-  end.setUTCHours(23, 59, 59, 999);
+  end.setHours(23, 59, 59, 999);
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 6); // Last 7 days including today
-  start.setUTCHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - 6); // Last 7 days including today
+  start.setHours(0, 0, 0, 0);
+
+  const formatDate = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0]
+    start: formatDate(start),
+    end: formatDate(end)
   };
 };
 
@@ -202,11 +210,12 @@ export const SearchVisibility = () => {
     // This preserves the calendar date regardless of user's timezone
     const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
     const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
-    
-    // Create UTC date boundaries for the selected calendar dates
-    const start = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0, 0));
-    const end = new Date(Date.UTC(endYear, endMonth - 1, endDay, 23, 59, 59, 999));
-    
+
+    // Create local date boundaries for the selected calendar dates
+    // This ensures that 00:00 local time is sent as the corresponding UTC timestamp
+    const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+    const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+
     return {
       startDate: start.toISOString(),
       endDate: end.toISOString()
@@ -248,10 +257,10 @@ export const SearchVisibility = () => {
   // Build endpoint
   const visibilityEndpoint = useMemo(() => {
     const endpointStart = performance.now();
-    
+
     // Wait for brands to load and validate selection
     if (brandsLoading || !selectedBrandId) return null;
-    
+
     // Ensure selected brand exists in the list
     const brandExists = brands.some(b => b.id === selectedBrandId);
     if (!brandExists) {
@@ -393,36 +402,84 @@ export const SearchVisibility = () => {
     const llmSlices = response.data.llmVisibility ?? [];
 
     const competitorEntries = response.data.competitorVisibility ?? [];
-    
+
+    // Helper to filter data arrays based on valid indices
+    const filterByIndices = <T extends unknown>(arr: T[], indices: Set<number>): T[] => {
+      return arr.filter((_, i) => indices.has(i));
+    };
+
+    // Calculate valid indices based on date range
+    // Filter out dates that are strictly outside the user's selected range (string comparison)
+    // This prevents "future dates" (Jan 11) from showing up when user selected Jan 10,
+    // even if the backend returns them due to UTC bucketing.
+    const rawDates = (llmSlices.length > 0 && llmSlices[0].timeSeries?.dates)
+      ? llmSlices[0].timeSeries.dates
+      : (competitorEntries.length > 0 && competitorEntries[0].timeSeries?.dates ? competitorEntries[0].timeSeries.dates : []);
+
+    // Determine valid indices
+    const validIndices = new Set<number>();
+    // Default to all invalid if we have dates but can't map them
+    // If no dates, we rely on the chartLabels default which is static
+
+    if (rawDates.length > 0) {
+      rawDates.forEach((dateStr, index) => {
+        // Extract YYYY-MM-DD part if ISO string
+        const dateKey = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+        if (dateKey >= startDate && dateKey <= endDate) {
+          validIndices.add(index);
+        }
+      });
+    } else {
+      // Fallback for static labels (though rarely used with real data)
+      chartLabels.forEach((_, i) => validIndices.add(i));
+    }
+
     // Extract date labels from time-series data (if available)
     // Try brand visibility first, then competitor visibility
-    let chartDateLabels: string[] = chartLabels
-    if (llmSlices.length > 0 && llmSlices[0].timeSeries?.dates && llmSlices[0].timeSeries.dates.length > 0) {
-      chartDateLabels = llmSlices[0].timeSeries.dates.map(formatDateLabel)
-    } else if (competitorEntries.length > 0 && competitorEntries[0].timeSeries?.dates && competitorEntries[0].timeSeries?.dates.length > 0) {
-      chartDateLabels = competitorEntries[0].timeSeries!.dates.map(formatDateLabel)
+    let chartDateLabels: string[] = chartLabels;
+    if (rawDates.length > 0) {
+      // Filter raw dates first, then format
+      const validRawDates = filterByIndices(rawDates, validIndices);
+      chartDateLabels = validRawDates.map(formatDateLabel);
     }
-    
+
     const llmModels = llmSlices.map((slice) => {
       const totalQueries = slice.totalQueries ?? 0;
       const brandPresenceCount = slice.brandPresenceCount ?? 0;
       // Brand Presence % = (collector results with brand presence / total collector results) * 100
       // Use totalCollectorResults if available (more accurate), otherwise fall back to totalQueries
       const totalCollectorResults = slice.totalCollectorResults ?? totalQueries;
-      const brandPresencePercentage = totalCollectorResults > 0 
+      const brandPresencePercentage = totalCollectorResults > 0
         ? Math.min(100, Math.round((brandPresenceCount / totalCollectorResults) * 100))
         : 0;
-      
+
       const visibilityValue = slice.visibility ?? 0;
       const shareValue = slice.shareOfSearch ?? slice.share ?? 0;
       const sentimentValue = slice.sentiment ?? null;
       // Sentiment values are already in 1-100 format from database, use directly
       const sentimentDisplayValue = sentimentValue !== null ? sentimentValue : null;
       const brandPresenceSeries = (slice.timeSeries as any)?.brandPresence ?? (slice.timeSeries as any)?.brandPresencePercentage ?? (slice.timeSeries as any)?.brandPresence;
-      const brandPresenceData = Array.isArray(brandPresenceSeries) && brandPresenceSeries.length > 0
+
+      const rawBrandPresenceData = Array.isArray(brandPresenceSeries) && brandPresenceSeries.length > 0
         ? brandPresenceSeries.map((value: number) => Math.round(value))
-        : buildTimeseries(brandPresencePercentage);
-      
+        : buildTimeseries(brandPresencePercentage); // Fallback is static length, might be wrong if filtered
+
+      // Helper to safely get array data or build fallback
+      const getFilteredData = (data: any[], fallbackValue: any) => {
+        if (Array.isArray(data) && data.length > 0) {
+          return filterByIndices(data, validIndices);
+        }
+        // If we defaulted to buildTimeseries(value), it created an array of chartLabels.length (7).
+        // If we are filtering, we should strictly return empty or match the filtered length?
+        // Actually, if backend didn't return timeseries, we shouldn't show a chart line for it?
+        // But the original code falls back to a flat line.
+        // If we have validIndices determined from OTHER slices, we should match that length.
+        if (validIndices.size > 0 && rawDates.length > 0) {
+          return Array(validIndices.size).fill(fallbackValue);
+        }
+        return buildTimeseries(fallbackValue);
+      };
+
       return {
         id: normalizeId(slice.provider),
         name: slice.provider,
@@ -438,18 +495,19 @@ export const SearchVisibility = () => {
         referenceCount: brandPresenceCount,
         brandPresencePercentage,
         // Use time-series data from backend if available, otherwise fallback to flat line
-        data: slice.timeSeries?.visibility && slice.timeSeries.visibility.length > 0
-          ? slice.timeSeries.visibility
-          : buildTimeseries(visibilityValue),
-        shareData: slice.timeSeries?.share && slice.timeSeries.share.length > 0
-          ? slice.timeSeries.share
-          : buildTimeseries(shareValue),
+        // AND FILTER IT
+        data: getFilteredData(slice.timeSeries?.visibility || [], Math.max(0, Math.round(visibilityValue))),
+        shareData: getFilteredData(slice.timeSeries?.share || [], Math.round(shareValue)),
         sentimentData: slice.timeSeries?.sentiment && slice.timeSeries.sentiment.length > 0
-          ? slice.timeSeries.sentiment.map((s: number | null) => s !== null ? s : null)
-          : (sentimentDisplayValue !== null ? buildTimeseries(sentimentDisplayValue) : undefined),
-        brandPresenceData,
+          ? filterByIndices(slice.timeSeries.sentiment, validIndices).map((s: number | null) => s !== null ? s : null)
+          : (sentimentDisplayValue !== null
+            ? (rawDates.length > 0 ? Array(validIndices.size).fill(sentimentDisplayValue) : buildTimeseries(sentimentDisplayValue))
+            : undefined),
+        brandPresenceData: Array.isArray(brandPresenceSeries) && brandPresenceSeries.length > 0
+          ? filterByIndices(rawBrandPresenceData, validIndices)
+          : (rawDates.length > 0 ? Array(validIndices.size).fill(Math.round(brandPresencePercentage)) : rawBrandPresenceData),
         // Pass through isRealData flags for chart rendering (show dots only for real data)
-        isRealData: slice.timeSeries?.isRealData,
+        isRealData: slice.timeSeries?.isRealData ? filterByIndices(slice.timeSeries.isRealData, validIndices) : undefined,
         topTopics: (slice.topTopics ?? []).map(topic => ({
           topic: topic.topic,
           occurrences: topic.occurrences,
@@ -463,7 +521,7 @@ export const SearchVisibility = () => {
 
     // Create brand summary model for competitive view
     const brandSummary = response.data.brandSummary;
-    
+
     // Calculate brand summary from llmVisibility if brandSummary is not available
     const calculateBrandSummary = () => {
       if (brandSummary) {
@@ -474,13 +532,13 @@ export const SearchVisibility = () => {
           topTopics: brandSummary.topTopics ?? []
         };
       }
-      
+
       // Fallback: calculate from llmVisibility
       if (llmModels.length > 0) {
         const totalVisibility = llmModels.reduce((sum, model) => sum + model.score, 0) / llmModels.length;
         const totalShare = llmModels.reduce((sum, model) => sum + model.shareOfSearch, 0) / llmModels.length;
         const totalBrandPresence = llmModels.reduce((sum, model) => sum + model.brandPresencePercentage, 0) / llmModels.length;
-        
+
         // Get top topics from all LLM models
         const allTopics = new Map<string, { occurrences: number; share: number; visibility: number; mentions: number }>();
         llmModels.forEach(model => {
@@ -494,7 +552,7 @@ export const SearchVisibility = () => {
             });
           });
         });
-        
+
         const topTopics = Array.from(allTopics.entries())
           .map(([topic, stats]) => ({
             topic,
@@ -505,7 +563,7 @@ export const SearchVisibility = () => {
           }))
           .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share)
           .slice(0, 5);
-        
+
         return {
           visibility: totalVisibility,
           share: totalShare,
@@ -513,7 +571,7 @@ export const SearchVisibility = () => {
           topTopics
         };
       }
-      
+
       // If no data available, return empty summary (will show zeros)
       return {
         visibility: 0,
@@ -522,14 +580,14 @@ export const SearchVisibility = () => {
         topTopics: []
       };
     };
-    
+
     const brandData = calculateBrandSummary();
     // Get brand name from response or selectedBrand
     const brandName = (response.data as any)?.brandName ?? selectedBrand?.name ?? 'Your Brand';
-    
+
     // Get brand presence count from response data
     const queriesWithBrandPresence = (response.data as any)?.queriesWithBrandPresence ?? 0;
-    
+
     // Always create brand row if we have a selected brand ID
     const brandVisibilityValue = brandData.visibility ?? 0;
     const brandShareValue = brandData.share ?? 0;
@@ -537,7 +595,7 @@ export const SearchVisibility = () => {
     // Sentiment values are already in 1-100 format from database, use directly
     const brandSentimentRaw = (response.data as any)?.sentimentScore ?? null;
     const brandSentimentDisplay = brandSentimentRaw !== null ? brandSentimentRaw : null;
-    
+
     // Aggregate time-series from all LLM models for brand summary
     let brandTimeSeries: { dates: string[], visibility: number[], share: number[], sentiment: (number | null)[], brandPresence: number[] } | undefined
     if (llmModels.length > 0 && llmModels[0].data && llmModels[0].data.length > 0) {
@@ -548,7 +606,7 @@ export const SearchVisibility = () => {
         const share: number[] = []
         const sentiment: (number | null)[] = []
         const brandPresence: number[] = []
-        
+
         // For each day, average across all collectors
         dates.forEach((_, dayIndex) => {
           const dayVisibilities = llmModels
@@ -566,8 +624,8 @@ export const SearchVisibility = () => {
           const dayBrandPresence = llmModels
             .map(model => model.brandPresenceData?.[dayIndex])
             .filter(v => v !== undefined && v !== null) as number[]
-          
-          visibility.push(dayVisibilities.length > 0 
+
+          visibility.push(dayVisibilities.length > 0
             ? Math.round(dayVisibilities.reduce((sum, v) => sum + v, 0) / dayVisibilities.length)
             : 0)
           share.push(dayShares.length > 0
@@ -580,11 +638,11 @@ export const SearchVisibility = () => {
             ? Math.round(dayBrandPresence.reduce((sum, v) => sum + v, 0) / dayBrandPresence.length)
             : 0)
         })
-        
+
         brandTimeSeries = { dates, visibility, share, sentiment, brandPresence }
       }
     }
-    
+
     const brandCompetitiveModel = selectedBrandId ? {
       id: 'brand',
       name: brandName,
@@ -628,7 +686,7 @@ export const SearchVisibility = () => {
       const competitorBrandPresenceData = Array.isArray(competitorBrandPresenceSeries) && competitorBrandPresenceSeries.length > 0
         ? competitorBrandPresenceSeries.map((value: number) => Math.round(value))
         : buildTimeseries(Math.round(entry.brandPresencePercentage ?? 0));
-      
+
       return {
         id: normalizeId(entry.competitor),
         name: entry.competitor,
@@ -664,12 +722,12 @@ export const SearchVisibility = () => {
     });
 
     // Prepend brand model to competitor models if available
-    const allCompetitorModels = brandCompetitiveModel 
+    const allCompetitorModels = brandCompetitiveModel
       ? [brandCompetitiveModel, ...competitorModelsData]
       : competitorModelsData;
 
     perfLog('SearchVisibility: Data processing', processStart);
-    
+
     return {
       brandModels: llmModels,
       competitorModels: allCompetitorModels,
@@ -679,7 +737,7 @@ export const SearchVisibility = () => {
 
   // Update state from processed data (batched update)
   const [chartDateLabels, setChartDateLabels] = useState<string[]>(chartLabels);
-  
+
   useEffect(() => {
     console.log('[SearchVisibility] Updating models from processed data:', {
       brandModels: processedData.brandModels.length,
@@ -699,18 +757,18 @@ export const SearchVisibility = () => {
       // The critical part is ensuring the loading screen stays up if selection is pending.
       // If we have data, we reset initialization to force the selection effect to run
       // and update the selection state before rendering the chart.
-       setIsSelectionInitialized(false);
+      setIsSelectionInitialized(false);
     }
   }, [processedData]);
 
   useEffect(() => {
-    console.log('[SearchVisibility] Loading state:', { 
-      authLoading, 
-      brandsLoading, 
-      loading, 
-      hasEndpoint: !!visibilityEndpoint, 
-      hasResponse: !!response, 
-      combinedLoading 
+    console.log('[SearchVisibility] Loading state:', {
+      authLoading,
+      brandsLoading,
+      loading,
+      hasEndpoint: !!visibilityEndpoint,
+      hasResponse: !!response,
+      combinedLoading
     });
   }, [authLoading, brandsLoading, loading, visibilityEndpoint, response, combinedLoading]);
 
@@ -743,17 +801,17 @@ export const SearchVisibility = () => {
   useEffect(() => {
     // If we have models and a selection, we are initialized
     if (currentModels.length > 0 && selectedModels.length > 0) {
-       // Verify that the selected models actually correspond to the current models
-       // This prevents initialization with stale selection IDs
-       const hasValidSelection = selectedModels.some(id => currentModels.some(m => m.id === id));
-       if (hasValidSelection) {
-         console.log('[SearchVisibility] Initialization complete: Selection valid');
-         setIsSelectionInitialized(true);
-       }
+      // Verify that the selected models actually correspond to the current models
+      // This prevents initialization with stale selection IDs
+      const hasValidSelection = selectedModels.some(id => currentModels.some(m => m.id === id));
+      if (hasValidSelection) {
+        console.log('[SearchVisibility] Initialization complete: Selection valid');
+        setIsSelectionInitialized(true);
+      }
     } else if (response && !loading && currentModels.length === 0) {
-       // If loaded but no models, we are initialized (empty state)
-       console.log('[SearchVisibility] Initialization complete: No models available');
-       setIsSelectionInitialized(true);
+      // If loaded but no models, we are initialized (empty state)
+      console.log('[SearchVisibility] Initialization complete: No models available');
+      setIsSelectionInitialized(true);
     }
   }, [selectedModels, currentModels, response, loading]);
 
@@ -768,9 +826,9 @@ export const SearchVisibility = () => {
     datasets: currentModels.map((model) => ({
       id: model.id,
       label: model.name,
-      data: metricType === 'visibility' 
-        ? model.data 
-        : metricType === 'share' 
+      data: metricType === 'visibility'
+        ? model.data
+        : metricType === 'share'
           ? (model.shareData ?? model.data)
           : metricType === 'brandPresence'
             ? (model.brandPresenceData ?? buildTimeseries(model.brandPresencePercentage ?? 0))
@@ -885,7 +943,7 @@ export const SearchVisibility = () => {
               <div className="flex flex-col gap-6">
                 {/* KPI Toggle and LLM Selectors Row - KPI on left, LLM selectors on right */}
                 <div className="flex items-start justify-between gap-4">
-                <KpiToggle metricType={metricType} onChange={setMetricType} />
+                  <KpiToggle metricType={metricType} onChange={setMetricType} />
                   {activeTab === 'competitive' && llmOptions.filter((o) => o.value !== 'all').length > 0 && (
                     <div className="flex flex-col gap-2 flex-shrink-0">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8690a8] text-right">
@@ -895,11 +953,10 @@ export const SearchVisibility = () => {
                         <button
                           type="button"
                           onClick={() => setLlmFilters([])}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
-                            llmFilters.length === 0
-                              ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
-                              : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${llmFilters.length === 0
+                            ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
+                            : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
+                            }`}
                         >
                           All
                         </button>
@@ -918,11 +975,10 @@ export const SearchVisibility = () => {
                                       : [...prev, option.value]
                                   )
                                 }
-                                className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${
-                                  isActive
-                                    ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
-                                    : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-                                }`}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${isActive
+                                  ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
+                                  : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
+                                  }`}
                                 title={option.label}
                                 aria-label={`Filter by ${option.label}`}
                               >

@@ -518,12 +518,14 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
       data: dashboard
     });
   } catch (error) {
-    console.error('Error fetching brand dashboard:', error);
-
     if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
+      // Log as warning without stack trace for expected 404s
+      console.warn(`[Dashboard] Brand not found: ${req.params.brandId} (Customer: ${req.user!.customer_id})`);
       res.status(404).json({ success: false, error: error.message });
       return;
     }
+
+    console.error('Error fetching brand dashboard:', error);
 
     res.status(500).json({
       success: false,

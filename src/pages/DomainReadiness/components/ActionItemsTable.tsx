@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AeoAuditResult } from '../types/types';
 import { AlertCircle, CheckCircle2, Wrench, ChevronDown, ChevronUp } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { TEST_RESOURCES } from '../utils/testResources';
 
 interface ActionItemsTableProps {
     audit: AeoAuditResult;
@@ -111,9 +112,17 @@ export const ActionItemsTable = ({ audit, selectedCategory }: ActionItemsTablePr
                                                         <td className="px-6 py-4 text-gray-700 align-top">
                                                             <div className="flex items-start gap-2">
                                                                 <Wrench className="w-4 h-4 text-blue-500 mt-1 flex-shrink-0" />
-                                                                <span className="text-sm leading-relaxed">
-                                                                    {issue.remediation || issue.how_to_fix || 'Check documentation for remediation steps.'}
-                                                                </span>
+                                                                <div className="text-sm leading-relaxed">
+                                                                    {TEST_RESOURCES[issue.name]?.howToFix ? (
+                                                                        <ol className="list-decimal list-inside space-y-1 mt-0.5">
+                                                                            {TEST_RESOURCES[issue.name].howToFix.map((step: string, i: number) => (
+                                                                                <li key={i}>{step}</li>
+                                                                            ))}
+                                                                        </ol>
+                                                                    ) : (
+                                                                        <span>{issue.remediation || issue.how_to_fix || 'Check documentation for remediation steps.'}</span>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         </td>
                                                     </tr>

@@ -1,28 +1,29 @@
 import { useMemo } from 'react';
-import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { AeoAuditResult } from '../types/types';
+import { VisibilityChart } from '../../../components/Visibility/VisibilityChart';
 
 interface TrendChartsProps {
     history: AeoAuditResult[];
-    orientation?: 'horizontal' | 'vertical';
-    categoryFilter?: string; // Add filter prop
+    orientation?: 'horizontal' | 'vertical'; // Kept for prop compatibility, but we enforce specific layout now
+    categoryFilter?: string;
 }
 
-interface CategoryTrend {
-    name: string;
-    key: keyof AeoAuditResult['scoreBreakdown'];
-    currentScore: number;
-    trend: number;
-    data: { date: string; score: number }[];
-    color: string;
-}
+export const TrendCharts = ({ history, categoryFilter }: TrendChartsProps) => {
+    // Transform history data for VisibilityChart
+    const chartData = useMemo(() => {
+        if (!history || history.length === 0) return null;
 
-export const TrendCharts = ({ history, orientation = 'horizontal', categoryFilter }: TrendChartsProps) => {
-    const categories: CategoryTrend[] = useMemo(() => {
-        if (history.length === 0) return [];
+        // Sort history by date just in case
+        const sortedHistory = [...history].sort((a, b) =>
+            new Date(a.auditDate || a.timestamp).getTime() - new Date(b.auditDate || b.timestamp).getTime()
+        );
 
-        const categoryKeys: { key: keyof AeoAuditResult['scoreBreakdown']; name: string; color: string }[] = [
+        const labels = sortedHistory.map(h => {
+            const d = new Date(h.auditDate || h.timestamp);
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        });
+
+        const categories = [
             { key: 'technicalCrawlability', name: 'Technical', color: '#3b82f6' },
             { key: 'contentQuality', name: 'Content', color: '#a855f7' },
             { key: 'semanticStructure', name: 'Semantic', color: '#10b981' },
@@ -30,106 +31,75 @@ export const TrendCharts = ({ history, orientation = 'horizontal', categoryFilte
             { key: 'aeoOptimization', name: 'AEO', color: '#6366f1' },
         ];
 
-        // Filter if prop provided
-        const filteredKeys = categoryFilter
-            ? categoryKeys.filter(c => c.key === categoryFilter)
-            : categoryKeys;
+        // If filter is active, show only that category. If not, show all? 
+        // User asked for "Historical Trend" in context of a generic modal.
+        // If coming from "Overall", maybe show all?
+        // But the modal trigger is usually inside `TestResultsList` which might be filtered?
+        // `TestResultsList` handles "All" (Overall) or "Specific".
+        // If categoryFilter is present, show only that ONE line.
+        // If not, show ALL lines.
 
-        return filteredKeys.map(({ key, name, color }) => {
-            const data = history.map(audit => ({
-                date: audit.auditDate || audit.timestamp.split('T')[0],
-                score: audit.scoreBreakdown[key]
-            }));
+        const activeCategories = categoryFilter
+            ? categories.filter(c => c.key === categoryFilter)
+            : categories;
 
-            const currentScore = data[data.length - 1]?.score || 0;
-            const firstScore = data[0]?.score || 0;
-            const trend = firstScore > 0 ? ((currentScore - firstScore) / firstScore) * 100 : 0;
+        const datasets = activeCategories.map(cat => {
+            const data = sortedHistory.map(h => {
+                const val = h.scoreBreakdown[cat.key as keyof typeof h.scoreBreakdown];
+                return typeof val === 'number' ? Math.round(val) : null;
+            });
 
-            return { name, key, currentScore, trend, data, color };
+            return {
+                id: cat.key,
+                label: cat.name,
+                data: data,
+                // We can assume real data here if history is real
+                isRealData: new Array(data.length).fill(true)
+            };
         });
-    }, [history]);
 
-    const getTrendIcon = (trend: number) => {
-        if (trend > 2) return <TrendingUp className="w-3 h-3 text-green-600" />;
-        if (trend < -2) return <TrendingDown className="w-3 h-3 text-red-600" />;
-        return <Minus className="w-3 h-3 text-gray-400" />;
-    };
+        return {
+            labels,
+            datasets
+        };
 
-    const getTrendColor = (trend: number) => {
-        if (trend > 2) return 'text-green-600';
-        if (trend < -2) return 'text-red-600';
-        return 'text-gray-500';
-    };
+    }, [history, categoryFilter]);
 
-    if (history.length === 0) {
+    // Models for color mapping
+    const models = useMemo(() => [
+        { id: 'technicalCrawlability', name: 'Technical', color: '#3b82f6' },
+        { id: 'contentQuality', name: 'Content', color: '#a855f7' },
+        { id: 'semanticStructure', name: 'Semantic', color: '#10b981' },
+        { id: 'accessibilityAndBrand', name: 'Access & Brand', color: '#f97316' },
+        { id: 'aeoOptimization', name: 'AEO', color: '#6366f1' },
+    ], []);
+
+    const selectedModels = useMemo(() => {
+        if (categoryFilter) return [categoryFilter];
+        return models.map(m => m.id);
+    }, [categoryFilter, models]);
+
+    if (!history || history.length === 0) {
         return (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
-                <p className="text-sm text-gray-500">No historical data available yet. Run audits over multiple days to see trends.</p>
+            <div className="text-center py-10 text-gray-400">
+                No historical data available.
             </div>
         );
     }
 
+    if (!chartData) return null;
+
     return (
-        <div className={`mb - 6 ${orientation === 'vertical' ? 'h-full' : ''} `}>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">30-Day Trends</h3>
-            <div className={`grid gap - 4 ${orientation === 'vertical'
-                ? 'grid-cols-1'
-                : 'grid-cols-1 md:grid-cols-5'
-                } `}>
-                {categories.map((cat) => (
-                    <div key={cat.key} className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium text-gray-600">{cat.name}</span>
-                            <div className="flex items-center gap-1">
-                                {getTrendIcon(cat.trend)}
-                                <span className={`text - xs font - medium ${getTrendColor(cat.trend)} `}>
-                                    {cat.trend > 0 ? '+' : ''}{cat.trend.toFixed(1)}%
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="text-2xl font-bold text-gray-900 mb-3">
-                            {cat.currentScore}
-                        </div>
-
-                        <ResponsiveContainer width="100%" height={60}>
-                            <LineChart data={cat.data}>
-                                <defs>
-                                    <linearGradient id={`gradient - ${cat.key} `} x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor={cat.color} stopOpacity={0.3} />
-                                        <stop offset="100%" stopColor={cat.color} stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <Tooltip
-                                    content={({ active, payload }) => {
-                                        if (active && payload && payload.length) {
-                                            return (
-                                                <div className="bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg">
-                                                    <p>{payload[0].payload.date}</p>
-                                                    <p className="font-bold">Score: {payload[0].value}</p>
-                                                </div>
-                                            );
-                                        }
-                                        return null;
-                                    }}
-                                />
-                                <Line
-                                    type="monotone"
-                                    dataKey="score"
-                                    stroke={cat.color}
-                                    strokeWidth={2}
-                                    dot={false}
-                                    fill={`url(#gradient - ${cat.key})`}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
-
-                        <div className="text-xs text-gray-500 mt-2">
-                            {cat.data.length} data point{cat.data.length !== 1 ? 's' : ''}
-                        </div>
-                    </div>
-                ))}
-            </div>
+        <div className="w-full h-[400px]"> {/* Fixed height container, width fully responsive */}
+            <VisibilityChart
+                data={chartData}
+                chartType="line"
+                selectedModels={selectedModels}
+                activeTab="brand" // Dummy tab to satisfy props
+                loading={false}
+                models={models}
+                metricType="visibility" // Uses 0-100 scale logic roughly
+            />
         </div>
     );
 };

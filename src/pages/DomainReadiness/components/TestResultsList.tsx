@@ -197,7 +197,8 @@ export function TestResultsList({ audit, loading, progress, categoryFilter, hist
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col"
+              // UPDATED: max-w-7xl here
+              className="relative bg-white rounded-xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-y-auto flex flex-col"
             >
               <div className="flex items-center justify-between p-6 border-b border-gray-100">
                 <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">

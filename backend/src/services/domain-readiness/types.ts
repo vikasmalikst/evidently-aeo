@@ -50,12 +50,14 @@ export interface AeoAuditResult {
     contentQuality: number;
     semanticStructure: number;
     accessibilityAndBrand: number;
+    aeoOptimization: number;
   };
   detailedResults: {
     technicalCrawlability: CategoryResult;
     contentQuality: CategoryResult;
     semanticStructure: CategoryResult;
     accessibilityAndBrand: CategoryResult;
+    aeoOptimization: CategoryResult;
   };
   botAccessStatus: BotAccessStatus[];
   criticalIssues: Issue[];

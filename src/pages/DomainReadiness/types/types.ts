@@ -44,18 +44,21 @@ export interface AeoAuditResult {
   brandId: string;
   domain: string;
   timestamp: string;
+  auditDate?: string; // Daily grouping date (YYYY-MM-DD)
   overallScore: number;
   scoreBreakdown: {
     technicalCrawlability: number;
     contentQuality: number;
     semanticStructure: number;
     accessibilityAndBrand: number;
+    aeoOptimization: number;
   };
   detailedResults: {
     technicalCrawlability: CategoryResult;
     contentQuality: CategoryResult;
     semanticStructure: CategoryResult;
     accessibilityAndBrand: CategoryResult;
+    aeoOptimization: CategoryResult;
   };
   botAccessStatus: BotAccessStatus[];
   criticalIssues: Issue[];

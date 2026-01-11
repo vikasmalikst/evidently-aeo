@@ -1,119 +1,174 @@
 import { useState } from 'react';
 import { AeoAuditResult } from '../types/types';
-import { ChevronDown, ChevronUp, CheckCircle, AlertTriangle, XCircle, Info } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle, AlertTriangle, XCircle, Info, ExternalLink, Lightbulb, ArrowUpRight } from 'lucide-react';
+import { TEST_RESOURCES } from '../utils/testResources';
 
 interface TestResultsListProps {
   audit: AeoAuditResult;
   loading?: boolean;
   progress?: {
     active: boolean;
-    buckets: Record<
-      'technicalCrawlability' | 'contentQuality' | 'semanticStructure' | 'accessibilityAndBrand',
-      { total: number; completed: number }
-    >;
+    buckets: Record<string, { total: number; completed: number }>;
   };
+  categoryFilter?: string;
 }
 
-export const TestResultsList = ({ audit, loading, progress }: TestResultsListProps) => {
-  // Use a mapped type for state keys
-  type CategoryKey = keyof typeof audit.detailedResults;
-  
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    technicalCrawlability: true,
-    contentQuality: false,
-    semanticStructure: false,
-    accessibilityAndBrand: false,
-  });
+type CategoryKey = 'technicalCrawlability' | 'contentQuality' | 'semanticStructure' | 'accessibilityAndBrand' | 'aeoOptimization';
 
-  const toggle = (key: string) => {
-    setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+export function TestResultsList({ audit, loading, progress, categoryFilter }: TestResultsListProps) {
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  const toggleRow = (id: string) => {
+    setExpandedRow(prev => (prev === id ? null : id));
   };
 
-  const categories: { name: string; key: CategoryKey; data: any }[] = [
+  const allCategories: { name: string; key: CategoryKey; data: any }[] = [
     { name: 'Technical Crawlability', key: 'technicalCrawlability', data: audit.detailedResults.technicalCrawlability },
     { name: 'Content Quality', key: 'contentQuality', data: audit.detailedResults.contentQuality },
     { name: 'Semantic Structure', key: 'semanticStructure', data: audit.detailedResults.semanticStructure },
     { name: 'Accessibility & Brand', key: 'accessibilityAndBrand', data: audit.detailedResults.accessibilityAndBrand },
+    { name: 'AEO Optimization', key: 'aeoOptimization', data: audit.detailedResults.aeoOptimization },
   ];
 
+  // Filter to single category if categoryFilter is provided
+  const categories = categoryFilter
+    ? allCategories.filter(cat => cat.key === categoryFilter)
+    : allCategories;
+
   const getIcon = (status: string) => {
-    switch (status) {
-      case 'pass': return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'fail': return <XCircle className="w-5 h-5 text-red-500" />;
-      case 'warning': return <AlertTriangle className="w-5 h-5 text-yellow-500" />;
-      default: return <Info className="w-5 h-5 text-blue-500" />;
-    }
+    if (status === 'pass') return <CheckCircle className="w-5 h-5 text-green-500 shrink-0" />;
+    if (status === 'fail') return <XCircle className="w-5 h-5 text-red-500 shrink-0" />;
+    if (status === 'warning') return <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0" />;
+    return <Info className="w-5 h-5 text-blue-500 shrink-0" />;
+  };
+
+  const getScoreBadgeColor = (score: number) => {
+    if (score >= 90) return 'bg-green-100 text-green-800 border-green-200';
+    if (score >= 60) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    return 'bg-red-100 text-red-800 border-red-200';
   };
 
   return (
-    <div className="space-y-4">
-      {categories.map((cat) => (
-        <div key={cat.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <div 
-            className="flex justify-between items-center p-4 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
-            onClick={() => toggle(cat.key)}
-          >
-            <div className="flex items-center space-x-3">
-              <span className="font-semibold text-gray-800">{cat.name}</span>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                cat.data.score >= 90 ? 'bg-green-100 text-green-800' : 
-                cat.data.score >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
-              }`}>
-                {cat.data.score}/100
-              </span>
-              {loading && progress?.active && progress.buckets[cat.key] && (
-                <span className="text-xs text-gray-500">
-                  {progress.buckets[cat.key].completed}/{progress.buckets[cat.key].total}
+    <div className="space-y-6">
+      {categories.map((cat) => {
+        if (!cat.data || !cat.data.tests) return null;
+
+        return (
+          <div key={cat.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+            {/* Category Header (if we are showing all categories, otherwise MiddleSection handles title) */}
+            {/* Since MiddleSection handles title when filtered, we might want to hide it if filtered? 
+                 But MiddleSection title is outside. Let's keep a subtle header here or purely the table.
+                 User asked for table. Let's do a table structure. 
+             */}
+            {!categoryFilter && (
+              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                <h3 className="font-semibold text-gray-800">{cat.name}</h3>
+                <span className={`text-xs px-2 py-0.5 rounded border ${getScoreBadgeColor(cat.data.score)}`}>
+                  Category Score: {cat.data.score}
                 </span>
-              )}
-            </div>
-            {expanded[cat.key] ? <ChevronUp className="w-5 h-5 text-gray-500" /> : <ChevronDown className="w-5 h-5 text-gray-500" />}
-          </div>
-          
-          {expanded[cat.key] && (
-            <div className="divide-y divide-gray-100">
-              {loading && progress?.active && progress.buckets[cat.key] && (
-                <div className="px-4 py-2 bg-white">
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
-                    <div
-                      className="h-1.5 rounded-full bg-blue-500 transition-all duration-300"
-                      style={{
-                        width: `${
-                          progress.buckets[cat.key].total
-                            ? Math.round((progress.buckets[cat.key].completed / progress.buckets[cat.key].total) * 100)
-                            : 0
-                        }%`
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-              {cat.data.tests.map((test: any, idx: number) => (
-                <div key={idx} className="p-4 hover:bg-gray-50 flex items-start space-x-3">
-                  <div className="mt-0.5">{getIcon(test.status)}</div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start">
-                      <h4 className="text-sm font-medium text-gray-900">{test.name}</h4>
-                      <span className="text-xs text-gray-500">Score: {test.score}</span>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">{test.message}</p>
-                    {test.details && (
-                      <div className="mt-2 text-xs bg-gray-50 p-2 rounded border border-gray-200 font-mono text-gray-600 overflow-x-auto">
-                        {JSON.stringify(test.details, null, 2)}
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 text-gray-500 border-b border-gray-100">
+                  <tr>
+                    <th className="px-6 py-3 font-medium w-1/4">Metric</th>
+                    <th className="px-6 py-3 font-medium w-1/2">Result</th>
+                    <th className="px-6 py-3 font-medium w-1/6 text-center">Score</th>
+                    <th className="px-6 py-3 font-medium w-1/12 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {cat.data.tests.map((test: any, idx: number) => {
+                    const uniqueId = `${cat.key}-${idx}`;
+                    const resource = TEST_RESOURCES[test.name];
+                    const isExpanded = expandedRow === uniqueId;
+
+                    return (
+                      <div key={idx} style={{ display: 'contents' }}>
+                        <tr className="hover:bg-blue-50/50 transition-colors group">
+                          {/* Metric */}
+                          <td className="px-6 py-4 font-medium text-gray-900 align-top">
+                            {test.name}
+                          </td>
+
+                          {/* Result */}
+                          <td className="px-6 py-4 text-gray-600 align-top">
+                            <div className="flex items-start gap-3">
+                              {getIcon(test.status)}
+                              <span className="text-sm leading-relaxed">
+                                {test.message || test.description || 'No details available.'}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Score */}
+                          <td className="px-6 py-4 text-center align-top">
+                            <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium border ${getScoreBadgeColor(test.score)}`}>
+                              {test.score}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-6 py-4 text-right align-top">
+                            <div className="flex items-center justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                              {/* Learn More */}
+                              {(test.documentationUrl || resource?.learnMoreUrl) && (
+                                <a
+                                  href={test.documentationUrl || resource?.learnMoreUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-gray-400 hover:text-blue-600 transition-colors"
+                                  title="Learn More"
+                                >
+                                  <ExternalLink size={16} />
+                                </a>
+                              )}
+
+                              {/* How to Fix Toggle */}
+                              {resource?.howToFix && test.status !== 'pass' && (
+                                <button
+                                  onClick={() => toggleRow(uniqueId)}
+                                  className={`transition-colors ${isExpanded ? 'text-purple-600' : 'text-gray-400 hover:text-purple-600'}`}
+                                  title="How to fix"
+                                >
+                                  <Lightbulb size={16} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Expandable Row for Fix */}
+                        {isExpanded && resource?.howToFix && (
+                          <tr className="bg-purple-50/50">
+                            <td colSpan={4} className="px-6 py-4 mx-4">
+                              <div className="ml-0 md:ml-[25%] bg-white border border-purple-100 rounded-lg p-4 shadow-sm relative">
+                                <div className="absolute left-[-8px] top-[-8px]">
+                                  <div className="bg-purple-100 p-1 rounded-full">
+                                    <Lightbulb size={14} className="text-purple-600" />
+                                  </div>
+                                </div>
+                                <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wide mb-2">How to Fix</h4>
+                                <ol className="list-decimal list-inside text-sm text-gray-700 space-y-1">
+                                  {resource.howToFix.map((fix: string, i: number) => (
+                                    <li key={i}>{fix}</li>
+                                  ))}
+                                </ol>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
                       </div>
-                    )}
-                    {test.documentationUrl && (
-                      <a href={test.documentationUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline mt-1 inline-block">
-                        Learn more
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
-};
+}

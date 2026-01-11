@@ -3,21 +3,21 @@ import { AuditResponse, AeoAuditResult, BotAccessStatus, TestResult } from '../p
 
 export type DomainReadinessStreamEvent =
   | {
-      type: 'progress';
-      analyzer: string;
-      bucket: 'technicalCrawlability' | 'contentQuality' | 'semanticStructure' | 'accessibilityAndBrand';
-      tests: TestResult[];
-      completed: number;
-      total: number;
-    }
+    type: 'progress';
+    analyzer: string;
+    bucket: 'technicalCrawlability' | 'contentQuality' | 'semanticStructure' | 'accessibilityAndBrand';
+    tests: TestResult[];
+    completed: number;
+    total: number;
+  }
   | {
-      type: 'progress';
-      analyzer: string;
-      bucket: 'botAccess';
-      botAccessStatus: BotAccessStatus[];
-      completed: number;
-      total: number;
-    }
+    type: 'progress';
+    analyzer: string;
+    bucket: 'botAccess';
+    botAccessStatus: BotAccessStatus[];
+    completed: number;
+    total: number;
+  }
   | { type: 'final'; result: AeoAuditResult }
   | { type: 'error'; error: string };
 
@@ -88,6 +88,13 @@ class DomainReadinessApi {
 
   async getLatestAudit(brandId: string): Promise<AuditResponse> {
     return apiClient.get<AuditResponse>(`/brands/${brandId}/domain-readiness/audit`);
+  }
+
+  async getAuditHistory(brandId: string, days: number = 30): Promise<AeoAuditResult[]> {
+    const response = await apiClient.get<{ success: boolean; data: AeoAuditResult[] }>(
+      `/brands/${brandId}/domain-readiness/history?days=${days}`
+    );
+    return response.data || [];
   }
 }
 

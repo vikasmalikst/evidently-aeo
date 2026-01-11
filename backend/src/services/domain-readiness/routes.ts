@@ -10,5 +10,6 @@ router.use(authenticateToken);
 router.post('/brands/:brandId/domain-readiness/audit', domainReadinessController.runAudit);
 router.post('/brands/:brandId/domain-readiness/audit/stream', domainReadinessController.runAuditStream);
 router.get('/brands/:brandId/domain-readiness/audit', domainReadinessController.getLatestAudit);
+router.get('/brands/:brandId/domain-readiness/history', domainReadinessController.getAuditHistory);
 
 export default router;

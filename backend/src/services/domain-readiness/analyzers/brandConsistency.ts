@@ -4,7 +4,7 @@ import { TestResult, AnalyzerOptions } from '../types';
 
 export async function analyzeBrandConsistency(url: string, options?: AnalyzerOptions): Promise<TestResult[]> {
   const brandName = options?.brandName;
-  
+
   if (!brandName) {
     return [{
       name: 'Brand Consistency',
@@ -17,7 +17,7 @@ export async function analyzeBrandConsistency(url: string, options?: AnalyzerOpt
   let html = options?.html;
   if (!html) {
     try {
-      const response = await axios.get(url, { 
+      const response = await axios.get(url, {
         timeout: options?.timeout || 10000,
         headers: { 'User-Agent': 'EvidentlyAEO-Auditor/1.0' }
       });
@@ -33,7 +33,7 @@ export async function analyzeBrandConsistency(url: string, options?: AnalyzerOpt
   }
 
   const $ = cheerio.load(html as string);
-  const brandRegex = new RegExp(brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  const brandRegex = new RegExp(`\\b${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
 
   const h1Text = $('h1').first().text();
   const titleText = $('title').text();

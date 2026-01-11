@@ -2,41 +2,65 @@ import { supabaseAdmin } from '../../config/database';
 import { AeoAuditResult, TestResult, BotAccessStatus } from './types';
 import * as Analyzers from './analyzers/index';
 import axios from 'axios';
+import puppeteer from 'puppeteer';
 
 export type DomainReadinessBucket =
   | 'technicalCrawlability'
   | 'contentQuality'
   | 'semanticStructure'
   | 'accessibilityAndBrand'
+  | 'aeoOptimization'
   | 'botAccess';
 
 export type DomainReadinessProgressEvent =
   | {
-      type: 'progress';
-      analyzer: string;
-      bucket: Exclude<DomainReadinessBucket, 'botAccess'>;
-      tests: TestResult[];
-      completed: number;
-      total: number;
-    }
+    type: 'progress';
+    analyzer: string;
+    bucket: Exclude<DomainReadinessBucket, 'botAccess'>;
+    tests: TestResult[];
+    completed: number;
+    total: number;
+  }
   | {
-      type: 'progress';
-      analyzer: string;
-      bucket: 'botAccess';
-      botAccessStatus: BotAccessStatus[];
-      completed: number;
-      total: number;
-    }
+    type: 'progress';
+    analyzer: string;
+    bucket: 'botAccess';
+    botAccessStatus: BotAccessStatus[];
+    completed: number;
+    total: number;
+  }
   | {
-      type: 'final';
-      result: AeoAuditResult;
-    };
+    type: 'final';
+    result: AeoAuditResult;
+  };
 
 export class DomainReadinessService {
   private calculateScore(tests: TestResult[]): number {
     if (tests.length === 0) return 0;
     const sum = tests.reduce((acc, t) => acc + t.score, 0);
     return Math.round(sum / tests.length);
+  }
+
+  private async fetchHtmlWithPuppeteer(url: string): Promise<string | undefined> {
+    let browser;
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      const page = await browser.newPage();
+      await page.setUserAgent('EvidentlyAEO-Auditor/1.0');
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+      const html = await page.content();
+      return html;
+    } catch (e) {
+      console.warn('Puppeteer rendering failed:', e);
+      return undefined;
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+    }
   }
 
   private buildResult(params: {
@@ -47,15 +71,17 @@ export class DomainReadinessService {
     contentTests: TestResult[];
     semanticTests: TestResult[];
     accessTests: TestResult[];
+    aeoTests: TestResult[];
     botAccessStatus: BotAccessStatus[];
   }): AeoAuditResult {
     const techScore = this.calculateScore(params.techTests);
     const contentScore = this.calculateScore(params.contentTests);
     const semanticScore = this.calculateScore(params.semanticTests);
     const accessScore = this.calculateScore(params.accessTests);
+    const aeoScore = this.calculateScore(params.aeoTests);
 
     const overallScore = Math.round(
-      techScore * 0.25 + contentScore * 0.35 + semanticScore * 0.25 + accessScore * 0.15
+      techScore * 0.20 + contentScore * 0.30 + semanticScore * 0.25 + accessScore * 0.15 + aeoScore * 0.10
     );
 
     return {
@@ -67,13 +93,15 @@ export class DomainReadinessService {
         technicalCrawlability: techScore,
         contentQuality: contentScore,
         semanticStructure: semanticScore,
-        accessibilityAndBrand: accessScore
+        accessibilityAndBrand: accessScore,
+        aeoOptimization: aeoScore
       },
       detailedResults: {
-        technicalCrawlability: { score: techScore, weight: 0.25, tests: params.techTests, recommendations: [] },
-        contentQuality: { score: contentScore, weight: 0.35, tests: params.contentTests, recommendations: [] },
+        technicalCrawlability: { score: techScore, weight: 0.20, tests: params.techTests, recommendations: [] },
+        contentQuality: { score: contentScore, weight: 0.30, tests: params.contentTests, recommendations: [] },
         semanticStructure: { score: semanticScore, weight: 0.25, tests: params.semanticTests, recommendations: [] },
-        accessibilityAndBrand: { score: accessScore, weight: 0.15, tests: params.accessTests, recommendations: [] }
+        accessibilityAndBrand: { score: accessScore, weight: 0.15, tests: params.accessTests, recommendations: [] },
+        aeoOptimization: { score: aeoScore, weight: 0.10, tests: params.aeoTests, recommendations: [] }
       },
       botAccessStatus: params.botAccessStatus,
       criticalIssues: [],
@@ -96,19 +124,48 @@ export class DomainReadinessService {
     userId?: string;
     metadata: AeoAuditResult['metadata'];
   }): Promise<void> {
-    const { error } = await supabaseAdmin.from('domain_readiness_audits').insert({
-      brand_id: params.brandId,
-      domain: params.domain,
-      overall_score: params.overallScore,
-      scores: params.scoreBreakdown,
-      results: params.detailedResults,
-      bot_access: params.botAccessStatus,
-      created_by: params.userId,
-      metadata: params.metadata
-    });
+    // Calculate audit date for daily grouping (YYYY-MM-DD)
+    const auditDate = new Date().toISOString().split('T')[0];
 
-    if (error) {
-      throw new Error(`Failed to save domain readiness audit: ${error.message}`);
+    // Try upsert first (requires audit_date column and unique constraint)
+    try {
+      const { error } = await supabaseAdmin
+        .from('domain_readiness_audits')
+        .upsert({
+          brand_id: params.brandId,
+          audit_date: auditDate, // This column might not exist yet
+          domain: params.domain,
+          overall_score: params.overallScore,
+          scores: params.scoreBreakdown,
+          results: params.detailedResults,
+          bot_access: params.botAccessStatus,
+          created_by: params.userId,
+          metadata: params.metadata
+        }, { onConflict: 'brand_id,audit_date' });
+
+      if (error) throw error;
+
+    } catch (upsertError: any) {
+      console.warn('Daily upsert failed (likely missing migration), falling back to standard insert:', upsertError.message);
+
+      // Fallback: Standard insert (creates new record every time, works with old schema)
+      const { error: insertError } = await supabaseAdmin
+        .from('domain_readiness_audits')
+        .insert({
+          brand_id: params.brandId,
+          domain: params.domain,
+          overall_score: params.overallScore,
+          scores: params.scoreBreakdown,
+          results: params.detailedResults,
+          bot_access: params.botAccessStatus,
+          created_by: params.userId,
+          metadata: params.metadata
+        });
+
+      if (insertError) {
+        console.error('Failed to save audit results (fallback):', insertError);
+        throw new Error(`Failed to save domain readiness audit: ${insertError.message}`);
+      }
     }
   }
 
@@ -127,17 +184,25 @@ export class DomainReadinessService {
     const domain = brand.homepage_url;
     const brandName = brand.name;
 
-    // 2. Fetch HTML once
+    // 2. Fetch HTML with Puppeteer (with fallback to axios)
     let htmlContent: string | undefined;
     try {
-      const response = await axios.get(domain, { 
-        timeout: 10000,
-        headers: { 'User-Agent': 'EvidentlyAEO-Auditor/1.0' },
-        validateStatus: () => true
-      });
-      htmlContent = typeof response.data === 'string' ? response.data : undefined;
+      htmlContent = await this.fetchHtmlWithPuppeteer(domain);
     } catch (e) {
-      console.warn('Failed to pre-fetch HTML, analyzers will try individually');
+      console.warn('Puppeteer failed, trying axios');
+    }
+
+    if (!htmlContent) {
+      try {
+        const response = await axios.get(domain, {
+          timeout: 10000,
+          headers: { 'User-Agent': 'EvidentlyAEO-Auditor/1.0' },
+          validateStatus: () => true
+        });
+        htmlContent = typeof response.data === 'string' ? response.data : undefined;
+      } catch (e) {
+        console.warn('Failed to pre-fetch HTML, analyzers will try individually');
+      }
     }
 
     const options = { html: htmlContent, brandName };
@@ -155,7 +220,10 @@ export class DomainReadinessService {
       accessibility,
       brandConsist,
       sitemap,
-      botAccess
+      botAccess,
+      entityConf,
+      contentFormat,
+      coreWebVitals
     ] = await Promise.all([
       Analyzers.analyzeBasicCrawlability(domain),
       Analyzers.analyzeRobotsTxt(domain),
@@ -169,13 +237,17 @@ export class DomainReadinessService {
       Analyzers.analyzeAccessibility(domain, options),
       Analyzers.analyzeBrandConsistency(domain, options),
       Analyzers.analyzeSitemap(domain, options),
-      Analyzers.analyzeBotAccess(domain, options)
+      Analyzers.analyzeBotAccess(domain, options),
+      Analyzers.analyzeEntityConfidence(domain, options),
+      Analyzers.analyzeContentFormatting(domain, options),
+      Analyzers.analyzeCoreWebVitals(domain, options)
     ]);
 
     const techTests = [...basicCrawl, ...robots, ...sitemap, ...canonical, ...llmsTxt];
     const contentTests = [...freshness, ...faq, ...brandConsist];
     const semanticTests = [...schema, ...htmlStruct.filter(t => t.name !== 'Content Depth')];
     const accessTests = [...accessibility, ...metadata];
+    const aeoTests = [...entityConf, ...contentFormat, ...coreWebVitals];
 
     const result = this.buildResult({
       brandId,
@@ -185,6 +257,7 @@ export class DomainReadinessService {
       contentTests,
       semanticTests,
       accessTests,
+      aeoTests,
       botAccessStatus: botAccess as BotAccessStatus[]
     });
 
@@ -221,21 +294,30 @@ export class DomainReadinessService {
     const domain = brand.homepage_url;
     const brandName = brand.name;
 
+    // Fetch HTML with Puppeteer (with fallback to axios)
     let htmlContent: string | undefined;
     try {
-      const response = await axios.get(domain, {
-        timeout: 10000,
-        headers: { 'User-Agent': 'EvidentlyAEO-Auditor/1.0' },
-        validateStatus: () => true
-      });
-      htmlContent = typeof response.data === 'string' ? response.data : undefined;
-    } catch {
-      htmlContent = undefined;
+      htmlContent = await this.fetchHtmlWithPuppeteer(domain);
+    } catch (e) {
+      console.warn('Puppeteer failed, trying axios');
+    }
+
+    if (!htmlContent) {
+      try {
+        const response = await axios.get(domain, {
+          timeout: 10000,
+          headers: { 'User-Agent': 'EvidentlyAEO-Auditor/1.0' },
+          validateStatus: () => true
+        });
+        htmlContent = typeof response.data === 'string' ? response.data : undefined;
+      } catch {
+        htmlContent = undefined;
+      }
     }
 
     const options = { html: htmlContent, brandName };
 
-    const total = 13;
+    const total = 16;
     let completed = 0;
 
     const ensureNotAborted = () => {
@@ -308,10 +390,23 @@ export class DomainReadinessService {
     const botAccess = await Analyzers.analyzeBotAccess(domain, options);
     emitBotAccess('analyzeBotAccess', botAccess as BotAccessStatus[]);
 
+    ensureNotAborted();
+    const entityConf = await Analyzers.analyzeEntityConfidence(domain, options);
+    emitTests('analyzeEntityConfidence', 'aeoOptimization', entityConf);
+
+    ensureNotAborted();
+    const contentFormat = await Analyzers.analyzeContentFormatting(domain, options);
+    emitTests('analyzeContentFormatting', 'aeoOptimization', contentFormat);
+
+    ensureNotAborted();
+    const coreWebVitals = await Analyzers.analyzeCoreWebVitals(domain, options);
+    emitTests('analyzeCoreWebVitals', 'aeoOptimization', coreWebVitals);
+
     const techTests = [...basicCrawl, ...robots, ...sitemap, ...canonical, ...llmsTxt];
     const contentTests = [...freshness, ...faq, ...brandConsist];
     const semanticTests = [...schema, ...htmlStruct.filter(t => t.name !== 'Content Depth')];
     const accessTests = [...accessibility, ...metadata];
+    const aeoTests = [...entityConf, ...contentFormat, ...coreWebVitals];
 
     const result = this.buildResult({
       brandId,
@@ -321,6 +416,7 @@ export class DomainReadinessService {
       contentTests,
       semanticTests,
       accessTests,
+      aeoTests,
       botAccessStatus: botAccess as BotAccessStatus[]
     });
 
@@ -362,6 +458,37 @@ export class DomainReadinessService {
       improvementPriorities: [],
       metadata: data.metadata
     };
+  }
+
+  async getAuditHistory(brandId: string, days: number = 30): Promise<AeoAuditResult[]> {
+    // Calculate date threshold (days ago)
+    const thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() - days);
+    const thresholdDateStr = thresholdDate.toISOString().split('T')[0];
+
+    const { data, error } = await supabaseAdmin
+      .from('domain_readiness_audits')
+      .select('*')
+      .eq('brand_id', brandId)
+      .gte('audit_date', thresholdDateStr)
+      .order('audit_date', { ascending: true });
+
+    if (error || !data) return [];
+
+    return data.map(row => ({
+      id: row.id,
+      brandId: row.brand_id,
+      domain: row.domain,
+      timestamp: row.created_at,
+      auditDate: row.audit_date,  // Include audit_date for grouping
+      overallScore: row.overall_score,
+      scoreBreakdown: row.scores,
+      detailedResults: row.results,
+      botAccessStatus: row.bot_access,
+      criticalIssues: [],
+      improvementPriorities: [],
+      metadata: row.metadata
+    }));
   }
 }
 

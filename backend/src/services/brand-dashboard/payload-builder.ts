@@ -41,7 +41,7 @@ export async function buildDashboardPayload(
   brand: BrandRow,
   customerId: string,
   range: NormalizedDashboardRange,
-  options: { collectors?: string[] } = {}
+  options: { collectors?: string[]; timezoneOffset?: number } = {}
 ): Promise<BrandDashboardPayload> {
   const requestStart = Date.now()
   let lastMark = requestStart
@@ -425,16 +425,25 @@ export async function buildDashboardPayload(
     normalizedCollectors.length === 0
       ? rawPositionRows
       : rawPositionRows.filter(
-          (row) => normalizedCollectors.includes((row.collector_type ?? 'unknown').toLowerCase())
-        )
+        (row) => normalizedCollectors.includes((row.collector_type ?? 'unknown').toLowerCase())
+      )
 
   // Helper function to extract date from timestamp (YYYY-MM-DD format)
+  // Adjusted for user's local timezone to ensure correct day bucketing
   const extractDate = (timestamp: string | null): string | null => {
     if (!timestamp) return null
     try {
       const date = new Date(timestamp)
       if (isNaN(date.getTime())) return null
-      return date.toISOString().split('T')[0] // Returns YYYY-MM-DD
+
+      // Apply timezone offset to get local date
+      // timezoneOffset is in minutes (UTC - Local). e.g. EST (UTC-5) is 300.
+      // We subtract the offset to shift the UTC time to Local time
+      // Example: 01:00 UTC (Jan 11) - 300 min (5h) = 20:00 UTC (Jan 10) -> represents 20:00 EST
+      const offsetMinutes = options.timezoneOffset || 0
+      const localTime = new Date(date.getTime() - (offsetMinutes * 60 * 1000))
+
+      return localTime.toISOString().split('T')[0] // Returns YYYY-MM-DD
     } catch {
       return null
     }
@@ -445,15 +454,15 @@ export async function buildDashboardPayload(
   // This ensures date ranges are generated correctly regardless of server timezone
   const generateDateRange = (start: string, end: string): string[] => {
     const dates: string[] = []
-    
+
     // Parse date strings (YYYY-MM-DD) as calendar dates in UTC
     const [startYear, startMonth, startDay] = start.split('-').map(Number)
     const [endYear, endMonth, endDay] = end.split('-').map(Number)
-    
+
     const startDate = new Date(Date.UTC(startYear, startMonth - 1, startDay))
     const endDate = new Date(Date.UTC(endYear, endMonth - 1, endDay))
     const current = new Date(startDate)
-    
+
     // Generate dates using UTC methods to avoid timezone shifts
     while (current <= endDate) {
       dates.push(current.toISOString().split('T')[0])
@@ -463,7 +472,7 @@ export async function buildDashboardPayload(
   }
 
   const allDates = generateDateRange(startIsoBound.split('T')[0], endIsoBound.split('T')[0])
-  
+
   const trendPercentage = 0
   const knownCompetitors =
     (competitorResult.data ?? [])
@@ -591,7 +600,7 @@ export async function buildDashboardPayload(
           .filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
       )
     )
-    
+
     if (uniqueCollectorResultIds.length > 0) {
       const chunkSize = 200
       const collectorRows: Array<{ id: number; question: string | null }> = []
@@ -613,7 +622,7 @@ export async function buildDashboardPayload(
           continue
         }
 
-        ;(data ?? []).forEach((row) => {
+        ; (data ?? []).forEach((row) => {
           if (typeof row?.id !== 'number' || !Number.isFinite(row.id)) {
             return
           }
@@ -662,7 +671,7 @@ export async function buildDashboardPayload(
           continue
         }
 
-        ;(data ?? []).forEach((row) => {
+        ; (data ?? []).forEach((row) => {
           if (!row?.id) {
             return
           }
@@ -730,7 +739,7 @@ export async function buildDashboardPayload(
       ? Math.max(0, toNumber(brandShareRaw))
       : null
     const brandVisibility = Math.max(0, toNumber(row.visibility_index))
-    
+
     // Use sentiment_score from extracted_positions table only (no fallback to collector_results)
     let brandSentiment: number | null = null
     if (row.sentiment_score !== null && row.sentiment_score !== undefined) {
@@ -738,7 +747,7 @@ export async function buildDashboardPayload(
     }
     const hasBrandSentiment = brandSentiment !== null && brandSentiment !== undefined
     const brandSentimentValue = hasBrandSentiment ? brandSentiment : 0
-    
+
     const hasBrandPresence = row.has_brand_presence === true
     const brandMentions = Math.max(0, toNumber(row.total_brand_mentions))
 
@@ -757,7 +766,7 @@ export async function buildDashboardPayload(
     const shareArray = brandShareByQuery.get(queryId)!
     const visibilityArray = brandVisibilityByQuery.get(queryId)!
     const sentimentArray = brandSentimentByQuery.get(queryId)!
-    
+
     // Use the sentiment value we determined above
     if (hasBrandSentiment) {
       sentimentArray.push(brandSentimentValue)
@@ -923,7 +932,7 @@ export async function buildDashboardPayload(
           collectorAggregate.shareValues.push(brandShare)
         }
         collectorAggregate.visibilityValues.push(brandVisibility)
-        
+
         // Add sentiment for brand rows only
         if (hasBrandSentiment) {
           collectorAggregate.sentimentValues.push(brandSentimentValue)
@@ -938,7 +947,7 @@ export async function buildDashboardPayload(
             collectorAggregate.collectorResultsWithBrandPresence.add(row.collector_result_id)
           }
         }
-        
+
         // Track unique queries per collector
         if (queryId) {
           collectorAggregate.uniqueQueryIds.add(queryId)
@@ -980,7 +989,7 @@ export async function buildDashboardPayload(
       ? Math.max(0, toNumber(competitorShareRaw))
       : null // Mark as null to exclude from average calculation
     const competitorVisibility = Math.max(0, toNumber(row.visibility_index_competitor))
-    
+
     // Priority: 1) sentiment_score_competitor from extracted_positions (competitor-specific column)
     // Note: We don't use collector_results sentiment for competitors since that's brand-level sentiment
     let competitorSentiment: number | null = null
@@ -989,8 +998,8 @@ export async function buildDashboardPayload(
     }
     const hasCompetitorSentiment = competitorSentiment !== null && competitorSentiment !== undefined
     const competitorSentimentValue = hasCompetitorSentiment ? competitorSentiment : 0
-    
-    
+
+
     const competitorMentions = Math.max(0, toNumber(row.competitor_mentions))
 
     if (!competitorAggregates.has(competitorName)) {
@@ -1055,7 +1064,7 @@ export async function buildDashboardPayload(
     const newShareSum = competitorQueryAggregate.shareSum + (competitorShare !== null && competitorShare !== undefined && Number.isFinite(competitorShare) ? competitorShare : 0)
     const newCount = competitorQueryAggregate.count + 1
     // Note: shareSum / count gives average, but we'll use aggregate.shareValues array for final average instead
-    
+
     competitorAggregate.queries.set(queryId, {
       text: queryText,
       shareSum: newShareSum, // For backward compatibility, but final average uses shareValues array
@@ -1128,11 +1137,11 @@ export async function buildDashboardPayload(
   // totalQueries = unique queries tracked
   // totalResponses = total score rows (queries × collectors × competitors)
   const totalPositionRows = positionRows.length
-  
+
   if (totalQueries === 0) {
     totalQueries = uniqueQueries
   }
-  
+
   const totalResponses = totalPositionRows
 
   // Check if filters are applied
@@ -1152,7 +1161,7 @@ export async function buildDashboardPayload(
       .filter(val => val !== null && val !== undefined) // Filter out nulls
       .map(val => toNumber(val)) // Convert to number only for non-null values
       .filter(val => Number.isFinite(val) && val >= 0) // Filter out invalid numbers
-    
+
     shareOfAnswersPercentage = allBrandShareValues.length > 0
       ? average(allBrandShareValues)
       : 0
@@ -1165,7 +1174,7 @@ export async function buildDashboardPayload(
       .filter(val => val !== null && val !== undefined) // Filter out nulls
       .map(val => toNumber(val)) // Convert to number only for non-null values
       .filter(val => Number.isFinite(val) && val >= 0) // Filter out invalid numbers
-    
+
     shareOfAnswersPercentage = filteredBrandShareValues.length > 0
       ? average(filteredBrandShareValues)
       : 0
@@ -1178,10 +1187,10 @@ export async function buildDashboardPayload(
     0
   )
   const totalShareUniverse = brandShareSum + competitorShareSum
-  
+
   // Calculate Visibility Index (average prominence across queries)
   const visibilityIndexPercentage = average(brandVisibilityValues) * 100 // Convert 0-1 scale to 0-100
-  
+
   // Calculate average sentiment: all scores are now in 1-100 format
   // First average per query, then average those query-level averages (same approach as share and visibility)
   // Simple average - return value in 1-100 range (no conversion)
@@ -1406,7 +1415,7 @@ export async function buildDashboardPayload(
 
   // Track which categories are in the top 5 (for "Other" aggregation later)
   const top5CategoryKeys = new Set<string>()
-  
+
   if (totalCategoryVisibility > 0) {
     const sortedCategories = Array.from(categoryVisibilityAggregates.entries()).sort(
       (a, b) => b[1].visibilitySum - a[1].visibilitySum
@@ -1455,12 +1464,12 @@ export async function buildDashboardPayload(
     .sort((a, b) => b[1] - a[1])
     .map(([categoryKey, count], index) => ({
       label: formatCategoryLabel(categoryKey),
-      percentage: totalCitations > 0 
+      percentage: totalCitations > 0
         ? round((count / totalCitations) * 100)
         : 0,
       color: DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]
     }))
-  
+
   // Update sourceDistribution to use categoryDistribution (citation counts) instead of visibility-weighted
   // This ensures Source Type Distribution shows citation counts, not visibility-weighted percentages
   if (categoryDistribution.length > 0) {
@@ -1469,27 +1478,27 @@ export async function buildDashboardPayload(
 
   // Calculate top 5 sources by source type for tooltip display
   const topSourcesByType: Record<string, Array<{ domain: string; title: string | null; url: string | null; usage: number }>> = {}
-  
+
   // Helper function to get top sources for a single category
   const getTopSourcesForCategory = (categoryKey: string): Array<{ domain: string; title: string | null; url: string | null; usage: number }> => {
     if (!domainUsageByCategory.has(categoryKey)) {
       return []
     }
-    
+
     const categoryDomainMap = domainUsageByCategory.get(categoryKey)!
-    
+
     // Get top 5 domains by usage count
     const topDomains = Array.from(categoryDomainMap.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-    
+
     // Map domains to source information
     return topDomains
       .map(([domain, usage]) => {
         // Find the source aggregate for this domain
         const sourceKey = `domain:${domain}`
         const sourceAggregate = sourceAggregates.get(sourceKey)
-        
+
         if (sourceAggregate) {
           return {
             domain,
@@ -1498,7 +1507,7 @@ export async function buildDashboardPayload(
             usage
           }
         }
-        
+
         // Fallback if source aggregate not found
         return {
           domain,
@@ -1509,37 +1518,37 @@ export async function buildDashboardPayload(
       })
       .filter(source => source.domain) // Filter out invalid domains
   }
-  
+
   // Process each category in sourceDistribution to get top sources
   sourceDistribution.forEach((distributionSlice) => {
     // Special handling for "Other" - aggregate sources from all non-top-5 categories
     if (distributionSlice.label === 'Other') {
       // Aggregate all domains from categories NOT in top 5
       const otherDomainsMap = new Map<string, number>()
-      
+
       for (const [categoryKey, categoryDomainMap] of domainUsageByCategory.entries()) {
         // Skip categories that are in the top 5
         if (top5CategoryKeys.has(categoryKey)) {
           continue
         }
-        
+
         // Aggregate usage counts for each domain across all "other" categories
         for (const [domain, usage] of categoryDomainMap.entries()) {
           otherDomainsMap.set(domain, (otherDomainsMap.get(domain) || 0) + usage)
         }
       }
-      
+
       // Get top 5 domains from aggregated "other" categories
       const topOtherDomains = Array.from(otherDomainsMap.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
-      
+
       // Map domains to source information
       const topSources = topOtherDomains
         .map(([domain, usage]) => {
           const sourceKey = `domain:${domain}`
           const sourceAggregate = sourceAggregates.get(sourceKey)
-          
+
           if (sourceAggregate) {
             return {
               domain,
@@ -1548,7 +1557,7 @@ export async function buildDashboardPayload(
               usage
             }
           }
-          
+
           return {
             domain,
             title: null,
@@ -1557,17 +1566,17 @@ export async function buildDashboardPayload(
           }
         })
         .filter(source => source.domain)
-      
+
       if (topSources.length > 0) {
         topSourcesByType['Other'] = topSources
       }
       return // Skip normal processing for "Other"
     }
-    
+
     // Normal processing for non-"Other" categories
     // Normalize the label back to category key (lowercase, handle spaces)
     const categoryKey = distributionSlice.label.toLowerCase().replace(/\s+/g, '_').replace(/[_-]/g, '')
-    
+
     // Try to find matching category in domainUsageByCategory
     // Check both the normalized key and original category keys
     let matchingCategoryKey: string | null = null
@@ -1578,7 +1587,7 @@ export async function buildDashboardPayload(
         break
       }
     }
-    
+
     // Also check if the label matches any category directly
     if (!matchingCategoryKey) {
       const labelLower = distributionSlice.label.toLowerCase()
@@ -1589,7 +1598,7 @@ export async function buildDashboardPayload(
         }
       }
     }
-    
+
     if (matchingCategoryKey) {
       const topSources = getTopSourcesForCategory(matchingCategoryKey)
       if (topSources.length > 0) {
@@ -1621,8 +1630,8 @@ export async function buildDashboardPayload(
       domain && domain.trim().length > 0
         ? truncateLabel(domain.trim(), 72)
         : aggregate.url
-            ? truncateLabel(aggregate.url.replace(/^https?:\/\//, ''), 72)
-            : 'Unknown Source'
+          ? truncateLabel(aggregate.url.replace(/^https?:\/\//, ''), 72)
+          : 'Unknown Source'
 
     const title =
       aggregate.title && aggregate.title.trim().length > 0
@@ -1680,7 +1689,7 @@ export async function buildDashboardPayload(
     (max, source) => (source.usage > max ? source.usage : max),
     0
   )
-  
+
   // Calculate max values for Value score normalization
   const maxTopicsCount = sourceAggregateEntries.reduce(
     (max, source) => ((source.topicsCount || 0) > max ? (source.topicsCount || 0) : max),
@@ -1688,17 +1697,17 @@ export async function buildDashboardPayload(
   )
 
   // Group by normalized domain to ensure no duplicates
-  const domainMap = new Map<string, Omit<typeof sourceAggregateEntries[0], 'urls' | 'collectorIds'> & { 
-    urls?: string[] | Set<string>; 
+  const domainMap = new Map<string, Omit<typeof sourceAggregateEntries[0], 'urls' | 'collectorIds'> & {
+    urls?: string[] | Set<string>;
     collectorIds?: Set<number>;
     sentiment?: number;
     topicsCount?: number;
   }>()
-  
+
   sourceAggregateEntries.forEach((source) => {
     const normalizedDomain = source.domain?.toLowerCase().replace(/^www\./, '') || 'unknown'
     const existing = domainMap.get(normalizedDomain)
-    
+
     if (!existing) {
       // Keep URLs as Set and preserve collectorIds from source aggregate
       const sourceAggregate = sourceAggregates.get(source.key)
@@ -1715,7 +1724,7 @@ export async function buildDashboardPayload(
       } else {
         urlsSet = new Set<string>()
       }
-      domainMap.set(normalizedDomain, { 
+      domainMap.set(normalizedDomain, {
         ...source,
         urls: urlsSet,
         collectorIds: sourceAggregate?.collectorIds ? new Set(sourceAggregate.collectorIds) : new Set<number>()
@@ -1788,15 +1797,15 @@ export async function buildDashboardPayload(
   // Example: If viewing Dec 1-2, compare Dec 2 (most recent) to Dec 1 (previous day)
   // Example: If viewing Dec 2 only, compare Dec 2 to Dec 1 (previous day)
   const previousPeriodStartTime = Date.now()
-  
+
   // Use the end date of the current period as the "current day" to compare
   const currentDay = new Date(range.endDate)
   currentDay.setUTCHours(0, 0, 0, 0) // Start of the most recent day
-  
+
   // Previous day is one day before the current day
   const previousDay = new Date(currentDay)
   previousDay.setUTCDate(previousDay.getUTCDate() - 1)
-  
+
   // Previous period is just the previous day (00:00:00 to 23:59:59)
   const previousStart = new Date(previousDay)
   previousStart.setUTCHours(0, 0, 0, 0)
@@ -1978,7 +1987,7 @@ export async function buildDashboardPayload(
     // Use placeholders for sentiment and topics (50 for sentiment, 50 for topics) if not available
     const normalizedSentiment = 50 // Default neutral if not available
     const normalizedTopics = 50 // Default middle if not available
-    
+
     const value = round(
       (normalizedVisibility * 0.2) +
       (normalizedSOA * 0.2) +
@@ -1997,10 +2006,10 @@ export async function buildDashboardPayload(
       // Calculate mentionRate: percentage of total collector results where this source is cited
       // Formula: (Number of unique collector results citing this source / Total collector results) * 100
       const uniqueCollectorResultsCitingSource = source.collectorIds ? source.collectorIds.size : 0
-      const mentionRate = totalCollectorResultsCount > 0 
-        ? (uniqueCollectorResultsCitingSource / totalCollectorResultsCount) * 100 
+      const mentionRate = totalCollectorResultsCount > 0
+        ? (uniqueCollectorResultsCitingSource / totalCollectorResultsCount) * 100
         : 0
-      
+
       // Calculate Value: Composite score based on Visibility, SOA, Sentiment, Citations and Topics
       // Same formula as in source-attribution.service.ts
       const normalizedVisibility = Math.min(100, Math.max(0, source.visibility))
@@ -2009,7 +2018,7 @@ export async function buildDashboardPayload(
       const normalizedSentiment = Math.min(100, Math.max(0, source.sentiment || 0))
       const normalizedCitations = maxSourceUsage > 0 ? Math.min(100, (source.usage / maxSourceUsage) * 100) : 0
       const normalizedTopics = maxTopicsCount > 0 ? Math.min(100, ((source.topicsCount || 0) / maxTopicsCount) * 100) : 0
-      
+
       const value = round(
         (normalizedVisibility * 0.2) +
         (normalizedSOA * 0.2) +
@@ -2018,13 +2027,13 @@ export async function buildDashboardPayload(
         (normalizedTopics * 0.2),
         1
       )
-      
+
       // Calculate change from previous period
       // Match by normalized domain (same as used in previous period aggregation)
       // Normalize domain the same way as domainMap key (lowercase, remove www.)
       const normalizedDomain = source.domain?.toLowerCase().replace(/^www\./, '') || 'unknown'
       const previousValue = previousValues.get(normalizedDomain)
-      
+
       let change: number | null = null
       if (previousValue !== undefined) {
         change = round(value - previousValue, 1)
@@ -2032,7 +2041,7 @@ export async function buildDashboardPayload(
         // New source in current period - no previous data to compare
         change = null
       }
-      
+
       // Get all unique URLs for this domain (exact URLs from database, no normalization)
       // URLs that differ only by trailing slash will be shown separately
       let allUrls: string[] = []
@@ -2046,10 +2055,10 @@ export async function buildDashboardPayload(
       } else if (source.url && typeof source.url === 'string') {
         allUrls = [source.url]
       }
-      
+
       // Primary URL is the first one (shortest, usually most relevant)
       const primaryUrl = allUrls.length > 0 ? allUrls[0] : (source.url || null)
-      
+
       return {
         id: source.key,
         title: source.title,
@@ -2177,7 +2186,7 @@ export async function buildDashboardPayload(
       // Only show topics with actual data - no fallbacks
       // Must have at least one meaningful metric
       return topic.promptsTracked > 0 && (
-        topic.averageVolume > 0 || 
+        topic.averageVolume > 0 ||
         (topic.sentimentScore !== null && topic.sentimentScore !== undefined) ||
         (topic.avgVisibility !== null && topic.avgVisibility !== undefined && topic.avgVisibility > 0) ||
         (topic.brandPresencePercentage !== null && topic.brandPresencePercentage !== undefined && topic.brandPresencePercentage > 0)
@@ -2205,7 +2214,7 @@ export async function buildDashboardPayload(
     0
   )
 
-  
+
   // Calculate time-series data: group by day and collector type (for brand visibility)
   const timeSeriesByCollector = new Map<string, Map<string, {
     visibilityValues: number[]
@@ -2275,14 +2284,14 @@ export async function buildDashboardPayload(
 
   // Group positionRows by date, collector type, and competitor
   // Always use created_at for date grouping (matches query filtering)
-  
+
   // Track collector types seen in position rows for debugging
   const positionRowCollectorTypes = new Set<string>()
   let skippedRowsCount = 0
   let processedBrandRowsCount = 0
   const dateMismatchesByCollector = new Map<string, number>()
   const successfulMatchesByCollector = new Map<string, number>()
-  
+
   positionRows.forEach(row => {
     // Prefer created_at for time series grouping, fallback to processed_at if created_at is missing
     const timestamp = (row.created_at && row.created_at.trim() !== '') ? row.created_at : row.processed_at
@@ -2297,7 +2306,7 @@ export async function buildDashboardPayload(
       skippedRowsCount++
       return
     }
-    
+
     positionRowCollectorTypes.add(collectorType)
 
     const isBrandRow = !row.competitor_name || row.competitor_name.trim().length === 0
@@ -2389,8 +2398,8 @@ export async function buildDashboardPayload(
               allCollectorResultsForDate.add(row.collector_result_id)
             }
             // Competitor has presence if any metric is > 0
-            const hasCompetitorPresence = 
-              competitorVisibility > 0 || 
+            const hasCompetitorPresence =
+              competitorVisibility > 0 ||
               (competitorShare !== null && competitorShare > 0) ||
               (row.competitor_mentions !== null && row.competitor_mentions > 0)
             if (hasCompetitorPresence) {
@@ -2415,7 +2424,7 @@ export async function buildDashboardPayload(
       }
     }
   })
-  
+
   console.log(`[TimeSeries] Position rows processing summary:`)
   console.log(`   - Total position rows: ${positionRows.length}`)
   console.log(`   - Processed brand rows: ${processedBrandRowsCount}`)
@@ -2429,7 +2438,7 @@ export async function buildDashboardPayload(
     const status = successful > 0 ? '✅' : '❌'
     console.log(`   ${status} ${collectorType}: ${successful} matched, ${mismatched} date mismatches`)
   })
-  
+
   // Log date range being used for this request
   console.log(`[TimeSeries] Date range for this request: ${allDates[0]} to ${allDates[allDates.length - 1]} (${allDates.length} days)`)
 
@@ -2465,10 +2474,10 @@ export async function buildDashboardPayload(
       const lookbackStart = new Date(beforeDate)
       lookbackStart.setDate(lookbackStart.getDate() - lookbackDays)
       lookbackStart.setUTCHours(0, 0, 0, 0)
-      
+
       const lookbackEnd = new Date(beforeDate)
       lookbackEnd.setUTCHours(0, 0, 0, 0)
-      
+
       const lookbackStartIso = lookbackStart.toISOString()
       const lookbackEndIso = lookbackEnd.toISOString()
 
@@ -2530,7 +2539,7 @@ export async function buildDashboardPayload(
         if (!bm) return
 
         // Extract brand_sentiment (can be array or single object, or null)
-        const bs = Array.isArray(mf.brand_sentiment) 
+        const bs = Array.isArray(mf.brand_sentiment)
           ? (mf.brand_sentiment.length > 0 ? mf.brand_sentiment[0] : null)
           : mf.brand_sentiment
 
@@ -2740,10 +2749,10 @@ export async function buildDashboardPayload(
       const lookbackStart = new Date(beforeDate)
       lookbackStart.setDate(lookbackStart.getDate() - lookbackDays)
       lookbackStart.setUTCHours(0, 0, 0, 0)
-      
+
       const lookbackEnd = new Date(beforeDate)
       lookbackEnd.setUTCHours(0, 0, 0, 0)
-      
+
       const lookbackStartIso = lookbackStart.toISOString()
       const lookbackEndIso = lookbackEnd.toISOString()
 
@@ -2950,7 +2959,7 @@ export async function buildDashboardPayload(
       const dayData = dailyData.get(date)
       const allCollectorResultsForDate = allCollectorResultsByDate.get(date)
       const totalCollectorResults = allCollectorResultsForDate?.size ?? 0
-      
+
       if (dayData) {
         dates.push(date)
         const hasVisibility = dayData.visibilityValues.length > 0
@@ -3001,7 +3010,7 @@ export async function buildDashboardPayload(
       competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment, brandPresencePercentage, isRealData })
     }
   })
-  
+
   const llmVisibility = visibilityService.calculateLlmVisibility(
     collectorAggregates,
     totalCollectorMentions,

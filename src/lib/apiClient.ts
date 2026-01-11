@@ -4,22 +4,22 @@ const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL.replace(/\/$/, '');
   }
-  
+
   // Auto-detect based on current origin
   if (typeof window !== 'undefined') {
     const origin = window.location.origin;
-    
+
     // If accessing via domain, use domain API
     if (origin.includes('evidentlyaeo.com')) {
       return `${origin}/api`;
     }
-    
+
     // If accessing via IP, use IP API
     if (origin.includes('85.239.244.166')) {
       return `${origin}/api`;
     }
   }
-  
+
   // Default fallback to localhost for development
   return 'http://localhost:3000/api';
 };
@@ -128,6 +128,12 @@ class ApiClient {
       headers.set('Content-Type', 'application/json');
     }
 
+    // Add timezone offset header to all requests
+    // Date.prototype.getTimezoneOffset() returns minutes (UTC - local)
+    // e.g. EST (UTC-5) returns 300, PST (UTC-8) returns 480
+    // Backend will use this to adjust UTC aggregations to local "days"
+    headers.set('x-timezone-offset', String(new Date().getTimezoneOffset()));
+
     const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
 
     if (requiresAuth) {
@@ -139,9 +145,9 @@ class ApiClient {
         error.name = 'AuthenticationError';
         throw error;
       }
-        headers.set('Authorization', `Bearer ${accessToken}`);
+      headers.set('Authorization', `Bearer ${accessToken}`);
     }
-    
+
     // Log slow requests (>5 seconds) for debugging
     const logSlowRequest = (duration: number, status?: number) => {
       // Avoid noisy warnings by default; enable explicitly via VITE_LOG_SLOW_API=true
@@ -151,12 +157,12 @@ class ApiClient {
     };
 
     // Add timeout to prevent hanging requests (30 seconds default)
-    const timeoutMs = config.timeout || 30000; 
+    const timeoutMs = config.timeout || 30000;
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();
     }, timeoutMs);
-    
+
     // Merge abort signals if provided
     let finalSignal: AbortSignal;
     if (options.signal) {
@@ -188,7 +194,7 @@ class ApiClient {
     } catch (error) {
       clearTimeout(timeoutId);
       const errorDuration = performance.now() - requestStart;
-      
+
       // Handle timeout/abort errors
       if (this.isAbortError(error)) {
         // Check if timeout occurred (timeoutController aborted but caller signal didn't)
@@ -200,7 +206,7 @@ class ApiClient {
         // Otherwise it was a user-initiated abort, rethrow as-is
         throw error;
       }
-      
+
       // Handle network errors (server not running, CORS, etc.)
       if (error instanceof TypeError && error.message.includes('fetch')) {
         const port = this.baseUrl.includes('3001') ? '3001' : '3000';
@@ -253,7 +259,7 @@ class ApiClient {
     }
     const totalDuration = performance.now() - requestStart;
     logSlowRequest(totalDuration, response.status);
-    
+
     return result;
   }
 

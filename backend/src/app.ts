@@ -36,11 +36,11 @@ app.use(cors({
     if (!origin) {
       return callback(null, true);
     }
-    
-    const allowedOrigins = Array.isArray(config.cors.origin) 
-      ? config.cors.origin 
+
+    const allowedOrigins = Array.isArray(config.cors.origin)
+      ? config.cors.origin
       : [config.cors.origin];
-    
+
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -54,7 +54,7 @@ app.use(cors({
   },
   credentials: config.cors.credentials,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-timezone-offset'],
   exposedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
   preflightContinue: false,
@@ -132,20 +132,20 @@ app.get('/', (_req, res) => {
     success: true,
     message: 'AnswerIntel Backend API',
     version: '1.0.0',
-      endpoints: {
-        health: '/health',
-        auth: '/api/auth',
-        brands: '/api/brands',
-        queryGeneration: '/api/query-generation',
-        trendingKeywords: '/api/trending-keywords',
-        dataCollection: '/api/data-collection',
-        keywords: '/api/keywords',
-        citations: '/api/citations',
-        admin: '/api/admin',
-        recommendations: '/api/recommendations',
-        // TEMPORARY: User management routes commented out
-        // users: '/api/users'
-      }
+    endpoints: {
+      health: '/health',
+      auth: '/api/auth',
+      brands: '/api/brands',
+      queryGeneration: '/api/query-generation',
+      trendingKeywords: '/api/trending-keywords',
+      dataCollection: '/api/data-collection',
+      keywords: '/api/keywords',
+      citations: '/api/citations',
+      admin: '/api/admin',
+      recommendations: '/api/recommendations',
+      // TEMPORARY: User management routes commented out
+      // users: '/api/users'
+    }
   });
 });
 

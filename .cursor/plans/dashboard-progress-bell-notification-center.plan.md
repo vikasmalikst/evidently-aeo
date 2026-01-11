@@ -1,4 +1,9 @@
-<!-- 2d5c0fe2-3c0a-4c86-8cc0-7a7a8b3f9f4a 5b0e2a1b-8f35-4d27-8c6a-2e2b6c0e9f2d -->
+---
+name: Dashboard Progress Bell + Notification Center (Onboarding → Dashboard Handoff)
+overview: ""
+todos: []
+---
+
 # Dashboard Progress Bell + Notification Center (Onboarding → Dashboard Handoff)
 
 ## Problem Statement

@@ -26,6 +26,12 @@ import {
 import { generateColdStartRecommendations } from './cold-start-templates';
 import { filterLowQualityRecommendationsV3 } from './recommendation-quality.service';
 import { rankRecommendationsV3 } from './recommendation-ranking.service';
+import { domainReadinessService } from '../domain-readiness/domain-readiness.service';
+import { 
+  shouldFilterRecommendation, 
+  getReadinessContext,
+  enhanceRecommendationWithReadiness 
+} from './domain-readiness-filter.service';
 
 // ============================================================================
 // TYPES
@@ -2107,6 +2113,25 @@ Respond only with the JSON array.`;
       context._dataMaturity = this.computeDataMaturity(context);
       console.log(`🧪 [RecommendationV3Service] Data maturity: ${context._dataMaturity}`);
 
+      // Step 1.5: Fetch latest Domain Readiness audit
+      console.log('📊 [RecommendationV3Service] Fetching Domain Readiness audit...');
+      let latestAudit = await domainReadinessService.getLatestAudit(brandId);
+      
+      // Check if audit is stale (older than 90 days)
+      if (latestAudit) {
+        const auditDate = new Date(latestAudit.timestamp);
+        const daysSinceAudit = (Date.now() - auditDate.getTime()) / (1000 * 60 * 60 * 24);
+        
+        if (daysSinceAudit > 90) {
+          console.log(`⚠️ [RecommendationV3Service] Domain Readiness audit is stale (${Math.round(daysSinceAudit)} days old) - ignoring for filtering`);
+          latestAudit = null; // Don't use stale audit
+        } else {
+          console.log(`✅ [RecommendationV3Service] Found Domain Readiness audit (score: ${latestAudit.overallScore}/100, date: ${latestAudit.timestamp}, ${Math.round(daysSinceAudit)} days old)`);
+        }
+      } else {
+        console.log('⚠️ [RecommendationV3Service] No Domain Readiness audit found - recommendations will not be filtered');
+      }
+
       // Step 2: Generate recommendations (cold-start templates OR LLM)
       let recommendations: RecommendationV3[] = [];
       if (flags.coldStartMode && context._dataMaturity === 'cold_start') {
@@ -2134,6 +2159,23 @@ Respond only with the JSON array.`;
       console.log(`📊 [RecommendationV3Service] Before post-processing: ${recommendations.length} recommendation(s)`);
       recommendations = this.postProcessRecommendations(context, recommendations);
       console.log(`📊 [RecommendationV3Service] After post-processing: ${recommendations.length} recommendation(s)`);
+
+      // Step 2.5: Filter recommendations based on Domain Readiness
+      if (latestAudit) {
+        const beforeFilter = recommendations.length;
+        recommendations = recommendations.filter(rec => 
+          !shouldFilterRecommendation(rec, latestAudit)
+        );
+        const filteredCount = beforeFilter - recommendations.length;
+        if (filteredCount > 0) {
+          console.log(`🚫 [RecommendationV3Service] Filtered ${filteredCount} recommendation(s) based on Domain Readiness audit`);
+        }
+        
+        // Enhance priority for recommendations addressing readiness gaps
+        recommendations = recommendations.map(rec => 
+          enhanceRecommendationWithReadiness(rec, latestAudit)
+        );
+      }
 
       if (recommendations.length === 0) {
         console.error(`❌ [RecommendationV3Service] All recommendations were filtered out during post-processing`);

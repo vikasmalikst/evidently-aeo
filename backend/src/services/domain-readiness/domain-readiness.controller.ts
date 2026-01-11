@@ -61,6 +61,19 @@ export class DomainReadinessController {
       res.status(500).json({ success: false, error: error.message });
     }
   }
+
+  async getAuditHistory(req: Request, res: Response) {
+    try {
+      const { brandId } = req.params;
+      const days = parseInt(req.query.days as string) || 30;
+
+      const history = await domainReadinessService.getAuditHistory(brandId, days);
+      res.json({ success: true, data: history });
+    } catch (error: any) {
+      console.error('Fetch Audit History Error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
 }
 
 export const domainReadinessController = new DomainReadinessController();

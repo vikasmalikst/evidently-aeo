@@ -21,38 +21,42 @@ interface DateRangePickerProps {
 // Uses UTC for date calculations to ensure consistency with backend
 export const calculatePreviousPeriod = (startDate: string, endDate: string): { start: string; end: string } | null => {
   try {
-    // Parse date strings and work in UTC for calculations
-    // This ensures date calculations are consistent regardless of user's timezone
+    // Parse date strings and work in local time for calculations
     const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
-    const end = new Date(Date.UTC(endYear, endMonth - 1, endDay));
-    
-    // Use the end date as the "current day" to compare
-    const currentDay = new Date(Date.UTC(endYear, endMonth - 1, endDay));
-    currentDay.setUTCHours(0, 0, 0, 0);
-    
+    // Create date in local timezone at 00:00:00
+    const currentDay = new Date(endYear, endMonth - 1, endDay);
+    currentDay.setHours(0, 0, 0, 0);
+
     // Previous day is one day before the current day
     const previousDay = new Date(currentDay);
-    previousDay.setUTCDate(previousDay.getUTCDate() - 1);
-    
+    previousDay.setDate(previousDay.getDate() - 1);
+
     // Previous period is just the previous day (00:00:00 to 23:59:59)
     const previousStart = new Date(previousDay);
-    previousStart.setUTCHours(0, 0, 0, 0);
+    previousStart.setHours(0, 0, 0, 0);
     const previousEnd = new Date(previousDay);
-    previousEnd.setUTCHours(23, 59, 59, 999);
-    
+    previousEnd.setHours(23, 59, 59, 999);
+
+    const formatDate = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
     return {
-      start: previousStart.toISOString().split('T')[0],
-      end: previousEnd.toISOString().split('T')[0]
+      start: formatDate(previousStart),
+      end: formatDate(previousEnd)
     };
   } catch {
     return null;
   }
 };
 
-export const DateRangePicker = ({ 
-  startDate, 
-  endDate, 
-  onStartDateChange, 
+export const DateRangePicker = ({
+  startDate,
+  endDate,
+  onStartDateChange,
   onEndDateChange,
   showComparisonInfo = true,
   className = '',
@@ -85,7 +89,7 @@ export const DateRangePicker = ({
   // Handle date range change from react-day-picker
   const handleDateRangeChange = (range: DateRange | undefined) => {
     setDateRange(range);
-    
+
     // Convert Date objects back to YYYY-MM-DD strings
     if (range?.from) {
       const year = range.from.getFullYear();
@@ -94,7 +98,7 @@ export const DateRangePicker = ({
       const startDateStr = `${year}-${month}-${day}`;
       onStartDateChange(startDateStr);
     }
-    
+
     if (range?.to) {
       const year = range.to.getFullYear();
       const month = String(range.to.getMonth() + 1).padStart(2, '0');
@@ -198,7 +202,7 @@ export const DateRangePicker = ({
             {calendarComponent}
           </Popover>
         </div>
-        
+
         {showComparisonInfo && previousPeriod && (
           <div className="flex items-center gap-2 text-[11px] text-[#64748b] ml-0">
             <Info size={12} className="flex-shrink-0" />
@@ -217,16 +221,16 @@ export const DateRangePicker = ({
     <div className={`flex ${showComparisonInfo ? 'flex-col' : 'flex-row'} gap-2 ${className}`}>
       <div className="flex items-center gap-3">
         <label className="text-[13px] text-[#64748b] font-medium">Date Range:</label>
-        <div style={{ 
-          border: '1px solid #e8e9ed', 
-          borderRadius: '8px', 
+        <div style={{
+          border: '1px solid #e8e9ed',
+          borderRadius: '8px',
           padding: '8px',
           backgroundColor: 'white'
         }}>
           {calendarComponent}
         </div>
       </div>
-      
+
       {showComparisonInfo && previousPeriod && (
         <div className="flex items-center gap-2 text-[11px] text-[#64748b] ml-0">
           <Info size={12} className="flex-shrink-0" />

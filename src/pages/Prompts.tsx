@@ -26,13 +26,19 @@ interface ApiResponse<T> {
 
 const getDefaultDateRange = () => {
   const end = new Date();
-  end.setUTCHours(23, 59, 59, 999);
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 6);
-  start.setUTCHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - 6);
+
+  const formatDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0],
+    start: formatDate(start),
+    end: formatDate(end),
   };
 };
 
@@ -182,25 +188,25 @@ export const Prompts = () => {
     <Layout>
       <div className="p-6">
         <div className="flex items-start justify-between mb-6">
-        <div className="flex items-start gap-6">
-          {selectedBrand && (
-            <SafeLogo
-              src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
-              domain={selectedBrand.homepage_url || undefined}
-              alt={selectedBrand.name}
-              size={48}
-              className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
-            />
-          )}
-          <div>
-            <h1 className="text-3xl font-bold text-[var(--text-headings)] mb-2">
-              Prompts
-            </h1>
-            <p className="text-[var(--text-caption)]">
-              Analyze AI responses to tracked prompts across topics and platforms
-            </p>
+          <div className="flex items-start gap-6">
+            {selectedBrand && (
+              <SafeLogo
+                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                domain={selectedBrand.homepage_url || undefined}
+                alt={selectedBrand.name}
+                size={48}
+                className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+              />
+            )}
+            <div>
+              <h1 className="text-3xl font-bold text-[var(--text-headings)] mb-2">
+                Prompts
+              </h1>
+              <p className="text-[var(--text-caption)]">
+                Analyze AI responses to tracked prompts across topics and platforms
+              </p>
+            </div>
           </div>
-        </div>
           <button
             onClick={handleManagePrompts}
             className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"

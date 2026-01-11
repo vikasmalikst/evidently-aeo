@@ -67,16 +67,16 @@ export class DashboardService {
     brandKey: string,
     customerId: string,
     dateRange?: DashboardDateRange,
-    options: { skipCache?: boolean; collectors?: string[] } = {}
+    options: { skipCache?: boolean; collectors?: string[]; timezoneOffset?: number } = {}
   ): Promise<BrandDashboardPayload> {
     try {
-      const { skipCache = false, collectors } = options
+      const { skipCache = false, collectors, timezoneOffset = 0 } = options
       const hasCollectorFilter = Array.isArray(collectors) && collectors.length > 0
       const effectiveSkipCache = skipCache || hasCollectorFilter
       const brand = await this.resolveBrand(brandKey, customerId)
 
       const normalizedRange = normalizeDateRange(dateRange)
-      
+
       const shouldUseCache = !effectiveSkipCache
 
       // Try to get cached dashboard, but don't let cache errors block the request
@@ -104,12 +104,12 @@ export class DashboardService {
       if (shouldUseCache && cached && dashboardCacheService.isCacheValid(cached.computed_at)) {
         // Ensure totalBrandRows exists for backward compatibility
         const payload: BrandDashboardPayload = { ...cached.payload } as BrandDashboardPayload
-        
+
         // Ensure all required fields exist with defaults
         if (!('totalBrandRows' in payload) || typeof payload.totalBrandRows !== 'number') {
           payload.totalBrandRows = (payload.brandPresenceRows || 0) as number
         }
-        
+
         // Ensure llmVisibility exists and has required fields for backward compatibility
         if (!payload.llmVisibility) {
           payload.llmVisibility = []
@@ -140,7 +140,7 @@ export class DashboardService {
             return enhancedSlice
           })
         }
-        
+
         // Ensure competitorVisibility exists and has new fields
         if (!payload.competitorVisibility) {
           payload.competitorVisibility = []
@@ -156,7 +156,7 @@ export class DashboardService {
             collectors: entry.collectors ?? []
           }))
         }
-        
+
         // Calculate brandSummary from cached data if missing
         if (!payload.brandSummary) {
           // Get actual values from scores array (most reliable)
@@ -164,13 +164,13 @@ export class DashboardService {
           const visibilityScore = payload.scores?.find((s: any) => s.label === 'Visibility Index')
           const actualShare = shareScore?.value ?? payload.visibilityPercentage ?? 0
           const actualVisibility = visibilityScore?.value ?? 0
-          
+
           const totalBrandPresence = payload.queriesWithBrandPresence && payload.totalQueries
             ? round((payload.queriesWithBrandPresence / payload.totalQueries) * 100, 1)
             : (payload.llmVisibility && payload.llmVisibility.length > 0
               ? payload.llmVisibility.reduce((sum: number, slice: any) => sum + (slice.brandPresencePercentage ?? 0), 0) / payload.llmVisibility.length
               : 0)
-          
+
           // Aggregate top topics from all LLM slices
           const allTopics = new Map<string, { occurrences: number; share: number; visibility: number }>()
           payload.llmVisibility.forEach((slice: any) => {
@@ -185,7 +185,7 @@ export class DashboardService {
               })
             }
           })
-          
+
           const topTopics = Array.from(allTopics.entries())
             .map(([topic, stats]) => ({
               topic,
@@ -195,7 +195,7 @@ export class DashboardService {
             }))
             .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share)
             .slice(0, 5)
-          
+
           payload.brandSummary = {
             visibility: Math.round(actualVisibility * 10) / 10,
             share: Math.round(actualShare * 10) / 10,
@@ -203,13 +203,13 @@ export class DashboardService {
             topTopics
           }
         }
-        
+
         return payload
       }
 
 
-      const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange, collectors)
-      
+      const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange, collectors, timezoneOffset)
+
       // Ensure required fields exist with proper defaults
       if (!payload.llmVisibility) {
         payload.llmVisibility = []
@@ -217,14 +217,14 @@ export class DashboardService {
       if (!Array.isArray(payload.llmVisibility)) {
         payload.llmVisibility = []
       }
-      
+
       if (!payload.competitorVisibility) {
         payload.competitorVisibility = []
       }
       if (!Array.isArray(payload.competitorVisibility)) {
         payload.competitorVisibility = []
       }
-      
+
       // Ensure all llmVisibility slices have required fields
       payload.llmVisibility = payload.llmVisibility.map((slice) => ({
         ...slice,
@@ -236,7 +236,7 @@ export class DashboardService {
         topTopics: slice.topTopics ?? [],
         topTopic: slice.topTopic ?? slice.topTopics?.[0]?.topic ?? null
       }))
-      
+
       const hasMeaningfulData =
         (payload.totalBrandRows ?? 0) > 0 ||
         (Array.isArray(payload.llmVisibility) && payload.llmVisibility.length > 0) ||
@@ -257,7 +257,7 @@ export class DashboardService {
           })
         }
       }
-      
+
       return payload
     } catch (error) {
       console.error('[Dashboard] Error in getBrandDashboard:', error)
@@ -269,9 +269,10 @@ export class DashboardService {
     brand: BrandRow,
     customerId: string,
     range: NormalizedDashboardRange,
-    collectors?: string[]
+    collectors?: string[],
+    timezoneOffset: number = 0
   ): Promise<BrandDashboardPayload> {
-    return buildDashboardPayload(brand, customerId, range, { collectors })
+    return buildDashboardPayload(brand, customerId, range, { collectors, timezoneOffset })
   }
 }
 

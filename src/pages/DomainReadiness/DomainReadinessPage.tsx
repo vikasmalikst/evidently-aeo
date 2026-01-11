@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useDomainReadiness } from './hooks/useDomainReadiness';
+import { ActionItemsTable } from './components/ActionItemsTable';
+import { MiddleSection } from './components/MiddleSection';
 import { ScoreGauge } from './components/ScoreGauge';
 import { CategoryBreakdown } from './components/CategoryBreakdown';
-import { TestResultsList } from './components/TestResultsList';
 import { BotAccessTable } from './components/BotAccessTable';
 import { Button } from '../../components/Onboarding/common/Button';
 import { Loader2 } from 'lucide-react';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { updateBrandWebsiteUrl } from '../../api/brandApi';
+import { Layout } from '../../components/Layout/Layout';
+import { TrendCharts } from './components/TrendCharts';
 
 export const DomainReadinessPage = () => {
   const {
@@ -19,12 +23,16 @@ export const DomainReadinessPage = () => {
     selectBrand,
     reloadBrands,
     audit,
+    auditHistory,
     loading,
     error,
     progress,
     runAudit,
     brandDomain
   } = useDomainReadiness();
+
+  // Local state for filtering categories
+  const [selectedCategory, setSelectedCategory] = useState<string>('overall');
 
   const [brandUrlDraft, setBrandUrlDraft] = useState('');
   const [brandUrlSaving, setBrandUrlSaving] = useState(false);
@@ -84,182 +92,199 @@ export const DomainReadinessPage = () => {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <div className="flex items-center gap-3">
-            {!!selectedBrand && (
-              <SafeLogo
-                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
-                domain={selectedBrand.homepage_url || undefined}
-                alt={selectedBrand.name}
-                size={44}
-                className="w-11 h-11 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
-              />
-            )}
-            <h1 className="text-2xl font-bold text-gray-900">Domain Readiness</h1>
-          </div>
-          <p className="text-gray-500 mt-1">
-            Analyzing AEO readiness for{' '}
-            <span className="font-semibold">
-              {selectedBrand?.name || brandDomain || '—'}
-            </span>
-          </p>
-          {brands.length > 1 && (
-            <div className="flex items-center gap-2 mt-3">
-              <label htmlFor="domain-readiness-brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
-                Brand
-              </label>
-              <select
-                id="domain-readiness-brand-selector"
-                value={selectedBrandId || ''}
-                onChange={(event) => selectBrand(event.target.value)}
-                className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
-                disabled={brandsLoading || loading}
-              >
-                {brands.map((brandOption) => (
-                  <option key={brandOption.id} value={brandOption.id}>
-                    {brandOption.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {!!selectedBrand && (
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <label
-                htmlFor="domain-readiness-brand-url"
-                className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide"
-              >
-                Brand URL
-              </label>
-              <input
-                id="domain-readiness-brand-url"
-                value={brandUrlDraft}
-                onChange={(event) => setBrandUrlDraft(event.target.value)}
-                className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white w-[320px] max-w-full"
-                placeholder="https://example.com"
-                disabled={brandsLoading || loading || brandUrlSaving}
-              />
-              <Button
-                onClick={handleSaveBrandUrl}
-                isLoading={brandUrlSaving}
-                disabled={!brandUrlDirty || brandsLoading || loading || brandUrlSaving || !selectedBrandId}
-                variant="secondary"
-                className="!px-3 !py-1.5 !text-sm"
-              >
-                Save
-              </Button>
-              {brandUrlError && (
-                <div className="w-full text-sm text-red-600">
-                  {brandUrlError}
-                </div>
+    <Layout>
+      <div className="p-6 max-w-7xl mx-auto space-y-6"> {/* Reduced space-y from default/implicit */}
+
+        {/* Header Row: Title + Brand Selector + URL */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4"> {/* Reduced mb */}
+          <div>
+            <div className="flex items-center gap-3">
+              {!!selectedBrand && (
+                <SafeLogo
+                  src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                  domain={selectedBrand.homepage_url || undefined}
+                  alt={selectedBrand.name}
+                  size={40} // Slightly smaller
+                  className="w-10 h-10 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+                />
               )}
-            </div>
-          )}
-        </div>
-        <Button
-          onClick={handleRunAudit}
-          isLoading={loading}
-          disabled={loading || brandsLoading || !selectedBrandId}
-        >
-          {audit ? 'Re-run Audit' : 'Run Audit'}
-        </Button>
-      </div>
-
-      {brandsError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-          {brandsError}
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-          {error}
-        </div>
-      )}
-
-      {brandsLoading && (
-        <div className="flex flex-col items-center justify-center py-20">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
-          <p className="text-gray-500">Loading brands...</p>
-        </div>
-      )}
-
-      {!brandsLoading && !selectedBrand && (
-        <div className="text-center py-20 bg-gray-50 rounded-lg border border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Select a Brand</h3>
-          <p className="text-gray-500 mb-6">Choose a brand to run a domain readiness audit.</p>
-        </div>
-      )}
-
-      {loading && !audit && !!selectedBrand && (
-        <div className="flex flex-col items-center justify-center py-20">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
-          <p className="text-gray-500">Running domain analysis... This may take up to a minute.</p>
-        </div>
-      )}
-
-      {!brandsLoading && !!selectedBrand && !loading && !audit && !error && (
-        <div className="text-center py-20 bg-gray-50 rounded-lg border border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Audit Results Yet</h3>
-          <p className="text-gray-500 mb-6">Run your first audit to see how well your domain is optimized for AI engines.</p>
-          <Button onClick={handleRunAudit} disabled={!selectedBrandId}>
-            Start Analysis
-          </Button>
-        </div>
-      )}
-
-      {audit && (
-        <div className="space-y-8">
-          {/* Top Section: Score & Breakdown */}
-          <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-            <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-y-0 md:space-x-8">
-              <div className="flex-shrink-0">
-                <ScoreGauge score={audit.overallScore} size={160} />
+              <div>
+                <h1 className="text-xl font-bold text-gray-900 leading-tight">Domain Readiness</h1>
+                <p className="text-gray-500 text-xs">
+                  Analyzing <span className="font-semibold">{selectedBrand?.name || brandDomain || '—'}</span>
+                </p>
               </div>
-              <div className="flex-1 w-full">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Readiness Breakdown</h3>
-                <CategoryBreakdown audit={audit} loading={loading} progress={progress} />
-                <div className="text-sm text-gray-500">
-                  Last updated: {new Date(audit.timestamp).toLocaleString()}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {brands.length > 1 && (
+              <div className="flex items-center gap-2">
+                <label htmlFor="domain-readiness-brand-selector" className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">
+                  Brand
+                </label>
+                <select
+                  id="domain-readiness-brand-selector"
+                  value={selectedBrandId || ''}
+                  onChange={(event) => selectBrand(event.target.value)}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-500 bg-white"
+                  disabled={brandsLoading || loading}
+                >
+                  {brands.map((brandOption) => (
+                    <option key={brandOption.id} value={brandOption.id}>
+                      {brandOption.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {!!selectedBrand && (
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="domain-readiness-brand-url"
+                  className="text-[11px] font-medium text-gray-500 uppercase tracking-wide"
+                >
+                  URL
+                </label>
+                <div className="relative">
+                  <input
+                    id="domain-readiness-brand-url"
+                    value={brandUrlDraft}
+                    onChange={(event) => setBrandUrlDraft(event.target.value)}
+                    className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 w-[240px] focus:outline-none focus:border-blue-500 bg-white pr-16"
+                    placeholder="https://example.com"
+                  />
+                  {brandUrlDirty && (
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      <Button
+                        variant="primary"
+                        className="h-6 text-[10px] px-2 py-0"
+                        onClick={handleSaveBrandUrl}
+                        disabled={brandUrlSaving}
+                      >
+                        {brandUrlSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Error / Loading States */}
+        {brandUrlError && (
+          <div className="bg-red-50 text-red-600 text-sm px-4 py-2 rounded-lg mb-4">
+            {brandUrlError}
+          </div>
+        )}
+
+        {loading && !audit && (
+          <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl border border-gray-100 shadow-sm">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-4" />
+            <h3 className="text-lg font-medium text-gray-900">Running Audit...</h3>
+            <p className="text-gray-500 text-sm mb-6">Analyzing {brandDomain}...</p>
+            {progress && progress.active && (
+              <div className="w-full max-w-md space-y-2"> {/* Show total progress */}
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Progress</span>
+                  <span>{Math.round((progress.completed / progress.total) * 100)}%</span>
+                </div>
+                <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-blue-500"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(progress.completed / progress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-50 border border-red-100 rounded-xl p-8 text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={handleRunAudit}>Retry Audit</Button>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!audit && !loading && !error && ( // Added !error to prevent showing empty state if there's an error
+          <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Audit Results Yet</h3>
+            <p className="text-gray-500 mb-6">Run your first audit to see how well your domain is optimized.</p>
+            <Button onClick={handleRunAudit} disabled={!selectedBrandId}>
+              Start Analysis
+            </Button>
+          </div>
+        )}
+
+        {/* MAIN DASHBOARD CONTENT */}
+        {audit && !loading && (
+          <div className="space-y-6"> {/* Reduced gap */}
+            {/* --- TOP SECTION: Aggregate Results --- */}
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm"> {/* Compact padding */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                {/* Left: Score Gauge (Click to reset to Overall) */}
+                <div className="lg:col-span-3 flex flex-col items-center justify-center border-r border-gray-100 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+                  onClick={() => setSelectedCategory('overall')}>
+                  <ScoreGauge score={audit.overallScore} size={140} /> {/* Smaller Size */}
+                  <div className="text-center mt-2">
+                    <span className="text-sm font-medium text-gray-500 block">Overall Score</span>
+                    <span className="text-[10px] text-blue-500 font-medium cursor-pointer"
+                      onClick={() => setSelectedCategory('overall')}
+                      style={{ visibility: selectedCategory !== 'overall' ? 'visible' : 'hidden' }}>
+                      Click to View All
+                    </span>
+                    <button
+                      onClick={() => document.getElementById('action-plan')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="block w-full mt-3 text-xs text-gray-400 hover:text-blue-600 font-medium transition-colors"
+                    >
+                      View Action Plan ↓
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right: Category Breakdown Bars */}
+                <div className="lg:col-span-9 pl-4">
+                  <CategoryBreakdown
+                    audit={audit}
+                    selectedCategory={selectedCategory}
+                    onSelectCategory={setSelectedCategory}
+                  />
+                  <div className="mt-2 text-right text-[10px] text-gray-400">
+                    Last updated: {new Date(audit.timestamp).toLocaleString()}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Detailed Results</h2>
-              <TestResultsList
+
+            {/* --- MIDDLE SECTION: Activity & Details --- */}
+            {/* Shows Charts (Left) and Details (Right) based on selection */}
+            <MiddleSection
+              audit={audit}
+              history={auditHistory}
+              selectedCategory={selectedCategory}
+            />
+
+
+            {/* --- BOTTOM SECTION: Actionable Insights --- */}
+            <div className="space-y-4" id="action-plan">
+              <h2 className="text-xl font-bold text-gray-800">Action Plan & Improvements</h2>
+              <ActionItemsTable
                 audit={audit}
-                loading={loading}
-                progress={{
-                  active: progress.active,
-                  buckets: {
-                    technicalCrawlability: progress.buckets.technicalCrawlability,
-                    contentQuality: progress.buckets.contentQuality,
-                    semanticStructure: progress.buckets.semanticStructure,
-                    accessibilityAndBrand: progress.buckets.accessibilityAndBrand
-                  }
-                }}
+                selectedCategory={selectedCategory}
               />
             </div>
-            <div>
-              <BotAccessTable
-                bots={audit.botAccessStatus}
-                loading={loading}
-                progress={{
-                  active: progress.active,
-                  completed: progress.buckets.botAccess.completed,
-                  total: progress.buckets.botAccess.total
-                }}
-              />
-            </div>
+
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+      </div>
+    </Layout>
   );
 };
 

@@ -8,7 +8,7 @@ export async function analyzeFreshness(url: string, options?: AnalyzerOptions): 
 
   if (!html) {
     try {
-      const response = await axios.get(url, { 
+      const response = await axios.get(url, {
         timeout: options?.timeout || 10000,
         headers: { 'User-Agent': 'EvidentlyAEO-Auditor/1.0' }
       });
@@ -25,14 +25,14 @@ export async function analyzeFreshness(url: string, options?: AnalyzerOptions): 
   }
 
   const $ = cheerio.load(html as string);
-  
+
   // Try to find a date
   const dates: Date[] = [];
-  
+
   // Meta tags
   const metaDate = $('meta[property="article:published_time"]').attr('content') ||
-                   $('meta[name="publish_date"]').attr('content') ||
-                   $('meta[name="date"]').attr('content');
+    $('meta[name="publish_date"]').attr('content') ||
+    $('meta[name="date"]').attr('content');
   if (metaDate) dates.push(new Date(metaDate));
 
   // Time tags
@@ -55,13 +55,17 @@ export async function analyzeFreshness(url: string, options?: AnalyzerOptions): 
       };
       if (Array.isArray(data)) data.forEach(findDate);
       else findDate(data);
-    } catch (e) {}
+    } catch (e) { }
   });
 
   if (lastModifiedHeader) dates.push(new Date(lastModifiedHeader));
 
   // Find most recent valid date
   const validDates = dates.filter(d => !isNaN(d.getTime()));
+
+  // Check if we only have Last-Modified header (less reliable)
+  const onlyHasLastModified = validDates.length === 1 && lastModifiedHeader;
+
   if (validDates.length === 0) {
     return [{
       name: 'Content Freshness',
@@ -97,11 +101,20 @@ export async function analyzeFreshness(url: string, options?: AnalyzerOptions): 
     message = `Content is stale (>1 year old)`;
   }
 
+  // Reduce score if only using Last-Modified header (deployment timestamp, not content timestamp)
+  if (onlyHasLastModified) {
+    score = Math.round(score * 0.8); // 20% penalty for uncertainty
+    message += ' (based on deployment timestamp - may not reflect actual content age)';
+  }
+
   return [{
     name: 'Content Freshness',
     status,
     score,
     message,
-    details: { date: mostRecent.toISOString() }
+    details: {
+      date: mostRecent.toISOString(),
+      sourceIsLastModified: onlyHasLastModified
+    }
   }];
 }

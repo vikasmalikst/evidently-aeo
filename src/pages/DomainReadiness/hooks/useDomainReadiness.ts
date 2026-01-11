@@ -3,7 +3,7 @@ import { domainReadinessApi, type DomainReadinessStreamEvent } from '../../../ap
 import { AeoAuditResult, BotAccessStatus, TestResult } from '../types/types';
 import { useManualBrandDashboard } from '../../../manual-dashboard/useManualBrandDashboard';
 
-type DomainReadinessBucket = 'technicalCrawlability' | 'contentQuality' | 'semanticStructure' | 'accessibilityAndBrand' | 'botAccess';
+type DomainReadinessBucket = 'technicalCrawlability' | 'contentQuality' | 'semanticStructure' | 'accessibilityAndBrand' | 'aeoOptimization' | 'botAccess';
 
 type DomainReadinessProgress = {
   active: boolean;
@@ -21,13 +21,15 @@ const createEmptyAudit = (brandId: string, domain: string): AeoAuditResult => ({
     technicalCrawlability: 0,
     contentQuality: 0,
     semanticStructure: 0,
-    accessibilityAndBrand: 0
+    accessibilityAndBrand: 0,
+    aeoOptimization: 0
   },
   detailedResults: {
-    technicalCrawlability: { score: 0, weight: 0.25, tests: [], recommendations: [] },
-    contentQuality: { score: 0, weight: 0.35, tests: [], recommendations: [] },
+    technicalCrawlability: { score: 0, weight: 0.20, tests: [], recommendations: [] },
+    contentQuality: { score: 0, weight: 0.30, tests: [], recommendations: [] },
     semanticStructure: { score: 0, weight: 0.25, tests: [], recommendations: [] },
-    accessibilityAndBrand: { score: 0, weight: 0.15, tests: [], recommendations: [] }
+    accessibilityAndBrand: { score: 0, weight: 0.15, tests: [], recommendations: [] },
+    aeoOptimization: { score: 0, weight: 0.10, tests: [], recommendations: [] }
   },
   botAccessStatus: [],
   criticalIssues: [],
@@ -56,17 +58,19 @@ export function useDomainReadiness() {
   } = useManualBrandDashboard();
 
   const [audit, setAudit] = useState<AeoAuditResult | null>(null);
+  const [auditHistory, setAuditHistory] = useState<AeoAuditResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<DomainReadinessProgress>({
     active: false,
-    total: 13,
+    total: 16,
     completed: 0,
     buckets: {
       technicalCrawlability: { total: 5, completed: 0 },
       contentQuality: { total: 3, completed: 0 },
       semanticStructure: { total: 2, completed: 0 },
       accessibilityAndBrand: { total: 2, completed: 0 },
+      aeoOptimization: { total: 3, completed: 0 },
       botAccess: { total: 1, completed: 0 }
     }
   });
@@ -80,13 +84,14 @@ export function useDomainReadiness() {
     setError(null);
     setProgress({
       active: false,
-      total: 13,
+      total: 16,
       completed: 0,
       buckets: {
         technicalCrawlability: { total: 5, completed: 0 },
         contentQuality: { total: 3, completed: 0 },
         semanticStructure: { total: 2, completed: 0 },
         accessibilityAndBrand: { total: 2, completed: 0 },
+        aeoOptimization: { total: 3, completed: 0 },
         botAccess: { total: 1, completed: 0 }
       }
     });
@@ -95,19 +100,29 @@ export function useDomainReadiness() {
   const fetchLatestAudit = useCallback(async () => {
     if (!selectedBrandId) {
       setAudit(null);
+      setAuditHistory([]); // Clear history when no brand is selected
       return;
     }
-    
+
     setLoading(true);
     setError(null);
+    setAudit(null); // Clear previous audit
+    setAuditHistory([]); // Clear previous history
+
     try {
-      const response = await domainReadinessApi.getLatestAudit(selectedBrandId);
-      if (response.success && response.data) {
-        setAudit(response.data);
-      } else if (response.error) {
+      // Fetch latest audit
+      const latestAuditResponse = await domainReadinessApi.getLatestAudit(selectedBrandId);
+      if (latestAuditResponse.success && latestAuditResponse.data) {
+        setAudit(latestAuditResponse.data);
+      } else if (latestAuditResponse.error) {
         // If error is "Brand not found" or similar, just set null (no audit yet)
         setAudit(null);
       }
+
+      // Fetch audit history for trend charts
+      const history = await domainReadinessApi.getAuditHistory(selectedBrandId, 30);
+      setAuditHistory(history);
+
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Failed to fetch audit');
@@ -121,7 +136,7 @@ export function useDomainReadiness() {
       setError('Select a brand to run a domain audit.');
       return;
     }
-    
+
     streamAbortRef.current?.abort();
     const abortController = new AbortController();
     streamAbortRef.current = abortController;
@@ -130,13 +145,14 @@ export function useDomainReadiness() {
     setError(null);
     setProgress({
       active: true,
-      total: 13,
+      total: 16,
       completed: 0,
       buckets: {
         technicalCrawlability: { total: 5, completed: 0 },
         contentQuality: { total: 3, completed: 0 },
         semanticStructure: { total: 2, completed: 0 },
         accessibilityAndBrand: { total: 2, completed: 0 },
+        aeoOptimization: { total: 3, completed: 0 },
         botAccess: { total: 1, completed: 0 }
       }
     });
@@ -164,7 +180,8 @@ export function useDomainReadiness() {
                 [bucketKey]: {
                   ...prev.buckets[bucketKey],
                   completed: Math.min(prev.buckets[bucketKey].total, prev.buckets[bucketKey].completed + 1)
-                }
+                },
+                aeoOptimization: prev.buckets.aeoOptimization || { total: 3, completed: 0 }
               }
             };
             return next;
@@ -184,6 +201,12 @@ export function useDomainReadiness() {
 
           setAudit((prev) => {
             if (!prev) return prev;
+
+            // Check if the bucket exists in detailedResults (defensive check for new categories)
+            if (!prev.detailedResults[bucket]) {
+              console.warn(`Bucket "${bucket}" not initialized in detailedResults, skipping test update`);
+              return prev;
+            }
 
             const existing = prev.detailedResults[bucket].tests;
             const nextTests =
@@ -205,9 +228,10 @@ export function useDomainReadiness() {
             const contentScore = calculateScore(nextDetailedResults.contentQuality.tests);
             const semanticScore = calculateScore(nextDetailedResults.semanticStructure.tests);
             const accessScore = calculateScore(nextDetailedResults.accessibilityAndBrand.tests);
+            const aeoScore = calculateScore(nextDetailedResults.aeoOptimization.tests);
 
             const overallScore = Math.round(
-              techScore * 0.25 + contentScore * 0.35 + semanticScore * 0.25 + accessScore * 0.15
+              techScore * 0.20 + contentScore * 0.30 + semanticScore * 0.25 + accessScore * 0.15 + aeoScore * 0.10
             );
 
             return {
@@ -217,13 +241,15 @@ export function useDomainReadiness() {
                 technicalCrawlability: techScore,
                 contentQuality: contentScore,
                 semanticStructure: semanticScore,
-                accessibilityAndBrand: accessScore
+                accessibilityAndBrand: accessScore,
+                aeoOptimization: aeoScore
               },
               detailedResults: {
                 technicalCrawlability: { ...nextDetailedResults.technicalCrawlability, score: techScore },
                 contentQuality: { ...nextDetailedResults.contentQuality, score: contentScore },
                 semanticStructure: { ...nextDetailedResults.semanticStructure, score: semanticScore },
-                accessibilityAndBrand: { ...nextDetailedResults.accessibilityAndBrand, score: accessScore }
+                accessibilityAndBrand: { ...nextDetailedResults.accessibilityAndBrand, score: accessScore },
+                aeoOptimization: { ...nextDetailedResults.aeoOptimization, score: aeoScore }
               }
             };
           });
@@ -271,6 +297,7 @@ export function useDomainReadiness() {
     selectBrand,
     reloadBrands,
     audit,
+    auditHistory,
     loading,
     error,
     progress,

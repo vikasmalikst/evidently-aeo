@@ -24,14 +24,14 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     const customerId = req.user!.customer_id;
 
     const result = await brandService.createBrand(customerId, brandData);
-    
+
     res.status(201).json({
       success: true,
       data: result
     });
   } catch (error) {
     console.error('Error creating brand:', error);
-    
+
     if (error instanceof Error) {
       res.status(400).json({
         success: false,
@@ -112,9 +112,9 @@ router.get('/:brandId/keywords', authenticateToken, async (req: Request, res: Re
         ? collectorTypesParam.split(',').map((t) => t.trim()).filter(Boolean)
         : Array.isArray(collectorTypesParam)
           ? collectorTypesParam
-              .flatMap((t) => (typeof t === 'string' ? t.split(',') : []))
-              .map((t) => t.trim())
-              .filter(Boolean)
+            .flatMap((t) => (typeof t === 'string' ? t.split(',') : []))
+            .map((t) => t.trim())
+            .filter(Boolean)
           : undefined;
 
     const payload = await keywordsAnalyticsService.getKeywordAnalytics({
@@ -144,9 +144,9 @@ router.get('/search', authenticateToken, async (req: Request, res: Response) => 
   try {
     const { url, name } = req.query;
     const customerId = req.user!.customer_id;
-    
+
     console.log('🔍 Brand search request:', { url, name, customerId });
-    
+
     if (!url && !name) {
       res.status(400).json({
         success: false,
@@ -154,13 +154,13 @@ router.get('/search', authenticateToken, async (req: Request, res: Response) => 
       });
       return;
     }
-    
+
     const brand = await brandService.findBrandByUrlOrName(
-      url as string | undefined, 
+      url as string | undefined,
       name as string | undefined,
       customerId
     );
-    
+
     if (brand) {
       res.json({
         success: true,
@@ -189,7 +189,7 @@ router.get('/search', authenticateToken, async (req: Request, res: Response) => 
 router.get('/', authenticateToken, async (req: Request, res: Response) => {
   try {
     const customerId = req.user!.customer_id;
-    
+
     if (!customerId) {
       res.status(403).json({
         success: false,
@@ -197,9 +197,9 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
       });
       return;
     }
-    
+
     const brands = await brandService.getBrandsByCustomer(customerId);
-    
+
     res.json({
       success: true,
       data: brands
@@ -253,7 +253,7 @@ router.post('/:brandId/collectors', authenticateToken, async (req: Request, res:
 router.get('/stats', authenticateToken, async (req: Request, res: Response) => {
   try {
     const customerId = req.user!.customer_id;
-    
+
     if (!customerId) {
       res.status(403).json({
         success: false,
@@ -261,9 +261,9 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response) => {
       });
       return;
     }
-    
+
     const stats = await brandService.getBrandStats(customerId);
-    
+
     res.json({
       success: true,
       data: stats
@@ -295,7 +295,7 @@ router.get('/:brandId', authenticateToken, async (req: Request, res: Response) =
     }
 
     const brand = await brandService.getBrandById(brandId, customerId);
-    
+
     if (!brand) {
       res.status(404).json({
         success: false,
@@ -342,14 +342,14 @@ router.put('/:brandId', authenticateToken, async (req: Request, res: Response) =
     }
 
     const updatedBrand = await brandService.updateBrand(brandId, customerId, updateData);
-    
+
     res.json({
       success: true,
       data: updatedBrand
     });
   } catch (error) {
     console.error('Error updating brand:', error);
-    
+
     if (error instanceof Error) {
       res.status(400).json({
         success: false,
@@ -383,7 +383,7 @@ router.delete('/:brandId', authenticateToken, async (req: Request, res: Response
     }
 
     await brandService.deleteBrand(brandId, customerId);
-    
+
     res.json({
       success: true,
       message: 'Brand deleted successfully'
@@ -415,7 +415,7 @@ router.get('/:brandId/artifacts', authenticateToken, async (req: Request, res: R
     }
 
     const artifacts = await brandService.getOnboardingArtifacts(brandId, customerId);
-    
+
     res.json({
       success: true,
       data: artifacts
@@ -443,19 +443,26 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
     const collectors =
       typeof collectorsQuery === 'string'
         ? collectorsQuery
-            .split(',')
-            .map((value) => value.trim())
-            .filter((value) => value.length > 0)
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
         : Array.isArray(collectorsQuery)
           ? collectorsQuery
-              .map((value) => (typeof value === 'string' ? value : String(value ?? '')))
-              .map((value) => value.trim())
-              .filter((value) => value.length > 0)
+            .map((value) => (typeof value === 'string' ? value : String(value ?? '')))
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
           : undefined;
     const skipCacheQuery = Array.isArray(req.query.skipCache) ? req.query.skipCache[0] : req.query.skipCache;
     const skipCache =
       typeof skipCacheQuery === 'string' &&
       ['true', '1', 'yes'].includes(skipCacheQuery.toLowerCase());
+
+    // Extract timezone offset from header (minutes difference between UTC and local)
+    // e.g. 300 for EST (UTC-5)
+    // Default to 0 (UTC) if not provided
+    const timezoneOffsetHeader = req.headers['x-timezone-offset'];
+    const timezoneOffset = timezoneOffsetHeader ? Number(timezoneOffsetHeader) : 0;
+
     let dateRange: DashboardDateRange | undefined;
 
     if (startQuery || endQuery) {
@@ -510,7 +517,8 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
 
     const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange, {
       skipCache,
-      collectors
+      collectors,
+      timezoneOffset
     });
 
     res.json({
@@ -518,12 +526,14 @@ router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: R
       data: dashboard
     });
   } catch (error) {
-    console.error('Error fetching brand dashboard:', error);
-
     if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
+      // Log as warning without stack trace for expected 404s
+      console.warn(`[Dashboard] Brand not found: ${req.params.brandId} (Customer: ${req.user!.customer_id})`);
       res.status(404).json({ success: false, error: error.message });
       return;
     }
+
+    console.error('Error fetching brand dashboard:', error);
 
     res.status(500).json({
       success: false,
@@ -541,61 +551,61 @@ router.get(
   authenticateToken,
   responseCacheMiddleware({ ttlMs: 5 * 60 * 1000 }),
   async (req: Request, res: Response) => {
-  try {
-    const { brandId } = req.params;
-    const customerId = req.user!.customer_id;
+    try {
+      const { brandId } = req.params;
+      const customerId = req.user!.customer_id;
 
-    if (!brandId) {
-      res.status(400).json({ success: false, error: 'Brand ID is required' });
-      return;
+      if (!brandId) {
+        res.status(400).json({ success: false, error: 'Brand ID is required' });
+        return;
+      }
+
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+      const collectorsQuery = req.query.collectors;
+
+      let collectors: string[] | undefined;
+      if (typeof collectorsQuery === 'string') {
+        collectors = collectorsQuery
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0);
+      } else if (Array.isArray(collectorsQuery)) {
+        collectors = collectorsQuery
+          .map((value) => (typeof value === 'string' ? value.trim() : ''))
+          .filter((value) => value.length > 0);
+      }
+
+      const payload = await promptsAnalyticsService.getPromptAnalytics({
+        brandId,
+        customerId,
+        startDate,
+        endDate,
+        collectors
+      });
+
+      res.json({
+        success: true,
+        data: payload
+      });
+    } catch (error) {
+      console.error('Error fetching prompt analytics:', error);
+
+      if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
+        res.status(404).json({ success: false, error: error.message });
+        return;
+      }
+
+      if (error instanceof Error && error.message.toLowerCase().includes('invalid')) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch prompt analytics'
+      });
     }
-
-    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
-    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
-    const collectorsQuery = req.query.collectors;
-
-    let collectors: string[] | undefined;
-    if (typeof collectorsQuery === 'string') {
-      collectors = collectorsQuery
-        .split(',')
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0);
-    } else if (Array.isArray(collectorsQuery)) {
-      collectors = collectorsQuery
-        .map((value) => (typeof value === 'string' ? value.trim() : ''))
-        .filter((value) => value.length > 0);
-    }
-
-    const payload = await promptsAnalyticsService.getPromptAnalytics({
-      brandId,
-      customerId,
-      startDate,
-      endDate,
-      collectors
-    });
-
-    res.json({
-      success: true,
-      data: payload
-    });
-  } catch (error) {
-    console.error('Error fetching prompt analytics:', error);
-
-    if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
-      res.status(404).json({ success: false, error: error.message });
-      return;
-    }
-
-    if (error instanceof Error && error.message.toLowerCase().includes('invalid')) {
-      res.status(400).json({ success: false, error: error.message });
-      return;
-    }
-
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch prompt analytics'
-    });
-  }
   }
 );
 
@@ -609,69 +619,69 @@ router.get(
   authenticateToken,
   responseCacheMiddleware({ ttlMs: 5 * 60 * 1000 }),
   async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const customerId = req.user!.customer_id;
-    // Accept both 'collectors' (same as Prompts API) and 'collectorType' for backward compatibility
-    const { startDate, endDate, collectorType, collectors, country, competitors } = req.query;
-    
-    // Use collectors param if provided, otherwise fall back to collectorType
-    const modelFilter = collectors || collectorType;
-    
-    // Parse competitor filter (comma-separated list of competitor names)
-    const competitorFilter = competitors
-      ? (typeof competitors === 'string'
+    try {
+      const { id } = req.params;
+      const customerId = req.user!.customer_id;
+      // Accept both 'collectors' (same as Prompts API) and 'collectorType' for backward compatibility
+      const { startDate, endDate, collectorType, collectors, country, competitors } = req.query;
+
+      // Use collectors param if provided, otherwise fall back to collectorType
+      const modelFilter = collectors || collectorType;
+
+      // Parse competitor filter (comma-separated list of competitor names)
+      const competitorFilter = competitors
+        ? (typeof competitors === 'string'
           ? competitors.split(',').map(c => c.toLowerCase().trim()).filter(Boolean)
           : Array.isArray(competitors)
-          ? competitors.map(c => String(c).toLowerCase().trim()).filter(Boolean)
-          : undefined)
-      : undefined;
-    
-    console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
-    console.log(`🔍 Filters: model=${modelFilter}, country=${country}, competitors=${competitorFilter?.join(',') || 'all'}, dateRange=${startDate} to ${endDate}`);
-    
-    const result = await brandService.getBrandTopicsWithAnalytics(
-      id, 
-      customerId,
-      startDate as string | undefined,
-      endDate as string | undefined,
-      modelFilter as string | undefined,
-      country as string | undefined,
-      competitorFilter
-    );
-    
-    // The service always returns { topics: [], availableModels: [] }
-    // Return in the format that frontend expects (object with topics array)
-    const responseData: { topics: any[]; availableModels?: string[]; avgSoADelta?: number } = {
-      topics: result.topics || []
-    };
-    
-    // Include availableModels in the data object for consistency
-    if (result.availableModels && result.availableModels.length > 0) {
-      responseData.availableModels = result.availableModels;
-    }
-    
-    res.json({
-      success: true,
-      data: responseData,
-      availableModels: result.availableModels || [] // Also include at top level for backward compatibility
-    });
-  } catch (error) {
-    console.error('Error fetching brand topics:', error);
-    
-    if (error instanceof Error) {
-      res.status(400).json({
-        success: false,
-        error: error.message
+            ? competitors.map(c => String(c).toLowerCase().trim()).filter(Boolean)
+            : undefined)
+        : undefined;
+
+      console.log(`🎯 Fetching AEO topics with analytics for brand ${id}, customer ${customerId}`);
+      console.log(`🔍 Filters: model=${modelFilter}, country=${country}, competitors=${competitorFilter?.join(',') || 'all'}, dateRange=${startDate} to ${endDate}`);
+
+      const result = await brandService.getBrandTopicsWithAnalytics(
+        id,
+        customerId,
+        startDate as string | undefined,
+        endDate as string | undefined,
+        modelFilter as string | undefined,
+        country as string | undefined,
+        competitorFilter
+      );
+
+      // The service always returns { topics: [], availableModels: [] }
+      // Return in the format that frontend expects (object with topics array)
+      const responseData: { topics: any[]; availableModels?: string[]; avgSoADelta?: number } = {
+        topics: result.topics || []
+      };
+
+      // Include availableModels in the data object for consistency
+      if (result.availableModels && result.availableModels.length > 0) {
+        responseData.availableModels = result.availableModels;
+      }
+
+      res.json({
+        success: true,
+        data: responseData,
+        availableModels: result.availableModels || [] // Also include at top level for backward compatibility
       });
-      return;
+    } catch (error) {
+      console.error('Error fetching brand topics:', error);
+
+      if (error instanceof Error) {
+        res.status(400).json({
+          success: false,
+          error: error.message
+        });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        error: 'Failed to fetch brand topics'
+      });
     }
-    
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch brand topics'
-    });
-  }
   }
 );
 
@@ -702,36 +712,36 @@ router.post('/:id/categorize-topics', authenticateToken, async (req: Request, re
     const customerId = req.user!.customer_id;
 
     console.log(`🎯 Manual categorization requested for brand ${id}`);
-    
+
     // Get topics for this brand
     const topics = await brandService.getBrandTopics(id, customerId);
     console.log(`📋 Found ${topics.length} topics to categorize`);
-    
+
     // Try AI categorization first (Cerebras primary, OpenAI fallback, rules final)
-    const topicLabels = topics.map(topic => 
+    const topicLabels = topics.map(topic =>
       typeof topic === 'string' ? topic : (topic.topic_name || topic.name || topic)
     );
-    
+
     try {
       // Use the same AI categorization logic as brand creation
       await brandService.categorizeTopicsWithAI(id, topicLabels);
       console.log('✅ AI categorization completed successfully');
     } catch (error) {
       console.error('❌ AI categorization failed, using rule-based fallback:', error);
-      
+
       // Fallback to rule-based categorization
       for (const topic of topics) {
         const topicName = typeof topic === 'string' ? topic : (topic.topic_name || topic.name || topic);
         const category = brandService.categorizeTopicByRules(topicName);
         console.log(`🎯 Rule-categorizing "${topicName}" as "${category}"`);
-        
+
         // Update the topic with its category
-                 const { error: updateError } = await supabaseAdmin
-                   .from('brand_topics')
-                   .update({ category: category })
-                   .eq('brand_id', id)
-                   .eq('topic_name', topicName); // Fixed: use topic_name instead of topic
-        
+        const { error: updateError } = await supabaseAdmin
+          .from('brand_topics')
+          .update({ category: category })
+          .eq('brand_id', id)
+          .eq('topic_name', topicName); // Fixed: use topic_name instead of topic
+
         if (updateError) {
           console.error(`❌ Failed to update topic ${topicName}:`, updateError);
         } else {
@@ -739,7 +749,7 @@ router.post('/:id/categorize-topics', authenticateToken, async (req: Request, re
         }
       }
     }
-    
+
     res.json({ success: true, message: 'Topics categorized successfully' });
   } catch (error) {
     console.error('Error categorizing topics:', error);
@@ -756,109 +766,109 @@ router.get(
   authenticateToken,
   responseCacheMiddleware({ ttlMs: 10 * 60 * 1000 }),
   async (req: Request, res: Response) => {
-  const requestStartTime = Date.now();
-  const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  try {
-    console.log(`\n[SourceAttribution API] 🚀 Request ${requestId} started at ${new Date().toISOString()}`);
-    console.log(`[SourceAttribution API] 📍 Endpoint: GET /brands/:brandId/sources`);
-    
-    const { brandId } = req.params;
-    const customerId = req.user!.customer_id;
-    const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
-    const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
-    
-    console.log(`[SourceAttribution API] 📊 Params: brandId=${brandId}, customerId=${customerId}`);
-    console.log(`[SourceAttribution API] 📅 Date Range: startDate=${startQuery || 'default'}, endDate=${endQuery || 'default'}`);
-    
-    let dateRange: { start: string; end: string } | undefined;
-    
-    if (startQuery || endQuery) {
-      try {
-        const parseDate = (value: string): Date => {
-          const parsed = new Date(value);
-          if (Number.isNaN(parsed.getTime())) {
-            throw new Error(`Invalid date: ${value}`);
+    const requestStartTime = Date.now();
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    try {
+      console.log(`\n[SourceAttribution API] 🚀 Request ${requestId} started at ${new Date().toISOString()}`);
+      console.log(`[SourceAttribution API] 📍 Endpoint: GET /brands/:brandId/sources`);
+
+      const { brandId } = req.params;
+      const customerId = req.user!.customer_id;
+      const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+
+      console.log(`[SourceAttribution API] 📊 Params: brandId=${brandId}, customerId=${customerId}`);
+      console.log(`[SourceAttribution API] 📅 Date Range: startDate=${startQuery || 'default'}, endDate=${endQuery || 'default'}`);
+
+      let dateRange: { start: string; end: string } | undefined;
+
+      if (startQuery || endQuery) {
+        try {
+          const parseDate = (value: string): Date => {
+            const parsed = new Date(value);
+            if (Number.isNaN(parsed.getTime())) {
+              throw new Error(`Invalid date: ${value}`);
+            }
+            return parsed;
+          };
+
+          let startDate = startQuery ? parseDate(startQuery) : undefined;
+          let endDate = endQuery ? parseDate(endQuery) : undefined;
+
+          if (endDate && !startDate) {
+            startDate = new Date(endDate);
+            startDate.setUTCDate(startDate.getUTCDate() - 30);
           }
-          return parsed;
-        };
 
-        let startDate = startQuery ? parseDate(startQuery) : undefined;
-        let endDate = endQuery ? parseDate(endQuery) : undefined;
+          if (startDate && !endDate) {
+            endDate = new Date(startDate);
+            endDate.setUTCDate(endDate.getUTCDate() + 30);
+          }
 
-        if (endDate && !startDate) {
-          startDate = new Date(endDate);
-          startDate.setUTCDate(startDate.getUTCDate() - 30);
+          if (!startDate || !endDate) {
+            throw new Error('Both startDate and endDate are required');
+          }
+
+          startDate.setUTCHours(0, 0, 0, 0);
+          endDate.setUTCHours(23, 59, 59, 999);
+
+          if (startDate.getTime() > endDate.getTime()) {
+            throw new Error('startDate must be before or equal to endDate');
+          }
+
+          dateRange = {
+            start: startDate.toISOString(),
+            end: endDate.toISOString()
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Invalid date range';
+          res.status(400).json({ success: false, error: message });
+          return;
         }
+      }
 
-        if (startDate && !endDate) {
-          endDate = new Date(startDate);
-          endDate.setUTCDate(endDate.getUTCDate() + 30);
-        }
-
-        if (!startDate || !endDate) {
-          throw new Error('Both startDate and endDate are required');
-        }
-
-        startDate.setUTCHours(0, 0, 0, 0);
-        endDate.setUTCHours(23, 59, 59, 999);
-
-        if (startDate.getTime() > endDate.getTime()) {
-          throw new Error('startDate must be before or equal to endDate');
-        }
-
-        dateRange = {
-          start: startDate.toISOString(),
-          end: endDate.toISOString()
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Invalid date range';
-        res.status(400).json({ success: false, error: message });
+      if (!brandId) {
+        res.status(400).json({ success: false, error: 'Brand ID is required' });
         return;
       }
+
+      const serviceStartTime = Date.now();
+      console.log(`[SourceAttribution API] ⏱️  Calling service.getSourceAttribution()...`);
+
+      const sourceData = await sourceAttributionService.getSourceAttribution(
+        brandId,
+        customerId,
+        dateRange
+      );
+
+      const serviceEndTime = Date.now();
+      const serviceDuration = serviceEndTime - serviceStartTime;
+      console.log(`[SourceAttribution API] ✅ Service completed in ${serviceDuration}ms`);
+      console.log(`[SourceAttribution API] 📦 Response: ${sourceData.sources.length} sources, ${sourceData.totalSources} total`);
+
+      const responseStartTime = Date.now();
+      res.json({ success: true, data: sourceData });
+
+      const totalDuration = Date.now() - requestStartTime;
+      const responseDuration = Date.now() - responseStartTime;
+      console.log(`[SourceAttribution API] 📤 Response sent in ${responseDuration}ms`);
+      console.log(`[SourceAttribution API] ⏱️  Total request duration: ${totalDuration}ms`);
+      console.log(`[SourceAttribution API] ✅ Request ${requestId} completed successfully\n`);
+    } catch (error) {
+      const totalDuration = Date.now() - requestStartTime;
+      console.error(`[SourceAttribution API] ❌ Request ${requestId} failed after ${totalDuration}ms:`, error);
+
+      if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
+        res.status(404).json({ success: false, error: error.message });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch source attribution'
+      });
     }
-
-    if (!brandId) {
-      res.status(400).json({ success: false, error: 'Brand ID is required' });
-      return;
-    }
-
-    const serviceStartTime = Date.now();
-    console.log(`[SourceAttribution API] ⏱️  Calling service.getSourceAttribution()...`);
-    
-    const sourceData = await sourceAttributionService.getSourceAttribution(
-      brandId,
-      customerId,
-      dateRange
-    );
-    
-    const serviceEndTime = Date.now();
-    const serviceDuration = serviceEndTime - serviceStartTime;
-    console.log(`[SourceAttribution API] ✅ Service completed in ${serviceDuration}ms`);
-    console.log(`[SourceAttribution API] 📦 Response: ${sourceData.sources.length} sources, ${sourceData.totalSources} total`);
-
-    const responseStartTime = Date.now();
-    res.json({ success: true, data: sourceData });
-    
-    const totalDuration = Date.now() - requestStartTime;
-    const responseDuration = Date.now() - responseStartTime;
-    console.log(`[SourceAttribution API] 📤 Response sent in ${responseDuration}ms`);
-    console.log(`[SourceAttribution API] ⏱️  Total request duration: ${totalDuration}ms`);
-    console.log(`[SourceAttribution API] ✅ Request ${requestId} completed successfully\n`);
-  } catch (error) {
-    const totalDuration = Date.now() - requestStartTime;
-    console.error(`[SourceAttribution API] ❌ Request ${requestId} failed after ${totalDuration}ms:`, error);
-
-    if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
-      res.status(404).json({ success: false, error: error.message });
-      return;
-    }
-
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch source attribution'
-    });
-  }
   }
 );
 
@@ -875,45 +885,45 @@ router.get(
   authenticateToken,
   responseCacheMiddleware({ ttlMs: 10 * 60 * 1000 }),
   async (req: Request, res: Response) => {
-  try {
-    const { brandId } = req.params;
-    const customerId = req.user!.customer_id;
-    const days = req.query.days ? parseInt(req.query.days as string, 10) : 7;
+    try {
+      const { brandId } = req.params;
+      const customerId = req.user!.customer_id;
+      const days = req.query.days ? parseInt(req.query.days as string, 10) : 7;
 
-    const sourcesParam = typeof req.query.sources === 'string' ? req.query.sources : '';
-    const selectedSources =
-      sourcesParam
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-        .slice(0, 10);
+      const sourcesParam = typeof req.query.sources === 'string' ? req.query.sources : '';
+      const selectedSources =
+        sourcesParam
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+          .slice(0, 10);
 
-    const metricRaw = typeof req.query.metric === 'string' ? req.query.metric : 'impactScore';
-    const metric = (metricRaw || 'impactScore').toString();
-    const allowedMetrics = new Set(['impactScore', 'mentionRate', 'soa', 'sentiment', 'citations']);
-    const safeMetric = allowedMetrics.has(metric) ? metric : 'impactScore';
+      const metricRaw = typeof req.query.metric === 'string' ? req.query.metric : 'impactScore';
+      const metric = (metricRaw || 'impactScore').toString();
+      const allowedMetrics = new Set(['impactScore', 'mentionRate', 'soa', 'sentiment', 'citations']);
+      const safeMetric = allowedMetrics.has(metric) ? metric : 'impactScore';
 
-    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
-    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
-    const dateRange = startDate && endDate ? { start: startDate, end: endDate } : undefined;
-    
-    const trends = await sourceAttributionService.getImpactScoreTrends(
-      brandId,
-      customerId,
-      days,
-      selectedSources.length ? selectedSources : undefined,
-      safeMetric as any,
-      dateRange
-    );
-    
-    res.json({ success: true, data: trends });
-  } catch (error) {
-    console.error('Error fetching Impact Score trends:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch Impact Score trends'
-    });
-  }
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+      const dateRange = startDate && endDate ? { start: startDate, end: endDate } : undefined;
+
+      const trends = await sourceAttributionService.getImpactScoreTrends(
+        brandId,
+        customerId,
+        days,
+        selectedSources.length ? selectedSources : undefined,
+        safeMetric as any,
+        dateRange
+      );
+
+      res.json({ success: true, data: trends });
+    } catch (error) {
+      console.error('Error fetching Impact Score trends:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch Impact Score trends'
+      });
+    }
   }
 );
 
@@ -926,10 +936,10 @@ router.get('/:brandId/topic-configuration/current', authenticateToken, async (re
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
     const config = await topicConfigurationService.getCurrentConfiguration(brandId, customerId, req.user?.id);
-    
+
     // Log the topic IDs being returned
     console.log('📤 Returning topic configuration with topics:', config.topics?.map(t => ({ id: t.id, name: t.name })));
-    
+
     res.json({ success: true, data: config });
   } catch (error) {
     console.error('Error fetching current topic configuration:', error);
@@ -1029,12 +1039,12 @@ router.get('/:brandId/data-updates', authenticateToken, async (req: Request, res
     const { brandId } = req.params;
     const customerId = req.user!.customer_id;
     const sinceParam = typeof req.query.since === 'string' ? req.query.since : undefined;
-    
+
     if (!brandId) {
       res.status(400).json({ success: false, error: 'Brand ID is required' });
       return;
     }
-    
+
     // Check if there are collector_results with raw_answer populated that were updated since the given time
     // This helps detect when async BrightData responses have been populated
     let query = supabaseAdmin
@@ -1043,7 +1053,7 @@ router.get('/:brandId/data-updates', authenticateToken, async (req: Request, res
       .eq('brand_id', brandId)
       .not('raw_answer', 'is', null)
       .neq('raw_answer', '');
-    
+
     if (sinceParam) {
       query = query.gte('updated_at', sinceParam);
     } else {
@@ -1051,9 +1061,9 @@ router.get('/:brandId/data-updates', authenticateToken, async (req: Request, res
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
       query = query.gte('updated_at', twoMinutesAgo);
     }
-    
+
     const { data, error, count } = await query.limit(1);
-    
+
     if (error) {
       console.error('Error checking for data updates:', error);
       res.status(500).json({
@@ -1062,9 +1072,9 @@ router.get('/:brandId/data-updates', authenticateToken, async (req: Request, res
       });
       return;
     }
-    
+
     const hasUpdates = (count || 0) > 0;
-    
+
     res.json({
       success: true,
       data: {
@@ -1107,22 +1117,22 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
       { data: scoredResults, error: scoredError },
     ] = await Promise.all([
       supabaseAdmin
-      .from('generated_queries')
-      .select('id', { count: 'exact', head: true })
-      .eq('brand_id', brandId)
+        .from('generated_queries')
+        .select('id', { count: 'exact', head: true })
+        .eq('brand_id', brandId)
         .eq('customer_id', customerId),
       supabaseAdmin
-      .from('collector_results')
-      .select('query_id')
-      .eq('brand_id', brandId)
-      .eq('customer_id', customerId)
+        .from('collector_results')
+        .select('query_id')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
         .eq('status', 'completed')
         .not('query_id', 'is', null),
       supabaseAdmin
-      .from('collector_results')
-      .select('query_id')
-      .eq('brand_id', brandId)
-      .eq('customer_id', customerId)
+        .from('collector_results')
+        .select('query_id')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
         .eq('scoring_status', 'completed')
         .not('query_id', 'is', null),
     ]);
@@ -1145,13 +1155,13 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
       });
       return;
     }
-    
+
     // Handle null/undefined data arrays
     const collectedData = collectedResults || [];
     const scoredData = scoredResults || [];
 
     const total = totalQueries || 0;
-    
+
     // Count unique query_ids (not total collector_results)
     // This prevents showing "8/6" when one query has multiple collector results
     // (e.g., 6 queries × 3 collectors = 18 collector_results, but should show 6/6)
@@ -1161,7 +1171,7 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         .filter((id: any) => id != null)
     );
     const collected = uniqueCollectedQueryIds.size;
-    
+
     const uniqueScoredQueryIds = new Set(
       scoredData
         .map((r: any) => r.query_id)
@@ -1179,13 +1189,13 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
     let scoringStatus: 'pending' | 'active' | 'completed' = 'pending';
     // Scoring is active if we have collected something
     if (collected > 0) {
-       if (scored >= total && total > 0) scoringStatus = 'completed';
-       else scoringStatus = 'active';
+      if (scored >= total && total > 0) scoringStatus = 'completed';
+      else scoringStatus = 'active';
     }
 
     let finalizationStatus: 'pending' | 'active' | 'completed' = 'pending';
     if (collectionStatus === 'completed' && scoringStatus === 'completed') {
-       finalizationStatus = 'active';
+      finalizationStatus = 'active';
     }
 
     // Determine current operation (backward compatibility + high level state)
@@ -1223,12 +1233,12 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         },
         // Keep backward compatibility
         queries: { total: total, completed: collected },
-        scoring: { 
+        scoring: {
           // Only mark as complete if ALL results are scored (scored >= total)
           // This prevents premature completion detection
-          positions: allScoringComplete, 
-          sentiments: allScoringComplete, 
-          citations: allScoringComplete 
+          positions: allScoringComplete,
+          sentiments: allScoringComplete,
+          citations: allScoringComplete
         },
         currentOperation
       }
@@ -1486,18 +1496,18 @@ router.get('/:brandId/competitors/versions', authenticateToken, async (req: Requ
 router.get('/:brandId/competitors/:competitorName/sources', authenticateToken, async (req: Request, res: Response) => {
   const requestStartTime = Date.now();
   const requestId = `req-comp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
+
   try {
     console.log(`\n[CompetitorSourceAttribution API] 🚀 Request ${requestId} started at ${new Date().toISOString()}`);
-    
+
     const { brandId, competitorName } = req.params;
     const customerId = req.user!.customer_id;
     const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
     const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
-    
+
     console.log(`[CompetitorSourceAttribution API] 📊 Params: brandId=${brandId}, competitor=${competitorName}, customerId=${customerId}`);
     console.log(`[CompetitorSourceAttribution API] 📅 Date Range: startDate=${startQuery || 'default'}, endDate=${endQuery || 'default'}`);
-    
+
     if (!brandId || !customerId || !competitorName) {
       res.status(400).json({
         success: false,
@@ -1507,7 +1517,7 @@ router.get('/:brandId/competitors/:competitorName/sources', authenticateToken, a
     }
 
     let dateRange: { start: string; end: string } | undefined;
-    
+
     if (startQuery || endQuery) {
       try {
         const parseDate = (value: string): Date => {
@@ -1555,21 +1565,21 @@ router.get('/:brandId/competitors/:competitorName/sources', authenticateToken, a
 
     const serviceStartTime = Date.now();
     console.log(`[CompetitorSourceAttribution API] ⏱️  Calling service.getCompetitorSourceAttribution()...`);
-    
+
     const sourceData = await sourceAttributionService.getCompetitorSourceAttribution(
       brandId,
       customerId,
       decodeURIComponent(competitorName),
       dateRange
     );
-    
+
     const serviceEndTime = Date.now();
     const serviceDuration = serviceEndTime - serviceStartTime;
     console.log(`[CompetitorSourceAttribution API] ✅ Service completed in ${serviceDuration}ms`);
     console.log(`[CompetitorSourceAttribution API] 📦 Response: ${sourceData.sources.length} sources, ${sourceData.totalSources} total`);
 
     res.json({ success: true, data: sourceData });
-    
+
     const totalDuration = Date.now() - requestStartTime;
     console.log(`[CompetitorSourceAttribution API] ⏱️  Total request duration: ${totalDuration}ms`);
     console.log(`[CompetitorSourceAttribution API] ✅ Request ${requestId} completed successfully\n`);

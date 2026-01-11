@@ -233,9 +233,17 @@ export const DomainReadinessPage = () => {
                   <ScoreGauge score={audit.overallScore} size={140} /> {/* Smaller Size */}
                   <div className="text-center mt-2">
                     <span className="text-sm font-medium text-gray-500 block">Overall Score</span>
-                    <span className="text-[10px] text-blue-500 font-medium" style={{ visibility: selectedCategory !== 'overall' ? 'visible' : 'hidden' }}>
+                    <span className="text-[10px] text-blue-500 font-medium cursor-pointer"
+                      onClick={() => setSelectedCategory('overall')}
+                      style={{ visibility: selectedCategory !== 'overall' ? 'visible' : 'hidden' }}>
                       Click to View All
                     </span>
+                    <button
+                      onClick={() => document.getElementById('action-plan')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="block w-full mt-3 text-xs text-gray-400 hover:text-blue-600 font-medium transition-colors"
+                    >
+                      View Action Plan ↓
+                    </button>
                   </div>
                 </div>
 
@@ -264,7 +272,7 @@ export const DomainReadinessPage = () => {
 
 
             {/* --- BOTTOM SECTION: Actionable Insights --- */}
-            <div className="space-y-4">
+            <div className="space-y-4" id="action-plan">
               <h2 className="text-xl font-bold text-gray-800">Action Plan & Improvements</h2>
               <ActionItemsTable
                 audit={audit}

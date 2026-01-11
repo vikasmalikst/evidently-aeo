@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { AeoAuditResult } from '../types/types';
-import { ChevronDown, ChevronUp, CheckCircle, AlertTriangle, XCircle, Info, ExternalLink, Lightbulb, ArrowUpRight } from 'lucide-react';
+import { CheckCircle, AlertTriangle, XCircle, Info, ExternalLink, Lightbulb, TrendingUp, X, History } from 'lucide-react';
 import { TEST_RESOURCES } from '../utils/testResources';
+import { TrendCharts } from './TrendCharts';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface TestResultsListProps {
   audit: AeoAuditResult;
@@ -11,12 +13,14 @@ interface TestResultsListProps {
     buckets: Record<string, { total: number; completed: number }>;
   };
   categoryFilter?: string;
+  history?: AeoAuditResult[];
 }
 
 type CategoryKey = 'technicalCrawlability' | 'contentQuality' | 'semanticStructure' | 'accessibilityAndBrand' | 'aeoOptimization';
 
-export function TestResultsList({ audit, loading, progress, categoryFilter }: TestResultsListProps) {
+export function TestResultsList({ audit, loading, progress, categoryFilter, history = [] }: TestResultsListProps) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const toggleRow = (id: string) => {
     setExpandedRow(prev => (prev === id ? null : id));
@@ -49,126 +53,177 @@ export function TestResultsList({ audit, loading, progress, categoryFilter }: Te
   };
 
   return (
-    <div className="space-y-6">
-      {categories.map((cat) => {
-        if (!cat.data || !cat.data.tests) return null;
+    <>
+      <div className="space-y-6 relative">
+        {/* Header Actions Row (History Button) */}
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={() => setShowHistoryModal(true)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-600 bg-white border border-gray-200 hover:border-blue-200 shadow-sm px-3 py-1.5 rounded-lg transition-all"
+          >
+            <History className="w-4 h-4" />
+            Show Historical Trend
+          </button>
+        </div>
 
-        return (
-          <div key={cat.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-            {/* Category Header (if we are showing all categories, otherwise MiddleSection handles title) */}
-            {/* Since MiddleSection handles title when filtered, we might want to hide it if filtered? 
-                 But MiddleSection title is outside. Let's keep a subtle header here or purely the table.
-                 User asked for table. Let's do a table structure. 
-             */}
-            {!categoryFilter && (
-              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                <h3 className="font-semibold text-gray-800">{cat.name}</h3>
-                <span className={`text-xs px-2 py-0.5 rounded border ${getScoreBadgeColor(cat.data.score)}`}>
-                  Category Score: {cat.data.score}
-                </span>
-              </div>
-            )}
+        {categories.map((cat) => {
+          if (!cat.data || !cat.data.tests) return null;
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 text-gray-500 border-b border-gray-100">
-                  <tr>
-                    <th className="px-6 py-3 font-medium w-1/4">Metric</th>
-                    <th className="px-6 py-3 font-medium w-1/2">Result</th>
-                    <th className="px-6 py-3 font-medium w-1/6 text-center">Score</th>
-                    <th className="px-6 py-3 font-medium w-1/12 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {cat.data.tests.map((test: any, idx: number) => {
-                    const uniqueId = `${cat.key}-${idx}`;
-                    const resource = TEST_RESOURCES[test.name];
-                    const isExpanded = expandedRow === uniqueId;
+          return (
+            <div key={cat.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+              {!categoryFilter && (
+                <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                  <h3 className="font-semibold text-gray-800">{cat.name}</h3>
+                  <span className={`text-xs px-2 py-0.5 rounded border ${getScoreBadgeColor(cat.data.score)}`}>
+                    Category Score: {cat.data.score}
+                  </span>
+                </div>
+              )}
 
-                    return (
-                      <div key={idx} style={{ display: 'contents' }}>
-                        <tr className="hover:bg-blue-50/50 transition-colors group">
-                          {/* Metric */}
-                          <td className="px-6 py-4 font-medium text-gray-900 align-top">
-                            {test.name}
-                          </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-500 border-b border-gray-100">
+                    <tr>
+                      <th className="px-6 py-3 font-medium w-1/4">Metric</th>
+                      <th className="px-6 py-3 font-medium w-1/2">Result</th>
+                      <th className="px-6 py-3 font-medium w-1/6 text-center">Score</th>
+                      <th className="px-6 py-3 font-medium w-1/12 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {cat.data.tests.map((test: any, idx: number) => {
+                      const uniqueId = `${cat.key}-${idx}`;
+                      const resource = TEST_RESOURCES[test.name];
+                      const isExpanded = expandedRow === uniqueId;
 
-                          {/* Result */}
-                          <td className="px-6 py-4 text-gray-600 align-top">
-                            <div className="flex items-start gap-3">
-                              {getIcon(test.status)}
-                              <span className="text-sm leading-relaxed">
-                                {test.message || test.description || 'No details available.'}
+                      return (
+                        <div key={idx} style={{ display: 'contents' }}>
+                          <tr className="hover:bg-blue-50/50 transition-colors group">
+                            {/* Metric */}
+                            <td className="px-6 py-4 font-medium text-gray-900 align-top">
+                              {test.name}
+                            </td>
+
+                            {/* Result */}
+                            <td className="px-6 py-4 text-gray-600 align-top">
+                              <div className="flex items-start gap-3">
+                                {getIcon(test.status)}
+                                <span className="text-sm leading-relaxed">
+                                  {test.message || test.description || 'No details available.'}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Score */}
+                            <td className="px-6 py-4 text-center align-top">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium border ${getScoreBadgeColor(test.score)}`}>
+                                {test.score}
                               </span>
-                            </div>
-                          </td>
+                            </td>
 
-                          {/* Score */}
-                          <td className="px-6 py-4 text-center align-top">
-                            <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium border ${getScoreBadgeColor(test.score)}`}>
-                              {test.score}
-                            </span>
-                          </td>
+                            {/* Actions */}
+                            <td className="px-6 py-4 text-right align-top">
+                              <div className="flex items-center justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                                {/* Learn More */}
+                                {(test.documentationUrl || resource?.learnMoreUrl) && (
+                                  <a
+                                    href={test.documentationUrl || resource?.learnMoreUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-gray-400 hover:text-blue-600 transition-colors"
+                                    title="Learn More"
+                                  >
+                                    <ExternalLink size={16} />
+                                  </a>
+                                )}
 
-                          {/* Actions */}
-                          <td className="px-6 py-4 text-right align-top">
-                            <div className="flex items-center justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
-                              {/* Learn More */}
-                              {(test.documentationUrl || resource?.learnMoreUrl) && (
-                                <a
-                                  href={test.documentationUrl || resource?.learnMoreUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-gray-400 hover:text-blue-600 transition-colors"
-                                  title="Learn More"
-                                >
-                                  <ExternalLink size={16} />
-                                </a>
-                              )}
-
-                              {/* How to Fix Toggle */}
-                              {resource?.howToFix && test.status !== 'pass' && (
-                                <button
-                                  onClick={() => toggleRow(uniqueId)}
-                                  className={`transition-colors ${isExpanded ? 'text-purple-600' : 'text-gray-400 hover:text-purple-600'}`}
-                                  title="How to fix"
-                                >
-                                  <Lightbulb size={16} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-
-                        {/* Expandable Row for Fix */}
-                        {isExpanded && resource?.howToFix && (
-                          <tr className="bg-purple-50/50">
-                            <td colSpan={4} className="px-6 py-4 mx-4">
-                              <div className="ml-0 md:ml-[25%] bg-white border border-purple-100 rounded-lg p-4 shadow-sm relative">
-                                <div className="absolute left-[-8px] top-[-8px]">
-                                  <div className="bg-purple-100 p-1 rounded-full">
-                                    <Lightbulb size={14} className="text-purple-600" />
-                                  </div>
-                                </div>
-                                <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wide mb-2">How to Fix</h4>
-                                <ol className="list-decimal list-inside text-sm text-gray-700 space-y-1">
-                                  {resource.howToFix.map((fix: string, i: number) => (
-                                    <li key={i}>{fix}</li>
-                                  ))}
-                                </ol>
+                                {/* How to Fix Toggle */}
+                                {resource?.howToFix && test.status !== 'pass' && (
+                                  <button
+                                    onClick={() => toggleRow(uniqueId)}
+                                    className={`transition-colors ${isExpanded ? 'text-purple-600' : 'text-gray-400 hover:text-purple-600'}`}
+                                    title="How to fix"
+                                  >
+                                    <Lightbulb size={16} />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
-                        )}
-                      </div>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+                          {/* Expandable Row for Fix */}
+                          {isExpanded && resource?.howToFix && (
+                            <tr className="bg-purple-50/50">
+                              <td colSpan={4} className="px-6 py-4 mx-4">
+                                <div className="ml-0 md:ml-[25%] bg-white border border-purple-100 rounded-lg p-4 shadow-sm relative">
+                                  <div className="absolute left-[-8px] top-[-8px]">
+                                    <div className="bg-purple-100 p-1 rounded-full">
+                                      <Lightbulb size={14} className="text-purple-600" />
+                                    </div>
+                                  </div>
+                                  <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wide mb-2">How to Fix</h4>
+                                  <ol className="list-decimal list-inside text-sm text-gray-700 space-y-1">
+                                    {resource.howToFix.map((fix: string, i: number) => (
+                                      <li key={i}>{fix}</li>
+                                    ))}
+                                  </ol>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
+          );
+        })}
+      </div>
+
+      {/* History Modal */}
+      <AnimatePresence>
+        {showHistoryModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowHistoryModal(false)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col"
+            >
+              <div className="flex items-center justify-between p-6 border-b border-gray-100">
+                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-blue-600" />
+                  Historical Performance
+                  {categoryFilter && <span className="text-gray-500 font-normal">({allCategories.find(c => c.key === categoryFilter)?.name})</span>}
+                </h3>
+                <button
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-8">
+                <TrendCharts
+                  history={history}
+                  categoryFilter={categoryFilter} // Filter modal content too
+                  orientation="horizontal" // Use horizontal in modal for more space
+                />
+              </div>
+            </motion.div>
           </div>
-        );
-      })}
-    </div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

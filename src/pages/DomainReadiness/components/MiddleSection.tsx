@@ -45,20 +45,35 @@ export const MiddleSection = ({ audit, history, selectedCategory }: MiddleSectio
     // Let's implement the loop logic.
 
     const renderCategoryBlock = (catKey: string, catName: string) => (
-        <div key={catKey} className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8 border-b border-gray-100 pb-8 last:border-0">
-            {/* Left: Chart */}
-            <div className="lg:col-span-5 flex flex-col h-full">
-                <h3 className="font-semibold text-gray-800 mb-2">{catName} Trends</h3>
-                <div className="flex-1 bg-white rounded-lg border border-gray-100 p-4 shadow-sm">
-                    <TrendCharts history={history} categoryFilter={catKey} orientation="vertical" />
+        <div key={catKey} className="mb-8 border-b border-gray-100 pb-8 last:border-0 last:pb-0">
+            {/* Detailed Results (Full Width) */}
+            <div className="flex flex-col h-full">
+                {/* Header handled inside TestResultsList logic or here? 
+                    Previously TestResultsList had logic to hide header if filtered.
+                    MiddleSection renders title "Technical Trends" etc. 
+                    Now we just want the table. 
+                */}
+                {/* <h3 className="font-semibold text-gray-800 mb-2">{catName} Details</h3> */}
+                {/* Let's keep a clean layout. The TestResultsList has a header inside if !filtered. 
+                    But here we are iterating. 
+                    Actually, if we iterate, we are passing categoryFilter={catKey}. 
+                    TestResultsList uses categoryFilter.
+                    If we pass categoryFilter, TestResultsList renders ONLY that category. 
+                    Does TestResultsList render a header? 
+                    Lines 72-80 in previous TestResultsList: "if !categoryFilter render header".
+                    So if we pass filter, NO header inside.
+                    So we DO need a header here.
+                */}
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-gray-800 text-lg">{catName} Details</h3>
                 </div>
-            </div>
 
-            {/* Right: Detailed Results */}
-            <div className="lg:col-span-7 flex flex-col h-full">
-                <h3 className="font-semibold text-gray-800 mb-2">{catName} Details</h3>
-                <div className="flex-1 bg-gray-50 rounded-lg p-0 border border-gray-100 overflow-hidden">
-                    <TestResultsList audit={audit} categoryFilter={catKey} />
+                <div className="flex-1 bg-white rounded-lg border border-gray-100 overflow-hidden shadow-sm">
+                    <TestResultsList
+                        audit={audit}
+                        categoryFilter={catKey}
+                        history={history} // Pass history for Modal
+                    />
                 </div>
             </div>
         </div>

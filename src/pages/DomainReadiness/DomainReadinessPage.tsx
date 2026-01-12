@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useDomainReadiness } from './hooks/useDomainReadiness';
 import { ActionItemsTable } from './components/ActionItemsTable';
@@ -14,6 +15,7 @@ import { Layout } from '../../components/Layout/Layout';
 import { TrendCharts } from './components/TrendCharts';
 
 export const DomainReadinessPage = () => {
+  const navigate = useNavigate();
   const {
     brands,
     brandsLoading,
@@ -228,22 +230,31 @@ export const DomainReadinessPage = () => {
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm"> {/* Compact padding */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
                 {/* Left: Score Gauge (Click to reset to Overall) */}
-                <div className="lg:col-span-3 flex flex-col items-center justify-center border-r border-gray-100 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
-                  onClick={() => setSelectedCategory('overall')}>
-                  <ScoreGauge score={audit.overallScore} size={140} /> {/* Smaller Size */}
-                  <div className="text-center mt-2">
+                <div className="lg:col-span-3 flex flex-col items-center justify-center border-r border-gray-100 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors">
+                  <div onClick={() => setSelectedCategory('overall')}>
+                    <ScoreGauge score={audit.overallScore} size={140} />
+                  </div>
+                  <div className="text-center mt-2 w-full">
                     <span className="text-sm font-medium text-gray-500 block">Overall Score</span>
                     <span className="text-[10px] text-blue-500 font-medium cursor-pointer"
                       onClick={() => setSelectedCategory('overall')}
                       style={{ visibility: selectedCategory !== 'overall' ? 'visible' : 'hidden' }}>
                       Click to View All
                     </span>
-                    <button
-                      onClick={() => document.getElementById('action-plan')?.scrollIntoView({ behavior: 'smooth' })}
-                      className="block w-full mt-3 text-xs text-gray-400 hover:text-blue-600 font-medium transition-colors"
-                    >
-                      View Action Plan ↓
-                    </button>
+                    <div className="flex flex-col gap-1 mt-3 w-full px-4">
+                      <button
+                        onClick={() => document.getElementById('action-plan')?.scrollIntoView({ behavior: 'smooth' })}
+                        className="text-xs text-gray-400 hover:text-blue-600 font-medium transition-colors"
+                      >
+                        View Audit Details ↓
+                      </button>
+                      <button
+                        onClick={() => navigate('/recommendations')}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors border-t border-gray-100 pt-2 mt-1"
+                      >
+                        View AI Recommendations →
+                      </button>
+                    </div>
                   </div>
                 </div>
 

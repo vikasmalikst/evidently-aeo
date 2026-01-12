@@ -27,11 +27,12 @@ import { generateColdStartRecommendations } from './cold-start-templates';
 import { filterLowQualityRecommendationsV3 } from './recommendation-quality.service';
 import { rankRecommendationsV3 } from './recommendation-ranking.service';
 import { domainReadinessService } from '../domain-readiness/domain-readiness.service';
-import { 
-  shouldFilterRecommendation, 
+import {
+  shouldFilterRecommendation,
   getReadinessContext,
-  enhanceRecommendationWithReadiness 
+  enhanceRecommendationWithReadiness
 } from './domain-readiness-filter.service';
+import { AeoAuditResult, BotAccessStatus, TestResult } from '../domain-readiness/types';
 
 // ============================================================================
 // TYPES
@@ -61,7 +62,7 @@ export interface RecommendationV3 {
   effort: 'Low' | 'Medium' | 'High';
   kpiId?: string;           // Links to identified KPI
   kpi?: string;             // KPI name (for display)
-  
+
   // Additional fields (stored but not shown in simplified table)
   reason?: string;
   explanation?: string;
@@ -77,7 +78,7 @@ export interface RecommendationV3 {
   timeline?: string;
   confidence?: number;
   calculatedScore?: number; // Deterministic ranking score (stored in DB as calculated_score)
-  
+
   // Workflow flags
   isApproved?: boolean;
   isContentGenerated?: boolean;
@@ -143,6 +144,9 @@ interface BrandContextV3 {
   };
   // Internal: data maturity classification (computed)
   _dataMaturity?: 'cold_start' | 'low_data' | 'normal';
+
+  // Domain Readiness Audit Result
+  domainAuditResult?: AeoAuditResult | null;
 }
 
 type CerebrasChatResponse = {
@@ -164,7 +168,7 @@ class RecommendationV3Service {
   constructor() {
     this.cerebrasApiKey = getCerebrasKey();
     this.cerebrasModel = getCerebrasModel();
-    
+
     if (!this.cerebrasApiKey) {
       console.warn('⚠️ [RecommendationV3Service] CEREBRAS_API_KEY not configured');
     }
@@ -418,9 +422,9 @@ ${templatesJson}`;
 
     // Parse JSON array (reuse the same robust cleaning approach used elsewhere in this service)
     console.log('📝 [RecommendationV3Service] Personalization response (first 500 chars):', content.substring(0, 500));
-    
+
     let cleaned = content.trim();
-    
+
     // Remove markdown code blocks
     if (cleaned.startsWith('```json')) {
       cleaned = cleaned.slice(7);
@@ -435,7 +439,7 @@ ${templatesJson}`;
     // Try to extract JSON array if there's extra text
     let jsonStart = cleaned.indexOf('[');
     let jsonEnd = cleaned.lastIndexOf(']');
-    
+
     if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
       cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
     }
@@ -447,21 +451,21 @@ ${templatesJson}`;
     } catch (parseError) {
       console.error('❌ [RecommendationV3Service] Personalization JSON parse error. Attempting to fix...');
       console.error('Cleaned content (first 1000 chars):', cleaned.substring(0, 1000));
-      
+
       // Try to fix common JSON issues
       // Remove trailing commas before closing brackets
       cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
-      
+
       // Fix extra closing braces before closing bracket
       cleaned = cleaned.replace(/\}\s*\}\s*\]/g, '}]');
       cleaned = cleaned.replace(/(\})\s*\}(\s*\])/g, '$1$2');
-      
+
       // Try to extract just the array part more aggressively
       const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
       if (arrayMatch) {
         cleaned = arrayMatch[0];
       }
-      
+
       // Final cleanup: remove any standalone closing braces before ]
       const lastBraceIndex = cleaned.lastIndexOf('}');
       const lastBracketIndex = cleaned.lastIndexOf(']');
@@ -469,11 +473,11 @@ ${templatesJson}`;
         const beforeBracket = cleaned.substring(lastBraceIndex, lastBracketIndex);
         const braceCount = (beforeBracket.match(/\}/g) || []).length;
         if (braceCount > 1) {
-          cleaned = cleaned.substring(0, lastBraceIndex) + 
-                   cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
+          cleaned = cleaned.substring(0, lastBraceIndex) +
+            cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
         }
       }
-      
+
       try {
         parsed = JSON.parse(cleaned);
       } catch (secondError) {
@@ -488,7 +492,7 @@ ${templatesJson}`;
       console.warn('⚠️ [RecommendationV3Service] Personalization returned non-array, returning original templates');
       return templates;
     }
-    
+
     if (parsed.length === 0) {
       console.warn('⚠️ [RecommendationV3Service] Personalization returned empty array, returning original templates');
       return templates;
@@ -546,7 +550,7 @@ ${templatesJson}`;
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const sixtyDaysAgo = new Date();
       sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-      
+
       const currentStartDate = thirtyDaysAgo.toISOString().split('T')[0];
       const currentEndDate = new Date().toISOString().split('T')[0];
       const previousStartDate = sixtyDaysAgo.toISOString().split('T')[0];
@@ -702,11 +706,11 @@ ${templatesJson}`;
         .eq('brand_id', brandId)
         .order('priority', { ascending: true })
         .limit(10); // Increased limit to catch more competitors
-      
+
       if (competitorError) {
         console.error(`❌ [RecommendationV3Service] Error fetching competitors:`, competitorError);
       }
-      
+
       // Debug: Log raw competitor data
       if (competitors && competitors.length > 0) {
         console.log(`🔍 [RecommendationV3Service] Found ${competitors.length} active competitor(s):`);
@@ -717,12 +721,12 @@ ${templatesJson}`;
       } else {
         console.warn(`⚠️ [RecommendationV3Service] No active competitors found for brand ${brandId}`);
       }
-      
+
       // Build competitor exclusion list for filtering (Layer 1: Pre-generation filtering)
       const competitorExclusionList = competitors && competitors.length > 0
         ? buildCompetitorExclusionList(competitors)
         : { names: new Set<string>(), domains: new Set<string>(), nameVariations: new Set<string>(), baseDomains: new Set<string>() };
-      
+
       if (competitors && competitors.length > 0) {
         console.log(`🚫 [RecommendationV3Service] Built competitor exclusion list: ${competitors.length} competitors`);
         console.log(`   - Competitor names: ${Array.from(competitorExclusionList.names).join(', ') || 'N/A'}`);
@@ -733,7 +737,7 @@ ${templatesJson}`;
       }
 
       const competitorData: BrandContextV3['competitors'] = [];
-      
+
       if (competitors && competitors.length > 0) {
         for (const comp of competitors) {
           let compVis: number | undefined;
@@ -815,13 +819,13 @@ ${templatesJson}`;
       // Use the same source-attribution service as Citations Sources page for 100% consistency
       console.log('📊 [RecommendationV3Service] Fetching source data using source-attribution service (same as Citations Sources page)...');
       const sourceAttributionStartTime = Date.now();
-      
+
       const sourceAttributionResponse = await sourceAttributionService.getSourceAttribution(
         brandId,
         customerId,
         { start: currentStartDate, end: currentEndDate }
       );
-      
+
       console.log(`✅ [RecommendationV3Service] Fetched ${sourceAttributionResponse.sources.length} sources from source-attribution service in ${Date.now() - sourceAttributionStartTime}ms`);
 
       const sourceMetrics: BrandContextV3['sourceMetrics'] = [];
@@ -852,7 +856,7 @@ ${templatesJson}`;
 
         for (const source of topSources) {
           const normalizedDomain = source.name.toLowerCase().replace(/^www\./, '').trim();
-          
+
           sourceMetrics.push({
             domain: normalizedDomain,
             mentionRate: Math.round(source.mentionRate * 10) / 10,
@@ -868,11 +872,11 @@ ${templatesJson}`;
         const originalSourceCount = sourceMetrics.length;
         const filteredSourceMetrics = filterCompetitorSources(sourceMetrics, competitorExclusionList);
         const filteredCount = originalSourceCount - filteredSourceMetrics.length;
-        
+
         if (filteredCount > 0) {
           console.log(`🚫 [RecommendationV3Service] Filtered out ${filteredCount} competitor source(s) from available citation sources`);
         }
-        
+
         // Use filtered sources
         sourceMetrics.length = 0;
         sourceMetrics.push(...filteredSourceMetrics);
@@ -915,13 +919,82 @@ ${templatesJson}`;
           soa: competitorAvgSoa,
           sentiment: competitorAvgSentiment,
           count: competitorData.length
-        }
+        },
+        domainAuditResult: await domainReadinessService.getLatestAudit(brand.id)
       };
 
     } catch (error) {
       console.error('❌ [RecommendationV3Service] Error gathering context:', error);
       return null;
     }
+  }
+
+  /**
+   * Generate recommendations based on Domain Readiness Audit
+   */
+  private generateDomainReadinessRecommendations(context: BrandContextV3): RecommendationV3[] {
+    const audit = context.domainAuditResult;
+    if (!audit) return [];
+
+    const recommendations: RecommendationV3[] = [];
+
+    // Thresholds
+    const CRITICAL_SCORE_THRESHOLD = 50;
+    const WARNING_SCORE_THRESHOLD = 70;
+
+    // Helper to map audit issues to recommendations
+    const mapTestsToRecs = (
+      bucketName: string,
+      bucketLabel: string,
+      tests: TestResult[],
+      kpiName: string
+    ) => {
+      // Filter for failed tests or warnings
+      const issues = tests.filter(t => t.status === 'fail' || t.status === 'warning');
+
+      issues.forEach(issue => {
+        // Determine priority based on status and severity (if we had severity, for now use status)
+        const priority = issue.status === 'fail' ? 'High' : 'Medium';
+
+        const rec: RecommendationV3 = {
+          action: `Fix ${bucketLabel} Issue: ${issue.name}`,
+          citationSource: 'owned-site', // Technical fixes are usually on owned site
+          focusArea: 'visibility', // Technical issues usually affect visibility first
+          priority: priority,
+          effort: 'Medium', // Default to Medium, hard to estimate without more data
+          kpi: kpiName,
+          reason: `${bucketLabel} score is impacted by failing test: ${issue.name}`,
+          explanation: issue.message || `The test "${issue.name}" failed during the domain audit. Addressing this will improve your ${bucketLabel} score and overall technical health.`,
+          expectedBoost: 'Technical Baseline',
+          timeline: '1-2 weeks',
+          confidence: 90, // High confidence because it's based on a hard test result
+          focusSources: 'owned-site',
+          contentFocus: 'Technical Optimization'
+        };
+
+        recommendations.push(rec);
+      });
+    };
+
+    // 1. Technical Crawlability
+    if (audit.scoreBreakdown.technicalCrawlability < WARNING_SCORE_THRESHOLD) {
+      const tests = audit.detailedResults.technicalCrawlability.tests;
+      mapTestsToRecs('technicalCrawlability', 'Technical Crawlability', tests, 'Technical Health');
+    }
+
+    // 2. AEO Optimization (High Priority)
+    // Always check AEO tests regardless of score if there are failures
+    const aeoTests = audit.detailedResults.aeoOptimization.tests;
+    mapTestsToRecs('aeoOptimization', 'AEO Optimization', aeoTests, 'Technical Health');
+
+    // 3. Schema/Semantic Structure
+    if (audit.scoreBreakdown.semanticStructure < WARNING_SCORE_THRESHOLD) {
+      const tests = audit.detailedResults.semanticStructure.tests;
+      mapTestsToRecs('semanticStructure', 'Semantic Structure', tests, 'Technical Health');
+    }
+
+    // Limit to top 3 technical recommendations to not overwhelm the user
+    return recommendations.slice(0, 3);
   }
 
   /**
@@ -951,7 +1024,7 @@ ${templatesJson}`;
 
     // Simplified prompt - removed competitor summary, trends, and citation sources
     // These are not needed for KPI identification and add unnecessary complexity
-    
+
     const prompt = `You are a Brand/AEO expert. Analyze the brand data below and identify 3-5 key KPIs/metrics that are most important for improving this brand's performance.
 
 Return ONLY a JSON array of KPIs. Each KPI should have:
@@ -1065,7 +1138,7 @@ Respond only with the JSON array.`;
 
       // Parse JSON response - try multiple extraction strategies
       let cleaned = content.trim();
-      
+
       // Remove markdown code blocks
       if (cleaned.startsWith('```json')) {
         cleaned = cleaned.slice(7);
@@ -1080,7 +1153,7 @@ Respond only with the JSON array.`;
       // Try to extract JSON array if there's extra text
       let jsonStart = cleaned.indexOf('[');
       let jsonEnd = cleaned.lastIndexOf(']');
-      
+
       if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
         cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
       }
@@ -1092,25 +1165,25 @@ Respond only with the JSON array.`;
       } catch (parseError) {
         console.error('❌ [RecommendationV3Service] JSON parse error. Attempting to fix...');
         console.error('Cleaned content (first 1000 chars):', cleaned.substring(0, 1000));
-        
+
         // Try to fix common JSON issues
         // Remove trailing commas before closing brackets
         cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
-        
+
         // Fix extra closing braces before closing bracket (e.g., "  }\n  }\n]")
         // This happens when LLM adds an extra closing brace
         cleaned = cleaned.replace(/\}\s*\}\s*\]/g, '}]');
-        
+
         // Remove any extra closing braces right before the closing bracket
         // Match pattern: whitespace + } + whitespace + } + whitespace + ]
         cleaned = cleaned.replace(/(\})\s*\}(\s*\])/g, '$1$2');
-        
+
         // Try to extract just the array part more aggressively
         const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
         if (arrayMatch) {
           cleaned = arrayMatch[0];
         }
-        
+
         // Final cleanup: remove any standalone closing braces before ]
         // This handles cases like: "  }\n  }\n]" -> "  }\n]"
         const lastBraceIndex = cleaned.lastIndexOf('}');
@@ -1121,17 +1194,17 @@ Respond only with the JSON array.`;
           const braceCount = (beforeBracket.match(/\}/g) || []).length;
           if (braceCount > 1) {
             // Remove extra braces, keep only one
-            cleaned = cleaned.substring(0, lastBraceIndex) + 
-                     cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
+            cleaned = cleaned.substring(0, lastBraceIndex) +
+              cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
           }
         }
-        
+
         try {
           parsed = JSON.parse(cleaned);
         } catch (secondError) {
           console.error('❌ [RecommendationV3Service] Failed to parse JSON after fixes:', secondError);
           console.error('Cleaned content (last 200 chars):', cleaned.substring(Math.max(0, cleaned.length - 200)));
-          
+
           // Last resort: try to manually extract array elements
           try {
             const elements: any[] = [];
@@ -1176,6 +1249,19 @@ Respond only with the JSON array.`;
       }));
 
       console.log(`✅ [RecommendationV3Service] Identified ${kpis.length} KPIs`);
+
+      // Inject "Technical Health" KPI if Domain Readiness audit is poor
+      if (context.domainAuditResult && context.domainAuditResult.overallScore < 70) {
+        console.log(`⚠️ [RecommendationV3Service] Domain Health is poor (${context.domainAuditResult.overallScore}/100), injecting Technical Health KPI`);
+        kpis.unshift({
+          kpiName: 'Technical Health',
+          kpiDescription: 'Your domain readiness score is low. Fixing technical foundations is a prerequisite for AEO success.',
+          currentValue: context.domainAuditResult.overallScore,
+          targetValue: 80,
+          displayOrder: -1 // Ensure it comes first
+        });
+      }
+
       return kpis;
 
     } catch (error) {
@@ -1211,30 +1297,30 @@ Respond only with the JSON array.`;
 
     // Log available sources for debugging (top 10 from Citations Sources page)
     if (context.sourceMetrics && context.sourceMetrics.length > 0) {
-      console.log(`📊 [RecommendationV3Service] Top 10 sources from Citations Sources page (${context.sourceMetrics.length} total):`, 
+      console.log(`📊 [RecommendationV3Service] Top 10 sources from Citations Sources page (${context.sourceMetrics.length} total):`,
         context.sourceMetrics.map(s => `${s.domain} (Value: ${s.impactScore}, Citations: ${s.citations})`).join(', '));
     } else {
       console.warn('⚠️ [RecommendationV3Service] No sourceMetrics available in context');
     }
-    
+
     // Format source metrics (Top Citation Sources) - include actual data for LLM reference
     // Create a numbered list with EXACT domain names that must be used
     // Use only top 10 sources (same as Citations Sources page)
     const sourceSummary = context.sourceMetrics && context.sourceMetrics.length > 0
       ? context.sourceMetrics.slice(0, 10).map((s, idx) => {
-          const visibility = normalizePercent(s.visibility);
-          const soa = normalizePercent(s.soa);
-          const sentiment = normalizeSentiment100(s.sentiment);
-          const parts: string[] = [`${idx + 1}. ${s.domain}`, `(${s.citations} citations, Impact ${s.impactScore}/10`];
-          if (Number.isFinite(s.mentionRate)) parts.push(`Mention Rate ${Math.round(s.mentionRate * 10) / 10}%`);
-          if (soa !== null) parts.push(`SOA ${soa}%`);
-          if (sentiment !== null) parts.push(`Sentiment ${Math.round(sentiment * 10) / 10}`);
-          if (visibility !== null) parts.push(`Visibility ${visibility}`);
-          parts.push(')');
-          return parts.join(', ');
-        }).join('\n  ')
+        const visibility = normalizePercent(s.visibility);
+        const soa = normalizePercent(s.soa);
+        const sentiment = normalizeSentiment100(s.sentiment);
+        const parts: string[] = [`${idx + 1}. ${s.domain}`, `(${s.citations} citations, Impact ${s.impactScore}/10`];
+        if (Number.isFinite(s.mentionRate)) parts.push(`Mention Rate ${Math.round(s.mentionRate * 10) / 10}%`);
+        if (soa !== null) parts.push(`SOA ${soa}%`);
+        if (sentiment !== null) parts.push(`Sentiment ${Math.round(sentiment * 10) / 10}`);
+        if (visibility !== null) parts.push(`Visibility ${visibility}`);
+        parts.push(')');
+        return parts.join(', ');
+      }).join('\n  ')
       : 'No source data available';
-    
+
     // Create a simple list of exact domain names for strict matching (top 10 only)
     // Note: These sources are already filtered to exclude competitor domains (Layer 1)
     const exactDomains = context.sourceMetrics && context.sourceMetrics.length > 0
@@ -1332,26 +1418,26 @@ Respond only with the JSON array.`;
         try {
           console.log('🦙 [RecommendationV3Service] Attempting Ollama API (primary for this brand)...');
           const ollamaStartTime = Date.now();
-          
+
           const systemMessage = 'You are a senior Brand/AEO expert. Generate actionable recommendations. Respond only with valid JSON arrays.';
           const ollamaResponse = await callOllamaAPI(systemMessage, prompt, context.brandId);
-          
+
           // Ollama returns JSON string, may need parsing
           let parsedContent = ollamaResponse;
-          
+
           // Remove markdown code blocks if present
           if (parsedContent.includes('```json')) {
             parsedContent = parsedContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
           } else if (parsedContent.includes('```')) {
             parsedContent = parsedContent.replace(/```\s*/g, '');
           }
-          
+
           // Extract JSON array if wrapped in other text
           const jsonMatch = parsedContent.match(/\[[\s\S]*\]/);
           if (jsonMatch) {
             parsedContent = jsonMatch[0];
           }
-          
+
           content = parsedContent;
           if (content) {
             providerUsed = 'ollama';
@@ -1371,12 +1457,12 @@ Respond only with the JSON array.`;
         try {
           console.log('🚀 [RecommendationV3Service] Attempting OpenRouter API (primary/fallback)...');
           const openRouterStartTime = Date.now();
-          
+
           // Add timeout wrapper for OpenRouter call
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('OpenRouter request timeout after 180 seconds')), 180000);
           });
-          
+
           const openRouterPromise = openRouterCollectorService.executeQuery({
             collectorType: 'content',
             prompt,
@@ -1385,10 +1471,10 @@ Respond only with the JSON array.`;
             topP: 0.9,
             enableWebSearch: false
           });
-          
+
           const or = await Promise.race([openRouterPromise, timeoutPromise]) as any;
           const openRouterDuration = Date.now() - openRouterStartTime;
-          
+
           content = or.response;
           if (content) {
             providerUsed = 'openrouter';
@@ -1457,14 +1543,14 @@ Respond only with the JSON array.`;
         console.error('❌ [RecommendationV3Service] Failed to get recommendations from LLM (both OpenRouter and Cerebras failed)');
         return [];
       }
-      
+
       console.log(`📊 [RecommendationV3Service] Successfully received response from ${providerUsed}, length: ${content.length} chars`);
       // Log raw response for debugging
       console.log('📝 [RecommendationV3Service] Raw recommendations response (first 500 chars):', content.substring(0, 500));
 
       // Parse JSON response - reuse the same robust parsing logic
       let cleaned = content.trim();
-      
+
       // Remove markdown code blocks
       if (cleaned.startsWith('```json')) {
         cleaned = cleaned.slice(7);
@@ -1479,7 +1565,7 @@ Respond only with the JSON array.`;
       // Try to extract JSON array if there's extra text
       let jsonStart = cleaned.indexOf('[');
       let jsonEnd = cleaned.lastIndexOf(']');
-      
+
       if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
         cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
       }
@@ -1491,34 +1577,34 @@ Respond only with the JSON array.`;
       } catch (parseError) {
         console.error('❌ [RecommendationV3Service] JSON parse error. Attempting to fix...');
         console.error('Cleaned content (first 1000 chars):', cleaned.substring(0, 1000));
-        
+
         // Try to fix common JSON issues
         cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
         cleaned = cleaned.replace(/\}\s*\}\s*\]/g, '}]');
         cleaned = cleaned.replace(/(\})\s*\}(\s*\])/g, '$1$2');
-        
+
         const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
         if (arrayMatch) {
           cleaned = arrayMatch[0];
         }
-        
+
         const lastBraceIndex = cleaned.lastIndexOf('}');
         const lastBracketIndex = cleaned.lastIndexOf(']');
         if (lastBraceIndex !== -1 && lastBracketIndex !== -1 && lastBraceIndex < lastBracketIndex) {
           const beforeBracket = cleaned.substring(lastBraceIndex, lastBracketIndex);
           const braceCount = (beforeBracket.match(/\}/g) || []).length;
           if (braceCount > 1) {
-            cleaned = cleaned.substring(0, lastBraceIndex) + 
-                     cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
+            cleaned = cleaned.substring(0, lastBraceIndex) +
+              cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
           }
         }
-        
+
         try {
           parsed = JSON.parse(cleaned);
         } catch (secondError) {
           console.error('❌ [RecommendationV3Service] Failed to parse JSON after fixes:', secondError);
           console.error('Cleaned content (last 200 chars):', cleaned.substring(Math.max(0, cleaned.length - 200)));
-          
+
           // Last resort: try to manually extract array elements
           try {
             const elements: any[] = [];
@@ -1589,7 +1675,7 @@ Respond only with the JSON array.`;
           expectedBoost: rec.expectedBoost,
           // Use actual source data from source-attribution service (exact same as Citations Sources page)
           impactScore: matchingSource ? formatValue(matchingSource.impactScore, 1) : null,
-          mentionRate: matchingSource && Number.isFinite(matchingSource.mentionRate) 
+          mentionRate: matchingSource && Number.isFinite(matchingSource.mentionRate)
             ? formatValue(matchingSource.mentionRate, 1) // Already 0-100 from source-attribution service
             : null,
           soa: matchingSource && matchingSource.soa !== null && matchingSource.soa !== undefined
@@ -1614,7 +1700,7 @@ Respond only with the JSON array.`;
       const unmatchedSources = recommendations.length - matchedSources;
       console.log(`✅ [RecommendationV3Service] Generated ${recommendations.length} recommendations`);
       console.log(`📊 [RecommendationV3Service] Source data matched: ${matchedSources}, unmatched: ${unmatchedSources}`);
-      
+
       // Note: competitor filtering, quality contract, and deterministic ranking are applied
       // in `generateRecommendations()` via `postProcessRecommendations()`.
       return recommendations;
@@ -1653,17 +1739,17 @@ Respond only with the JSON array.`;
 
     const sourceSummary = context.sourceMetrics && context.sourceMetrics.length > 0
       ? context.sourceMetrics.slice(0, 8).map(s => {
-          const visibility = normalizePercent(s.visibility);
-          const soa = normalizePercent(s.soa);
-          const parts: string[] = [`${s.domain}:`, `${s.citations} citations`, `Impact ${s.impactScore}/10`];
-          if (Number.isFinite(s.mentionRate)) parts.push(`Mention Rate ${Math.round(s.mentionRate * 10) / 10}%`);
-          if (soa !== null) parts.push(`SOA ${soa}%`);
-          return parts.join(', ');
-        }).join('\n  ')
+        const visibility = normalizePercent(s.visibility);
+        const soa = normalizePercent(s.soa);
+        const parts: string[] = [`${s.domain}:`, `${s.citations} citations`, `Impact ${s.impactScore}/10`];
+        if (Number.isFinite(s.mentionRate)) parts.push(`Mention Rate ${Math.round(s.mentionRate * 10) / 10}%`);
+        if (soa !== null) parts.push(`SOA ${soa}%`);
+        return parts.join(', ');
+      }).join('\n  ')
       : 'No source data available';
 
     // Format KPIs for prompt
-    const kpisList = kpis.map((kpi, idx) => 
+    const kpisList = kpis.map((kpi, idx) =>
       `[KPI ${idx + 1}] ${kpi.kpiName}\n  Current: ${kpi.currentValue ?? 'N/A'}\n  Target: ${kpi.targetValue ?? 'N/A'}\n  Why: ${kpi.kpiDescription}`
     ).join('\n\n');
 
@@ -1800,7 +1886,7 @@ Respond only with the JSON array.`;
 
       // Parse JSON response - try multiple extraction strategies
       let cleaned = content.trim();
-      
+
       // Remove markdown code blocks
       if (cleaned.startsWith('```json')) {
         cleaned = cleaned.slice(7);
@@ -1815,7 +1901,7 @@ Respond only with the JSON array.`;
       // Try to extract JSON array if there's extra text
       let jsonStart = cleaned.indexOf('[');
       let jsonEnd = cleaned.lastIndexOf(']');
-      
+
       if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
         cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
       }
@@ -1827,25 +1913,25 @@ Respond only with the JSON array.`;
       } catch (parseError) {
         console.error('❌ [RecommendationV3Service] JSON parse error. Attempting to fix...');
         console.error('Cleaned content (first 1000 chars):', cleaned.substring(0, 1000));
-        
+
         // Try to fix common JSON issues
         // Remove trailing commas before closing brackets
         cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
-        
+
         // Fix extra closing braces before closing bracket (e.g., "  }\n  }\n]")
         // This happens when LLM adds an extra closing brace
         cleaned = cleaned.replace(/\}\s*\}\s*\]/g, '}]');
-        
+
         // Remove any extra closing braces right before the closing bracket
         // Match pattern: whitespace + } + whitespace + } + whitespace + ]
         cleaned = cleaned.replace(/(\})\s*\}(\s*\])/g, '$1$2');
-        
+
         // Try to extract just the array part more aggressively
         const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
         if (arrayMatch) {
           cleaned = arrayMatch[0];
         }
-        
+
         // Final cleanup: remove any standalone closing braces before ]
         // This handles cases like: "  }\n  }\n]" -> "  }\n]"
         const lastBraceIndex = cleaned.lastIndexOf('}');
@@ -1856,21 +1942,21 @@ Respond only with the JSON array.`;
           const braceCount = (beforeBracket.match(/\}/g) || []).length;
           if (braceCount > 1) {
             // Remove extra braces, keep only one
-            cleaned = cleaned.substring(0, lastBraceIndex) + 
-                     cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
+            cleaned = cleaned.substring(0, lastBraceIndex) +
+              cleaned.substring(lastBraceIndex).replace(/\}/g, '').replace(/\]/, '}]');
           }
         }
-        
+
         try {
           parsed = JSON.parse(cleaned);
         } catch (secondError) {
           console.error('❌ [RecommendationV3Service] Failed to parse JSON after fixes:', secondError);
           console.error('Cleaned content (last 200 chars):', cleaned.substring(Math.max(0, cleaned.length - 200)));
-          
+
           // Last resort: try to manually extract array elements with improved parsing
           try {
             const elements: any[] = [];
-            
+
             // Strategy 1: Try to extract complete objects using a more sophisticated approach
             // Find all object starts (opening braces followed by quotes and "action")
             const objectStarts: number[] = [];
@@ -1878,7 +1964,7 @@ Respond only with the JSON array.`;
             while (true) {
               const actionIndex = cleaned.indexOf('"action"', searchIndex);
               if (actionIndex === -1) break;
-              
+
               // Find the opening brace before "action"
               let braceIndex = actionIndex;
               while (braceIndex >= 0 && cleaned[braceIndex] !== '{') {
@@ -1889,7 +1975,7 @@ Respond only with the JSON array.`;
               }
               searchIndex = actionIndex + 1;
             }
-            
+
             // For each object start, try to extract the complete object
             for (const startIndex of objectStarts) {
               try {
@@ -1898,25 +1984,25 @@ Respond only with the JSON array.`;
                 let inString = false;
                 let escapeNext = false;
                 let endIndex = -1; // Use -1 to indicate not found
-                
+
                 for (let i = startIndex; i < cleaned.length; i++) {
                   const char = cleaned[i];
-                  
+
                   if (escapeNext) {
                     escapeNext = false;
                     continue;
                   }
-                  
+
                   if (char === '\\') {
                     escapeNext = true;
                     continue;
                   }
-                  
+
                   if (char === '"' && !escapeNext) {
                     inString = !inString;
                     continue;
                   }
-                  
+
                   if (!inString) {
                     if (char === '{') {
                       depth++;
@@ -1929,7 +2015,7 @@ Respond only with the JSON array.`;
                     }
                   }
                 }
-                
+
                 if (endIndex > startIndex) {
                   const objectStr = cleaned.substring(startIndex, endIndex + 1);
                   try {
@@ -1967,7 +2053,7 @@ Respond only with the JSON array.`;
                   // Object is incomplete/truncated (no closing brace found), try to salvage it
                   const incompleteStr = cleaned.substring(startIndex);
                   let fixedStr = incompleteStr;
-                  
+
                   // Close any unterminated strings (handle cases like: "timeline": "2-4 we)
                   fixedStr = fixedStr.replace(/: "([^"]*)$/gm, ': "$1"');
                   // Remove trailing commas
@@ -1979,7 +2065,7 @@ Respond only with the JSON array.`;
                   if (missing > 0) {
                     fixedStr = fixedStr.trim() + '}'.repeat(missing);
                   }
-                  
+
                   try {
                     const element = JSON.parse(fixedStr);
                     if (element.action && element.citationSource) {
@@ -1993,7 +2079,7 @@ Respond only with the JSON array.`;
                 // Skip this object
               }
             }
-            
+
             // Strategy 2: If Strategy 1 didn't work, try regex-based extraction (fallback)
             if (elements.length === 0) {
               const elementMatches = cleaned.match(/\{[^{}]*"action"[^{}]*\}/g);
@@ -2010,7 +2096,7 @@ Respond only with the JSON array.`;
                 }
               }
             }
-            
+
             if (elements.length > 0) {
               console.log(`⚠️ [RecommendationV3Service] Manually extracted ${elements.length} recommendation(s) from malformed/truncated JSON`);
               parsed = elements;
@@ -2034,7 +2120,7 @@ Respond only with the JSON array.`;
       const recommendations: RecommendationV3[] = parsed.map((rec: any) => {
         // Find matching KPI
         const matchingKpi = kpis.find(k => k.kpiName === rec.kpi);
-        
+
         // Determine kpi: use rec.kpi if provided, otherwise match by focusArea, otherwise default
         let kpiValue = rec.kpi || matchingKpi?.kpiName;
         if (!kpiValue) {
@@ -2044,7 +2130,7 @@ Respond only with the JSON array.`;
           else if (focusArea === 'sentiment') kpiValue = 'Sentiment Score';
           else kpiValue = 'Visibility Index';
         }
-        
+
         return {
           action: String(rec.action || ''),
           citationSource: String(rec.citationSource || ''),
@@ -2099,7 +2185,7 @@ Respond only with the JSON array.`;
       const contextStartTime = Date.now();
       const context = await this.gatherBrandContext(brandId, customerId);
       console.log(`✅ [RecommendationV3Service] Context gathered in ${Date.now() - contextStartTime}ms`);
-      
+
       if (!context) {
         return {
           success: false,
@@ -2116,12 +2202,12 @@ Respond only with the JSON array.`;
       // Step 1.5: Fetch latest Domain Readiness audit
       console.log('📊 [RecommendationV3Service] Fetching Domain Readiness audit...');
       let latestAudit = await domainReadinessService.getLatestAudit(brandId);
-      
+
       // Check if audit is stale (older than 90 days)
       if (latestAudit) {
         const auditDate = new Date(latestAudit.timestamp);
         const daysSinceAudit = (Date.now() - auditDate.getTime()) / (1000 * 60 * 60 * 24);
-        
+
         if (daysSinceAudit > 90) {
           console.log(`⚠️ [RecommendationV3Service] Domain Readiness audit is stale (${Math.round(daysSinceAudit)} days old) - ignoring for filtering`);
           latestAudit = null; // Don't use stale audit
@@ -2155,6 +2241,18 @@ Respond only with the JSON array.`;
         }
       }
 
+      // Step 2.5: Inject Domain Readiness Recommendations
+      if (context.domainAuditResult) {
+        console.log('🔧 [RecommendationV3Service] Step 2.5: Generating Domain Readiness recommendations...');
+        const domainRecs = this.generateDomainReadinessRecommendations(context);
+        if (domainRecs.length > 0) {
+          console.log(`   ✅ Adding ${domainRecs.length} technical recommendations derived from Domain Audit`);
+          recommendations = [...domainRecs, ...recommendations];
+        } else {
+          console.log('   ✨ No critical domain readiness issues found to convert to recommendations.');
+        }
+      }
+
       // Unified post-processing (competitor safety, quality contract, deterministic ranking)
       console.log(`📊 [RecommendationV3Service] Before post-processing: ${recommendations.length} recommendation(s)`);
       recommendations = this.postProcessRecommendations(context, recommendations);
@@ -2163,16 +2261,16 @@ Respond only with the JSON array.`;
       // Step 2.5: Filter recommendations based on Domain Readiness
       if (latestAudit) {
         const beforeFilter = recommendations.length;
-        recommendations = recommendations.filter(rec => 
+        recommendations = recommendations.filter(rec =>
           !shouldFilterRecommendation(rec, latestAudit)
         );
         const filteredCount = beforeFilter - recommendations.length;
         if (filteredCount > 0) {
           console.log(`🚫 [RecommendationV3Service] Filtered ${filteredCount} recommendation(s) based on Domain Readiness audit`);
         }
-        
+
         // Enhance priority for recommendations addressing readiness gaps
-        recommendations = recommendations.map(rec => 
+        recommendations = recommendations.map(rec =>
           enhanceRecommendationWithReadiness(rec, latestAudit)
         );
       }
@@ -2307,12 +2405,12 @@ Respond only with the JSON array.`;
         nameVariations: new Set<string>(),
         baseDomains: new Set<string>()
       };
-      
+
       const { filtered: finalRecommendations, removed: finalRemoved } = filterCompetitorRecommendations(
         recommendations,
         exclusionList
       );
-      
+
       if (finalRemoved.length > 0) {
         console.error(`🚫 [RecommendationV3Service] Layer 2 final validation: Removed ${finalRemoved.length} recommendation(s) before database save`);
         finalRemoved.forEach(({ reason }) => {
@@ -2334,7 +2432,7 @@ Respond only with the JSON array.`;
         }
         finalForInsert = kept;
       }
-      
+
       if (finalForInsert.length === 0) {
         console.error('❌ [RecommendationV3Service] All recommendations were filtered out before database save');
         console.error(`   - Started with ${recommendations.length} recommendation(s)`);
@@ -2344,13 +2442,13 @@ Respond only with the JSON array.`;
         console.error(`   - Feature flags:`, flags);
         return null;
       }
-      
+
       console.log(`💾 [RecommendationV3Service] Saving ${finalForInsert.length} recommendation(s) to database (started with ${recommendations.length})`);
-      
+
       // Save recommendations (only the filtered ones)
       const recommendationsToInsert = finalForInsert.map((rec, index) => {
         const kpiId = rec.kpi ? kpiIdMap.get(rec.kpi) : null;
-        
+
         return {
           generation_id: generationId,
           brand_id: brandId,
@@ -2401,12 +2499,12 @@ Respond only with the JSON array.`;
             console.log(`✅ [RecommendationV3Service] Mapped ID ${insertedRecommendations[i].id} to recommendation ${i + 1}`);
           }
         }
-        
+
         // Also update the original recommendations array for return value
         // Find matching recommendations and update their IDs
         finalForInsert.forEach((finalRec, idx) => {
-          const originalIdx = recommendations.findIndex(r => 
-            r.action === finalRec.action && 
+          const originalIdx = recommendations.findIndex(r =>
+            r.action === finalRec.action &&
             r.citationSource === finalRec.citationSource
           );
           if (originalIdx >= 0 && insertedRecommendations[idx]?.id) {

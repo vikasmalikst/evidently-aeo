@@ -21,7 +21,7 @@ const getApiBaseUrl = (): string => {
   }
 
   // Default fallback to localhost for development
-  return 'http://localhost:3000/api';
+  return 'http://localhost:4000/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -209,7 +209,9 @@ class ApiClient {
 
       // Handle network errors (server not running, CORS, etc.)
       if (error instanceof TypeError && error.message.includes('fetch')) {
-        const port = this.baseUrl.includes('3001') ? '3001' : '3000';
+        // Extract port from baseUrl, default to 4000
+        const portMatch = this.baseUrl.match(/:(\d+)/);
+        const port = portMatch ? portMatch[1] : '4000';
         const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
         console.error(`❌ Network error: ${endpoint} failed after ${errorDuration.toFixed(2)}ms`);
         throw new Error(

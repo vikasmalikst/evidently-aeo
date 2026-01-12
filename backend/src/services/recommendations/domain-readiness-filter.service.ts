@@ -23,26 +23,31 @@ import { RecommendationV3 } from './recommendation-v3.service';
  */
 const READINESS_TO_RECOMMENDATION_MAP: Record<string, string[]> = {
   // Technical Crawlability Tests
-  'XML Sitemap': ['sitemap', 'xml sitemap', 'sitemap.xml', 'sitemap optimization'],
-  'Robots.txt': ['robots.txt', 'robots', 'crawlability', 'crawl', 'bot access'],
+  'XML Sitemap': ['sitemap', 'xml sitemap', 'sitemap.xml'],
+  'Robots.txt': ['robots.txt', 'bot access'], // Removed 'crawlability' to avoid false positives
   'LLMs.txt': ['llms.txt', 'llm', 'ai bot access', 'ai crawler'],
   'Canonical URLs': ['canonical', 'canonical url', 'duplicate content', 'canonical tag'],
-  'Basic Crawlability': ['crawlability', 'crawl', 'index coverage', 'indexing'],
-  
+  'Basic Crawlability': ['index coverage', 'indexing', 'noindex'],
+  'HTTP Status Codes': ['http status', '403', '404', '500', 'status code', 'redirect', 'broken link'],
+  'SSL/HTTPS': ['ssl', 'https', 'security', 'certificate'],
+
   // Content Quality Tests
   'FAQ Content': ['faq', 'frequently asked', 'q&a', 'answer-first', 'questions'],
   'Content Freshness': ['freshness', 'publish date', 'content date', 'recent content', 'updated'],
   'Brand Consistency': ['brand name', 'brand consistency', 'branding', 'brand mention'],
-  
+  'Content Relevance': ['relevance', 'intent', 'depth'],
+
   // Semantic Structure Tests
   'Schema Markup': ['schema', 'schema.org', 'structured data', 'json-ld', 'microdata'],
   'Heading Hierarchy': ['heading', 'h1', 'h2', 'h3', 'headings', 'heading structure'],
   'Semantic HTML': ['semantic html', 'html5', 'article', 'section', 'semantic elements'],
-  
+
   // Accessibility & Brand Tests
   'Image Alt Text': ['alt text', 'image alt', 'accessibility', 'alt attribute'],
   'Metadata Quality': ['metadata', 'meta description', 'title tag', 'meta tags'],
   'Open Graph Tags': ['open graph', 'og:', 'social sharing', 'og:title', 'og:description'],
+  'Mobile Friendliness': ['mobile', 'responsive', 'viewport'],
+  'Page Speed': ['speed', 'load time', 'performance', 'lcp', 'cls', 'fid'],
 };
 
 // ============================================================================
@@ -66,22 +71,22 @@ export function shouldFilterRecommendation(
   }
 
   const actionLower = recommendation.action.toLowerCase();
-  
+
   // Only filter recommendations for "owned-site" (technical fixes)
   // External sources (directories, partnerships) shouldn't be filtered
   if (recommendation.citationSource !== 'owned-site') {
     return false;
   }
-  
+
   // Check each test category for keyword matches
   for (const [testName, keywords] of Object.entries(READINESS_TO_RECOMMENDATION_MAP)) {
     // Check if recommendation action mentions any keyword
     const matchesKeyword = keywords.some(keyword => actionLower.includes(keyword));
-    
+
     if (matchesKeyword) {
       // Find the corresponding test result in the audit
       const testResult = findTestResult(auditResult, testName);
-      
+
       if (testResult) {
         // Filter if test PASSED (score >= 80) or is WARNING with good score (>= 60)
         // Only keep recommendations if test FAILED (score < 60) or is critical warning
@@ -118,15 +123,15 @@ function findTestResult(auditResult: AeoAuditResult, testName: string): TestResu
   for (const category of categories) {
     // Try exact match first
     let test = category.tests.find(t => t.name === testName);
-    
+
     // Try partial match if exact match fails
     if (!test) {
-      test = category.tests.find(t => 
+      test = category.tests.find(t =>
         t.name.toLowerCase().includes(testName.toLowerCase()) ||
         testName.toLowerCase().includes(t.name.toLowerCase())
       );
     }
-    
+
     if (test) return test;
   }
 
@@ -242,7 +247,7 @@ export function enhanceRecommendationWithReadiness(
         // This recommendation addresses a failed test - boost priority
         priorityBoost += 10;
         addressedTests.push(test.name);
-        
+
         // Extra boost for critical failures (score < 40)
         if (test.score < 40) {
           priorityBoost += 5;

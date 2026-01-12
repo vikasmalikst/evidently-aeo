@@ -976,10 +976,15 @@ ${templatesJson}`;
       });
     };
 
+    // Helper to check for critical failures regardless of score
+    const hasCriticalFailures = (tests: TestResult[]) => {
+      return tests.some(t => t.score === 0 || t.status === 'fail');
+    };
+
     // 1. Technical Crawlability
-    if (audit.scoreBreakdown.technicalCrawlability < WARNING_SCORE_THRESHOLD) {
-      const tests = audit.detailedResults.technicalCrawlability.tests;
-      mapTestsToRecs('technicalCrawlability', 'Technical Crawlability', tests, 'Technical Health');
+    const techTests = audit.detailedResults.technicalCrawlability.tests;
+    if (audit.scoreBreakdown.technicalCrawlability < WARNING_SCORE_THRESHOLD || hasCriticalFailures(techTests)) {
+      mapTestsToRecs('technicalCrawlability', 'Technical Crawlability', techTests, 'Technical Health');
     }
 
     // 2. AEO Optimization (High Priority)
@@ -988,9 +993,9 @@ ${templatesJson}`;
     mapTestsToRecs('aeoOptimization', 'AEO Optimization', aeoTests, 'Technical Health');
 
     // 3. Schema/Semantic Structure
-    if (audit.scoreBreakdown.semanticStructure < WARNING_SCORE_THRESHOLD) {
-      const tests = audit.detailedResults.semanticStructure.tests;
-      mapTestsToRecs('semanticStructure', 'Semantic Structure', tests, 'Technical Health');
+    const semanticTests = audit.detailedResults.semanticStructure.tests;
+    if (audit.scoreBreakdown.semanticStructure < WARNING_SCORE_THRESHOLD || hasCriticalFailures(semanticTests)) {
+      mapTestsToRecs('semanticStructure', 'Semantic Structure', semanticTests, 'Technical Health');
     }
 
     // Limit to top 3 technical recommendations to not overwhelm the user
@@ -2287,8 +2292,23 @@ Respond only with the JSON array.`;
         };
       }
 
-      // Step 3: Save to database (no KPIs) - this will add IDs to recommendations
-      const generationId = await this.saveToDatabase(brandId, customerId, [], recommendations, context);
+      // Step 3: Prepare KPIs (Inject "Technical Health" if needed)
+      const kpis: IdentifiedKPI[] = [];
+      const hasTechnicalRecs = recommendations.some(r => r.kpi === 'Technical Health');
+
+      if (hasTechnicalRecs) {
+        console.log('🔧 [RecommendationV3Service] Injecting "Technical Health" KPI for Domain Readiness recommendations');
+        kpis.push({
+          kpiName: 'Technical Health',
+          kpiDescription: 'Technical foundation and site health based on Domain Readiness Audit',
+          displayOrder: 0,
+          currentValue: context.domainAuditResult?.overallScore || 0,
+          targetValue: 100
+        });
+      }
+
+      // Step 3b: Save to database (now passing synthesized KPIs) - this will add IDs to recommendations
+      const generationId = await this.saveToDatabase(brandId, customerId, kpis, recommendations, context);
 
       if (!generationId) {
         return {
@@ -2299,23 +2319,19 @@ Respond only with the JSON array.`;
         };
       }
 
-      // Verify all recommendations have IDs before returning
-      const recommendationsWithIds = recommendations.filter(rec => rec.id);
-      if (recommendationsWithIds.length !== recommendations.length) {
-        console.warn(`⚠️ [RecommendationV3Service] ${recommendations.length - recommendationsWithIds.length} recommendations missing IDs`);
-      }
-      console.log(`✅ [RecommendationV3Service] Returning ${recommendationsWithIds.length} recommendations with IDs`);
-
       return {
         success: true,
-        generationId,
+        kpis: kpis,
+        recommendations: recommendations,
+        message: 'Recommendations generated successfully.',
+        generationId: generationId,
         dataMaturity: context._dataMaturity,
-        kpis: [],
-        recommendations: recommendationsWithIds, // Only return recommendations with IDs
         generatedAt: new Date().toISOString(),
-        brandId: context.brandId,
+        brandId: brandId,
         brandName: context.brandName
       };
+
+
 
     } catch (error) {
       console.error('❌ [RecommendationV3Service] Error:', error);

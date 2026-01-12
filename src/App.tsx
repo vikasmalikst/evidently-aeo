@@ -24,6 +24,7 @@ import { DomainReadinessPage } from './pages/DomainReadiness/DomainReadinessPage
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
+import LandingPage from './pages/LandingPage';
 
 function DefaultRedirect() {
   if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
@@ -264,7 +265,11 @@ function App() {
         />
         <Route 
           path="/" 
-          element={<DefaultRedirect />}
+          element={<LandingPage />} 
+        />
+        <Route 
+          path="/app" 
+          element={<DefaultRedirect />} 
         />
       </Routes>
     </BrowserRouter>

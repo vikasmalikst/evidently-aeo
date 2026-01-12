@@ -79,18 +79,18 @@ export const VisibilityTable = memo(({
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden border border-[var(--border-default)] rounded-b-lg">
-      <div className="overflow-y-auto flex-1">
+      <div className="overflow-auto flex-1">
         <table className="w-full border-collapse text-sm bg-white">
-          <thead className="sticky top-0 z-10">
+          <thead className="sticky top-0 z-10 w-fit">
             <tr>
-              <th className="px-3 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold border-b border-[var(--border-default)] w-[50px] text-center">
+              <th className="px-3 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold border-b border-[var(--border-default)] w-[50px] text-center whitespace-nowrap">
                 <input type="checkbox" disabled />
               </th>
-              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] min-w-[200px]">
+              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] min-w-[200px] whitespace-nowrap">
                 {activeTab === 'brand' ? 'LLM Model' : 'Brand'}
               </th>
               <th
-                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[200px]"
+                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[200px] whitespace-nowrap"
                 onClick={() => handleSort('score')}
               >
                 <div className="flex items-center gap-2">
@@ -101,7 +101,7 @@ export const VisibilityTable = memo(({
                 </div>
               </th>
               <th
-                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[200px]"
+                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[200px] whitespace-nowrap"
                 onClick={() => handleSort('shareOfSearch')}
               >
                 <div className="flex items-center gap-2">
@@ -111,11 +111,11 @@ export const VisibilityTable = memo(({
                   </span>
                 </div>
               </th>
-              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] min-w-[150px]">
+              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] min-w-[150px] whitespace-nowrap">
                 Brand Presence
               </th>
               <th
-                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px]"
+                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px] whitespace-nowrap"
                 onClick={() => handleSort('sentiment')}
               >
                 <div className="flex items-center gap-2">
@@ -125,7 +125,7 @@ export const VisibilityTable = memo(({
                   </span>
                 </div>
               </th>
-              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)]">
+              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] whitespace-nowrap">
                 Top Topic
               </th>
             </tr>
@@ -145,7 +145,7 @@ export const VisibilityTable = memo(({
                     }`}
                     onClick={() => handleRowClick(model.id)}
                   >
-                    <td className="px-3 py-3 border-b border-[var(--border-default)] text-center">
+                    <td className="px-3 py-3 border-b border-[var(--border-default)] text-center whitespace-nowrap">
                       <input
                         type="checkbox"
                         checked={selected}
@@ -153,7 +153,7 @@ export const VisibilityTable = memo(({
                         onClick={(e) => e.stopPropagation()}
                       />
                     </td>
-                    <td className="px-4 py-3 border-b border-[var(--border-default)]">
+                    <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <div className="flex items-center gap-3">
                         {activeTab === 'brand' ? getLLMIcon(model.name) : (
                           <BrandIcon brandName={model.name} />
@@ -164,7 +164,7 @@ export const VisibilityTable = memo(({
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 border-b border-[var(--border-default)]">
+                    <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-[var(--text-body)]">
                           {model.score}
@@ -181,7 +181,7 @@ export const VisibilityTable = memo(({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 border-b border-[var(--border-default)]">
+                    <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-[var(--text-body)]">
                           {model.shareOfSearch}%
@@ -198,12 +198,12 @@ export const VisibilityTable = memo(({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 border-b border-[var(--border-default)]">
+                    <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <span className="text-sm font-semibold text-[var(--text-body)]">
                         {model.brandPresencePercentage > 0 ? `${model.brandPresencePercentage}%` : '—'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 border-b border-[var(--border-default)]">
+                    <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       {model.sentiment !== null && model.sentiment !== undefined ? (
                         <span className="text-sm font-semibold text-[var(--text-body)]">
                           {model.sentiment.toFixed(1).replace(/\.0$/, '')}
@@ -212,7 +212,7 @@ export const VisibilityTable = memo(({
                         <span className="text-sm text-[var(--text-caption)]">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 border-b border-[var(--border-default)]">
+                    <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

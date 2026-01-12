@@ -27,7 +27,7 @@ for (const envVar of requiredEnvVars) {
 // Environment configuration
 export const config = {
   // Server
-  port: parseInt(process.env['PORT'] || '3000', 10),
+  port: parseInt(process.env['PORT'] || '4000', 10),
   nodeEnv: process.env['NODE_ENV'] || 'development',
   
   // Supabase
@@ -88,7 +88,7 @@ export const config = {
   },
   
   // Site
-  siteUrl: process.env['SITE_URL'] || 'http://localhost:3000',
+  siteUrl: process.env['SITE_URL'] || 'http://localhost:4000',
   
   // Development
   bypassAuthInDev: process.env['BYPASS_AUTH_IN_DEV'] === 'true' && process.env['NODE_ENV'] === 'development',

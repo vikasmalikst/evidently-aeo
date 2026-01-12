@@ -1,10 +1,6 @@
 @import './styles/tokens.css';
-@import './styles/promptSelection.css';
-@import './styles/onboardingModal.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import './styles/landing.css';
+@import "tailwindcss";
 
 @layer base {
   body {
@@ -28,7 +24,7 @@
 
   .text-fade-in {
     transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .w-8 {
@@ -48,6 +44,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -59,10 +56,12 @@
     transform: translate3d(0, 0, 0);
     opacity: 0.55;
   }
+
   50% {
     transform: translate3d(12px, -10px, 0);
     opacity: 0.95;
   }
+
   100% {
     transform: translate3d(0, 0, 0);
     opacity: 0.55;

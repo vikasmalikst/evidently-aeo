@@ -83,6 +83,10 @@ deploy_backend() {
 deploy_frontend() {
     print_info "Deploying frontend..."
     
+    # Stop legacy landing page process if it exists
+    pm2 stop landing-page 2>/dev/null || true
+    pm2 delete landing-page 2>/dev/null || true
+    
     cd "$PROJECT_DIR"
     
     # Check if .env file exists

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { ArrowRight } from "lucide-react"
 import { BookDemoModal } from "@/components/landing/book-demo-modal"
 import { HeroBackground } from "@/components/landing/hero-background"
+import { Link } from "react-router-dom"
 
 const fadeInUp = {
   hidden: { opacity: 0, y: 20 },
@@ -85,6 +86,8 @@ export function HeroSection() {
             variants={fadeInUp}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
+            <Link 
+             to="/auth" >
             <Button
               size="lg"
               className="rounded-full px-10 py-7 text-lg bg-cyan-500 text-white hover:bg-cyan-600 transition-all hover:scale-105 shadow-[0_0_40px_-10px_rgba(6,182,212,0.5)] border border-cyan-400/20"
@@ -92,6 +95,7 @@ export function HeroSection() {
               Start Free Trial
               <ArrowRight className="ml-2 w-5 h-5" />
             </Button>
+            </Link>
             <Button
               size="lg"
               variant="outline"

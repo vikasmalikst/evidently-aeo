@@ -12,12 +12,14 @@ import { ScrollToTop } from '../components/landing/scroll-to-top';
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen bg-background font-sans antialiased">
+    <main className="min-h-screen bg-background font-sans antialiased landing-scope">
       <ScrollToTop />
       <Navigation />
       <HeroSection />
       <FullLoopStrip />
-      <FeaturesStickyScroll />
+      <section id="features">
+        <FeaturesStickyScroll />
+      </section>
       <WhyDifferent />
       <TrustSection />
       {/* <HeroFeature1 /> */}
@@ -25,8 +27,12 @@ export default function LandingPage() {
       {/* <FeatureGrid /> */}
       {/* <HowItWorks /> */}
       {/* <CaseStudies /> */}
-      <PricingSection />
-      <FAQSection />
+      <section id="pricing">
+        <PricingSection />
+      </section>
+      <section id="faq">
+        <FAQSection />
+      </section>
       <CTAStrip />
       <Footer />
     </main>

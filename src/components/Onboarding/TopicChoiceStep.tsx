@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { IconDownload, IconUpload, IconSparkles, IconInfoCircle, IconChevronRight } from '@tabler/icons-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Download, Upload, Sparkles, Info, ArrowRight, FileText, Zap } from 'lucide-react';
 import type { ReviewRow } from './ReviewStep';
 
 interface TopicChoiceStepProps {
@@ -157,54 +158,92 @@ export const TopicChoiceStep: React.FC<TopicChoiceStepProps> = ({ onChoice, onBa
   };
 
   return (
-    <div className="topic-choice-step h-full flex flex-col">
-      <div className="onboarding-modal-body p-6 flex-1 flex flex-col justify-between">
-        <div className="text-center mb-6">
-          <h3 className="text-xl font-semibold text-[var(--text-headings)] mb-2">
-            How would you like to set up your Topics & Prompts?
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto w-full">
-          {/* Option 1: AI Recommendations */}
-          <button
-            onClick={() => onChoice('ai')}
-            className="flex flex-col items-center p-5 rounded-xl border-2 border-[var(--border-default)] hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/5 transition-all text-center group"
+    <motion.div 
+      className="w-full"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      {/* Premium Card Container */}
+      <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-8 md:p-10">
+        
+        {/* Header */}
+        <motion.div 
+          className="text-center mb-10"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <motion.div
+            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-400 to-cyan-600 shadow-lg shadow-cyan-200 mb-4"
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
           >
-            <div className="w-12 h-12 rounded-full bg-[var(--accent-primary)]/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <IconSparkles size={24} className="text-[var(--accent-primary)]" />
+            <FileText size={32} className="text-white" />
+          </motion.div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Configure Topics & Prompts</h1>
+          <p className="text-gray-500 max-w-md mx-auto">
+            How would you like to set up your tracking?
+          </p>
+        </motion.div>
+
+        {/* Options Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+          
+          {/* Option 1: AI Recommendations */}
+          <motion.button
+            onClick={() => onChoice('ai')}
+            whileHover={{ scale: 1.02, y: -4 }}
+            whileTap={{ scale: 0.98 }}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+            className="group relative flex flex-col items-center p-8 rounded-2xl border-2 border-gray-200 hover:border-cyan-400 hover:shadow-xl transition-all text-center bg-white"
+          >
+            {/* Recommended Badge */}
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-xs font-bold rounded-full shadow-md">
+              Recommended
             </div>
-            <h4 className="text-lg font-bold text-[var(--text-headings)] mb-1">AI Recommendations</h4>
-            <p className="text-xs text-[var(--text-caption)] mb-4">
+
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-100 to-blue-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <Sparkles size={32} className="text-cyan-600" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">AI Recommendations</h3>
+            <p className="text-sm text-gray-500 mb-6">
               Let our AI analyze your brand and suggest the most relevant topics and prompts automatically.
             </p>
             <div className="mt-auto w-full">
-              <div className="w-full py-2 rounded-lg bg-[var(--accent-primary)] text-white font-semibold text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-1">
-                Get Started <IconChevronRight size={14} />
+              <div className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-semibold flex items-center justify-center gap-2 shadow-lg shadow-cyan-200 group-hover:shadow-xl transition-shadow">
+                Get Started <ArrowRight size={18} />
               </div>
             </div>
-          </button>
+          </motion.button>
 
           {/* Option 2: Upload CSV */}
-          <div className="flex flex-col items-center p-5 rounded-xl border-2 border-[var(--border-default)] hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/5 transition-all text-center group relative">
-            <div className="w-12 h-12 rounded-full bg-[var(--success500)]/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <IconUpload size={24} className="text-[var(--success500)]" />
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3 }}
+            className="group relative flex flex-col items-center p-8 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:shadow-xl transition-all text-center bg-white"
+          >
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-100 to-green-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <Upload size={32} className="text-emerald-600" />
             </div>
-            <h4 className="text-lg font-bold text-[var(--text-headings)] mb-1">Upload CSV</h4>
-            <p className="text-xs text-[var(--text-caption)] mb-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Upload CSV</h3>
+            <p className="text-sm text-gray-500 mb-6">
               Import your own list of topics and prompts using our CSV template.
             </p>
             
-            <div className="mt-auto flex flex-col gap-2 w-full">
+            <div className="mt-auto flex flex-col gap-3 w-full">
               <button
                 onClick={handleDownloadTemplate}
-                className="flex items-center justify-center gap-1 text-[var(--accent-primary)] hover:underline text-[10px] font-medium"
+                className="flex items-center justify-center gap-2 text-cyan-600 hover:text-cyan-700 text-sm font-medium transition-colors"
               >
-                <IconDownload size={12} /> Download Sample Template
+                <Download size={16} />
+                Download Sample Template
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full py-2 rounded-lg bg-[var(--accent-primary)] text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+                className="w-full py-3 rounded-xl bg-gray-900 text-white font-semibold hover:bg-gray-800 transition-colors"
               >
                 Choose File
               </button>
@@ -216,42 +255,58 @@ export const TopicChoiceStep: React.FC<TopicChoiceStepProps> = ({ onChoice, onBa
               onChange={handleFileUpload}
               className="hidden"
             />
-          </div>
+          </motion.div>
         </div>
 
-        {error && (
-          <div className="mt-4 p-2 rounded-lg bg-red-50 border border-red-100 text-red-600 text-xs text-center">
-            {error}
-          </div>
-        )}
+        {/* Error Message */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mt-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm text-center"
+            >
+              {error}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        <div className="mt-8">
-          <div className="flex flex-col gap-3 text-sm text-[var(--text-caption)] max-w-2xl mx-auto bg-[var(--bg-secondary)] p-4 rounded-xl border border-[var(--border-default)]">
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-[var(--accent-primary)]/10 flex items-center justify-center flex-shrink-0">
-                <IconInfoCircle size={14} className="text-[var(--accent-primary)]" />
+        {/* Info Section */}
+        <motion.div 
+          className="mt-10 max-w-2xl mx-auto"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <div className="bg-gradient-to-r from-gray-50 to-cyan-50/30 rounded-2xl p-6 border border-gray-100">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-100 flex items-center justify-center flex-shrink-0">
+                  <Zap size={20} className="text-cyan-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm mb-1">Topics</p>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Key areas of interest for your brand (e.g., "Pricing", "Features").
+                  </p>
+                </div>
               </div>
-              <div className="text-left">
-                <p className="font-bold text-[var(--text-body)] text-xs mb-0.5">Topics</p>
-                <p className="leading-tight text-[11px]">
-                  Key areas of interest for your brand (e.g., "Pricing", "Features").
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3 border-t border-[var(--border-default)] pt-3">
-              <div className="w-6 h-6 rounded-full bg-[var(--accent-primary)]/10 flex items-center justify-center flex-shrink-0">
-                <IconInfoCircle size={14} className="text-[var(--accent-primary)]" />
-              </div>
-              <div className="text-left">
-                <p className="font-bold text-[var(--text-body)] text-xs mb-0.5">Prompts</p>
-                <p className="leading-tight text-[11px]">
-                  Specific questions potential customers likely ask LLMs while searching for your brand.
-                </p>
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                  <Info size={20} className="text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm mb-1">Prompts</p>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Specific questions customers likely ask AI while searching for your brand.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };

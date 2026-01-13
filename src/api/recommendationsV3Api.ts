@@ -36,7 +36,7 @@ export interface RecommendationV3 {
   effort: 'Low' | 'Medium' | 'High';
   kpiId?: string;
   kpi?: string;
-  
+
   // Additional fields
   reason?: string;
   explanation?: string;
@@ -51,7 +51,7 @@ export interface RecommendationV3 {
   expectedBoost?: string;
   timeline?: string;
   confidence?: number;
-  
+
   // Workflow flags
   isApproved?: boolean;
   isContentGenerated?: boolean;
@@ -60,6 +60,10 @@ export interface RecommendationV3 {
   kpiBeforeValue?: number;
   kpiAfterValue?: number;
   reviewStatus?: 'pending_review' | 'approved' | 'rejected';
+
+  // Source tracking
+  source?: 'domain_audit' | 'ai_generated';
+  howToFix?: string[];  // Step-by-step fix instructions (for domain audit recs)
 }
 
 /**
@@ -186,11 +190,11 @@ export async function generateRecommendationsV3(
       return data;
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
-      
+
       // Check if it's a timeout/abort error
-      if (timeoutController.signal.aborted || fetchError.name === 'AbortError' || 
-          fetchError.message?.includes('timeout') || fetchError.message?.includes('timed out') ||
-          fetchError.message?.includes('aborted')) {
+      if (timeoutController.signal.aborted || fetchError.name === 'AbortError' ||
+        fetchError.message?.includes('timeout') || fetchError.message?.includes('timed out') ||
+        fetchError.message?.includes('aborted')) {
         console.warn('⚠️ Generate request timed out after 60s. Backend may have completed.');
         // Return a response that indicates we should try to fetch by generationId
         return {
@@ -249,7 +253,7 @@ export async function getRecommendationsByStepV3(
     }
     const queryString = params.toString();
     const url = `/recommendations-v3/${generationId}/steps/${step}${queryString ? `?${queryString}` : ''}`;
-    
+
     // apiClient.get returns the parsed JSON response directly, not wrapped in .data
     const response = await apiClient.get<GetByStepV3Response>(url);
     // Response is already the parsed JSON object with { success, data, error }
@@ -332,10 +336,10 @@ export async function generateContentBulkV3(
       return data;
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
-      
+
       // Check if it's a timeout/abort error
-      if (timeoutController.signal.aborted || fetchError.name === 'AbortError' || 
-          fetchError.message?.includes('timeout') || fetchError.message?.includes('timed out')) {
+      if (timeoutController.signal.aborted || fetchError.name === 'AbortError' ||
+        fetchError.message?.includes('timeout') || fetchError.message?.includes('timed out')) {
         console.warn('⚠️ Bulk content generation timed out after 120s. Backend may have completed.');
         // Return a response indicating timeout but don't fail completely
         return {
@@ -456,10 +460,10 @@ export async function generateContentV3(
       return data;
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
-      
+
       // Check if it's a timeout/abort error
-      if (timeoutController.signal.aborted || fetchError.name === 'AbortError' || 
-          fetchError.message?.includes('timeout') || fetchError.message?.includes('timed out')) {
+      if (timeoutController.signal.aborted || fetchError.name === 'AbortError' ||
+        fetchError.message?.includes('timeout') || fetchError.message?.includes('timed out')) {
         console.warn('⚠️ Content generation timed out after 180s.');
         return {
           success: false,

@@ -1108,13 +1108,14 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
       return;
     }
 
-    // Fetch counts in parallel to reduce endpoint latency (important for polling)
+    // Fetch counts and statuses in parallel
     // IMPORTANT: Count unique query_ids, not total collector_results
-    // (One query can have multiple collector_results - one per collector type)
     const [
       { count: totalQueries, error: totalError },
       { data: collectedResults, error: collectedError },
       { data: scoredResults, error: scoredError },
+      { data: readinessAudits, error: readinessError },
+      { data: recommendations, error: recommendationsError }
     ] = await Promise.all([
       supabaseAdmin
         .from('generated_queries')
@@ -1135,23 +1136,35 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         .eq('customer_id', customerId)
         .eq('scoring_status', 'completed')
         .not('query_id', 'is', null),
+      // Check for most recent domain readiness audit
+      supabaseAdmin
+        .from('domain_readiness_audits')
+        .select('created_at')
+        .eq('brand_id', brandId)
+        .order('created_at', { ascending: false })
+        .limit(1),
+      // Check for most recent recommendation generation
+      supabaseAdmin
+        .from('recommendation_generations')
+        .select('generated_at')
+        .eq('brand_id', brandId)
+        .order('generated_at', { ascending: false })
+        .limit(1)
     ]);
 
-    if (totalError || collectedError || scoredError) {
+    if (totalError || collectedError || scoredError || readinessError || recommendationsError) {
       console.error('Error fetching onboarding progress counts:', {
         totalError,
         collectedError,
         scoredError,
+        readinessError, // Log new errors
+        recommendationsError,
         brandId,
         customerId,
       });
       res.status(500).json({
         success: false,
-        error:
-          totalError?.message ||
-          collectedError?.message ||
-          scoredError?.message ||
-          'Failed to fetch progress',
+        error: 'Failed to fetch progress details', // Generic message
       });
       return;
     }
@@ -1163,8 +1176,6 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
     const total = totalQueries || 0;
 
     // Count unique query_ids (not total collector_results)
-    // This prevents showing "8/6" when one query has multiple collector results
-    // (e.g., 6 queries × 3 collectors = 18 collector_results, but should show 6/6)
     const uniqueCollectedQueryIds = new Set(
       collectedData
         .map((r: any) => r.query_id)
@@ -1193,24 +1204,52 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
       else scoringStatus = 'active';
     }
 
+    // New Stages Analysis
+    const lastAudit = readinessAudits && readinessAudits.length > 0 ? readinessAudits[0] : null;
+    let readinessStatus: 'pending' | 'active' | 'completed' = 'pending';
+    if (lastAudit) {
+      // Assume existence means completed unless we track explicit status columns, 
+      // usually availability of rows means it ran.
+      readinessStatus = 'completed';
+    } else if (scoringStatus === 'completed') {
+      // If scoring done but no audit, it's pending (ready to run)
+      // or could be considered 'active' if we had a job running state.
+      // For simple UI logic: if previous step done, this is 'pending' (waiting for trigger)
+      // or 'active' if user clicked. 
+      // Let's call it 'pending' until a row appears.
+      readinessStatus = 'pending';
+    }
+
+    const lastRecommendation = recommendations && recommendations.length > 0 ? recommendations[0] : null;
+    let recommendationStatus: 'pending' | 'active' | 'completed' = 'pending';
+    if (lastRecommendation) {
+      recommendationStatus = 'completed';
+    }
+
     let finalizationStatus: 'pending' | 'active' | 'completed' = 'pending';
-    if (collectionStatus === 'completed' && scoringStatus === 'completed') {
-      finalizationStatus = 'active';
+    if (collectionStatus === 'completed' && scoringStatus === 'completed' && readinessStatus === 'completed' && recommendationStatus === 'completed') {
+      finalizationStatus = 'active'; // Or completed? Keeping logic similar to before
     }
 
     // Determine current operation (backward compatibility + high level state)
-    let currentOperation: 'collecting' | 'scoring' | 'finalizing' = 'collecting';
+    let currentOperation: 'collecting' | 'scoring' | 'finalizing' | 'domain_readiness' | 'recommendations' = 'collecting';
     if (collectionStatus === 'completed') {
       if (scoringStatus === 'completed') {
-        currentOperation = 'finalizing';
+        if (readinessStatus === 'completed') {
+          if (recommendationStatus === 'completed') {
+            currentOperation = 'finalizing';
+          } else {
+            currentOperation = 'recommendations';
+          }
+        } else {
+          currentOperation = 'domain_readiness';
+        }
       } else {
         currentOperation = 'scoring';
       }
     }
 
-    // Check if all scoring types are complete (more accurate than just scored > 0)
-    // For backward compatibility, we check if all results have been scored
-    // This is a simplified check - ideally we'd check each scoring type separately
+    // Check if all scoring types are complete
     const allScoringComplete = total > 0 && scored >= total;
 
     res.json({
@@ -1227,6 +1266,14 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
             completed: scored,
             status: scoringStatus
           },
+          domain_readiness: {
+            status: readinessStatus,
+            last_run: lastAudit ? lastAudit.created_at : null
+          },
+          recommendations: {
+            status: recommendationStatus,
+            last_run: lastRecommendation ? lastRecommendation.generated_at : null
+          },
           finalization: {
             status: finalizationStatus
           }
@@ -1234,8 +1281,6 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         // Keep backward compatibility
         queries: { total: total, completed: collected },
         scoring: {
-          // Only mark as complete if ALL results are scored (scored >= total)
-          // This prevents premature completion detection
           positions: allScoringComplete,
           sentiments: allScoringComplete,
           citations: allScoringComplete

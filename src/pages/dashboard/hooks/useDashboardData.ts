@@ -25,13 +25,15 @@ export const useDashboardData = () => {
     stages?: {
       collection: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
       scoring: { total: number; completed: number; status: 'pending' | 'active' | 'completed' };
+      domain_readiness: { status: 'pending' | 'active' | 'completed'; last_run: string | null };
+      recommendations: { status: 'pending' | 'active' | 'completed'; last_run: string | null };
       finalization: { status: 'pending' | 'active' | 'completed' };
     };
     queries: { total: number; completed: number };
     scoring: { positions: boolean; sentiments: boolean; citations: boolean };
-    currentOperation: 'collecting' | 'scoring' | 'finalizing';
+    currentOperation: 'collecting' | 'scoring' | 'finalizing' | 'domain_readiness' | 'recommendations';
   } | null>(null);
-  
+
   const {
     brands,
     isLoading: brandsLoading,
@@ -69,11 +71,11 @@ export const useDashboardData = () => {
     }
 
     const locationState = location.state as { autoSelectBrandId?: string; fromOnboarding?: boolean } | null;
-    
+
     if (locationState?.autoSelectBrandId && locationState.fromOnboarding) {
       const brandToSelect = locationState.autoSelectBrandId;
       const brandExists = brands.some(brand => brand.id === brandToSelect);
-      
+
       if (!brandExists && !hasRetriedBrandLoad) {
         console.log(`[useDashboardData] Brand ${brandToSelect} not found in cache, reloading brands list...`);
         setHasRetriedBrandLoad(true);
@@ -139,12 +141,12 @@ export const useDashboardData = () => {
     if (brandsLoading) {
       return null;
     }
-    
+
     // Ensure we have a valid brand selected that exists in the brands list
     if (!selectedBrandId || !startDate || !endDate) {
       return null;
     }
-    
+
     // Additional safety check: ensure the selected brand actually exists in the brands list
     // This prevents trying to fetch data for a deleted brand
     const brandExists = brands.some(b => b.id === selectedBrandId);
@@ -152,7 +154,7 @@ export const useDashboardData = () => {
       console.warn(`[useDashboardData] Selected brand ${selectedBrandId} not found in brands list`);
       return null;
     }
-    
+
     const params = new URLSearchParams({
       startDate,
       endDate,
@@ -180,19 +182,19 @@ export const useDashboardData = () => {
     dashboardEndpoint,
     {},
     { requiresAuth: true },
-    { 
-      enabled: !!dashboardEndpoint, 
+    {
+      enabled: !!dashboardEndpoint,
       // Use more frequent refresh when data collection is in progress (15 seconds) or normal refresh (30 seconds)
       // This ensures dashboard updates quickly when async data arrives
       refetchInterval: isDataCollectionInProgress ? 15000 : 30000, // 15 seconds during collection, 30 seconds normally
       refetchOnMount: true
     }
   );
-  
+
   // Check for recent data updates and trigger refresh when new data is detected
   useEffect(() => {
     if (!selectedBrandId || !dashboardEndpoint) return;
-    
+
     const checkForNewData = async () => {
       try {
         // Check if there are collector_results with raw_answer updated in the last 2 minutes
@@ -203,7 +205,7 @@ export const useDashboardData = () => {
           {},
           { requiresAuth: true }
         );
-        
+
         if (response?.success && response.data?.hasUpdates) {
           // Trigger immediate refresh when new data is detected
           refetchDashboard().catch((err) => {
@@ -217,13 +219,13 @@ export const useDashboardData = () => {
         }
       }
     };
-    
+
     // Check for new data every 20 seconds (between normal refresh intervals)
     const interval = setInterval(checkForNewData, 20000);
-    
+
     return () => clearInterval(interval);
   }, [selectedBrandId, dashboardEndpoint, refetchDashboard]);
-  
+
   useEffect(() => {
     if (dashboardResponse && !dashboardLoading) {
       const fetchDuration = performance.now() - dataFetchStart.current;
@@ -242,13 +244,13 @@ export const useDashboardData = () => {
 
   const dataProcessStart = useRef(performance.now());
   // Clear dashboardData when switching brands to prevent showing stale data
-  const dashboardData: DashboardPayload | null = isBrandSwitching 
-    ? null 
+  const dashboardData: DashboardPayload | null = isBrandSwitching
+    ? null
     : (dashboardResponse?.success ? dashboardResponse.data || null : null);
-  const dashboardErrorMsg: string | null = dashboardResponse?.success 
-    ? null 
+  const dashboardErrorMsg: string | null = dashboardResponse?.success
+    ? null
     : (dashboardError?.message || dashboardResponse?.error || dashboardResponse?.message || null);
-  
+
   useEffect(() => {
     if (dashboardData) {
       const processDuration = performance.now() - dataProcessStart.current;
@@ -268,7 +270,7 @@ export const useDashboardData = () => {
   // Show loading when: auth loading, brand selection pending, brand switching, or fetching new data
   const shouldShowLoading = (authLoading || brandSelectionPending || isBrandSwitching || (dashboardLoading && !dashboardData && !fromOnboarding));
 
-  
+
   useEffect(() => {
     if (!shouldShowLoading && dashboardData) {
       const totalTime = performance.now() - pageMountTime.current;
@@ -296,10 +298,10 @@ export const useDashboardData = () => {
       // Wait a bit to avoid blocking the initial render
       const prefetchTimer = setTimeout(() => {
         const otherBrands = brands.filter((brand) => brand.id !== selectedBrandId);
-        
+
         // Prefetch up to 3 brands at a time to avoid overwhelming the backend
         const brandsToPrefetch = otherBrands.slice(0, 3);
-        
+
         brandsToPrefetch.forEach((brand, index) => {
           // Skip if already prefetched
           if (prefetchedBrandsRef.current.has(brand.id)) {
@@ -308,14 +310,14 @@ export const useDashboardData = () => {
 
           // Stagger prefetches slightly to avoid burst
           const delay = index * 200; // 200ms between each prefetch
-          
+
           setTimeout(() => {
             const params = new URLSearchParams({
               startDate,
               endDate,
             });
             const endpoint = `/brands/${brand.id}/dashboard?${params.toString()}`;
-            
+
             // Use prefetchOnIdle to avoid blocking main thread
             prefetchOnIdle<ApiResponse<DashboardPayload>>(
               endpoint,
@@ -323,7 +325,7 @@ export const useDashboardData = () => {
               { requiresAuth: true },
               1000 // 1 second timeout
             );
-            
+
             prefetchedBrandsRef.current.add(brand.id);
             console.debug(`[DASHBOARD] Prefetched dashboard for brand: ${brand.name}`);
           }, delay);
@@ -367,21 +369,21 @@ export const useDashboardData = () => {
       }
 
       if (snapshot.isComplete) {
-          localStorage.removeItem(storageKey);
+        localStorage.removeItem(storageKey);
         localStorage.setItem(completedAtKey, new Date().toISOString());
-          setIsDataCollectionInProgress(false);
+        setIsDataCollectionInProgress(false);
 
-          refetchDashboard().catch((err) => {
-            console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
-          });
+        refetchDashboard().catch((err) => {
+          console.error('[DASHBOARD] Error refreshing dashboard after completion:', err);
+        });
 
-          // Keep progress data for a moment to show completion, then clear
-          setTimeout(() => {
-            if (isMounted) {
-              setProgressData(null);
-            }
-          }, 3000);
-        }
+        // Keep progress data for a moment to show completion, then clear
+        setTimeout(() => {
+          if (isMounted) {
+            setProgressData(null);
+          }
+        }, 3000);
+      }
     });
 
     return () => {

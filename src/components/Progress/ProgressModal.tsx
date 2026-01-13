@@ -125,12 +125,20 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
     };
   }, [mode, minTimePassed, isComplete, onNavigateDashboard]);
 
-  const currentStage = useMemo<'collecting' | 'scoring' | 'finalizing'>(() => {
+  const currentStage = useMemo<'collecting' | 'scoring' | 'domain_readiness' | 'recommendations' | 'finalizing'>(() => {
     if (progress?.stages?.collection?.status === 'completed') {
-      if (progress?.stages?.scoring?.status === 'completed') return 'finalizing';
+      if (progress?.stages?.scoring?.status === 'completed') {
+          if (progress?.stages?.domain_readiness?.status === 'completed') {
+             if (progress?.stages?.recommendations?.status === 'completed') {
+                 return 'finalizing';
+             }
+             return 'recommendations';
+          }
+          return 'domain_readiness';
+      }
       return 'scoring';
     }
-    if (progress?.currentOperation) return progress.currentOperation;
+    if (progress?.currentOperation) return progress.currentOperation as any;
     return 'collecting';
   }, [progress]);
 
@@ -145,17 +153,39 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
     }
 
     let calculated = 0;
-    const collectionProgress = (completedQueries / totalQueries) * 70;
+    // 1. Collection (0-40%)
+    const collectionProgress = (completedQueries / totalQueries) * 40;
     calculated = collectionProgress;
 
     if (progress?.stages?.collection?.status === 'completed') {
+      // 2. Scoring (40-70%)
       if (progress?.stages?.scoring?.status === 'completed') {
-        calculated = 100;
+        calculated = 70; // Base for next step
       } else if (progress?.stages?.scoring?.total) {
-        const scoringProgress = (progress.stages.scoring.completed / progress.stages.scoring.total) * 25;
-        calculated = 70 + scoringProgress;
+        const scoringProgress = (progress.stages.scoring.completed / progress.stages.scoring.total) * 30;
+        calculated = 40 + scoringProgress;
       } else {
-        calculated = 75;
+        calculated = 40;
+      }
+
+      // 3. Domain Readiness (70-85%)
+      // If scoring is done, we are at least at 70%.
+      if (progress?.stages?.scoring?.status === 'completed') {
+          if (progress?.stages?.domain_readiness?.status === 'completed') {
+              calculated = 85; 
+          } else {
+              // Active/Pending readiness
+              calculated = 75; // Indeterminate progress
+          }
+      }
+
+      // 4. Recommendations (85-100%)
+      if (progress?.stages?.domain_readiness?.status === 'completed') {
+          if (progress?.stages?.recommendations?.status === 'completed') {
+              calculated = 100;
+          } else {
+              calculated = 90;
+          }
       }
     }
 
@@ -201,12 +231,18 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           />
         </div>
 
-        <div className="flex justify-between mt-2 text-[12px]" style={{ color: '#64748b' }}>
+        <div className="flex justify-between mt-2 text-[10px] sm:text-[12px]" style={{ color: '#64748b' }}>
           <span className={currentStage === 'collecting' ? 'font-medium' : ''} style={currentStage === 'collecting' ? { color: '#00bcdc' } : {}}>
-            {currentStage === 'collecting' ? '● Collecting' : '✓ Collecting'}
+            {progress?.stages?.collection?.status === 'completed' ? '✓ Data' : '● Data'}
           </span>
           <span className={currentStage === 'scoring' ? 'font-medium' : ''} style={currentStage === 'scoring' ? { color: '#00bcdc' } : {}}>
-            {currentStage === 'scoring' ? '● Scoring' : currentStage === 'finalizing' ? '● Scoring' : 'Scoring'}
+            {progress?.stages?.scoring?.status === 'completed' ? '✓ Scoring' : '● Scoring'}
+          </span>
+          <span className={currentStage === 'domain_readiness' ? 'font-medium' : ''} style={currentStage === 'domain_readiness' ? { color: '#00bcdc' } : {}}>
+            {progress?.stages?.domain_readiness?.status === 'completed' ? '✓ Audit' : '● Audit'}
+          </span>
+          <span className={currentStage === 'recommendations' ? 'font-medium' : ''} style={currentStage === 'recommendations' ? { color: '#00bcdc' } : {}}>
+            {progress?.stages?.recommendations?.status === 'completed' ? '✓ Recs' : '● Recs'}
           </span>
         </div>
 
@@ -339,7 +375,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           <div className="mt-6 text-center">
             <div className="inline-flex items-center gap-2 text-sm font-semibold" style={{ color: '#16a34a' }}>
               <CheckCircle2 className="w-4 h-4" />
-              Collection & scoring complete
+              Onboarding complete
             </div>
           </div>
         )}

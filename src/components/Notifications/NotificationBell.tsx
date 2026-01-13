@@ -162,7 +162,7 @@ export const NotificationBell = () => {
           <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4">
             <div className="text-sm font-semibold text-gray-900">Notifications</div>
             <div className="mt-2 text-sm text-gray-600">
-              Data collection and scoring are complete{state.completedAt ? ` (finished ${new Date(state.completedAt).toLocaleString()})` : ''}.
+              Onboarding complete{state.completedAt ? ` (finished ${new Date(state.completedAt).toLocaleString()})` : ''}.
             </div>
             <div className="mt-3 flex justify-end">
               <button

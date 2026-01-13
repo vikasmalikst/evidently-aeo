@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Spinner } from './common/Spinner';
-import { CheckCircle, Sparkles, Edit2, Save, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { CheckCircle, Sparkles, Edit2, Save, X, Rocket, Target, TrendingUp, BarChart3 } from 'lucide-react';
 import { SafeLogo } from './common/SafeLogo';
-import { Input } from './common/Input';
 import { fetchBrandProductsPreview } from '../../api/onboardingApi';
 import type { BrandProductsEnrichment, OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 
@@ -27,7 +26,13 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
   const [editIndustry, setEditIndustry] = useState('');
   const [editWebsite, setEditWebsite] = useState('');
 
-  // Initialize edit state when entering edit mode
+  // Draft text state
+  const [draftInitialized, setDraftInitialized] = useState(false);
+  const [draftBrandSynonyms, setDraftBrandSynonyms] = useState('');
+  const [draftBrandProducts, setDraftBrandProducts] = useState('');
+  const [draftCompetitorSynonyms, setDraftCompetitorSynonyms] = useState<Record<string, string>>({});
+  const [draftCompetitorProducts, setDraftCompetitorProducts] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (isEditingBrand) {
       setEditIndustry(brand.industry || '');
@@ -35,9 +40,7 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
     }
   }, [isEditingBrand, brand]);
 
-  const handleCancelEdit = () => {
-    setIsEditingBrand(false);
-  };
+  const handleCancelEdit = () => setIsEditingBrand(false);
 
   const handleSaveBrandDetails = () => {
     if (onUpdateBrand) {
@@ -51,28 +54,18 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
     setIsEditingBrand(false);
   };
 
-  // Draft text so the textarea behaves normally (no auto-trim/join while typing).
-  const [draftInitialized, setDraftInitialized] = useState(false);
-  const [draftBrandSynonyms, setDraftBrandSynonyms] = useState('');
-  const [draftBrandProducts, setDraftBrandProducts] = useState('');
-  const [draftCompetitorSynonyms, setDraftCompetitorSynonyms] = useState<Record<string, string>>({});
-  const [draftCompetitorProducts, setDraftCompetitorProducts] = useState<Record<string, string>>({});
-
   const sanitizeListForSave = (items: string[]): string[] =>
     items.map((s) => s.trim()).filter(Boolean);
 
   const parseCommaListForSave = (value: string): string[] =>
     sanitizeListForSave(value.split(','));
 
-  // When enrichment is loaded or cached, initialize editedEnrichment
   useEffect(() => {
     if (enrichment && !editedEnrichment) {
       setEditedEnrichment(enrichment);
     }
   }, [enrichment, editedEnrichment]);
 
-  // Initialize draft text once we have editedEnrichment, so inputs are editable
-  // without reformatting/cursor jumps on each keystroke.
   useEffect(() => {
     if (!editedEnrichment || draftInitialized) return;
 
@@ -127,18 +120,12 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate products and synonyms';
-      console.error(message, error);
       setEnrichmentError(message);
       
-      // On error, initialize empty enrichment to allow manual entry
-      // This ensures the user is not blocked if the LLM call fails
       const emptyEnrichment: BrandProductsEnrichment = {
         brand: { synonyms: [], products: [] },
         competitors: Object.fromEntries(
-          competitorNames.map((name) => [
-            name,
-            { synonyms: [], products: [] }
-          ])
+          competitorNames.map((name) => [name, { synonyms: [], products: [] }])
         ),
       };
       setEnrichment(emptyEnrichment);
@@ -155,7 +142,6 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
     setIsSubmitting(true);
     setLoadingMessage('Saving your approval...');
     try {
-      // Clean up any empty items (e.g., from trailing commas) before saving.
       const cleaned: BrandProductsEnrichment = {
         ...editedEnrichment,
         brand: {
@@ -193,18 +179,12 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
     try {
       const cached = localStorage.getItem(previewCacheKey);
       if (cached) {
-        const parsed = JSON.parse(cached) as {
-          brandName: string;
-          industry?: string;
-          competitors: string[];
-          enrichment: BrandProductsEnrichment;
-        };
-
+        const parsed = JSON.parse(cached);
         const sameBrand = parsed.brandName === brand.companyName;
         const sameCompetitors =
           Array.isArray(parsed.competitors) &&
           parsed.competitors.length === competitorNames.length &&
-          parsed.competitors.every((name, idx) => name === competitorNames[idx]);
+          parsed.competitors.every((name: string, idx: number) => name === competitorNames[idx]);
 
         if (sameBrand && sameCompetitors && parsed.enrichment) {
           setEnrichment(parsed.enrichment);
@@ -219,8 +199,6 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
   }, [brand.companyName, competitorNames.join('|')]);
 
   const rows = useMemo(() => {
-    console.log('📊 Summary: Generating rows. Competitors prop:', competitors);
-
     const brandRow = {
       name: brand.companyName,
       type: 'Brand' as const,
@@ -230,182 +208,246 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
       productsText: draftBrandProducts,
     };
 
-    // If we have enrichment data, we can filter/sort, 
-    // but we must ensure ALL selected competitors are shown.
-    // We map over the `competitors` prop to ensure no one is left out.
-    const competitorRows = competitors.map((comp) => {
-      const row = {
-        name: comp.name,
-        type: 'Competitor' as const,
-        logo: comp.logo || '',
-        domain: comp.domain || '',
-        synonymsText: draftCompetitorSynonyms[comp.name] || '',
-        productsText: draftCompetitorProducts[comp.name] || '',
-      };
-      
-      if (!draftCompetitorSynonyms[comp.name] && !draftCompetitorProducts[comp.name]) {
-        console.warn(`⚠️ Competitor "${comp.name}" has no enrichment data. Showing empty row.`);
-      }
-      
-      return row;
-    });
+    const competitorRows = competitors.map((comp) => ({
+      name: comp.name,
+      type: 'Competitor' as const,
+      logo: comp.logo || '',
+      domain: comp.domain || '',
+      synonymsText: draftCompetitorSynonyms[comp.name] || '',
+      productsText: draftCompetitorProducts[comp.name] || '',
+    }));
 
-    const result = [brandRow, ...competitorRows];
-    console.log('✅ Summary: Generated rows:', result);
-    return result;
-  }, [
-    brand,
-    competitors,
-    draftBrandSynonyms,
-    draftBrandProducts,
-    draftCompetitorSynonyms,
-    draftCompetitorProducts,
-  ]);
+    return [brandRow, ...competitorRows];
+  }, [brand, competitors, draftBrandSynonyms, draftBrandProducts, draftCompetitorSynonyms, draftCompetitorProducts]);
 
+  // Success State
   if (showSuccess) {
     return (
-      <div className="onboarding-summary-content">
-        <div className="onboarding-success">
-          <div className="onboarding-success__icon">
-            <CheckCircle size={80} />
-          </div>
-          <h1 className="onboarding-success__title">All Set!</h1>
-          <p className="onboarding-success__message">
-            Redirecting to the next step...
-          </p>
-        </div>
-      </div>
+      <motion.div 
+        className="w-full flex items-center justify-center py-20"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <motion.div 
+          className="text-center"
+          initial={{ scale: 0.8 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200 }}
+        >
+          <motion.div
+            className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 mb-6"
+            initial={{ scale: 0 }}
+            animate={{ scale: 1, rotate: [0, 10, -10, 0] }}
+            transition={{ delay: 0.2 }}
+          >
+            <CheckCircle size={48} className="text-white" />
+          </motion.div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">All Set!</h1>
+          <p className="text-gray-500">Redirecting to the next step...</p>
+        </motion.div>
+      </motion.div>
     );
   }
 
+  // Loading State
   if (isSubmitting) {
     return (
-      <div className="onboarding-summary-content">
-        <Spinner size="large" message={loadingMessage || 'Working...'} />
-      </div>
+      <motion.div 
+        className="w-full flex items-center justify-center py-20"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <div className="text-center">
+          <div className="relative w-16 h-16 mx-auto">
+            <div className="w-16 h-16 border-4 border-cyan-100 rounded-full" />
+            <div className="absolute top-0 left-0 w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <p className="mt-4 text-gray-600 font-medium">{loadingMessage || 'Working...'}</p>
+        </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="onboarding-summary-content">
-      <div className="onboarding-summary" style={{ maxWidth: '1000px' }}>
-        <div className="onboarding-summary__header">
-          <Sparkles size={48} className="onboarding-summary__icon" />
-          <h1 className="onboarding-summary__title">Ready to Launch</h1>
-          <p className="onboarding-summary__subtitle">
-            Review and refine your brand and competitor products
-          </p>
-        </div>
+    <motion.div 
+      className="w-full"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      {/* Main Card */}
+      <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-8 md:p-10">
+        
+        {/* Header */}
+        <motion.div 
+          className="text-center mb-10"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <motion.div
+            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-400 to-cyan-600 shadow-lg shadow-cyan-200 mb-4"
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
+          >
+            <Sparkles size={32} className="text-white" />
+          </motion.div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Ready to Launch</h1>
+          <p className="text-gray-500">Review and refine your brand and competitor products</p>
+        </motion.div>
 
-        <div className="onboarding-summary__section">
-          <div className="onboarding-brand-details" style={{ marginBottom: '24px', padding: '20px', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-default)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-headings)' }}>Brand Information</h3>
-              {!isEditingBrand && onUpdateBrand && (
-                <button
-                  onClick={() => setIsEditingBrand(true)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: 'none', color: 'var(--accent500)', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}
-                >
-                  <Edit2 size={14} />
-                  Edit
-                </button>
-              )}
-            </div>
+        {/* Brand Info Card */}
+        <motion.div 
+          className="bg-gradient-to-r from-gray-50 to-cyan-50/30 rounded-2xl p-6 mb-8 border border-gray-100"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="font-semibold text-gray-900">Brand Information</h3>
+            {!isEditingBrand && onUpdateBrand && (
+              <button
+                onClick={() => setIsEditingBrand(true)}
+                className="flex items-center gap-1.5 text-cyan-600 hover:text-cyan-700 text-sm font-medium transition-colors"
+              >
+                <Edit2 size={14} />
+                Edit
+              </button>
+            )}
+          </div>
 
+          <AnimatePresence mode="wait">
             {isEditingBrand ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <Input
-                  label="Industry"
-                  value={editIndustry}
-                  onChange={(e) => setEditIndustry(e.target.value)}
-                  placeholder="e.g. SaaS, E-commerce"
-                />
-                <Input
-                  label="Website"
-                  value={editWebsite}
-                  onChange={(e) => setEditWebsite(e.target.value)}
-                  placeholder="e.g. brand.com"
-                />
-                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+              <motion.div 
+                key="edit"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Industry</label>
+                    <input
+                      type="text"
+                      value={editIndustry}
+                      onChange={(e) => setEditIndustry(e.target.value)}
+                      placeholder="e.g. SaaS, E-commerce"
+                      className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                    <input
+                      type="text"
+                      value={editWebsite}
+                      onChange={(e) => setEditWebsite(e.target.value)}
+                      placeholder="e.g. brand.com"
+                      className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3 mt-4">
                   <button
                     onClick={handleCancelEdit}
-                    className="onboarding-button-secondary"
-                    style={{ height: '36px', padding: '0 16px' }}
+                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveBrandDetails}
-                    className="onboarding-button-primary"
-                    style={{ height: '36px', padding: '0 16px' }}
+                    className="px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600 transition-colors"
                   >
                     Save Changes
                   </button>
                 </div>
-              </div>
+              </motion.div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
+              <motion.div 
+                key="view"
+                className="grid grid-cols-3 gap-6"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
                 <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-caption)', marginBottom: '4px' }}>Brand Name</div>
-                  <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-body)' }}>{brand.companyName}</div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Brand Name</p>
+                  <p className="font-medium text-gray-900">{brand.companyName}</p>
                 </div>
                 <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-caption)', marginBottom: '4px' }}>Industry</div>
-                  <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-body)' }}>{brand.industry || '-'}</div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Industry</p>
+                  <p className="font-medium text-gray-900">{brand.industry || '-'}</p>
                 </div>
                 <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-caption)', marginBottom: '4px' }}>Website</div>
-                  <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-body)' }}>{brand.website || '-'}</div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Website</p>
+                  <p className="font-medium text-gray-900">{brand.website || '-'}</p>
                 </div>
-              </div>
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
+        </motion.div>
 
+        {/* Error Message */}
+        <AnimatePresence>
           {enrichmentError && (
-            <div style={{ color: 'var(--text-error)', fontSize: 14, marginBottom: 16 }}>
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm"
+            >
               {enrichmentError}
-            </div>
+            </motion.div>
           )}
+        </AnimatePresence>
 
-          {editedEnrichment ? (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ 
-                padding: '12px 16px', 
-                background: 'var(--accent50)', 
-                borderLeft: '3px solid var(--accent500)',
-                borderRadius: '4px',
-                marginBottom: '16px',
-                fontSize: '14px',
-                color: 'var(--text-body)'
-              }}>
-                <strong>Tip:</strong> Click any field below to edit synonyms or products. Separate multiple items with commas.
-              </div>
-              <table className="onboarding-grid-table">
-                <thead>
+        {/* Products & Synonyms Table */}
+        {editedEnrichment ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            {/* Tip */}
+            <div className="mb-6 p-4 bg-cyan-50 border-l-4 border-cyan-500 rounded-r-xl">
+              <p className="text-sm text-gray-700">
+                <strong className="text-cyan-700">Tip:</strong> Click any field below to edit synonyms or products. Separate multiple items with commas.
+              </p>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-hidden rounded-2xl border border-gray-200">
+              <table className="w-full">
+                <thead className="bg-gray-50">
                   <tr>
-                    <th style={{ width: '25%' }}>Brand</th>
-                    <th style={{ width: '35%' }}>Alias (Synonyms)</th>
-                    <th style={{ width: '40%' }}>Commercial Products</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '25%' }}>Brand</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '35%' }}>Alias (Synonyms)</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '40%' }}>Commercial Products</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={`${row.type}:${row.name}`}>
-                      <td>
-                        <div className="onboarding-grid-entity">
+                <tbody className="divide-y divide-gray-100">
+                  {rows.map((row, index) => (
+                    <motion.tr 
+                      key={`${row.type}:${row.name}`}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className={row.type === 'Brand' ? 'bg-cyan-50/30' : 'bg-white hover:bg-gray-50'}
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
                           <SafeLogo
                             src={row.logo}
                             domain={row.domain}
                             alt={row.name}
-                            size={32}
-                            className="onboarding-summary-competitor__logo"
+                            size={36}
+                            className="w-9 h-9 rounded-lg object-contain bg-white p-1 border border-gray-100"
                           />
-                          <span>{row.name}</span>
+                          <span className="font-medium text-gray-900">{row.name}</span>
+                          {row.type === 'Brand' && (
+                            <span className="px-2 py-0.5 bg-cyan-100 text-cyan-700 text-xs font-semibold rounded-full">You</span>
+                          )}
                         </div>
                       </td>
-                      <td>
+                      <td className="px-6 py-4">
                         <textarea
-                          className="onboarding-grid-input"
                           value={row.synonymsText}
                           onChange={(e) => {
                             if (row.type === 'Brand') {
@@ -414,15 +456,14 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
                               setDraftCompetitorSynonyms((prev) => ({ ...prev, [row.name]: e.target.value }));
                             }
                           }}
-                          placeholder="Add synonyms separated by commas..."
+                          placeholder="Add synonyms..."
                           disabled={isSubmitting}
-                          rows={3}
-                          spellCheck={false}
+                          rows={2}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-cyan-500 focus:outline-none resize-none transition-colors"
                         />
                       </td>
-                      <td>
+                      <td className="px-6 py-4">
                         <textarea
-                          className="onboarding-grid-input"
                           value={row.productsText}
                           onChange={(e) => {
                             if (row.type === 'Brand') {
@@ -431,63 +472,90 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
                               setDraftCompetitorProducts((prev) => ({ ...prev, [row.name]: e.target.value }));
                             }
                           }}
-                          placeholder="Add products separated by commas..."
+                          placeholder="Add products..."
                           disabled={isSubmitting}
-                          rows={3}
-                          spellCheck={false}
+                          rows={2}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-cyan-500 focus:outline-none resize-none transition-colors"
                         />
                       </td>
-                    </tr>
+                    </motion.tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          ) : (
-            <div className="onboarding-spinner-container">
-              <Spinner size="large" message="Generating product and synonym suggestions…" />
+          </motion.div>
+        ) : (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="relative w-12 h-12 mx-auto">
+                <div className="w-12 h-12 border-4 border-cyan-100 rounded-full" />
+                <div className="absolute top-0 left-0 w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+              <p className="mt-4 text-sm text-gray-500">Generating product and synonym suggestions…</p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="onboarding-summary__preview">
-          <h3 className="onboarding-summary__preview-title">What's Next?</h3>
-          <ul className="onboarding-summary__preview-list">
-            <li>Track visibility across multiple AI engines</li>
-            <li>Analyze queries across {competitors.length} competitor{competitors.length !== 1 ? 's' : ''}</li>
-            <li>Get actionable insights powered by AI</li>
-            <li>Monitor your brand's performance</li>
-          </ul>
-        </div>
+        {/* What's Next Section */}
+        <motion.div 
+          className="mt-8 p-6 bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl text-white"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Rocket size={20} className="text-cyan-400" />
+            What's Next?
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { icon: Target, text: 'Track visibility across AI engines' },
+              { icon: BarChart3, text: `Monitor ${competitors.length} competitors` },
+              { icon: Sparkles, text: 'AI-powered insights' },
+              { icon: TrendingUp, text: 'Track brand performance' },
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 + i * 0.1 }}
+                className="flex items-center gap-2 text-sm text-gray-300"
+              >
+                <item.icon size={16} className="text-cyan-400 flex-shrink-0" />
+                <span>{item.text}</span>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
 
-        <div
-          className="onboarding-summary-actions"
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '12px',
-            marginTop: '32px',
-          }}
+        {/* Action Buttons */}
+        <motion.div 
+          className="mt-8 flex justify-end gap-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
         >
           <button
             type="button"
-            className="onboarding-button-secondary"
             onClick={onBack}
             disabled={isSubmitting}
-            style={{ minWidth: 120 }}
+            className="px-6 py-3 text-gray-600 hover:bg-gray-100 rounded-xl font-medium transition-colors"
           >
             Back
           </button>
-          <button
+          <motion.button
             type="button"
-            className="onboarding-button-primary"
             onClick={enrichment ? handleApproveAndContinue : handleGenerate}
-            disabled={isSubmitting || (!enrichment && competitorNames.length === 0)}
-            style={{ minWidth: 160 }}
+            disabled={isSubmitting}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="px-8 py-3 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-xl font-semibold shadow-lg shadow-cyan-200 hover:shadow-xl transition-all flex items-center gap-2"
           >
+            <Sparkles size={18} />
             {enrichment ? 'Approve & Continue' : 'Generate Products'}
-          </button>
-        </div>
+          </motion.button>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };

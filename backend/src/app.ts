@@ -24,6 +24,7 @@ import recommendationsRoutes from './routes/recommendations.routes';
 import recommendationsV3Routes from './routes/recommendations-v3.routes';
 import moversShakersRoutes from './routes/movers-shakers.routes';
 import domainReadinessRoutes from './services/domain-readiness/routes';
+import { contactRouter } from './routes/contact.routes';
 // TEMPORARY: User management routes commented out
 // import userManagementRoutes from './routes/user-management.routes';
 
@@ -110,6 +111,7 @@ app.use('/api', (_req, res, next) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api/contact', contactRouter);
 app.use('/api/brands', brandRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/query-generation', queryGenerationRoutes);

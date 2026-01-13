@@ -1,71 +1,69 @@
 import nodemailer from 'nodemailer';
-import { config } from '../../config/environment';
-import { getOTPTemplate } from './templates';
+import fs from 'fs';
+import path from 'path';
+
+export interface DemoRequestData {
+  name: string;
+  email: string;
+  company: string;
+  jobTitle: string;
+  message?: string;
+}
 
 export class EmailService {
   private transporter: nodemailer.Transporter;
 
   constructor() {
-    this.initTransporter();
-  }
-
-  private initTransporter() {
-    // Check if Zoho credentials are configured, otherwise log a warning
-    const user = process.env.ZOHO_MAIL_USER;
-    const pass = process.env.ZOHO_MAIL_PASSWORD;
-
-    if (!user || !pass) {
-      console.warn('⚠️ Zoho Mail credentials not found in environment variables. Email sending will fail.');
-      console.warn('Current ZOHO_MAIL_USER:', user);
-      console.warn('Current ZOHO_MAIL_PASSWORD:', pass ? '******' : 'undefined');
-    } else {
-      console.log('✅ Zoho Mail credentials configured for:', user);
-    }
-
     this.transporter = nodemailer.createTransport({
       host: 'smtp.zoho.com',
       port: 465,
       secure: true, // use SSL
       auth: {
-        user: user,
-        pass: pass
-      }
+        user: process.env.ZOHO_EMAIL,
+        pass: process.env.ZOHO_PASSWORD,
+      },
     });
   }
 
-  async sendOTP(to: string, otp: string, type: 'signup' | 'reset' = 'reset'): Promise<boolean> {
+  private async loadTemplate(templateName: string, data: Record<string, string>): Promise<string> {
+    const templatePath = path.join(process.cwd(), 'src', 'templates', `${templateName}.html`);
+    let html = fs.readFileSync(templatePath, 'utf-8');
+
+    // Replace placeholders
+    Object.keys(data).forEach((key) => {
+      const regex = new RegExp(`{{${key}}}`, 'g');
+      html = html.replace(regex, data[key] || '');
+    });
+
+    return html;
+  }
+
+  public async sendDemoRequest(data: DemoRequestData): Promise<void> {
+    const htmlDate = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+
+    const html = await this.loadTemplate('demo-request', {
+      name: data.name,
+      email: data.email,
+      company: data.company,
+      jobTitle: data.jobTitle,
+      message: data.message || 'No specific message provided.',
+      date: htmlDate
+    });
+
+    const mailOptions = {
+      from: `"EvidentlyAEO Demo Bot" <${process.env.ZOHO_EMAIL}>`,
+      to: ['sales.support@evidentlyAEO.com', 'vikas.malik@evidentlyaeo.com'],
+      subject: `New Demo Request: ${data.company} (${data.name})`,
+      html: html,
+      replyTo: data.email
+    };
+
     try {
-      if (!this.transporter) {
-        this.initTransporter();
-      }
-      
-      const user = process.env.ZOHO_MAIL_USER;
-      if (!user) {
-        console.error('❌ Cannot send OTP: ZOHO_MAIL_USER is missing');
-        return false;
-      }
-
-      const subject = type === 'signup' 
-        ? 'Verify your email - EvidentlyAEO' 
-        : 'Your Password Reset Code - EvidentlyAEO';
-
-      const html = getOTPTemplate(otp, type);
-
-      const mailOptions = {
-        from: `"EvidentlyAEO" <${user}>`, // Use friendly name
-        to: to, // receiver address
-        subject: subject,
-        html: html
-      };
-
-      const info = await this.transporter.sendMail(mailOptions);
-      console.log('Message sent: %s', info.messageId);
-      return true;
+      await this.transporter.sendMail(mailOptions);
+      console.log(`Demo request email sent successfully for ${data.email}`);
     } catch (error) {
-      console.error('Error sending email:', error);
-      return false;
+      console.error('Error sending demo request email:', error);
+      throw new Error('Failed to send email');
     }
   }
 }
-
-export const emailService = new EmailService();

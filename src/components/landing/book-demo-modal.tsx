@@ -4,7 +4,7 @@ import * as React from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Calendar, Mail, Phone, Building2, User, Send, CheckCircle2, ArrowRight } from "lucide-react"
+import { Calendar, Mail, Phone, Building2, User, Send, CheckCircle2, ArrowRight, Briefcase } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,7 @@ import {
   FormDescription,
 } from "@/components/landing/ui/form"
 import { motion, AnimatePresence } from "framer-motion"
+import { apiClient } from "@/lib/apiClient"
 
 interface BookDemoModalProps {
   open: boolean
@@ -35,6 +36,7 @@ const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Please enter a valid email address"),
   company: z.string().min(2, "Company name is required"),
+  jobTitle: z.string().min(2, "Job title is required"),
   phone: z.string().optional(),
   message: z.string().optional(),
 })
@@ -61,6 +63,7 @@ export function BookDemoModal({ open, onOpenChange }: BookDemoModalProps) {
       name: "",
       email: "",
       company: "",
+      jobTitle: "",
       phone: "",
       message: "",
     },
@@ -68,28 +71,45 @@ export function BookDemoModal({ open, onOpenChange }: BookDemoModalProps) {
 
   const onSubmit = async (data: FormValues) => {
     setIsSubmitting(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    console.log("Form submitted:", data)
-    setIsSubmitting(false)
-    setIsSuccess(true)
-    
-    // Reset form and close modal after delay
-    setTimeout(() => {
-      setIsSuccess(false)
-      form.reset()
-      onOpenChange(false)
-    }, 2500)
+    try {
+      // API call to backend
+      const payload = {
+        name: data.name,
+        email: data.email,
+        company: data.company,
+        jobTitle: data.jobTitle,
+        message: `Phone: ${data.phone || 'Not Provided'}\n\n${data.message || ''}`,
+      }
+
+      await apiClient.post('/contact/book-demo', payload, { requiresAuth: false });
+
+      console.log("Demo request sent successfully:", data)
+      setIsSubmitting(false)
+      setIsSuccess(true)
+
+      // Reset form and close modal after delay
+      setTimeout(() => {
+        setIsSuccess(false)
+        form.reset()
+        onOpenChange(false)
+      }, 2500)
+    } catch (error) {
+      console.error("Failed to submit demo request:", error)
+      setIsSubmitting(false)
+      // We could show an error state here, but for now we'll just log it
+      // and maybe keep the form open so they can retry.
+      alert("Failed to submit request. Please try again.");
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden bg-white dark:bg-zinc-950 border-none shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
-        
+
         <AnimatePresence mode="wait">
           {isSuccess ? (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
@@ -194,17 +214,16 @@ export function BookDemoModal({ open, onOpenChange }: BookDemoModalProps) {
 
                       <FormField
                         control={form.control}
-                        name="phone"
+                        name="jobTitle"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                              <Phone className="w-3.5 h-3.5" />
-                              Phone
+                              <Briefcase className="w-3.5 h-3.5" />
+                              Job Title
                             </FormLabel>
                             <FormControl>
                               <Input
-                                type="tel"
-                                placeholder="+1 (555) 000-0000"
+                                placeholder="VP of Marketing"
                                 className="h-11 bg-slate-50 border-transparent focus:border-black focus:ring-0 transition-all font-medium"
                                 {...field}
                               />
@@ -214,6 +233,28 @@ export function BookDemoModal({ open, onOpenChange }: BookDemoModalProps) {
                         )}
                       />
                     </div>
+
+                    <FormField
+                      control={form.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            <Phone className="w-3.5 h-3.5" />
+                            Phone (Optional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type="tel"
+                              placeholder="+1 (555) 000-0000"
+                              className="h-11 bg-slate-50 border-transparent focus:border-black focus:ring-0 transition-all font-medium"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
                     <FormField
                       control={form.control}
@@ -239,7 +280,7 @@ export function BookDemoModal({ open, onOpenChange }: BookDemoModalProps) {
                     />
 
                     <div className="flex gap-3 pt-2">
-                       <Button
+                      <Button
                         type="button"
                         variant="ghost"
                         onClick={() => onOpenChange(false)}
@@ -273,4 +314,3 @@ export function BookDemoModal({ open, onOpenChange }: BookDemoModalProps) {
     </Dialog>
   )
 }
-

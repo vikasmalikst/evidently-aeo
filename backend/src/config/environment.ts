@@ -29,20 +29,20 @@ export const config = {
   // Server
   port: parseInt(process.env['PORT'] || '4000', 10),
   nodeEnv: process.env['NODE_ENV'] || 'development',
-  
+
   // Supabase
   supabase: {
     url: process.env['SUPABASE_URL']!,
     anonKey: process.env['SUPABASE_ANON_KEY']!,
     serviceRoleKey: process.env['SUPABASE_SERVICE_ROLE_KEY']!,
   },
-  
+
   // JWT
   jwt: {
     secret: process.env['JWT_SECRET']!,
     expiresIn: process.env['JWT_EXPIRES_IN'] || '7d',
   },
-  
+
   // CORS
   cors: {
     origin: [
@@ -58,38 +58,39 @@ export const config = {
       'https://evidentlyaeo.com', // Domain (HTTPS)
       'http://www.evidentlyaeo.com', // Domain with www (HTTP)
       'https://www.evidentlyaeo.com', // Domain with www (HTTPS)
+      'http://localhost:5178', // Current dev port
     ],
     credentials: true,
   },
-  
+
   // OpenAI
   openai: {
     apiKey: process.env['OPENAI_API_KEY'],
     model: process.env['MODEL'] || 'gpt-4o-mini',
     useWebSearch: process.env['USE_OPENAI_WEBSEARCH'] === 'true',
   },
-  
+
   // Cerebras
   cerebras: {
     apiKey: process.env['CEREBRAS_API_KEY'],
     model: process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507',
   },
-  
+
   // DataForSEO
   dataforseo: {
     username: process.env['DATAFORSEO_USERNAME'],
     password: process.env['DATAFORSEO_PASSWORD'],
   },
-  
+
   // Oxylabs
   oxylabs: {
     username: process.env['OXYLABS_USERNAME'],
     password: process.env['OXYLABS_PASSWORD'],
   },
-  
+
   // Site
   siteUrl: process.env['SITE_URL'] || 'http://localhost:4000',
-  
+
   // Development
   bypassAuthInDev: process.env['BYPASS_AUTH_IN_DEV'] === 'true' && process.env['NODE_ENV'] === 'development',
 };

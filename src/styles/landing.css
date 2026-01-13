@@ -113,3 +113,11 @@
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
 }
+
+@layer components {
+    .landing-scope {
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        letter-spacing: -0.01em;
+        /* Slight tight tracking for professional look */
+    }
+}

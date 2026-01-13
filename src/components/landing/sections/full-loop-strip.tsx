@@ -13,64 +13,59 @@ import {
 const steps = [
   {
     id: "measure",
-    title: "1. Measure & Benchmark",
+    title: "1. Measure",
     icon: BarChart2,
-    description: "Your performance against top competitors.",
+    description: "Benchmark vs. competitors.",
   },
   {
     id: "analyze",
-    title: "2. Analyze Data",
+    title: "2. Analyze",
     icon: BrainCircuit,
-    description: "In-depth analysis for valuable insights and key takeaways.",
+    description: "Deep insights & takeaways.",
   },
   {
     id: "discover",
     title: "3. Discover",
     icon: Telescope,
-    description: "Opportunities to optimize and improve LLM referred traffic.",
+    description: "Find LLM traffic opportunities.",
   },
   {
     id: "action",
-    title: "4. Action Plan",
+    title: "4. Plan",
     icon: ClipboardCheck,
-    description: "Build a comprehensive action plan.",
+    description: "Build your action strategy.",
   },
   {
     id: "execute",
     title: "5. Execute",
     icon: Rocket,
-    description: "Generate content and accelerate time to results.",
+    description: "Generate content & results.",
   },
   {
     id: "impact",
-    title: "6. Track Impact",
+    title: "6. Impact",
     icon: LineChart,
-    description: "Track ROI and the impact of your AEO strategy.",
+    description: "Track ROI & AEO value.",
   }
 ]
 
 export function FullLoopStrip() {
-  const radius = 280
+  const radius = 220 // Reduced from 280
 
-  // SVG parameters for generating arcs
-  // We need to draw arcs between steps.
-  // Step 0 is at -90deg (top). 
-  // Step i is at -90 + i * 60.
-  // We want arcs between i and i+1.
   const stepAngle = 360 / steps.length
 
   const generateArcPath = (index: number) => {
-    // Start angle for this segment (offset by -90 to start at top)
-    // Add some padding so the line doesn't overlap the card
-    const startAngle = (index * stepAngle) - 90 + 20
-    const endAngle = ((index + 1) * stepAngle) - 90 - 20
+    // Start angle for this segment
+    const startAngle = (index * stepAngle) - 90
+    const endAngle = ((index + 1) * stepAngle) - 90
 
+    // Small gap for the nodes
+    const gap = 15; 
+    
     // Convert to radians
-    const startRad = (startAngle * Math.PI) / 180
-    const endRad = (endAngle * Math.PI) / 180
+    const startRad = ((startAngle + gap) * Math.PI) / 180
+    const endRad = ((endAngle - gap) * Math.PI) / 180
 
-    // Calculate coordinates
-    // Center is 400, 400 (half of 800)
     const cx = 400
     const cy = 400
     const r = radius
@@ -80,69 +75,88 @@ export function FullLoopStrip() {
     const x2 = cx + r * Math.cos(endRad)
     const y2 = cy + r * Math.sin(endRad)
 
-    // SVG Path A command: rx ry x-axis-rotation large-arc-flag sweep-flag x y
     return `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`
   }
 
   return (
-    <section className="py-24 bg-background border-y border-border/50 relative overflow-hidden">
-      {/* Background ambient glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+    <section className="py-20 bg-gradient-to-b from-transparent to-slate-50/50 dark:to-black/20 border-y border-border/50 relative overflow-hidden">
+      {/* Background ambient glow - reduced size for tighter feel */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none" />
 
       <div className="container mx-auto px-4 lg:px-6 relative z-10">
-        <div className="text-center mb-20">
-          <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-6">The Complete AEO Loop</h2>
-          <p className="text-lg text-muted-foreground w-full max-w-2xl mx-auto mb-4">
-            Stop guessing. Start dominating. The only platform that connects visibility measurement to content optimization and ranking outcomes.
-          </p>
-          <p className="text-sm font-semibold text-cyan-600 uppercase tracking-wider">
-            Outcome as a Service — We don't stop at dashboards. We deliver results.
+        <div className="text-center mb-16">
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-4">The AEO Loop</h2>
+          <p className="text-lg text-muted-foreground w-full max-w-xl mx-auto mb-4">
+            The only platform connecting visibility to measurable revenue outcomes.
           </p>
         </div>
 
         {/* --- DESKTOP: CIRCULAR LAYOUT --- */}
-        <div className="hidden xl:flex relative h-[800px] items-center justify-center">
-
-          {/* SVG Container for Arrows */}
+        <div className="hidden xl:flex relative h-[650px] items-center justify-center -mt-10">
+          
+          {/* SVG Container for Beams */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 800 800">
-            <defs>
-              <marker
-                id="arrowhead"
-                markerWidth="10"
-                markerHeight="7"
-                refX="9"
-                refY="3.5"
-                orient="auto"
-              >
-                <polygon points="0 0, 10 3.5, 0 7" fill="#06b6d4" />
-              </marker>
-            </defs>
+             <defs>
+               <linearGradient id="beam-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                 <stop offset="0%" stopColor="#06b6d4" stopOpacity="0" />
+                 <stop offset="50%" stopColor="#06b6d4" stopOpacity="1" />
+                 <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+               </linearGradient>
+             </defs>
 
             {steps.map((_, index) => (
-              <motion.path
-                key={`path-${index}`}
-                d={generateArcPath(index)}
-                fill="none"
-                stroke="#06b6d4"
-                strokeWidth="2"
-                strokeDasharray="4 4"
-                className="opacity-40"
-                markerEnd="url(#arrowhead)"
-                initial={{ pathLength: 0, opacity: 0 }}
-                whileInView={{ pathLength: 1, opacity: 0.4 }}
-                transition={{ duration: 1, delay: index * 0.2 }}
-              />
+              <g key={`track-${index}`}>
+                {/* Background Track */}
+                <path
+                  d={generateArcPath(index)}
+                  fill="none"
+                  stroke="currentColor"
+                  className="text-slate-200 dark:text-slate-800"
+                  strokeWidth="2"
+                />
+                
+                {/* Animated Beam */}
+                <motion.path
+                  d={generateArcPath(index)}
+                  fill="none"
+                  stroke="url(#beam-gradient)"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ 
+                    pathLength: [0, 0.4, 0],
+                    opacity: [0, 1, 0],
+                    pathOffset: [0, 0.6, 1]
+                  }}
+                  transition={{ 
+                    duration: 2, 
+                    ease: "linear",
+                    repeat: Infinity,
+                    repeatDelay: 0.5,
+                    delay: index * 0.3 
+                  }}
+                />
+              </g>
             ))}
           </svg>
 
-          {/* Central 'Engine' Node */}
-          <div className="absolute z-20 flex flex-col items-center justify-center w-48 h-48 rounded-full bg-white dark:bg-slate-900 shadow-[0_0_50px_-10px_rgba(6,182,212,0.4)] border border-cyan-100 dark:border-cyan-900/50">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg mb-2 text-white">
-              <span className="text-3xl font-bold">E</span>
+          {/* Central 'Engine' Node - Pulsing */}
+          <motion.div 
+            className="absolute z-20 flex flex-col items-center justify-center w-40 h-40 rounded-full bg-background/50 backdrop-blur-xl border border-cyan-100 dark:border-cyan-900/50 shadow-2xl"
+            animate={{ boxShadow: ["0 0 20px -5px rgba(6,182,212,0.3)", "0 0 40px -5px rgba(6,182,212,0.6)", "0 0 20px -5px rgba(6,182,212,0.3)"] }}
+            transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg mb-2 text-white relative overflow-hidden">
+               {/* Shine effect */}
+               <motion.div 
+                  className="absolute inset-0 bg-white/30 skew-x-12"
+                  animate={{ x: ["-150%", "150%"] }}
+                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+               />
+              <span className="text-2xl font-bold font-serif italic">E</span>
             </div>
-            <p className="font-bold text-foreground text-lg">EvidentlyAEO</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold">Engine</p>
-          </div>
+            <p className="font-bold text-foreground text-sm tracking-tight text-center leading-none">Evidently<br/><span className="text-cyan-600">Engine</span></p>
+          </motion.div>
 
           {/* Orbiting Steps */}
           {steps.map((step, index) => {
@@ -154,62 +168,61 @@ export function FullLoopStrip() {
             return (
               <motion.div
                 key={step.id}
-                className="absolute w-[340px]"
+                className="absolute w-[260px]"
                 style={{
                   left: `calc(50% + ${x}px)`,
                   top: `calc(50% + ${y}px)`,
                   x: "-50%",
                   y: "-50%"
                 }}
-                initial={{ opacity: 0, scale: 0.9 }}
+                initial={{ opacity: 0, scale: 0.8 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
-                transition={{ delay: index * 0.15, duration: 0.5 }}
+                transition={{ delay: index * 0.1, duration: 0.4 }}
               >
-                <div className="group relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-xl p-6 border border-slate-200/60 dark:border-slate-800 transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:border-cyan-500/30 hover:-translate-y-1">
-                  {/* Gradient glow on hover */}
-                  <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-cyan-500/5 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
+                <motion.div 
+                  className="group relative bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800 cursor-pointer overflow-hidden shadow-sm"
+                  whileHover={{ scale: 1.05, backgroundColor: "rgba(255,255,255,1)" }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                >
+                  {/* Magic Glow Border on Hover */}
+                  <div className="absolute inset-0 rounded-2xl ring-2 ring-transparent group-hover:ring-cyan-500/20 group-hover:shadow-[0_0_20px_-5px_rgba(6,182,212,0.3)] transition-all duration-300" />
 
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-lg flex-shrink-0 flex items-center justify-center bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-slate-800 dark:to-slate-800 border border-cyan-100 dark:border-slate-700 shadow-sm group-hover:shadow-md transition-all">
-                      <step.icon className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
+                  <div className="flex items-center gap-4 relative z-10">
+                    <div className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center bg-cyan-50 dark:bg-cyan-950/30 text-cyan-600 dark:text-cyan-400 group-hover:scale-110 group-hover:bg-cyan-500 group-hover:text-white transition-all duration-300">
+                      <step.icon className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-base mb-1 text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">{step.title}</h3>
-                      <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-medium">{step.description}</p>
+                      <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 mb-1">{step.title}</h3>
+                      <p className="text-sm text-slate-600 dark:text-slate-300 leading-snug font-medium">{step.description}</p>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               </motion.div>
             )
           })}
         </div>
 
-        {/* --- MOBILE/TABLET: TIMELINE LAYOUT --- */}
-        <div className="flex xl:hidden flex-col gap-8 max-w-2xl mx-auto relative pt-8">
-          {/* Vertical Line */}
-          <div className="absolute left-6 top-8 bottom-8 w-0.5 bg-gradient-to-b from-cyan-500/20 via-cyan-500/20 to-transparent -z-10" />
+        {/* --- MOBILE/TABLET: COMPACT TIMELINE LAYOUT --- */}
+        <div className="flex xl:hidden flex-col gap-6 max-w-md mx-auto relative pt-8">
+          <div className="absolute left-6 top-4 bottom-4 w-0.5 bg-gradient-to-b from-cyan-500/20 via-cyan-500/20 to-transparent -z-10" />
 
           {steps.map((step, index) => (
             <motion.div
               key={step.id}
-              initial={{ opacity: 0, x: -20 }}
+              initial={{ opacity: 0, x: -10 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ delay: index * 0.1 }}
-              className="relative pl-20 z-10"
+              className="relative pl-16 z-10"
             >
-              {/* Timeline Dot & Icon */}
-              <div className="absolute left-0 top-0 w-12 h-12 rounded-xl flex items-center justify-center bg-white dark:bg-slate-900 border border-cyan-100 dark:border-slate-700 shadow-sm z-20">
+              <div className="absolute left-0 top-1 w-12 h-12 rounded-full flex items-center justify-center bg-white dark:bg-slate-900 border border-cyan-100 dark:border-slate-800 shadow-sm z-20">
                 <step.icon className="w-5 h-5 text-cyan-600" />
               </div>
 
-              {/* Connector line from dot to card */}
-              <div className="absolute left-12 top-6 w-8 h-[1px] bg-cyan-200 dark:bg-slate-700" />
-
-              <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-                <h3 className="font-bold text-lg mb-2 text-slate-900 dark:text-slate-100">{step.title}</h3>
-                <p className="text-slate-500 dark:text-slate-400 leading-relaxed">{step.description}</p>
+              <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+                <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100">{step.title}</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">{step.description}</p>
               </div>
             </motion.div>
           ))}

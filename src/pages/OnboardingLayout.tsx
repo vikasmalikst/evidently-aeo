@@ -18,8 +18,25 @@ const steps = [
   { id: 'summary', label: 'Summary' },
 ];
 
+// Get the max-width for each step (in rem)
+const getStepWidth = (step: OnboardingStep): string => {
+  switch (step) {
+    case 'brand':
+      return '42rem'; // Narrow for brand input
+    case 'competitors':
+      return '72rem'; // Wide for competitor cards
+    case 'summary':
+      return '64rem'; // Medium-wide for summary table
+    default:
+      return '42rem';
+  }
+};
+
 export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({ currentStep, children }) => {
   const currentIndex = steps.findIndex(s => s.id === currentStep);
+  
+  // Get the specific width for the current step
+  const currentWidth = getStepWidth(currentStep);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-cyan-50 flex flex-col relative overflow-hidden">
@@ -55,7 +72,15 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({ currentStep,
 
       {/* Main content area - centered */}
       <main className="flex-grow flex items-center justify-center px-4 py-12 relative z-10">
-        <div className="w-full max-w-5xl">
+        {/* Animated width container */}
+        <motion.div 
+          className="w-full"
+          initial={false}
+          animate={{ 
+            maxWidth: currentWidth
+          }}
+          transition={{ duration: 0.4, ease: 'easeInOut' }}
+        >
           {/* Step indicator - above the card */}
           <motion.div 
             className="flex justify-center mb-6"
@@ -110,7 +135,7 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({ currentStep,
           >
             {children}
           </motion.div>
-        </div>
+        </motion.div>
       </main>
     </div>
   );

@@ -1,7 +1,5 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { Router } from 'express';
-import { z } from 'zod';
 import { EmailService, DemoRequestData } from '../services/email/email.service';
 
 const router = Router();

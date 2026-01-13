@@ -50,7 +50,7 @@ function DifferentiatorCardGrid({
             <AnimatePresence>
               {hoveredIndex === index && (
                 <motion.span
-                  className="absolute inset-0 h-full w-full bg-cyan-50 dark:bg-slate-800/[0.8] block rounded-2xl"
+                  className="absolute inset-0 h-full w-full bg-cyan-50 dark:bg-slate-800 block rounded-2xl"
                   layoutId="hoverBackgroundDifferentiator"
                   initial={{ opacity: 0 }}
                   animate={{
@@ -64,7 +64,7 @@ function DifferentiatorCardGrid({
                 />
               )}
             </AnimatePresence>
-            <div className="relative z-20 p-6 lg:p-8 rounded-2xl border border-border bg-white group-hover:border-cyan-300 group-hover:shadow-xl transition-all duration-300 h-full">
+            <div className="relative z-20 p-6 lg:p-8 rounded-2xl border border-border bg-white dark:bg-slate-900 group-hover:border-cyan-300 dark:group-hover:border-cyan-500 group-hover:shadow-xl transition-all duration-300 h-full">
               <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mb-4">
                 <Icon className="w-6 h-6 text-white" />
               </div>

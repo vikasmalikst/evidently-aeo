@@ -72,7 +72,10 @@ export function HeroSection() {
               </span>
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto leading-relaxed font-light">
-              The only end-to-end platform to measure, optimize, and dominate AI search outcomes used by forward-thinking marketing teams.
+              AI search is quietly erasing your organic traffic. CMOs and SEO leaders use EvidentlyAEO to measure, optimize, and reclaim visibility in ChatGPT, Gemini, and beyond.
+            </p>
+            <p className="text-sm font-medium text-cyan-600 uppercase tracking-widest pt-2">
+              For CMOs • VPs of Marketing • SEO Leaders
             </p>
           </MotionDiv>
 
@@ -98,21 +101,13 @@ export function HeroSection() {
               Book a Demo
             </Button>
           </MotionDiv>
-          
-           <MotionDiv
+
+          <MotionDiv
             className="flex flex-col items-center gap-3 text-sm text-muted-foreground pt-8 opacity-80"
             variants={fadeInUp}
             transition={{ duration: 0.6, delay: 0.4 }}
           >
-            <div className="flex -space-x-3">
-               <div className="w-10 h-10 rounded-full bg-slate-200 border-2 border-background shadow-sm" />
-               <div className="w-10 h-10 rounded-full bg-slate-300 border-2 border-background shadow-sm" />
-               <div className="w-10 h-10 rounded-full bg-slate-400 border-2 border-background shadow-sm" />
-               <div className="w-10 h-10 rounded-full bg-slate-100 border-2 border-background flex items-center justify-center text-xs font-bold shadow-sm">
-                 +2k
-               </div>
-            </div>
-            <p className="font-medium tracking-wide">Trusted by 2000+ forward-thinking teams</p>
+            <p className="font-medium tracking-wide">Built for forward-thinking marketing teams ready to own the AI search era</p>
           </MotionDiv>
         </MotionDiv>
       </div>

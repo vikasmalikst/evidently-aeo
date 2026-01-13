@@ -11,6 +11,8 @@ import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrendsChart';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 import { fetchRecommendations, type Recommendation } from '../api/recommendationsApi';
+import { KeyTakeaways } from '../components/SourcesR2/KeyTakeaways';
+import { generateKeyTakeaways, type KeyTakeaway } from '../utils/SourcesTakeawayGenerator';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -19,7 +21,7 @@ interface ApiResponse<T> {
   message?: string;
 }
 
-interface SourceData {
+export interface SourceData {
   name: string;
   url: string;
   type: 'brand' | 'editorial' | 'corporate' | 'reference' | 'ugc' | 'institutional';
@@ -184,12 +186,12 @@ export const SearchSourcesR2 = () => {
   const [searchParams] = useSearchParams();
   const authLoading = useAuthStore((state) => state.isLoading);
   const { selectedBrandId, selectedBrand, isLoading: brandsLoading } = useManualBrandDashboard();
-  
+
   // Read date range from URL params if available
   const urlStartDate = searchParams.get('startDate');
   const urlEndDate = searchParams.get('endDate');
   const highlightSource = searchParams.get('highlightSource');
-  
+
   const [startDate, setStartDate] = useState<string>(() => {
     if (urlStartDate) return urlStartDate;
     const end = new Date();
@@ -298,7 +300,34 @@ export const SearchSourcesR2 = () => {
     }));
   }, [processedSources]);
 
+
   const sourcesForFilters = isProcessedReady ? processedTableSources : rawTableSources;
+
+
+  const keyTakeaways = useMemo(() => {
+    // Generate takeaways from the most complete data available
+    // We combine sourceData (metrics+changes) with processedSources (quadrant+valueScore)
+    if (!sourceData.length) return [];
+
+    // Create a map of quadrant/value by name from processed sources
+    const enrichmentMap = new Map();
+    if (processedSources) {
+      processedSources.forEach(p => {
+        enrichmentMap.set(p.name, { quadrant: p.quadrant, valueScore: p.valueScore });
+      });
+    }
+
+    const combinedSources = sourceData.map(s => {
+      const enriched = enrichmentMap.get(s.name);
+      return {
+        ...s,
+        quadrant: enriched?.quadrant || '—',
+        valueScore: enriched?.valueScore || 0
+      };
+    });
+
+    return generateKeyTakeaways(combinedSources);
+  }, [processedSources, sourceData]);
 
   const quadrantCounts = useMemo(() => {
     if (!processedSources) {
@@ -372,7 +401,7 @@ export const SearchSourcesR2 = () => {
   // Fetch Impact Score trends data (follows selected date range)
   const trendsEndpoint = useMemo(() => {
     if (!selectedBrandId) return null;
-    const params = new URLSearchParams({ 
+    const params = new URLSearchParams({
       metric: trendMetric,
       startDate,
       endDate
@@ -383,10 +412,10 @@ export const SearchSourcesR2 = () => {
     return `/brands/${selectedBrandId}/sources/impact-score-trends?${params.toString()}`;
   }, [selectedBrandId, selectedTrendSources, trendMetric, startDate, endDate]);
 
-  const { 
-    data: trendsResponse, 
-    loading: trendsLoading, 
-    error: trendsError 
+  const {
+    data: trendsResponse,
+    loading: trendsLoading,
+    error: trendsError
   } = useCachedData<ApiResponse<{
     dates: string[];
     sources: Array<{
@@ -518,9 +547,9 @@ export const SearchSourcesR2 = () => {
   // Filter recommendations by selected category
   const filteredRecommendations = useMemo(() => {
     const selectedCategory = getCategoryFromQuadrant(activeQuadrant);
-    
+
     if (!selectedCategory) return [];
-    
+
     return recommendations.filter(rec => rec.citationCategory === selectedCategory);
   }, [recommendations, activeQuadrant]);
 
@@ -567,6 +596,8 @@ export const SearchSourcesR2 = () => {
             {errorMessage}
           </div>
         )}
+
+        <KeyTakeaways takeaways={keyTakeaways} isLoading={isLoading && !sourcesForFilters.length} />
 
         {isProcessedReady ? (
           <SummaryCards
@@ -734,10 +765,10 @@ export const SearchSourcesR2 = () => {
                 <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Recommended Actions</h3>
                 <p style={{ margin: '0 0 16px 0', fontSize: 12, color: '#64748b' }}>
                   Actions tailored for {activeQuadrant === 'priority' ? 'Priority Partnerships' :
-                       activeQuadrant === 'reputation' ? 'Reputation Management' :
-                       activeQuadrant === 'growth' ? 'Growth Opportunities' : 'Monitor'}
+                    activeQuadrant === 'reputation' ? 'Reputation Management' :
+                      activeQuadrant === 'growth' ? 'Growth Opportunities' : 'Monitor'}
                 </p>
-                
+
                 {recommendationsLoading ? (
                   <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>Loading recommendations...</div>
                 ) : filteredRecommendations.length === 0 ? (
@@ -766,11 +797,11 @@ export const SearchSourcesR2 = () => {
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                          <div style={{ 
-                            minWidth: 24, 
-                            height: 24, 
-                            borderRadius: '50%', 
-                            background: '#0ea5e9', 
+                          <div style={{
+                            minWidth: 24,
+                            height: 24,
+                            borderRadius: '50%',
+                            background: '#0ea5e9',
                             color: '#fff',
                             display: 'flex',
                             alignItems: 'center',
@@ -783,21 +814,21 @@ export const SearchSourcesR2 = () => {
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ marginBottom: 6 }}>
-                              <span style={{ 
-                                fontSize: 10, 
-                                fontWeight: 700, 
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 700,
                                 textTransform: 'uppercase',
                                 padding: '2px 6px',
                                 borderRadius: 4,
                                 background: rec.citationCategory === 'Priority Partnerships' ? '#06c686' :
-                                          rec.citationCategory === 'Reputation Management' ? '#ef4444' :
-                                          rec.citationCategory === 'Growth Opportunities' ? '#0ea5e9' : '#94a3b8',
+                                  rec.citationCategory === 'Reputation Management' ? '#ef4444' :
+                                    rec.citationCategory === 'Growth Opportunities' ? '#0ea5e9' : '#94a3b8',
                                 color: '#fff',
                                 marginRight: 8
                               }}>
                                 {rec.citationCategory === 'Priority Partnerships' ? 'Priority' :
-                                 rec.citationCategory === 'Reputation Management' ? 'Reputation' :
-                                 rec.citationCategory === 'Growth Opportunities' ? 'Growth' : 'Monitor'}
+                                  rec.citationCategory === 'Reputation Management' ? 'Reputation' :
+                                    rec.citationCategory === 'Growth Opportunities' ? 'Growth' : 'Monitor'}
                               </span>
                             </div>
                             <h4 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, color: '#0f172a', lineHeight: 1.4 }}>

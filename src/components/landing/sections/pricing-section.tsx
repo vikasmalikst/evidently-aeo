@@ -1,10 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import { Button } from "@/components/landing/ui/button"
 import { Card } from "@/components/landing/ui/card"
-import { Check, ArrowRight } from "lucide-react"
+import { Check } from "lucide-react"
+import { cn } from "@/lib-landing/utils"
 
 const plans = [
   {
@@ -26,7 +27,7 @@ const plans = [
     description: "Advanced intelligence for growing brands.",
     features: [
       "Everything in Basic, plus:",
-      "Track 50 prompts",
+      "Track 100 prompts",
       "10 AI-optimized articles",
       "Email and Slack Support",
       "AEO Strategy Playbook",
@@ -53,6 +54,7 @@ const plans = [
 
 export function PricingSection() {
   const [isAnnual, setIsAnnual] = useState(true)
+  const [selectedPlan, setSelectedPlan] = useState<string>("Pro")
 
   return (
     <section className="relative py-24 bg-background overflow-hidden" id="pricing">
@@ -64,7 +66,7 @@ export function PricingSection() {
 
       <div className="container mx-auto px-4 lg:px-6 relative z-10">
         <div className="text-center mb-20 space-y-4">
-          <motion.h2 
+          <motion.h2
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -72,7 +74,7 @@ export function PricingSection() {
           >
             Outcome-Focused Pricing
           </motion.h2>
-          <motion.p 
+          <motion.p
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -109,89 +111,88 @@ export function PricingSection() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start max-w-6xl mx-auto">
-          {plans.map((plan, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: index * 0.1 }}
-              className="relative group h-full flex flex-col"
-            >
-              <Card
-                className={cn(
-                  "flex flex-col h-full rounded-[2rem] border transition-all duration-300 overflow-hidden relative",
-                  plan.popular 
-                    ? "border-black dark:border-white shadow-2xl scale-105 z-10 bg-white dark:bg-zinc-950" 
-                    : "border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-zinc-950/50 hover:bg-white dark:hover:bg-zinc-950 hover:shadow-xl hover:-translate-y-1"
-                )}
+          {plans.map((plan, index) => {
+            const isSelected = selectedPlan === plan.name
+            return (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: index * 0.1 }}
+                className="relative group h-full flex flex-col"
+                onMouseEnter={() => setSelectedPlan(plan.name)}
               >
-                {/* Popular Badge */}
-                {plan.popular && (
-                  <div className="bg-cyan-500 text-white py-2.5 text-center text-xs font-bold uppercase tracking-widest">
-                   Most Popular
-                  </div>
-                )}
-
-                <div className="p-8 flex flex-col flex-1 relative">
-                  {/* Subtle hover gradient for non-popular cards */}
-                  {!plan.popular && (
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                <Card
+                  className={cn(
+                    "flex flex-col h-full rounded-[2rem] border transition-all duration-300 overflow-hidden relative",
+                    isSelected
+                      ? "border-cyan-500 shadow-2xl scale-105 z-10 bg-white dark:bg-zinc-950"
+                      : "border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-zinc-950/50 opacity-80 hover:opacity-100 hover:bg-white dark:hover:bg-zinc-950"
+                  )}
+                >
+                  {/* Highlight Badge */}
+                  {isSelected && (
+                    <div className="bg-cyan-500 text-white py-2.5 text-center text-xs font-bold uppercase tracking-widest">
+                      Selected Plan
+                    </div>
                   )}
 
-                  <div className="mb-8 relative">
-                    <h3 className="text-xl font-bold text-foreground mb-4">{plan.name}</h3>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-4xl lg:text-5xl font-bold text-foreground tracking-tighter">
-                        ${isAnnual ? Math.round(Number(plan.price) * 0.8) : plan.price}
-                      </span>
-                      <span className="text-muted-foreground font-medium">/mo</span>
+                  <div className="p-8 flex flex-col flex-1 relative">
+                    <div className="mb-8 relative">
+                      <h3 className="text-xl font-bold text-foreground mb-4">{plan.name}</h3>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-4xl lg:text-5xl font-bold text-foreground tracking-tighter">
+                          ${isAnnual ? Math.round(Number(plan.price) * 0.8) : plan.price}
+                        </span>
+                        <span className="text-muted-foreground font-medium">/mo</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-4 leading-relaxed min-h-[40px]">
+                        {plan.description}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-4 leading-relaxed">
-                      {plan.description}
-                    </p>
-                  </div>
 
-                  <div className="w-full h-px bg-slate-100 dark:bg-slate-800 mb-8" />
+                    <div className="w-full h-px bg-slate-100 dark:bg-slate-800 mb-8" />
 
-                  <ul className="space-y-4 mb-10 flex-1 relative">
-                    {plan.features.map((feature, idx) => {
-                      const isHeader = feature.includes("Everything in")
-                      return (
-                        <li key={idx} className={cn("flex items-start gap-3", isHeader && "mt-6")}>
-                          {!isHeader && (
-                            <div className={cn(
-                              "mt-1 rounded-full p-0.5",
-                              plan.popular ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-500"
+                    <ul className="space-y-4 mb-10 flex-1 relative">
+                      {plan.features.map((feature, idx) => {
+                        const isHeader = feature.includes("Everything in")
+                        return (
+                          <li key={idx} className={cn("flex items-start gap-3", isHeader && "mt-6")}>
+                            {!isHeader && (
+                              <div className={cn(
+                                "mt-1 rounded-full p-0.5",
+                                isSelected ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-500"
+                              )}>
+                                <Check className="w-3 h-3" />
+                              </div>
+                            )}
+                            <span className={cn(
+                              "text-sm",
+                              isHeader ? "text-foreground font-bold" : "text-foreground/80 font-medium"
                             )}>
-                              <Check className="w-3 h-3" />
-                            </div>
-                          )}
-                          <span className={cn(
-                            "text-sm",
-                            isHeader ? "text-foreground font-bold" : "text-foreground/80 font-medium"
-                          )}>
-                            {feature}
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                              {feature}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
 
-                  <Button
-                    className={cn(
-                      "w-full h-12 rounded-full text-sm font-bold transition-all shadow-sm",
-                      plan.popular
-                        ? "bg-cyan-500 text-white hover:bg-cyan-600 hover:shadow-lg"
-                        : "bg-white text-black border-2 border-slate-200 hover:border-cyan-500 hover:bg-cyan-500 hover:text-white"
-                    )}
-                  >
-                    {plan.cta}
-                  </Button>
-                </div>
-              </Card>
-            </motion.div>
-          ))}
+                    <Button
+                      className={cn(
+                        "w-full h-12 rounded-full text-sm font-bold transition-all shadow-sm",
+                        isSelected
+                          ? "bg-cyan-500 text-white hover:bg-cyan-600 hover:shadow-lg"
+                          : "bg-white text-black border-2 border-slate-200 hover:border-cyan-500 hover:bg-cyan-500 hover:text-white"
+                      )}
+                    >
+                      {plan.cta}
+                    </Button>
+                  </div>
+                </Card>
+              </motion.div>
+            )
+          })}
         </div>
         <div className="mt-16 text-center">
           <p className="text-sm text-muted-foreground">
@@ -207,7 +208,5 @@ export function PricingSection() {
   )
 }
 
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(" ")
-}
+
 

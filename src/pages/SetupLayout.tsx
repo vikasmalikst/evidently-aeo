@@ -62,61 +62,63 @@ export const SetupLayout: React.FC<SetupLayoutProps> = ({ currentStep, children 
 
       {/* Main content area - centered */}
       <main className="flex-grow flex items-center justify-center px-4 py-12 relative z-10">
-        <motion.div
-          className="w-full max-w-4xl"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
-        >
-          {children}
-        </motion.div>
-      </main>
+        <div className="w-full max-w-5xl">
+          {/* Step indicator - above the card */}
+          <motion.div 
+            className="flex justify-center mb-6"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+          >
+            <div className="flex items-center gap-3 bg-white/80 backdrop-blur-lg rounded-full px-6 py-3 shadow-lg border border-gray-100">
+              {steps.map((step, index) => {
+                const isCompleted = index < currentIndex;
+                const isCurrent = index === currentIndex;
 
-      {/* Bottom step indicator */}
-      <motion.div 
-        className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-20"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.4 }}
-      >
-        <div className="flex items-center gap-3 bg-white/80 backdrop-blur-lg rounded-full px-6 py-3 shadow-lg border border-gray-100">
-          {steps.map((step, index) => {
-            const isCompleted = index < currentIndex;
-            const isCurrent = index === currentIndex;
+                return (
+                  <React.Fragment key={step.id}>
+                    <div className="flex items-center gap-2">
+                      <motion.div
+                        className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+                          isCompleted ? 'bg-cyan-500' :
+                          isCurrent ? 'bg-cyan-500 ring-4 ring-cyan-100' :
+                          'bg-gray-300'
+                        }`}
+                        initial={false}
+                        animate={{
+                          scale: isCurrent ? 1.2 : 1,
+                        }}
+                        transition={{ duration: 0.3 }}
+                      />
+                      <span className={`text-sm font-medium transition-colors duration-300 ${
+                        isCurrent ? 'text-gray-900' :
+                        isCompleted ? 'text-cyan-600' :
+                        'text-gray-400'
+                      }`}>
+                        {step.label}
+                      </span>
+                    </div>
+                    {index < steps.length - 1 && (
+                      <div className={`w-8 h-0.5 transition-colors duration-300 ${
+                        isCompleted ? 'bg-cyan-400' : 'bg-gray-200'
+                      }`} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </motion.div>
 
-            return (
-              <React.Fragment key={step.id}>
-                <div className="flex items-center gap-2">
-                  <motion.div
-                    className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
-                      isCompleted ? 'bg-cyan-500' :
-                      isCurrent ? 'bg-cyan-500 ring-4 ring-cyan-100' :
-                      'bg-gray-300'
-                    }`}
-                    initial={false}
-                    animate={{
-                      scale: isCurrent ? 1.2 : 1,
-                    }}
-                    transition={{ duration: 0.3 }}
-                  />
-                  <span className={`text-sm font-medium transition-colors duration-300 ${
-                    isCurrent ? 'text-gray-900' :
-                    isCompleted ? 'text-cyan-600' :
-                    'text-gray-400'
-                  }`}>
-                    {step.label}
-                  </span>
-                </div>
-                {index < steps.length - 1 && (
-                  <div className={`w-8 h-0.5 transition-colors duration-300 ${
-                    isCompleted ? 'bg-cyan-400' : 'bg-gray-200'
-                  }`} />
-                )}
-              </React.Fragment>
-            );
-          })}
+          {/* Content */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+          >
+            {children}
+          </motion.div>
         </div>
-      </motion.div>
+      </main>
     </div>
   );
 };

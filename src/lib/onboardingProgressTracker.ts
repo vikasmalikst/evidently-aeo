@@ -86,12 +86,22 @@ const computeIsComplete = (progress: OnboardingProgressData | null): boolean => 
   // Check stages for more accurate completion detection
   const collectionStatus = progress.stages?.collection?.status;
   const scoringStatus = progress.stages?.scoring?.status;
+  const recommendationsStatus = progress.stages?.recommendations?.status;
 
   // If using stages data, use it for more accurate completion check
   if (collectionStatus && scoringStatus) {
-    // Both collection and scoring must be completed
+    // Collection, scoring, and recommendations must be completed
+    // Note: domain_readiness is handled separately in the onboarding flow
     if (collectionStatus === 'completed' && scoringStatus === 'completed') {
-      // Also verify scoring flags as a double-check
+      // Check if recommendations are also done
+      if (recommendationsStatus === 'completed') {
+        return true;
+      }
+      // If recommendations status is available but not complete, not done
+      if (recommendationsStatus) {
+        return false;
+      }
+      // Fallback: check legacy scoring flags if recommendations status not available
       if (scoring) {
         return Boolean(scoring.positions && scoring.sentiments && scoring.citations);
       }

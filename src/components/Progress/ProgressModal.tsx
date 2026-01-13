@@ -125,16 +125,14 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
     };
   }, [mode, minTimePassed, isComplete, onNavigateDashboard]);
 
-  const currentStage = useMemo<'collecting' | 'scoring' | 'domain_readiness' | 'recommendations' | 'finalizing'>(() => {
+  const currentStage = useMemo<'collecting' | 'scoring' | 'recommendations' | 'finalizing'>(() => {
     if (progress?.stages?.collection?.status === 'completed') {
       if (progress?.stages?.scoring?.status === 'completed') {
-          if (progress?.stages?.domain_readiness?.status === 'completed') {
-             if (progress?.stages?.recommendations?.status === 'completed') {
-                 return 'finalizing';
-             }
-             return 'recommendations';
-          }
-          return 'domain_readiness';
+        // Skip domain_readiness - it's handled separately in onboarding
+        if (progress?.stages?.recommendations?.status === 'completed') {
+          return 'finalizing';
+        }
+        return 'recommendations';
       }
       return 'scoring';
     }
@@ -153,39 +151,30 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
     }
 
     let calculated = 0;
-    // 1. Collection (0-40%)
-    const collectionProgress = (completedQueries / totalQueries) * 40;
+    // 1. Collection (0-50%)
+    const collectionProgress = (completedQueries / totalQueries) * 50;
     calculated = collectionProgress;
 
     if (progress?.stages?.collection?.status === 'completed') {
-      // 2. Scoring (40-70%)
+      // 2. Scoring (50-80%)
       if (progress?.stages?.scoring?.status === 'completed') {
-        calculated = 70; // Base for next step
+        calculated = 80; // Base for next step
       } else if (progress?.stages?.scoring?.total) {
         const scoringProgress = (progress.stages.scoring.completed / progress.stages.scoring.total) * 30;
-        calculated = 40 + scoringProgress;
+        calculated = 50 + scoringProgress;
       } else {
-        calculated = 40;
+        calculated = 50;
       }
 
-      // 3. Domain Readiness (70-85%)
-      // If scoring is done, we are at least at 70%.
+      // 3. Recommendations (80-100%) - Domain readiness is handled separately
       if (progress?.stages?.scoring?.status === 'completed') {
-          if (progress?.stages?.domain_readiness?.status === 'completed') {
-              calculated = 85; 
-          } else {
-              // Active/Pending readiness
-              calculated = 75; // Indeterminate progress
-          }
-      }
-
-      // 4. Recommendations (85-100%)
-      if (progress?.stages?.domain_readiness?.status === 'completed') {
-          if (progress?.stages?.recommendations?.status === 'completed') {
-              calculated = 100;
-          } else {
-              calculated = 90;
-          }
+        if (progress?.stages?.recommendations?.status === 'completed') {
+          calculated = 100;
+        } else if (progress?.stages?.recommendations?.status === 'active') {
+          calculated = 90;
+        } else {
+          calculated = 80;
+        }
       }
     }
 
@@ -237,9 +226,6 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           </span>
           <span className={currentStage === 'scoring' ? 'font-medium' : ''} style={currentStage === 'scoring' ? { color: '#00bcdc' } : {}}>
             {progress?.stages?.scoring?.status === 'completed' ? '✓ Scoring' : '● Scoring'}
-          </span>
-          <span className={currentStage === 'domain_readiness' ? 'font-medium' : ''} style={currentStage === 'domain_readiness' ? { color: '#00bcdc' } : {}}>
-            {progress?.stages?.domain_readiness?.status === 'completed' ? '✓ Audit' : '● Audit'}
           </span>
           <span className={currentStage === 'recommendations' ? 'font-medium' : ''} style={currentStage === 'recommendations' ? { color: '#00bcdc' } : {}}>
             {progress?.stages?.recommendations?.status === 'completed' ? '✓ Recs' : '● Recs'}

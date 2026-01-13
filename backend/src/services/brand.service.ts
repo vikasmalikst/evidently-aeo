@@ -120,7 +120,8 @@ export class BrandService {
       };
     }
 
-    // 3. Check Domain Readiness
+    // 3. Check Domain Readiness (for tracking only - not required for recommendations)
+    // Domain readiness is handled separately in the onboarding flow (shown to user first)
     const { data: audits } = await supabaseAdmin
       .from('domain_readiness_audits')
       .select('created_at')
@@ -131,22 +132,7 @@ export class BrandService {
     const domainAuditCompleted = !!(audits && audits.length > 0);
     const lastAuditDate = domainAuditCompleted ? audits[0].created_at : null;
 
-    // Logic: If scoring completed but no audit -> Need audit
-    // Note: We might want to check if audit is *stale* compared to onboarding, but for now simple existence is enough
-    if (!domainAuditCompleted) {
-      return {
-        stage: 'domain_readiness',
-        details: {
-          onboarding: { completed: true, date: onboardingDate },
-          scoring: { status: 'completed', progress: 100 },
-          domainReadiness: { status: 'not_started', lastAuditDate: null },
-          recommendations: { status: 'not_started', lastGeneratedDate: null }
-        },
-        nextAction: 'trigger_domain_readiness'
-      };
-    }
-
-    // 4. Check Recommendations
+    // 4. Check Recommendations - trigger directly after scoring (domain_readiness is NOT required)
     const { data: generations } = await supabaseAdmin
       .from('recommendation_generations')
       .select('generated_at')
@@ -158,13 +144,13 @@ export class BrandService {
     const lastGeneratedDate = recommendationsGenerated ? generations[0].generated_at : null;
 
     if (!recommendationsGenerated) {
-      // Check if generation is newer than audit? For now, just check existence
+      // Trigger recommendations directly after scoring is complete (not dependent on domain_readiness)
       return {
         stage: 'recommendations',
         details: {
           onboarding: { completed: true, date: onboardingDate },
           scoring: { status: 'completed', progress: 100 },
-          domainReadiness: { status: 'completed', lastAuditDate },
+          domainReadiness: { status: domainAuditCompleted ? 'completed' : 'not_started', lastAuditDate },
           recommendations: { status: 'not_started', lastGeneratedDate: null }
         },
         nextAction: 'trigger_recommendations'
@@ -177,7 +163,7 @@ export class BrandService {
       details: {
         onboarding: { completed: true, date: onboardingDate },
         scoring: { status: 'completed', progress: 100 },
-        domainReadiness: { status: 'completed', lastAuditDate },
+        domainReadiness: { status: domainAuditCompleted ? 'completed' : 'not_started', lastAuditDate },
         recommendations: { status: 'generated', lastGeneratedDate }
       },
       nextAction: 'view_dashboard'

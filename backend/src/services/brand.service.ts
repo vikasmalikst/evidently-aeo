@@ -1,10 +1,10 @@
 import { supabaseAdmin } from '../config/database';
-import { 
-  Brand, 
-  BrandOnboardingRequest, 
-  BrandOnboardingResponse, 
+import {
+  Brand,
+  BrandOnboardingRequest,
+  BrandOnboardingResponse,
   DatabaseError,
-  ValidationError 
+  ValidationError
 } from '../types/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { queryGenerationService } from './query-generation.service';
@@ -26,6 +26,150 @@ type NormalizedCompetitor = {
 import { brandProductEnrichmentService } from './onboarding/brand-product-enrichment.service';
 
 export class BrandService {
+  /**
+   * Get the comprehensive onboarding status for a brand
+   * Tracks progress through: Onboarding -> Scoring -> Domain READINESS -> Recommendations
+   */
+  async getOnboardingStatus(brandId: string): Promise<{
+    stage: 'onboarding' | 'scoring' | 'domain_readiness' | 'recommendations' | 'complete';
+    details: {
+      onboarding: { completed: boolean; date: string | null };
+      scoring: { status: 'pending' | 'processing' | 'completed'; progress: number };
+      domainReadiness: { status: 'not_started' | 'completed'; lastAuditDate: string | null };
+      recommendations: { status: 'not_started' | 'generated'; lastGeneratedDate: string | null };
+    };
+    nextAction: 'wait' | 'trigger_domain_readiness' | 'trigger_recommendations' | 'view_dashboard';
+  }> {
+    // 1. Check Onboarding Artifacts
+    const { data: artifacts } = await supabaseAdmin
+      .from('onboarding_artifacts')
+      .select('completed_at_iso')
+      .eq('brand_id', brandId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const onboardingCompleted = !!(artifacts && artifacts.length > 0);
+    const onboardingDate = onboardingCompleted ? artifacts[0].completed_at_iso : null;
+
+    if (!onboardingCompleted) {
+      return {
+        stage: 'onboarding',
+        details: {
+          onboarding: { completed: false, date: null },
+          scoring: { status: 'pending', progress: 0 },
+          domainReadiness: { status: 'not_started', lastAuditDate: null },
+          recommendations: { status: 'not_started', lastGeneratedDate: null }
+        },
+        nextAction: 'wait' // Waiting for onboarding to finish
+      };
+    }
+
+    // 2. Check Scoring Status (Collector Results)
+    // Only consider results associated with the latest onboarding or recent time window if needed
+    // For now, checks all recent collector results
+    const { data: collectorResults } = await supabaseAdmin
+      .from('collector_results')
+      .select('scoring_status, status')
+      .eq('brand_id', brandId);
+
+    let scoringStatus: 'pending' | 'processing' | 'completed' = 'pending';
+    let scoringProgress = 0;
+
+    if (collectorResults && collectorResults.length > 0) {
+      const total = collectorResults.length;
+      const completed = collectorResults.filter(
+        r => r.scoring_status === 'completed' || r.scoring_status === 'error' || r.scoring_status === 'timeout'
+      ).length;
+      const processing = collectorResults.filter(
+        r => r.scoring_status === 'processing' || r.status === 'processing'
+      ).length;
+
+      scoringProgress = Math.round((completed / total) * 100);
+
+      if (completed === total) {
+        scoringStatus = 'completed';
+      } else if (processing > 0 || completed > 0) {
+        scoringStatus = 'processing';
+      }
+    } else {
+      // If no results yet but onboarding done, likely jobs are just starting or metrics are being calculated
+      // Assume processing if onboarding is very recent, otherwise might be stuck or using optimized metrics
+      scoringStatus = 'processing';
+    }
+
+    // Check if optimized metrics exist (alternative to collector_results for scoring check)
+    if (scoringStatus !== 'completed') {
+      const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
+      const hasMetrics = await optimizedMetricsHelper.hasMetricsForBrand(brandId);
+      if (hasMetrics) {
+        scoringStatus = 'completed';
+        scoringProgress = 100;
+      }
+    }
+
+    if (scoringStatus !== 'completed') {
+      return {
+        stage: 'scoring',
+        details: {
+          onboarding: { completed: true, date: onboardingDate },
+          scoring: { status: scoringStatus, progress: scoringProgress },
+          domainReadiness: { status: 'not_started', lastAuditDate: null },
+          recommendations: { status: 'not_started', lastGeneratedDate: null }
+        },
+        nextAction: 'wait' // Waiting for scoring to finish
+      };
+    }
+
+    // 3. Check Domain Readiness (for tracking only - not required for recommendations)
+    // Domain readiness is handled separately in the onboarding flow (shown to user first)
+    const { data: audits } = await supabaseAdmin
+      .from('domain_readiness_audits')
+      .select('created_at')
+      .eq('brand_id', brandId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const domainAuditCompleted = !!(audits && audits.length > 0);
+    const lastAuditDate = domainAuditCompleted ? audits[0].created_at : null;
+
+    // 4. Check Recommendations - trigger directly after scoring (domain_readiness is NOT required)
+    const { data: generations } = await supabaseAdmin
+      .from('recommendation_generations')
+      .select('generated_at')
+      .eq('brand_id', brandId)
+      .order('generated_at', { ascending: false })
+      .limit(1);
+
+    const recommendationsGenerated = !!(generations && generations.length > 0);
+    const lastGeneratedDate = recommendationsGenerated ? generations[0].generated_at : null;
+
+    if (!recommendationsGenerated) {
+      // Trigger recommendations directly after scoring is complete (not dependent on domain_readiness)
+      return {
+        stage: 'recommendations',
+        details: {
+          onboarding: { completed: true, date: onboardingDate },
+          scoring: { status: 'completed', progress: 100 },
+          domainReadiness: { status: domainAuditCompleted ? 'completed' : 'not_started', lastAuditDate },
+          recommendations: { status: 'not_started', lastGeneratedDate: null }
+        },
+        nextAction: 'trigger_recommendations'
+      };
+    }
+
+    // All done
+    return {
+      stage: 'complete',
+      details: {
+        onboarding: { completed: true, date: onboardingDate },
+        scoring: { status: 'completed', progress: 100 },
+        domainReadiness: { status: domainAuditCompleted ? 'completed' : 'not_started', lastAuditDate },
+        recommendations: { status: 'generated', lastGeneratedDate }
+      },
+      nextAction: 'view_dashboard'
+    };
+  }
+
   private parseFiniteNumber(value: any): number | null {
     if (value === null || value === undefined) return null;
     const num = typeof value === 'number' ? value : Number(value);
@@ -47,7 +191,7 @@ export class BrandService {
    * Create a new brand for a customer
    */
   async createBrand(
-    customerId: string, 
+    customerId: string,
     brandData: BrandOnboardingRequest
   ): Promise<BrandOnboardingResponse> {
     try {
@@ -103,12 +247,12 @@ export class BrandService {
 
       let brandId: string;
       let newBrand: any;
-      
+
       if (existingBrand) {
         // Brand exists - update it and proceed with adding queries/topics/competitors
         brandId = existingBrand.id;
         console.log(`🔄 Updating existing brand: ${existingBrand.name} (${brandId})`);
-        
+
         // Update brand metadata and other fields
         const metadata = {
           ...(brandData.metadata || {}),
@@ -228,15 +372,15 @@ export class BrandService {
           }
         })
         .filter((item): item is NormalizedCompetitor => Boolean(item));
-      
+
       // 🎯 NEW: Verify competitors with enhanced validation
       const verifiedCompetitors: NormalizedCompetitor[] = await this.verifyCompetitors(
         normalizedCompetitors,
         brandData.brand_name
       );
-      
+
       const competitorNames = verifiedCompetitors.map((competitor) => competitor.name).filter(Boolean);
-      
+
       // Create brand if it doesn't exist
       if (!existingBrand) {
         // Prepare metadata with ai_models
@@ -250,9 +394,9 @@ export class BrandService {
           brand_logo: (brandData as any).logo || brandData.metadata?.logo || undefined,
           competitors_detail: verifiedCompetitors
         };
-        
+
         const brandSlug = brandData.brand_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        
+
         const { data: createdBrand, error: brandError } = await supabaseAdmin
           .from('brands')
           .insert({
@@ -284,7 +428,7 @@ export class BrandService {
           });
           throw new DatabaseError(`Failed to create brand: ${brandError?.message || 'Unknown error'}`);
         }
-        
+
         newBrand = createdBrand;
       }
 
@@ -336,19 +480,19 @@ export class BrandService {
             .from('brand_competitors')
             .select('competitor_name')
             .eq('brand_id', newBrand.id);
-          
+
           if (existingCompetitors) {
             existingCompetitorNames = new Set(
               existingCompetitors.map((c: any) => c.competitor_name?.toLowerCase().trim()).filter(Boolean)
             );
           }
         }
-        
+
         // Filter out competitors that already exist
-        const newCompetitors = verifiedCompetitors.filter(competitor => 
+        const newCompetitors = verifiedCompetitors.filter(competitor =>
           !existingCompetitorNames.has(competitor.name.toLowerCase().trim())
         );
-        
+
         if (newCompetitors.length > 0) {
           const competitorRecords = newCompetitors.map((competitor, index) => {
             // Get the next priority number (existing max + index + 1)
@@ -391,7 +535,7 @@ export class BrandService {
           console.log(`🔄 Triggering automatic brand enrichment for new brand ${newBrand.id}...`);
           // Import and trigger enrichment asynchronously (non-blocking)
           const { brandProductEnrichmentService } = await import('./onboarding/brand-product-enrichment.service');
-          
+
           // Run in background to not block brand creation response
           setTimeout(async () => {
             try {
@@ -402,7 +546,7 @@ export class BrandService {
               // Don't throw - enrichment failure shouldn't block brand creation
             }
           }, 500); // Small delay to ensure brand creation response is sent first
-          
+
           console.log(`✅ Automatic brand enrichment triggered for brand ${newBrand.id} (running in background)`);
         } catch (enrichmentError) {
           console.warn(`⚠️ Failed to trigger brand enrichment for brand ${newBrand.id} (non-blocking):`, enrichmentError);
@@ -445,7 +589,7 @@ export class BrandService {
       // Insert AEO topics into brand_topics table
       // Check both aeo_topics and metadata.topics fields
       const topics = brandData.aeo_topics || (brandData as any).metadata?.topics || [];
-      
+
       // Extract topic labels and categories from objects or use strings directly
       const topicData = topics.map((topic: any) => {
         if (typeof topic === 'string') {
@@ -456,10 +600,10 @@ export class BrandService {
           category: topic.category || null
         };
       });
-      
+
       const topicLabels = topicData.map(t => t.label);
       const topicsWithCategories = topicData.filter(t => t.category);
-      
+
       console.log('🔍 DEBUG: Topics extraction:', {
         aeo_topics: brandData.aeo_topics,
         metadata_topics: (brandData as any).metadata?.topics,
@@ -469,7 +613,7 @@ export class BrandService {
         topics_length: topics.length,
         is_array: Array.isArray(topics)
       });
-      
+
       if (topicLabels && Array.isArray(topicLabels) && topicLabels.length > 0) {
         // Check existing topics to avoid duplicates
         let existingTopicNames = new Set<string>();
@@ -478,14 +622,14 @@ export class BrandService {
             .from('brand_topics')
             .select('topic_name')
             .eq('brand_id', newBrand.id);
-          
+
           if (existingTopics) {
             existingTopicNames = new Set(
               existingTopics.map((t: any) => t.topic_name?.toLowerCase().trim()).filter(Boolean)
             );
           }
         }
-        
+
         // Create a map of topic_name -> category for quick lookup
         const categoryMap = new Map<string, string>();
         topicsWithCategories.forEach(t => {
@@ -506,7 +650,7 @@ export class BrandService {
             categoryMap.set(t.label, normalizedCategory);
           }
         });
-        
+
         // Deduplicate topics by name (keep first occurrence)
         const seenTopics = new Set<string>();
         const uniqueTopicLabels: string[] = [];
@@ -517,12 +661,12 @@ export class BrandService {
             uniqueTopicLabels.push(topicLabel);
           }
         }
-        
+
         // Filter out topics that already exist
-        const newTopics = uniqueTopicLabels.filter(topicLabel => 
+        const newTopics = uniqueTopicLabels.filter(topicLabel =>
           !existingTopicNames.has(topicLabel.toLowerCase().trim())
         );
-        
+
         if (newTopics.length > 0) {
           // Helper function to normalize category before insertion
           const normalizeCategoryForDB = (cat: string | null | undefined): string | null => {
@@ -540,13 +684,13 @@ export class BrandService {
             // If invalid category, return null (will be categorized later by AI)
             return null;
           };
-          
+
           const topicRecords = newTopics.map((topicLabel: string) => {
             // Get category from map or find it in original topics
             let category = categoryMap.get(topicLabel);
             if (!category) {
               // Try to find category from original topic data
-              const originalTopic = topics.find((t: any) => 
+              const originalTopic = topics.find((t: any) =>
                 (t.label || t.name || String(t)).toLowerCase().trim() === topicLabel.toLowerCase().trim()
               );
               if (originalTopic && originalTopic.category) {
@@ -555,7 +699,7 @@ export class BrandService {
             }
             // Normalize category before insertion
             const normalizedCategory = normalizeCategoryForDB(category);
-            
+
             return {
               brand_id: newBrand.id,
               topic_name: topicLabel,
@@ -565,7 +709,7 @@ export class BrandService {
           });
 
           console.log('🔍 DEBUG: Inserting topics into brand_topics table:', topicRecords);
-          
+
           const { error: topicError } = await supabaseAdmin
             .from('brand_topics')
             .insert(topicRecords);
@@ -580,35 +724,35 @@ export class BrandService {
         } else if (existingBrand) {
           console.log(`ℹ️ All ${uniqueTopicLabels.length} topics already exist for brand ${newBrand.name}`);
         }
-        
+
         // For existing brands, we still want to proceed with query generation for existing topics
         // So we use all unique topics (not just new ones) for query generation
         const topicsForQueryGen = existingBrand ? uniqueTopicLabels : newTopics;
-        
+
         if (topicsForQueryGen.length > 0) {
-          
+
           // Check which topics need categorization (those without category from frontend)
           // For existing brands, check all topics; for new brands, only check new topics
           const topicsToCheck = existingBrand ? uniqueTopicLabels : newTopics;
           const uncategorizedTopics = topicsToCheck.filter(label => !categoryMap.has(label));
           const categorizedCount = topicsToCheck.length - uncategorizedTopics.length;
-          
+
           if (categorizedCount > 0) {
             console.log(`✅ ${categorizedCount} topics already have categories from frontend`);
           }
-          
+
           // Only categorize topics that don't have categories from frontend
           if (uncategorizedTopics.length > 0) {
             console.log(`🤖 Starting AI categorization for ${uncategorizedTopics.length} uncategorized topics`);
             console.log(`📋 Topics to categorize:`, uncategorizedTopics);
-            
+
             try {
               await this.categorizeTopicsWithAI(newBrand.id, uncategorizedTopics);
               console.log(`✅ AI categorization completed for brand ${newBrand.id}`);
             } catch (error) {
               console.error('⚠️ Failed to categorize topics with AI:', error);
               console.log('🔄 AI categorization failed, using rule-based fallback');
-              
+
               // GUARANTEED FALLBACK: Always categorize topics using rules
               try {
                 await this.categorizeTopicsWithRules(newBrand.id, uncategorizedTopics);
@@ -620,17 +764,17 @@ export class BrandService {
           } else {
             console.log(`✅ All topics already have categories, skipping AI categorization`);
           }
-          
+
           // 🎯 PHASE 3: Save user-selected queries OR generate new queries
           // This code is inside the else block (line 380) - topics were inserted successfully
           // Check if user has selected queries in metadata.prompts or metadata.prompts_with_topics
           const promptsWithTopics = (brandData.metadata as any)?.prompts_with_topics || (brandData.metadata as any)?.prompts || [];
           let queryGenResult: { total_queries: number };
-          
+
           if (promptsWithTopics && Array.isArray(promptsWithTopics) && promptsWithTopics.length > 0) {
             // Check if prompts are in new format (with topics) or old format (just strings)
             const isNewFormat = promptsWithTopics.length > 0 && typeof promptsWithTopics[0] === 'object' && promptsWithTopics[0].prompt;
-            
+
             // Save user-selected queries directly
             console.log(`💾 Saving ${promptsWithTopics.length} user-selected queries to database (format: ${isNewFormat ? 'with topics' : 'legacy'})`);
             try {
@@ -650,17 +794,17 @@ export class BrandService {
               queryGenResult = { total_queries: 0 };
             }
           }
-          
+
           // If no user-selected queries or save failed, generate queries with AI
           if (!queryGenResult || queryGenResult.total_queries === 0) {
             try {
               // Check if we should use the new topics+queries generation approach
               const useNewApproach = process.env.USE_NEW_TOPICS_QUERY_GENERATION === 'true';
-              
+
               if (useNewApproach && topicsForQueryGen.length === 0) {
                 // Use new approach: generate topics and queries together
                 console.log(`🚀 Using NEW topics+queries generation approach for brand ${newBrand.name}`);
-                
+
                 const topicsAndQueries = await topicsQueryGenerationService.generateTopicsAndQueries({
                   brandName: newBrand.name,
                   industry: brandData.industry,
@@ -683,7 +827,7 @@ export class BrandService {
                 // Use original approach: generate queries for existing topics
                 console.log(`🚀 Triggering AI query generation for ${topicsForQueryGen.length} topics`);
                 console.log(`📋 Topics for query generation:`, topicsForQueryGen);
-                
+
                 queryGenResult = await queryGenerationService.generateSeedQueries({
                   url: brandData.website_url,
                   locale: 'en-US',
@@ -696,7 +840,7 @@ export class BrandService {
                   customer_id: customerId,
                   topics: topicsForQueryGen // Pass topicsForQueryGen instead of topicLabels
                 });
-                
+
                 console.log(`✅ Query generation completed for brand ${newBrand.id} - Generated ${queryGenResult.total_queries} queries`);
               }
             } catch (genError) {
@@ -704,16 +848,16 @@ export class BrandService {
               queryGenResult = { total_queries: 0 };
             }
           }
-          
+
           // 🎯 PHASE 4: Automatically trigger data collection for generated queries
           // Use selected AI models from onboarding, or default to common collectors
           const selectedModels = brandData.ai_models || [];
           const collectors = this.mapAIModelsToCollectors(selectedModels);
-          
+
           if (collectors.length > 0 && queryGenResult.total_queries > 0) {
             try {
               console.log(`🚀 Triggering automatic data collection for ${queryGenResult.total_queries} queries using collectors: ${collectors.join(', ')}`);
-              
+
               // Fetch the generated queries from database
               const { data: generatedQueries, error: queriesError } = await supabaseAdmin
                 .from('generated_queries')
@@ -723,22 +867,22 @@ export class BrandService {
                 .eq('is_active', true)
                 .order('created_at', { ascending: false })
                 .limit(queryGenResult.total_queries);
-              
+
               if (queriesError) {
                 console.error('⚠️ Failed to fetch generated queries for data collection:', queriesError);
               } else if (generatedQueries && generatedQueries.length > 0) {
                 // Prepare execution requests
                 const executionRequests: QueryExecutionRequest[] = generatedQueries.map(query => ({
-        queryId: query.id,
-        brandId: newBrand.id,
-        customerId: customerId,
-        queryText: query.query_text,
-        intent: query.intent || 'data_collection',
-        locale: 'en-US',
-        country: query.country || 'US',
-        collectors: collectors
-      }));
-                
+                  queryId: query.id,
+                  brandId: newBrand.id,
+                  customerId: customerId,
+                  queryText: query.query_text,
+                  intent: query.intent || 'data_collection',
+                  locale: 'en-US',
+                  country: query.country || 'US',
+                  collectors: collectors
+                }));
+
                 // Execute queries through collectors (non-blocking)
                 // Use setTimeout to run in background without blocking brand creation response
                 setTimeout(async () => {
@@ -757,36 +901,36 @@ export class BrandService {
                     console.log(`📊 Starting background data collection for ${executionRequests.length} queries...`);
                     console.log(`📋 Collectors: ${collectors.join(', ')}`);
                     console.log(`🔗 Brand ID: ${newBrand.id}, Customer ID: ${customerId}`);
-                    
+
                     const results = await dataCollectionService.executeQueries(executionRequests);
                     const endTime = Date.now();
                     const durationMs = endTime - startTime;
-                    
+
                     collectionMetrics.totalExecutions = results.length;
                     collectionMetrics.successCount = results.filter(r => r.status === 'completed').length;
                     collectionMetrics.failedCount = results.filter(r => r.status === 'failed').length;
-                    
+
                     // Aggregate failures by collector type
                     results.forEach(result => {
                       if (result.status === 'failed') {
                         const collector = result.collectorType || 'unknown';
-                        collectionMetrics.failuresByCollector[collector] = 
+                        collectionMetrics.failuresByCollector[collector] =
                           (collectionMetrics.failuresByCollector[collector] || 0) + 1;
-                        
+
                         // Extract error type from metadata if available
                         if (result.metadata?.error_type) {
                           const errorType = result.metadata.error_type;
-                          collectionMetrics.errorsByType[errorType] = 
+                          collectionMetrics.errorsByType[errorType] =
                             (collectionMetrics.errorsByType[errorType] || 0) + 1;
                         }
                       }
-                      
+
                       // Track execution IDs
                       if (result.executionId) {
                         collectionMetrics.executionIds.push(result.executionId);
                       }
                     });
-                    
+
                     // Log structured summary
                     console.log(`✅ Data collection completed in ${durationMs}ms`);
                     console.log(`📊 Data collection summary:`);
@@ -794,26 +938,26 @@ export class BrandService {
                     console.log(`   Total executions: ${collectionMetrics.totalExecutions}`);
                     console.log(`   Successful: ${collectionMetrics.successCount} (${Math.round((collectionMetrics.successCount / collectionMetrics.totalExecutions) * 100)}%)`);
                     console.log(`   Failed: ${collectionMetrics.failedCount} (${Math.round((collectionMetrics.failedCount / collectionMetrics.totalExecutions) * 100)}%)`);
-                    
+
                     if (Object.keys(collectionMetrics.failuresByCollector).length > 0) {
                       console.log(`   Failures by collector:`, collectionMetrics.failuresByCollector);
                     }
-                    
+
                     if (Object.keys(collectionMetrics.errorsByType).length > 0) {
                       console.log(`   Errors by type:`, collectionMetrics.errorsByType);
                     }
-                    
+
                     // Store metrics in database (non-blocking)
                     try {
                       await this.storeDataCollectionMetrics(newBrand.id, customerId, collectionMetrics, durationMs);
                     } catch (metricsError) {
                       console.warn('⚠️ Failed to store data collection metrics (non-critical):', metricsError);
                     }
-                    
+
                   } catch (collectionError: any) {
                     const endTime = Date.now();
                     const durationMs = endTime - startTime;
-                    
+
                     // Structured error logging with context
                     const errorContext = {
                       brandId: newBrand.id,
@@ -823,24 +967,24 @@ export class BrandService {
                       durationMs: durationMs,
                       timestamp: new Date().toISOString()
                     };
-                    
+
                     console.error('❌ Data collection execution failed (non-critical):', {
                       error: collectionError?.message || String(collectionError),
                       stack: collectionError?.stack,
                       context: errorContext
                     });
-                    
+
                     // Log error to database (non-blocking)
                     try {
                       await this.logDataCollectionError(newBrand.id, customerId, collectionError, errorContext);
                     } catch (logError) {
                       console.warn('⚠️ Failed to log data collection error (non-critical):', logError);
                     }
-                    
+
                     // Don't throw - data collection failure shouldn't affect brand creation
                   }
                 }, 1000); // Small delay to ensure brand creation response is sent first
-                
+
                 console.log(`✅ Data collection triggered in background for ${executionRequests.length} queries`);
               } else {
                 console.warn('⚠️ No generated queries found for data collection');
@@ -870,7 +1014,7 @@ export class BrandService {
         console.log(`💾 Saving provided enrichment data for brand ${newBrand.id}...`);
         try {
           await brandProductEnrichmentService.saveEnrichmentToDatabase(
-            newBrand.id, 
+            newBrand.id,
             brandData.enrichment_data,
             (msg) => console.log(`[EnrichmentStorage] ${msg}`)
           );
@@ -1045,7 +1189,7 @@ export class BrandService {
             brand_topics!left (*)
           `)
           .eq('homepage_url', homepage_url);
-        
+
         // Filter by customer if provided
         if (customerId) {
           query = query.eq('customer_id', customerId);
@@ -1070,7 +1214,7 @@ export class BrandService {
             brand_topics!left (*)
           `)
           .ilike('name', name);
-        
+
         // Filter by customer if provided
         if (customerId) {
           exactQuery = exactQuery.eq('customer_id', customerId);
@@ -1080,7 +1224,7 @@ export class BrandService {
         const { data: exactMatches, error: exactError } = await exactQuery;
 
         console.log('🔍 Exact match result:', { count: exactMatches?.length, exactError });
-        
+
         const exactMatch = exactMatches && exactMatches.length > 0 ? exactMatches[0] : null;
 
         if (!exactError && exactMatch) {
@@ -1099,7 +1243,7 @@ export class BrandService {
             `)
             .ilike('name', `%${name}%`)
             .limit(1);
-          
+
           // Filter by customer if provided
           if (customerId) {
             partialQuery = partialQuery.eq('customer_id', customerId);
@@ -1146,12 +1290,12 @@ export class BrandService {
           console.log('✅ Found onboarding artifact for brand');
           // Merge artifact data with brand data
           brand.onboarding_artifact = artifact.brand_intel;
-          
+
           // If topics from artifact are more complete, use those
           if (artifact.brand_intel.topics && artifact.brand_intel.topics.length > 0) {
             brand.topics = artifact.brand_intel.topics;
           }
-          
+
           // Add sources if available
           if (artifact.brand_intel.sources) {
             brand.sources = artifact.brand_intel.sources;
@@ -1173,8 +1317,8 @@ export class BrandService {
    * Update brand
    */
   async updateBrand(
-    brandId: string, 
-    customerId: string, 
+    brandId: string,
+    customerId: string,
     updateData: any
   ): Promise<Brand> {
     try {
@@ -1361,12 +1505,12 @@ export class BrandService {
    */
   private transformBrand(brand: any): Brand {
     if (!brand) return brand;
-    
+
     // Map 'archived' back to 'inactive' for the frontend
     if (brand.status === 'archived') {
       brand.status = 'inactive';
     }
-    
+
     return brand;
   }
 
@@ -1422,7 +1566,7 @@ export class BrandService {
   async getBrandTopics(brandId: string, customerId: string): Promise<any[]> {
     try {
       console.log(`🎯 Fetching AEO topics for brand ${brandId}, customer ${customerId}`);
-      
+
       // First try to get topics from brand_topics table (if they exist)
       const { data: dbTopics, error: dbError } = await supabaseAdmin
         .from('brand_topics')
@@ -1450,7 +1594,7 @@ export class BrandService {
 
       // Extract topics from metadata
       const topics = brand?.metadata?.topics || [];
-      
+
       if (topics.length === 0) {
         console.log(`⚠️ No topics found for brand ${brandId}`);
         return [];
@@ -1483,7 +1627,7 @@ export class BrandService {
   async getBrandCategoriesWithTopics(brandId: string, customerId: string): Promise<any[]> {
     try {
       console.log(`🎯 Fetching categories with topics for brand ${brandId}`);
-      
+
       // Get all categories
       const { data: categories, error: categoriesError } = await supabaseAdmin
         .from('categories')
@@ -1505,7 +1649,7 @@ export class BrandService {
       // Group topics by category
       const categoriesWithTopics = categories.map(category => {
         const categoryTopics = topics.filter(topic => topic.category === category.name);
-        console.log(`🔍 DEBUG: Category "${category.name}" has ${categoryTopics.length} topics:`, 
+        console.log(`🔍 DEBUG: Category "${category.name}" has ${categoryTopics.length} topics:`,
           categoryTopics.map(t => t.topic_name || t.topic || t));
         return {
           ...category,
@@ -1539,11 +1683,11 @@ export class BrandService {
     const overallStart = performance.now();
     try {
       console.log(`🎯 Fetching topics WITH analytics from new schema (metric_facts) for brand ${brandId}`);
-      
+
       // Set default date range (last 30 days)
       const end = endDate ? new Date(endDate) : new Date();
       const start = startDate ? new Date(startDate) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-      
+
       // Validate dates
       if (isNaN(start.getTime())) {
         throw new Error(`Invalid startDate: ${startDate}`);
@@ -1551,14 +1695,14 @@ export class BrandService {
       if (isNaN(end.getTime())) {
         throw new Error(`Invalid endDate: ${endDate}`);
       }
-      
+
       const startIso = start.toISOString();
       const endIso = end.toISOString();
-      
+
       console.log(`📅 Date range: ${startIso} to ${endIso}`);
-      
+
       const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
-      
+
       // Map collector type(s) if provided
       // Support both single collector type and comma-separated multiple types
       let mappedCollectorTypes: string[] = [];
@@ -1581,17 +1725,17 @@ export class BrandService {
           'bing_copilot': 'Bing Copilot',
           'bing copilot': 'Bing Copilot'
         };
-        
+
         // Split by comma and map each collector type
         const inputTypes = collectorType.split(',').map(t => t.trim()).filter(Boolean);
         mappedCollectorTypes = inputTypes.map(input => {
           const normalizedInput = input.toLowerCase().trim();
           return collectorTypeMap[normalizedInput] || normalizedInput;
         });
-        
+
         console.log(`🔍 Filtering by collector_type(s): ${mappedCollectorTypes.join(', ')} (from input: ${collectorType})`);
       }
-      
+
       // Get distinct collector_types (models) available for this brand in the date range
       // Do this BEFORE filtering so we always return all available models, not just the filtered one
       const step1Start = performance.now();
@@ -1600,18 +1744,18 @@ export class BrandService {
         startDate: startIso,
         endDate: endIso,
       });
-      
+
       const step1Time = performance.now() - step1Start;
       let availableModels = new Set<string>();
-      
+
       if (availableModelsResult.error) {
         console.warn(`⚠️ Warning: Error fetching distinct collector types:`, availableModelsResult.error);
       } else {
         availableModels = availableModelsResult.data;
       }
-      
+
       console.log(`📊 Available models: ${Array.from(availableModels).join(', ') || 'none'} [${step1Time.toFixed(2)}ms]`);
-      
+
       // Get positions from metric_facts (new schema only)
       const step2Start = performance.now();
       const result = await optimizedMetricsHelper.fetchTopicPositions({
@@ -1621,14 +1765,14 @@ export class BrandService {
         endDate: endIso,
         collectorTypes: mappedCollectorTypes.length > 0 ? mappedCollectorTypes : undefined,
       });
-      
+
       const step2Time = performance.now() - step2Start;
-      
+
       if (result.error) {
         console.error(`❌ Error fetching positions from metric_facts [${step2Time.toFixed(2)}ms]:`, result.error);
         throw new Error(`Failed to fetch positions: ${result.error}`);
       }
-      
+
       // Transform to expected format
       const positions = result.data.map(row => ({
         share_of_answers_brand: row.share_of_answers_brand,
@@ -1641,7 +1785,7 @@ export class BrandService {
         metadata: null, // Not used in new schema
         collector_type: row.collector_type,
       }));
-      
+
       // Log detailed info about positions and topics
       const positionsWithTopicsCount = positions.filter(p => p.topic && p.topic.trim().length > 0).length;
       const positionsWithoutTopicsCount = positions.length - positionsWithTopicsCount;
@@ -1651,7 +1795,7 @@ export class BrandService {
       if (positions.length > 0 && positionsWithoutTopicsCount > 0) {
         console.log(`   ⚠️ Warning: ${positionsWithoutTopicsCount} positions will be filtered out because they have no topic`);
       }
-      
+
       if (!positions || positions.length === 0) {
         console.log(`⚠️ No positions found in metric_facts${mappedCollectorTypes.length > 0 ? ` for collector_type(s): ${mappedCollectorTypes.join(', ')}` : ''} in date range ${startIso} to ${endIso}`);
         console.log(`   - Brand ID: ${brandId}`);
@@ -1660,7 +1804,7 @@ export class BrandService {
         // Return empty topics but still return availableModels so the filter dropdown works
         return { topics: [], availableModels: Array.from(availableModels) };
       }
-      
+
       // Group analytics by topic (distinct topics only, not by collector_type)
       // Topics come directly from metric_facts.topic column
       const step3Start = performance.now();
@@ -1676,28 +1820,28 @@ export class BrandService {
         }>;
         collectorTypes: Set<string>; // Track which models have data for this topic
       }>();
-      
+
       let positionsWithTopics = 0;
       let positionsWithoutTopics = 0;
-      
+
       (positions || []).forEach(pos => {
         // Topic comes directly from metric_facts.topic column
         const topicName = pos.topic && typeof pos.topic === 'string' && pos.topic.trim().length > 0
           ? pos.topic.trim()
           : null;
-        
+
         // Skip if no topic found
         if (!topicName) {
           positionsWithoutTopics++;
           return;
         }
-        
+
         positionsWithTopics++;
-        
+
         // Group by topic name only (not by collector_type) to get distinct topics
         const normalizedTopicName = topicName.toLowerCase().trim();
         const collectorType = pos.collector_type || 'unknown';
-        
+
         if (!topicMap.has(normalizedTopicName)) {
           topicMap.set(normalizedTopicName, {
             topicName, // Keep original casing
@@ -1705,7 +1849,7 @@ export class BrandService {
             collectorTypes: new Set<string>()
           });
         }
-        
+
         const topicData = topicMap.get(normalizedTopicName)!;
         topicData.analytics.push({
           // Keep NULL as NULL (don't convert to 0) to match SQL AVG behavior
@@ -1720,7 +1864,7 @@ export class BrandService {
         });
         topicData.collectorTypes.add(collectorType.toLowerCase());
       });
-      
+
       const step3Time = performance.now() - step3Start;
       console.log(`📊 Topic extraction summary [${step3Time.toFixed(2)}ms]:`);
       console.log(`   - Positions with topics: ${positionsWithTopics}`);
@@ -1742,7 +1886,7 @@ export class BrandService {
           console.log(`📊 Topic "${topicName}": analytics from collector types: ${Array.from(analyticsCollectorTypes).join(', ')} (${data.analytics.length} data points)`);
         });
       }
-      
+
       if (topicMap.size === 0) {
         console.log('⚠️ No topics found with analytics data.');
         console.log(`   - Total positions processed: ${positions.length}`);
@@ -1750,7 +1894,7 @@ export class BrandService {
         console.log(`   - Positions without topics: ${positionsWithoutTopics}`);
         console.log(`   - Date range: ${startIso} to ${endIso}`);
         console.log(`   - Brand ID: ${brandId}`);
-        
+
         // Debug: Check first few positions
         if (positions && positions.length > 0) {
           console.log('   Sample positions (first 3):');
@@ -1761,7 +1905,7 @@ export class BrandService {
           console.log('   ⚠️ No positions were returned from the query at all!');
         }
       }
-      
+
       // Step 4: Get topic metadata from brand_topics (if exists) for category/priority
       const step4MetadataStart = performance.now();
       const { data: brandTopics } = await supabaseAdmin
@@ -1769,7 +1913,7 @@ export class BrandService {
         .select('topic_name, category, priority, description, id')
         .eq('brand_id', brandId)
         .eq('is_active', true);
-      
+
       const brandTopicsMap = new Map<string, any>();
       if (brandTopics) {
         brandTopics.forEach(bt => {
@@ -1778,7 +1922,7 @@ export class BrandService {
       }
       const step4MetadataTime = performance.now() - step4MetadataStart;
       console.log(`📊 Step 4: Loaded ${brandTopicsMap.size} topic metadata entries [${step4MetadataTime.toFixed(2)}ms]`);
-      
+
       // Step 5: Calculate metrics for each distinct topic (aggregate only from filtered collector_types)
       const topicsWithAnalytics = Array.from(topicMap.entries()).map(([normalizedTopicName, data]) => {
         const analytics = data.analytics;
@@ -1794,47 +1938,47 @@ export class BrandService {
             : 0;
           console.log(`📊 Topic "${data.topicName}": ${analytics.length} data points, ${validSoAValues.length} with SOA, avg SOA: ${avgSoA.toFixed(2)}`);
         }
-        
+
         if (analytics.length === 0) {
           return null; // Skip topics with no analytics in date range
         }
-        
+
         // Calculate metrics - Exclude NULL values (matching SQL AVG behavior)
         const soaValues = analytics
           .map(a => a.share_of_answers_brand)
           .filter((v: any) => v !== null && v !== undefined && typeof v === 'number' && isFinite(v));
-        
+
         const sentimentValues = analytics
           .map(a => this.parseFiniteNumber(a.sentiment_score))
           .filter((v: any) => typeof v === 'number' && isFinite(v) && v !== null);
-        
+
         const visibilityValues = analytics
           .map(a => this.parseFiniteNumber(a.visibility_index))
           .filter((v: any) => typeof v === 'number' && isFinite(v) && v !== null);
-        
+
         const brandPresenceCount = analytics.filter(a => a.has_brand_presence).length;
         const totalQueries = analytics.length;
-        
+
         const avgShareOfAnswer = soaValues.length > 0
           ? soaValues.reduce((sum: number, v: number) => sum + v, 0) / soaValues.length
           : 0;
-        
+
         const avgSentiment = sentimentValues.length > 0
           ? sentimentValues.reduce((sum: number, v: number) => sum + v, 0) / sentimentValues.length
           : null;
-        
+
         const avgVisibilityRaw = visibilityValues.length > 0
           ? visibilityValues.reduce((sum: number, v: number) => sum + v, 0) / visibilityValues.length
           : null;
         const avgVisibilityScore = avgVisibilityRaw !== null ? this.normalizeVisibilityScore(avgVisibilityRaw) : null;
-        
+
         const brandPresencePercentage = totalQueries > 0
           ? (brandPresenceCount / totalQueries) * 100
           : null;
-        
+
         // Get metadata from brand_topics if available
         const brandTopicMeta = brandTopicsMap.get(normalizedTopicName);
-        
+
         return {
           id: brandTopicMeta?.id || `topic-${data.topicName.replace(/\s+/g, '-').toLowerCase()}`,
           topic_name: data.topicName,
@@ -1855,7 +1999,7 @@ export class BrandService {
           availableModels: Array.from(data.collectorTypes)
         };
       }).filter(Boolean) as any[]; // Remove nulls
-      
+
       // Sort by priority, then by SoA descending
       topicsWithAnalytics.sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority;
@@ -1863,7 +2007,7 @@ export class BrandService {
       });
       const step5Time = performance.now() - step3Start;
       console.log(`📊 Step 5: Grouped ${topicsWithAnalytics.length} topics from ${positions.length} positions [${step5Time.toFixed(2)}ms]`);
-      
+
       // Step 6: Fetch top citation sources per topic
       // Pass the filtered positions so citations are also filtered by collector_type
       const step6Start = performance.now();
@@ -1877,7 +2021,7 @@ export class BrandService {
       );
       const step6Time = performance.now() - step6Start;
       console.log(`📊 Step 6: Fetched top sources for ${topicSourcesMap.size} topics [${step6Time.toFixed(2)}ms]`);
-      
+
       // Step 7: Calculate competitor average SOA per topic (only competitor SOA, not brand SOA)
       const step7Start = performance.now();
       const industryAvgSoAMap = await this.getIndustryAvgSoAPerTopic(
@@ -1890,12 +2034,12 @@ export class BrandService {
       );
       const step7Time = performance.now() - step7Start;
       console.log(`📊 Step 7: Calculated competitor averages for ${industryAvgSoAMap.size} topics [${step7Time.toFixed(2)}ms]`);
-      
+
       // Add top sources and competitor average SOA to each topic
       topicsWithAnalytics.forEach(topic => {
         const normalizedName = topic.topic_name.toLowerCase().trim();
         topic.topSources = topicSourcesMap.get(normalizedName) || [];
-        
+
         // Add competitor averages (calculated from competitor values only)
         const industryAvg = industryAvgSoAMap.get(normalizedName);
         if (industryAvg) {
@@ -1925,18 +2069,18 @@ export class BrandService {
           topic.competitorSentimentMap = undefined;
         }
       });
-      
+
       // Return topics with available models metadata
       const response = {
         topics: topicsWithAnalytics,
         availableModels: Array.from(availableModels)
       };
-      
+
       const overallTime = performance.now() - overallStart;
       console.log(`✅ Returned ${topicsWithAnalytics.length} distinct topics with analytics data [TOTAL: ${overallTime.toFixed(2)}ms]`);
       console.log(`📊 Available models: ${Array.from(availableModels).join(', ')}`);
       return response;
-      
+
     } catch (error) {
       const overallTime = performance.now() - overallStart;
       console.error(`❌ Error in getBrandTopicsWithAnalytics [${overallTime.toFixed(2)}ms]:`, error);
@@ -2027,13 +2171,13 @@ export class BrandService {
         .select('name')
         .eq('id', currentBrandId)
         .single();
-      
+
       const currentBrandName = currentBrand?.name?.toLowerCase().trim() || null;
-      
+
       // Normalize topic names for matching
       const normalizedTopicNames = topicNames.map(name => name.toLowerCase().trim());
       const topicNameSet = new Set(normalizedTopicNames);
-      
+
       // Use optimized helper to get competitor metrics
       const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
       const result = await optimizedMetricsHelper.fetchCompetitorMetricsByTopic({
@@ -2045,21 +2189,21 @@ export class BrandService {
         endDate: endIso,
         competitorNames,
       });
-      
+
       if (result.error) {
         console.warn(`⚠️ Error fetching competitor metrics from new schema:`, result.error);
         return new Map();
       }
-      
+
       if (!result.data || result.data.length === 0) {
         console.log(`ℹ️ No competitor data found for comparison (${result.duration_ms}ms)`);
         console.log(`   - Looking for topics: ${normalizedTopicNames.join(', ')}`);
         console.log(`   - Date range: ${startIso} to ${endIso}`);
         return new Map();
       }
-      
+
       console.log(`📊 Found ${result.data.length} competitor positions for comparison (${result.duration_ms}ms)`);
-      
+
       // Group by normalized topic name and calculate averages (matching legacy logic)
       const topicDataMap = new Map<
         string,
@@ -2074,13 +2218,13 @@ export class BrandService {
           competitorSentimentMap?: Map<string, number[]>;
         }
       >();
-      
+
       result.data.forEach(pos => {
         const normalizedTopicName = pos.topic.toLowerCase().trim();
-        
+
         // Only process topics we care about
         if (!topicNameSet.has(normalizedTopicName)) return;
-        
+
         if (!topicDataMap.has(normalizedTopicName)) {
           topicDataMap.set(normalizedTopicName, {
             soaValues: [],
@@ -2093,29 +2237,29 @@ export class BrandService {
             competitorSentimentMap: competitorNames && competitorNames.length > 0 ? new Map() : undefined
           });
         }
-        
+
         const topicData = topicDataMap.get(normalizedTopicName)!;
-        
+
         // Parse metrics
         const competitorSoA = this.parseFiniteNumber(pos.share_of_answers);
         const competitorVisibilityRaw = this.parseFiniteNumber(pos.visibility_index);
         const competitorVisibility = competitorVisibilityRaw !== null ? this.normalizeVisibilityScore(competitorVisibilityRaw) : null;
         const competitorSentiment = this.parseFiniteNumber(pos.sentiment_score);
-        
+
         const competitorNameKey = pos.competitor_name ? pos.competitor_name.toLowerCase().trim() : null;
-        
+
         const anyMetricPresent =
           (typeof competitorSoA === 'number' && isFinite(competitorSoA)) ||
           (typeof competitorVisibility === 'number' && isFinite(competitorVisibility)) ||
           (typeof competitorSentiment === 'number' && isFinite(competitorSentiment));
-        
+
         if (anyMetricPresent) {
           // Track the brand_id (for brand count)
           if (pos.brand_id) {
             topicData.brandIds.add(pos.brand_id);
           }
         }
-        
+
         // Add SOA values
         if (typeof competitorSoA === 'number' && isFinite(competitorSoA)) {
           topicData.soaValues.push(competitorSoA);
@@ -2125,7 +2269,7 @@ export class BrandService {
             topicData.competitorSoAMap.get(competitorNameKey)!.push(competitorSoA);
           }
         }
-        
+
         // Add visibility values
         if (typeof competitorVisibility === 'number' && isFinite(competitorVisibility)) {
           topicData.visibilityValues.push(competitorVisibility);
@@ -2135,7 +2279,7 @@ export class BrandService {
             topicData.competitorVisibilityMap.get(competitorNameKey)!.push(competitorVisibility);
           }
         }
-        
+
         // Add sentiment values
         if (typeof competitorSentiment === 'number' && isFinite(competitorSentiment)) {
           topicData.sentimentValues.push(competitorSentiment);
@@ -2145,13 +2289,13 @@ export class BrandService {
             topicData.competitorSentimentMap.get(competitorNameKey)!.push(competitorSentiment);
           }
         }
-        
+
         // Track timestamp for trend calculation
         if (pos.processed_at) {
           topicData.timestamps.push(new Date(pos.processed_at));
         }
       });
-      
+
       // Calculate averages and trends for each topic (matching legacy logic)
       const resultMap = new Map<
         string,
@@ -2166,10 +2310,10 @@ export class BrandService {
           competitorSentiment?: Map<string, number>;
         }
       >();
-      
+
       topicDataMap.forEach((data, normalizedTopicName) => {
         if (data.soaValues.length === 0 && data.visibilityValues.length === 0 && data.sentimentValues.length === 0) return;
-        
+
         // Calculate average SOA (or individual competitor SOA if single competitor selected)
         let avgSoA: number = 0;
         let avgVisibility: number | null = null;
@@ -2177,11 +2321,11 @@ export class BrandService {
         let competitorSoA: Map<string, number> | undefined;
         let competitorVisibility: Map<string, number> | undefined;
         let competitorSentiment: Map<string, number> | undefined;
-        
+
         // If filtering by specific competitors and only one is selected, return that competitor's values
         if (competitorNames && competitorNames.length === 1) {
           const singleCompetitor = competitorNames[0];
-          
+
           // SOA
           if (data.competitorSoAMap) {
             const competitorValues = data.competitorSoAMap.get(singleCompetitor) || [];
@@ -2194,7 +2338,7 @@ export class BrandService {
           } else if (data.soaValues.length > 0) {
             avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
           }
-          
+
           // Visibility
           if (data.competitorVisibilityMap) {
             const values = data.competitorVisibilityMap.get(singleCompetitor) || [];
@@ -2208,7 +2352,7 @@ export class BrandService {
           } else if (data.visibilityValues.length > 0) {
             avgVisibility = data.visibilityValues.reduce((sum, val) => sum + val, 0) / data.visibilityValues.length;
           }
-          
+
           // Sentiment
           if (data.competitorSentimentMap) {
             const values = data.competitorSentimentMap.get(singleCompetitor) || [];
@@ -2227,15 +2371,15 @@ export class BrandService {
           if (data.soaValues.length > 0) {
             avgSoA = data.soaValues.reduce((sum, val) => sum + val, 0) / data.soaValues.length;
           }
-          
+
           if (data.visibilityValues.length > 0) {
             avgVisibility = data.visibilityValues.reduce((sum, val) => sum + val, 0) / data.visibilityValues.length;
           }
-          
+
           if (data.sentimentValues.length > 0) {
             avgSentiment = data.sentimentValues.reduce((sum, val) => sum + val, 0) / data.sentimentValues.length;
           }
-          
+
           // Calculate per-competitor averages if filtering by multiple competitors
           if (competitorNames && competitorNames.length > 1) {
             if (data.competitorSoAMap) {
@@ -2247,7 +2391,7 @@ export class BrandService {
                 }
               });
             }
-            
+
             if (data.competitorVisibilityMap) {
               competitorVisibility = new Map();
               data.competitorVisibilityMap.forEach((values, compName) => {
@@ -2257,7 +2401,7 @@ export class BrandService {
                 }
               });
             }
-            
+
             if (data.competitorSentimentMap) {
               competitorSentiment = new Map();
               data.competitorSentimentMap.forEach((values, compName) => {
@@ -2269,7 +2413,7 @@ export class BrandService {
             }
           }
         }
-        
+
         // Calculate trend
         let trend: { direction: 'up' | 'down' | 'neutral'; delta: number } = { direction: 'neutral', delta: 0 };
         if (data.timestamps.length >= 2 && data.soaValues.length >= 2) {
@@ -2278,11 +2422,11 @@ export class BrandService {
             .map((t, i) => ({ t, i }))
             .sort((a, b) => a.t.getTime() - b.t.getTime())
             .map(x => x.i);
-          
+
           const midpoint = Math.floor(sortedIndices.length / 2);
           const firstHalfIndices = sortedIndices.slice(0, midpoint);
           const secondHalfIndices = sortedIndices.slice(midpoint);
-          
+
           if (firstHalfIndices.length > 0 && secondHalfIndices.length > 0) {
             const firstHalfSoA = firstHalfIndices
               .map(i => data.soaValues[i])
@@ -2290,12 +2434,12 @@ export class BrandService {
             const secondHalfSoA = secondHalfIndices
               .map(i => data.soaValues[i])
               .filter(v => typeof v === 'number' && isFinite(v));
-            
+
             if (firstHalfSoA.length > 0 && secondHalfSoA.length > 0) {
               const firstAvg = firstHalfSoA.reduce((sum, v) => sum + v, 0) / firstHalfSoA.length;
               const secondAvg = secondHalfSoA.reduce((sum, v) => sum + v, 0) / secondHalfSoA.length;
               const delta = secondAvg - firstAvg;
-              
+
               if (Math.abs(delta) >= 1) {
                 trend = {
                   direction: delta > 0 ? 'up' : 'down',
@@ -2305,7 +2449,7 @@ export class BrandService {
             }
           }
         }
-        
+
         resultMap.set(normalizedTopicName, {
           avgSoA,
           avgVisibility,
@@ -2317,9 +2461,9 @@ export class BrandService {
           competitorSentiment,
         });
       });
-      
+
       console.log(`📊 Calculated competitor averages for ${resultMap.size} topics (${result.duration_ms}ms)`);
-      
+
       return resultMap;
     } catch (error) {
       console.error('❌ Error in getCompetitorAveragesOptimized:', error);
@@ -2383,10 +2527,10 @@ export class BrandService {
 
       // Create collector_result_id to topic name map
       const collectorResultToTopicMap = new Map<number, string>();
-      
+
       (positions || []).forEach(pos => {
         let topicName: string | null = null;
-        
+
         // Priority: 1) extracted_positions.topic column, 2) metadata.topic_name
         if (pos.topic && typeof pos.topic === 'string' && pos.topic.trim().length > 0) {
           topicName = pos.topic.trim();
@@ -2396,7 +2540,7 @@ export class BrandService {
             topicName = metadata.topic_name.trim();
           }
         }
-        
+
         if (topicName && pos.collector_result_id) {
           const normalizedTopicName = topicName.toLowerCase().trim();
           // Only map if this topic exists in our valid topics
@@ -2430,7 +2574,7 @@ export class BrandService {
         }
 
         const domainMap = topicSourcesMap.get(normalizedTopicName)!;
-        
+
         if (domainMap.has(domain)) {
           // Aggregate citations count
           const existing = domainMap.get(domain)!;
@@ -2488,7 +2632,7 @@ export class BrandService {
       }
       return 'editorial';
     }
-    
+
     const normalizedCategory = category.toLowerCase().trim();
     const mapping: Record<string, string> = {
       'brand': 'brand',
@@ -2500,7 +2644,7 @@ export class BrandService {
       'institutional': 'institutional',
       'other': 'editorial'
     };
-    
+
     return mapping[normalizedCategory] || 'editorial';
   }
 
@@ -2522,33 +2666,33 @@ export class BrandService {
    */
   public categorizeTopicByRules(topic: string): string {
     const topicLower = topic.toLowerCase();
-    
+
     // Awareness category
-    if (topicLower.includes('brand') || topicLower.includes('trust') || topicLower.includes('identity') || 
-        topicLower.includes('history') || topicLower.includes('reputation') || topicLower.includes('company')) {
+    if (topicLower.includes('brand') || topicLower.includes('trust') || topicLower.includes('identity') ||
+      topicLower.includes('history') || topicLower.includes('reputation') || topicLower.includes('company')) {
       return 'awareness';
     }
-    
+
     // Comparison category
-    if (topicLower.includes('comparison') || topicLower.includes('competitor') || topicLower.includes('vs') || 
-        topicLower.includes('better') || topicLower.includes('versus')) {
+    if (topicLower.includes('comparison') || topicLower.includes('competitor') || topicLower.includes('vs') ||
+      topicLower.includes('better') || topicLower.includes('versus')) {
       return 'comparison';
     }
-    
+
     // Purchase category
-    if (topicLower.includes('pricing') || topicLower.includes('price') || topicLower.includes('cost') || 
-        topicLower.includes('discount') || topicLower.includes('value') || topicLower.includes('buy') ||
-        topicLower.includes('purchase') || topicLower.includes('afford')) {
+    if (topicLower.includes('pricing') || topicLower.includes('price') || topicLower.includes('cost') ||
+      topicLower.includes('discount') || topicLower.includes('value') || topicLower.includes('buy') ||
+      topicLower.includes('purchase') || topicLower.includes('afford')) {
       return 'purchase';
     }
-    
+
     // Post-purchase support category
-    if (topicLower.includes('complaint') || topicLower.includes('support') || topicLower.includes('service') || 
-        topicLower.includes('warranty') || topicLower.includes('return') || topicLower.includes('refund') ||
-        topicLower.includes('help') || topicLower.includes('issue') || topicLower.includes('problem')) {
+    if (topicLower.includes('complaint') || topicLower.includes('support') || topicLower.includes('service') ||
+      topicLower.includes('warranty') || topicLower.includes('return') || topicLower.includes('refund') ||
+      topicLower.includes('help') || topicLower.includes('issue') || topicLower.includes('problem')) {
       return 'post-purchase support';
     }
-    
+
     // Default to awareness
     return 'awareness';
   }
@@ -2559,14 +2703,14 @@ export class BrandService {
   public async categorizeTopicsWithAI(brandId: string, topics: string[]): Promise<void> {
     try {
       console.log(`🤖 Starting AI categorization for ${topics.length} topics`);
-      
+
       // Get API keys
       const geminiApiKey = process.env['GOOGLE_GEMINI_API_KEY'];
       const geminiModel = process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash-002';
       const openaiApiKey = process.env['OPENAI_API_KEY'];
       const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
       const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
-      
+
       // Try Cerebras first (primary)
       if (cerebrasApiKey && cerebrasApiKey !== 'your_cerebras_api_key_here') {
         console.log('🧠 Using Cerebras AI as primary provider');
@@ -2581,7 +2725,7 @@ export class BrandService {
       } else {
         console.log('⚠️ Cerebras API key not configured, trying Gemini...');
       }
-      
+
       // Try Gemini as secondary fallback
       if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
         console.log('🤖 Using Gemini as secondary provider');
@@ -2596,7 +2740,7 @@ export class BrandService {
       } else {
         console.log('⚠️ Gemini API key not configured, trying OpenAI...');
       }
-      
+
       // Try OpenAI as tertiary fallback
       if (openaiApiKey && openaiApiKey !== 'your_openai_api_key_here') {
         console.log('🤖 Using OpenAI as tertiary fallback provider');
@@ -2611,7 +2755,7 @@ export class BrandService {
       } else {
         console.log('⚠️ OpenAI API key not configured, using rule-based categorization');
       }
-      
+
       // Final fallback to rule-based categorization
       console.log('📋 Using rule-based categorization as final fallback');
       await this.categorizeTopicsWithRules(brandId, topics);
@@ -2628,7 +2772,7 @@ export class BrandService {
    */
   private async categorizeWithCerebras(brandId: string, topics: string[], apiKey: string, model: string): Promise<void> {
     console.log(`🧠 Categorizing topics with Cerebras AI (${model})`);
-    
+
     const prompt = `You are an expert in brand marketing and customer journey analysis. 
       
 I need you to categorize the following AEO (Answer Engine Optimization) topics into one of these 4 categories:
@@ -2670,7 +2814,7 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
 
     const data = await response.json() as any;
     const aiResponse = data.choices?.[0]?.text?.trim();
-    
+
     if (!aiResponse) {
       throw new Error('Empty response from Cerebras API');
     }
@@ -2679,10 +2823,10 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
     let categorization: Record<string, string>;
     try {
       // console.log('🧠 Raw Cerebras response:', aiResponse); // Removed verbose logging
-      
+
       // Try multiple JSON extraction methods
       let jsonStr = '';
-      
+
       // Method 1: Look for JSON object with balanced braces
       const jsonMatch = aiResponse.match(/\{[\s\S]*?\}(?=\s*$|\s*[^,}])/);
       if (jsonMatch) {
@@ -2694,19 +2838,19 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
         let jsonLines = [];
         let braceCount = 0;
         let inJson = false;
-        
+
         for (const line of lines) {
           if (line.trim().startsWith('{')) {
             inJson = true;
             braceCount = 0;
             jsonLines = [];
           }
-          
+
           if (inJson) {
             jsonLines.push(line);
             braceCount += (line.match(/\{/g) || []).length;
             braceCount -= (line.match(/\}/g) || []).length;
-            
+
             if (braceCount === 0 && line.trim().endsWith('}')) {
               jsonStr = jsonLines.join('\n');
               // console.log('🧠 Extracted JSON (method 2):', jsonStr); // Removed verbose logging
@@ -2715,14 +2859,14 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
           }
         }
       }
-      
+
       if (!jsonStr) {
         throw new Error('No valid JSON found in response');
       }
-      
+
       categorization = JSON.parse(jsonStr);
       // console.log('🧠 Parsed categorization:', categorization); // Removed verbose logging
-      
+
     } catch (parseError) {
       console.error('❌ Failed to parse Cerebras response:', parseError);
       // console.log('🧠 Raw response was:', aiResponse); // Removed verbose logging
@@ -2740,7 +2884,7 @@ Only use these exact category names: awareness, comparison, purchase, post-purch
    */
   private async categorizeWithGemini(brandId: string, topics: string[], apiKey: string, model: string): Promise<void> {
     console.log(`🤖 Categorizing topics with Gemini (${model})`);
-    
+
     const prompt = `You are an expert in brand marketing and customer journey analysis. 
       
 I need you to categorize the following AEO (Answer Engine Optimization) topics into one of these 4 categories:
@@ -2794,7 +2938,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
 
     const data = await response.json() as any;
     const content = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
+
     if (!content) {
       throw new Error('Empty response from Gemini API');
     }
@@ -2846,7 +2990,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
    */
   private async categorizeWithOpenAI(brandId: string, topics: string[], apiKey: string): Promise<void> {
     console.log(`🤖 Categorizing topics with OpenAI (fallback)`);
-    
+
     const prompt = `You are an expert in brand marketing and customer journey analysis. 
       
 I need you to categorize the following AEO (Answer Engine Optimization) topics into one of these 4 categories:
@@ -2899,7 +3043,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
 
     const data = await response.json() as any;
     const content = data.choices[0]?.message?.content?.trim() || '';
-    
+
     if (!content) {
       throw new Error('Empty response from OpenAI API');
     }
@@ -2951,7 +3095,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
    */
   private async updateTopicsWithCategories(brandId: string, categorization: Record<string, string>): Promise<void> {
     console.log('💾 Updating topics with categories in database...');
-    
+
     for (const [topicName, category] of Object.entries(categorization)) {
       const { error: updateError } = await supabaseAdmin
         .from('brand_topics')
@@ -2974,10 +3118,10 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
    */
   private async categorizeTopicsWithRules(brandId: string, topics: string[]): Promise<void> {
     console.log(`📋 Using rule-based categorization for ${topics.length} topics`);
-    
+
     for (const topic of topics) {
       const category = this.categorizeTopicByRules(topic);
-      
+
       const { error: updateError } = await supabaseAdmin
         .from('brand_topics')
         .update({ category: category })
@@ -3071,8 +3215,8 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
           totalExecutions: metrics.totalExecutions,
           successCount: metrics.successCount,
           failedCount: metrics.failedCount,
-          successRate: metrics.totalExecutions > 0 
-            ? Math.round((metrics.successCount / metrics.totalExecutions) * 100) 
+          successRate: metrics.totalExecutions > 0
+            ? Math.round((metrics.successCount / metrics.totalExecutions) * 100)
             : 0,
           failuresByCollector: metrics.failuresByCollector,
           errorsByType: metrics.errorsByType
@@ -3140,10 +3284,10 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
 
       if (brand) {
         const metadata = brand.metadata || {};
-        const existingErrors = Array.isArray(metadata.data_collection_errors) 
-          ? metadata.data_collection_errors 
+        const existingErrors = Array.isArray(metadata.data_collection_errors)
+          ? metadata.data_collection_errors
           : [];
-        
+
         // Keep only last 10 errors to avoid metadata bloat
         const updatedErrors = [...existingErrors, errorData].slice(-10);
 
@@ -3181,9 +3325,9 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
     const normalizedBrandName = brandName.toLowerCase().trim();
     const verified: NormalizedCompetitor[] = [];
     const enableHttpChecks = process.env['COMPETITOR_VERIFY_HTTP'] === 'true';
-    
+
     console.log(`🔍 Verifying ${competitors.length} competitors for brand "${brandName}"...`);
-    
+
     for (const competitor of competitors) {
       try {
         // Basic name validation
@@ -3193,7 +3337,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
         }
 
         const competitorNameLower = competitor.name.toLowerCase().trim();
-        
+
         // Remove if competitor is the same as the brand (case-insensitive)
         if (competitorNameLower === normalizedBrandName) {
           console.log(`🚫 Filtered competitor: "${competitor.name}" is the same as brand "${brandName}"`);
@@ -3222,7 +3366,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
           try {
             const isReachable = await this.checkUrlReachability(competitor.url);
             verificationStatus = isReachable ? 'verified' : 'failed';
-            
+
             if (!isReachable) {
               console.warn(`⚠️ Competitor "${competitor.name}" URL "${competitor.url}" is not reachable`);
             } else {
@@ -3281,7 +3425,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
       const topicRecords = topicsAndQueries.topics.map((item) => {
         // Map intent archetype to existing category system
         const category = topicsQueryGenerationService.mapIntentToCategory(item.intentArchetype);
-        
+
         return {
           brand_id: brandId,
           topic_name: item.topic,
@@ -3311,7 +3455,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
       // Note: The new topics service only generates topics, not queries
       // Queries will be generated separately using the query generation service
       const topicNames = topicsAndQueries.topics.map(item => item.topic);
-      
+
       // Generate queries for the created topics
       const queryGenResult = await queryGenerationService.generateSeedQueries({
         url: '', // Not needed for topic-based generation
@@ -3364,7 +3508,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
   ): Promise<void> {
     const { v4: uuidv4 } = require('uuid');
     const generationId = uuidv4();
-    
+
     // Create query generation record
     const { error: genError } = await supabaseAdmin
       .from('query_generations')
@@ -3393,7 +3537,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
     const queryInserts = prompts.map((promptData, index) => {
       let promptText: string;
       let matchedTopic: string;
-      
+
       if (hasTopicInfo && typeof promptData === 'object' && 'prompt' in promptData) {
         // New format: prompts include topic information
         promptText = promptData.prompt;
@@ -3402,11 +3546,11 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
         // Legacy format: just prompt strings, need to match to topics
         promptText = typeof promptData === 'string' ? promptData : (promptData as any).prompt || '';
         // Try to find matching topic by checking if prompt contains topic name
-        matchedTopic = topics.find(topic => 
+        matchedTopic = topics.find(topic =>
           promptText.toLowerCase().includes(topic.toLowerCase())
         ) || topics[0] || 'General'; // Fallback to first topic or 'General'
       }
-      
+
       return {
         generation_id: generationId,
         brand_id: brandId,
@@ -3453,7 +3597,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
 
     // Basic domain format validation
     const domainRegex = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
-    
+
     // Remove protocol and path if present
     const cleanDomain = domain
       .replace(/^https?:\/\//, '')
@@ -3486,7 +3630,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
     try {
       // Ensure URL has protocol
       const urlWithProtocol = url.startsWith('http') ? url : `https://${url}`;
-      
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 

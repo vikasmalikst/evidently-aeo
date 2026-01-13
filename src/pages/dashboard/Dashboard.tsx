@@ -8,6 +8,7 @@ import {
   Eye
 } from 'lucide-react';
 import { useDashboardData } from './hooks/useDashboardData';
+import { useOnboardingOrchestrator } from '../../hooks/useOnboardingOrchestrator';
 import { getBrandData, formatMetricValue, computeTrend, formatNumber } from './utils';
 import { MetricCard } from './components/MetricCard';
 import { TopBrandSources } from './components/TopBrandSources';
@@ -41,6 +42,9 @@ export const Dashboard = () => {
     isDataCollectionInProgress,
     progressData
   } = useDashboardData();
+
+  // Orchestrate automated onboarding steps (Domain Audit -> Recommendations)
+  useOnboardingOrchestrator(selectedBrandId);
 
   // Progress UI is now accessed via the Header bell (minimizable modal)
   // so we no longer render a separate full-screen processing state here.

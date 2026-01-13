@@ -125,12 +125,18 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
     };
   }, [mode, minTimePassed, isComplete, onNavigateDashboard]);
 
-  const currentStage = useMemo<'collecting' | 'scoring' | 'finalizing'>(() => {
+  const currentStage = useMemo<'collecting' | 'scoring' | 'recommendations' | 'finalizing'>(() => {
     if (progress?.stages?.collection?.status === 'completed') {
-      if (progress?.stages?.scoring?.status === 'completed') return 'finalizing';
+      if (progress?.stages?.scoring?.status === 'completed') {
+        // Skip domain_readiness - it's handled separately in onboarding
+        if (progress?.stages?.recommendations?.status === 'completed') {
+          return 'finalizing';
+        }
+        return 'recommendations';
+      }
       return 'scoring';
     }
-    if (progress?.currentOperation) return progress.currentOperation;
+    if (progress?.currentOperation) return progress.currentOperation as any;
     return 'collecting';
   }, [progress]);
 
@@ -145,17 +151,30 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
     }
 
     let calculated = 0;
-    const collectionProgress = (completedQueries / totalQueries) * 70;
+    // 1. Collection (0-50%)
+    const collectionProgress = (completedQueries / totalQueries) * 50;
     calculated = collectionProgress;
 
     if (progress?.stages?.collection?.status === 'completed') {
+      // 2. Scoring (50-80%)
       if (progress?.stages?.scoring?.status === 'completed') {
-        calculated = 100;
+        calculated = 80; // Base for next step
       } else if (progress?.stages?.scoring?.total) {
-        const scoringProgress = (progress.stages.scoring.completed / progress.stages.scoring.total) * 25;
-        calculated = 70 + scoringProgress;
+        const scoringProgress = (progress.stages.scoring.completed / progress.stages.scoring.total) * 30;
+        calculated = 50 + scoringProgress;
       } else {
-        calculated = 75;
+        calculated = 50;
+      }
+
+      // 3. Recommendations (80-100%) - Domain readiness is handled separately
+      if (progress?.stages?.scoring?.status === 'completed') {
+        if (progress?.stages?.recommendations?.status === 'completed') {
+          calculated = 100;
+        } else if (progress?.stages?.recommendations?.status === 'active') {
+          calculated = 90;
+        } else {
+          calculated = 80;
+        }
       }
     }
 
@@ -201,12 +220,15 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           />
         </div>
 
-        <div className="flex justify-between mt-2 text-[12px]" style={{ color: '#64748b' }}>
+        <div className="flex justify-between mt-2 text-[10px] sm:text-[12px]" style={{ color: '#64748b' }}>
           <span className={currentStage === 'collecting' ? 'font-medium' : ''} style={currentStage === 'collecting' ? { color: '#00bcdc' } : {}}>
-            {currentStage === 'collecting' ? '● Collecting' : '✓ Collecting'}
+            {progress?.stages?.collection?.status === 'completed' ? '✓ Data' : '● Data'}
           </span>
           <span className={currentStage === 'scoring' ? 'font-medium' : ''} style={currentStage === 'scoring' ? { color: '#00bcdc' } : {}}>
-            {currentStage === 'scoring' ? '● Scoring' : currentStage === 'finalizing' ? '● Scoring' : 'Scoring'}
+            {progress?.stages?.scoring?.status === 'completed' ? '✓ Scoring' : '● Scoring'}
+          </span>
+          <span className={currentStage === 'recommendations' ? 'font-medium' : ''} style={currentStage === 'recommendations' ? { color: '#00bcdc' } : {}}>
+            {progress?.stages?.recommendations?.status === 'completed' ? '✓ Recs' : '● Recs'}
           </span>
         </div>
 
@@ -339,7 +361,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           <div className="mt-6 text-center">
             <div className="inline-flex items-center gap-2 text-sm font-semibold" style={{ color: '#16a34a' }}>
               <CheckCircle2 className="w-4 h-4" />
-              Collection & scoring complete
+              Onboarding complete
             </div>
           </div>
         )}

@@ -27,7 +27,30 @@ import {
 } from '../../types/optimized-metrics.types';
 
 export class OptimizedMetricsHelper {
-  constructor(private supabase: SupabaseClient) {}
+  constructor(private supabase: SupabaseClient) { }
+
+  /**
+   * Check if a brand has any metrics in the optimized tables
+   * Used for determining if scoring has completed/started
+   */
+  async hasMetricsForBrand(brandId: string): Promise<boolean> {
+    try {
+      const { count, error } = await this.supabase
+        .from('metric_facts')
+        .select('*', { count: 'exact', head: true })
+        .eq('brand_id', brandId)
+        .limit(1);
+
+      if (error) {
+        console.warn('[OptimizedMetricsHelper] Error checking metrics existence:', error);
+        return false;
+      }
+
+      return (count || 0) > 0;
+    } catch (e) {
+      return false;
+    }
+  }
 
   /**
    * Fetch brand metrics for specific collector_results
@@ -40,7 +63,7 @@ export class OptimizedMetricsHelper {
    */
   async fetchBrandMetrics(options: FetchMetricsOptions): Promise<FetchBrandMetricsResult> {
     const startTime = Date.now();
-    
+
     try {
       const {
         collectorResultIds,
@@ -110,10 +133,10 @@ export class OptimizedMetricsHelper {
 
       // Flatten nested structure
       const flattenedData: BrandMetricsRow[] = (data || []).map((row: any) => {
-        const brandMetrics = Array.isArray(row.brand_metrics) 
-          ? row.brand_metrics[0] 
+        const brandMetrics = Array.isArray(row.brand_metrics)
+          ? row.brand_metrics[0]
           : row.brand_metrics;
-        
+
         const brandSentiment = Array.isArray(row.brand_sentiment)
           ? row.brand_sentiment[0]
           : row.brand_sentiment;
@@ -128,7 +151,7 @@ export class OptimizedMetricsHelper {
           topic: row.topic,
           processed_at: row.processed_at,
           created_at: row.created_at,
-          
+
           // brand_metrics fields
           visibility_index: brandMetrics?.visibility_index ?? null,
           share_of_answers: brandMetrics?.share_of_answers ?? null,
@@ -137,7 +160,7 @@ export class OptimizedMetricsHelper {
           brand_positions: brandMetrics?.brand_positions || [],
           brand_first_position: brandMetrics?.brand_first_position || null,
           total_word_count: brandMetrics?.total_word_count || 0,
-          
+
           // brand_sentiment fields (if included)
           ...(includeSentiment && brandSentiment ? {
             sentiment_score: brandSentiment.sentiment_score,
@@ -175,7 +198,7 @@ export class OptimizedMetricsHelper {
    */
   async fetchCompetitorMetrics(options: FetchMetricsOptions): Promise<FetchCompetitorMetricsResult> {
     const startTime = Date.now();
-    
+
     try {
       const {
         collectorResultIds,
@@ -247,21 +270,21 @@ export class OptimizedMetricsHelper {
       // Flatten nested structure
       // Note: metric_facts can have multiple competitor_metrics rows
       const flattenedData: CompetitorMetricsRow[] = [];
-      
+
       (data || []).forEach((row: any) => {
         const competitorMetricsList = Array.isArray(row.competitor_metrics)
           ? row.competitor_metrics
           : [row.competitor_metrics];
-        
+
         const competitorSentimentList = Array.isArray(row.competitor_sentiment)
           ? row.competitor_sentiment
           : (row.competitor_sentiment ? [row.competitor_sentiment] : []);
 
         competitorMetricsList.forEach((cm: any) => {
           if (!cm) return;
-          
+
           const competitorName = cm.brand_competitors?.competitor_name || 'Unknown';
-          
+
           // Find matching sentiment
           const sentiment = competitorSentimentList.find(
             (cs: any) => cs.competitor_id === cm.competitor_id
@@ -277,17 +300,17 @@ export class OptimizedMetricsHelper {
             topic: row.topic,
             processed_at: row.processed_at,
             created_at: row.created_at,
-            
+
             // Competitor identification
             competitor_id: cm.competitor_id,
             competitor_name: competitorName,
-            
+
             // competitor_metrics fields
             visibility_index: cm.visibility_index ?? null,
             share_of_answers: cm.share_of_answers ?? null,
             competitor_mentions: cm.competitor_mentions || 0,
             competitor_positions: cm.competitor_positions || [],
-            
+
             // competitor_sentiment fields (if included)
             ...(includeSentiment && sentiment ? {
               sentiment_score: sentiment.sentiment_score,
@@ -325,7 +348,7 @@ export class OptimizedMetricsHelper {
    */
   async fetchCombinedMetrics(options: FetchMetricsOptions): Promise<FetchCombinedMetricsResult> {
     const startTime = Date.now();
-    
+
     try {
       // Fetch brand and competitor metrics in parallel
       const [brandResult, competitorResult] = await Promise.all([
@@ -425,7 +448,7 @@ export class OptimizedMetricsHelper {
     options: FetchMetricsByDateRangeOptions
   ): Promise<FetchBrandMetricsResult> {
     const startTime = Date.now();
-    
+
     try {
       const {
         brandId,
@@ -497,10 +520,10 @@ export class OptimizedMetricsHelper {
 
       // Flatten nested structure (same as fetchBrandMetrics)
       const flattenedData: BrandMetricsRow[] = (data || []).map((row: any) => {
-        const brandMetrics = Array.isArray(row.brand_metrics) 
-          ? row.brand_metrics[0] 
+        const brandMetrics = Array.isArray(row.brand_metrics)
+          ? row.brand_metrics[0]
           : row.brand_metrics;
-        
+
         const brandSentiment = Array.isArray(row.brand_sentiment)
           ? row.brand_sentiment[0]
           : row.brand_sentiment;
@@ -562,7 +585,7 @@ export class OptimizedMetricsHelper {
     includeSentiment?: boolean;
   }): Promise<FetchCompetitorMetricsResult> {
     const startTime = Date.now();
-    
+
     try {
       const {
         competitorId,
@@ -619,10 +642,10 @@ export class OptimizedMetricsHelper {
 
       // Flatten nested structure
       const flattenedData: CompetitorMetricsRow[] = (data || []).map((row: any) => {
-        const metricFact = Array.isArray(row.metric_facts) 
-          ? row.metric_facts[0] 
+        const metricFact = Array.isArray(row.metric_facts)
+          ? row.metric_facts[0]
           : row.metric_facts;
-        
+
         const competitorSentiment = Array.isArray(row.competitor_sentiment)
           ? row.competitor_sentiment[0]
           : row.competitor_sentiment;
@@ -799,10 +822,10 @@ export class OptimizedMetricsHelper {
 
           // Competitor rows (if any)
           for (const comp of cm) {
-            const competitor = Array.isArray(comp.brand_competitors) 
-              ? comp.brand_competitors[0] 
+            const competitor = Array.isArray(comp.brand_competitors)
+              ? comp.brand_competitors[0]
               : comp.brand_competitors;
-            
+
             if (competitor) {
               // Access competitor_metrics fields (now properly selected in query)
               const compAny = comp as any; // TypeScript doesn't infer nested select types perfectly
@@ -1184,7 +1207,7 @@ export class OptimizedMetricsHelper {
           }
 
           // Only include if at least one metric is present
-          const hasMetric = 
+          const hasMetric =
             (cm.share_of_answers !== null && cm.share_of_answers !== undefined) ||
             (cm.visibility_index !== null && cm.visibility_index !== undefined) ||
             (cs?.sentiment_score !== null && cs?.sentiment_score !== undefined);
@@ -1259,7 +1282,7 @@ export class OptimizedMetricsHelper {
       // FIXED: Query from collector_results first, then LEFT JOIN to metric_facts
       // This ensures ALL collector_results are returned, even if they don't have metric_facts yet
       // Previously querying from metric_facts with INNER JOIN excluded unscored collector_results
-      
+
       // Build base query on collector_results
       let collectorQuery = this.supabase
         .from('collector_results')
@@ -1296,7 +1319,7 @@ export class OptimizedMetricsHelper {
       if (customerId) {
         collectorQuery = collectorQuery.eq('customer_id', customerId);
       }
-      
+
       // IMPORTANT: When collectorResultIds are provided, don't apply date filters
       // The IDs are already filtered by the calling code, and date filters might exclude valid results
       // Only apply date filters when querying by queryIds or when no specific IDs are provided
@@ -1330,7 +1353,7 @@ export class OptimizedMetricsHelper {
 
       // Debug: Log raw Supabase response structure for first few rows
       if (collectorData && collectorData.length > 0) {
-        console.log(`[OptimizedMetrics] 🔍 Raw Supabase response (first 2 rows):`, 
+        console.log(`[OptimizedMetrics] 🔍 Raw Supabase response (first 2 rows):`,
           JSON.stringify(collectorData.slice(0, 2).map((cr: any) => ({
             id: cr.id,
             collector_type: cr.collector_type,
@@ -1340,16 +1363,16 @@ export class OptimizedMetricsHelper {
             metric_facts_structure: cr.metric_facts ? {
               id: Array.isArray(cr.metric_facts) ? cr.metric_facts[0]?.id : cr.metric_facts.id,
               has_brand_metrics: !!(Array.isArray(cr.metric_facts) ? cr.metric_facts[0]?.brand_metrics : cr.metric_facts.brand_metrics),
-              brand_metrics_type: Array.isArray(cr.metric_facts) 
+              brand_metrics_type: Array.isArray(cr.metric_facts)
                 ? (Array.isArray(cr.metric_facts[0]?.brand_metrics) ? 'array' : typeof cr.metric_facts[0]?.brand_metrics)
                 : (Array.isArray(cr.metric_facts.brand_metrics) ? 'array' : typeof cr.metric_facts.brand_metrics),
               brand_metrics_data: Array.isArray(cr.metric_facts)
-                ? (Array.isArray(cr.metric_facts[0]?.brand_metrics) 
-                    ? cr.metric_facts[0].brand_metrics[0] 
-                    : cr.metric_facts[0]?.brand_metrics)
+                ? (Array.isArray(cr.metric_facts[0]?.brand_metrics)
+                  ? cr.metric_facts[0].brand_metrics[0]
+                  : cr.metric_facts[0]?.brand_metrics)
                 : (Array.isArray(cr.metric_facts.brand_metrics)
-                    ? cr.metric_facts.brand_metrics[0]
-                    : cr.metric_facts.brand_metrics)
+                  ? cr.metric_facts.brand_metrics[0]
+                  : cr.metric_facts.brand_metrics)
             } : null
           })), null, 2)
         );
@@ -1359,12 +1382,12 @@ export class OptimizedMetricsHelper {
       // Each collector_result may have 0 or 1 metric_facts row
       const transformed = (collectorData || []).map((cr: any) => {
         // Get metric_facts (should be array with 0 or 1 element, or single object)
-        const mf = Array.isArray(cr.metric_facts) 
+        const mf = Array.isArray(cr.metric_facts)
           ? (cr.metric_facts.length > 0 ? cr.metric_facts[0] : null)
           : cr.metric_facts;
-        
+
         // Extract brand_metrics, brand_sentiment, competitor_metrics from metric_facts
-        const bm = mf?.brand_metrics 
+        const bm = mf?.brand_metrics
           ? (Array.isArray(mf.brand_metrics) ? mf.brand_metrics[0] : mf.brand_metrics)
           : null;
         const bs = mf?.brand_sentiment
@@ -1388,8 +1411,8 @@ export class OptimizedMetricsHelper {
             }
             // SUM competitor mentions
             if (cm.competitor_mentions !== null && cm.competitor_mentions !== undefined) {
-              const mentions = typeof cm.competitor_mentions === 'number' 
-                ? cm.competitor_mentions 
+              const mentions = typeof cm.competitor_mentions === 'number'
+                ? cm.competitor_mentions
                 : Number(cm.competitor_mentions);
               if (Number.isFinite(mentions) && mentions >= 0) {
                 totalCompetitorMentions += mentions;
@@ -1397,8 +1420,8 @@ export class OptimizedMetricsHelper {
             }
             // SUM competitor product mentions
             if (cm.total_competitor_product_mentions !== null && cm.total_competitor_product_mentions !== undefined) {
-              const productMentions = typeof cm.total_competitor_product_mentions === 'number' 
-                ? cm.total_competitor_product_mentions 
+              const productMentions = typeof cm.total_competitor_product_mentions === 'number'
+                ? cm.total_competitor_product_mentions
                 : Number(cm.total_competitor_product_mentions);
               if (Number.isFinite(productMentions) && productMentions >= 0) {
                 totalCompetitorProductMentions += productMentions;
@@ -1467,7 +1490,7 @@ export class OptimizedMetricsHelper {
           return mf === null || mf === undefined;
         });
         console.log(`[OptimizedMetrics] Collector_results with metrics: ${withMetrics.length}, without metrics: ${withoutMetrics.length}`);
-        
+
         // Log sample of collector_result_ids that don't have metrics
         if (withoutMetrics.length > 0 && collectorResultIds && collectorResultIds.length > 0) {
           const missingIds = withoutMetrics
@@ -1475,14 +1498,14 @@ export class OptimizedMetricsHelper {
             .filter((id: any) => id !== null)
             .slice(0, 10);
           console.log(`[OptimizedMetrics] Sample collector_result_ids WITHOUT metrics:`, missingIds);
-          
+
           // Check if these IDs were requested
           const requestedButMissing = missingIds.filter((id: number) => collectorResultIds.includes(id));
           if (requestedButMissing.length > 0) {
             console.warn(`[OptimizedMetrics] ⚠️ ${requestedButMissing.length} requested collector_result_ids have no metrics:`, requestedButMissing);
           }
         }
-        
+
         // Log sample of collector_result_ids that DO have metrics
         if (withMetrics.length > 0) {
           const withMetricsIds = withMetrics

@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import './styles/onboarding.css';
+import './styles/onboardingModal.css';
 import './styles/topics.css';
 
 // Import cache cleanup utilities to make them available in browser console

@@ -12,6 +12,7 @@ import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
 import { PromptSelection } from './pages/PromptSelection';
 import { DataCollectionLoadingScreenRoute } from './components/Onboarding/DataCollectionLoadingScreen';
+import { OnboardingDomainReadinessScreenRoute } from './components/Onboarding/OnboardingDomainReadinessScreen';
 import { ManageCompetitors } from './pages/ManageCompetitors';
 import { ManageBrands } from './pages/ManageBrands';
 import { ManageCollectors } from './pages/ManageCollectors';
@@ -84,6 +85,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DataCollectionLoadingScreenRoute />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/onboarding/domain-readiness/:brandId" 
+          element={
+            <ProtectedRoute>
+              <OnboardingDomainReadinessScreenRoute />
             </ProtectedRoute>
           } 
         />

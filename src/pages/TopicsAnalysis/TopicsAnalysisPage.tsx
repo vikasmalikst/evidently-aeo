@@ -7,6 +7,7 @@ import { CompactMetricsPods } from './components/CompactMetricsPods';
 import { TopicsRankedTable } from './components/TopicsRankedTable';
 import { TopicAnalysisMultiView } from './components/TopicAnalysisMultiView';
 import { TopicDetailModal } from './components/TopicDetailModal';
+import { KeyTakeaways } from './components/KeyTakeaways';
 import { DateRangePicker } from '../../components/DateRangePicker/DateRangePicker';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { getActiveCompetitors, type ManagedCompetitor } from '../../api/competitorManagementApi';
@@ -521,6 +522,8 @@ export const TopicsAnalysisPage = ({
           </div>
         </div>
 
+
+        <KeyTakeaways data={data} metricType={metricType} />
 
         <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
           <KpiToggle

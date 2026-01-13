@@ -62,7 +62,7 @@ export const SetupLayout: React.FC<SetupLayoutProps> = ({ currentStep, children 
 
       {/* Main content area - centered */}
       <main className="flex-grow flex items-center justify-center px-4 py-12 relative z-10">
-        <div className="w-full max-w-5xl">
+        <div className="w-full max-w-6xl">
           {/* Step indicator - above the card */}
           <motion.div 
             className="flex justify-center mb-6"

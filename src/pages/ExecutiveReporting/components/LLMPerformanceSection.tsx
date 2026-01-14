@@ -36,35 +36,51 @@ export const LLMPerformanceSection = ({ data }: { data: any }) => {
                 </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(data.by_llm).map(([llmName, metrics]: [string, any]) => (
-                    <div key={llmName} className="p-4 border border-[var(--border-default)] rounded-lg hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-3 mb-3">
-                            <SafeLogo
-                                domain={getLLMDomain(llmName)}
-                                alt={llmName}
-                                size={32}
-                                className="w-8 h-8 object-contain rounded-full bg-gray-50 p-1 border border-gray-100"
-                            />
-                            <div className="font-semibold text-[var(--text-headings)]">{llmName}</div>
-                        </div>
-
-                        <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                                <span className="text-[var(--text-muted)]">Visibility:</span>
-                                <span className="font-medium">{metrics.visibility?.toFixed(1) || 'N/A'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-[var(--text-muted)]">Avg Position:</span>
-                                <span className="font-medium">{metrics.average_position?.toFixed(1) || 'N/A'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-[var(--text-muted)]">SOA:</span>
-                                <span className="font-medium">{metrics.share_of_answer?.toFixed(1) || 'N/A'}%</span>
-                            </div>
-                        </div>
-                    </div>
-                ))}
+            <div className="overflow-x-auto">
+                <table className="w-full">
+                    <thead>
+                        <tr className="border-b border-[var(--border-default)]">
+                            <th className="text-left py-3 px-4 text-sm font-semibold">LLM</th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold">Visibility</th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold">Avg Position</th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold">SOA</th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold">Sentiment</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {Object.entries(data.by_llm).map(([llmName, metrics]: [string, any]) => (
+                            <tr key={llmName} className="border-b border-[var(--border-default)] hover:bg-gray-50 transition-colors">
+                                <td className="py-3 px-4 text-sm font-medium">
+                                    <div className="flex items-center gap-3">
+                                        <SafeLogo
+                                            domain={getLLMDomain(llmName)}
+                                            alt={llmName}
+                                            size={24}
+                                            className="w-6 h-6 object-contain rounded-full bg-gray-50 p-1 border border-gray-100"
+                                        />
+                                        <span>{llmName}</span>
+                                    </div>
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                    {metrics.visibility?.toFixed(1) || 'N/A'}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                    {metrics.average_position?.toFixed(1) || 'N/A'}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                    {metrics.share_of_answer?.toFixed(1) || 'N/A'}%
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                    <span className={`
+                                        ${(metrics.sentiment || 0) > 0 ? 'text-green-600' : (metrics.sentiment || 0) < 0 ? 'text-red-600' : 'text-gray-500'}
+                                    `}>
+                                        {(metrics.sentiment || 0).toFixed(1)}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
         </div>
     );
@@ -93,6 +109,7 @@ export const CompetitiveLandscapeSection = ({ data }: { data: any }) => {
                         <tr className="border-b border-[var(--border-default)]">
                             <th className="text-left py-3 px-4 text-sm font-semibold">Competitor</th>
                             <th className="text-right py-3 px-4 text-sm font-semibold">Visibility</th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold">Avg Position</th>
                             <th className="text-right py-3 px-4 text-sm font-semibold">SOA</th>
                             <th className="text-right py-3 px-4 text-sm font-semibold">Sentiment</th>
                         </tr>
@@ -114,16 +131,19 @@ export const CompetitiveLandscapeSection = ({ data }: { data: any }) => {
                                     </div>
                                 </td>
                                 <td className="py-3 px-4 text-sm text-right">
-                                    {comp.visibility?.toFixed(1) || '0.0'}
+                                    {comp.current?.visibility?.toFixed(1) || '0.0'}
                                 </td>
                                 <td className="py-3 px-4 text-sm text-right">
-                                    {comp.share_of_answer?.toFixed(1) || '0.0'}%
+                                    {comp.current?.average_position?.toFixed(1) || 'N/A'}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                    {comp.current?.share_of_answer?.toFixed(1) || '0.0'}%
                                 </td>
                                 <td className="py-3 px-4 text-sm text-right">
                                     <span className={`
-                                        ${(comp.sentiment || 0) > 0 ? 'text-green-600' : (comp.sentiment || 0) < 0 ? 'text-red-600' : 'text-gray-500'}
+                                        ${(comp.current?.sentiment || 0) > 0 ? 'text-green-600' : (comp.current?.sentiment || 0) < 0 ? 'text-red-600' : 'text-gray-500'}
                                     `}>
-                                        {(comp.sentiment || 0).toFixed(1)}
+                                        {(comp.current?.sentiment || 0).toFixed(1)}
                                     </span>
                                 </td>
                             </tr>
@@ -141,6 +161,8 @@ export const DomainReadinessSection = ({ data }: { data: any }) => {
         return null;
     }
 
+    const { sub_scores, overall_score, score_delta } = data;
+
     return (
         <div className="bg-white rounded-lg p-6 border border-[var(--border-default)]">
             <div className="flex items-center gap-3 mb-6">
@@ -152,68 +174,92 @@ export const DomainReadinessSection = ({ data }: { data: any }) => {
                 </h2>
             </div>
 
-            <div className="flex items-center gap-8 mb-6">
-                <div>
-                    <div className="text-sm text-[var(--text-muted)] mb-1">Overall Score</div>
-                    <div className="text-4xl font-bold text-[var(--text-headings)]">
-                        {data.overall_score?.toFixed(0) || 0}
-                        <span className="text-xl text-[var(--text-muted)]">/100</span>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+                <div className="md:col-span-1 p-6 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-center items-center text-center">
+                    <div className="text-sm text-[var(--text-muted)] font-medium mb-2 uppercase tracking-wider">Overall readiness</div>
+                    <div className="text-5xl font-black text-[var(--text-headings)] mb-1">
+                        {overall_score?.toFixed(0) || 0}
+                        <span className="text-2xl text-[var(--text-muted)] ml-1">/100</span>
                     </div>
-                </div>
-                <div>
-                    <span
-                        className={`text-sm font-semibold ${data.score_delta?.percentage > 0
-                            ? 'text-green-600'
-                            : data.score_delta?.percentage < 0
-                                ? 'text-red-600'
-                                : 'text-[var(--text-muted)]'
+                    <div
+                        className={`text-sm font-bold px-2 py-1 rounded-full ${score_delta?.percentage > 0
+                            ? 'bg-green-100 text-green-700'
+                            : score_delta?.percentage < 0
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-gray-100 text-[var(--text-muted)]'
                             }`}
                     >
-                        {data.score_delta?.percentage > 0 ? '+' : ''}
-                        {data.score_delta?.percentage?.toFixed(1) || 0}% vs previous
-                    </span>
+                        {score_delta?.percentage > 0 ? '↑' : score_delta?.percentage < 0 ? '↓' : ''}
+                        {Math.abs(score_delta?.percentage || 0).toFixed(1)}% vs previous
+                    </div>
+                </div>
+
+                <div className="md:col-span-2 overflow-hidden border border-[var(--border-default)] rounded-xl">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-[var(--border-default)]">
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">KPI / Test Category</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Previous</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Current</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Change</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border-default)]">
+                            {sub_scores && Object.entries(sub_scores).map(([key, item]: [string, any]) => (
+                                <tr key={key} className="hover:bg-gray-50/50 transition-colors">
+                                    <td className="px-4 py-3 text-sm font-semibold text-[var(--text-headings)]">
+                                        {item.label}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-[var(--text-muted)] font-medium text-center">
+                                        {item.previous_score?.toFixed(0) || 0}
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        <span className={`inline-flex items-center justify-center min-w-[32px] px-2 py-1 rounded text-sm font-bold ${item.score >= 80 ? 'bg-green-100 text-green-700' :
+                                            item.score >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+                                            }`}>
+                                            {item.score?.toFixed(0) || 0}
+                                        </span>
+                                    </td>
+                                    <td className={`px-4 py-3 text-sm font-bold text-right ${item.delta?.percentage > 0
+                                        ? 'text-green-600'
+                                        : item.delta?.percentage < 0
+                                            ? 'text-red-600'
+                                            : 'text-gray-400'
+                                        }`}>
+                                        {item.delta?.percentage > 0 ? '+' : ''}
+                                        {item.delta?.percentage?.toFixed(1) || 0}%
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            {/* KPI Cards */}
-            {data.sub_scores && Object.keys(data.sub_scores).length > 0 && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    {Object.entries(data.sub_scores).map(([key, item]: [string, any]) => (
-                        <div key={key} className="p-3 bg-gray-50 rounded-lg border border-gray-100 text-center">
-                            <div className="text-xs text-gray-500 uppercase font-medium mb-1">{item.label}</div>
-                            <div className={`text-lg font-bold ${item.score >= 80 ? 'text-green-600' :
-                                item.score >= 50 ? 'text-yellow-600' : 'text-red-600'
-                                }`}>
-                                {item.score?.toFixed(0) || 0}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-
             {data.key_deficiencies && data.key_deficiencies.length > 0 && (
-                <div>
-                    <h3 className="text-sm font-semibold text-[var(--text-headings)] mb-3">
-                        Key Deficiencies
+                <div className="pt-6 border-t border-[var(--border-default)]">
+                    <h3 className="text-sm font-bold text-[var(--text-headings)] mb-4 flex items-center gap-2 uppercase tracking-wider">
+                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                        Key Deficiencies & Priorities
                     </h3>
-                    <div className="space-y-2">
-                        {data.key_deficiencies.slice(0, 5).map((def: any, index: number) => (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {data.key_deficiencies.slice(0, 6).map((def: any, index: number) => (
                             <div
                                 key={index}
-                                className="flex items-start gap-3 p-3 bg-[var(--bg-secondary)] rounded-lg"
+                                className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-100 rounded-xl"
                             >
                                 <div
-                                    className={`px-2 py-1 rounded text-xs font-semibold ${def.severity === 'critical'
-                                        ? 'bg-red-100 text-red-700'
+                                    className={`px-2 py-0.5 rounded text-[10px] uppercase font-black ${def.severity === 'critical'
+                                        ? 'bg-red-600 text-white'
                                         : def.severity === 'high'
-                                            ? 'bg-orange-100 text-orange-700'
-                                            : 'bg-yellow-100 text-yellow-700'
+                                            ? 'bg-orange-500 text-white'
+                                            : 'bg-yellow-500 text-white'
                                         }`}
                                 >
                                     {def.severity}
                                 </div>
-                                <div className="flex-1 text-sm text-[var(--text-body)]">
-                                    <span className="font-medium">{def.category}:</span> {def.description}
+                                <div className="flex-1 text-sm text-[var(--text-body)] leading-relaxed">
+                                    <span className="font-bold text-[var(--text-headings)]">{def.category}:</span> {def.description}
                                 </div>
                             </div>
                         ))}
@@ -297,10 +343,15 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                             {data.queries.gains.slice(0, 5).map((item: any, index: number) => (
                                 <div
                                     key={index}
-                                    className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm flex justify-between items-center"
+                                    className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm flex justify-between items-center gap-3"
                                 >
-                                    <span className="font-medium text-[var(--text-headings)]">{item.name}</span>
-                                    <span className="font-bold text-green-700">
+                                    <span
+                                        className="font-medium text-[var(--text-headings)] flex-1 truncate"
+                                        title={item.query_text || item.name}
+                                    >
+                                        {item.query_text || item.name}
+                                    </span>
+                                    <span className="font-bold text-green-700 whitespace-nowrap">
                                         +{item.changes?.share_of_answer?.absolute?.toFixed(1) || item.change || 0}%
                                     </span>
                                 </div>
@@ -317,10 +368,15 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                             {data.queries.losses.slice(0, 5).map((item: any, index: number) => (
                                 <div
                                     key={index}
-                                    className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm flex justify-between items-center"
+                                    className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm flex justify-between items-center gap-3"
                                 >
-                                    <span className="font-medium text-[var(--text-headings)]">{item.name}</span>
-                                    <span className="font-bold text-red-700">
+                                    <span
+                                        className="font-medium text-[var(--text-headings)] flex-1 truncate"
+                                        title={item.query_text || item.name}
+                                    >
+                                        {item.query_text || item.name}
+                                    </span>
+                                    <span className="font-bold text-red-700 whitespace-nowrap">
                                         {item.changes?.share_of_answer?.absolute?.toFixed(1) || item.change || 0}%
                                     </span>
                                 </div>

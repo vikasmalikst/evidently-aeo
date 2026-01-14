@@ -25,12 +25,13 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
 import LandingPage from './pages/LandingPage';
+import { ExecutiveReportingPage } from './pages/ExecutiveReporting/ExecutiveReportingPage';
 
 function DefaultRedirect() {
   if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
     return <Navigate to="/dashboard" replace />;
   }
-  
+
   if (featureFlags.skipOnboardingAfterLogin) {
     // Skip onboarding, go to setup
     return onboardingUtils.isOnboardingComplete() ? (
@@ -39,11 +40,11 @@ function DefaultRedirect() {
       <Navigate to="/setup" replace />
     );
   }
-  
+
   if (featureFlags.forceOnboardingAfterLogin) {
     return <Navigate to="/onboarding" replace />;
   }
-  
+
   // Check onboarding completion (brand/competitors)
   if (typeof window !== 'undefined' && localStorage.getItem('onboarding_complete') === 'true') {
     // Onboarding complete, check setup
@@ -53,7 +54,7 @@ function DefaultRedirect() {
       <Navigate to="/setup" replace />
     );
   }
-  
+
   // Onboarding not complete, go to onboarding
   return <Navigate to="/onboarding" replace />;
 }
@@ -63,29 +64,29 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/auth" element={<AuthPage />} />
-        <Route 
-          path="/onboarding" 
+        <Route
+          path="/onboarding"
           element={
             <ProtectedRoute>
               <Onboarding />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/setup" 
+        <Route
+          path="/setup"
           element={
             <ProtectedRoute>
               <Setup />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/onboarding/loading/:brandId" 
+        <Route
+          path="/onboarding/loading/:brandId"
           element={
             <ProtectedRoute>
               <DataCollectionLoadingScreenRoute />
             </ProtectedRoute>
-          } 
+          }
         />
         <Route
           path="/movers-shakers"
@@ -172,6 +173,14 @@ function App() {
           element={
             <ProtectedRoute>
               <RecommendationsV3 />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/executive-reporting"
+          element={
+            <ProtectedRoute>
+              <ExecutiveReportingPage />
             </ProtectedRoute>
           }
         />
@@ -263,13 +272,13 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route 
-          path="/" 
-          element={<LandingPage />} 
+        <Route
+          path="/"
+          element={<LandingPage />}
         />
-        <Route 
-          path="/app" 
-          element={<DefaultRedirect />} 
+        <Route
+          path="/app"
+          element={<DefaultRedirect />}
         />
       </Routes>
     </BrowserRouter>

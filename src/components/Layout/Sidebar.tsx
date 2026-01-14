@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconLayoutDashboard, IconTargetArrow, IconSparkles, IconShieldCheck } from '@tabler/icons-react';
+import { IconEye, IconForms, IconKey, IconSettings, IconLogout, IconFolderSearch, IconLayoutDashboard, IconTargetArrow, IconSparkles, IconShieldCheck, IconChartBar } from '@tabler/icons-react';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../lib/auth';
 import { useManualBrandDashboard } from '../../manual-dashboard';
@@ -13,7 +13,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { icon: IconLayoutDashboard, label: 'Performance Overview', path: '/' },
+  { icon: IconLayoutDashboard, label: 'Performance Overview', path: '/dashboard' },
   { icon: IconEye, label: 'Metrics Analysis', path: '/search-visibility' },
   { icon: IconTargetArrow, label: 'Citations Sources', path: '/search-sources' },
   { icon: IconFolderSearch, label: 'Topics', path: '/topics' },
@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
   { icon: IconKey, label: 'Keywords', path: '/keywords' },
   { icon: IconShieldCheck, label: 'Domain Readiness', path: '/domain-readiness' },
   { icon: IconSparkles, label: 'Recommendations', path: '/recommendations' },
+  { icon: IconChartBar, label: 'Executive Reporting', path: '/executive-reporting' },
 ];
 
 export const Sidebar = () => {
@@ -40,7 +41,7 @@ export const Sidebar = () => {
   // Added comment to force refresh for Movers & Shakers menu item visibility
   const getPrefetchEndpoint = (path: string): string | null => {
     if (!selectedBrandId) return null;
-    
+
     // Normalize dates to avoid cache misses due to changing timestamps.
     // This prevents hammering the backend with unique URLs on every hover.
     const end = new Date();
@@ -48,7 +49,7 @@ export const Sidebar = () => {
     const start = new Date(end);
     start.setUTCHours(0, 0, 0, 0);
     const toDateOnly = (d: Date) => d.toISOString().split('T')[0];
-    
+
     switch (path) {
       case '/':
         start.setDate(start.getDate() - 29);
@@ -151,21 +152,19 @@ export const Sidebar = () => {
                   className="flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)]"
                 >
                   <div
-                    className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${
-                      active
-                        ? 'bg-[var(--accent-primary)] text-white'
-                        : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
-                    }`}
+                    className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
+                      ? 'bg-[var(--accent-primary)] text-white'
+                      : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
+                      }`}
                   >
                     <Icon size={20} className="transition-colors duration-300" />
                   </div>
 
                   <span
-                    className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${
-                      isExpanded
-                        ? 'opacity-100 translate-x-0'
-                        : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-                    }`}
+                    className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
+                      ? 'opacity-100 translate-x-0'
+                      : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+                      }`}
                   >
                     {item.label}
                   </span>
@@ -179,21 +178,19 @@ export const Sidebar = () => {
       <div className="border-t border-[var(--border-default)] p-3 space-y-2">
         <Link
           to="/settings"
-          className={`flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out ${
-            isActive('/settings') || location.pathname.startsWith('/settings')
-              ? 'bg-[var(--bg-secondary)] text-[var(--accent-primary)]'
-              : 'text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]'
-          }`}
+          className={`flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out ${isActive('/settings') || location.pathname.startsWith('/settings')
+            ? 'bg-[var(--bg-secondary)] text-[var(--accent-primary)]'
+            : 'text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]'
+            }`}
         >
           <div className="flex-shrink-0 relative z-10">
             <IconSettings size={24} className="transition-colors duration-300" />
           </div>
           <span
-            className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${
-              isExpanded
-                ? 'opacity-100 translate-x-0'
-                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-            }`}
+            className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${isExpanded
+              ? 'opacity-100 translate-x-0'
+              : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+              }`}
           >
             Settings
           </span>
@@ -210,11 +207,10 @@ export const Sidebar = () => {
               </div>
             </div>
             <span
-              className={`font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${
-                isExpanded
-                  ? 'opacity-100 translate-x-0 flex-1 min-w-0 truncate block'
-                  : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-              }`}
+              className={`font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${isExpanded
+                ? 'opacity-100 translate-x-0 flex-1 min-w-0 truncate block'
+                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+                }`}
               title={user?.email || ''}
             >
               {user?.email}

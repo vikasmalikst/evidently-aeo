@@ -4,6 +4,7 @@ import type { Topic } from '../../types/topic';
 import type { OnboardingCompetitor } from '../../types/onboarding';
 import { fetchPromptsForTopics } from '../../api/onboardingApi';
 import { Spinner } from './common/Spinner';
+import { OnboardingTooltip } from './common/OnboardingTooltip';
 
 export interface PromptWithTopic {
   prompt: string;
@@ -235,6 +236,19 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
 
   return (
     <div className="prompt-configuration">
+      {/* Contextual Tooltip */}
+      <OnboardingTooltip
+        storageKey="prompts-configuration"
+        title="Selecting Prompts"
+      >
+        <p className="mb-2">
+          Select <strong>up to 3 prompts per topic</strong> to track your brand's visibility across AI platforms.
+        </p>
+        <p>
+          💡 Need more? You can always add additional prompts later from the <strong>Configuration</strong> page in Settings.
+        </p>
+      </OnboardingTooltip>
+
       <div className="prompt-instruction">
         <IconInfoCircle size={20} className="instruction-icon" />
         <p>

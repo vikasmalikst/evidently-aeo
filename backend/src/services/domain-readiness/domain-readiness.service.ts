@@ -301,14 +301,28 @@ export class DomainReadinessService {
     onEvent: (event: DomainReadinessProgressEvent) => void,
     signal?: AbortSignal
   ): Promise<void> {
+    console.log(`🔍 [Domain Readiness] Starting audit for brandId: ${brandId}`);
+
     const { data: brand, error } = await supabaseAdmin
       .from('brands')
       .select('id, name, homepage_url')
       .eq('id', brandId)
       .single();
 
+    console.log(`🔍 [Domain Readiness] Brand lookup result:`, {
+      brandId,
+      found: !!brand,
+      name: brand?.name || 'N/A',
+      homepage_url: brand?.homepage_url || 'MISSING',
+      error: error?.message || null
+    });
+
     if (error || !brand || !brand.homepage_url) {
-      throw new Error('Brand not found or missing homepage URL');
+      const reason = error ? `DB Error: ${error.message}`
+        : !brand ? 'Brand not found in database'
+          : 'homepage_url is null/empty';
+      console.error(`❌ [Domain Readiness] Cannot run audit: ${reason}`);
+      throw new Error(`Brand not found or missing homepage URL (${reason})`);
     }
 
     const domain = brand.homepage_url;

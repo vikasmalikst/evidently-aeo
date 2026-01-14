@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { ChevronLeft } from 'lucide-react';
 import evidentlyLogo from '../assets/logo.png';
 
 type SetupStep = 'welcome' | 'models' | 'topicChoice' | 'topics' | 'prompts' | 'review' | 'summary' | 'progress';
@@ -25,8 +26,9 @@ const getStepIndex = (stepId: SetupStep) => {
   return 0;
 };
 
-export const SetupLayout: React.FC<SetupLayoutProps> = ({ currentStep, children }) => {
+export const SetupLayout: React.FC<SetupLayoutProps> = ({ currentStep, onBack, children }) => {
   const currentIndex = getStepIndex(currentStep);
+  const showBackButton = currentStep !== 'welcome' && onBack;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-cyan-50 flex flex-col relative overflow-hidden">
@@ -50,15 +52,44 @@ export const SetupLayout: React.FC<SetupLayoutProps> = ({ currentStep, children 
         />
       </div>
 
-      {/* Floating logo - top left corner */}
-      <motion.div 
-        className="absolute top-6 left-6 z-10"
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-      >
-        <img src={evidentlyLogo} alt="EvidentlyAEO" className="h-8 w-auto" />
-      </motion.div>
+      {/* Top bar with logo and optional back button */}
+      <div className="absolute top-0 left-0 right-0 z-20">
+        <div className="flex items-center justify-between px-6 py-5">
+          {/* Back button - left side */}
+          {showBackButton ? (
+            <motion.button
+              type="button"
+              onClick={() => onBack?.()}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              whileHover={{ x: -4 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              className="group flex items-center gap-2 px-5 py-2.5 bg-white/90 backdrop-blur-md border border-gray-200 rounded-full shadow-lg shadow-gray-200/50 hover:shadow-xl hover:border-gray-300 transition-all duration-300"
+            >
+              <motion.div
+                className="flex items-center justify-center w-6 h-6 bg-gray-100 rounded-full group-hover:bg-cyan-100 transition-colors"
+              >
+                <ChevronLeft size={16} className="text-gray-600 group-hover:text-cyan-600 transition-colors" />
+              </motion.div>
+              <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">Back</span>
+            </motion.button>
+          ) : (
+            <div className="w-28" /> 
+          )}
+          
+          {/* Logo - center */}
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <img src={evidentlyLogo} alt="EvidentlyAEO" className="h-8 w-auto" />
+          </motion.div>
+          
+          <div className="w-28" /> {/* Right spacer for balance */}
+        </div>
+      </div>
 
       {/* Main content area - centered */}
       <main className="flex-grow flex items-center justify-center px-4 py-12 relative z-10">

@@ -41,12 +41,19 @@ export function Navigation() {
           {/* Desktop Links (Centered relative to container) */}
           <div className="hidden md:flex items-center gap-1">
             {navLinks.map((link, index) => (
-              <Link
+              <a
                 key={link.name}
-                to={link.href}
-                className="relative text-base font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors px-4 py-2 rounded-full"
+                href={link.href}
+                className="relative text-base font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors px-4 py-2 rounded-full cursor-pointer"
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  const element = document.querySelector(link.href);
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'smooth' });
+                  }
+                }}
               >
                 {/* Animated Background Pill */}
                 {hoveredIndex === index && (
@@ -61,7 +68,7 @@ export function Navigation() {
                   />
                 )}
                 <span className="relative z-10">{link.name}</span>
-              </Link>
+              </a>
             ))}
           </div>
 
@@ -97,16 +104,23 @@ export function Navigation() {
        {isOpen && (
           <div className="fixed inset-0 z-40 bg-background/95 backdrop-blur-sm md:hidden pt-24 px-6 animate-in fade-in slide-in-from-top-4 duration-200">
              <div className="flex flex-col space-y-4">
-              {navLinks.map((link) => (
-                <Link 
+               {navLinks.map((link) => (
+                <a
                   key={link.name} 
-                  to={link.href} 
+                  href={link.href}
                   className="flex items-center justify-between py-4 border-b border-border text-lg font-medium"
-                  onClick={() => setIsOpen(false)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsOpen(false);
+                    const element = document.querySelector(link.href);
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
                 >
                   {link.name}
                   <ArrowRight className="w-5 h-5 opacity-50" />
-                </Link>
+                </a>
               ))}
               <div className="pt-6 grid gap-4">
                 <Link 

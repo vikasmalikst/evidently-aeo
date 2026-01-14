@@ -51,7 +51,7 @@ export const Sidebar = () => {
     const toDateOnly = (d: Date) => d.toISOString().split('T')[0];
 
     switch (path) {
-      case '/':
+      case '/dashboard':
         start.setDate(start.getDate() - 29);
         return `/brands/${selectedBrandId}/dashboard?startDate=${toDateOnly(start)}&endDate=${toDateOnly(end)}`;
       case '/search-visibility':

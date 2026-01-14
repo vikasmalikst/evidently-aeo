@@ -195,8 +195,8 @@ export const Setup = () => {
         if (brandId) {
           localStorage.setItem('current_brand_id', brandId);
           localStorage.setItem(`data_collection_in_progress_${brandId}`, 'true');
-          // Navigate to loading screen instead of dashboard
-          navigate(`/onboarding/loading/${brandId}`, { 
+          // Navigate to domain readiness screen first, then to data collection progress
+          navigate(`/onboarding/domain-readiness/${brandId}`, { 
             replace: true
           });
         } else {

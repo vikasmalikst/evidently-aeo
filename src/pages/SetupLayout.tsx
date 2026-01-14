@@ -1,55 +1,122 @@
 import React from 'react';
-import { ChevronLeft } from 'lucide-react';
-import { StepIndicator } from '../components/Onboarding/StepIndicator';
+import { motion } from 'framer-motion';
 import evidentlyLogo from '../assets/logo.png';
 
+type SetupStep = 'welcome' | 'models' | 'topicChoice' | 'topics' | 'prompts' | 'review' | 'summary' | 'progress';
+
 interface SetupLayoutProps {
-  currentStep: 'welcome' | 'models' | 'topicChoice' | 'topics' | 'prompts' | 'review' | 'summary' | 'progress';
+  currentStep: SetupStep;
   title: string | null;
   onBack?: () => void;
   children: React.ReactNode;
 }
 
-export const SetupLayout: React.FC<SetupLayoutProps> = ({
-  currentStep,
-  title,
-  onBack,
-  children,
-}) => {
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20">
-            <div className="flex items-center">
-              <img src={evidentlyLogo} alt="EvidentlyAEO" className="h-10 w-auto" />
-            </div>
-            <div className="flex items-center">
-              <StepIndicator currentStep={currentStep} />
-            </div>
-          </div>
-        </div>
-      </header>
+// Step indicator configuration
+const steps = [
+  { id: 'models', label: 'Models' },
+  { id: 'topics', label: 'Configuration' },
+  { id: 'summary', label: 'Summary' },
+];
 
-      <main className="flex-grow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
-            {title && (
-              <div className="flex items-center mb-8">
-                {onBack && (
-                  <button
-                    onClick={onBack}
-                    className="mr-4 p-2 rounded-full hover:bg-gray-100 transition-colors"
-                    aria-label="Go back"
-                  >
-                    <ChevronLeft size={24} className="text-gray-600" />
-                  </button>
-                )}
-                <h1 className="text-3xl font-bold text-gray-900">{title}</h1>
-              </div>
-            )}
+const getStepIndex = (stepId: SetupStep) => {
+  if (stepId === 'welcome' || stepId === 'models') return 0;
+  if (['topicChoice', 'topics', 'prompts', 'review'].includes(stepId)) return 1;
+  if (stepId === 'summary' || stepId === 'progress') return 2;
+  return 0;
+};
+
+export const SetupLayout: React.FC<SetupLayoutProps> = ({ currentStep, children }) => {
+  const currentIndex = getStepIndex(currentStep);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-cyan-50 flex flex-col relative overflow-hidden">
+      {/* Subtle animated background gradients */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <motion.div
+          className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-cyan-100/40 to-blue-100/40 rounded-full blur-3xl"
+          animate={{
+            scale: [1, 1.2, 1],
+            opacity: [0.3, 0.5, 0.3],
+          }}
+          transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          className="absolute -bottom-40 -left-40 w-96 h-96 bg-gradient-to-tr from-cyan-100/30 to-teal-100/30 rounded-full blur-3xl"
+          animate={{
+            scale: [1.2, 1, 1.2],
+            opacity: [0.3, 0.5, 0.3],
+          }}
+          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      </div>
+
+      {/* Floating logo - top left corner */}
+      <motion.div 
+        className="absolute top-6 left-6 z-10"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        <img src={evidentlyLogo} alt="EvidentlyAEO" className="h-8 w-auto" />
+      </motion.div>
+
+      {/* Main content area - centered */}
+      <main className="flex-grow flex items-center justify-center px-4 py-12 relative z-10">
+        <div className="w-full max-w-6xl">
+          {/* Step indicator - above the card */}
+          <motion.div 
+            className="flex justify-center mb-6"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+          >
+            <div className="flex items-center gap-3 bg-white/80 backdrop-blur-lg rounded-full px-6 py-3 shadow-lg border border-gray-100">
+              {steps.map((step, index) => {
+                const isCompleted = index < currentIndex;
+                const isCurrent = index === currentIndex;
+
+                return (
+                  <React.Fragment key={step.id}>
+                    <div className="flex items-center gap-2">
+                      <motion.div
+                        className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+                          isCompleted ? 'bg-cyan-500' :
+                          isCurrent ? 'bg-cyan-500 ring-4 ring-cyan-100' :
+                          'bg-gray-300'
+                        }`}
+                        initial={false}
+                        animate={{
+                          scale: isCurrent ? 1.2 : 1,
+                        }}
+                        transition={{ duration: 0.3 }}
+                      />
+                      <span className={`text-sm font-medium transition-colors duration-300 ${
+                        isCurrent ? 'text-gray-900' :
+                        isCompleted ? 'text-cyan-600' :
+                        'text-gray-400'
+                      }`}>
+                        {step.label}
+                      </span>
+                    </div>
+                    {index < steps.length - 1 && (
+                      <div className={`w-8 h-0.5 transition-colors duration-300 ${
+                        isCompleted ? 'bg-cyan-400' : 'bg-gray-200'
+                      }`} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </motion.div>
+
+          {/* Content */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+          >
             {children}
-          </div>
+          </motion.div>
         </div>
       </main>
     </div>

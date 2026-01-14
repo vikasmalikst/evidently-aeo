@@ -32,6 +32,7 @@ import {
   getReadinessContext,
   enhanceRecommendationWithReadiness
 } from './domain-readiness-filter.service';
+import { getHowToFixSteps } from './domain-readiness-resources';
 import { AeoAuditResult, BotAccessStatus, TestResult } from '../domain-readiness/types';
 
 // ============================================================================
@@ -86,6 +87,10 @@ export interface RecommendationV3 {
   completedAt?: string;
   kpiBeforeValue?: number;
   kpiAfterValue?: number;
+
+  // Source tracking
+  source?: 'domain_audit' | 'ai_generated';
+  howToFix?: string[];  // Step-by-step fix instructions (for domain audit recs)
 }
 
 /**
@@ -180,7 +185,8 @@ class RecommendationV3Service {
       coldStartMode: process.env.RECS_V3_COLD_START_MODE !== 'false',
       coldStartPersonalize: process.env.RECS_V3_COLD_START_PERSONALIZE !== 'false',
       qualityContract: process.env.RECS_V3_QUALITY_CONTRACT !== 'false',
-      deterministicRanking: process.env.RECS_V3_DETERMINISTIC_RANKING !== 'false'
+      deterministicRanking: process.env.RECS_V3_DETERMINISTIC_RANKING !== 'false',
+      domainReadinessFilter: process.env.RECS_V3_DOMAIN_FILTER === 'true' // Disabled by default
     };
   }
 
@@ -512,6 +518,182 @@ ${templatesJson}`;
       confidence: typeof rec.confidence === 'number' ? rec.confidence : 55,
       focusSources: rec.focusSources,
       contentFocus: rec.contentFocus
+    }));
+  }
+
+  /**
+   * Personalize Domain Readiness recommendations using AI
+   * Transforms generic technical fix actions into brand-specific, actionable recommendations
+   */
+  private async personalizeDomainReadinessRecommendations(
+    context: BrandContextV3,
+    templates: RecommendationV3[]
+  ): Promise<RecommendationV3[]> {
+    if (templates.length === 0) return [];
+
+    const systemMessage =
+      'You are a senior technical SEO and AEO expert. You transform generic technical issue fix recommendations into concrete, brand-specific action items. Respond ONLY with valid JSON.';
+
+    const templatesJson = JSON.stringify(
+      templates.map(t => ({
+        action: t.action,
+        reason: t.reason,
+        explanation: t.explanation,
+        howToFix: t.howToFix,
+        priority: t.priority,
+        effort: t.effort
+      })),
+      null,
+      2
+    );
+
+    const prompt = `Context:
+- Brand: ${context.brandName}
+- Industry: ${context.industry || 'Unknown'}
+- Brand URL: ${context.domainAuditResult?.domain || 'Unknown'}
+- Current Domain Readiness Score: ${context.domainAuditResult?.overallScore || 'Unknown'}/100
+
+Task:
+You will receive domain audit recommendations for technical issues. Improve them using these rules:
+1) Make each action brand-specific by using the actual brand URL where appropriate (e.g., "Add Sitemap: https://${context.domainAuditResult?.domain || 'yourdomain.com'}/sitemap.xml")
+2) Personalize the howToFix steps based on brand context (e.g., if it's an e-commerce site, mention product pages)
+3) Provide realistic timeline and effort estimates based on the complexity for this specific brand
+4) Keep the source as "domain_audit" and maintain the existing priority/effort unless you have strong reason to change
+5) Make explanations more specific and actionable for this brand's industry
+6) Return all recommendations - do not filter any out
+
+Required fields for each recommendation:
+- action: Brand-specific action (string)
+- reason: Why this matters for the brand (string)  
+- explanation: Detailed explanation with success criteria (string)
+- howToFix: Array of step-by-step instructions personalized for this brand (string[])
+- priority: "High" | "Medium" | "Low"
+- effort: "Low" | "Medium" | "High"
+- timeline: Realistic timeline (string like "1-2 weeks")
+- confidence: 0-100 (number)
+
+Original recommendations JSON:
+${templatesJson}
+
+Return ONLY a JSON array with the personalized recommendations.`;
+
+    let content: string | null = null;
+
+    // Try Ollama first (if enabled for this brand)
+    const useOllama = await shouldUseOllama(context.brandId);
+    if (useOllama) {
+      try {
+        console.log('🦙 [RecommendationV3Service] Domain Readiness Personalization: attempting Ollama...');
+        const ollamaResponse = await callOllamaAPI(systemMessage, prompt, context.brandId);
+        content = ollamaResponse || null;
+      } catch (e: any) {
+        console.error('❌ [RecommendationV3Service] Domain Readiness Personalization Ollama failed:', e.message || e);
+      }
+    }
+
+    if (!content) {
+      try {
+        console.log('🚀 [RecommendationV3Service] Domain Readiness Personalization: attempting OpenRouter...');
+        const or = await openRouterCollectorService.executeQuery({
+          collectorType: 'content',
+          prompt,
+          maxTokens: 3000,
+          temperature: 0.3,
+          topP: 0.9,
+          enableWebSearch: false
+        });
+        content = or.response || null;
+      } catch (e: any) {
+        console.error('❌ [RecommendationV3Service] Domain Readiness Personalization OpenRouter failed:', e.message || e);
+      }
+    }
+
+    if (!content && this.cerebrasApiKey) {
+      try {
+        console.log('🔄 [RecommendationV3Service] Domain Readiness Personalization: trying Cerebras fallback...');
+        const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.cerebrasApiKey}`
+          },
+          body: JSON.stringify({
+            model: this.cerebrasModel,
+            messages: [
+              { role: 'system', content: systemMessage },
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: 3000,
+            temperature: 0.3
+          })
+        });
+        if (response.ok) {
+          const data = (await response.json()) as CerebrasChatResponse;
+          content = data?.choices?.[0]?.message?.content || null;
+        }
+      } catch (e) {
+        console.error('❌ [RecommendationV3Service] Domain Readiness Personalization Cerebras failed:', e);
+      }
+    }
+
+    if (!content) {
+      console.warn('⚠️ [RecommendationV3Service] Domain Readiness Personalization LLM call failed, returning original templates');
+      return templates;
+    }
+
+    // Parse JSON response
+    console.log('📝 [RecommendationV3Service] Domain Readiness Personalization response (first 500 chars):', content.substring(0, 500));
+
+    let cleaned = content.trim();
+
+    // Remove markdown code blocks
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.slice(7);
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.slice(3);
+    }
+    if (cleaned.endsWith('```')) {
+      cleaned = cleaned.slice(0, -3);
+    }
+    cleaned = cleaned.trim();
+
+    // Extract JSON array
+    let jsonStart = cleaned.indexOf('[');
+    let jsonEnd = cleaned.lastIndexOf(']');
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (parseError) {
+      console.error('❌ [RecommendationV3Service] Domain Readiness Personalization JSON parse error');
+      return templates;
+    }
+
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      console.warn('⚠️ [RecommendationV3Service] Domain Readiness Personalization returned invalid/empty array');
+      return templates;
+    }
+
+    // Map personalized recommendations, preserving domain_audit source
+    return parsed.map((rec: any, index: number) => ({
+      action: String(rec.action || templates[index]?.action || ''),
+      citationSource: 'owned-site',
+      focusArea: 'visibility' as const,
+      priority: rec.priority === 'High' ? 'High' : rec.priority === 'Low' ? 'Low' : 'Medium',
+      effort: rec.effort === 'High' ? 'High' : rec.effort === 'Low' ? 'Low' : 'Medium',
+      kpi: 'Technical Health',
+      reason: rec.reason || templates[index]?.reason,
+      explanation: rec.explanation || templates[index]?.explanation,
+      expectedBoost: 'Technical Baseline',
+      timeline: rec.timeline || templates[index]?.timeline || '1-2 weeks',
+      confidence: typeof rec.confidence === 'number' ? rec.confidence : 90,
+      focusSources: 'owned-site',
+      contentFocus: 'Technical Optimization',
+      source: 'domain_audit' as const,
+      howToFix: Array.isArray(rec.howToFix) ? rec.howToFix : templates[index]?.howToFix || []
     }));
   }
 
@@ -953,8 +1135,11 @@ ${templatesJson}`;
       const issues = tests.filter(t => t.status === 'fail' || t.status === 'warning');
 
       issues.forEach(issue => {
-        // Determine priority based on status and severity (if we had severity, for now use status)
+        // Determine priority based on status and severity
         const priority = issue.status === 'fail' ? 'High' : 'Medium';
+
+        // Get how-to-fix steps from resources
+        const howToFix = getHowToFixSteps(issue.name);
 
         const rec: RecommendationV3 = {
           action: `Fix ${bucketLabel} Issue: ${issue.name}`,
@@ -969,7 +1154,9 @@ ${templatesJson}`;
           timeline: '1-2 weeks',
           confidence: 90, // High confidence because it's based on a hard test result
           focusSources: 'owned-site',
-          contentFocus: 'Technical Optimization'
+          contentFocus: 'Technical Optimization',
+          source: 'domain_audit', // Mark as domain audit recommendation
+          howToFix: howToFix // Include step-by-step fix instructions
         };
 
         recommendations.push(rec);
@@ -987,19 +1174,32 @@ ${templatesJson}`;
       mapTestsToRecs('technicalCrawlability', 'Technical Crawlability', techTests, 'Technical Health');
     }
 
-    // 2. AEO Optimization (High Priority)
-    // Always check AEO tests regardless of score if there are failures
-    const aeoTests = audit.detailedResults.aeoOptimization.tests;
-    mapTestsToRecs('aeoOptimization', 'AEO Optimization', aeoTests, 'Technical Health');
+    // 2. Content Quality
+    const contentTests = audit.detailedResults.contentQuality.tests;
+    if (audit.scoreBreakdown.contentQuality < WARNING_SCORE_THRESHOLD || hasCriticalFailures(contentTests)) {
+      mapTestsToRecs('contentQuality', 'Content Quality', contentTests, 'Technical Health');
+    }
 
-    // 3. Schema/Semantic Structure
+    // 3. Semantic Structure
     const semanticTests = audit.detailedResults.semanticStructure.tests;
     if (audit.scoreBreakdown.semanticStructure < WARNING_SCORE_THRESHOLD || hasCriticalFailures(semanticTests)) {
       mapTestsToRecs('semanticStructure', 'Semantic Structure', semanticTests, 'Technical Health');
     }
 
-    // Limit to top 3 technical recommendations to not overwhelm the user
-    return recommendations.slice(0, 3);
+    // 4. Accessibility & Brand
+    const accessTests = audit.detailedResults.accessibilityAndBrand.tests;
+    if (audit.scoreBreakdown.accessibilityAndBrand < WARNING_SCORE_THRESHOLD || hasCriticalFailures(accessTests)) {
+      mapTestsToRecs('accessibilityAndBrand', 'Accessibility & Brand', accessTests, 'Technical Health');
+    }
+
+    // 5. AEO Optimization (High Priority - always check for failures)
+    const aeoTests = audit.detailedResults.aeoOptimization.tests;
+    mapTestsToRecs('aeoOptimization', 'AEO Optimization', aeoTests, 'Technical Health');
+
+    console.log(`🔧 [RecommendationV3Service] Generated ${recommendations.length} domain readiness recommendation(s)`);
+
+    // No limit - return all domain readiness recommendations
+    return recommendations;
   }
 
   /**
@@ -1696,7 +1896,8 @@ Respond only with the JSON array.`;
           focusSources: rec.focusSources || rec.citationSource,
           contentFocus: rec.contentFocus || rec.action,
           timeline: rec.timeline || '2-4 weeks',
-          confidence: rec.confidence || 70
+          confidence: rec.confidence || 70,
+          source: 'ai_generated' as const // Mark as AI-generated recommendation
         };
       });
 
@@ -2246,12 +2447,17 @@ Respond only with the JSON array.`;
         }
       }
 
-      // Step 2.5: Inject Domain Readiness Recommendations
+      // Step 2.5: Inject Domain Readiness Recommendations (with AI personalization)
       if (context.domainAuditResult) {
         console.log('🔧 [RecommendationV3Service] Step 2.5: Generating Domain Readiness recommendations...');
-        const domainRecs = this.generateDomainReadinessRecommendations(context);
-        if (domainRecs.length > 0) {
-          console.log(`   ✅ Adding ${domainRecs.length} technical recommendations derived from Domain Audit`);
+        const domainRecsRaw = this.generateDomainReadinessRecommendations(context);
+        if (domainRecsRaw.length > 0) {
+          console.log(`   📋 Generated ${domainRecsRaw.length} raw domain readiness recommendation(s)`);
+
+          // Personalize domain readiness recommendations through AI
+          console.log('   🤖 Personalizing domain readiness recommendations with AI...');
+          const domainRecs = await this.personalizeDomainReadinessRecommendations(context, domainRecsRaw);
+          console.log(`   ✅ Adding ${domainRecs.length} personalized technical recommendations derived from Domain Audit`);
           recommendations = [...domainRecs, ...recommendations];
         } else {
           console.log('   ✨ No critical domain readiness issues found to convert to recommendations.');
@@ -2263,15 +2469,19 @@ Respond only with the JSON array.`;
       recommendations = this.postProcessRecommendations(context, recommendations);
       console.log(`📊 [RecommendationV3Service] After post-processing: ${recommendations.length} recommendation(s)`);
 
-      // Step 2.5: Filter recommendations based on Domain Readiness
+      // Step 2.5: Filter recommendations based on Domain Readiness (if enabled)
       if (latestAudit) {
-        const beforeFilter = recommendations.length;
-        recommendations = recommendations.filter(rec =>
-          !shouldFilterRecommendation(rec, latestAudit)
-        );
-        const filteredCount = beforeFilter - recommendations.length;
-        if (filteredCount > 0) {
-          console.log(`🚫 [RecommendationV3Service] Filtered ${filteredCount} recommendation(s) based on Domain Readiness audit`);
+        if (flags.domainReadinessFilter) {
+          const beforeFilter = recommendations.length;
+          recommendations = recommendations.filter(rec =>
+            !shouldFilterRecommendation(rec, latestAudit)
+          );
+          const filteredCount = beforeFilter - recommendations.length;
+          if (filteredCount > 0) {
+            console.log(`🚫 [RecommendationV3Service] Filtered ${filteredCount} recommendation(s) based on Domain Readiness audit`);
+          }
+        } else {
+          console.log(`⏭️ [RecommendationV3Service] Domain Readiness filtering disabled (RECS_V3_DOMAIN_FILTER != 'true')`);
         }
 
         // Enhance priority for recommendations addressing readiness gaps

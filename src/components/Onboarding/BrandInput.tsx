@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, ChevronDown } from 'lucide-react';
-import { Input } from './common/Input';
+import { Search, ChevronDown, Globe, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Spinner } from './common/Spinner';
 import { fetchBrandIntel } from '../../api/onboardingApi';
 import { searchBrand } from '../../api/brandApi';
@@ -35,6 +35,7 @@ export const BrandInput = ({
   const [logoDomain, setLogoDomain] = useState('');
   const [brandPreview, setBrandPreview] = useState<OnboardingBrand | null>(null);
   const [isCountryOpen, setIsCountryOpen] = useState(false);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
   const countryDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown when clicking outside
@@ -59,7 +60,6 @@ export const BrandInput = ({
         setCountries(fetchedCountries);
       } catch (err) {
         console.error('Failed to fetch countries:', err);
-        // Fallback to basic list if fetch fails
         setCountries([
           { code: 'US', name: 'United States' },
           { code: 'GB', name: 'United Kingdom' },
@@ -90,7 +90,6 @@ export const BrandInput = ({
     if (onInputChange) {
       onInputChange(value);
     }
-
     onAnalysisComplete?.();
   };
 
@@ -159,7 +158,6 @@ export const BrandInput = ({
 
       // If brand exists in database, use that data
       if (existingBrandData) {
-        // Build logo URL with proper fallback to brand name
         const brandDomain = existingBrandData.homepage_url?.replace(/^https?:\/\//, '').split('/')[0] || '';
         const brandNameDomain = existingBrandData.name.toLowerCase().replace(/\s+/g, '');
         const logoDomain = brandDomain || (brandNameDomain ? `${brandNameDomain}.com` : '');
@@ -179,15 +177,14 @@ export const BrandInput = ({
                       existingBrandData.metadata?.description || '',
           metadata: {
             ...(existingBrandData.metadata || {}),
-            logo: logoUrl, // Add logo to metadata for dashboard compatibility
-            brand_logo: logoUrl, // Also add as brand_logo for compatibility
+            logo: logoUrl,
+            brand_logo: logoUrl,
             ceo: existingBrandData.ceo || existingBrandData.metadata?.ceo,
             headquarters: existingBrandData.headquarters || existingBrandData.metadata?.headquarters,
             founded_year: existingBrandData.founded_year || existingBrandData.metadata?.founded_year,
           }
         };
 
-        // Format competitors from database
         const competitors: OnboardingCompetitor[] = [];
         if (existingBrandData.brand_competitors && Array.isArray(existingBrandData.brand_competitors)) {
           existingBrandData.brand_competitors.forEach((comp: any) => {
@@ -254,176 +251,272 @@ export const BrandInput = ({
   }, [externalIsLoading]);
 
   const showLoading = isLoading || externalIsLoading;
+  const canSubmit = input.trim().length >= 2 && url.trim().length > 0;
 
   return (
-    <div className="onboarding-brand-input">
-      <div className="onboarding-hero">
-        <div className="onboarding-hero__icon">
-          <Search size={48} />
-        </div>
-        <h1 className="onboarding-hero__title">Track Your Brand's AI Visibility</h1>
-        <p className="onboarding-hero__subtitle">
-          See how your brand appears across ChatGPT, Perplexity, Claude, and more
-        </p>
-      </div>
-
-      {showLoading ? (
-        <div className="onboarding-loading">
-          <Spinner size="large" message="Fetching your brand info ..." />
-        </div>
-      ) : (
-        <>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-            }}
-            className={`onboarding-form ${shake ? 'onboarding-form--shake' : ''}`}
+    <div className="w-full">
+      {/* Premium Card Container */}
+      <motion.div 
+        className={`bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-8 md:p-12 ${shake ? 'animate-shake' : ''}`}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        {/* Hero Section */}
+        <div className="text-center mb-10">
+          {/* Animated Icon */}
+          <motion.div 
+            className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-400 to-cyan-600 shadow-lg shadow-cyan-200 mb-6"
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.2 }}
           >
-            <div className="onboarding-input-with-logo">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '16px', alignItems: 'start' }}>
-                <Input
-                  type="text"
-                  placeholder="Enter your brand name"
-                  value={input}
-                  onChange={(e) => handleInputChange(e.target.value)}
-                  error={error}
-                  autoFocus
-                  label="Brand Name"
-                />
+            <Search size={36} className="text-white" />
+          </motion.div>
 
-                <div className="onboarding-input-wrapper" ref={countryDropdownRef} style={{ position: 'relative' }}>
-                  <label className="onboarding-input-label">Country</label>
-                  <div
-                    className="onboarding-input"
-                    onClick={() => setIsCountryOpen(!isCountryOpen)}
-                    style={{
-                      height: '48px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      paddingRight: '12px',
-                      userSelect: 'none'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <CountryFlag countryCode={country} />
-                      <span>{country}</span>
-                    </div>
-                    <ChevronDown size={16} className={`transition-transform duration-200 ${isCountryOpen ? 'rotate-180' : ''}`} />
+          <motion.h1 
+            className="text-3xl md:text-4xl font-bold text-gray-900 mb-3"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+          >
+            Track Your Brand's AI Visibility
+          </motion.h1>
+          
+          <motion.p 
+            className="text-gray-500 text-lg"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            See how your brand appears across ChatGPT, Perplexity, Claude, and more
+          </motion.p>
+        </div>
+
+        {showLoading ? (
+          <motion.div 
+            className="py-16 flex flex-col items-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-cyan-100 rounded-full" />
+              <div className="absolute top-0 left-0 w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+            <p className="mt-6 text-gray-600 font-medium">Analyzing your brand...</p>
+            <p className="mt-2 text-sm text-gray-400">This may take a few moments</p>
+          </motion.div>
+        ) : (
+          <>
+            {/* Form */}
+            <motion.form
+              onSubmit={(e) => e.preventDefault()}
+              className="space-y-6"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+            >
+              {/* Brand Name & Country Row */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Brand Name Input */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Brand Name
+                  </label>
+                  <div className={`relative transition-all duration-300 ${focusedField === 'brand' ? 'scale-[1.02]' : ''}`}>
+                    <input
+                      type="text"
+                      placeholder="Enter your brand name"
+                      value={input}
+                      onChange={(e) => handleInputChange(e.target.value)}
+                      onFocus={() => setFocusedField('brand')}
+                      onBlur={() => setFocusedField(null)}
+                      autoFocus
+                      className={`w-full px-5 py-4 bg-gray-50 border-2 rounded-xl text-gray-900 placeholder-gray-400 
+                        transition-all duration-300 outline-none
+                        ${focusedField === 'brand' ? 'border-cyan-500 bg-white shadow-lg shadow-cyan-100' : 'border-gray-200 hover:border-gray-300'}
+                        ${error && !input ? 'border-red-400' : ''}
+                      `}
+                    />
+                    {logoUrl && (
+                      <motion.img
+                        src={logoUrl}
+                        alt=""
+                        className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md object-contain bg-white shadow-sm"
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    )}
                   </div>
+                </div>
 
-                  {isCountryOpen && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        right: 0,
-                        maxHeight: '240px',
-                        overflowY: 'auto',
-                        background: 'var(--bg-primary)',
-                        border: '1px solid var(--border-default)',
-                        borderRadius: '8px',
-                        marginTop: '4px',
-                        zIndex: 10,
-                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
-                      }}
+                {/* Country Dropdown */}
+                <div ref={countryDropdownRef}>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Country
+                  </label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsCountryOpen(!isCountryOpen)}
+                      className={`w-full px-5 py-4 bg-gray-50 border-2 rounded-xl text-left flex items-center justify-between
+                        transition-all duration-300 
+                        ${isCountryOpen ? 'border-cyan-500 bg-white shadow-lg shadow-cyan-100' : 'border-gray-200 hover:border-gray-300'}
+                      `}
                     >
-                      {countries.length > 0 ? (
-                        countries.map((c) => (
-                          <div
-                            key={c.code}
-                            onClick={() => {
-                              setCountry(c.code);
-                              setIsCountryOpen(false);
-                            }}
-                            title={c.name}
-                            style={{
-                              padding: '8px 8px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              cursor: 'pointer',
-                              background: country === c.code ? 'var(--bg-secondary)' : 'transparent',
-                              fontSize: '14px',
-                              transition: 'background-color 0.2s'
-                            }}
-                            onMouseEnter={(e) => {
-                              if (country !== c.code) e.currentTarget.style.background = 'var(--bg-secondary)';
-                            }}
-                            onMouseLeave={(e) => {
-                              if (country !== c.code) e.currentTarget.style.background = 'transparent';
-                            }}
-                          >
-                            <CountryFlag countryCode={c.code} />
-                            <span style={{ fontWeight: 500, minWidth: '24px' }}>{c.code}</span>
-                            <span style={{ 
-                              color: '#64748b', 
-                              fontSize: '12px', 
-                              overflow: 'hidden', 
-                              textOverflow: 'ellipsis', 
-                              whiteSpace: 'nowrap' 
-                            }}>{c.name}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontSize: '14px' }}>Loading...</div>
+                      <div className="flex items-center gap-3">
+                        <CountryFlag countryCode={country} />
+                        <span className="font-medium text-gray-900">{country}</span>
+                      </div>
+                      <ChevronDown 
+                        size={18} 
+                        className={`text-gray-400 transition-transform duration-300 ${isCountryOpen ? 'rotate-180' : ''}`}  
+                      />
+                    </button>
+
+                    <AnimatePresence>
+                      {isCountryOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                          transition={{ duration: 0.2 }}
+                          className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto"
+                        >
+                          {countries.map((c) => (
+                            <button
+                              key={c.code}
+                              type="button"
+                              onClick={() => {
+                                setCountry(c.code);
+                                setIsCountryOpen(false);
+                              }}
+                              className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left
+                                ${country === c.code ? 'bg-cyan-50' : ''}
+                              `}
+                            >
+                              <CountryFlag countryCode={c.code} />
+                              <span className="font-medium text-gray-900">{c.code}</span>
+                              <span className="text-gray-500 text-sm truncate">{c.name}</span>
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </div>
+
+              {/* Website URL */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <Globe size={14} className="inline mr-1.5 -mt-0.5" />
+                  Website URL
+                </label>
+                <div className={`relative transition-all duration-300 ${focusedField === 'url' ? 'scale-[1.02]' : ''}`}>
+                  <input
+                    type="url"
+                    placeholder="e.g. brand.com"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    onFocus={() => setFocusedField('url')}
+                    onBlur={() => setFocusedField(null)}
+                    className={`w-full px-5 py-4 bg-gray-50 border-2 rounded-xl text-gray-900 placeholder-gray-400 
+                      transition-all duration-300 outline-none
+                      ${focusedField === 'url' ? 'border-cyan-500 bg-white shadow-lg shadow-cyan-100' : 'border-gray-200 hover:border-gray-300'}
+                      ${error && !url ? 'border-red-400' : ''}
+                    `}
+                  />
+                </div>
+              </div>
+
+              {/* Error Message */}
+              <AnimatePresence>
+                {error && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="text-red-500 text-sm font-medium"
+                  >
+                    {error}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </motion.form>
+
+            {/* Analyze Button */}
+            <motion.div 
+              className="mt-8 flex justify-end"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+            >
+              <motion.button
+                onClick={handleSubmit}
+                disabled={!canSubmit}
+                whileHover={{ scale: canSubmit ? 1.02 : 1 }}
+                whileTap={{ scale: canSubmit ? 0.98 : 1 }}
+                className={`relative px-8 py-4 rounded-xl font-semibold text-lg overflow-hidden transition-all duration-300
+                  ${canSubmit 
+                    ? 'bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-lg shadow-cyan-200 hover:shadow-xl hover:shadow-cyan-300'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }
+                `}
+              >
+                {/* Shimmer effect */}
+                {canSubmit && (
+                  <motion.div
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12"
+                    animate={{ x: ['-100%', '200%'] }}
+                    transition={{ duration: 2, repeat: Infinity, repeatDelay: 1 }}
+                  />
+                )}
+                <span className="relative flex items-center gap-2">
+                  <Sparkles size={20} />
+                  Analyze Brand
+                </span>
+              </motion.button>
+            </motion.div>
+
+            {/* Brand Preview */}
+            <AnimatePresence>
+              {brandPreview && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="mt-8 p-6 bg-gradient-to-r from-gray-50 to-cyan-50/50 rounded-2xl border border-gray-100"
+                >
+                  <div className="flex items-start gap-4">
+                    <SafeLogo
+                      src={brandPreview.logo || brandPreview.metadata?.logo || brandPreview.metadata?.brand_logo}
+                      domain={brandPreview.domain || brandPreview.website?.replace(/^https?:\/\//, '').split('/')[0]}
+                      alt={brandPreview.companyName}
+                      size={64}
+                      className="w-16 h-16 rounded-xl shadow-md object-contain bg-white p-2 border border-gray-100"
+                    />
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold text-gray-900">{brandPreview.companyName}</h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {brandPreview.industry || 'General'}
+                        {brandPreview.headquarters ? ` • ${brandPreview.headquarters}` : ''}
+                        {brandPreview.founded ? ` • Founded ${brandPreview.founded}` : ''}
+                      </p>
+                      {brandPreview.description && (
+                        <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                          {brandPreview.description}
+                        </p>
                       )}
                     </div>
-                  )}
-                </div>
-              </div>
-              
-              <div style={{ marginTop: '16px' }}>
-                <Input
-                  type="url"
-                  placeholder="e.g. brand.com"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  label="Website URL"
-                  error={error}
-                />
-              </div>
-            </div>
-          </form>
-
-          {brandPreview && (
-            <div
-              className="onboarding-brand-header"
-              style={{ margin: '24px auto 0', maxWidth: 520 }}
-            >
-              <div className="onboarding-brand-header__info" style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                <SafeLogo
-                  src={brandPreview.logo || brandPreview.metadata?.logo || brandPreview.metadata?.brand_logo}
-                  domain={brandPreview.domain || brandPreview.website?.replace(/^https?:\/\//, '').split('/')[0]}
-                  alt={brandPreview.companyName}
-                  size={64}
-                  className="w-16 h-16 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
-                />
-                <div style={{ flex: 1 }}>
-                  <h3 className="onboarding-brand-header__name">{brandPreview.companyName}</h3>
-                  <p className="onboarding-brand-header__meta">
-                    {brandPreview.industry || 'General'}
-                    {brandPreview.headquarters ? ` • ${brandPreview.headquarters}` : ''}
-                    {brandPreview.founded ? ` • Founded ${brandPreview.founded}` : ''}
-                    {brandPreview.metadata?.ceo ? ` • CEO: ${brandPreview.metadata.ceo}` : ''}
-                  </p>
-                  {brandPreview.description ? (
-                    <p className="onboarding-brand-header__description">
-                      {brandPreview.description}
-                    </p>
-                  ) : (
-                    <p className="onboarding-brand-header__description" style={{ fontStyle: 'italic', color: '#64748b' }}>
-                      {brandPreview.website ? `Website: ${brandPreview.website}` : 'No additional information available'}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
+        )}
+      </motion.div>
     </div>
   );
 };

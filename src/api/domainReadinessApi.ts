@@ -37,53 +37,78 @@ class DomainReadinessApi {
     }
 
     const url = `${apiClient.baseUrl}/brands/${brandId}/domain-readiness/audit/stream`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      signal,
-    });
 
-    if (!response.ok || !response.body) {
-      const errorText = await response.text().catch(() => '');
-      throw new Error(errorText || `Audit stream failed (HTTP ${response.status})`);
-    }
+    // Create a timeout controller
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 60000); // 60s timeout
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let finalResult: AeoAuditResult | null = null;
+    try {
+      // Merge signals if provided
+      let finalSignal = timeoutController.signal;
+      if (signal) {
+        const mergedController = new AbortController();
+        const abort = () => mergedController.abort();
+        signal.addEventListener('abort', abort, { once: true });
+        timeoutController.signal.addEventListener('abort', abort, { once: true });
+        finalSignal = mergedController.signal;
+      }
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        signal: finalSignal,
+      });
 
-      let newlineIndex = buffer.indexOf('\n');
-      while (newlineIndex !== -1) {
-        const line = buffer.slice(0, newlineIndex).trim();
-        buffer = buffer.slice(newlineIndex + 1);
-        newlineIndex = buffer.indexOf('\n');
+      clearTimeout(timeoutId);
 
-        if (!line) continue;
-        try {
-          const event = JSON.parse(line) as DomainReadinessStreamEvent;
-          onEvent(event);
-          if (event.type === 'final') {
-            finalResult = event.result;
+      if (!response.ok || !response.body) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(errorText || `Audit stream failed (HTTP ${response.status})`);
+      }
+
+      const reader = response.body.getReader();
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalResult: AeoAuditResult | null = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex = buffer.indexOf('\n');
+        while (newlineIndex !== -1) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          newlineIndex = buffer.indexOf('\n');
+
+          if (!line) continue;
+          try {
+            const event = JSON.parse(line) as DomainReadinessStreamEvent;
+            onEvent(event);
+            if (event.type === 'final') {
+              finalResult = event.result;
+            }
+          } catch {
+            // ignore malformed lines
           }
-        } catch {
-          // ignore malformed lines
         }
       }
-    }
 
-    if (!finalResult) {
-      throw new Error('Audit stream ended without a final result.');
-    }
+      if (!finalResult) {
+        throw new Error('Audit stream ended without a final result.');
+      }
 
-    return finalResult;
+      return finalResult;
+    } catch (error) {
+      if (timeoutController.signal.aborted) {
+        throw new Error('Audit stream timed out after 60 seconds.');
+      }
+      throw error;
+    }
   }
 
   async getLatestAudit(brandId: string): Promise<AuditResponse> {

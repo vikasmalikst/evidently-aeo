@@ -11,7 +11,7 @@ export type OnboardingProgressData = {
     sentiments: boolean;
     citations: boolean;
   };
-  currentOperation: 'collecting' | 'scoring' | 'finalizing';
+  currentOperation: 'collecting' | 'scoring' | 'finalizing' | 'domain_readiness' | 'recommendations';
   estimatedTimeRemaining?: number;
   stages?: {
     collection: {
@@ -23,6 +23,14 @@ export type OnboardingProgressData = {
       total: number;
       completed: number;
       status: 'pending' | 'active' | 'completed';
+    };
+    domain_readiness: {
+      status: 'pending' | 'active' | 'completed';
+      last_run: string | null;
+    };
+    recommendations: {
+      status: 'pending' | 'active' | 'completed';
+      last_run: string | null;
     };
     finalization: {
       status: 'pending' | 'active' | 'completed';
@@ -64,26 +72,36 @@ const REQUEST_TIMEOUT_MS = 45000;
 
 const computeIsComplete = (progress: OnboardingProgressData | null): boolean => {
   if (!progress) return false;
-  
+
   const total = progress.queries?.total ?? 0;
   const completed = progress.queries?.completed ?? 0;
   const scoring = progress.scoring;
-  
+
   // If no queries exist yet, not complete
   if (total === 0) return false;
-  
+
   // If queries exist but not all collected, not complete
   if (completed < total) return false;
-  
+
   // Check stages for more accurate completion detection
   const collectionStatus = progress.stages?.collection?.status;
   const scoringStatus = progress.stages?.scoring?.status;
-  
+  const recommendationsStatus = progress.stages?.recommendations?.status;
+
   // If using stages data, use it for more accurate completion check
   if (collectionStatus && scoringStatus) {
-    // Both collection and scoring must be completed
+    // Collection, scoring, and recommendations must be completed
+    // Note: domain_readiness is handled separately in the onboarding flow
     if (collectionStatus === 'completed' && scoringStatus === 'completed') {
-      // Also verify scoring flags as a double-check
+      // Check if recommendations are also done
+      if (recommendationsStatus === 'completed') {
+        return true;
+      }
+      // If recommendations status is available but not complete, not done
+      if (recommendationsStatus) {
+        return false;
+      }
+      // Fallback: check legacy scoring flags if recommendations status not available
       if (scoring) {
         return Boolean(scoring.positions && scoring.sentiments && scoring.citations);
       }
@@ -91,7 +109,7 @@ const computeIsComplete = (progress: OnboardingProgressData | null): boolean => 
     }
     return false;
   }
-  
+
   // Fallback to legacy scoring flags check
   if (!scoring) return false;
   return Boolean(scoring.positions && scoring.sentiments && scoring.citations);

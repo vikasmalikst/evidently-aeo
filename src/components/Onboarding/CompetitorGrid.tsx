@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, X } from 'lucide-react';
-import { Card } from './common/Card';
-import { Input } from './common/Input';
-import { Spinner } from './common/Spinner';
+import { Plus, X, Users, Building2, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 import { SafeLogo } from './common/SafeLogo';
 
@@ -46,10 +44,6 @@ export const CompetitorGrid = ({
   }, [externalSelected]);
 
   useEffect(() => {
-    // If we have already loaded the initial competitors and we have local changes,
-    // prevent overwriting local state with the echoed prop from parent.
-    // This fixes the issue where adding a custom competitor updates parent, 
-    // which then updates prop, causing a reset here.
     if (hasLoadedRef.current && competitors.length > 0) {
       return;
     }
@@ -61,9 +55,6 @@ export const CompetitorGrid = ({
           setCompetitors(initialCompetitors);
           hasLoadedRef.current = true;
           
-          // Only notify if we haven't already (to avoid loops)
-          // onCompetitorsLoaded?.(initialCompetitors); 
-          
           if (!externalSelected || externalSelected.size === 0) {
             const autoSelect = new Set(
               initialCompetitors.slice(0, 5).map((competitor) => getCompetitorKey(competitor))
@@ -72,7 +63,6 @@ export const CompetitorGrid = ({
             onSelectionChange?.(autoSelect);
           }
         } else {
-          // Only reset if we really have nothing
           if (!hasLoadedRef.current) {
              setCompetitors([]);
              onCompetitorsLoaded?.([]);
@@ -91,22 +81,17 @@ export const CompetitorGrid = ({
 
 
   const handleRemoveCompetitor = (competitor: OnboardingCompetitor, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click event
+    e.stopPropagation();
     const key = getCompetitorKey(competitor);
-    if (!key) {
-      return;
-    }
+    if (!key) return;
 
-    // Remove competitor from the list
     const updatedCompetitors = competitors.filter((c) => getCompetitorKey(c) !== key);
     setCompetitors(updatedCompetitors);
     
-    // Notify parent of updated competitors list
     if (onCompetitorsLoaded) {
       onCompetitorsLoaded(updatedCompetitors);
     }
 
-    // Remove from selection if it was selected
     const newSelected = new Set(selected);
     if (newSelected.has(key)) {
       newSelected.delete(key);
@@ -122,15 +107,13 @@ export const CompetitorGrid = ({
 
     let domain = customUrl.trim().toLowerCase();
     try {
-      // Add protocol if missing for URL parsing
       const urlToParse = domain.startsWith('http') ? domain : `https://${domain}`;
       const urlObj = new URL(urlToParse);
       domain = urlObj.hostname;
     } catch (e) {
-      // fallback to raw string if parsing fails
+      // fallback to raw string
     }
     
-    // Remove www. if present for cleaner domain
     domain = domain.replace(/^www\./, '');
 
     const customCompetitor: OnboardingCompetitor = {
@@ -144,16 +127,13 @@ export const CompetitorGrid = ({
     };
 
     const updatedCompetitors = [customCompetitor, ...competitors];
-    console.log('➕ Added custom competitor:', customCompetitor);
     setCompetitors(updatedCompetitors);
     
-    // Add to selection automatically
     const key = getCompetitorKey(customCompetitor);
     const newSelected = new Set(selected);
     newSelected.add(key);
     setSelected(newSelected);
     
-    // Notify parent of both the new list and the new selection
     onCompetitorsLoaded?.(updatedCompetitors);
     onSelectionChange?.(newSelected);
 
@@ -163,148 +143,260 @@ export const CompetitorGrid = ({
   };
 
   const handleContinue = () => {
-    // All remaining competitors are considered selected
-    console.log('🚀 CompetitorGrid: handleContinue called with competitors:', competitors);
     onContinue(competitors);
   };
 
   if (isLoading) {
     return (
-      <div className="onboarding-competitor-grid-content">
-        <Spinner size="large" message="Loading competitors..." />
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center">
+          <div className="relative w-16 h-16 mx-auto">
+            <div className="w-16 h-16 border-4 border-cyan-100 rounded-full" />
+            <div className="absolute top-0 left-0 w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <p className="mt-4 text-gray-600 font-medium">Loading competitors...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="onboarding-competitor-grid-content">
-      <div className="onboarding-brand-section-wrapper">
-        <div className="onboarding-brand-header">
-          <div className="onboarding-brand-header__info" style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+    <motion.div 
+      className="w-full"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
+      {/* Premium Card Container */}
+      <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-8 md:p-10">
+        
+        {/* Brand Header Section */}
+        <motion.div 
+          className="flex flex-col md:flex-row md:items-start gap-6 mb-8 pb-8 border-b border-gray-100"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          {/* Brand Info */}
+          <div className="flex items-start gap-4 flex-1">
             <SafeLogo
               src={brand.logo || brand.metadata?.logo || brand.metadata?.brand_logo}
               domain={brand.domain || brand.website?.replace(/^https?:\/\//, '').split('/')[0]}
               alt={brand.companyName}
-              size={64}
-              className="w-16 h-16 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+              size={72}
+              className="w-18 h-18 rounded-2xl shadow-lg object-contain bg-white p-2 border border-gray-100"
             />
-            <div style={{ flex: 1 }}>
-              <h2 className="onboarding-brand-header__name">{brand.companyName}</h2>
-              <p className="onboarding-brand-header__meta">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-2xl font-bold text-gray-900">{brand.companyName}</h2>
+              <p className="text-sm text-gray-500 mt-1">
                 {brand.industry || 'General'}
                 {brand.headquarters ? ` • ${brand.headquarters}` : ''}
                 {brand.founded ? ` • Founded ${brand.founded}` : ''}
-                {brand.metadata?.ceo ? ` • CEO: ${brand.metadata.ceo}` : ''}
               </p>
-              {brand.description ? (
-                <p className="onboarding-brand-header__description">{brand.description}</p>
-              ) : (
-                <p className="onboarding-brand-header__description" style={{ fontStyle: 'italic', color: '#64748b' }}>
-                  {brand.website ? `Website: ${brand.website}` : 'No additional information available'}
-                </p>
+              {brand.description && (
+                <p className="text-sm text-gray-600 mt-2 line-clamp-2">{brand.description}</p>
               )}
             </div>
           </div>
-        </div>
-        <div className="onboarding-selection-count">
-          <span className="onboarding-selection-count__number">{competitors.length}</span>
-          <span className="onboarding-selection-count__text">competitors</span>
-        </div>
-      </div>
 
-      <div className="onboarding-section-header">
-        <p className="onboarding-section-header__subtitle">
-          Remove competitors you don't want to track (recommended: 5-7)
-        </p>
-        <button
-          type="button"
-          className="onboarding-button-secondary"
-          onClick={() => setShowCustomForm(!showCustomForm)}
-        >
-          <Plus size={18} />
-          Add Custom Competitor
-        </button>
-      </div>
-
-      {showCustomForm && (
-        <div className="onboarding-custom-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '16px', alignItems: 'end', marginBottom: '24px' }}>
-          <Input
-            label="Competitor Name"
-            placeholder="Enter competitor name"
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-          />
-          <Input
-            label="Competitor URL"
-            placeholder="e.g. example.com"
-            value={customUrl}
-            onChange={(e) => setCustomUrl(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleAddCustom();
-              }
-            }}
-          />
-          <button
-            className="onboarding-button-primary"
-            onClick={handleAddCustom}
-            disabled={!customName.trim() || !customUrl.trim()}
-            style={{ marginBottom: '2px', height: '42px' }}
+          {/* Competitor Count Badge */}
+          <motion.div 
+            className="flex-shrink-0 bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-6 text-center border border-cyan-100"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.3, type: 'spring' }}
           >
-            Add
-          </button>
-        </div>
-      )}
+            <div className="text-4xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
+              {competitors.length}
+            </div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-1">
+              Competitors
+            </div>
+          </motion.div>
+        </motion.div>
 
-      <div className="onboarding-competitor-grid">
-        {competitors.map((competitor) => {
-          const key = getCompetitorKey(competitor);
-          return (
-            <Card
-              key={key || competitor.name}
-              hoverable
-              className={
-                competitor.relevance === 'Direct Competitor' 
-                  ? 'onboarding-card--direct' 
-                  : competitor.relevance === 'Indirect Competitor'
-                  ? 'onboarding-card--indirect'
-                  : 'onboarding-card--custom'
-              }
+        {/* Action Bar */}
+        <motion.div 
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <div className="flex items-center gap-2 text-gray-500">
+            <Users size={18} />
+            <span className="text-sm">Remove competitors you don't want to track (recommended: 5-7)</span>
+          </div>
+          <motion.button
+            type="button"
+            onClick={() => setShowCustomForm(!showCustomForm)}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl font-medium text-sm hover:bg-gray-800 transition-colors"
+          >
+            <Plus size={18} />
+            Add Custom Competitor
+          </motion.button>
+        </motion.div>
+
+        {/* Custom Competitor Form */}
+        <AnimatePresence>
+          {showCustomForm && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
             >
-              <div className="onboarding-competitor-card">
-                <button
-                  onClick={(e) => handleRemoveCompetitor(competitor, e)}
-                  className="onboarding-competitor-card__remove"
-                  aria-label={`Remove ${competitor.name}`}
-                  type="button"
-                >
-                  <X size={16} />
-                </button>
-                {(competitor.logo || competitor.domain) && (
-                  <SafeLogo
-                    src={competitor.logo}
-                    domain={competitor.domain}
-                    alt={competitor.name}
-                    className="onboarding-competitor-card__logo"
-                  />
-                )}
-                <h3 className="onboarding-competitor-card__name">{competitor.name}</h3>
-                <p className="onboarding-competitor-card__industry">{competitor.industry}</p>
-                <span className={`onboarding-competitor-card__relevance onboarding-competitor-card__relevance--${
-                  competitor.relevance === 'Direct Competitor' 
-                    ? 'direct' 
-                    : competitor.relevance === 'Indirect Competitor' 
-                    ? 'indirect' 
-                    : 'custom'
-                }`}>
-                  {competitor.relevance}
-                </span>
+              <div className="bg-gray-50 rounded-2xl p-6 mb-6 border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Competitor Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Enter competitor name"
+                      value={customName}
+                      onChange={(e) => setCustomName(e.target.value)}
+                      className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-cyan-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Website URL
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. example.com"
+                      value={customUrl}
+                      onChange={(e) => setCustomUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustom();
+                        }
+                      }}
+                      className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-cyan-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <motion.button
+                    type="button"
+                    onClick={handleAddCustom}
+                    disabled={!customName.trim() || !customUrl.trim()}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all"
+                  >
+                    Add
+                  </motion.button>
+                </div>
               </div>
-            </Card>
-          );
-        })}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Competitor Grid */}
+        <motion.div 
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+        >
+          <AnimatePresence mode="popLayout">
+            {competitors.map((competitor, index) => {
+              const key = getCompetitorKey(competitor);
+              const relevanceColor = 
+                competitor.relevance === 'Direct Competitor' ? 'from-red-500 to-red-600' :
+                competitor.relevance === 'Indirect Competitor' ? 'from-orange-500 to-orange-600' :
+                'from-gray-500 to-gray-600';
+              const borderColor = 
+                competitor.relevance === 'Direct Competitor' ? 'border-red-100 hover:border-red-200' :
+                competitor.relevance === 'Indirect Competitor' ? 'border-orange-100 hover:border-orange-200' :
+                'border-gray-100 hover:border-gray-200';
+
+              return (
+                <motion.div
+                  key={key || competitor.name}
+                  layout
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ delay: index * 0.03 }}
+                  className={`relative group bg-white rounded-2xl border-2 ${borderColor} p-4 transition-all duration-200 hover:shadow-lg`}
+                >
+                  {/* Remove Button */}
+                  <motion.button
+                    onClick={(e) => handleRemoveCompetitor(competitor, e)}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    className="absolute -top-2 -right-2 w-7 h-7 bg-gray-800 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
+                    aria-label={`Remove ${competitor.name}`}
+                  >
+                    <X size={14} />
+                  </motion.button>
+
+                  {/* Logo */}
+                  <div className="flex justify-center mb-3">
+                    <SafeLogo
+                      src={competitor.logo}
+                      domain={competitor.domain}
+                      alt={competitor.name}
+                      size={48}
+                      className="w-12 h-12 rounded-xl object-contain bg-gray-50 p-1.5 border border-gray-100"
+                    />
+                  </div>
+
+                  {/* Name */}
+                  <h3 className="text-sm font-semibold text-gray-900 text-center truncate">
+                    {competitor.name}
+                  </h3>
+
+                  {/* Industry */}
+                  <p className="text-xs text-gray-500 text-center mt-1 truncate">
+                    {competitor.industry || 'General'}
+                  </p>
+
+                  {/* Relevance Badge */}
+                  <div className="mt-3 flex justify-center">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold text-white uppercase tracking-wide bg-gradient-to-r ${relevanceColor}`}>
+                      {competitor.relevance === 'Direct Competitor' ? 'Direct' : 
+                       competitor.relevance === 'Indirect Competitor' ? 'Indirect' : 'Custom'}
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Continue Button */}
+        <motion.div 
+          className="mt-8 pt-6 border-t border-gray-100 flex justify-end"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
+        >
+          <motion.button
+            onClick={handleContinue}
+            disabled={competitors.length < 3}
+            whileHover={{ scale: competitors.length >= 3 ? 1.02 : 1 }}
+            whileTap={{ scale: competitors.length >= 3 ? 0.98 : 1 }}
+            className={`group flex items-center gap-3 px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-300 ${
+              competitors.length >= 3
+                ? 'bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-lg shadow-cyan-200 hover:shadow-xl hover:shadow-cyan-300'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            <span>Continue</span>
+            <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
+          </motion.button>
+          {competitors.length < 3 && (
+            <div className="absolute -top-10 right-0 bg-gray-900 text-white px-3 py-2 rounded-lg text-sm">
+              Keep at least 3 competitors
+            </div>
+          )}
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };

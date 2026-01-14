@@ -10,7 +10,11 @@ interface ProgressData {
     sentiments: boolean;
     citations: boolean;
   };
-  currentOperation: 'collecting' | 'scoring' | 'finalizing';
+  currentOperation: 'collecting' | 'scoring' | 'finalizing' | 'domain_readiness' | 'recommendations';
+  stages?: {
+    domain_readiness?: { status: string };
+    recommendations?: { status: string };
+  };
 }
 
 interface DataCollectionProgressBarProps {
@@ -34,12 +38,12 @@ export const DataCollectionProgressBar = ({
 
     const { queries, scoring } = progress;
     
-    // Calculate query progress (0-70% of total)
+    // 1. Query Progress (0-40%)
     const queryProgress = queries.total > 0 
-      ? (queries.completed / queries.total) * 70
+      ? (queries.completed / queries.total) * 40
       : 0;
 
-    // Calculate scoring progress (70-100% of total, split between 3 steps)
+    // 2. Scoring Progress (40-70%)
     let scoringProgress = 0;
     if (queries.completed >= queries.total && queries.total > 0) {
       const scoringSteps = [
@@ -47,21 +51,37 @@ export const DataCollectionProgressBar = ({
         scoring.sentiments,
         scoring.citations
       ].filter(Boolean).length;
-      scoringProgress = (scoringSteps / 3) * 30; // Remaining 30%
+      scoringProgress = (scoringSteps / 3) * 30; 
     }
 
-    return Math.min(100, Math.round(queryProgress + scoringProgress));
+    // 3. Domain Readiness (70-85%)
+    let readinessProgress = 0;
+    if (progress.stages?.domain_readiness?.status === 'completed') {
+        readinessProgress = 15;
+    }
+
+    // 4. Recommendations (85-100%)
+    let recsProgress = 0;
+    if (progress.stages?.recommendations?.status === 'completed') {
+        recsProgress = 15;
+    }
+
+    return Math.min(100, Math.round(queryProgress + scoringProgress + readinessProgress + recsProgress));
   };
 
   const progressPercentage = calculateProgress();
-  const isComplete = progress.queries.completed >= progress.queries.total &&
-                    progress.scoring.positions &&
-                    progress.scoring.sentiments &&
-                    progress.scoring.citations;
+  
+  // Checking full completion via stages if available, else fallback
+  const isComplete = progress.stages 
+    ? (progress.stages.recommendations?.status === 'completed')
+    : (progress.queries.completed >= progress.queries.total &&
+       progress.scoring.positions &&
+       progress.scoring.sentiments &&
+       progress.scoring.citations);
 
   const getStatusText = () => {
     if (isComplete) {
-      return 'Data collection and scoring complete!';
+      return 'Onboarding complete! Your dashboard is ready.';
     }
     if (progress.currentOperation === 'collecting') {
       return `Collecting data: ${progress.queries.completed} of ${progress.queries.total} queries completed`;
@@ -74,7 +94,13 @@ export const DataCollectionProgressBar = ({
       ].filter(Boolean);
       return `Scoring results: ${scoringSteps.join(', ')} completed`;
     }
-    return 'Processing your data...';
+    if (progress.currentOperation === 'domain_readiness') {
+        return 'Running domain readiness audit...';
+    }
+    if (progress.currentOperation === 'recommendations') {
+        return 'Generating personalized recommendations...';
+    }
+    return 'Finalizing your dashboard...';
   };
   const statusText = getStatusText();
 
@@ -94,7 +120,7 @@ export const DataCollectionProgressBar = ({
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-[14px] font-semibold mb-1" style={{ color: '#1a1d29' }}>
-            {isComplete ? 'Data Collection Complete' : 'Collecting and Scoring Your Data'}
+            {isComplete ? 'Onboarding Complete' : 'Setting Up Your Dashboard'}
           </h3>
           <p className="text-[13px] mb-3" style={{ color: '#64748b' }}>
             {statusText}{isLoading ? ' (updating)' : ''}
@@ -123,17 +149,15 @@ export const DataCollectionProgressBar = ({
           {!isComplete && (
             <div className="grid grid-cols-2 gap-2 mt-3 text-[12px]">
               <div style={{ color: '#64748b' }}>
-                <span className="font-medium">Queries: </span>
-                <span>{progress.queries.completed}/{progress.queries.total}</span>
+                <span className="font-medium">Data & Scoring: </span>
+                <span>
+                   {progress.scoring.positions && progress.scoring.sentiments ? 'Done' : 'Processing'}
+                </span>
               </div>
               <div style={{ color: '#64748b' }}>
-                <span className="font-medium">Scoring: </span>
+                <span className="font-medium">Audit & Recs: </span>
                 <span>
-                  {[
-                    progress.scoring.positions && 'Positions',
-                    progress.scoring.sentiments && 'Sentiments',
-                    progress.scoring.citations && 'Citations'
-                  ].filter(Boolean).join(', ') || 'Pending'}
+                  {progress.stages?.domain_readiness?.status === 'completed' ? 'Done' : 'Pending'}
                 </span>
               </div>
             </div>

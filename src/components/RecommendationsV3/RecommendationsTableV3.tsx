@@ -75,6 +75,21 @@ const EffortBadge = ({ effort }: { effort: 'Low' | 'Medium' | 'High' }) => {
   );
 };
 
+// const SourceBadge = ({ source }: { source?: 'domain_audit' | 'ai_generated' }) => {
+//   if (source === 'domain_audit') {
+//     return (
+//       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#fef3c7] text-[#92400e] border border-[#fde68a]">
+//         🔧 Technical Fix
+//       </span>
+//     );
+//   }
+//   return (
+//     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#e0f2fe] text-[#0369a1] border border-[#bae6fd]">
+//       🤖 AI Recommendation
+//     </span>
+//   );
+// };
+
 export const RecommendationsTableV3 = ({
   recommendations,
   selectedIds = new Set(),
@@ -164,7 +179,7 @@ export const RecommendationsTableV3 = ({
               recommendations.map((rec, index) => {
                 const recId = rec.id || `rec-${index}`;
                 const isExpanded = expandedRows.has(recId);
-                const hasDetails = rec.reason || rec.explanation || rec.expectedBoost || rec.impactScore || rec.kpi;
+                const hasDetails = rec.reason || rec.explanation || rec.expectedBoost || rec.impactScore || rec.kpi || (rec.howToFix && rec.howToFix.length > 0);
                 
                 return (
                   <>
@@ -189,11 +204,11 @@ export const RecommendationsTableV3 = ({
                         </td>
                       )}
                       <td className="px-4 py-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-start gap-2">
                           {hasDetails && (
                             <button
                               onClick={() => toggleExpand(recId)}
-                              className="p-1 hover:bg-[#e2e8f0] rounded transition-colors"
+                              className="p-1 hover:bg-[#e2e8f0] rounded transition-colors flex-shrink-0 mt-0.5"
                               aria-label={isExpanded ? 'Collapse' : 'Expand'}
                             >
                               {isExpanded ? (
@@ -203,9 +218,12 @@ export const RecommendationsTableV3 = ({
                               )}
                             </button>
                           )}
-                          <p className="text-[13px] text-[var(--text-headings)] font-medium leading-snug">
-                            {rec.action}
-                          </p>
+                          <div className="flex flex-col gap-1">
+                            <p className="text-[13px] text-[var(--text-headings)] font-medium leading-snug">
+                              {rec.action}
+                            </p>
+                            {/* <SourceBadge source={rec.source} /> */}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -431,6 +449,22 @@ export const RecommendationsTableV3 = ({
                                 )}
                               </ul>
                             </div>
+
+                            {/* How to Fix (for domain audit recommendations) */}
+                            {rec.howToFix && rec.howToFix.length > 0 && (
+                              <div className="md:col-span-2 space-y-2">
+                                <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide flex items-center gap-1.5">
+                                  <span className="text-[14px]">📋</span> How to Fix
+                                </p>
+                                <ol className="list-decimal pl-5 space-y-1">
+                                  {rec.howToFix.map((step, i) => (
+                                    <li key={i} className="text-[13px] text-[#0f172a]">
+                                      {step}
+                                    </li>
+                                  ))}
+                                </ol>
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>

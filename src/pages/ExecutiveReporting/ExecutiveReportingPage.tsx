@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { apiClient } from '../../lib/apiClient';
 import { Layout } from '../../components/Layout/Layout';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { IconDownload, IconCalendar, IconFileText, IconLoader } from '@tabler/icons-react';
@@ -49,27 +50,23 @@ export const ExecutiveReportingPage = () => {
         setError(null);
 
         try {
-            const response = await fetch(
-                `${import.meta.env.VITE_BACKEND_URL}/brands/${selectedBrandId}/executive-reports/latest`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    },
-                }
+            const response = await apiClient.get<{ success: boolean; data: ExecutiveReport }>(
+                `/brands/${selectedBrandId}/executive-reports/latest`
             );
 
-            if (response.ok) {
-                const data = await response.json();
-                setReport(data.data);
-            } else if (response.status === 404) {
-                // No reports yet, that's okay
+            if (response.success && response.data) {
+                setReport(response.data);
+            } else {
+                setReport(null);
+            }
+        } catch (err: any) {
+            // Ignore 404s (no reports yet)
+            if (err.message && err.message.includes('404')) {
                 setReport(null);
             } else {
-                throw new Error('Failed to fetch report');
+                console.error('Error fetching report:', err);
+                setError(err instanceof Error ? err.message : 'Failed to load report');
             }
-        } catch (err) {
-            console.error('Error fetching report:', err);
-            setError(err instanceof Error ? err.message : 'Failed to load report');
         } finally {
             setLoading(false);
         }
@@ -82,26 +79,18 @@ export const ExecutiveReportingPage = () => {
         setError(null);
 
         try {
-            const response = await fetch(
-                `${import.meta.env.VITE_BACKEND_URL}/brands/${selectedBrandId}/executive-reports`,
+            const response = await apiClient.post<{ success: boolean; data: ExecutiveReport }>(
+                `/brands/${selectedBrandId}/executive-reports`,
                 {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    },
-                    body: JSON.stringify({
-                        period_days: periodDays,
-                    }),
+                    period_days: periodDays,
                 }
             );
 
-            if (!response.ok) {
+            if (response.success && response.data) {
+                setReport(response.data);
+            } else {
                 throw new Error('Failed to generate report');
             }
-
-            const data = await response.json();
-            setReport(data.data);
         } catch (err) {
             console.error('Error generating report:', err);
             setError(err instanceof Error ? err.message : 'Failed to generate report');
@@ -114,13 +103,16 @@ export const ExecutiveReportingPage = () => {
         if (!report) return;
 
         try {
+            // For binary downloads like PDF, we still need fetch to handle the blob response
+            // properly, but we can reuse the token from apiClient
+            const token = apiClient.getAccessToken();
             const response = await fetch(
-                `${import.meta.env.VITE_BACKEND_URL}/brands/${selectedBrandId}/executive-reports/${report.id}/export/pdf`,
+                `${apiClient.baseUrl}/brands/${selectedBrandId}/executive-reports/${report.id}/export/pdf`,
                 {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Authorization': `Bearer ${token}`,
                     },
                     body: JSON.stringify({
                         include_annotations: false,

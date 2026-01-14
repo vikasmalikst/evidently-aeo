@@ -28,15 +28,19 @@ import { onboardingUtils } from './utils/onboardingUtils';
 import LandingPage from './pages/LandingPage';
 import { ExecutiveReportingPage } from './pages/ExecutiveReporting/ExecutiveReportingPage';
 
+// New pages for restructured navigation
+import { MeasurePage } from './pages/Measure';
+import { DiscoverPage, ActionPlanPage, ExecutePage, ImpactPage } from './pages/Improve';
+
 function DefaultRedirect() {
   if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/measure" replace />;
   }
 
   if (featureFlags.skipOnboardingAfterLogin) {
     // Skip onboarding, go to setup
     return onboardingUtils.isOnboardingComplete() ? (
-      <Navigate to="/dashboard" replace />
+      <Navigate to="/measure" replace />
     ) : (
       <Navigate to="/setup" replace />
     );
@@ -50,7 +54,7 @@ function DefaultRedirect() {
   if (typeof window !== 'undefined' && localStorage.getItem('onboarding_complete') === 'true') {
     // Onboarding complete, check setup
     return onboardingUtils.isOnboardingComplete() ? (
-      <Navigate to="/dashboard" replace />
+      <Navigate to="/measure" replace />
     ) : (
       <Navigate to="/setup" replace />
     );
@@ -105,40 +109,42 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* ====================== */}
+        {/* MEASURE SECTION        */}
+        {/* ====================== */}
+        <Route
+          path="/measure"
+          element={
+            <ProtectedRoute>
+              <MeasurePage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Redirect old /dashboard to /measure */}
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <Navigate to="/measure" replace />
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/domain-readiness"
-          element={
-            <ProtectedRoute>
-              <DomainReadinessPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Redirect old /search-visibility to /measure */}
         <Route
           path="/search-visibility"
           element={
             <ProtectedRoute>
-              <SearchVisibility />
+              <Navigate to="/measure" replace />
             </ProtectedRoute>
           }
         />
+
+        {/* ====================== */}
+        {/* ANALYZE SECTION        */}
+        {/* ====================== */}
         <Route
-          path="/ai-sources"
-          element={
-            <ProtectedRoute>
-              <AISources />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/search-sources"
+          path="/analyze/citation-sources"
           element={
             <ProtectedRoute>
               <SearchSourcesR2 />
@@ -146,15 +152,7 @@ function App() {
           }
         />
         <Route
-          path="/search-sources-r2"
-          element={
-            <ProtectedRoute>
-              <Navigate to="/search-sources" replace />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/topics"
+          path="/analyze/topics"
           element={
             <ProtectedRoute>
               <Topics />
@@ -162,7 +160,7 @@ function App() {
           }
         />
         <Route
-          path="/prompts"
+          path="/analyze/queries"
           element={
             <ProtectedRoute>
               <Prompts />
@@ -170,7 +168,15 @@ function App() {
           }
         />
         <Route
-          path="/keywords"
+          path="/analyze/queries-answers"
+          element={
+            <ProtectedRoute>
+              <Prompts />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analyze/keywords"
           element={
             <ProtectedRoute>
               <Keywords />
@@ -178,13 +184,127 @@ function App() {
           }
         />
         <Route
-          path="/recommendations"
+          path="/analyze/domain-readiness"
           element={
             <ProtectedRoute>
-              <RecommendationsV3 />
+              <DomainReadinessPage />
             </ProtectedRoute>
           }
         />
+        {/* Redirects from old Analyze routes */}
+        <Route
+          path="/search-sources"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/analyze/citation-sources" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search-sources-r2"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/analyze/citation-sources" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/topics"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/analyze/topics" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/prompts"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/analyze/queries" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/keywords"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/analyze/keywords" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/domain-readiness"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/analyze/domain-readiness" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ai-sources"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/analyze/citation-sources" replace />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ====================== */}
+        {/* IMPROVE SECTION        */}
+        {/* ====================== */}
+        <Route
+          path="/improve/discover"
+          element={
+            <ProtectedRoute>
+              <DiscoverPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/improve/action-plan"
+          element={
+            <ProtectedRoute>
+              <ActionPlanPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/improve/execute"
+          element={
+            <ProtectedRoute>
+              <ExecutePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/improve/impact"
+          element={
+            <ProtectedRoute>
+              <ImpactPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Redirects from old Recommendations routes */}
+        <Route
+          path="/recommendations"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/improve/discover" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/recommendations-v3"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/improve/discover" replace />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ====================== */}
+        {/* EXECUTIVE REPORTING    */}
+        {/* ====================== */}
         <Route
           path="/executive-reporting"
           element={
@@ -193,14 +313,10 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/recommendations-v3"
-          element={
-            <ProtectedRoute>
-              <Navigate to="/recommendations" replace />
-            </ProtectedRoute>
-          }
-        />
+
+        {/* ====================== */}
+        {/* SETTINGS SECTION       */}
+        {/* ====================== */}
         <Route
           path="/prompt-selection"
           element={
@@ -257,6 +373,10 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* ====================== */}
+        {/* ADMIN ROUTES           */}
+        {/* ====================== */}
         <Route
           path="/admin/scheduled-jobs"
           element={
@@ -281,6 +401,10 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* ====================== */}
+        {/* ROOT ROUTES            */}
+        {/* ====================== */}
         <Route
           path="/"
           element={<LandingPage />}

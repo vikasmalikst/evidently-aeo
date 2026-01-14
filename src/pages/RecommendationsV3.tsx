@@ -30,7 +30,11 @@ import { RecommendationsTableV3 } from '../components/RecommendationsV3/Recommen
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 
-export const RecommendationsV3 = () => {
+interface RecommendationsV3Props {
+  initialStep?: number;
+}
+
+export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) => {
   const {
     brands,
     isLoading: brandsLoading,
@@ -42,6 +46,10 @@ export const RecommendationsV3 = () => {
 
   // Helper functions to persist/restore current step in sessionStorage
   const getPersistedStep = (brandId: string | null): number => {
+    // If initialStep is provided via props (from route), use that
+    if (initialStep && initialStep >= 1 && initialStep <= 4) {
+      return initialStep;
+    }
     if (!brandId) return 1;
     try {
       const persisted = sessionStorage.getItem(`recommendations-v3-step-${brandId}`);
@@ -66,8 +74,8 @@ export const RecommendationsV3 = () => {
     }
   };
 
-  // State
-  const [currentStep, setCurrentStep] = useState<number>(() => getPersistedStep(selectedBrandId));
+  // State - use initialStep from props if provided
+  const [currentStep, setCurrentStep] = useState<number>(() => initialStep || getPersistedStep(selectedBrandId));
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [dataMaturity, setDataMaturity] = useState<'cold_start' | 'low_data' | 'normal' | null>(null);
   const [kpis, setKpis] = useState<IdentifiedKPI[]>([]); // Keep for potential future use, but not displayed in UI

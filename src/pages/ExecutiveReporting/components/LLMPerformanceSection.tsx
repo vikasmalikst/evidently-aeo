@@ -1,32 +1,23 @@
 /**
- * Placeholder components for remaining Executive Reporting sections
- * These provide basic functionality and can be enhanced later
+ * Executive Report section components
+ * Uses SafeLogo for robust logo rendering with fallback support
  */
 
 import { IconRobot, IconUsers, IconShieldCheck, IconBolt, IconTrendingUp } from '@tabler/icons-react';
+import { SafeLogo } from '../../../components/Onboarding/common/SafeLogo';
 
-// LLM Performance Section
-// Map LLM names to logo URLs (using Clearbit or static assets where possible)
-const getLLMLogo = (llmName: string) => {
+// Map LLM names to their associated domains for logo resolution
+const getLLMDomain = (llmName: string): string | undefined => {
     const normalize = llmName.toLowerCase();
-    if (normalize.includes('chatgpt')) return 'https://logo.clearbit.com/openai.com';
-    if (normalize.includes('gemini')) return 'https://logo.clearbit.com/google.com';
-    if (normalize.includes('bard')) return 'https://logo.clearbit.com/google.com';
-    if (normalize.includes('claude')) return 'https://logo.clearbit.com/anthropic.com';
-    if (normalize.includes('perplexity')) return 'https://logo.clearbit.com/perplexity.ai';
-    if (normalize.includes('bing')) return 'https://logo.clearbit.com/bing.com';
-    if (normalize.includes('meta') || normalize.includes('llama')) return 'https://logo.clearbit.com/meta.com';
-    return null;
-};
-
-const getDomain = (url: string) => {
-    try {
-        if (!url) return '';
-        const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-        return urlObj.hostname;
-    } catch {
-        return '';
-    }
+    if (normalize.includes('chatgpt') || normalize.includes('gpt')) return 'openai.com';
+    if (normalize.includes('gemini')) return 'google.com';
+    if (normalize.includes('bard')) return 'google.com';
+    if (normalize.includes('claude')) return 'anthropic.com';
+    if (normalize.includes('perplexity')) return 'perplexity.ai';
+    if (normalize.includes('bing') || normalize.includes('copilot')) return 'microsoft.com';
+    if (normalize.includes('meta') || normalize.includes('llama')) return 'meta.com';
+    if (normalize.includes('grok')) return 'x.ai';
+    return undefined;
 };
 
 export const LLMPerformanceSection = ({ data }: { data: any }) => {
@@ -46,51 +37,34 @@ export const LLMPerformanceSection = ({ data }: { data: any }) => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(data.by_llm).map(([llmName, metrics]: [string, any]) => {
-                    const logoUrl = getLLMLogo(llmName);
+                {Object.entries(data.by_llm).map(([llmName, metrics]: [string, any]) => (
+                    <div key={llmName} className="p-4 border border-[var(--border-default)] rounded-lg hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-3 mb-3">
+                            <SafeLogo
+                                domain={getLLMDomain(llmName)}
+                                alt={llmName}
+                                size={32}
+                                className="w-8 h-8 object-contain rounded-full bg-gray-50 p-1 border border-gray-100"
+                            />
+                            <div className="font-semibold text-[var(--text-headings)]">{llmName}</div>
+                        </div>
 
-                    return (
-                        <div key={llmName} className="p-4 border border-[var(--border-default)] rounded-lg hover:shadow-md transition-shadow">
-                            <div className="flex items-center gap-3 mb-3">
-                                {logoUrl ? (
-                                    <img
-                                        src={logoUrl}
-                                        alt={`${llmName} logo`}
-                                        className="w-8 h-8 object-contain rounded-full bg-gray-50 p-1 border border-gray-100"
-                                        onError={(e) => {
-                                            (e.target as HTMLImageElement).style.display = 'none';
-                                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                                        }}
-                                    />
-                                ) : (
-                                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-xs">
-                                        {llmName.substring(0, 2).toUpperCase()}
-                                    </div>
-                                )}
-                                {/* Fallback icon if image fails */}
-                                <div className="hidden w-8 h-8 rounded-full bg-purple-100 items-center justify-center text-purple-600 font-bold text-xs">
-                                    {llmName.substring(0, 2).toUpperCase()}
-                                </div>
-                                <div className="font-semibold text-[var(--text-headings)]">{llmName}</div>
+                        <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                                <span className="text-[var(--text-muted)]">Visibility:</span>
+                                <span className="font-medium">{metrics.visibility?.toFixed(1) || 'N/A'}</span>
                             </div>
-
-                            <div className="space-y-2 text-sm">
-                                <div className="flex justify-between">
-                                    <span className="text-[var(--text-muted)]">Visibility:</span>
-                                    <span className="font-medium">{metrics.visibility?.toFixed(1) || 'N/A'}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-[var(--text-muted)]">Avg Position:</span>
-                                    <span className="font-medium">{metrics.average_position?.toFixed(1) || 'N/A'}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-[var(--text-muted)]">SOA:</span>
-                                    <span className="font-medium">{metrics.share_of_answer?.toFixed(1) || 'N/A'}%</span>
-                                </div>
+                            <div className="flex justify-between">
+                                <span className="text-[var(--text-muted)]">Avg Position:</span>
+                                <span className="font-medium">{metrics.average_position?.toFixed(1) || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-[var(--text-muted)]">SOA:</span>
+                                <span className="font-medium">{metrics.share_of_answer?.toFixed(1) || 'N/A'}%</span>
                             </div>
                         </div>
-                    );
-                })}
+                    </div>
+                ))}
             </div>
         </div>
     );
@@ -124,56 +98,36 @@ export const CompetitiveLandscapeSection = ({ data }: { data: any }) => {
                         </tr>
                     </thead>
                     <tbody>
-                        {data.competitors.map((comp: any, index: number) => {
-                            const domain = getDomain(comp.website_url);
-                            // Use logo.clearbit.com for logos, fallback to generic
-                            const logoUrl = domain ? `https://logo.clearbit.com/${domain}` : null;
-
-                            return (
-                                <tr key={index} className="border-b border-[var(--border-default)] hover:bg-gray-50 transition-colors">
-                                    <td className="py-3 px-4 text-sm font-medium">
-                                        <div className="flex items-center gap-3">
-                                            {logoUrl ? (
-                                                <img
-                                                    src={logoUrl}
-                                                    alt={`${comp.name} logo`}
-                                                    className="w-6 h-6 object-contain rounded-full bg-white border border-gray-100"
-                                                    onError={(e) => {
-                                                        (e.target as HTMLImageElement).style.display = 'none';
-                                                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                                                    }}
-                                                />
-                                            ) : (
-                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${comp.is_brand ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-700'}`}>
-                                                    {comp.name.substring(0, 1)}
-                                                </div>
-                                            )}
-                                            {/* Fallback icon */}
-                                            <div className={`hidden w-6 h-6 rounded-full items-center justify-center text-xs font-bold ${comp.is_brand ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-700'}`}>
-                                                {comp.name.substring(0, 1)}
-                                            </div>
-
-                                            <span className={comp.is_brand ? 'font-bold text-[var(--accent-primary)]' : ''}>
-                                                {comp.name} {comp.is_brand && '(You)'}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td className="py-3 px-4 text-sm text-right">
-                                        {comp.visibility?.toFixed(1) || '0.0'}
-                                    </td>
-                                    <td className="py-3 px-4 text-sm text-right">
-                                        {comp.share_of_answer?.toFixed(1) || '0.0'}%
-                                    </td>
-                                    <td className="py-3 px-4 text-sm text-right">
-                                        <span className={`
-                                            ${(comp.sentiment || 0) > 0 ? 'text-green-600' : (comp.sentiment || 0) < 0 ? 'text-red-600' : 'text-gray-500'}
-                                        `}>
-                                            {(comp.sentiment || 0).toFixed(1)}
+                        {data.competitors.map((comp: any, index: number) => (
+                            <tr key={index} className="border-b border-[var(--border-default)] hover:bg-gray-50 transition-colors">
+                                <td className="py-3 px-4 text-sm font-medium">
+                                    <div className="flex items-center gap-3">
+                                        <SafeLogo
+                                            domain={comp.website_url}
+                                            alt={comp.name}
+                                            size={24}
+                                            className="w-6 h-6 object-contain rounded-full bg-white border border-gray-100"
+                                        />
+                                        <span className={comp.is_brand ? 'font-bold text-[var(--accent-primary)]' : ''}>
+                                            {comp.name} {comp.is_brand && '(You)'}
                                         </span>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                                    </div>
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                    {comp.visibility?.toFixed(1) || '0.0'}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                    {comp.share_of_answer?.toFixed(1) || '0.0'}%
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                    <span className={`
+                                        ${(comp.sentiment || 0) > 0 ? 'text-green-600' : (comp.sentiment || 0) < 0 ? 'text-red-600' : 'text-gray-500'}
+                                    `}>
+                                        {(comp.sentiment || 0).toFixed(1)}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
                     </tbody>
                 </table>
             </div>
@@ -228,7 +182,7 @@ export const DomainReadinessSection = ({ data }: { data: any }) => {
                         <div key={key} className="p-3 bg-gray-50 rounded-lg border border-gray-100 text-center">
                             <div className="text-xs text-gray-500 uppercase font-medium mb-1">{item.label}</div>
                             <div className={`text-lg font-bold ${item.score >= 80 ? 'text-green-600' :
-                                    item.score >= 50 ? 'text-yellow-600' : 'text-red-600'
+                                item.score >= 50 ? 'text-yellow-600' : 'text-red-600'
                                 }`}>
                                 {item.score?.toFixed(0) || 0}
                             </div>
@@ -368,6 +322,51 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                                     <span className="font-medium text-[var(--text-headings)]">{item.name}</span>
                                     <span className="font-bold text-red-700">
                                         {item.changes?.share_of_answer?.absolute?.toFixed(1) || item.change || 0}%
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Citation Sources and Topics Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                {/* Top Citation Sources */}
+                {data.sources?.gains && data.sources.gains.length > 0 && (
+                    <div>
+                        <h3 className="text-sm font-semibold text-purple-600 mb-3">Top Citation Sources (Impact)</h3>
+                        <div className="space-y-2">
+                            {data.sources.gains.slice(0, 3).map((item: any, index: number) => (
+                                <div
+                                    key={index}
+                                    className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm flex justify-between items-center"
+                                >
+                                    <span className="font-medium text-[var(--text-headings)] truncate max-w-[200px]" title={item.name}>
+                                        {item.name}
+                                    </span>
+                                    <span className="font-bold text-purple-700">
+                                        {item.changes?.impact_score?.absolute || 0}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Top Topics */}
+                {data.topics?.gains && data.topics.gains.length > 0 && (
+                    <div>
+                        <h3 className="text-sm font-semibold text-blue-600 mb-3">Top Topics (Combined Score)</h3>
+                        <div className="space-y-2">
+                            {data.topics.gains.slice(0, 3).map((item: any, index: number) => (
+                                <div
+                                    key={index}
+                                    className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm flex justify-between items-center"
+                                >
+                                    <span className="font-medium text-[var(--text-headings)]">{item.name}</span>
+                                    <span className="font-bold text-blue-700">
+                                        {item.changes?.combined_score?.absolute?.toFixed(2) || 0}
                                     </span>
                                 </div>
                             ))}

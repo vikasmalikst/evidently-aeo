@@ -44,7 +44,7 @@ export class DataAggregationService {
         ] = await Promise.all([
             this.aggregateBrandPerformance(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
             this.aggregateLLMPerformance(brandId, periodStart, periodEnd),
-            this.aggregateCompetitiveLandscape(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
+            this.aggregateCompetitiveLandscape(brandId, periodStart, periodEnd),
             this.aggregateDomainReadiness(brandId, periodStart, periodEnd),
             this.aggregateActionsImpact(brandId, periodStart, periodEnd),
             this.calculateTopMovers(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
@@ -436,10 +436,8 @@ export class DataAggregationService {
         // 2. Fetch Active Competitors
         const { data: competitors, error: compError } = await supabase
             .from('brand_competitors')
-            .select('id, competitor_name, website_url')
+            .select('id, competitor_name')
             .eq('brand_id', brandId);
-
-        console.log('DEBUG_COMPETITORS:', { count: competitors?.length, error: compError, brandId });
 
         if (competitors) {
             for (const competitor of competitors) {
@@ -450,7 +448,7 @@ export class DataAggregationService {
                         customerId,
                         startDate: periodStart.toISOString(),
                         endDate: periodEnd.toISOString(),
-                        includeSentiment: true
+                        includeSentiment: false // Disabled - table relationship broken
                     });
 
                     if (compMetrics.success && compMetrics.data) {
@@ -483,7 +481,7 @@ export class DataAggregationService {
                                 share_of_answer: { percentage: 0 },
                                 visibility: { percentage: 0 }
                             },
-                            website_url: competitor.website_url
+                            website_url: '' // Not available in database
                         });
                     }
                 } catch (e) {
@@ -505,7 +503,7 @@ export class DataAggregationService {
     }
 
     /**
-     * Aggregate domain readiness metrics
+     * Aggregate domain readiness metrics from domain_readiness_results table
      */
     async aggregateDomainReadiness(
         brandId: string,
@@ -514,18 +512,17 @@ export class DataAggregationService {
     ): Promise<DomainReadinessData> {
         console.log(`🔍 [EXEC-REPORT] Aggregating domain readiness for ${brandId}`);
 
-        // Fetch latest domain readiness audit
-        const { data: latestAudit, error } = await supabase
-            .from('domain_readiness_audits')
+        // Fetch latest domain readiness result from domain_readiness_results table
+        const { data: latestResult, error } = await supabase
+            .from('domain_readiness_results')
             .select('*')
             .eq('brand_id', brandId)
-            .not('audit_results', 'is', null)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
-        if (error || !latestAudit) {
-            console.warn('⚠️ [EXEC-REPORT] No domain readiness data found');
+        if (error || !latestResult) {
+            console.warn('⚠️ [EXEC-REPORT] No domain readiness data found in domain_readiness_results');
             return {
                 overall_score: 0,
                 previous_overall_score: 0,
@@ -536,60 +533,79 @@ export class DataAggregationService {
             };
         }
 
-        // Fetch previous audit for comparison
-        const { data: previousAudit } = await supabase
-            .from('domain_readiness_audits')
-            .select('overall_score')
-            .eq('brand_id', brandId)
-            .lt('created_at', latestAudit.created_at)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
+        // Extract scores from the JSONB scores column
+        const scores = latestResult.scores as Record<string, any> | null;
 
-        const previousScore = previousAudit?.overall_score || latestAudit.overall_score;
-        const scoreDelta = this.calculateDelta(latestAudit.overall_score, previousScore);
-
-        // Extract sub-scores from audit results
+        // Calculate overall score as average of sub-scores
+        let overallScore = 0;
         const subScores: Record<string, { score: number; label: string }> = {};
-        if (latestAudit.audit_results && typeof latestAudit.audit_results === 'object') {
-            const results = latestAudit.audit_results as any;
-            // Parse sub-scores from audit results structure
-            // This will vary based on actual audit structure
-            if (results.scores) {
-                Object.entries(results.scores).forEach(([key, value]: [string, any]) => {
+
+        // Map known category keys to friendly labels
+        const categoryLabels: Record<string, string> = {
+            technicalCrawlability: 'Technical',
+            contentQuality: 'Content',
+            semanticStructure: 'Semantic',
+            accessibilityAndBrand: 'Access & Brand',
+            aeoOptimization: 'AEO',
+            llmBotAccess: 'LLM Bot Access',
+        };
+
+        if (scores && typeof scores === 'object') {
+            const scoreValues: number[] = [];
+            Object.entries(scores).forEach(([key, value]: [string, any]) => {
+                const scoreValue = typeof value === 'number' ? value : (value?.score || value?.value || 0);
+                if (typeof scoreValue === 'number' && scoreValue > 0) {
                     subScores[key] = {
-                        score: value.score || 0,
-                        label: value.label || key,
+                        score: Math.round(scoreValue),
+                        label: categoryLabels[key] || key.replace(/([A-Z])/g, ' $1').trim(),
                     };
-                });
+                    scoreValues.push(scoreValue);
+                }
+            });
+
+            // Calculate overall as average
+            if (scoreValues.length > 0) {
+                overallScore = Math.round(scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length);
             }
         }
+
+        // Fetch previous result for comparison
+        const { data: previousResult } = await supabase
+            .from('domain_readiness_results')
+            .select('scores')
+            .eq('brand_id', brandId)
+            .lt('created_at', latestResult.created_at)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        let previousScore = overallScore;
+        if (previousResult?.scores && typeof previousResult.scores === 'object') {
+            const prevScores = previousResult.scores as Record<string, any>;
+            const prevValues: number[] = [];
+            Object.values(prevScores).forEach((value: any) => {
+                const scoreValue = typeof value === 'number' ? value : (value?.score || value?.value || 0);
+                if (typeof scoreValue === 'number' && scoreValue > 0) {
+                    prevValues.push(scoreValue);
+                }
+            });
+            if (prevValues.length > 0) {
+                previousScore = Math.round(prevValues.reduce((a, b) => a + b, 0) / prevValues.length);
+            }
+        }
+
+        const scoreDelta = this.calculateDelta(overallScore, previousScore);
 
         // TODO: Fetch 12-week readiness trend
         const twelveWeekTrend: TrendDataPoint[] = [];
 
-        // Extract key deficiencies
-        const keyDeficiencies: any[] = [];
-        if (latestAudit.audit_results && typeof latestAudit.audit_results === 'object') {
-            const results = latestAudit.audit_results as any;
-            if (results.issues && Array.isArray(results.issues)) {
-                results.issues.slice(0, 5).forEach((issue: any) => {
-                    keyDeficiencies.push({
-                        category: issue.category || 'General',
-                        severity: issue.severity || 'medium',
-                        description: issue.description || issue.message || 'Unknown issue',
-                    });
-                });
-            }
-        }
-
         return {
-            overall_score: latestAudit.overall_score,
+            overall_score: overallScore,
             previous_overall_score: previousScore,
             score_delta: scoreDelta,
             sub_scores: subScores,
             twelve_week_trend: twelveWeekTrend,
-            key_deficiencies: keyDeficiencies,
+            key_deficiencies: [],
         };
     }
 
@@ -686,7 +702,7 @@ export class DataAggregationService {
 
         // Helper to aggregate data by query_id
         const aggregateByQuery = (data: any[]) => {
-            const map = new Map<number, { soa: number, vis: number, query_id: number, count: number }>();
+            const map = new Map<any, { soa: number, vis: number, query_id: any, count: number }>();
 
             data.forEach(row => {
                 if (!row.query_id) return;
@@ -700,7 +716,7 @@ export class DataAggregationService {
                 });
             });
 
-            const result = new Map<number, { soa: number, vis: number }>();
+            const result = new Map<any, { soa: number, vis: number }>();
             map.forEach((val, key) => {
                 result.set(key, {
                     soa: val.soa / val.count,
@@ -742,7 +758,7 @@ export class DataAggregationService {
 
         // Fetch Query Texts
         const queryIds = [...gains, ...losses].map(d => d.query_id);
-        const queryTextMap = new Map<number, string>();
+        const queryTextMap = new Map<any, string>();
 
         if (queryIds.length > 0) {
             const { data: queries } = await supabase
@@ -768,17 +784,84 @@ export class DataAggregationService {
             }
         }));
 
+        // === Top 3 Citation Sources by Impact Score ===
+        const { data: topSources } = await supabase
+            .from('recommendations')
+            .select('citation_source, impact_score')
+            .eq('brand_id', brandId)
+            .not('citation_source', 'is', null)
+            .not('impact_score', 'is', null)
+            .order('impact_score', { ascending: false })
+            .limit(10);
+
+        const sourcesWithScores = (topSources || [])
+            .filter(s => s.citation_source && s.impact_score)
+            .slice(0, 3)
+            .map(s => ({
+                name: s.citation_source,
+                id: s.citation_source,
+                changes: {
+                    impact_score: {
+                        absolute: Number(s.impact_score) || 0,
+                        percentage: 0
+                    }
+                }
+            }));
+
+        // === Top Topic by combined SOA/Visibility and Sentiment ===
+        // Aggregate current data by topic
+        const topicMap = new Map<string, { soa: number, vis: number, sentiment: number, count: number }>();
+        (current.data || []).forEach((row: any) => {
+            if (!row.topic) return;
+            const prev = topicMap.get(row.topic) || { soa: 0, vis: 0, sentiment: 0, count: 0 };
+            topicMap.set(row.topic, {
+                soa: prev.soa + (row.share_of_answers || 0),
+                vis: prev.vis + (row.visibility_index || 0),
+                sentiment: prev.sentiment + (row.sentiment_score || 0),
+                count: prev.count + 1
+            });
+        });
+
+        // Calculate combined score and rank topics
+        const topicScores: { name: string; score: number; soa: number; vis: number; sentiment: number }[] = [];
+        topicMap.forEach((val, topic) => {
+            const avgSoa = val.soa / val.count;
+            const avgVis = val.vis / val.count;
+            const avgSentiment = val.sentiment / val.count;
+            // Combined score: weighted sum (SOA 40%, Visibility 40%, Sentiment 20%)
+            const combinedScore = (avgSoa * 0.4) + (avgVis * 0.4) + ((avgSentiment + 1) / 2 * 0.2);
+            topicScores.push({
+                name: topic,
+                score: combinedScore,
+                soa: avgSoa,
+                vis: avgVis,
+                sentiment: avgSentiment
+            });
+        });
+
+        topicScores.sort((a, b) => b.score - a.score);
+        const topTopics = topicScores.slice(0, 3).map(t => ({
+            name: t.name,
+            id: t.name,
+            changes: {
+                combined_score: {
+                    absolute: Number(t.score.toFixed(2)),
+                    percentage: 0
+                }
+            }
+        }));
+
         return {
             queries: {
                 gains: formatItem(gains),
                 losses: formatItem(losses),
             },
             topics: {
-                gains: [],
+                gains: topTopics as any,
                 losses: [],
             },
             sources: {
-                gains: [],
+                gains: sourcesWithScores as any,
                 losses: [],
             },
         };

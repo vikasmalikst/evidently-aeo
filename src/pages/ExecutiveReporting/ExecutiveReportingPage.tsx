@@ -15,6 +15,7 @@ import { CompetitiveLandscapeSection } from './components/CompetitiveLandscapeSe
 import { DomainReadinessSection } from './components/DomainReadinessSection';
 import { ActionsImpactSection } from './components/ActionsImpactSection';
 import { TopMoversSection } from './components/TopMoversSection';
+import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 
 interface ExecutiveReport {
     id: string;
@@ -27,7 +28,7 @@ interface ExecutiveReport {
 }
 
 export const ExecutiveReportingPage = () => {
-    const { selectedBrandId } = useManualBrandDashboard();
+    const { selectedBrandId, selectedBrand, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
     const [report, setReport] = useState<ExecutiveReport | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -165,18 +166,48 @@ export const ExecutiveReportingPage = () => {
             <div className="min-h-screen bg-[var(--bg-primary)] p-6">
                 {/* Header */}
                 <div className="max-w-7xl mx-auto mb-8">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-3xl font-bold text-[var(--text-headings)]">
-                                Executive Reporting
-                            </h1>
-                            <p className="text-[var(--text-body)] mt-2">
-                                Comprehensive AEO performance insights for leadership
-                            </p>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            {selectedBrand && (
+                                <SafeLogo
+                                    src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                                    domain={selectedBrand.homepage_url || undefined}
+                                    alt={selectedBrand.name}
+                                    size={48}
+                                    className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
+                                />
+                            )}
+                            <div>
+                                <h1 className="text-2xl font-bold text-[var(--text-headings)]">
+                                    Executive Reporting
+                                </h1>
+                                <p className="text-[var(--text-body)] text-sm">
+                                    Comprehensive AEO performance insights for leadership
+                                </p>
+                            </div>
                         </div>
 
                         <div className="flex items-center gap-3">
-                            {/* Period Selector */}
+                            {/* Brand Selector */}
+                            {brands.length > 1 && (
+                                <div className="flex items-center gap-2">
+                                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                        Brand
+                                    </label>
+                                    <select
+                                        value={selectedBrandId || ''}
+                                        onChange={(e) => selectBrand(e.target.value)}
+                                        disabled={brandsLoading || loading}
+                                        className="px-3 py-2 border border-[var(--border-default)] rounded-lg bg-white text-[var(--text-body)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+                                    >
+                                        {brands.map((brand) => (
+                                            <option key={brand.id} value={brand.id}>
+                                                {brand.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <select
                                 value={periodDays}
                                 onChange={(e) => setPeriodDays(Number(e.target.value) as 7 | 30 | 60 | 90)}

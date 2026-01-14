@@ -90,6 +90,7 @@ export const OnboardingDomainReadinessScreen = ({ brandId }: OnboardingDomainRea
   const [tipIndex, setTipIndex] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string>('overall');
   const [auditStarted, setAuditStarted] = useState(false);
+  const [showSkipButton, setShowSkipButton] = useState(false);
   const [progress, setProgress] = useState<DomainReadinessProgress>({
     active: false,
     total: 16,
@@ -106,32 +107,88 @@ export const OnboardingDomainReadinessScreen = ({ brandId }: OnboardingDomainRea
 
   const streamAbortRef = useRef<AbortController | null>(null);
 
-  // Fetch brand data from API
+  // Fetch brand data from API with retry mechanism for database replication lag
   useEffect(() => {
-    const fetchBrand = async () => {
+    const fetchBrand = async (retryCount = 0): Promise<void> => {
+      const maxRetries = 3;
+      const retryDelay = 1500; // 1.5 seconds
+      
       setBrandLoading(true);
       try {
         const response = await apiClient.get<{ success: boolean; data: BrandData }>(`/brands/${brandId}`);
-        if (response.success && response.data) {
+        if (response.success && response.data && response.data.homepage_url) {
+          console.log(`✅ Brand data fetched successfully (attempt ${retryCount + 1}):`, response.data.name);
           setBrand(response.data);
-        } else {
-          // Try to get from localStorage as fallback
+          setBrandLoading(false);
+          return;
+        }
+        
+        // If brand exists but missing homepage_url, try to use localStorage data
+        if (response.success && response.data) {
           const localData = localStorage.getItem('onboarding_brand');
           if (localData) {
             try {
-              setBrand(JSON.parse(localData));
+              const parsed = JSON.parse(localData);
+              // Merge localStorage homepage_url with DB data
+              if (parsed.website || parsed.domain) {
+                const mergedBrand = {
+                  ...response.data,
+                  homepage_url: response.data.homepage_url || parsed.website || `https://${parsed.domain}`
+                };
+                console.log(`✅ Brand data merged with localStorage:`, mergedBrand.name);
+                setBrand(mergedBrand);
+                setBrandLoading(false);
+                return;
+              }
             } catch {
               // ignore parse errors
             }
           }
         }
-      } catch (err) {
-        console.error('Failed to fetch brand:', err);
-        // Try localStorage fallback
+        
+        // Retry if brand not found (database replication lag)
+        if (retryCount < maxRetries) {
+          console.log(`⏳ Brand not ready yet, retrying in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          return fetchBrand(retryCount + 1);
+        }
+        
+        // Final fallback to localStorage
         const localData = localStorage.getItem('onboarding_brand');
         if (localData) {
           try {
-            setBrand(JSON.parse(localData));
+            const parsed = JSON.parse(localData);
+            setBrand({
+              id: brandId,
+              name: parsed.companyName || parsed.name,
+              homepage_url: parsed.website || `https://${parsed.domain}`
+            });
+            console.log(`⚠️ Using localStorage fallback for brand:`, parsed.companyName || parsed.name);
+          } catch {
+            // ignore parse errors
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to fetch brand (attempt ${retryCount + 1}):`, err);
+        
+        // Retry on error
+        if (retryCount < maxRetries) {
+          console.log(`⏳ Retrying brand fetch in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          return fetchBrand(retryCount + 1);
+        }
+        
+        // Final fallback to localStorage
+        const localData = localStorage.getItem('onboarding_brand');
+        if (localData) {
+          try {
+            const parsed = JSON.parse(localData);
+            setBrand({
+              id: brandId,
+              name: parsed.companyName || parsed.name,
+              homepage_url: parsed.website || `https://${parsed.domain}`
+            });
+            console.log(`⚠️ Using localStorage fallback for brand after error:`, parsed.companyName || parsed.name);
           } catch {
             // ignore parse errors
           }
@@ -151,44 +208,60 @@ export const OnboardingDomainReadinessScreen = ({ brandId }: OnboardingDomainRea
     return () => clearInterval(interval);
   }, []);
 
-  // Run domain readiness audit
-  const runAudit = useCallback(async () => {
+  // Run domain readiness audit with retry logic
+  const runAudit = useCallback(async (retryCount = 0) => {
     if (!brand) {
+      console.error('❌ runAudit called but brand is null');
       setError('Brand data not available. Please try again or skip.');
       return;
     }
 
-    streamAbortRef.current?.abort();
+    const maxRetries = 10;
+    const baseDelay = 2000;
+
+    // Always create a fresh AbortController for each attempt
     const abortController = new AbortController();
-    streamAbortRef.current = abortController;
-
-    setError(null);
-    setAuditStarted(true);
-    setProgress({
-      active: true,
-      total: 16,
-      completed: 0,
-      buckets: {
-        technicalCrawlability: { total: 5, completed: 0 },
-        contentQuality: { total: 3, completed: 0 },
-        semanticStructure: { total: 2, completed: 0 },
-        accessibilityAndBrand: { total: 2, completed: 0 },
-        aeoOptimization: { total: 3, completed: 0 },
-        botAccess: { total: 1, completed: 0 }
-      }
-    });
-
-    try {
+    
+    // Only reset UI state on first attempt
+    if (retryCount === 0) {
+      // Abort any previous request
+      streamAbortRef.current?.abort();
+      
+      setError(null);
+      setAuditStarted(true);
+      setProgress({
+        active: true,
+        total: 16,
+        completed: 0,
+        buckets: {
+          technicalCrawlability: { total: 5, completed: 0 },
+          contentQuality: { total: 3, completed: 0 },
+          semanticStructure: { total: 2, completed: 0 },
+          accessibilityAndBrand: { total: 2, completed: 0 },
+          aeoOptimization: { total: 3, completed: 0 },
+          botAccess: { total: 1, completed: 0 }
+        }
+      });
+      
       const seedDomain = brand.homepage_url || '';
       setAudit(createEmptyAudit(brandId, seedDomain));
+    }
+    
+    // Store the new controller for potential cleanup
+    streamAbortRef.current = abortController;
 
+    console.log(`🚀 [Audit] Starting attempt ${retryCount + 1}/${maxRetries + 1} for brand: ${brand.name} (${brandId})`);
+    console.log(`🔗 [Audit] Homepage URL: ${brand.homepage_url || 'MISSING!'}`);
+
+    try {
       const handleEvent = (event: DomainReadinessStreamEvent) => {
         if (event.type === 'error') {
-          setError(event.error || 'Audit failed');
-          return;
+          console.error(`❌ Audit stream error event (Attempt ${retryCount + 1}):`, event.error);
+          throw new Error(event.error || 'Audit failed');
         }
 
         if (event.type === 'progress') {
+          console.log(`📊 Audit progress: ${event.bucket} (${event.completed}/${event.total})`);
           setProgress((prev) => {
             const bucketKey = event.bucket as DomainReadinessBucket;
             return {
@@ -262,6 +335,7 @@ export const OnboardingDomainReadinessScreen = ({ brandId }: OnboardingDomainRea
         }
 
         if (event.type === 'final') {
+          console.log('✅ Audit completed successfully');
           setAudit(event.result);
           setProgress((prev) => ({ ...prev, active: false, completed: prev.total }));
           setPhase('results');
@@ -270,36 +344,72 @@ export const OnboardingDomainReadinessScreen = ({ brandId }: OnboardingDomainRea
 
       await domainReadinessApi.runAuditStream(brandId, handleEvent, abortController.signal);
     } catch (err: any) {
-      if (err?.name === 'AbortError') return;
-      console.error('Domain readiness audit failed:', err);
-      setError(err.message || 'Failed to run domain readiness audit. You can skip and continue to data collection.');
-      // Reset audit to null so we don't show 0 scores
-      setAudit(null);
-    } finally {
-      streamAbortRef.current = null;
+      if (err?.name === 'AbortError') {
+        console.log('🛑 Audit aborted by user or navigation');
+        return;
+      }
+
+      console.error(`❌ Audit attempt ${retryCount + 1} failed:`, err?.message || err);
+      
+      // Determine if we should retry
+      if (retryCount < maxRetries) {
+        const delay = baseDelay * Math.pow(1.5, retryCount);
+        console.log(`⏳ Retrying audit in ${delay}ms... (attempt ${retryCount + 2}/${maxRetries + 1})`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Check if we should still retry (component might have unmounted)
+        if (!streamAbortRef.current?.signal.aborted) {
+          return runAudit(retryCount + 1);
+        }
+      } else {
+        console.error('❌ All audit attempts failed after', maxRetries + 1, 'tries');
+        setError(err.message || 'Failed to run domain readiness audit. You can skip and continue to data collection.');
+        setAudit(null);
+      }
     }
   }, [brandId, brand]);
 
   // Start audit when brand data is loaded
   useEffect(() => {
+    // Only start audit if we have brand, not loading, and not already started
     if (brand && !brandLoading && !auditStarted) {
+      console.log('🎬 [useEffect] Triggering runAudit - brand loaded:', brand.name);
       runAudit();
     }
+  }, [brand, brandLoading, auditStarted, runAudit]);
+
+  // Separate cleanup effect that only runs on unmount
+  useEffect(() => {
     return () => {
+      console.log('🧹 [Cleanup] Component unmounting, aborting any active audit');
       streamAbortRef.current?.abort();
     };
-  }, [brand, brandLoading, auditStarted, runAudit]);
+  }, []);
 
   // Manual timeout check for "stuck" state
   useEffect(() => {
     let stuckTimer: NodeJS.Timeout;
+    let skipTimer: NodeJS.Timeout;
+    
+    // Show skip button after 5 seconds
+    if (phase === 'loading' && !showSkipButton) {
+      skipTimer = setTimeout(() => {
+        setShowSkipButton(true);
+      }, 5000);
+    }
+    
+    // Show error message after 30 seconds
     if (phase === 'loading' && progress.completed === 0 && !error) {
       stuckTimer = setTimeout(() => {
         setError('The audit is taking longer than expected. You can wait or skip to data collection.');
-      }, 15000); // 15 seconds
+      }, 30000); // 30 seconds
     }
-    return () => clearTimeout(stuckTimer);
-  }, [phase, progress.completed, error]);
+    return () => {
+      clearTimeout(stuckTimer);
+      clearTimeout(skipTimer);
+    };
+  }, [phase, progress.completed, error, showSkipButton]);
 
   const handleProceed = useCallback(() => {
     console.log('Proceeding to data collection with brandId:', brandId);
@@ -501,6 +611,22 @@ export const OnboardingDomainReadinessScreen = ({ brandId }: OnboardingDomainRea
                         Skip & Continue
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {/* Always-visible Skip Button (appears after 5 seconds) */}
+                {showSkipButton && !error && (
+                  <div className="mt-6 text-center">
+                    <button
+                      onClick={handleSkip}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors border border-gray-200"
+                    >
+                      <SkipForward className="w-4 h-4" />
+                      Skip Domain Audit & Continue
+                    </button>
+                    <p className="text-xs text-gray-400 mt-2">
+                      You can run the domain audit later from settings
+                    </p>
                   </div>
                 )}
               </>

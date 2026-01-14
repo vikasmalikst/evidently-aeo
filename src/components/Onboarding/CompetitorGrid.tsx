@@ -194,7 +194,7 @@ export const CompetitorGrid = ({
                 {brand.founded ? ` • Founded ${brand.founded}` : ''}
               </p>
               {brand.description && (
-                <p className="text-sm text-gray-600 mt-2 line-clamp-2">{brand.description}</p>
+                <p className="text-sm text-gray-600 mt-2">{brand.description}</p>
               )}
             </div>
           </div>

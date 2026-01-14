@@ -7,6 +7,7 @@ import { CustomTopicInput } from './CustomTopicInput';
 import { SelectedTopicsSummary } from './SelectedTopicsSummary';
 import { StepIndicator } from '../Onboarding/StepIndicator';
 import { Spinner } from '../Onboarding/common/Spinner';
+import { OnboardingTooltip } from '../Onboarding/common/OnboardingTooltip';
 import evidentlyLogo from '../../assets/logo.png';
 import { SetupLayout } from '../../pages/SetupLayout';
 
@@ -238,12 +239,26 @@ export const TopicSelectionModal = ({
 
   const body = (
     <>
+      {/* Contextual Tooltip - shows immediately on page load */}
+      <OnboardingTooltip
+        storageKey="topics-selection"
+        title="Selecting Topics"
+      >
+        <p className="mb-2">
+          Choose <strong>5-10 topics</strong> that matter most to your brand. These define what questions we'll track.
+        </p>
+        <p>
+          💡 Need more? You can always add or modify topics later from the <strong>Configuration</strong> page in Settings.
+        </p>
+      </OnboardingTooltip>
+
       {isLoadingTopics ? (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
           <Spinner size="large" message="Loading topics from AI..." />
         </div>
       ) : (
         <>
+
           {topicsError && (
             <div style={{ 
               padding: '12px 16px', 

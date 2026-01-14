@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, Sparkles, Edit2, Save, X, Rocket, Target, TrendingUp, BarChart3 } from 'lucide-react';
 import { SafeLogo } from './common/SafeLogo';
+import { OnboardingTooltip } from './common/OnboardingTooltip';
 import { fetchBrandProductsPreview } from '../../api/onboardingApi';
 import type { BrandProductsEnrichment, OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 
@@ -556,6 +557,14 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
           </motion.button>
         </motion.div>
       </div>
+
+      {/* Onboarding Tooltip */}
+      <OnboardingTooltip
+        storageKey="summary-enrichment"
+        title="Products & Synonyms"
+      >
+        We'll generate product names and brand synonyms that help AI platforms recognize your brand. These improve visibility tracking accuracy and can be edited anytime.
+      </OnboardingTooltip>
     </motion.div>
   );
 };

@@ -4,7 +4,7 @@ import { onboardingUtils } from '../utils/onboardingUtils';
 import { featureFlags } from '../config/featureFlags';
 import { submitBrandOnboarding, upsertBrandProducts } from '../api/brandApi';
 import { SetupLayout } from './SetupLayout';
-import { WelcomeScreen } from '../components/Topics/WelcomeScreen';
+import { WelcomeScreen } from '../components/Onboarding/WelcomeScreen';
 import { AIModelSelection } from '../components/Onboarding/AIModelSelection';
 import { TopicChoiceStep } from '../components/Onboarding/TopicChoiceStep';
 import { ReviewStep, type ReviewRow } from '../components/Onboarding/ReviewStep';

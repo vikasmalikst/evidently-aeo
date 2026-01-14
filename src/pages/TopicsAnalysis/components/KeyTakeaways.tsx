@@ -21,7 +21,7 @@ export const KeyTakeaways: React.FC<KeyTakeawaysProps> = ({ data, metricType = '
             <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-1">
                 <h3 className="text-base font-semibold text-gray-900 m-0 flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-purple-600" />
-                    AI Analysis & Key Takeaways
+                    Key Takeaways
                 </h3>
             </div>
 

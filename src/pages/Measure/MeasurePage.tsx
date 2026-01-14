@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
+import { LoadingScreen } from '../../components/common/LoadingScreen';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import {
   MessageSquare,
@@ -22,19 +23,133 @@ import {
 } from 'lucide-react';
 import { useDashboardData } from '../dashboard/hooks/useDashboardData';
 import { useOnboardingOrchestrator } from '../../hooks/useOnboardingOrchestrator';
-import { getBrandData, formatMetricValue, computeTrend, formatNumber } from '../dashboard/utils';
+import { formatMetricValue, computeTrend, formatNumber } from '../dashboard/utils';
 import { MetricCard } from '../dashboard/components/MetricCard';
 import { DateRangeSelector } from '../dashboard/components/DateRangeSelector';
 import { DashboardSkeleton } from '../dashboard/components/DashboardSkeleton';
 import { useCachedData } from '../../hooks/useCachedData';
-import type { DashboardScoreMetric, LLMVisibilitySliceUI } from '../dashboard/types';
-import type { ApiResponse, DashboardPayload } from '../dashboard/types';
+import type { DashboardScoreMetric } from '../dashboard/types';
 
-// Note: Detailed chart components will be integrated from SearchVisibility in a future update
+// Search Visibility components
+import { VisibilityTabs } from '../../components/Visibility/VisibilityTabs';
+import { ChartControls } from '../../components/Visibility/ChartControls';
+import { VisibilityChart } from '../../components/Visibility/VisibilityChart';
+import { VisibilityTable } from '../../components/Visibility/VisibilityTable';
+import { KpiToggle } from '../../components/Visibility/KpiToggle';
 import { useManualBrandDashboard } from '../../manual-dashboard';
+import { useAuthStore } from '../../store/authStore';
+import { getLLMIcon } from '../../components/Visibility/LLMIcons';
 import '../../styles/visibility.css';
+import { formatDateLabel } from '../../utils/dateFormatting';
 
 type MetricType = 'visibility' | 'share' | 'brandPresence' | 'sentiment';
+
+interface LlmTopic {
+  topic: string;
+  occurrences: number;
+  share: number;
+  visibility: number;
+  mentions: number;
+}
+
+interface LlmVisibilitySlice {
+  provider: string;
+  share: number;
+  shareOfSearch?: number;
+  visibility?: number;
+  delta?: number;
+  color?: string;
+  brandPresenceCount?: number;
+  totalQueries?: number;
+  totalCollectorResults?: number;
+  topTopic?: string | null;
+  topTopics?: LlmTopic[];
+  sentiment?: number | null;
+  timeSeries?: {
+    dates: string[];
+    visibility: number[];
+    share: number[];
+    sentiment: (number | null)[];
+    isRealData?: boolean[];
+  };
+}
+
+interface CompetitorVisibilityEntry {
+  competitor: string;
+  mentions: number;
+  share: number;
+  visibility: number;
+  brandPresencePercentage?: number;
+  topTopics?: Array<{
+    topic: string;
+    occurrences: number;
+    share: number;
+    visibility: number;
+    mentions: number;
+  }>;
+  collectors?: Array<{
+    collectorType: string;
+    mentions: number;
+  }>;
+  sentiment?: number | null;
+  timeSeries?: {
+    dates: string[];
+    visibility: number[];
+    share: number[];
+    sentiment: (number | null)[];
+    isRealData?: boolean[];
+  };
+}
+
+interface BrandSummary {
+  visibility: number;
+  share: number;
+  brandPresencePercentage: number;
+  topTopics?: Array<{
+    topic: string;
+    occurrences: number;
+    share: number;
+    visibility: number;
+  }>;
+}
+
+interface DashboardPayload {
+  llmVisibility?: LlmVisibilitySlice[];
+  competitorVisibility?: CompetitorVisibilityEntry[];
+  brandSummary?: BrandSummary;
+}
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+interface ModelData {
+  id: string;
+  name: string;
+  score: number;
+  shareOfSearch: number;
+  sentiment?: number | null;
+  shareOfSearchChange?: number;
+  topTopic: string;
+  change?: number;
+  referenceCount: number;
+  brandPresencePercentage: number;
+  data: number[];
+  shareData?: number[];
+  sentimentData?: number[];
+  brandPresenceData?: number[];
+  topTopics?: LlmTopic[];
+  color?: string;
+  isBrand?: boolean;
+  isRealData?: boolean[];
+}
+
+const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const normalizeId = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
+const buildTimeseries = (value: number) => Array(chartLabels.length).fill(Math.max(0, Math.round(value)));
 
 const parseMetricType = (value: string | null): MetricType | null => {
   if (value === 'visibility' || value === 'share' || value === 'brandPresence' || value === 'sentiment') {
@@ -43,11 +158,53 @@ const parseMetricType = (value: string | null): MetricType | null => {
   return null;
 };
 
+// Get default date range (last 7 days)
+const getDefaultDateRange = () => {
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 6);
+  start.setHours(0, 0, 0, 0);
+
+  const formatDate = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  return {
+    start: formatDate(start),
+    end: formatDate(end)
+  };
+};
+
 export const MeasurePage = () => {
+  const pageLoadStart = useRef(performance.now());
   const [searchParams, setSearchParams] = useSearchParams();
   const kpiParam = searchParams.get('kpi');
   const selectedKpi = parseMetricType(kpiParam) || 'visibility';
   
+  // Chart state
+  const [activeTab, setActiveTab] = useState<'brand' | 'competitive'>('brand');
+  const [chartType, setChartType] = useState('line');
+  const [region, setRegion] = useState('us');
+  const [llmFilters, setLlmFilters] = useState<string[]>([]);
+  const [allLlmOptions, setAllLlmOptions] = useState<Array<{ value: string; label: string; color?: string }>>([]);
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [isSelectionInitialized, setIsSelectionInitialized] = useState(false);
+  const [metricType, setMetricType] = useState<MetricType>(() => parseMetricType(searchParams.get('kpi')) ?? 'visibility');
+  const [brandModels, setBrandModels] = useState<ModelData[]>([]);
+  const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
+  const [reloadToken, setReloadToken] = useState(0);
+  const kpiSectionRef = useRef<HTMLDivElement | null>(null);
+
+  // Date range state
+  const defaultDateRange = getDefaultDateRange();
+  const [visibilityStartDate, setVisibilityStartDate] = useState<string>(defaultDateRange.start);
+  const [visibilityEndDate, setVisibilityEndDate] = useState<string>(defaultDateRange.end);
+  
+  // Dashboard data hook
   const {
     startDate,
     endDate,
@@ -63,12 +220,220 @@ export const MeasurePage = () => {
     shouldShowLoading,
     handleRetryFetch,
     isDataCollectionInProgress,
-    progressData
   } = useDashboardData();
 
-  // Orchestrate automated onboarding steps (Domain Audit -> Recommendations)
+  const authLoading = useAuthStore((state) => state.isLoading);
+
+  // Orchestrate automated onboarding steps
   useOnboardingOrchestrator(selectedBrandId);
 
+  // Build visibility API endpoint
+  const visibilityEndpoint = useMemo(() => {
+    if (!selectedBrandId || !visibilityStartDate || !visibilityEndDate) return null;
+    const startISO = new Date(visibilityStartDate).toISOString();
+    const endISO = new Date(visibilityEndDate + 'T23:59:59').toISOString();
+    const params = new URLSearchParams({ startDate: startISO, endDate: endISO });
+    return `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
+  }, [selectedBrandId, visibilityStartDate, visibilityEndDate, reloadToken]);
+
+  // Fetch visibility data
+  const { data: visibilityResponse, isLoading: visibilityLoading, error: visibilityError, refetch: refetchVisibility } = useCachedData<ApiResponse<DashboardPayload>>(
+    visibilityEndpoint,
+    {},
+    { requiresAuth: true, enabled: !!visibilityEndpoint }
+  );
+
+  // Process visibility data into chart models
+  const processedData = useMemo(() => {
+    if (!visibilityResponse?.data) {
+      return { brandModels: [], competitorModels: [], llmOptions: [] };
+    }
+
+    const data = visibilityResponse.data;
+    const llmSlices = data.llmVisibility ?? [];
+    const competitors = data.competitorVisibility ?? [];
+    const brandSum = data.brandSummary;
+
+    // Build chart date labels from first LLM slice with timeSeries
+    let chartDateLabels = chartLabels;
+    const firstSliceWithDates = llmSlices.find(s => s.timeSeries?.dates?.length);
+    if (firstSliceWithDates?.timeSeries?.dates) {
+      chartDateLabels = firstSliceWithDates.timeSeries.dates.map(d => formatDateLabel(d));
+    }
+
+    // Build brand models from LLM visibility
+    const brandModelData: ModelData[] = llmSlices.map((slice) => {
+      const topTopicLabel = slice.topTopics?.[0]?.topic ?? slice.topTopic ?? '—';
+      const visData = slice.timeSeries?.visibility ?? buildTimeseries(slice.visibility ?? 0);
+      const shareData = slice.timeSeries?.share ?? buildTimeseries((slice.shareOfSearch ?? slice.share ?? 0) * 100);
+      const sentData = slice.timeSeries?.sentiment ?? buildTimeseries(slice.sentiment ?? 0);
+      const brandPresenceData = buildTimeseries(
+        slice.totalCollectorResults && slice.totalCollectorResults > 0
+          ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
+          : 0
+      );
+      const isRealData = slice.timeSeries?.isRealData;
+
+      return {
+        id: normalizeId(slice.provider),
+        name: slice.provider,
+        score: slice.visibility ?? 0,
+        shareOfSearch: slice.shareOfSearch ?? slice.share ?? 0,
+        sentiment: slice.sentiment ?? null,
+        shareOfSearchChange: slice.delta ?? 0,
+        topTopic: topTopicLabel,
+        change: slice.delta ?? 0,
+        referenceCount: 0,
+        brandPresencePercentage: slice.totalCollectorResults && slice.totalCollectorResults > 0
+          ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
+          : 0,
+        data: visData,
+        shareData,
+        sentimentData: sentData,
+        brandPresenceData,
+        topTopics: slice.topTopics ?? [],
+        color: slice.color,
+        isBrand: false,
+        isRealData
+      };
+    });
+
+    // Build competitor models
+    const competitorModelData: ModelData[] = [];
+    if (brandSum) {
+      const brandName = selectedBrand?.name || 'Your Brand';
+      const topTopic = brandSum.topTopics?.[0]?.topic ?? '—';
+      competitorModelData.push({
+        id: normalizeId(brandName),
+        name: brandName,
+        score: brandSum.visibility,
+        shareOfSearch: brandSum.share,
+        sentiment: null,
+        shareOfSearchChange: 0,
+        topTopic,
+        change: 0,
+        referenceCount: 0,
+        brandPresencePercentage: brandSum.brandPresencePercentage ?? 0,
+        data: buildTimeseries(brandSum.visibility),
+        shareData: buildTimeseries(brandSum.share * 100),
+        brandPresenceData: buildTimeseries(brandSum.brandPresencePercentage ?? 0),
+        topTopics: brandSum.topTopics?.map(t => ({ ...t, mentions: 0 })) ?? [],
+        isBrand: true
+      });
+    }
+    competitors.forEach((comp) => {
+      const topTopic = comp.topTopics?.[0]?.topic ?? '—';
+      const visData = comp.timeSeries?.visibility ?? buildTimeseries(comp.visibility);
+      const shareData = comp.timeSeries?.share ?? buildTimeseries(comp.share * 100);
+      const sentData = comp.timeSeries?.sentiment ?? buildTimeseries(comp.sentiment ?? 0);
+      const brandPresenceData = buildTimeseries(comp.brandPresencePercentage ?? 0);
+      const isRealData = comp.timeSeries?.isRealData;
+
+      competitorModelData.push({
+        id: normalizeId(comp.competitor),
+        name: comp.competitor,
+        score: comp.visibility,
+        shareOfSearch: comp.share,
+        sentiment: comp.sentiment ?? null,
+        shareOfSearchChange: 0,
+        topTopic,
+        change: 0,
+        referenceCount: comp.mentions,
+        brandPresencePercentage: comp.brandPresencePercentage ?? 0,
+        data: visData,
+        shareData,
+        sentimentData: sentData,
+        brandPresenceData,
+        topTopics: comp.topTopics ?? [],
+        isBrand: false,
+        isRealData
+      });
+    });
+
+    // LLM filter options
+    const llmOptions = [
+      { value: 'all', label: 'All' },
+      ...llmSlices.map(s => ({ value: normalizeId(s.provider), label: s.provider, color: s.color }))
+    ];
+
+    return { brandModels: brandModelData, competitorModels: competitorModelData, llmOptions, chartDateLabels };
+  }, [visibilityResponse, selectedBrand]);
+
+  // Update state when processed data changes
+  useEffect(() => {
+    setBrandModels(processedData.brandModels);
+    setCompetitorModels(processedData.competitorModels);
+    setAllLlmOptions(processedData.llmOptions);
+    if (processedData.brandModels.length > 0 || processedData.competitorModels.length > 0) {
+      setIsSelectionInitialized(false);
+    }
+  }, [processedData]);
+
+  // Current models based on active tab
+  const currentModels = activeTab === 'brand' ? brandModels : competitorModels;
+  const llmOptions = allLlmOptions;
+  const chartDateLabels = processedData.chartDateLabels || chartLabels;
+
+  // Model selection logic
+  useEffect(() => {
+    const availableModels = currentModels;
+    setSelectedModels((previous) => {
+      const stillValid = previous.filter((id) => availableModels.some((model) => model.id === id));
+      if (stillValid.length > 0) return stillValid;
+      return availableModels.map((model) => model.id);
+    });
+  }, [activeTab, currentModels]);
+
+  useEffect(() => {
+    setIsSelectionInitialized(false);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (currentModels.length > 0 && selectedModels.length > 0) {
+      const hasValidSelection = selectedModels.some(id => currentModels.some(m => m.id === id));
+      if (hasValidSelection) setIsSelectionInitialized(true);
+    } else if (visibilityResponse && !visibilityLoading && currentModels.length === 0) {
+      setIsSelectionInitialized(true);
+    }
+  }, [selectedModels, currentModels, visibilityResponse, visibilityLoading]);
+
+  const handleModelToggle = useCallback((modelId: string) => {
+    setSelectedModels((prev) =>
+      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
+    );
+  }, []);
+
+  // Sync metricType with URL kpi param
+  useEffect(() => {
+    const kpi = parseMetricType(searchParams.get('kpi'));
+    if (kpi && kpi !== metricType) {
+      setMetricType(kpi);
+    }
+  }, [searchParams]);
+
+  const handleKpiSelect = (kpi: MetricType) => {
+    setSearchParams({ kpi });
+    setMetricType(kpi);
+  };
+
+  // Chart data
+  const chartData = useMemo(() => ({
+    labels: chartDateLabels,
+    datasets: currentModels.map((model) => ({
+      id: model.id,
+      label: model.name,
+      data: metricType === 'visibility'
+        ? model.data
+        : metricType === 'share'
+          ? (model.shareData ?? model.data)
+          : metricType === 'brandPresence'
+            ? (model.brandPresenceData ?? buildTimeseries(model.brandPresencePercentage ?? 0))
+            : (model.sentimentData ?? model.data).map((v) => v ?? 0),
+      isRealData: model.isRealData
+    }))
+  }), [currentModels, metricType, chartDateLabels]);
+
+  // Dashboard KPI metrics
   const findScore = (label: string, data: typeof dashboardData): DashboardScoreMetric | undefined =>
     data?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
@@ -121,15 +486,9 @@ export const MeasurePage = () => {
                     ? toSentimentDisplay(entry.sentiment)
                     : entry.brandPresencePercentage;
 
-            if (!Number.isFinite(value)) {
-              return null;
-            }
+            if (!Number.isFinite(value)) return null;
 
-            return {
-              label: entry.competitor,
-              value: value as number,
-              isBrand: false
-            };
+            return { label: entry.competitor, value: value as number, isBrand: false };
           })
           .filter(Boolean) as Array<{ label: string; value: number; isBrand: boolean }>;
 
@@ -151,7 +510,7 @@ export const MeasurePage = () => {
 
       return [
         {
-          key: 'visibility-index',
+          key: 'visibility',
           title: 'Visibility Score',
           value: formatMetricValue(visibilityMetric, ''),
           subtitle: '',
@@ -165,7 +524,7 @@ export const MeasurePage = () => {
           isActive: selectedKpi === 'visibility'
         },
         {
-          key: 'share-of-answers',
+          key: 'share',
           title: 'Share of Answers',
           value: formatMetricValue(shareMetric),
           subtitle: '',
@@ -179,7 +538,7 @@ export const MeasurePage = () => {
           isActive: selectedKpi === 'share'
         },
         {
-          key: 'sentiment-score',
+          key: 'sentiment',
           title: 'Sentiment Score',
           value: sentimentMetric ? formatNumber(sentimentMetric.value, 1) : '—',
           subtitle: '',
@@ -193,7 +552,7 @@ export const MeasurePage = () => {
           isActive: selectedKpi === 'sentiment'
         },
         {
-          key: 'brand-presence',
+          key: 'brandPresence',
           title: 'Brand Presence',
           value: `${brandPresencePercentage}%`,
           subtitle: '',
@@ -220,9 +579,15 @@ export const MeasurePage = () => {
     ]
   );
 
-  const handleKpiSelect = (kpi: MetricType) => {
-    setSearchParams({ kpi });
-  };
+  const handleRetry = useCallback(() => {
+    setReloadToken((prev) => prev + 1);
+    refetchVisibility();
+  }, [refetchVisibility]);
+
+  // Loading states
+  const combinedLoading = authLoading || visibilityLoading;
+  const dataLoading = combinedLoading && (!visibilityResponse || !visibilityResponse.data);
+  const selectionInitializing = !isSelectionInitialized && currentModels.length > 0;
 
   if (isDataCollectionInProgress && !dashboardData) {
     return (
@@ -258,9 +623,7 @@ export const MeasurePage = () => {
         <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
           <div className="max-w-xl mx-auto bg-white border border-[#fadddb] rounded-lg shadow-sm p-6 text-center">
             <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-2">Unable to load dashboard</h2>
-            <p className="text-[13px] text-[#64748b] mb-4">
-              {errorMessage}
-            </p>
+            <p className="text-[13px] text-[#64748b] mb-4">{errorMessage}</p>
             <button
               onClick={handleRetryFetch}
               className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-[#00bcdc] text-white text-[13px] font-medium hover:bg-[#0096b0] transition-colors"
@@ -272,6 +635,12 @@ export const MeasurePage = () => {
       </Layout>
     );
   }
+
+  const EmptyState = ({ message }: { message: string }) => (
+    <div className="flex flex-col items-center justify-center py-12 text-center text-sm text-[#6c7289]">
+      {message}
+    </div>
+  );
 
   return (
     <Layout>
@@ -289,15 +658,11 @@ export const MeasurePage = () => {
           )}
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-[32px] font-bold text-[#1a1d29]">
-                AI Visibility Dashboard
-              </h1>
+              <h1 className="text-[32px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
             </div>
             <div className="flex items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-4">
-                <p className="text-[15px] text-[#393e51]">
-                  {overviewSubtitle}
-                </p>
+                <p className="text-[15px] text-[#393e51]">{overviewSubtitle}</p>
                 {brands.length > 1 && selectedBrandId && (
                   <div className="flex items-center gap-2">
                     <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
@@ -310,9 +675,7 @@ export const MeasurePage = () => {
                       className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
                     >
                       {brands.map((brandOption) => (
-                        <option key={brandOption.id} value={brandOption.id}>
-                          {brandOption.name}
-                        </option>
+                        <option key={brandOption.id} value={brandOption.id}>{brandOption.name}</option>
                       ))}
                     </select>
                   </div>
@@ -335,7 +698,7 @@ export const MeasurePage = () => {
             <div 
               key={key} 
               className={`cursor-pointer transition-all duration-200 ${isActive ? 'ring-2 ring-[var(--accent-primary)] ring-offset-2 rounded-lg' : ''}`}
-              onClick={() => handleKpiSelect(key.replace('-index', '').replace('-of-answers', '').replace('-score', '').replace('-presence', '') as MetricType)}
+              onClick={() => handleKpiSelect(key as MetricType)}
             >
               <MetricCard {...cardProps} />
             </div>
@@ -343,48 +706,123 @@ export const MeasurePage = () => {
         </div>
 
         {/* Search Visibility Content */}
-        <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm">
-          {/* KPI Selector Tabs - now controlled by clicking on KPI cards above */}
-          <div className="border-b border-[#e8e9ed] p-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-[#64748b]">SELECT KPI</span>
-              <div className="flex gap-2 ml-4">
-                {[
-                  { id: 'visibility', label: 'Visibility Score', icon: '📊' },
-                  { id: 'share', label: 'Share of Answers', icon: '⏱' },
-                  { id: 'brandPresence', label: 'Brand Presence', icon: '👁' },
-                  { id: 'sentiment', label: 'Sentiment Score', icon: '❤️' },
-                ].map((kpi) => (
-                  <button
-                    key={kpi.id}
-                    onClick={() => handleKpiSelect(kpi.id as MetricType)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedKpi === kpi.id
-                        ? 'bg-[var(--accent-primary)] text-white'
-                        : 'bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]'
-                    }`}
-                  >
-                    {kpi.label}
-                  </button>
-                ))}
+        <div className="flex flex-col gap-4">
+          {/* Chart Section */}
+          <div
+            ref={kpiSectionRef}
+            className="flex flex-col rounded-3xl border border-[#e4e7ec] bg-white shadow-[0_20px_45px_rgb(15_23_42_/_0.08)] overflow-hidden"
+          >
+            <div className="border-b border-[#e7ecff] bg-white p-6">
+              <div className="flex flex-col gap-6">
+                {/* KPI Toggle and LLM Selectors Row */}
+                <div className="flex items-start justify-between gap-4">
+                  <KpiToggle metricType={metricType} onChange={handleKpiSelect} />
+                  {activeTab === 'competitive' && llmOptions.filter((o) => o.value !== 'all').length > 0 && (
+                    <div className="flex flex-col gap-2 flex-shrink-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8690a8] text-right">
+                        LLM Filter
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setLlmFilters([])}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${llmFilters.length === 0
+                            ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
+                            : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
+                            }`}
+                        >
+                          All
+                        </button>
+                        {llmOptions
+                          .filter((option) => option.value !== 'all')
+                          .map((option) => {
+                            const isActive = llmFilters.includes(option.value);
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() =>
+                                  setLlmFilters((prev) =>
+                                    prev.includes(option.value)
+                                      ? prev.filter((v) => v !== option.value)
+                                      : [...prev, option.value]
+                                  )
+                                }
+                                className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${isActive
+                                  ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
+                                  : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
+                                  }`}
+                                title={option.label}
+                              >
+                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
+                                  {getLLMIcon(option.label)}
+                                </span>
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* View Mode Section */}
+                <div className="flex flex-col gap-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
+                    View Mode
+                  </div>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-center bg-white">
+                      <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                    </div>
+                    <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm pt-1">
+                      {activeTab === 'brand'
+                        ? 'Focus on how each collector sees your brand.'
+                        : 'Benchmark the selected KPI against competitors.'}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <ChartControls
+              startDate={visibilityStartDate}
+              endDate={visibilityEndDate}
+              onStartDateChange={setVisibilityStartDate}
+              onEndDateChange={setVisibilityEndDate}
+              chartType={chartType}
+              onChartTypeChange={setChartType}
+              region={region}
+              onRegionChange={setRegion}
+              brands={brands}
+              selectedBrandId={selectedBrandId}
+              onBrandChange={selectBrand}
+            />
+
+            <VisibilityChart
+              data={chartData}
+              chartType={chartType}
+              selectedModels={selectedModels}
+              loading={combinedLoading}
+              activeTab={activeTab}
+              models={currentModels}
+              metricType={metricType}
+            />
           </div>
 
-          {/* Chart and Table Content - Pass data from dashboard */}
-          <div className="p-6">
-            <div className="text-center text-[#64748b] py-12">
-              {/* The detailed chart content will be integrated from SearchVisibility */}
-              <p className="text-sm">
-                Detailed {selectedKpi === 'visibility' ? 'Visibility Score' : 
-                          selectedKpi === 'share' ? 'Share of Answers' :
-                          selectedKpi === 'brandPresence' ? 'Brand Presence' :
-                          'Sentiment Score'} analysis
-              </p>
-              <p className="text-xs text-[#94a3b8] mt-2">
-                Charts and LLM comparison table will load here
-              </p>
-            </div>
+          {/* Table Section */}
+          <div className="flex flex-col flex-1 bg-white rounded-lg overflow-hidden shadow-sm">
+            {combinedLoading ? (
+              <EmptyState message="Loading visibility data…" />
+            ) : currentModels.length === 0 ? (
+              <EmptyState message="No visibility records available for the selected brand yet." />
+            ) : (
+              <VisibilityTable
+                activeTab={activeTab}
+                models={currentModels}
+                selectedModels={selectedModels}
+                onModelToggle={handleModelToggle}
+                loading={combinedLoading}
+              />
+            )}
           </div>
         </div>
       </div>

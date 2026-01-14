@@ -596,39 +596,41 @@ export class OptimizedMetricsHelper {
         includeSentiment = true,
       } = options;
 
-      // Build query - query metric_facts and join competitor_metrics filtered by competitor_id
-      // Query competitor_metrics directly and join with metric_facts for date filtering
+      // Build query - Query metric_facts as root to get both siblings (competitor_metrics and competitor_sentiment)
       let query = this.supabase
-        .from('competitor_metrics')
+        .from('metric_facts')
         .select(`
-          metric_fact_id,
-          competitor_id,
-          visibility_index,
-          share_of_answers,
-          competitor_mentions,
-          competitor_positions,
-          metric_facts!inner(
-            collector_result_id,
-            brand_id,
-            customer_id,
-            query_id,
-            collector_type,
-            topic,
-            processed_at,
-            created_at
+          collector_result_id,
+          brand_id,
+          customer_id,
+          query_id,
+          collector_type,
+          topic,
+          processed_at,
+          created_at,
+          competitor_metrics!inner(
+            competitor_id,
+            visibility_index,
+            share_of_answers,
+            competitor_mentions,
+            competitor_positions,
+            brand_competitors(competitor_name)
           )
           ${includeSentiment ? `,competitor_sentiment(
+            competitor_id,
             sentiment_score,
             sentiment_label
           )` : ''}
         `)
-        .eq('competitor_id', competitorId)
-        .eq('metric_facts.brand_id', brandId)
-        .eq('metric_facts.customer_id', customerId)
-        .gte('metric_facts.processed_at', startDate)
-        .lte('metric_facts.processed_at', endDate);
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .gte('processed_at', startDate)
+        .lte('processed_at', endDate)
+        .eq('competitor_metrics.competitor_id', competitorId);
 
       const { data, error } = await query;
+
+      console.log(`[OptimizedMetricsHelper] Fetched ${data?.length || 0} rows for competitor ${competitorId}`);
 
       if (error) {
         console.error('[OptimizedMetricsHelper] Error fetching competitor metrics by date range:', error);
@@ -641,30 +643,41 @@ export class OptimizedMetricsHelper {
       }
 
       // Flatten nested structure
-      const flattenedData: CompetitorMetricsRow[] = (data || []).map((row: any) => {
-        const metricFact = Array.isArray(row.metric_facts)
-          ? row.metric_facts[0]
-          : row.metric_facts;
+      const flattenedData: CompetitorMetricsRow[] = (data || []).map((row: any, index: number) => {
+        const metricList = Array.isArray(row.competitor_metrics)
+          ? row.competitor_metrics
+          : (row.competitor_metrics ? [row.competitor_metrics] : []);
 
-        const competitorSentiment = Array.isArray(row.competitor_sentiment)
-          ? row.competitor_sentiment[0]
-          : row.competitor_sentiment;
+        const competitorMetric = metricList.find((c: any) => c.competitor_id === competitorId);
+
+        // Filter sentiment for this specific competitor
+        const sentimentList = Array.isArray(row.competitor_sentiment)
+          ? row.competitor_sentiment
+          : (row.competitor_sentiment ? [row.competitor_sentiment] : []);
+
+        const competitorSentiment = sentimentList.find((s: any) => s.competitor_id === competitorId);
+
+        const competitorName = competitorMetric?.brand_competitors?.competitor_name || null;
+
+        if (index < 3) {
+          console.log(`[OptimizedMetricsHelper] Sample row ${index}: vis=${competitorMetric?.visibility_index}, soa=${competitorMetric?.share_of_answers}, sent=${competitorSentiment?.sentiment_score}`);
+        }
 
         return {
-          collector_result_id: metricFact?.collector_result_id || null,
-          brand_id: metricFact?.brand_id || null,
-          customer_id: metricFact?.customer_id || null,
-          query_id: metricFact?.query_id || null,
-          collector_type: metricFact?.collector_type || null,
-          topic: metricFact?.topic || null,
-          processed_at: metricFact?.processed_at || null,
-          created_at: metricFact?.created_at || null,
+          collector_result_id: row.collector_result_id,
+          brand_id: row.brand_id,
+          customer_id: row.customer_id,
+          query_id: row.query_id,
+          collector_type: row.collector_type,
+          topic: row.topic,
+          processed_at: row.processed_at,
+          created_at: row.created_at,
           competitor_id: competitorId,
-          competitor_name: null, // Will be populated from brand_competitors if needed
-          visibility_index: row.visibility_index ?? null,
-          share_of_answers: row.share_of_answers ?? null,
-          competitor_mentions: row.competitor_mentions || 0,
-          competitor_positions: row.competitor_positions || [],
+          competitor_name: competitorName,
+          visibility_index: competitorMetric?.visibility_index ?? null,
+          share_of_answers: competitorMetric?.share_of_answers ?? null,
+          competitor_mentions: competitorMetric?.competitor_mentions || 0,
+          competitor_positions: competitorMetric?.competitor_positions || [],
           ...(includeSentiment && competitorSentiment ? {
             sentiment_score: competitorSentiment.sentiment_score,
             sentiment_label: competitorSentiment.sentiment_label,

@@ -129,6 +129,8 @@ export interface DomainReadinessData {
     sub_scores: {
         [dimension: string]: {
             score: number;
+            previous_score: number;
+            delta: { absolute: number; percentage: number };
             label: string;
         };
     };

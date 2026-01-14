@@ -8,7 +8,7 @@ import { ScoreGauge } from './components/ScoreGauge';
 import { CategoryBreakdown } from './components/CategoryBreakdown';
 import { BotAccessTable } from './components/BotAccessTable';
 import { Button } from '../../components/Onboarding/common/Button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { updateBrandWebsiteUrl } from '../../api/brandApi';
 import { Layout } from '../../components/Layout/Layout';
@@ -172,6 +172,19 @@ export const DomainReadinessPage = () => {
                 </div>
               </div>
             )}
+
+            {/* Refresh Button */}
+            {!!selectedBrand && audit && !loading && (
+              <Button
+                variant="secondary"
+                onClick={handleRunAudit}
+                className="ml-2 py-1.5 h-[30px] text-xs flex items-center gap-2 border border-gray-200"
+                disabled={loading}
+              >
+                <RefreshCw className="w-3 h-3" />
+                Refresh Analysis
+              </Button>
+            )}
           </div>
         </div>
 
@@ -182,7 +195,7 @@ export const DomainReadinessPage = () => {
           </div>
         )}
 
-        {loading && !audit && (
+        {loading && (
           <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl border border-gray-100 shadow-sm">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-4" />
             <h3 className="text-lg font-medium text-gray-900">Running Audit...</h3>

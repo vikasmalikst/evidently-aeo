@@ -52,7 +52,7 @@ export const CategoryBreakdown = ({
   ];
 
   // Calculate LLM Bot Access Score
-  const allowedBots = audit.botAccessStatus.filter(b => b.status === 'allowed').length;
+  const allowedBots = audit.botAccessStatus.filter(b => b.allowed).length;
   const totalBots = audit.botAccessStatus.length;
   const botScore = totalBots > 0 ? (allowedBots / totalBots) * 100 : 0;
 

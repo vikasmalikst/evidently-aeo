@@ -80,8 +80,15 @@ export class DomainReadinessService {
     const accessScore = this.calculateScore(params.accessTests);
     const aeoScore = this.calculateScore(params.aeoTests);
 
+    // Calculate Bot Access Score
+    const botAccessScore = params.botAccessStatus.length > 0
+      ? Math.round((params.botAccessStatus.filter(b => b.allowed).length / params.botAccessStatus.length) * 100)
+      : 0;
+
+    // Adjusted weights to include Bot Access (15%)
+    // Tech: 15%, Content: 25%, Semantic: 20%, Access: 15%, AEO: 10%, Bot: 15%
     const overallScore = Math.round(
-      techScore * 0.20 + contentScore * 0.30 + semanticScore * 0.25 + accessScore * 0.15 + aeoScore * 0.10
+      techScore * 0.15 + contentScore * 0.25 + semanticScore * 0.20 + accessScore * 0.15 + aeoScore * 0.10 + botAccessScore * 0.15
     );
 
     return {
@@ -94,14 +101,27 @@ export class DomainReadinessService {
         contentQuality: contentScore,
         semanticStructure: semanticScore,
         accessibilityAndBrand: accessScore,
-        aeoOptimization: aeoScore
+        aeoOptimization: aeoScore,
+        botAccess: botAccessScore
       },
       detailedResults: {
-        technicalCrawlability: { score: techScore, weight: 0.20, tests: params.techTests, recommendations: [] },
-        contentQuality: { score: contentScore, weight: 0.30, tests: params.contentTests, recommendations: [] },
-        semanticStructure: { score: semanticScore, weight: 0.25, tests: params.semanticTests, recommendations: [] },
+        technicalCrawlability: { score: techScore, weight: 0.15, tests: params.techTests, recommendations: [] },
+        contentQuality: { score: contentScore, weight: 0.25, tests: params.contentTests, recommendations: [] },
+        semanticStructure: { score: semanticScore, weight: 0.20, tests: params.semanticTests, recommendations: [] },
         accessibilityAndBrand: { score: accessScore, weight: 0.15, tests: params.accessTests, recommendations: [] },
-        aeoOptimization: { score: aeoScore, weight: 0.10, tests: params.aeoTests, recommendations: [] }
+        aeoOptimization: { score: aeoScore, weight: 0.10, tests: params.aeoTests, recommendations: [] },
+        botAccess: {
+          score: botAccessScore,
+          weight: 0.15,
+          tests: params.botAccessStatus.map(b => ({
+            name: b.botName,
+            status: b.allowed ? 'pass' : 'fail',
+            score: b.allowed ? 100 : 0,
+            message: b.message,
+            details: { userAgent: b.userAgent, httpStatus: b.httpStatus }
+          }) as TestResult),
+          recommendations: []
+        }
       },
       botAccessStatus: params.botAccessStatus,
       criticalIssues: [],

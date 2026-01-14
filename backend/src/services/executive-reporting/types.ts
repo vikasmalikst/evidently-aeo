@@ -278,7 +278,7 @@ export interface SummaryFact {
     type: 'visibility_gain' | 'visibility_loss' | 'ranking_gain' | 'ranking_loss' | 'competitive_threat' | 'sentiment_shift' | 'traffic_change' | 'other';
     severity: 'high' | 'medium' | 'low';
     description: string;
-    metrics: Record<string, number>;
+    metrics: Record<string, string | number>;
 }
 
 export interface ExecutiveSummaryInput {

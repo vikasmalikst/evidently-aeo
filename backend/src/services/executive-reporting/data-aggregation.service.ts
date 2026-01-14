@@ -512,9 +512,10 @@ export class DataAggregationService {
     ): Promise<DomainReadinessData> {
         console.log(`🔍 [EXEC-REPORT] Aggregating domain readiness for ${brandId}`);
 
-        // Fetch latest domain readiness result from domain_readiness_results table
+        // Fetch latest domain readiness result from domain_readiness_audits table
+        // NOTE: Updated from domain_readiness_results to domain_readiness_audits to match DomainReadinessService
         const { data: latestResult, error } = await supabase
-            .from('domain_readiness_results')
+            .from('domain_readiness_audits')
             .select('*')
             .eq('brand_id', brandId)
             .order('created_at', { ascending: false })
@@ -522,7 +523,7 @@ export class DataAggregationService {
             .maybeSingle();
 
         if (error || !latestResult) {
-            console.warn('⚠️ [EXEC-REPORT] No domain readiness data found in domain_readiness_results');
+            console.warn('⚠️ [EXEC-REPORT] No domain readiness data found in domain_readiness_audits');
             return {
                 overall_score: 0,
                 previous_overall_score: 0,
@@ -536,8 +537,8 @@ export class DataAggregationService {
         // Extract scores from the JSONB scores column
         const scores = latestResult.scores as Record<string, any> | null;
 
-        // Calculate overall score as average of sub-scores
-        let overallScore = 0;
+        // Use the overall_score directly from DB as it is already weighted correctly
+        let overallScore = latestResult.overall_score || 0;
         const subScores: Record<string, { score: number; label: string }> = {};
 
         // Map known category keys to friendly labels
@@ -547,53 +548,55 @@ export class DataAggregationService {
             semanticStructure: 'Semantic',
             accessibilityAndBrand: 'Access & Brand',
             aeoOptimization: 'AEO',
-            llmBotAccess: 'LLM Bot Access',
+            botAccess: 'LLM Bot Access', // Updated to match key in DomainReadinessService
+            llmBotAccess: 'LLM Bot Access', // Keep for backward compatibility if needed
         };
 
         if (scores && typeof scores === 'object') {
-            const scoreValues: number[] = [];
             Object.entries(scores).forEach(([key, value]: [string, any]) => {
                 const scoreValue = typeof value === 'number' ? value : (value?.score || value?.value || 0);
-                if (typeof scoreValue === 'number' && scoreValue > 0) {
+                // Allow 0 scores if valid
+                if (typeof scoreValue === 'number') {
                     subScores[key] = {
                         score: Math.round(scoreValue),
                         label: categoryLabels[key] || key.replace(/([A-Z])/g, ' $1').trim(),
                     };
-                    scoreValues.push(scoreValue);
                 }
             });
 
-            // Calculate overall as average
-            if (scoreValues.length > 0) {
-                overallScore = Math.round(scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length);
+            // Fallback: If overall_score was 0 or missing but we have subscores, calculate simple average (though this shouldn't happen with valid audits)
+            if (overallScore === 0 && Object.keys(subScores).length > 0) {
+                const values = Object.values(subScores).map(s => s.score);
+                overallScore = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
             }
         }
 
-        // Fetch previous result for comparison
+        // Backfill: If botAccess is missing from subScores but we have bot_access data, calculate it
+        if (!subScores['botAccess'] && latestResult.bot_access && Array.isArray(latestResult.bot_access) && latestResult.bot_access.length > 0) {
+            const allowed = latestResult.bot_access.filter((b: any) => b.allowed).length;
+            const total = latestResult.bot_access.length;
+            const score = Math.round((allowed / total) * 100);
+
+            subScores['botAccess'] = {
+                score: score,
+                label: 'LLM Bot Access'
+            };
+
+            // NOTE: We do NOT update overallScore here to preserve historical integrity of the audit score at the time it was run.
+            // Future audits will have botAccess included in the weighted overallScore.
+        }
+
+        // Fetch previous result for comparison from domain_readiness_audits
         const { data: previousResult } = await supabase
-            .from('domain_readiness_results')
-            .select('scores')
+            .from('domain_readiness_audits')
+            .select('overall_score')
             .eq('brand_id', brandId)
             .lt('created_at', latestResult.created_at)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
-        let previousScore = overallScore;
-        if (previousResult?.scores && typeof previousResult.scores === 'object') {
-            const prevScores = previousResult.scores as Record<string, any>;
-            const prevValues: number[] = [];
-            Object.values(prevScores).forEach((value: any) => {
-                const scoreValue = typeof value === 'number' ? value : (value?.score || value?.value || 0);
-                if (typeof scoreValue === 'number' && scoreValue > 0) {
-                    prevValues.push(scoreValue);
-                }
-            });
-            if (prevValues.length > 0) {
-                previousScore = Math.round(prevValues.reduce((a, b) => a + b, 0) / prevValues.length);
-            }
-        }
-
+        const previousScore = previousResult?.overall_score || 0;
         const scoreDelta = this.calculateDelta(overallScore, previousScore);
 
         // TODO: Fetch 12-week readiness trend

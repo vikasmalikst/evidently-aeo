@@ -230,8 +230,13 @@ export function useDomainReadiness() {
             const accessScore = calculateScore(nextDetailedResults.accessibilityAndBrand.tests);
             const aeoScore = calculateScore(nextDetailedResults.aeoOptimization.tests);
 
+            // Calculate Bot Access Score
+            const botScore = (prev?.botAccessStatus?.length || 0) > 0
+              ? Math.round((prev!.botAccessStatus.filter(b => b.allowed).length / prev!.botAccessStatus.length) * 100)
+              : 0;
+
             const overallScore = Math.round(
-              techScore * 0.20 + contentScore * 0.30 + semanticScore * 0.25 + accessScore * 0.15 + aeoScore * 0.10
+              techScore * 0.15 + contentScore * 0.25 + semanticScore * 0.20 + accessScore * 0.15 + aeoScore * 0.10 + botScore * 0.15
             );
 
             return {
@@ -242,14 +247,15 @@ export function useDomainReadiness() {
                 contentQuality: contentScore,
                 semanticStructure: semanticScore,
                 accessibilityAndBrand: accessScore,
-                aeoOptimization: aeoScore
+                aeoOptimization: aeoScore,
+                botAccess: botScore
               },
               detailedResults: {
-                technicalCrawlability: { ...nextDetailedResults.technicalCrawlability, score: techScore },
-                contentQuality: { ...nextDetailedResults.contentQuality, score: contentScore },
-                semanticStructure: { ...nextDetailedResults.semanticStructure, score: semanticScore },
-                accessibilityAndBrand: { ...nextDetailedResults.accessibilityAndBrand, score: accessScore },
-                aeoOptimization: { ...nextDetailedResults.aeoOptimization, score: aeoScore }
+                technicalCrawlability: { ...nextDetailedResults.technicalCrawlability, score: techScore, weight: 0.15 },
+                contentQuality: { ...nextDetailedResults.contentQuality, score: contentScore, weight: 0.25 },
+                semanticStructure: { ...nextDetailedResults.semanticStructure, score: semanticScore, weight: 0.20 },
+                accessibilityAndBrand: { ...nextDetailedResults.accessibilityAndBrand, score: accessScore, weight: 0.15 },
+                aeoOptimization: { ...nextDetailedResults.aeoOptimization, score: aeoScore, weight: 0.10 }
               }
             };
           });

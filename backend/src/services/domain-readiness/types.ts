@@ -51,6 +51,7 @@ export interface AeoAuditResult {
     semanticStructure: number;
     accessibilityAndBrand: number;
     aeoOptimization: number;
+    botAccess: number;
   };
   detailedResults: {
     technicalCrawlability: CategoryResult;
@@ -58,6 +59,7 @@ export interface AeoAuditResult {
     semanticStructure: CategoryResult;
     accessibilityAndBrand: CategoryResult;
     aeoOptimization: CategoryResult;
+    botAccess: CategoryResult;
   };
   botAccessStatus: BotAccessStatus[];
   criticalIssues: Issue[];

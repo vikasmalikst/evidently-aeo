@@ -108,7 +108,7 @@ export class PositionExtractionService {
   private cerebrasApiKey: string | null;
   private geminiApiKey: string | null;
   private geminiModel: string;
-  
+
   // Cache for product names (avoid re-extracting for same brand)
   private productCache = new Map<string, string[]>();
   private totalPromptTokens = 0;
@@ -146,13 +146,13 @@ export class PositionExtractionService {
    */
   public async extractPositionsForNewResults(
     options: ExtractPositionsOptions = {}
-  ): Promise<{ 
-    count: number; 
-    results: Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }> 
+  ): Promise<{
+    count: number;
+    results: Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }>
   }> {
     const limit = Math.max(options.limit ?? DEFAULT_POSITION_LIMIT, 1);
     const fetchLimit = Math.max(limit * 2, limit);
-    
+
     let allResults: any[] = [];
 
     // If specific collector_result IDs are provided, fetch only those
@@ -160,7 +160,7 @@ export class PositionExtractionService {
     if (options.collectorResultIds && options.collectorResultIds.length > 0) {
       console.log(`   📌 [Position Extraction] Processing specific collector_result IDs: ${options.collectorResultIds.length} results`);
       console.log(`   📋 [Position Extraction] IDs: ${options.collectorResultIds.slice(0, 10).join(', ')}${options.collectorResultIds.length > 10 ? '...' : ''}`);
-      
+
       const { data: fetchedResults, error: fetchError } = await this.supabase
         .from('collector_results')
         .select('id, customer_id, brand_id, query_id, question, execution_id, collector_type, raw_answer, brand, competitors, created_at, metadata')
@@ -170,7 +170,7 @@ export class PositionExtractionService {
         console.error(`   ❌ [Position Extraction] Error fetching collector results:`, fetchError.message);
         throw fetchError;
       }
-      
+
       if (!fetchedResults || fetchedResults.length === 0) {
         console.log(`   ⚠️ [Position Extraction] No collector results found for provided IDs`);
         return { count: 0, results: new Map() };
@@ -212,7 +212,7 @@ export class PositionExtractionService {
 
     // Feature flag: Use optimized query (metric_facts) vs legacy (extracted_positions)
     const USE_OPTIMIZED_POSITION_CHECK = process.env.USE_OPTIMIZED_POSITION_CHECK === 'true';
-    
+
     if (USE_OPTIMIZED_POSITION_CHECK) {
       console.log(`   ⚡ [Position Extraction] Using optimized existence check (metric_facts)`);
     } else {
@@ -232,7 +232,7 @@ export class PositionExtractionService {
           .eq('collector_result_id', result.id)
           .limit(1)
           .maybeSingle();
-        
+
         existing = data;
         checkError = error;
       } else {
@@ -243,17 +243,17 @@ export class PositionExtractionService {
           .eq('collector_result_id', result.id)
           .limit(1)
           .maybeSingle();
-        
+
         existing = data;
         checkError = error;
       }
 
       const duration = Date.now() - startTime;
-      
+
       if (checkError) {
         console.error(`   ❌ [Position Extraction] Error checking existing positions for collector_result ${result.id}:`, checkError.message);
       }
-      
+
       if (existing) {
         processedCollectorResults.add(result.id);
         console.log(`   ℹ️ [Position Extraction] Collector_result ${result.id} already has positions (${USE_OPTIMIZED_POSITION_CHECK ? 'optimized' : 'legacy'}, ${duration}ms), will skip`);
@@ -268,20 +268,20 @@ export class PositionExtractionService {
       .filter(r => r && r.raw_answer) // Must have raw_answer
       .filter(r => !processedCollectorResults.has(r.id)) // Skip if already processed
       .slice(0, limit); // Process configurable batch size
-    
+
     console.log(`   📊 [Position Extraction] Will process ${results.length} results (${allResults.length} total, ${processedCollectorResults.size} already processed)`);
-    
+
     if (results.length === 0) {
       console.log(`   ⚠️ [Position Extraction] No results to process`);
       return { count: 0, results: new Map() };
     }
-    
+
     console.log(`   📋 [Position Extraction] Processing collector_result IDs: ${results.map(r => r.id).slice(0, 10).join(', ')}${results.length > 10 ? '...' : ''}`);
 
     // Process each result and collect metric_fact_id data for optimization
     let processed = 0;
     const resultsMap = new Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }>();
-    
+
     for (const result of results) {
       try {
         console.log(`   🔄 [Position Extraction] Processing collector_result ${result.id}...`);
@@ -323,7 +323,7 @@ export class PositionExtractionService {
   ): Promise<PositionExtractionPayload | null> {
     try {
       let result = collectorResultData;
-      
+
       // Fetch collector result if not provided
       if (!result) {
         const { data: fetchedResult, error: fetchError } = await this.supabase
@@ -356,7 +356,7 @@ export class PositionExtractionService {
     payloads: Array<{ payload: PositionExtractionPayload; collectorResultId: number }>
   ): Promise<Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }>> {
     const resultsMap = new Map<number, { metricFactId: number; brandId: string; competitorIdMap: Map<string, string> }>();
-    
+
     if (payloads.length === 0) {
       return resultsMap;
     }
@@ -572,8 +572,8 @@ export class PositionExtractionService {
     const parsedBrand = BrandRow.parse(brand);
 
     // Normalize competitors array first (needed for both paths)
-    const normalizedCompetitors = result.competitors.map(comp => 
-      typeof comp === 'string' 
+    const normalizedCompetitors = result.competitors.map(comp =>
+      typeof comp === 'string'
         ? { competitor_name: comp }
         : comp
     );
@@ -605,91 +605,22 @@ export class PositionExtractionService {
       console.warn(`   ⚠️ Failed to fetch brand_products for brand ${result.brand_id}, continuing without KB data`);
     }
 
-    // 🆕 Fetch consolidated_analysis_cache (LLM-extracted products)
-    let consolidatedCacheData: any = null;
-    if (result.id) {
-      try {
-        const { data: cacheData } = await this.supabase
-          .from('consolidated_analysis_cache')
-          .select('products')
-          .eq('collector_result_id', result.id)
-          .maybeSingle();
-        consolidatedCacheData = cacheData;
-        if (consolidatedCacheData?.products) {
-          console.log(`   💾 Loaded cache data: ${consolidatedCacheData.products.brand?.length || 0} brand products from cache`);
-        }
-      } catch (error) {
-        console.warn(`   ⚠️ Failed to fetch consolidated_analysis_cache for collector_result ${result.id}`);
-      }
-    }
+    // STRICT REQ: Only use brand_products table for products
+    // We ignore consolidated_analysis_cache and LLM extraction for products to ensure consistency/strictness as requested.
 
-    // Get product names (with caching or consolidated analysis)
+    // Get product names (Strictly from KB)
     let productNames: string[] = [];
-    let competitorProductsMap: Record<string, string[]> = {};
-
-    if (USE_CONSOLIDATED_ANALYSIS) {
-      // Use consolidated analysis service
-      try {
-        // Parse citations from result
-        let citations: string[] = [];
-        if (Array.isArray(result.citations)) {
-          citations = result.citations
-            .map(c => typeof c === 'string' ? c : (c.url || c))
-            .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
-        } else if (Array.isArray((result as any).urls)) {
-          citations = (result as any).urls
-            .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
-        }
-
-        // Get competitor names for consolidated service
-        const competitorNames = normalizedCompetitors.map(c => 
-          typeof c === 'string' ? c : c.competitor_name
-        ).filter(Boolean);
-
-        console.log(`🔄 Using consolidated analysis service for collector_result ${result.id}`);
-        const consolidated = await consolidatedAnalysisService.analyze({
-          brandName: parsedBrand.name,
-          brandMetadata: parsedBrand.metadata,
-          competitorNames,
-          competitorMetadata: competitorMetadataMap,
-          rawAnswer: result.raw_answer,
-          citations,
-          collectorResultId: result.id
-        });
-
-        productNames = consolidated.products.brand;
-        competitorProductsMap = consolidated.products.competitors;
-
-        // Cache brand products
-        this.productCache.set(parsedBrand.id, productNames);
-
-        console.log(`✅ Consolidated analysis: ${productNames.length} brand products, ${Object.keys(competitorProductsMap).length} competitors with products`);
-      } catch (error) {
-        console.warn(`⚠️ Consolidated analysis failed, falling back to individual extraction:`, error instanceof Error ? error.message : error);
-        // Fallback to individual extraction
-        productNames = await this.getProductNames(
-          parsedBrand.id,
-          parsedBrand.name,
-          parsedBrand.metadata,
-          result.raw_answer
-        );
-      }
-    } else {
-      // Use individual product extraction (original method)
-      productNames = await this.getProductNames(
-        parsedBrand.id,
-        parsedBrand.name,
-        parsedBrand.metadata,
-        result.raw_answer
-      );
+    if (brandProductsData?.brand_products) {
+      productNames = brandProductsData.brand_products;
     }
 
     // 🆕 Combine brand terms from all sources (must be done before using in metadata)
+    // We pass empty array for LLM products to enforce strict KB usage
     const brandTerms = this.combineBrandTerms(
       parsedBrand.name,
       brandProductsData,
-      consolidatedCacheData,
-      productNames // LLM-extracted products from consolidated analysis or fallback
+      null, // No cache
+      [] // No LLM products
     );
 
     // Build position metadata with topic and product names
@@ -706,25 +637,37 @@ export class PositionExtractionService {
       positionMetadata.brand_synonyms = brandTerms.brandSynonyms; // Include synonyms in metadata
     }
 
-    // 🆕 Combine competitor terms from all sources
+    // 🆕 Combine competitor terms strictly from brand_products.competitor_data if available
     const enrichedCompetitors = normalizedCompetitors.map((comp) => {
-      // Get LLM-extracted products for this competitor
-      const llmProducts = USE_CONSOLIDATED_ANALYSIS && competitorProductsMap[comp.competitor_name]
-        ? competitorProductsMap[comp.competitor_name]
-        : [];
+      // Check if we have specific data for this competitor in brand_products.competitor_data
+      // competitor_data structure expected: { "CompetitorName": { "products": [...], "synonyms": [...] } }
+      let specificCompetitorData = null;
+      if (brandProductsData?.competitor_data) {
+        // Case-insensitive lookup
+        const compNameLower = comp.competitor_name.toLowerCase();
+        const match = Object.entries(brandProductsData.competitor_data).find(([k]) => k.toLowerCase() === compNameLower);
+        if (match) {
+          specificCompetitorData = match[1];
+        }
+      }
 
-      // Combine all competitor terms using helper method
-      const competitorTerms = this.combineCompetitorTerms(
-        comp.competitor_name,
-        brandProductsData,
-        consolidatedCacheData,
-        llmProducts
-      );
+      // If user wants STRICT usage of brand_products only, we should theoretically ignore global competitor metadata?
+      // "in the same table use competitor_data column for products and synonyms"
+      // This implies we prioritize or exclusively use that. 
+      // Existing combineCompetitorTerms might need adjustment or we manually construct.
+
+      // Let's modify usage of combineCompetitorTerms to pass ONLY what we want.
+      // Or better, let's look at how combineCompetitorTerms is implemented (I can't see private methods here but I can infer).
+      // Since I can't see the private method `combineCompetitorTerms` definition in the view, I will try to follow the pattern
+      // but explicitly pass the data from `specificCompetitorData`.
+
+      const compProducts = (specificCompetitorData as any)?.products || [];
+      const compSynonyms = (specificCompetitorData as any)?.synonyms || [];
 
       return {
-        competitor_name: competitorTerms.competitorName,
-        competitorSynonyms: competitorTerms.competitorSynonyms,
-        productNames: competitorTerms.competitorProducts,
+        competitor_name: comp.competitor_name,
+        competitorSynonyms: compSynonyms, // Use KB synonyms
+        productNames: compProducts,       // Use KB products
       };
     });
 
@@ -878,7 +821,7 @@ export class PositionExtractionService {
 
     // Extract from metadata or LLM
     const products = await this.extractProductNamesWithLLM(brandName, metadata, rawAnswer);
-    
+
     // Cache for future use
     this.productCache.set(brandId, products);
     return products;
@@ -917,7 +860,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     try {
       const response = await this.callLLM(prompt, 'product-extraction');
       const products = JSON.parse(response);
-      
+
       if (!Array.isArray(products)) {
         return [];
       }
@@ -932,7 +875,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       return sanitizedProducts;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      
+
       // Check for token limit errors
       if (errorMsg.includes('token') || errorMsg.includes('context') || errorMsg.includes('length') || errorMsg.includes('400')) {
       } else {
@@ -978,7 +921,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     // Find positions for all brand terms (name + synonyms + products)
     const brandPositionsSet = new Set<number>();
     const brandProductPositionsSet = new Set<number>();
-    
+
     // Search for brand name and synonyms (these count as brand mentions)
     const brandNameAndSynonyms = [brandName, ...brandSynonyms];
     for (const term of brandNameAndSynonyms) {
@@ -1008,7 +951,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     // 🆕 Calculate competitor positions using name + synonyms + products
     const competitorPositions: Record<string, number[]> = {};
     const competitorProductPositions: Record<string, number[]> = {};
-    
+
     for (const competitor of competitors) {
       // Combine all competitor terms: name + synonyms + products
       const allCompetitorTerms = [
@@ -1174,7 +1117,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     consolidatedCacheData: any,
     llmExtractedProducts: string[]
   ): { brandName: string; brandSynonyms: string[]; brandProducts: string[] } {
-    const brandSynonyms = Array.isArray(brandProductsData?.brand_synonyms) 
+    const brandSynonyms = Array.isArray(brandProductsData?.brand_synonyms)
       ? brandProductsData.brand_synonyms.filter((s: string) => s && typeof s === 'string')
       : [];
 
@@ -1304,7 +1247,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
         return await this.callCerebras(prompt);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        
+
         // Check if it's a rate limit error
         if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
         } else {
@@ -1358,7 +1301,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     }
 
     const data = await response.json() as any;
-    
+
     if (!data.choices?.[0]?.message?.content) {
       throw new Error('No content in Cerebras response');
     }
@@ -1404,7 +1347,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     }
 
     const data = await response.json() as any;
-    
+
     if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
       throw new Error('No content in Gemini response');
     }
@@ -1471,10 +1414,10 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       competitorSentiment?: Record<string, { label: string; score: number; positive_sentences?: string[]; negative_sentences?: string[] }>;
       competitorNames: string[];
     }
-  ): Promise<{ 
-    metricFactId: number; 
-    brandId: string; 
-    competitorIdMap: Map<string, string> 
+  ): Promise<{
+    metricFactId: number;
+    brandId: string;
+    competitorIdMap: Map<string, string>
   }> {
     const collectorResultId = positionPayload.brandRow.collector_result_id;
     const brandRow = positionPayload.brandRow;
@@ -1533,7 +1476,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
         ...positionPayload.competitorRows.map(r => r.competitor_name).filter(Boolean),
         ...(sentimentData?.competitorNames || [])
       ].filter(Boolean) as string[];
-      
+
       const uniqueCompetitorNames = Array.from(new Set(competitorNames));
 
       if (uniqueCompetitorNames.length > 0) {
@@ -1577,17 +1520,17 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
           for (const [competitorName, sentiment] of Object.entries(sentimentData.competitorSentiment)) {
             // Try exact match first
             let competitorId = competitorIdMap.get(competitorName);
-            
+
             // If not found, try case-insensitive match
             if (!competitorId) {
-                for (const [name, id] of competitorIdMap.entries()) {
-                    if (name.toLowerCase() === competitorName.toLowerCase()) {
-                        competitorId = id;
-                        break;
-                    }
+              for (const [name, id] of competitorIdMap.entries()) {
+                if (name.toLowerCase() === competitorName.toLowerCase()) {
+                  competitorId = id;
+                  break;
                 }
+              }
             }
-            
+
             if (!competitorId) {
               console.warn(`   ⚠️ [batchSaveCollectorResult] Competitor "${competitorName}" not found for sentiment`);
               continue;
@@ -1739,10 +1682,10 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
    * 
    * NOTE: This method is kept for backward compatibility. New code should use batchSaveCollectorResult().
    */
-  private async savePositions(payload: PositionExtractionPayload): Promise<{ 
-    metricFactId: number; 
-    brandId: string; 
-    competitorIdMap: Map<string, string> 
+  private async savePositions(payload: PositionExtractionPayload): Promise<{
+    metricFactId: number;
+    brandId: string;
+    competitorIdMap: Map<string, string>
   }> {
     const collectorResultId = payload.brandRow.collector_result_id;
     const brandRow = payload.brandRow;

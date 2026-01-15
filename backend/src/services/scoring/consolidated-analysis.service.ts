@@ -235,7 +235,7 @@ export class ConsolidatedAnalysisService {
       const citations = Array.isArray(options.citations) ? options.citations : [];
       const customerId = options.customerId || options.brandMetadata?.customer_id;
       const brandId = options.brandId || options.brandMetadata?.brand_id;
-      
+
       const cachedResult = await this.getCachedAnalysisFromDB(
         options.collectorResultId,
         citations,
@@ -282,20 +282,20 @@ export class ConsolidatedAnalysisService {
       // Check if Ollama should be used (brand-specific)
       const useOllama = await shouldUseOllama(brandId);
       const llmProvider: 'ollama' | 'openrouter' = useOllama ? 'ollama' : 'openrouter';
-      
+
       // Call LLM API - either Ollama or OpenRouter (existing functionality)
-      const result = useOllama 
+      const result = useOllama
         ? await this.callOllamaAPI(prompt, brandId)
         : await this.callOpenRouterAPI(prompt);
 
       // Merge cached citations with LLM results
       const mergedCitations: ConsolidatedAnalysisResult['citations'] = {};
-      
+
       // Valid category type guard
       const isValidCategory = (cat: string): cat is 'Editorial' | 'Corporate' | 'Reference' | 'UGC' | 'Social' | 'Institutional' => {
         return ['Editorial', 'Corporate', 'Reference', 'UGC', 'Social', 'Institutional'].includes(cat);
       };
-      
+
       // Add cached citations
       for (const [domain, cached] of cachedCitations.entries()) {
         // Find the URL that matches this domain
@@ -359,35 +359,37 @@ export class ConsolidatedAnalysisService {
       ? JSON.stringify(options.brandMetadata, null, 2).substring(0, 600)
       : 'No metadata provided';
 
-    // Add brand synonyms and products from KB if available
+    // DISABLED: Add brand synonyms and products from KB if available
+    // Commented out for now but kept for future use
     let brandKBStr = '';
-    if (options.brandProducts) {
-      const { brand_synonyms, brand_products } = options.brandProducts;
-      brandKBStr = `
-**Brand Knowledge Base (Use these for detection):**
-- Synonyms/Aliases: ${brand_synonyms?.join(', ') || 'None'}
-- Known Products: ${brand_products?.join(', ') || 'None'}
-`;
-    }
+    // if (options.brandProducts) {
+    //   const { brand_synonyms, brand_products } = options.brandProducts;
+    //   brandKBStr = `
+    // **Brand Knowledge Base (Use these for detection):**
+    // - Synonyms/Aliases: ${brand_synonyms?.join(', ') || 'None'}
+    // - Known Products: ${brand_products?.join(', ') || 'None'}
+    // `;
+    // }
 
     const competitorMetadataStr = options.competitorMetadata && options.competitorMetadata.size > 0
       ? Array.from(options.competitorMetadata.entries())
-          .map(([name, metadata]) => {
-            const metadataStr = metadata ? JSON.stringify(metadata).substring(0, 200) : 'No metadata';
-            
-            // Add competitor products/synonyms if available
-            let compKB = '';
-            if (options.brandProducts?.competitor_data) {
-              const compData = options.brandProducts.competitor_data[name] || 
-                               Object.entries(options.brandProducts.competitor_data).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
-              if (compData) {
-                compKB = ` (Products: ${compData.products?.join(', ') || 'None'}, Synonyms: ${compData.synonyms?.join(', ') || 'None'})`;
-              }
-            }
-            
-            return `- ${name}: ${metadataStr}${compKB}`;
-          })
-          .join('\n')
+        .map(([name, metadata]) => {
+          const metadataStr = metadata ? JSON.stringify(metadata).substring(0, 200) : 'No metadata';
+
+          // DISABLED: Add competitor products/synonyms if available
+          // Commented out for now but kept for future use
+          let compKB = '';
+          // if (options.brandProducts?.competitor_data) {
+          //   const compData = options.brandProducts.competitor_data[name] || 
+          //                    Object.entries(options.brandProducts.competitor_data).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
+          //   if (compData) {
+          //     compKB = ` (Products: ${compData.products?.join(', ') || 'None'}, Synonyms: ${compData.synonyms?.join(', ') || 'None'})`;
+          //   }
+          // }
+
+          return `- ${name}: ${metadataStr}${compKB}`;
+        })
+        .join('\n')
       : 'No competitor metadata provided';
 
     const citations = Array.isArray(options.citations) ? options.citations : [];
@@ -549,18 +551,18 @@ Respond with ONLY valid JSON in this exact structure:
     console.log('🦙 Calling Ollama for consolidated analysis...');
 
     const systemMessage = 'You are a precise analysis assistant. Always respond with valid JSON only, no explanations.';
-    
+
     try {
       // Use the separate Ollama client service (brand-specific)
       const fullResponse = await callOllamaClientAPI(systemMessage, prompt, brandId);
 
       // Extract JSON from response (handle markdown code blocks)
       let jsonStr = typeof fullResponse === 'string' ? fullResponse.trim() : String(fullResponse).trim();
-      
+
       if (!jsonStr || jsonStr.length === 0) {
         throw new Error('Empty response from Ollama API');
       }
-      
+
       // Remove markdown code blocks if present
       if (jsonStr.includes('```json')) {
         jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '');
@@ -584,7 +586,7 @@ Respond with ONLY valid JSON in this exact structure:
         console.error('⚠️ Failed to parse JSON from Ollama. Response preview:', jsonStr.substring(0, 500));
         throw new Error(`Failed to parse JSON from Ollama response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
       }
-      
+
       // Validate and normalize result (same as OpenRouter)
       return this.validateAndNormalize(result);
     } catch (error) {
@@ -608,7 +610,7 @@ Respond with ONLY valid JSON in this exact structure:
 
     try {
       const parsed = JSON.parse(data);
-      
+
       // Extract content
       const content = parsed.choices?.[0]?.delta?.content;
       if (content && typeof content === 'string') {
@@ -644,14 +646,14 @@ Respond with ONLY valid JSON in this exact structure:
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         console.warn(`⚠️ OpenRouter attempt ${attempt + 1} failed: ${lastError.message}`);
-        
+
         // If it's a parse error or empty response, it's worth retrying
-        if (lastError.message.includes('Empty response') || 
-            lastError.message.includes('Failed to parse JSON') ||
-            lastError.message.includes('No JSON found')) {
+        if (lastError.message.includes('Empty response') ||
+          lastError.message.includes('Failed to parse JSON') ||
+          lastError.message.includes('No JSON found')) {
           continue;
         }
-        
+
         // For other errors (like auth or model not found), don't retry
         throw lastError;
       }
@@ -765,11 +767,11 @@ Respond with ONLY valid JSON in this exact structure:
 
       // Extract JSON from response (handle markdown code blocks)
       let jsonStr = typeof fullResponse === 'string' ? fullResponse.trim() : String(fullResponse).trim();
-      
+
       if (!jsonStr || jsonStr.length === 0) {
         throw new Error('Empty response from OpenRouter API');
       }
-      
+
       // Remove markdown code blocks if present
       if (jsonStr.includes('```json')) {
         jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '');
@@ -793,19 +795,19 @@ Respond with ONLY valid JSON in this exact structure:
         console.error('⚠️ Failed to parse JSON. Response preview:', jsonStr.substring(0, 500));
         throw new Error(`Failed to parse JSON from OpenRouter response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
       }
-      
+
       // Validate and normalize result
       return this.validateAndNormalize(result);
 
     } catch (error) {
       clearTimeout(timeoutId);
       const errorMsg = error instanceof Error ? error.message : String(error);
-      
+
       if (error instanceof Error && error.name === 'AbortError') {
         console.error('❌ OpenRouter API request timed out after 3 minutes');
         throw new Error('OpenRouter API timeout: Request took longer than 3 minutes');
       }
-      
+
       throw error;
     }
   }
@@ -894,7 +896,7 @@ Respond with ONLY valid JSON in this exact structure:
     }
 
     // Ensure arrays are arrays and strings are strings
-    result.products.brand = Array.isArray(result.products.brand) 
+    result.products.brand = Array.isArray(result.products.brand)
       ? result.products.brand.filter(p => typeof p === 'string')
       : [];
 
@@ -932,8 +934,8 @@ Respond with ONLY valid JSON in this exact structure:
           .filter(kw => kw && kw.keyword && typeof kw.keyword === 'string')
           .map(kw => ({
             keyword: kw.keyword.trim(),
-            relevance_score: typeof kw.relevance_score === 'number' 
-              ? Math.max(0, Math.min(1, kw.relevance_score)) 
+            relevance_score: typeof kw.relevance_score === 'number'
+              ? Math.max(0, Math.min(1, kw.relevance_score))
               : 0.5,
             metadata: kw.metadata || {}
           }));
@@ -966,7 +968,7 @@ Respond with ONLY valid JSON in this exact structure:
     if (!url || typeof url !== 'string') {
       return '';
     }
-    
+
     try {
       const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
       return urlObj.hostname.replace(/^www\./, '').toLowerCase();
@@ -990,14 +992,14 @@ Respond with ONLY valid JSON in this exact structure:
 
     // Ensure citations is an array
     const citationsArray = Array.isArray(citations) ? citations : [];
-    
+
     if (citationsArray.length === 0) {
       return cached;
     }
 
     // Extract unique domains from citations
     const domains = [...new Set(citationsArray.map(url => this.extractDomain(url)))];
-    
+
     if (domains.length === 0) {
       return cached;
     }
@@ -1047,7 +1049,7 @@ Respond with ONLY valid JSON in this exact structure:
   ): Promise<void> {
     // Ensure citations is an array
     const citationsArray = Array.isArray(citations) ? citations : [];
-    
+
     if (citationsArray.length === 0) {
       return;
     }
@@ -1063,7 +1065,7 @@ Respond with ONLY valid JSON in this exact structure:
           if (!url || typeof url !== 'string') {
             return null;
           }
-          
+
           const categorization = categorizations[url];
           if (!categorization || !categorization.category) {
             return null;

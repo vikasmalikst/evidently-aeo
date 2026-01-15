@@ -1,0 +1,52 @@
+🔍 QA Citation Source Metrics for Nike...
+
+Found 3 brands matching "Nike":
+ - Nike (c9605c71-595d-4d15-8bd1-61e802e028be): 0 citations
+ - Nike (0fa491bf-3b62-45a3-b498-8241b6bf689d): 4294 citations
+ - Nike (1973ad3c-84af-4040-967f-333df2c70ded): 247 citations
+
+✅ Selected Brand for QA: Nike (0fa491bf-3b62-45a3-b498-8241b6bf689d) with 4294 citations
+
+---------------------------------------------------------------------------------------------------------
+| Metric           | Source                 | Period  | Count | Vis   | SOA   | Sent  | Pos   |
+---------------------------------------------------------------------------------------------------------
+| Visibility       | reddit.com             | Current | 22    | 0.34  | 42.781 | 68.41 | 138.68 |
+| Visibility       | reddit.com             | Prior   | 19    | 0.33  | 35.130 | 70.79 | 160.17 |
+|                  |                        |         |       |       |       |       |       |
+| Visibility       | nike.com               | Current | 13    | 0.35  | 48.026 | 77.15 | 157.67 |
+| Visibility       | nike.com               | Prior   | 5     | 0.30  | 25.210 | 73.00 | 135.45 |
+|                  |                        |         |       |       |       |       |       |
+| Visibility       | thatfitfriend.com      | Current | 12    | 0.37  | 60.723 | 71.25 | 172.77 |
+| Visibility       | thatfitfriend.com      | Prior   | 13    | 0.42  | 65.741 | 80.00 | 192.95 |
+|                  |                        |         |       |       |       |       |       |
+---------------------------------------------------------------------------------------------------------
+| Share of Answer  | reddit.com             | Current | 22    | 0.34  | 42.781 | 68.41 | 138.68 |
+| Share of Answer  | reddit.com             | Prior   | 19    | 0.33  | 35.130 | 70.79 | 160.17 |
+|                  |                        |         |       |       |       |       |       |
+| Share of Answer  | freecultr.com          | Current | 1     | 0.23  | 14.290 | 80.00 | 371.00 |
+| Share of Answer  | freecultr.com          | Prior   | 2     | 0.32  | 33.330 | 82.50 | 111.88 |
+|                  |                        |         |       |       |       |       |       |
+| Share of Answer  | switchbacktravel.com   | Current | 1     | 0.23  | 14.290 | 80.00 | 371.00 |
+| Share of Answer  | switchbacktravel.com   | Prior   | 1     | 0.36  | 25.000 | 80.00 | 230.20 |
+|                  |                        |         |       |       |       |       |       |
+---------------------------------------------------------------------------------------------------------
+| Sentiment        | youtube.com            | Current | 8     | 0.31  | 35.764 | 70.63 | 158.50 |
+| Sentiment        | youtube.com            | Prior   | 3     | 0.45  | 56.433 | 70.00 | 210.96 |
+|                  |                        |         |       |       |       |       |       |
+| Sentiment        | orateai.com            | Current | 0     | -     | -     | -     | -     |
+| Sentiment        | orateai.com            | Prior   | 0     | -     | -     | -     | -     |
+|                  |                        |         |       |       |       |       |       |
+| Sentiment        | runnersworld.com       | Current | 24    | 0.35  | 40.481 | 71.67 | 161.03 |
+| Sentiment        | runnersworld.com       | Prior   | 18    | 0.31  | 35.841 | 73.33 | 124.25 |
+|                  |                        |         |       |       |       |       |       |
+---------------------------------------------------------------------------------------------------------
+| Avg Position     | runrepeat.com          | Current | 42    | 0.33  | 43.757 | 72.50 | 174.41 |
+| Avg Position     | runrepeat.com          | Prior   | 34    | 0.33  | 44.649 | 76.76 | 159.92 |
+|                  |                        |         |       |       |       |       |       |
+| Avg Position     | theruntesters.com      | Current | 19    | 0.27  | 33.445 | 71.84 | 156.38 |
+| Avg Position     | theruntesters.com      | Prior   | 12    | 0.30  | 26.374 | 72.92 | 167.95 |
+|                  |                        |         |       |       |       |       |       |
+| Avg Position     | runnersworld.com       | Current | 24    | 0.35  | 40.481 | 71.67 | 161.03 |
+| Avg Position     | runnersworld.com       | Prior   | 18    | 0.31  | 35.841 | 73.33 | 124.25 |
+|                  |                        |         |       |       |       |       |       |
+---------------------------------------------------------------------------------------------------------

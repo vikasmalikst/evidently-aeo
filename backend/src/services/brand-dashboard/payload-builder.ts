@@ -3155,11 +3155,87 @@ export async function buildDashboardPayload(
       })
       .slice(0, 5)
 
+    // Aggregate timeSeries across all collectors for brand chart line
+    // This gives the brand a proper time-series instead of a flat line
+    let brandTimeSeries: {
+      dates: string[]
+      visibility: number[]
+      share: number[]
+      sentiment: (number | null)[]
+      isRealData?: boolean[]
+    } | undefined = undefined
+
+    if (timeSeriesData.size > 0) {
+      // Use allDates as the base timeline
+      const aggregatedVisibility: number[] = []
+      const aggregatedShare: number[] = []
+      const aggregatedSentiment: (number | null)[] = []
+      const aggregatedIsRealData: boolean[] = []
+
+      allDates.forEach((date, dateIndex) => {
+        let visibilityValues: number[] = []
+        let shareValues: number[] = []
+        let sentimentValues: number[] = []
+        let hasRealData = false
+
+        timeSeriesData.forEach((ts) => {
+          const idx = ts.dates.indexOf(date)
+          if (idx !== -1) {
+            if (ts.visibility[idx] !== undefined && ts.visibility[idx] > 0) {
+              visibilityValues.push(ts.visibility[idx])
+            }
+            if (ts.share[idx] !== undefined && ts.share[idx] > 0) {
+              shareValues.push(ts.share[idx])
+            }
+            if (ts.sentiment[idx] !== null && ts.sentiment[idx] !== undefined) {
+              sentimentValues.push(ts.sentiment[idx] as number)
+            }
+            if (ts.isRealData && ts.isRealData[idx]) {
+              hasRealData = true
+            }
+          }
+        })
+
+        // Average across collectors for this date
+        aggregatedVisibility.push(visibilityValues.length > 0 ? round(average(visibilityValues)) : 0)
+        aggregatedShare.push(shareValues.length > 0 ? round(average(shareValues)) : 0)
+        aggregatedSentiment.push(sentimentValues.length > 0 ? round(average(sentimentValues), 2) : null)
+        aggregatedIsRealData.push(hasRealData)
+      })
+
+      // Only include if there's meaningful data
+      const hasData = aggregatedVisibility.some(v => v > 0) || aggregatedShare.some(s => s > 0)
+      if (hasData) {
+        brandTimeSeries = {
+          dates: allDates,
+          visibility: aggregatedVisibility,
+          share: aggregatedShare,
+          sentiment: aggregatedSentiment,
+          isRealData: aggregatedIsRealData
+        }
+      }
+    }
+
+    // Calculate aggregate sentiment for brand (average across all data)
+    let brandSentimentValue: number | null = null
+    if (brandTimeSeries && brandTimeSeries.sentiment) {
+      const validSentiments = brandTimeSeries.sentiment.filter((s): s is number => s !== null)
+      if (validSentiments.length > 0) {
+        brandSentimentValue = round(average(validSentiments), 2)
+      }
+    }
+    // Fallback to the overall sentimentScore if timeSeries doesn't have it
+    if (brandSentimentValue === null && sentimentScore > 0) {
+      brandSentimentValue = sentimentScore
+    }
+
     return {
       visibility: round(totalBrandVisibility, 1),
       share: round(totalBrandShare, 1),
+      sentiment: brandSentimentValue,
       brandPresencePercentage,
-      topTopics: brandTopTopics
+      topTopics: brandTopTopics,
+      timeSeries: brandTimeSeries
     }
   })()
 

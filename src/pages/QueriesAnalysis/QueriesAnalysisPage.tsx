@@ -1,18 +1,14 @@
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { Layout } from '../../components/Layout/Layout';
 import { getLLMIcon } from '../../components/Visibility/LLMIcons';
-import { KpiToggle } from '../../components/Visibility/KpiToggle';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { DateRangePicker } from '../../components/DateRangePicker/DateRangePicker';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { useCachedData } from '../../hooks/useCachedData';
-import { formatDateWithYear } from '../../utils/dateFormatting';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
 
 // Components
 import { QueriesRankedTable } from './components/QueriesRankedTable';
-import { QueryAnalysisMultiView } from './components/QueryAnalysisMultiView';
-import { CompactMetricsPods } from './components/CompactMetricsPods';
 
 // Types
 import type { QueriesAnalysisData, Query, QueriesPortfolio, QueriesPerformance } from './types';
@@ -27,7 +23,6 @@ interface ApiResponse<T> {
 
 export const QueriesAnalysisPage = () => {
     const { selectedBrand, selectedBrandId } = useManualBrandDashboard();
-    const [metricType, setMetricType] = useState<'visibility' | 'sentiment'>('visibility');
     
     // Date Range State
     const [startDate, setStartDate] = useState<string>(() => {
@@ -52,11 +47,10 @@ export const QueriesAnalysisPage = () => {
 
     // LLM Filters
     const [selectedModels, setSelectedModels] = useState<string[]>([]);
-    const [availableModels, setAvailableModels] = useState<string[]>([]);
 
-    // Determine normalized models for API call (currently not strictly used for filtering locally, 
-    // but typically passed to backend. In Prompts.tsx logic, backend filters by collector if passed).
-    
+    const [availableModels, setAvailableModels] = useState<string[]>([]);
+    const [selectedTopic, setSelectedTopic] = useState<string>('All');
+
     // Data Fetching
     const promptsEndpoint = useMemo(() => {
         if (!selectedBrandId) return null;
@@ -80,7 +74,6 @@ export const QueriesAnalysisPage = () => {
     // Update Available LLMs from response (collectors list)
     useEffect(() => {
         if (response?.data?.collectors) {
-             // Union existing available models with new ones to avoid flickering
              setAvailableModels(prev => {
                  const newSet = new Set([...prev, ...response.data!.collectors]);
                  return Array.from(newSet).sort();
@@ -98,31 +91,49 @@ export const QueriesAnalysisPage = () => {
 
         // Map PromptEntry to Query
         const queries: Query[] = allPrompts.map((p, index) => {
+            // Calculate SoA if responses are available, respecting selectedModels if present
+            // Note: If backend handles filtering, p.responses might already be filtered. 
+            // unique topic filtering happens later, but here we define the query object.
+            
+            // We'll calculate "Client-Side SoA" based on available responses in the payload 
+            // that match the selected models (if any are selected).
+            let relevantResponses = p.responses || [];
+            if (selectedModels.length > 0) {
+                 relevantResponses = relevantResponses.filter(r => selectedModels.includes(r.collectorType));
+            }
+
+            let soa: number | null = null;
+            if (relevantResponses.length > 0) {
+                 const mentions = relevantResponses.filter(r => (r.brandMentions || 0) > 0).length;
+                 soa = (mentions / relevantResponses.length) * 100;
+            }
+
             return {
                 id: p.id,
                 promptId: p.id,
-                rank: index + 1, // Simple rank for now based on order
+                rank: index + 1,
                 text: p.question,
                 topic: p.topic,
                 visibilityScore: p.visibilityScore,
+                soa,
                 sentimentScore: p.sentimentScore,
-                trend: { direction: 'neutral', delta: 0 }, // Placeholder for trend
+                trend: { direction: 'neutral', delta: 0 }, 
                 searchVolume: p.volumeCount,
                 sentiment: p.sentimentScore && p.sentimentScore > 60 ? 'positive' : p.sentimentScore && p.sentimentScore < 40 ? 'negative' : 'neutral',
+                collectorTypes: p.collectorTypes
             };
         });
 
-        // Portfolio Stats
+        // Portfolio Stats (Kept for structure but unused in UI currently)
         const portfolio: QueriesPortfolio = {
             totalQueries: rawData.totalPrompts,
-            avgVisibility: queries.reduce((S, q) => S + (q.visibilityScore || 0), 0) / (queries.length || 1),
-            avgSentiment: queries.reduce((S, q) => S + (q.sentimentScore || 0), 0) / (queries.length || 1),
-            lastUpdated: new Date().toISOString(), // Mock for now
+            avgVisibility: 0,
+            avgSentiment: 0,
+            lastUpdated: new Date().toISOString(),
         };
 
-        // Performance Stats (Mocking Deltas for now as API might not provide historical directly here without comparison)
         const performance: QueriesPerformance = {
-            avgVisibility: portfolio.avgVisibility,
+            avgVisibility: 0,
             avgVisibilityDelta: 0,
             topGainer: { query: '-', delta: 0 },
             topLoser: { query: '-', delta: 0 }
@@ -130,31 +141,43 @@ export const QueriesAnalysisPage = () => {
 
         return { portfolio, performance, queries };
 
-    }, [response]);
+    }, [response, selectedModels]);
+    
+    // Filter queries based on selected Topic AND selected LLMs
+    // (Even if backend filters, we double check here to be sure, and to handle empty states correctly)
+    const filteredQueries = useMemo(() => {
+        if (!analysisData?.queries) return [];
+        
+        let filtered = analysisData.queries;
+
+        // 1. Filter by Topic
+        if (selectedTopic !== 'All') {
+            filtered = filtered.filter(q => q.topic === selectedTopic);
+        }
+
+        // 2. Filter by LLM (if query wasn't run on selected LLM, hide it)
+        if (selectedModels.length > 0) {
+            filtered = filtered.filter(q => {
+                if (!q.collectorTypes) return false;
+                return q.collectorTypes.some(type => selectedModels.includes(type));
+            });
+        }
+
+        return filtered;
+    }, [analysisData, selectedTopic, selectedModels]);
+
+    // Extract available topics
+    const availableTopics = useMemo(() => {
+        if (!analysisData?.queries) return [];
+        const topics = new Set(analysisData.queries.map(q => q.topic));
+        return Array.from(topics).sort();
+    }, [analysisData]);
 
     const [selectedQueries, setSelectedQueries] = useState<Set<string>>(new Set());
 
-    // Effect to select all queries by default when data loads
-    useEffect(() => {
-        if (analysisData?.queries) {
-             // Select top 20 by default so chart isn't empty but also not overwhelmed
-             // Or select all? Let's select top 10 for chart clarity
-             const ids = analysisData.queries.slice(0, 10).map(q => q.id);
-             setSelectedQueries(new Set(ids));
-        }
-    }, [analysisData?.queries]);
-
     const handleQueryClick = useCallback((query: Query) => {
-        // Maybe open a modal detail view? For now just log
         console.log("Clicked query", query);
     }, []);
-
-    // Filter queries for chart based on selection
-    const chartQueries = useMemo(() => {
-        if (!analysisData?.queries) return [];
-        return analysisData.queries.filter(q => selectedQueries.has(q.id));
-    }, [analysisData, selectedQueries]);
-
 
     if (loading && !response) {
         return (
@@ -217,13 +240,27 @@ export const QueriesAnalysisPage = () => {
                      </div>
                 </div>
 
-                {/* Controls */}
-                <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
-                    <KpiToggle
-                        metricType={metricType === 'visibility' ? 'visibility' : 'sentiment'}
-                        onChange={(val: any) => setMetricType(val)} // Cast because KpiToggle accepts broader types
-                        allowedMetricTypes={['visibility', 'sentiment']}
-                    />
+                {/* Filters */}
+                <div className="mb-6 flex items-center justify-start gap-80 flex-wrap">
+
+                    
+                    {/* Topic Filter */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Topic:</span>
+                        <select
+                            value={selectedTopic}
+                            onChange={(e) => setSelectedTopic(e.target.value)}
+                            className="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm font-medium text-slate-700 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/20 transition-all cursor-pointer"
+                            style={{ backgroundImage: 'none', appearance: 'auto' }} // Simple native select for now
+                        >
+                            <option value="All">All Topics</option>
+                            {availableTopics.map(topic => (
+                                <option key={topic} value={topic}>{topic}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="h-6 w-px bg-gray-200 mx-2 hidden sm:block"></div>
 
                     {/* LLM Filter */}
                      <div className="flex flex-wrap items-center gap-2">
@@ -263,38 +300,13 @@ export const QueriesAnalysisPage = () => {
                     </div>
                 </div>
 
-                {/* Metrics Pods */}
-                {analysisData && (
-                     <div className="mb-6">
-                        <CompactMetricsPods
-                            portfolio={analysisData.portfolio}
-                            performance={analysisData.performance}
-                            queries={analysisData.queries}
-                            metricType={metricType}
-                        />
-                    </div>
-                )}
-
-                {/* Charts */}
-                {analysisData && (
-                    <div className="mb-6">
-                        <QueryAnalysisMultiView
-                            queries={chartQueries}
-                            metricType={metricType}
-                            isLoading={loading}
-                        />
-                    </div>
-                )}
-
-
                 {/* Table */}
                 {analysisData && (
-                    <div className="mb-6">
+                    <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <QueriesRankedTable
-                            queries={analysisData.queries}
+                            queries={filteredQueries}
                             selectedQueries={selectedQueries}
                             onSelectedQueriesChange={setSelectedQueries}
-                            metricType={metricType}
                             onRowClick={handleQueryClick}
                         />
                     </div>

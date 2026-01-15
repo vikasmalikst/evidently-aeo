@@ -168,8 +168,8 @@ export class BrandScoringService {
         if (positionsResult.status === 'fulfilled') {
           result.positionsProcessed = positionsResult.value.count;
         } else {
-          const errorMsg = positionsResult.reason instanceof Error 
-            ? positionsResult.reason.message 
+          const errorMsg = positionsResult.reason instanceof Error
+            ? positionsResult.reason.message
             : String(positionsResult.reason);
           result.errors.push({ operation: 'position_extraction', error: errorMsg });
           console.error(`❌ Position extraction failed:`, errorMsg);
@@ -179,8 +179,8 @@ export class BrandScoringService {
         if (combinedSentimentsResult.status === 'fulfilled') {
           result.competitorSentimentsProcessed = combinedSentimentsResult.value;
         } else {
-          const errorMsg = combinedSentimentsResult.reason instanceof Error 
-            ? combinedSentimentsResult.reason.message 
+          const errorMsg = combinedSentimentsResult.reason instanceof Error
+            ? combinedSentimentsResult.reason.message
             : String(combinedSentimentsResult.reason);
           result.errors.push({ operation: 'combined_sentiment_scoring', error: errorMsg });
           console.error(`❌ Combined sentiment scoring failed:`, errorMsg);
@@ -190,8 +190,8 @@ export class BrandScoringService {
         if (citationsResult.status === 'fulfilled') {
           result.citationsProcessed = citationsResult.value.processed || citationsResult.value.inserted || 0;
         } else {
-          const errorMsg = citationsResult.reason instanceof Error 
-            ? citationsResult.reason.message 
+          const errorMsg = citationsResult.reason instanceof Error
+            ? citationsResult.reason.message
             : String(citationsResult.reason);
           result.errors.push({ operation: 'citation_extraction', error: errorMsg });
           console.error(`❌ Citation extraction failed:`, errorMsg);
@@ -364,6 +364,150 @@ export class BrandScoringService {
         // Don't throw - this is fire-and-forget
       }
     });
+  }
+
+  /**
+   * Run a complete backfill for a brand (cleanup + re-score + backdate)
+   * This logic mirrors the robust script approach.
+   */
+  async backfillBrand(options: {
+    brandId: string;
+    customerId: string;
+    startDate: string;
+    endDate: string;
+    force?: boolean;
+    preserveDates?: boolean;
+    sendLog?: (msg: string) => void;
+  }): Promise<{ processed: number, errorCount: number }> {
+    const { brandId, customerId, startDate, endDate, force = false, preserveDates = true, sendLog = console.log } = options;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    sendLog(`\n🔄 Starting Backfill for Brand: ${brandId}`);
+    sendLog(`   Dates: ${start.toISOString()} to ${end.toISOString()}`);
+
+    // 1. Fetch relevant collector_results
+    const { data: results, error: resultsError } = await supabaseAdmin
+      .from('collector_results')
+      .select('id, created_at')
+      .eq('brand_id', brandId)
+      .eq('customer_id', customerId)
+      .gte('created_at', start.toISOString())
+      .lte('created_at', end.toISOString());
+
+    if (resultsError || !results) {
+      throw new Error(`Error fetching collector_results: ${resultsError?.message}`);
+    }
+
+    if (results.length === 0) {
+      sendLog('⚠️ No results found in this period.');
+      return { processed: 0, errorCount: 0 };
+    }
+
+    sendLog(`🔎 Found ${results.length} collector_results to re-process.`);
+
+    const resultIds = results.map(r => r.id);
+
+    // 2. Clean up existing data (metric_facts and citations)
+    // We intentionally ignore extracted_positions as they are legacy/expensive to re-compute
+    sendLog('🗑️ Cleaning up existing metrics and citations...');
+
+    const { count: deletedMetrics } = await supabaseAdmin
+      .from('metric_facts')
+      .delete({ count: 'exact' })
+      .in('collector_result_id', resultIds);
+
+    sendLog(`   - Deleted ${deletedMetrics} metric_facts rows`);
+
+    const { count: deletedCitations } = await supabaseAdmin
+      .from('citations')
+      .delete({ count: 'exact' })
+      .in('collector_result_id', resultIds);
+
+    sendLog(`   - Deleted ${deletedCitations} citations rows`);
+
+    // 3. Reset scoring_status
+    sendLog('🔄 Resetting scoring_status to "pending"...');
+    await supabaseAdmin
+      .from('collector_results')
+      .update({ scoring_status: 'pending' })
+      .in('id', resultIds);
+
+    // 4. Re-Process
+    sendLog('⚙️ Re-Scoring (batch process)...');
+
+    // We delegate to the standard scoreBrand method which picks up 'pending' items
+    // passing 'since' helps efficient querying but isn't strictly required if status is pending
+    const scoreResult: any = await this.scoreBrand({
+      brandId,
+      customerId,
+      since: start.toISOString(),
+      positionLimit: 1000 // Ensure we grab a good chunk
+    });
+
+    sendLog(`   Scored: ${scoreResult.positionsProcessed} positions, ${scoreResult.sentimentsProcessed} sentiments.`);
+
+    let errorCount = scoreResult.errors?.length || 0;
+
+    // 5. Backdate timestamps if requested
+    if (preserveDates) {
+      sendLog('🕰️ Backdating timestamps...');
+      // Correct processed_at and created_at to match original collector_result creation time
+      // We do this by iterating results because SQL update-join is tricky in Supabase JS client
+      for (const result of results) {
+        const originalDate = result.created_at;
+
+        const { error: updateMetricsError } = await supabaseAdmin
+          .from('metric_facts')
+          .update({
+            processed_at: originalDate,
+            created_at: originalDate
+          })
+          .eq('collector_result_id', result.id);
+
+        if (updateMetricsError) {
+          console.error(`Failed to backdate metrics for ${result.id}:`, updateMetricsError);
+          errorCount++;
+        }
+
+        // Citations
+        await supabaseAdmin
+          .from('citations')
+          .update({ created_at: originalDate })
+          .eq('collector_result_id', result.id);
+      }
+      sendLog('   Backdating complete.');
+    }
+
+    // 6. Log to backfill_history
+    const details = {
+      resultsFound: results.length,
+      deletedMetrics,
+      deletedCitations,
+      scoringOutput: scoreResult,
+      backdated: preserveDates,
+      errorCount
+    };
+
+    const { error: historyError } = await supabaseAdmin
+      .from('backfill_history')
+      .insert({
+        brand_id: brandId,
+        customer_id: customerId,
+        target_start_date: start,
+        target_end_date: end,
+        status: errorCount > 0 ? 'completed_with_errors' : 'completed',
+        details: details
+      });
+
+    if (historyError) {
+      sendLog('⚠️ Failed to log to backfill_history.');
+    } else {
+      sendLog('📝 Logged to backfill_history.');
+    }
+
+    return { processed: results.length, errorCount };
   }
 }
 

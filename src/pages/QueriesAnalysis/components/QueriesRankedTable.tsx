@@ -13,9 +13,9 @@ interface QueriesRankedTableProps {
 export const QueriesRankedTable = ({ 
   queries, 
   onRowClick,
+
   selectedQueries: externalSelectedQueries,
   onSelectedQueriesChange,
-  metricType = 'visibility',
 }: QueriesRankedTableProps) => {
 
   const [sortState, setSortState] = useState<SortState>({ column: 'visibility', direction: 'desc' });
@@ -69,10 +69,7 @@ export const QueriesRankedTable = ({
       let bVal: number | string;
 
       switch (sortState.column) {
-        case 'rank':
-          aVal = a.rank;
-          bVal = b.rank;
-          break;
+
         case 'text':
           aVal = a.text.toLowerCase();
           bVal = b.text.toLowerCase();
@@ -88,6 +85,10 @@ export const QueriesRankedTable = ({
         case 'sentiment':
             aVal = a.sentimentScore ?? 0;
             bVal = b.sentimentScore ?? 0;
+            break;
+        case 'soa':
+            aVal = a.soa ?? 0;
+            bVal = b.soa ?? 0;
             break;
         case 'trend':
           aVal = a.trend.delta;
@@ -105,13 +106,14 @@ export const QueriesRankedTable = ({
     return filtered;
   }, [queries, sortState]);
 
-  const metricHeaderLabel = metricType === 'visibility' ? 'Visibility' : 'Sentiment';
-  const metricTooltipLabel = metricType === 'visibility' ? 'Visibility Score' : 'Sentiment Score';
+  const formatScore = (val: number | null | undefined) => {
+      if (val === null || val === undefined) return '—';
+      return val.toFixed(1);
+  };
   
-  const formatMetricValue = (query: Query): string => {
-    if (metricType === 'visibility') return query.visibilityScore !== null && query.visibilityScore !== undefined ? query.visibilityScore.toFixed(1) : '—';
-    if (metricType === 'sentiment') return query.sentimentScore !== null && query.sentimentScore !== undefined ? query.sentimentScore.toFixed(1) : '—';
-    return '—';
+  const formatSoA = (val: number | null | undefined) => {
+      if (val === null || val === undefined) return '—';
+      return `${val.toFixed(1)}%`;
   };
 
   const SortButton = ({ column, children }: { column: SortColumn; children: React.ReactNode }) => {
@@ -146,44 +148,30 @@ export const QueriesRankedTable = ({
         <table className="w-full">
             <thead>
               <tr className="border-b-2 border-[var(--border-default)] bg-[var(--bg-secondary)]">
-                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left w-12">
-                  <input
-                    type="checkbox"
-                    checked={filteredAndSortedQueries.length > 0 && filteredAndSortedQueries.every(q => selectedQueries.has(q.id))}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      if (e.target.checked) {
-                        const newSet = new Set(filteredAndSortedQueries.map(q => q.id));
-                        if (onSelectedQueriesChange) {
-                          onSelectedQueriesChange(newSet);
-                        } else {
-                          setInternalSelectedQueries(newSet);
-                        }
-                      } else {
-                        const emptySet = new Set<string>();
-                        if (onSelectedQueriesChange) {
-                          onSelectedQueriesChange(emptySet);
-                        } else {
-                            setInternalSelectedQueries(emptySet);
-                        }
-                      }
-                    }}
-                    className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)] cursor-pointer"
-                  />
-                </th>
-                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[60px]">
-                  <SortButton column="rank">Rank</SortButton>
-                </th>
+
+                {/* Query */}
                 <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[200px]">
                   <SortButton column="text">Query</SortButton>
                 </th>
+
+                {/* Topic */}
                 <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[150px]">
                     <SortButton column="topic">Topic</SortButton>
                 </th>
-                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[100px]">
-                  <div className="flex items-center gap-1.5">
-                    <SortButton column={metricType}>{metricHeaderLabel}</SortButton>
-                  </div>
+
+                {/* Visibility */}
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
+                     <SortButton column="visibility">Visibility</SortButton>
+                </th>
+
+                 {/* SoA */}
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
+                    <SortButton column="soa">SoA</SortButton>
+                </th>
+
+                {/* Sentiment */}
+                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
+                     <SortButton column="sentiment">Sentiment</SortButton>
                 </th>
               </tr>
             </thead>
@@ -211,20 +199,6 @@ export const QueriesRankedTable = ({
                     role="button"
                     tabIndex={0}
                   >
-                    <td className="px-3 sm:px-4 lg:px-5 py-4" onClick={handleQueryToggle.bind(null, query.id, )}>
-                      <input
-                        type="checkbox"
-                        checked={selectedQueries.has(query.id)}
-                        onChange={() => {}}
-                        onClick={handleQueryToggle.bind(null, query.id)}
-                        className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)] cursor-pointer"
-                      />
-                    </td>
-                    <td className="px-3 sm:px-4 lg:px-5 py-4">
-                      <span className="text-sm font-semibold text-[var(--text-body)]">
-                        {query.rank}
-                      </span>
-                    </td>
                     <td className="px-3 sm:px-4 lg:px-5 py-4">
                       <span className="text-sm font-medium text-[var(--text-headings)] break-words">{query.text}</span>
                     </td>
@@ -234,8 +208,18 @@ export const QueriesRankedTable = ({
                        </span>
                     </td>
                     <td className="px-3 sm:px-4 lg:px-5 py-4">
-                        <span className="text-sm font-semibold whitespace-nowrap" title={metricTooltipLabel}>
-                          {formatMetricValue(query)}
+                        <span className="text-sm font-semibold whitespace-nowrap text-[var(--text-body)]">
+                          {formatScore(query.visibilityScore)}
+                        </span>
+                    </td>
+                     <td className="px-3 sm:px-4 lg:px-5 py-4">
+                        <span className="text-sm font-semibold whitespace-nowrap text-[var(--text-body)]">
+                          {formatSoA(query.soa)}
+                        </span>
+                    </td>
+                     <td className="px-3 sm:px-4 lg:px-5 py-4">
+                        <span className="text-sm font-semibold whitespace-nowrap text-[var(--text-body)]">
+                          {formatScore(query.sentimentScore)}
                         </span>
                     </td>
                   </tr>

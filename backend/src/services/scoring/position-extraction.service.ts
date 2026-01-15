@@ -897,6 +897,17 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
    * - Brand name + synonyms + products (from KB + cache)
    * - Competitor names + synonyms + products (from KB + cache)
    */
+  /**
+   * 🆕 Calculate word positions using all data sources:
+   * - Brand name + synonyms + products (from KB + cache)
+   * - Competitor names + synonyms + products (from KB + cache)
+   * 
+   * STRATEGY: Longest Match First (Strict Non-Overlap)
+   * 1. Gather all potential matches for all terms.
+   * 2. Sort by length (descending).
+   * 3. Accept matches only if they don't overlap with already claimed tokens.
+   * This ensures "Super" inside "Super Bowl" is NOT counted as a separate mention.
+   */
   private calculateWordPositions(
     brandName: string,
     brandSynonyms: string[],
@@ -912,81 +923,177 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
   } {
     const { tokens, normalizedTokens } = this.tokenizeWords(rawAnswer);
 
-    // 🆕 Combine all brand terms: name + synonyms + products
-    const allBrandTerms = [brandName, ...brandSynonyms, ...brandProducts];
-    const brandTermTokens = allBrandTerms
-      .map(term => this.normalizeTerm(term))
-      .filter(termTokens => termTokens.length > 0);
+    // --- Step 1: Gather all candidate terms ---
+    interface MatchCandidate {
+      term: string;
+      normalizedTerm: string[];
+      ownerType: 'brand' | 'competitor';
+      ownerName: string; // brandName or competitorName
+      isProduct: boolean;
+      isSynonym: boolean;
+    }
 
-    // Find positions for all brand terms (name + synonyms + products)
+    const candidates: MatchCandidate[] = [];
+
+    // Brand Name
+    candidates.push({
+      term: brandName,
+      normalizedTerm: this.normalizeTerm(brandName),
+      ownerType: 'brand',
+      ownerName: brandName,
+      isProduct: false,
+      isSynonym: false
+    });
+
+    // Brand Synonyms
+    brandSynonyms.forEach(s => candidates.push({
+      term: s,
+      normalizedTerm: this.normalizeTerm(s),
+      ownerType: 'brand',
+      ownerName: brandName,
+      isProduct: false,
+      isSynonym: true
+    }));
+
+    // Brand Products
+    brandProducts.forEach(p => candidates.push({
+      term: p,
+      normalizedTerm: this.normalizeTerm(p),
+      ownerType: 'brand',
+      ownerName: brandName,
+      isProduct: true,
+      isSynonym: false
+    }));
+
+    // Competitors
+    competitors.forEach(c => {
+      // Name
+      candidates.push({
+        term: c.competitor_name,
+        normalizedTerm: this.normalizeTerm(c.competitor_name),
+        ownerType: 'competitor',
+        ownerName: c.competitor_name,
+        isProduct: false,
+        isSynonym: false
+      });
+      // Synonyms
+      (c.competitorSynonyms || []).forEach(s => candidates.push({
+        term: s,
+        normalizedTerm: this.normalizeTerm(s),
+        ownerType: 'competitor',
+        ownerName: c.competitor_name,
+        isProduct: false,
+        isSynonym: true
+      }));
+      // Products
+      (c.productNames || []).forEach(p => candidates.push({
+        term: p,
+        normalizedTerm: this.normalizeTerm(p),
+        ownerType: 'competitor',
+        ownerName: c.competitor_name,
+        isProduct: true,
+        isSynonym: false
+      }));
+    });
+
+    // --- Step 2: Find ALL positions for ALL candidates ---
+    interface ValidatedMatch {
+      candidate: MatchCandidate;
+      start: number; // 1-indexed
+      end: number;   // 1-indexed
+      length: number;
+    }
+
+    const allMatches: ValidatedMatch[] = [];
+
+    for (const candidate of candidates) {
+      if (candidate.normalizedTerm.length === 0) continue;
+      const positions = this.findTermPositions(normalizedTokens, candidate.normalizedTerm);
+      // findTermPositions returns START index (1-based)
+      positions.forEach(pos => {
+        allMatches.push({
+          candidate,
+          start: pos,
+          end: pos + candidate.normalizedTerm.length - 1,
+          length: candidate.normalizedTerm.length
+        });
+      });
+    }
+
+    // --- Step 3: Sort by length descending (Longest First) ---
+    allMatches.sort((a, b) => b.length - a.length);
+
+    // --- Step 4: Resolve overlaps ---
+    const occupiedIndices = new Set<number>();
+    const acceptedMatches: ValidatedMatch[] = [];
+
+    for (const match of allMatches) {
+      let isOccupied = false;
+      // Check if any token in this match is already occupied
+      for (let i = match.start; i <= match.end; i++) {
+        if (occupiedIndices.has(i)) {
+          isOccupied = true;
+          break;
+        }
+      }
+
+      if (!isOccupied) {
+        acceptedMatches.push(match);
+        // Mark tokens as occupied
+        for (let i = match.start; i <= match.end; i++) {
+          occupiedIndices.add(i);
+        }
+      }
+    }
+
+    // --- Step 5: Distribute results back to structure ---
     const brandPositionsSet = new Set<number>();
     const brandProductPositionsSet = new Set<number>();
 
-    // Search for brand name and synonyms (these count as brand mentions)
-    const brandNameAndSynonyms = [brandName, ...brandSynonyms];
-    for (const term of brandNameAndSynonyms) {
-      const termTokens = this.normalizeTerm(term);
-      if (termTokens.length > 0) {
-        this.findTermPositions(normalizedTokens, termTokens).forEach(position => {
-          brandPositionsSet.add(position);
-        });
+    const competitorPositions: Record<string, number[]> = {};
+    const competitorProductPositions: Record<string, number[]> = {};
+
+    // Initialize competitor arrays
+    competitors.forEach(c => {
+      competitorPositions[c.competitor_name] = [];
+      competitorProductPositions[c.competitor_name] = [];
+    });
+
+    for (const match of acceptedMatches) {
+      // Use START position for metrics
+      const position = match.start;
+
+      if (match.candidate.ownerType === 'brand') {
+        brandPositionsSet.add(position);
+        if (match.candidate.isProduct) {
+          brandProductPositionsSet.add(position);
+        }
+      } else {
+        // Competitor
+        const name = match.candidate.ownerName;
+        // Ensure buckets exist (might be new if name casing diff, but we use ownerName from input)
+        if (!competitorPositions[name]) competitorPositions[name] = [];
+        if (!competitorProductPositions[name]) competitorProductPositions[name] = [];
+
+        competitorPositions[name].push(position);
+
+        if (match.candidate.isProduct) {
+          competitorProductPositions[name].push(position);
+        }
       }
     }
 
-    // Search for brand products (separate tracking for product mentions)
-    for (const productName of brandProducts) {
-      const productTokens = this.normalizeTerm(productName);
-      if (productTokens.length > 0) {
-        this.findTermPositions(normalizedTokens, productTokens).forEach(position => {
-          brandPositionsSet.add(position); // Products also count as brand mentions
-          brandProductPositionsSet.add(position); // Separate tracking for products
-        });
-      }
-    }
-
+    // Convert sets to sorted arrays
     const brandPositions = Array.from(brandPositionsSet).sort((a, b) => a - b);
     const brandFirst = brandPositions.length > 0 ? brandPositions[0] : null;
     const brandProductPositions = Array.from(brandProductPositionsSet).sort((a, b) => a - b);
 
-    // 🆕 Calculate competitor positions using name + synonyms + products
-    const competitorPositions: Record<string, number[]> = {};
-    const competitorProductPositions: Record<string, number[]> = {};
-
-    for (const competitor of competitors) {
-      // Combine all competitor terms: name + synonyms + products
-      const allCompetitorTerms = [
-        competitor.competitor_name,
-        ...(competitor.competitorSynonyms || []),
-        ...(competitor.productNames || [])
-      ];
-
-      const combinedPositionSet = new Set<number>();
-      const productPositionSet = new Set<number>();
-
-      // Search for competitor name and synonyms
-      const competitorNameAndSynonyms = [competitor.competitor_name, ...(competitor.competitorSynonyms || [])];
-      for (const term of competitorNameAndSynonyms) {
-        const termTokens = this.normalizeTerm(term);
-        if (termTokens.length > 0) {
-          this.findTermPositions(normalizedTokens, termTokens).forEach((position) => {
-            combinedPositionSet.add(position);
-          });
-        }
-      }
-
-      // Search for competitor products
-      for (const productName of (competitor.productNames || [])) {
-        const productTokens = this.normalizeTerm(productName);
-        if (productTokens.length > 0) {
-          this.findTermPositions(normalizedTokens, productTokens).forEach((position) => {
-            combinedPositionSet.add(position); // Products also count as competitor mentions
-            productPositionSet.add(position); // Separate tracking for products
-          });
-        }
-      }
-
-      competitorPositions[competitor.competitor_name] = Array.from(combinedPositionSet).sort((a, b) => a - b);
-      competitorProductPositions[competitor.competitor_name] = Array.from(productPositionSet).sort((a, b) => a - b);
+    // Sort competitor arrays (already arrays, just sort)
+    for (const key in competitorPositions) {
+      competitorPositions[key].sort((a, b) => a - b);
+    }
+    for (const key in competitorProductPositions) {
+      competitorProductPositions[key].sort((a, b) => a - b);
     }
 
     return {

@@ -130,7 +130,7 @@ export class VisibilityService {
         const sentimentValues = aggregate.sentimentValues || []
         const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
         const sentiment = avgSentiment > 0 ? round(avgSentiment, 2) : null
-        
+
         // Get time-series data for this collector
         const timeSeries = timeSeriesData?.get(collectorType)
 
@@ -139,8 +139,8 @@ export class VisibilityService {
         const totalCollectorResults = aggregate.uniqueCollectorResults?.size ?? 0
         const collectorResultsWithPresence = aggregate.collectorResultsWithBrandPresence?.size ?? 0
         // Use unique collector results count for brand presence, fallback to old row count for backward compatibility
-        const brandPresenceCount = totalCollectorResults > 0 
-          ? collectorResultsWithPresence 
+        const brandPresenceCount = totalCollectorResults > 0
+          ? collectorResultsWithPresence
           : aggregate.brandPresenceCount
 
         return {
@@ -197,6 +197,7 @@ export class VisibilityService {
     }>,
     totalShareUniverse: number,
     totalQueries: number,
+    totalResponses: number,
     knownCompetitors: string[],
     competitorTimeSeriesData?: Map<string, {
       dates: string[]
@@ -217,8 +218,8 @@ export class VisibilityService {
         const share = validShareValues.length > 0
           ? round(average(validShareValues))
           : 0
-        
-        
+
+
         const avgVisibilityRaw = aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
         const visibility = round(Math.min(1, Math.max(0, avgVisibilityRaw)) * 100)
 
@@ -232,16 +233,14 @@ export class VisibilityService {
           .sort((a, b) => b.mentions - a.mentions)
           .slice(0, 3)
 
-        // Calculate brand presence percentage - direct percentage calculation (no normalization)
-        // Count queries where competitor has meaningful data (visibility > 0 or share > 0)
-        const queriesWithData = Array.from(aggregate.queries.values())
-          .filter(query => query.visibilitySum > 0 || query.shareSum > 0 || query.mentionSum > 0)
-          .length
-        
-        // Direct percentage: (queries with competitor data / total queries in system) * 100
-        // No normalization - this matches database values exactly
-        const brandPresencePercentage = totalQueries > 0
-          ? round((queriesWithData / totalQueries) * 100, 1)
+        // Calculate brand presence percentage - Answer Frequency
+        // Calculate total answers where competitor appeared by summing count across all queries
+        const totalCompetitorAppearances = Array.from(aggregate.queries.values())
+          .reduce((sum, query) => sum + query.count, 0)
+
+        // Direct percentage: (answers with competitor / total answers) * 100
+        const brandPresencePercentage = totalResponses > 0
+          ? round((totalCompetitorAppearances / totalResponses) * 100, 1)
           : 0
 
         // Extract top topics - only include topics where competitor has meaningful data
@@ -255,7 +254,7 @@ export class VisibilityService {
               : 0
             // Convert to 0-100 scale to match brand summary calculation
             const avgVisibility = round(avgVisibilityRaw * 100, 1)
-            
+
             return {
               topic: truncateLabel(topicName, 64),
               occurrences: topicStats.occurrences,
@@ -266,8 +265,8 @@ export class VisibilityService {
               mentions: topicStats.mentions
             }
           })
-          .filter((topic) => 
-            topic.topic.trim().length > 0 && 
+          .filter((topic) =>
+            topic.topic.trim().length > 0 &&
             (topic.share > 0 || topic.visibility > 0 || topic.mentions > 0)
           )
           .sort((a, b) => {
@@ -356,7 +355,7 @@ export class VisibilityService {
       const brandShareArray = brandShareByQuery.get(queryId) ?? []
       const brandVisibilityArray = brandVisibilityByQuery.get(queryId) ?? []
       const brandSentimentArray = brandSentimentByQuery.get(queryId) ?? []
-      
+
       const brandShare = brandShareArray.length > 0 ? average(brandShareArray) : 0
       const brandVisibility = brandVisibilityArray.length > 0 ? average(brandVisibilityArray) : 0
       // All scores are now in 1-100 format, simple average - return in 1-100 range
@@ -432,7 +431,7 @@ export class VisibilityService {
     const brandShare = brandShareValues.length > 0
       ? round(average(brandShareValues))
       : 0
-    
+
     const visibilityComparison = [
       {
         entity: brandName,

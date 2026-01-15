@@ -3025,6 +3025,7 @@ export async function buildDashboardPayload(
     competitorAggregates,
     totalShareUniverse,
     totalQueries,
+    totalResponses,
     knownCompetitors,
     competitorTimeSeriesData
   )
@@ -3128,9 +3129,10 @@ export async function buildDashboardPayload(
     const totalBrandVisibility = visibilityIndexPercentage
     const totalBrandShare = shareOfAnswersPercentage
 
-    // Brand presence percentage
-    const brandPresencePercentage = totalQueries > 0
-      ? round((queriesWithBrandPresenceCount / totalQueries) * 100, 1)
+    // Brand presence percentage (Answer Frequency)
+    // Uses collectorBrandPresenceCount (unique collector results with presence) / totalBrandRows (total collector results)
+    const brandPresencePercentage = totalBrandRows > 0
+      ? round((collectorBrandPresenceCount / totalBrandRows) * 100, 1)
       : 0
 
     // Extract top topics from existing topicAggregates

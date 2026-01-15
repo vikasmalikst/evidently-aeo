@@ -8,6 +8,8 @@ export interface BrandIntel {
   headquarters: string;
   founded: number | null;
   description: string;
+  aliases?: string[];
+  products?: string[];
   metadata?: Record<string, any>;
 }
 
@@ -19,6 +21,8 @@ export interface CompetitorSuggestion {
   domain: string;
   url?: string;
   description?: string;
+  aliases?: string[];
+  products?: string[];
   source?: string;
 }
 
@@ -47,15 +51,25 @@ export interface CompetitorGenerationParams {
   country?: string;
 }
 
+export interface CompetitorDetail {
+  name: string;
+  url?: string; // Canonical
+  urls?: string[]; // Permutations
+  synonyms?: string[]; // Aliases
+  products?: string[]; // Commercial Products
+}
+
 export interface LLMBrandIntelResult {
   brandName?: string;
+  brandSynonyms?: string[];
+  keyProducts?: string[];
+  brandUrls?: string[];
   summary?: string;
   industry?: string;
   headquarters?: string;
   foundedYear?: number | null;
   ceo?: string;
-  competitors?: string[];
-  topics?: string[];
+  competitors?: CompetitorDetail[];
   homepageUrl?: string;
 }
 

@@ -145,6 +145,8 @@ export class OnboardingIntelService {
       headquarters,
       founded: foundedYear,
       description,
+      aliases: llmBrandIntel?.brandSynonyms || [],
+      products: llmBrandIntel?.keyProducts || [],
       metadata: {
         source: {
           wikipedia: wikipediaSummary?.url ?? null,
@@ -163,29 +165,46 @@ export class OnboardingIntelService {
       Array.isArray(llmBrandIntel.competitors) &&
       llmBrandIntel.competitors.length > 0
     ) {
-      // Convert LLM competitors (string array) to CompetitorSuggestion format
+      // Convert LLM competitors (CompetitorDetail objects) to CompetitorSuggestion format
       console.log(`✅ Using ${llmBrandIntel.competitors.length} competitors from LLM`);
       competitors = llmBrandIntel.competitors
-        .filter((name: string) => name && typeof name === 'string' && name.trim().length > 0)
+        .filter((comp: any) => comp && (typeof comp === 'string' || comp.name))
         .slice(0, 10)
-        .map((name: string) => {
+        .map((comp: any) => {
+          const name = typeof comp === 'string' ? comp : comp.name;
           const normalizedName = name.trim();
-          let competitorDomain = normalizedName
-            .toLowerCase()
-            .replace(/\s+/g, '')
-            .replace(/[^a-z0-9.-]/g, '');
-          if (!competitorDomain.includes('.')) {
-            competitorDomain = `${competitorDomain}.com`;
+          
+          let competitorDomain = '';
+          let competitorUrl = '';
+          
+          if (typeof comp !== 'string' && comp.url) {
+             // Use LLM provided URL
+             competitorUrl = comp.url.startsWith('http') ? comp.url : `https://${comp.url}`;
+             competitorDomain = comp.url.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '');
+          } else {
+             // Fallback: derive from name
+             competitorDomain = normalizedName
+               .toLowerCase()
+               .replace(/\s+/g, '')
+               .replace(/[^a-z0-9.-]/g, '');
+             if (!competitorDomain.includes('.')) {
+               competitorDomain = `${competitorDomain}.com`;
+             }
+             competitorUrl = `https://${competitorDomain}`;
           }
+
           return {
             name: normalizedName,
             domain: competitorDomain,
             logo: `https://logo.clearbit.com/${competitorDomain}`,
             industry: derivedIndustry,
             relevance: 'Direct Competitor',
-            url: `https://${competitorDomain}`,
-            description: '',
-            source: 'cerebras-ai',
+            url: competitorUrl,
+            aliases: (typeof comp !== 'string' && comp.synonyms) ? comp.synonyms : [],
+            products: (typeof comp !== 'string' && comp.products) ? comp.products : [],
+            description: (typeof comp !== 'string' && comp.products?.length) 
+              ? `Products: ${comp.products.join(', ')}` 
+              : undefined
           };
         });
     } else {

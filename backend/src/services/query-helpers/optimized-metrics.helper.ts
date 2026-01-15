@@ -721,6 +721,8 @@ export class OptimizedMetricsHelper {
       total_brand_mentions: number;
       sentiment_score: number | null;
       visibility_index: number | null;
+      average_position: number | null;
+      brand_positions: number[] | null;
       competitor_name: string | null;
       topic: string | null;
       processed_at: string;
@@ -753,7 +755,8 @@ export class OptimizedMetricsHelper {
           brand_metrics!inner(
             share_of_answers,
             total_brand_mentions,
-            visibility_index
+            visibility_index,
+            brand_positions
           ),
           brand_sentiment(
             sentiment_score
@@ -806,6 +809,8 @@ export class OptimizedMetricsHelper {
         total_brand_mentions: number;
         sentiment_score: number | null;
         visibility_index: number | null;
+        average_position: number | null;
+        brand_positions: number[] | null;
         competitor_name: string | null;
         topic: string | null;
         processed_at: string;
@@ -827,6 +832,8 @@ export class OptimizedMetricsHelper {
               total_brand_mentions: bm.total_brand_mentions || 0,
               sentiment_score: bs?.sentiment_score || null,
               visibility_index: bm.visibility_index,
+              average_position: bm.brand_positions && bm.brand_positions.length > 0 ? bm.brand_positions.reduce((a: number, b: number) => a + b, 0) / bm.brand_positions.length : null,
+              brand_positions: bm.brand_positions || null,
               competitor_name: null,
               topic: row.topic,
               processed_at: row.processed_at,
@@ -848,6 +855,8 @@ export class OptimizedMetricsHelper {
                 total_brand_mentions: 0, // Competitors don't have brand mentions
                 sentiment_score: null, // Competitor sentiment would be in competitor_sentiment table
                 visibility_index: compAny.visibility_index ?? null, // Competitor visibility
+                average_position: null, // Average position for competitors could be added if needed
+                brand_positions: null,
                 competitor_name: competitor.competitor_name,
                 topic: row.topic,
                 processed_at: row.processed_at,

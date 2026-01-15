@@ -1,0 +1,51 @@
+🔍 QA Citation Metrics Script
+📅 Reference Date: 2026-01-14
+-------------------------------------------
+No BRAND_ID provided. Searching for "Nike" (default)...
+✅ Selected Brand: Nike (0fa491bf-3b62-45a3-b498-8241b6bf689d) - 4294 citations
+
+Periods:
+ - Current: 2026-01-08 to 2026-01-14
+ - Prior  : 2026-01-01 to 2026-01-07
+
+|------------------|------------------------|---------|-------|-------|-------|-------|-------|
+| Metric           | Source                 | Period  | Count | Vis   | SOA % | Sent  | Pos   |
+|------------------|------------------------|---------|-------|-------|-------|-------|-------|
+| Share of Answer  | runrepeat.com          | Current | 42    | 0.33  | 43.76 | 72.50 | 174.41 |
+| Share of Answer  | runrepeat.com          | Prior   | 34    | 0.33  | 44.65 | 76.76 | 159.92 |
+|                  |                        |         |       |       |       |       |       |
+| Share of Answer  | reddit.com             | Current | 22    | 0.34  | 42.78 | 68.41 | 138.68 |
+| Share of Answer  | reddit.com             | Prior   | 19    | 0.33  | 35.13 | 70.79 | 160.17 |
+|                  |                        |         |       |       |       |       |       |
+| Share of Answer  | nike.com               | Current | 13    | 0.35  | 48.03 | 77.15 | 157.67 |
+| Share of Answer  | nike.com               | Prior   | 5     | 0.30  | 25.21 | 73.00 | 135.45 |
+|                  |                        |         |       |       |       |       |       |
+| Share of Answer  | easyreviewhub.com      | Current | 1     | 0.31  | 14.29 | 80.00 | 129.50 |
+| Share of Answer  | easyreviewhub.com      | Prior   | 1     | 0.35  | 37.50 | 80.00 | 121.33 |
+|                  |                        |         |       |       |       |       |       |
+| Share of Answer  | switchbacktravel.com   | Current | 1     | 0.23  | 14.29 | 80.00 | 371.00 |
+| Share of Answer  | switchbacktravel.com   | Prior   | 1     | 0.36  | 25.00 | 80.00 | 230.20 |
+|                  |                        |         |       |       |       |       |       |
+| Share of Answer  | freecultr.com          | Current | 1     | 0.23  | 14.29 | 80.00 | 371.00 |
+| Share of Answer  | freecultr.com          | Prior   | 2     | 0.32  | 33.33 | 82.50 | 111.88 |
+|                  |                        |         |       |       |       |       |       |
+|------------------|------------------------|---------|-------|-------|-------|-------|-------|
+| Avg Position     | reddit.com             | Current | 22    | 0.34  | 42.78 | 68.41 | 138.68 |
+| Avg Position     | reddit.com             | Prior   | 19    | 0.33  | 35.13 | 70.79 | 160.17 |
+|                  |                        |         |       |       |       |       |       |
+| Avg Position     | thatfitfriend.com      | Current | 12    | 0.37  | 60.72 | 71.25 | 172.77 |
+| Avg Position     | thatfitfriend.com      | Prior   | 13    | 0.42  | 65.74 | 80.00 | 192.95 |
+|                  |                        |         |       |       |       |       |       |
+| Avg Position     | theruntesters.com      | Current | 19    | 0.27  | 33.44 | 71.84 | 156.38 |
+| Avg Position     | theruntesters.com      | Prior   | 12    | 0.30  | 26.37 | 72.92 | 167.95 |
+|                  |                        |         |       |       |       |       |       |
+| Avg Position     | runrepeat.com          | Current | 42    | 0.33  | 43.76 | 72.50 | 174.41 |
+| Avg Position     | runrepeat.com          | Prior   | 34    | 0.33  | 44.65 | 76.76 | 159.92 |
+|                  |                        |         |       |       |       |       |       |
+| Avg Position     | nike.com               | Current | 13    | 0.35  | 48.03 | 77.15 | 157.67 |
+| Avg Position     | nike.com               | Prior   | 5     | 0.30  | 25.21 | 73.00 | 135.45 |
+|                  |                        |         |       |       |       |       |       |
+| Avg Position     | runnersworld.com       | Current | 24    | 0.35  | 40.48 | 71.67 | 161.03 |
+| Avg Position     | runnersworld.com       | Prior   | 18    | 0.31  | 35.84 | 73.33 | 124.25 |
+|                  |                        |         |       |       |       |       |       |
+|------------------|------------------------|---------|-------|-------|-------|-------|-------|

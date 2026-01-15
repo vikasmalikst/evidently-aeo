@@ -166,8 +166,10 @@ export interface TrafficAttributionData {
 
 export interface ActionsImpactData {
     recommendations: {
-        provided: number;
+        generated: number;
         approved: number;
+        rejected: number;
+        needs_review: number;
         content_generated: number;
         implemented: number;
     };
@@ -190,19 +192,29 @@ export interface TopMoversData {
         losses: TopMoverItem[];
     };
     sources: {
-        gains: TopMoverItem[];
-        losses: TopMoverItem[];
+        visibility_gains: TopMoverItem[];
+        visibility_losses: TopMoverItem[];
+        soa_gains: TopMoverItem[];
+        soa_losses: TopMoverItem[];
+        sentiment_gains: TopMoverItem[];
+        sentiment_losses: TopMoverItem[];
+        position_gains: TopMoverItem[];
+        position_losses: TopMoverItem[];
     };
 }
 
 export interface TopMoverItem {
     name: string;
     id: string;
+    impact_score?: number;
     changes: {
         visibility?: { absolute: number; percentage: number };
         position?: { absolute: number; percentage: number };
+        average_position?: { absolute: number; percentage: number };
         share_of_answer?: { absolute: number; percentage: number };
+        soa?: { absolute: number; percentage: number };
         sentiment?: { absolute: number; percentage: number };
+        combined_score?: { absolute: number; percentage: number };
     };
 }
 

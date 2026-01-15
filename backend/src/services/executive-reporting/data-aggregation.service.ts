@@ -5,7 +5,7 @@
  * Fetches data from various sources and compiles into structured format.
  */
 
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/database';
 import type {
     ReportDataSnapshot,
     BrandPerformanceData,
@@ -18,6 +18,9 @@ import type {
     TopMoverItem,
     CompetitorMetrics,
 } from './types';
+import { SourceAttributionService } from '../source-attribution.service';
+
+const sourceAttributionService = new SourceAttributionService();
 
 export class DataAggregationService {
     /**
@@ -103,7 +106,7 @@ export class DataAggregationService {
      */
     private async fetchPeriodMetrics(brandId: string, startDate: Date, endDate: Date) {
         // First, fetch the customer_id for this brand
-        const { data: brandData, error: brandError } = await supabase
+        const { data: brandData, error: brandError } = await supabaseAdmin
             .from('brands')
             .select('customer_id')
             .eq('id', brandId)
@@ -124,7 +127,7 @@ export class DataAggregationService {
 
         // Use OptimizedMetricsHelper to properly join metric_facts with brand_metrics and brand_sentiment
         const { OptimizedMetricsHelper } = await import('../query-helpers/optimized-metrics.helper');
-        const helper = new OptimizedMetricsHelper(supabase);
+        const helper = new OptimizedMetricsHelper(supabaseAdmin);
 
         const result = await helper.fetchBrandMetricsByDateRange({
             brandId,
@@ -261,7 +264,7 @@ export class DataAggregationService {
         console.log(`🤖 [EXEC-REPORT] Aggregating LLM performance for ${brandId}`);
 
         // First, fetch the customer_id for this brand
-        const { data: brandData, error: brandError } = await supabase
+        const { data: brandData, error: brandError } = await supabaseAdmin
             .from('brands')
             .select('customer_id')
             .eq('id', brandId)
@@ -279,7 +282,7 @@ export class DataAggregationService {
 
         // Use OptimizedMetricsHelper
         const { OptimizedMetricsHelper } = await import('../query-helpers/optimized-metrics.helper');
-        const helper = new OptimizedMetricsHelper(supabase);
+        const helper = new OptimizedMetricsHelper(supabaseAdmin);
 
         const result = await helper.fetchBrandMetricsByDateRange({
             brandId,
@@ -364,7 +367,7 @@ export class DataAggregationService {
         console.log(`[EXEC-REPORT] Period: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`);
 
         // First, fetch the customer_id for this brand
-        const { data: brandData, error: brandError } = await supabase
+        const { data: brandData, error: brandError } = await supabaseAdmin
             .from('brands')
             .select('customer_id, name, homepage_url, metadata')
             .eq('id', brandId)
@@ -387,7 +390,7 @@ export class DataAggregationService {
 
         // Use OptimizedMetricsHelper
         const { OptimizedMetricsHelper } = await import('../query-helpers/optimized-metrics.helper');
-        const helper = new OptimizedMetricsHelper(supabase);
+        const helper = new OptimizedMetricsHelper(supabaseAdmin);
 
         // 1. Fetch Brand Metrics
         const brandResult = await helper.fetchBrandMetricsByDateRange({
@@ -457,7 +460,7 @@ export class DataAggregationService {
         }
 
         // 2. Fetch Active Competitors
-        const { data: competitors, error: compError } = await supabase
+        const { data: competitors, error: compError } = await supabaseAdmin
             .from('brand_competitors')
             .select('id, competitor_name, competitor_url, metadata')
             .eq('brand_id', brandId);
@@ -561,7 +564,7 @@ export class DataAggregationService {
         console.log(`🔍 [EXEC-REPORT] Aggregating domain readiness for ${brandId}`);
 
         // Fetch latest domain readiness result from domain_readiness_audits table
-        const { data: latestResult, error } = await supabase
+        const { data: latestResult, error } = await supabaseAdmin
             .from('domain_readiness_audits')
             .select('*')
             .eq('brand_id', brandId)
@@ -618,7 +621,7 @@ export class DataAggregationService {
         const currentSubScoresRaw = extractSubScores(latestResult);
 
         // Fetch previous result for comparison from domain_readiness_audits
-        const { data: previousResult } = await supabase
+        const { data: previousResult } = await supabaseAdmin
             .from('domain_readiness_audits')
             .select('*')
             .eq('brand_id', brandId)
@@ -676,21 +679,56 @@ export class DataAggregationService {
     ): Promise<ActionsImpactData> {
         console.log(`⚡ [EXEC-REPORT] Aggregating actions impact for ${brandId}`);
 
-        // Fetch recommendations within period
-        const { data: recommendations, error } = await supabase
+        // Fetch Pipeline: created within period OR active status
+        // We fetch all recent recommendations to show the full pipeline state
+        const { data: recommendations, error } = await supabaseAdmin
             .from('recommendations')
             .select('*')
             .eq('brand_id', brandId)
-            .gte('created_at', periodStart.toISOString())
-            .lte('created_at', periodEnd.toISOString());
+            // Limit to max recent recommendations (e.g., last 3 months or just 200 items) to keep report relevant?
+            // For now, fetch all to show complete pipeline history for this brand
+            .order('created_at', { ascending: false });
 
         if (error) {
             console.error('❌ [EXEC-REPORT] Error fetching recommendations:', error);
         }
 
-        const provided = recommendations?.length || 0;
-        const approved = recommendations?.filter(r => r.status === 'approved').length || 0;
-        const implemented = recommendations?.filter(r => r.status === 'implemented').length || 0;
+        const recs = recommendations || [];
+        const startIso = periodStart.toISOString();
+        const endIso = periodEnd.toISOString();
+
+        // Count statuses
+        // Count statuses based on the reporting period (Activity View)
+        // 1. Generated: Recommendations created in this period
+        const generated = recs.filter(r => r.created_at >= startIso && r.created_at <= endIso).length;
+
+        // 2. Pipeline Activity: Count items that MOVED to these states in this period
+        // We use created_at or updated_at as a proxy for when the status changed
+        // This ensures the report shows "Activity in this period" rather than "Total Snapshot"
+        const approved = recs.filter(r =>
+            (r.is_approved === true || r.review_status === 'approved') &&
+            (r.updated_at >= startIso && r.updated_at <= endIso)
+        ).length;
+
+        const rejected = recs.filter(r =>
+            r.review_status === 'rejected' &&
+            (r.updated_at >= startIso && r.updated_at <= endIso)
+        ).length;
+
+        const needs_review = recs.filter(r =>
+            r.review_status === 'pending_review' &&
+            (r.created_at >= startIso && r.created_at <= endIso) // Pending usually means just created
+        ).length;
+
+        const content_generated = recs.filter(r =>
+            r.is_content_generated === true &&
+            (r.updated_at >= startIso && r.updated_at <= endIso)
+        ).length;
+
+        const implemented = recs.filter(r =>
+            r.is_completed === true &&
+            (r.updated_at >= startIso && r.updated_at <= endIso)
+        ).length;
 
         // TODO: Calculate average impact from implemented recommendations
         const averageImpact = {
@@ -703,9 +741,11 @@ export class DataAggregationService {
 
         return {
             recommendations: {
-                provided,
+                generated,
                 approved,
-                content_generated: approved, // Approximation
+                rejected,
+                needs_review,
+                content_generated,
                 implemented,
             },
             average_impact: averageImpact,
@@ -725,19 +765,28 @@ export class DataAggregationService {
         console.log(`📊 [EXEC-REPORT] Calculating top movers for ${brandId}`);
 
         // Fetch customerId
-        const { data: brandData } = await supabase.from('brands').select('customer_id').eq('id', brandId).single();
+        const { data: brandData } = await supabaseAdmin.from('brands').select('customer_id').eq('id', brandId).single();
         const customerId = brandData?.customer_id;
 
         if (!customerId) {
             return {
                 queries: { gains: [], losses: [] },
                 topics: { gains: [], losses: [] },
-                sources: { gains: [], losses: [] },
+                sources: {
+                    visibility_gains: [],
+                    visibility_losses: [],
+                    soa_gains: [],
+                    soa_losses: [],
+                    sentiment_gains: [],
+                    sentiment_losses: [],
+                    position_gains: [],
+                    position_losses: [],
+                },
             };
         }
 
         const { OptimizedMetricsHelper } = await import('../query-helpers/optimized-metrics.helper');
-        const helper = new OptimizedMetricsHelper(supabase);
+        const helper = new OptimizedMetricsHelper(supabaseAdmin);
 
         // Fetch metrics for both periods
         const [current, previous] = await Promise.all([
@@ -820,8 +869,8 @@ export class DataAggregationService {
         console.log(`[EXEC-REPORT] Fetching query texts for ${queryIds.length} queries`);
 
         if (queryIds.length > 0) {
-            const { data: queries, error: queryError } = await supabase
-                .from('queries')
+            const { data: queries, error: queryError } = await supabaseAdmin
+                .from('generated_queries')
                 .select('id, query_text')
                 .in('id', queryIds);
 
@@ -840,12 +889,12 @@ export class DataAggregationService {
         const formatItem = (items: any[]) => items.map(i => {
             const queryId = String(i.query_id);
             const queryText = queryTextMap.get(queryId);
-            console.log(`[EXEC-REPORT] Formatting item: queryId=${queryId.substring(0, 8)}..., found text=${!!queryText}`);
 
             return {
                 name: queryText || `Query #${queryId}`,
-                query_text: queryText || undefined, // Add explicit query_text field
+                query_text: queryText || undefined,
                 id: queryId,
+                impact_score: Math.round(i.current_vis || 0),
                 changes: {
                     share_of_answer: {
                         absolute: Number(i.change_soa.toFixed(2)),
@@ -859,47 +908,7 @@ export class DataAggregationService {
             };
         });
 
-        // === Top 3 Citation Sources by Impact Score ===
-        const { data: topSources } = await supabase
-            .from('recommendations')
-            .select('citation_source, impact_score')
-            .eq('brand_id', brandId)
-            .not('citation_source', 'is', null)
-            .not('impact_score', 'is', null)
-            .limit(100); // Get more to aggregate properly
-
-        console.log(`[EXEC-REPORT] Fetched ${topSources?.length || 0} recommendations for citation sources`);
-
-        // Aggregate by citation source (sum impact scores)
-        const sourceAggregation = new Map<string, number>();
-        (topSources || []).forEach(s => {
-            if (s.citation_source && s.impact_score) {
-                const current = sourceAggregation.get(s.citation_source) || 0;
-                sourceAggregation.set(s.citation_source, current + Number(s.impact_score));
-            }
-        });
-
-        console.log(`[EXEC-REPORT] Aggregated ${sourceAggregation.size} unique citation sources`);
-
-        // Convert to array, sort by total impact, take top 3
-        const sourcesWithScores = Array.from(sourceAggregation.entries())
-            .map(([source, totalImpact]) => ({
-                name: source,
-                id: source,
-                changes: {
-                    impact_score: {
-                        absolute: Number(totalImpact.toFixed(1)),
-                        percentage: 0
-                    }
-                }
-            }))
-            .sort((a, b) => b.changes.impact_score.absolute - a.changes.impact_score.absolute)
-            .slice(0, 3);
-
-        console.log(`[EXEC-REPORT] Top 3 citation sources:`, sourcesWithScores.map(s => `${s.name}: ${s.changes.impact_score.absolute}`));
-
         // === Top Topic by combined SOA/Visibility and Sentiment ===
-        // Aggregate current data by topic
         const topicMap = new Map<string, { soa: number, vis: number, sentiment: number, count: number }>();
         (current.data || []).forEach((row: any) => {
             if (!row.topic) return;
@@ -912,13 +921,11 @@ export class DataAggregationService {
             });
         });
 
-        // Calculate combined score and rank topics
         const topicScores: { name: string; score: number; soa: number; vis: number; sentiment: number }[] = [];
         topicMap.forEach((val, topic) => {
             const avgSoa = val.soa / val.count;
             const avgVis = val.vis / val.count;
             const avgSentiment = val.sentiment / val.count;
-            // Combined score: weighted sum (SOA 40%, Visibility 40%, Sentiment 20%)
             const combinedScore = (avgSoa * 0.4) + (avgVis * 0.4) + ((avgSentiment + 1) / 2 * 0.2);
             topicScores.push({
                 name: topic,
@@ -933,6 +940,7 @@ export class DataAggregationService {
         const topTopics = topicScores.slice(0, 3).map(t => ({
             name: t.name,
             id: t.name,
+            impact_score: Math.round(t.score * 100), // Convert decimal score to 0-100
             changes: {
                 combined_score: {
                     absolute: Number(t.score.toFixed(2)),
@@ -950,12 +958,142 @@ export class DataAggregationService {
                 gains: topTopics as any,
                 losses: [],
             },
-            sources: {
-                gains: sourcesWithScores as any,
-                losses: [],
-            },
+            sources: await this.aggregateSourceMovers(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
         };
     }
+
+    /**
+     * Aggregates citation source movers across all 8 metrics
+     */
+    private async aggregateSourceMovers(
+        brandId: string,
+        currentStart: Date,
+        currentEnd: Date,
+        comparisonStart: Date,
+        comparisonEnd: Date
+    ): Promise<TopMoversData['sources']> {
+        const { data: brandData } = await supabaseAdmin.from('brands').select('customer_id').eq('id', brandId).single();
+        const customerId = brandData?.customer_id;
+
+        if (!customerId) {
+            return {
+                visibility_gains: [],
+                visibility_losses: [],
+                soa_gains: [],
+                soa_losses: [],
+                sentiment_gains: [],
+                sentiment_losses: [],
+                position_gains: [],
+                position_losses: [],
+            };
+        }
+
+        const sourceAttribution = await sourceAttributionService.getSourceAttribution(
+            brandId,
+            customerId,
+            { start: currentStart.toISOString(), end: currentEnd.toISOString() },
+            { start: comparisonStart.toISOString(), end: comparisonEnd.toISOString() }
+        );
+
+        const sources = sourceAttribution.sources;
+
+        const getMovers = (outputKey: string, sourceKey: string, changeField: string, isGain: boolean): TopMoverItem[] => {
+            const items = sources.filter(s => {
+                const change = s[changeField] || 0;
+                return isGain ? change > 0 : change < 0;
+            });
+
+            // Sort by Value (Impact Score) descending, then by magnitude of change
+            items.sort((a, b) => {
+                const valDiff = (b.value || 0) - (a.value || 0);
+                if (Math.abs(valDiff) > 0.01) return valDiff;
+                const changeA = Math.abs(a[changeField] || 0);
+                const changeB = Math.abs(b[changeField] || 0);
+                return changeB - changeA;
+            });
+
+            return items.slice(0, 3).map(s => {
+                const absolute = s[changeField] || 0;
+                const previous = (s[sourceKey] || 0) - absolute;
+                const percentage = previous !== 0 ? (absolute / Math.abs(previous)) * 100 : 0;
+
+                return {
+                    name: s.name,
+                    id: s.name,
+                    impact_score: s.value ? Math.round(s.value) : 0,
+                    changes: {
+                        [outputKey]: {
+                            absolute: Number(absolute.toFixed(2)),
+                            percentage: Number(percentage.toFixed(2)),
+                        }
+                    }
+                };
+            });
+        };
+
+        // Visibility
+        const visibility_gains = getMovers('visibility', 'visibility', 'visibilityChange', true);
+        const visibility_losses = getMovers('visibility', 'visibility', 'visibilityChange', false);
+
+        // SOA
+        const soa_gains = getMovers('soa', 'soa', 'soaChange', true);
+        const soa_losses = getMovers('soa', 'soa', 'soaChange', false);
+
+        // Sentiment
+        const sentiment_gains = getMovers('sentiment', 'sentiment', 'sentimentChange', true);
+        const sentiment_losses = getMovers('sentiment', 'sentiment', 'sentimentChange', false);
+
+        // Position - Inverted logic: Gain is negative change (rank 5 -> 1 is change of -4)
+        const position_gains = sources
+            .filter(s => (s.averagePositionChange || 0) < 0) // Improvement
+            .sort((a, b) => (b.value || 0) - (a.value || 0)) // Sort by Impact
+            .slice(0, 3)
+            .map(s => {
+                const absolute = s.averagePositionChange || 0;
+                return {
+                    name: s.name,
+                    id: s.name,
+                    impact_score: s.value ? Math.round(s.value) : 0,
+                    changes: {
+                        average_position: {
+                            absolute: Number(absolute.toFixed(2)),
+                            percentage: 0
+                        }
+                    }
+                };
+            });
+
+        const position_losses = sources
+            .filter(s => (s.averagePositionChange || 0) > 0) // Decline
+            .sort((a, b) => (b.value || 0) - (a.value || 0)) // Sort by Impact
+            .slice(0, 3)
+            .map(s => {
+                const absolute = s.averagePositionChange || 0;
+                return {
+                    name: s.name,
+                    id: s.name,
+                    impact_score: s.value ? Math.round(s.value) : 0,
+                    changes: {
+                        average_position: {
+                            absolute: Number(absolute.toFixed(2)),
+                            percentage: 0
+                        }
+                    }
+                };
+            });
+
+        return {
+            visibility_gains,
+            visibility_losses,
+            soa_gains,
+            soa_losses,
+            sentiment_gains,
+            sentiment_losses,
+            position_gains,
+            position_losses,
+        };
+    }
+
 
     // ===== Helper Methods =====
 

@@ -18,8 +18,11 @@ export interface SourceAttributionData {
   topics: string[]
   prompts: string[]
   pages: string[]
-  value?: number // Composite score based on Visibility, SOA, Sentiment, Citations and Topics
   visibility?: number // Visibility index (0-100)
+  visibilityChange?: number // Change in visibility index
+  averagePosition?: number // Average position (1-10)
+  averagePositionChange?: number // Change in average position
+  value?: number // Composite score based on Visibility, SOA, Sentiment, Citations and Topics
 }
 
 export interface SourceAttributionResponse {
@@ -61,7 +64,7 @@ const getSourceType = (category: string | null, domain: string | null): 'brand' 
     }
     return 'editorial'
   }
-  
+
   const normalizedCategory = category.toLowerCase().trim()
   return sourceTypeMapping[normalizedCategory] || 'editorial'
 }
@@ -70,11 +73,12 @@ export class SourceAttributionService {
   async getSourceAttribution(
     brandId: string,
     customerId: string,
-    dateRange?: { start: string; end: string }
+    dateRange?: { start: string; end: string },
+    comparisonRange?: { start: string; end: string }
   ): Promise<SourceAttributionResponse> {
     const serviceStartTime = Date.now();
     const stepTimings: Record<string, number> = {};
-    
+
     try {
       // Step 1: Resolve brand
       const brandStartTime = Date.now();
@@ -107,10 +111,17 @@ export class SourceAttributionService {
         endIso
       )
       stepTimings['cache_lookup'] = Date.now() - cacheStartTime;
-      
+
       if (cached) {
+        console.log(`[SourceAttribution] 🟢 Cache HIT for range ${startIso} to ${endIso}`);
+        // Log a sample to see if cache has 0 deltas
+        if (cached.payload.sources.length > 0) {
+          const s = cached.payload.sources[0];
+          console.log(`[SourceAttribution] 🔍 Cached Sample: ${s.name} | SOA Change: ${s.soaChange}`);
+        }
         return cached.payload
       }
+      console.log(`[SourceAttribution] 🟡 Cache MISS for range ${startIso} to ${endIso}. Calculating live...`);
 
       // Step 3: Get brand domain for comparison
       const brandDomainStartTime = Date.now();
@@ -252,13 +263,14 @@ export class SourceAttributionService {
 
       // Step 8: Fetch SoA, mention counts, topics, and sentiment from extracted_positions
       const positionsStartTime = Date.now();
-      
+
       let extractedPositions: Array<{
         collector_result_id: number | null;
         share_of_answers_brand: number | null;
         total_brand_mentions: number | null;
         sentiment_score?: number | null;
         visibility_index?: number | null;
+        average_position?: number | null;
         competitor_name?: string | null;
         topic?: string | null;
         metadata?: any;
@@ -286,6 +298,7 @@ export class SourceAttributionService {
               total_brand_mentions: row.total_brand_mentions,
               sentiment_score: row.sentiment_score,
               visibility_index: row.visibility_index,
+              average_position: row.average_position || (row.brand_positions && row.brand_positions.length > 0 ? average(row.brand_positions) : null),
               competitor_name: row.competitor_name,
               topic: row.topic || null,
               metadata: row.metadata,
@@ -303,6 +316,7 @@ export class SourceAttributionService {
               total_brand_mentions,
               sentiment_score,
               visibility_index,
+              brand_positions,
               competitor_name,
               topic,
               metadata
@@ -313,7 +327,10 @@ export class SourceAttributionService {
           if (positionsError) {
             console.warn('[SourceAttribution] Failed to fetch extracted positions:', positionsError)
           } else {
-            extractedPositions = positionsData || []
+            extractedPositions = (positionsData || []).map((row: any) => ({
+              ...row,
+              average_position: row.brand_positions && row.brand_positions.length > 0 ? average(row.brand_positions) : null
+            }))
             stepTimings['extracted_positions_query'] = Date.now() - positionsStartTime;
           }
         }
@@ -326,23 +343,24 @@ export class SourceAttributionService {
       const queryMap = new Map(
         queries.map(q => [q.id, q])
       )
-      
+
       // Create maps for share of answer, mention counts, and visibility by collector_result_id
       // Multiple positions can exist per collector_result_id, so we'll average them
       // Note: sentiment is now stored directly in collector_results (already fetched above)
       const shareOfAnswerByCollectorResult = new Map<number, number[]>()
       const mentionCountsByCollectorResult = new Map<number, number[]>()
       const visibilityByCollectorResult = new Map<number, number[]>()
-      
+      const positionByCollectorResult = new Map<number, number[]>()
+
       for (const position of extractedPositions) {
         if (position.collector_result_id) {
           const collectorId = position.collector_result_id
-          
+
           // Determine if this is a brand row (not a competitor row)
           const isBrandRow =
             !position.competitor_name ||
             (typeof position.competitor_name === 'string' && position.competitor_name.trim().length === 0)
-          
+
           // Collect share of answer values (brand rows only, same as visibility)
           if (isBrandRow && position.share_of_answers_brand !== null) {
             if (!shareOfAnswerByCollectorResult.has(collectorId)) {
@@ -350,7 +368,7 @@ export class SourceAttributionService {
             }
             shareOfAnswerByCollectorResult.get(collectorId)!.push(toNumber(position.share_of_answers_brand))
           }
-          
+
           // Collect mention counts (brand rows only, from extracted_positions, not collector_results)
           if (isBrandRow && position.total_brand_mentions !== null && position.total_brand_mentions !== undefined) {
             if (!mentionCountsByCollectorResult.has(collectorId)) {
@@ -367,9 +385,17 @@ export class SourceAttributionService {
             // visibility_index is 0-1 scale, convert to 0-100 for consistency
             visibilityByCollectorResult.get(collectorId)!.push(toNumber(position.visibility_index) * 100)
           }
+
+          // Collect position values (brand rows only)
+          if (isBrandRow && position.average_position !== null && position.average_position !== undefined) {
+            if (!positionByCollectorResult.has(collectorId)) {
+              positionByCollectorResult.set(collectorId, [])
+            }
+            positionByCollectorResult.get(collectorId)!.push(toNumber(position.average_position))
+          }
         }
       }
-      
+
       // Calculate average share of answer per collector result
       const avgShareByCollectorResult = new Map<number, number>()
       for (const [collectorId, shareValues] of shareOfAnswerByCollectorResult.entries()) {
@@ -381,10 +407,16 @@ export class SourceAttributionService {
       for (const [collectorId, visibilityValues] of visibilityByCollectorResult.entries()) {
         avgVisibilityByCollectorResult.set(collectorId, average(visibilityValues))
       }
-      
+
+      // Calculate average position per collector result
+      const avgPositionByCollectorResult = new Map<number, number>()
+      for (const [collectorId, positionValues] of positionByCollectorResult.entries()) {
+        avgPositionByCollectorResult.set(collectorId, average(positionValues))
+      }
+
       // Collect sentiment values (brand rows only) from extracted_positions
       const sentimentValuesByCollectorResult = new Map<number, number[]>()
-      
+
       // Create map from collector_result_id to topic name (from extracted_positions topic column or metadata)
       const collectorResultTopicMap = new Map<number, string>()
       for (const position of extractedPositions) {
@@ -394,7 +426,7 @@ export class SourceAttributionService {
             collectorResultTopicMap.set(position.collector_result_id, topicName)
           }
         }
-        
+
         // Sentiment: only use brand rows (no competitor_name) to match other pages
         const collectorId = position.collector_result_id
         const isBrandRow =
@@ -410,9 +442,9 @@ export class SourceAttributionService {
           }
         }
       }
-      
+
       const calculationsStartTime = Date.now();
-      
+
       // Calculate average sentiment per collector result (from extracted_positions)
       const avgSentimentByCollectorResult = new Map<number, number>()
       for (const [collectorId, sentimentValues] of sentimentValuesByCollectorResult.entries()) {
@@ -434,6 +466,7 @@ export class SourceAttributionService {
           shareValues: number[]
           sentimentValues: number[]
           visibilityValues: number[]
+          positionValues: number[]
           mentionCounts: number[]
           topics: Set<string>
           queryIds: Set<string>
@@ -452,7 +485,7 @@ export class SourceAttributionService {
             return 'unknown'
           }
         })() : 'unknown')
-        
+
         const sourceKey = domain.toLowerCase().trim()
 
         if (!sourceKey || sourceKey === 'unknown') {
@@ -470,6 +503,7 @@ export class SourceAttributionService {
             shareValues: [],
             sentimentValues: [],
             visibilityValues: [],
+            positionValues: [],
             mentionCounts: [],
             topics: new Set<string>(),
             queryIds: new Set<string>(),
@@ -485,12 +519,12 @@ export class SourceAttributionService {
         // Add query_id from citation (citations table has query_id directly)
         if (citation.query_id) {
           aggregate.queryIds.add(citation.query_id)
-          
+
           // Also get topic from query_id directly (in case collector_result doesn't have it)
           const query = queryMap.get(citation.query_id)
           if (query) {
             // Priority: 1) query.topic column, 2) query.metadata->>'topic_name', 3) query.metadata->>'topic'
-            const queryTopic = query.topic || 
+            const queryTopic = query.topic ||
               (query.metadata?.topic_name || query.metadata?.topic || null)
             if (queryTopic) {
               aggregate.topics.add(queryTopic)
@@ -502,20 +536,20 @@ export class SourceAttributionService {
         if (citation.collector_result_id) {
           aggregate.collectorResultIds.add(citation.collector_result_id)
           const collectorResult = collectorResultMap.get(citation.collector_result_id)
-          
+
           // Get topic from collector_result_id mapping (extracted from extracted_positions metadata)
           const topicName = collectorResultTopicMap.get(citation.collector_result_id)
           if (topicName) {
             aggregate.topics.add(topicName)
           }
-          
+
           if (!collectorResult) {
             // Log missing collector result (only once per source to avoid spam)
             if (aggregate.collectorResultIds.size === 1) {
               console.warn(`[SourceAttribution] Collector result ${citation.collector_result_id} not found in map for source ${sourceKey}`)
             }
           }
-          
+
           // Get metrics from extracted_positions (SOA, sentiment, visibility, mention counts)
           // Only add values once per collector_result_id to avoid duplicates when same collector_result_id appears multiple times
           if (!aggregate.processedCollectorResultIds.has(citation.collector_result_id)) {
@@ -537,7 +571,13 @@ export class SourceAttributionService {
             if (avgVisibility !== undefined) {
               aggregate.visibilityValues.push(avgVisibility)
             }
-            
+
+            // Add position from extracted_positions (once per collector_result_id)
+            const avgPosition = avgPositionByCollectorResult.get(citation.collector_result_id)
+            if (avgPosition !== undefined) {
+              aggregate.positionValues.push(avgPosition)
+            }
+
             // Get mention counts from extracted_positions (once per collector_result_id)
             const mentionCounts = mentionCountsByCollectorResult.get(citation.collector_result_id)
             if (mentionCounts && mentionCounts.length > 0) {
@@ -548,7 +588,7 @@ export class SourceAttributionService {
             // Mark this collector_result_id as processed for all metrics
             aggregate.processedCollectorResultIds.add(citation.collector_result_id)
           }
-          
+
           if (collectorResult) {
             // Add question/prompt from collector_results
             if (collectorResult.question) {
@@ -559,7 +599,7 @@ export class SourceAttributionService {
                 console.warn(`[SourceAttribution] Collector result ${citation.collector_result_id} found but has no question field`)
               }
             }
-            
+
             // Also add query_id from collector result if citation doesn't have it
             if (!citation.query_id && collectorResult.query_id) {
               aggregate.queryIds.add(collectorResult.query_id)
@@ -575,23 +615,29 @@ export class SourceAttributionService {
       stepTimings['aggregation'] = Date.now() - aggregationStartTime;
 
       // Step 10: Calculate previous period for change metrics
-      // Compare the most recent day in the current period to the previous day
-      // Example: If viewing Dec 1-2, compare Dec 2 (most recent) to Dec 1 (previous day)
       const previousPeriodStartTime = Date.now();
-      
-      // Use the end date of the current period as the "current day" to compare
-      const currentDay = new Date(normalizedRange.endDate)
-      currentDay.setUTCHours(0, 0, 0, 0) // Start of the most recent day
-      
-      // Previous day is one day before the current day
-      const previousDay = new Date(currentDay)
-      previousDay.setUTCDate(previousDay.getUTCDate() - 1)
-      
-      // Previous period is just the previous day (00:00:00 to 23:59:59)
-      const previousStart = new Date(previousDay)
-      previousStart.setUTCHours(0, 0, 0, 0)
-      const previousEnd = new Date(previousDay)
-      previousEnd.setUTCHours(23, 59, 59, 999)
+      let previousStart: Date;
+      let previousEnd: Date;
+
+      if (comparisonRange) {
+        previousStart = new Date(comparisonRange.start);
+        previousEnd = new Date(comparisonRange.end);
+      } else {
+        // Fallback to legacy logic: Compare the most recent day in the current period to the previous day
+        // Example: If viewing Dec 1-2, compare Dec 2 (most recent) to Dec 1 (previous day)
+        const currentDay = new Date(normalizedRange.endDate);
+        currentDay.setUTCHours(0, 0, 0, 0); // Start of the most recent day
+
+        // Previous day is one day before the current day
+        const previousDay = new Date(currentDay);
+        previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+
+        // Previous period is just the previous day (00:00:00 to 23:59:59)
+        previousStart = new Date(previousDay);
+        previousStart.setUTCHours(0, 0, 0, 0);
+        previousEnd = new Date(previousDay);
+        previousEnd.setUTCHours(23, 59, 59, 999);
+      }
 
       const { data: previousCitations } = await supabaseAdmin
         .from('citations')
@@ -602,19 +648,33 @@ export class SourceAttributionService {
         .lte('created_at', previousEnd.toISOString())
 
       // Calculate previous period aggregates
-      const previousSourceAggregates = new Map<string, { citations: number; mentionRate: number; soa: number; soaArray?: number[]; sentiment: number }>()
-      
+      const previousSourceAggregates = new Map<string, {
+        citations: number;
+        mentionRate: number;
+        soa: number;
+        soaArray?: number[];
+        sentiment: number;
+        sentimentValues?: number[];
+        position: number;
+        positionArray?: number[];
+        visibility: number;
+        visibilityArray?: number[];
+        processedCollectorResultIds: Set<number>;
+      }>()
+
       if (previousCitations && previousCitations.length > 0) {
         const previousCollectorIds = Array.from(new Set(
           previousCitations.map(c => c.collector_result_id).filter((id): id is number => typeof id === 'number')
         ))
-        
+
         // Feature flag: default ON. Set USE_OPTIMIZED_SOURCE_ATTRIBUTION=false to force legacy behavior.
         const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION !== 'false';
         let previousPositions: Array<{
           collector_result_id: number | null;
           share_of_answers_brand: number | null;
           sentiment_score?: number | null;
+          visibility_index?: number | null;
+          average_position?: number | null;
           competitor_name?: string | null;
         }> = [];
 
@@ -631,29 +691,40 @@ export class SourceAttributionService {
               collector_result_id: row.collector_result_id,
               share_of_answers_brand: row.share_of_answers_brand,
               sentiment_score: row.sentiment_score,
+              visibility_index: row.visibility_index,
+              average_position: row.average_position || (row.brand_positions && row.brand_positions.length > 0 ? average(row.brand_positions) : null),
               competitor_name: row.competitor_name,
             }));
           }
         } else {
           const { data } = await supabaseAdmin
             .from('extracted_positions')
-            .select('collector_result_id, share_of_answers_brand, sentiment_score, competitor_name')
+            .select('collector_result_id, share_of_answers_brand, sentiment_score, visibility_index, brand_positions, competitor_name')
             .in('collector_result_id', previousCollectorIds)
             .eq('brand_id', brandId)
             .gte('processed_at', previousStart.toISOString())
             .lte('processed_at', previousEnd.toISOString());
-          previousPositions = data || [];
+          previousPositions = (data || []).map((row: any) => ({
+            ...row,
+            average_position: row.brand_positions && row.brand_positions.length > 0 ? average(row.brand_positions) : null
+          }))
         }
 
         // Calculate average share of answer per collector result for previous period
         const previousShareByCollectorResult = new Map<number, number[]>()
         const previousSentimentValuesByCollectorResult = new Map<number, number[]>()
-        
+        const previousPositionValuesByCollectorResult = new Map<number, number[]>()
+        const previousVisibilityValuesByCollectorResult = new Map<number, number[]>()
+
         if (previousPositions) {
           for (const position of previousPositions) {
             if (position.collector_result_id) {
               const collectorId = position.collector_result_id
-              
+
+              const isBrandRow =
+                !position.competitor_name ||
+                (typeof position.competitor_name === 'string' && position.competitor_name.trim().length === 0)
+
               // Collect share of answer values
               if (position.share_of_answers_brand !== null) {
                 if (!previousShareByCollectorResult.has(collectorId)) {
@@ -662,9 +733,22 @@ export class SourceAttributionService {
                 previousShareByCollectorResult.get(collectorId)!.push(toNumber(position.share_of_answers_brand))
               }
 
-              const isBrandRow =
-                !position.competitor_name ||
-                (typeof position.competitor_name === 'string' && position.competitor_name.trim().length === 0)
+              // Collect position values
+              if (position.average_position !== null && position.average_position !== undefined) {
+                if (!previousPositionValuesByCollectorResult.has(collectorId)) {
+                  previousPositionValuesByCollectorResult.set(collectorId, [])
+                }
+                previousPositionValuesByCollectorResult.get(collectorId)!.push(toNumber(position.average_position))
+              }
+
+              // Collect visibility values
+              if (isBrandRow && position.visibility_index !== null && position.visibility_index !== undefined) {
+                if (!previousVisibilityValuesByCollectorResult.has(collectorId)) {
+                  previousVisibilityValuesByCollectorResult.set(collectorId, [])
+                }
+                previousVisibilityValuesByCollectorResult.get(collectorId)!.push(toNumber(position.visibility_index) * 100)
+              }
+
               if (isBrandRow && position.sentiment_score !== null && position.sentiment_score !== undefined) {
                 const score = toNumber(position.sentiment_score)
                 if (Number.isFinite(score)) {
@@ -677,16 +761,26 @@ export class SourceAttributionService {
             }
           }
         }
-        
+
         const previousAvgShareByCollectorResult = new Map<number, number>()
         for (const [collectorId, shareValues] of previousShareByCollectorResult.entries()) {
           previousAvgShareByCollectorResult.set(collectorId, average(shareValues))
         }
-        
+
         // Average sentiment per collector result for previous period
         const previousAvgSentimentByCollectorResult = new Map<number, number>()
         for (const [collectorId, sentimentValues] of previousSentimentValuesByCollectorResult.entries()) {
           previousAvgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
+        }
+
+        const previousAvgPositionByCollectorResult = new Map<number, number>()
+        for (const [collectorId, positionValues] of previousPositionValuesByCollectorResult.entries()) {
+          previousAvgPositionByCollectorResult.set(collectorId, average(positionValues))
+        }
+
+        const previousAvgVisibilityByCollectorResult = new Map<number, number>()
+        for (const [collectorId, visibilityValues] of previousVisibilityValuesByCollectorResult.entries()) {
+          previousAvgVisibilityByCollectorResult.set(collectorId, average(visibilityValues))
         }
 
         for (const citation of previousCitations) {
@@ -698,26 +792,54 @@ export class SourceAttributionService {
           }
 
           if (!previousSourceAggregates.has(sourceKey)) {
-            previousSourceAggregates.set(sourceKey, { citations: 0, mentionRate: 0, soa: 0, soaArray: [], sentiment: 0 })
+            previousSourceAggregates.set(sourceKey, {
+              citations: 0,
+              mentionRate: 0,
+              soa: 0,
+              soaArray: [],
+              sentiment: 0,
+              sentimentValues: [],
+              position: 0,
+              positionArray: [],
+              visibility: 0,
+              visibilityArray: [],
+              processedCollectorResultIds: new Set<number>()
+            })
           }
 
           const prev = previousSourceAggregates.get(sourceKey)!
           prev.citations += citation.usage_count || 1
 
-          if (citation.collector_result_id) {
+          if (citation.collector_result_id && !prev.processedCollectorResultIds.has(citation.collector_result_id)) {
             // Get share of answer from extracted_positions
             const avgShare = previousAvgShareByCollectorResult.get(citation.collector_result_id)
             if (avgShare !== undefined) {
-              // Store as array to calculate average later
               if (!prev.soaArray) prev.soaArray = []
               prev.soaArray.push(avgShare)
             }
-            
+
             // Get sentiment from collector_results
-            const avgSentiment = previousAvgSentimentByCollectorResult.get(citation.collector_result_id)
-            if (avgSentiment !== undefined) {
-              prev.sentiment += avgSentiment
+            const collSentimentValues = previousSentimentValuesByCollectorResult.get(citation.collector_result_id)
+            if (collSentimentValues && collSentimentValues.length > 0) {
+              if (!prev.sentimentValues) prev.sentimentValues = []
+              prev.sentimentValues.push(...collSentimentValues)
             }
+
+            // Get position from extracted_positions
+            const avgPosition = previousAvgPositionByCollectorResult.get(citation.collector_result_id)
+            if (avgPosition !== undefined) {
+              if (!prev.positionArray) prev.positionArray = []
+              prev.positionArray.push(avgPosition)
+            }
+
+            // Get visibility from extracted_positions
+            const avgVisibility = previousAvgVisibilityByCollectorResult.get(citation.collector_result_id)
+            if (avgVisibility !== undefined) {
+              if (!prev.visibilityArray) prev.visibilityArray = []
+              prev.visibilityArray.push(avgVisibility)
+            }
+
+            prev.processedCollectorResultIds.add(citation.collector_result_id)
           }
         }
       }
@@ -752,11 +874,18 @@ export class SourceAttributionService {
         // share_of_answers_brand is stored as 0-100 percentage format (confirmed in position-extraction.service.ts:736)
         const avgShareRaw = aggregate.shareValues.length > 0 ? average(aggregate.shareValues) : 0
         const avgShare = avgShareRaw // Already in 0-100 format, no normalization needed
-        
+
+        if (sourceKey === 'reddit.com') {
+          console.log(`[DEBUG_S] reddit.com aggregate:`, {
+            sentimentValues: aggregate.sentimentValues,
+            avg: aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
+          });
+        }
         const avgSentiment = aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
         const avgVisibility = aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
+        const avgPosition = aggregate.positionValues.length > 0 ? average(aggregate.positionValues) : 0
         const totalMentions = aggregate.mentionCounts.reduce((sum, count) => sum + count, 0)
-        
+
         // Mention Rate: percentage of total collector results where this source is cited
         // Formula: (Number of unique collector results citing this source / Total collector results) * 100
         // Example: If learn.microsoft.com is cited in 8 out of 23 total responses, mention rate = (8/23) * 100 = 34.8%
@@ -777,7 +906,7 @@ export class SourceAttributionService {
         const normalizedSentiment = maxSentiment > 0 ? Math.min(100, Math.max(0, (avgSentiment / maxSentiment) * 100)) : 0
         const normalizedCitations = maxCitations > 0 ? Math.min(100, (aggregate.citations / maxCitations) * 100) : 0
         const normalizedTopics = maxTopics > 0 ? Math.min(100, (aggregate.topics.size / maxTopics) * 100) : 0
-        
+
         const value = round(
           (normalizedVisibility * 0.2) +
           (normalizedSOA * 0.2) +
@@ -797,11 +926,22 @@ export class SourceAttributionService {
           ? average(previous.soaArray)
           : (previous ? previous.soa : 0)
         const previousSoa = previousSoaRaw // Already in 0-100 format, no normalization needed
-        const previousSentiment = previous ? previous.sentiment : 0
+        const previousSentiment = previous && previous.sentimentValues && previous.sentimentValues.length > 0
+          ? average(previous.sentimentValues)
+          : (previous ? previous.sentiment : 0)
+
+        const previousPosition = previous && previous.positionArray && previous.positionArray.length > 0
+          ? average(previous.positionArray)
+          : (previous ? previous.position : 0)
+        const previousVisibility = previous && previous.visibilityArray && previous.visibilityArray.length > 0
+          ? average(previous.visibilityArray)
+          : (previous ? previous.visibility : 0)
 
         const mentionChange = mentionRate - previousMentionRate
         const soaChange = avgShare - previousSoa
         const sentimentChange = avgSentiment - previousSentiment
+        const positionChange = avgPosition - previousPosition
+        const visibilityChange = avgVisibility - previousVisibility
 
         // Determine if this is the brand's own domain
         const isBrandDomain = brandDomain && (
@@ -810,6 +950,7 @@ export class SourceAttributionService {
           brandDomain.toLowerCase().includes(aggregate.domain.toLowerCase())
         )
         const sourceType = isBrandDomain ? 'brand' : getSourceType(aggregate.category, aggregate.domain)
+
 
         sources.push({
           name: aggregate.domain,
@@ -824,6 +965,9 @@ export class SourceAttributionService {
           citations: aggregate.citations,
           topics: Array.from(aggregate.topics),
           visibility: round(avgVisibility, 1),
+          visibilityChange: round(visibilityChange, 1),
+          averagePosition: round(avgPosition, 1),
+          averagePositionChange: round(positionChange, 1),
           value: value,
           // Use prompts from collector_results.question, fallback to query_text from generated_queries
           prompts: (() => {
@@ -846,7 +990,7 @@ export class SourceAttributionService {
 
       // Sort by Value descending (composite score), then by mention rate as tiebreaker
       sources.sort((a, b) => (b.value || 0) - (a.value || 0) || b.mentionRate - a.mentionRate)
-      
+
       stepTimings['conversion'] = Date.now() - conversionStartTime;
 
       // Calculate overall metrics
@@ -919,7 +1063,7 @@ export class SourceAttributionService {
   ): Promise<SourceAttributionResponse> {
     const serviceStartTime = Date.now();
     const stepTimings: Record<string, number> = {};
-    
+
     try {
       // Step 1: Resolve brand
       const brandStartTime = Date.now();
@@ -1069,30 +1213,30 @@ export class SourceAttributionService {
       // Create lookup maps
       const queryMap = new Map(queries.map(q => [q.id, q]))
       const collectorResultMap = new Map(collectorResults.map(cr => [cr.id, cr]))
-      
+
       // Create maps for metrics by collector_result_id
       const shareByCollectorResult = new Map<number, number[]>()
       const sentimentByCollectorResult = new Map<number, number[]>()
       const mentionsByCollectorResult = new Map<number, number>()
-      
+
       for (const position of positionsData) {
         const collectorId = position.collector_result_id
         if (!collectorId) continue
-        
+
         if (position.share_of_answers_competitor !== null) {
           if (!shareByCollectorResult.has(collectorId)) {
             shareByCollectorResult.set(collectorId, [])
           }
           shareByCollectorResult.get(collectorId)!.push(toNumber(position.share_of_answers_competitor))
         }
-        
+
         if (position.sentiment_score_competitor !== null) {
           if (!sentimentByCollectorResult.has(collectorId)) {
             sentimentByCollectorResult.set(collectorId, [])
           }
           sentimentByCollectorResult.get(collectorId)!.push(toNumber(position.sentiment_score_competitor))
         }
-        
+
         if (position.competitor_mentions !== null) {
           mentionsByCollectorResult.set(collectorId, toNumber(position.competitor_mentions))
         }
@@ -1103,7 +1247,7 @@ export class SourceAttributionService {
       for (const [collectorId, shareValues] of shareByCollectorResult.entries()) {
         avgShareByCollectorResult.set(collectorId, average(shareValues))
       }
-      
+
       const avgSentimentByCollectorResult = new Map<number, number>()
       for (const [collectorId, sentimentValues] of sentimentByCollectorResult.entries()) {
         avgSentimentByCollectorResult.set(collectorId, average(sentimentValues))
@@ -1140,7 +1284,7 @@ export class SourceAttributionService {
             return 'unknown'
           }
         })() : 'unknown')
-        
+
         const sourceKey = domain.toLowerCase().trim()
         if (!sourceKey || sourceKey === 'unknown') continue
 
@@ -1176,7 +1320,7 @@ export class SourceAttributionService {
 
         if (citation.collector_result_id) {
           aggregate.collectorResultIds.add(citation.collector_result_id)
-          
+
           const avgShare = avgShareByCollectorResult.get(citation.collector_result_id)
           if (avgShare !== undefined) {
             aggregate.shareValues.push(avgShare)
@@ -1186,12 +1330,12 @@ export class SourceAttributionService {
           if (avgSentiment !== undefined) {
             aggregate.sentimentValues.push(avgSentiment)
           }
-          
+
           const mentions = mentionsByCollectorResult.get(citation.collector_result_id)
           if (mentions !== undefined) {
             aggregate.mentionCounts.push(mentions)
           }
-          
+
           const collectorResult = collectorResultMap.get(citation.collector_result_id)
           if (collectorResult?.question) {
             aggregate.prompts.add(collectorResult.question)
@@ -1219,11 +1363,11 @@ export class SourceAttributionService {
 
       // Step 8: Convert aggregates to source data
       const sources: SourceAttributionData[] = []
-      
+
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         const avgShare = aggregate.shareValues.length > 0 ? average(aggregate.shareValues) : 0
         const avgSentiment = aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
-        
+
         const uniqueCollectorResults = aggregate.collectorResultIds.size
         const mentionRate = totalResponsesCount > 0 ? (uniqueCollectorResults / totalResponsesCount) * 100 : 0
 
@@ -1241,7 +1385,7 @@ export class SourceAttributionService {
           sentimentChange: 0, // TODO: Calculate from previous period if needed
           citations: aggregate.citations,
           topics: Array.from(aggregate.topics),
-          prompts: Array.from(aggregate.prompts).length > 0 
+          prompts: Array.from(aggregate.prompts).length > 0
             ? Array.from(aggregate.prompts)
             : Array.from(aggregate.queryIds).map(qId => queryMap.get(qId)?.query_text || '').filter(Boolean),
           pages: Array.from(aggregate.pages)
@@ -1438,13 +1582,13 @@ export class SourceAttributionService {
 
       // Group citations by domain and date
       const citationsByDomainAndDate = new Map<string, Map<string, typeof citationsData>>()
-      
+
       for (const citation of citationsData) {
         if (!citation.domain || !citation.created_at) continue
         const domain = citation.domain.toLowerCase().trim()
         if (selectedSet && !selectedSet.has(domain)) continue
         const date = new Date(citation.created_at).toISOString().split('T')[0]
-        
+
         if (!citationsByDomainAndDate.has(domain)) {
           citationsByDomainAndDate.set(domain, new Map())
         }
@@ -1471,7 +1615,7 @@ export class SourceAttributionService {
         .eq('brand_id', brandId)
         .gte('created_at', startIso)
         .lte('created_at', endIso)
-      
+
       const totalResponsesByDate = new Map<string, number>()
       if (dailyResponsesData) {
         for (const r of dailyResponsesData) {
@@ -1482,7 +1626,7 @@ export class SourceAttributionService {
 
       // Calculate Impact Score for each domain and date
       const impactScoresByDomain = new Map<string, number[]>()
-      
+
       // Calculate daily aggregates to find max values for normalization
       let globalMaxDailyCitations = 1
       let globalMaxDailyTopics = 1
@@ -1513,7 +1657,7 @@ export class SourceAttributionService {
             if (citation.collector_result_id) {
               dayCollectorResults.add(citation.collector_result_id)
             }
-            
+
             if (citation.query_id) {
               const query = queryMap.get(citation.query_id)
               if (query?.topic) {
@@ -1525,7 +1669,7 @@ export class SourceAttributionService {
               const key = `${citation.collector_result_id}_${date}`
               const positions = positionsByCollectorAndDate.get(key) || []
               for (const pos of positions) {
-                const isBrandRow = !pos.competitor_name || 
+                const isBrandRow = !pos.competitor_name ||
                   (typeof pos.competitor_name === 'string' && pos.competitor_name.trim().length === 0)
                 if (isBrandRow && pos.sentiment_score !== null) {
                   sentimentValues.push(toNumber(pos.sentiment_score))
@@ -1535,7 +1679,7 @@ export class SourceAttributionService {
           }
 
           const avgSentiment = sentimentValues.length > 0 ? average(sentimentValues) : 0
-          
+
           globalMaxDailyCitations = Math.max(globalMaxDailyCitations, totalCitations)
           globalMaxDailyTopics = Math.max(globalMaxDailyTopics, dayTopics.size)
           globalMaxDailySentiment = Math.max(globalMaxDailySentiment, avgSentiment)
@@ -1556,7 +1700,7 @@ export class SourceAttributionService {
       for (const date of dates) {
         for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
           const dayCitations = dateMap.get(date) || []
-          
+
           if (dayCitations.length === 0) {
             // No data for this day - RETURN 0 (No fill-forward)
             if (!impactScoresByDomain.has(domain)) {
@@ -1567,7 +1711,7 @@ export class SourceAttributionService {
           }
 
           const agg = dailyAggregates.get(`${domain}_${date}`)!
-          
+
           // Re-calculate averages for SOA and Visibility (we didn't cache them in first pass)
           const shareValues: number[] = []
           const visibilityValues: number[] = []
@@ -1577,7 +1721,7 @@ export class SourceAttributionService {
               const key = `${citation.collector_result_id}_${date}`
               const positions = positionsByCollectorAndDate.get(key) || []
               for (const pos of positions) {
-                const isBrandRow = !pos.competitor_name || 
+                const isBrandRow = !pos.competitor_name ||
                   (typeof pos.competitor_name === 'string' && pos.competitor_name.trim().length === 0)
                 if (isBrandRow) {
                   if (pos.share_of_answers_brand !== null) shareValues.push(toNumber(pos.share_of_answers_brand))
@@ -1593,7 +1737,7 @@ export class SourceAttributionService {
           // Calculate normalized metrics for Impact Score
           // const normalizedVisibility = Math.min(100, Math.max(0, avgVisibility))
           const normalizedSOA = Math.min(100, Math.max(0, avgShare))
-          
+
           // Normalize relative to global max daily values
           const normalizedSentiment = (agg.avgSentiment / globalMaxDailySentiment) * 100
           const normalizedCitations = (agg.totalCitations / globalMaxDailyCitations) * 100
@@ -1656,19 +1800,19 @@ export class SourceAttributionService {
         }))
       } else {
         // Default: top 10 domains by average Impact Score
-      const domainAverages = Array.from(impactScoresByDomain.entries())
-        .map(([domain, scores]) => ({
-          domain,
-          scores,
-          average: scores.length > 0 ? average(scores) : 0
-        }))
-        .sort((a, b) => b.average - a.average)
-        .slice(0, 10)
+        const domainAverages = Array.from(impactScoresByDomain.entries())
+          .map(([domain, scores]) => ({
+            domain,
+            scores,
+            average: scores.length > 0 ? average(scores) : 0
+          }))
+          .sort((a, b) => b.average - a.average)
+          .slice(0, 10)
 
         sources = domainAverages.map(({ domain, scores }) => ({
-        name: domain,
-        data: scores
-      }))
+          name: domain,
+          data: scores
+        }))
       }
 
       // Format dates for display

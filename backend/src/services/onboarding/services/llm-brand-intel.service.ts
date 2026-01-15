@@ -1,15 +1,18 @@
 import axios from 'axios';
 import type { LLMBrandIntelResult } from '../types';
+import { braveSearchService } from './brave-search.service';
 
 /**
- * Service for generating brand intelligence using LLM (Cerebras)
+ * Service for generating brand intelligence using LLM (OpenRouter/Cerebras)
+ * Enhanced with Brave Search for real-time data
  */
 export class LLMBrandIntelService {
   private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
   private cerebrasModel =
     process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
   private openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-  private openRouterModel =process.env['OPENROUTER_MODEL'] || 'openai/gpt-4o-mini';
+  // Updated to use the fast GPT-OSS 20B model
+  private openRouterModel = process.env['OPENROUTER_MODEL'] || 'openai/gpt-oss-20b';
     
   private openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
   private openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
@@ -19,51 +22,80 @@ export class LLMBrandIntelService {
     companyName: string,
     domain?: string
   ): Promise<LLMBrandIntelResult> {
-    const systemPrompt = `You are a brand intelligence researcher. Given a brand name "${rawInput}"${domain ? ` and website "${domain}"` : ''}:
+    console.log(`🚀 [BRAND-INTEL] Starting intelligence gathering for: "${rawInput}"`);
 
-Identify the brand, canonical homepage URL, short neutral summary (max 4 sentences).
+    // Step 1: Perform Brave Web Search (Optimized: Single query to save API calls)
+    // Combined query for brand info + competitors + products
+    const combinedQuery = `${companyName} aliases products features competitors alternatives`;
+    
+    const searchStartTime = performance.now();
+    
+    // Use single search with higher limit (6) to get enough info
+    const searchResults = await braveSearchService.search(combinedQuery, 6);
 
-Extract CEO, headquarters city+country, founded year (if public).
+    const searchEndTime = performance.now();
+    console.log(`⏱️ [BRAND-INTEL] Total Search Phase: ${(searchEndTime - searchStartTime).toFixed(2)}ms`);
 
-List top 5 competitors (global first, dedupe subsidiaries).
+    // Prepare search context
+    const searchContext = searchResults.map(r => `Source: ${r.title}\n${r.description}\nURL: ${r.url}`).join('\n\n');
 
-Assign an industry/vertical (1–3 words).
+    const systemPrompt = `You are a brand intelligence researcher.
+    
+CONTEXT FROM WEB SEARCH:
+${searchContext}
+
+TASK:
+Analyze the brand "${rawInput}"${domain ? ` (Website: ${domain})` : ''} using the provided search context and your internal knowledge.
+
+1. Identify the brand, canonical homepage URL, short neutral summary (max 4 sentences).
+2. Extract CEO, headquarters city+country, founded year (if public).
+3. List top 5 competitors (global first, dedupe subsidiaries) with their URLs, aliases, and key products.
+4. Assign an industry/vertical (1–3 words).
+5. Identify Brand Synonyms/Aliases (e.g., "IBM" for "International Business Machines").
+6. Identify Key Commercial Products for the brand.
 
 IMPORTANT: You must respond with a valid JSON object containing these exact fields:
 {
   "brandName": "string",
   "homepageUrl": "string (domain name)",
+  "brandSynonyms": ["string"],
+  "keyProducts": ["string"],
   "summary": "string (max 4 sentences)",
   "ceo": "string or null",
   "headquarters": "string (city, country)",
   "foundedYear": number or null,
   "industry": "string (1-3 words)",
-  "competitors": ["string1", "string2", "string3", "string4", "string5"]
+  "competitors": [
+    {
+      "name": "string",
+      "url": "string (homepage)",
+      "synonyms": ["string"],
+      "products": ["string"]
+    }
+  ]
 }
 
-Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}${domain ? ` (Website: ${domain})` : ''}.`;
+Return JSON strictly matching the schema. Input was: ${rawInput}${domain ? ` (Website: ${domain})` : ''}.`;
 
     const userMessage = `Analyze this brand: ${rawInput}${domain ? ` (Website: ${domain})` : ''}`;
 
     // Log the full prompt being sent to LLM
     console.log('📝 [BRAND-INTEL] Full prompt being sent to LLM:');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔹 System Prompt:');
-    console.log(systemPrompt);
+    console.log('🔹 System Prompt (truncated):');
+    console.log(this.previewForLog(systemPrompt, 500));
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    // console.log('🔹 User Message:');
-    // console.log(userMessage);
-    // console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    // console.log('📋 Input Parameters:');
-    // console.log(JSON.stringify({ rawInput, companyName, domain }, null, 2));
-    // console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     let lastError: unknown;
 
-    // Primary: OpenRouter Parasail
+    // Primary: OpenRouter
     if (this.openRouterApiKey) {
       try {
+        const llmStartTime = performance.now();
         const content = await this.generateWithOpenRouter(systemPrompt, userMessage);
+        const llmEndTime = performance.now();
+        console.log(`⏱️ [BRAND-INTEL] OpenRouter Processing Time: ${(llmEndTime - llmStartTime).toFixed(2)}ms`);
+
         const parsed = this.parseBrandIntel(content);
         if (parsed) return parsed;
         console.warn('⚠️ OpenRouter returned no usable JSON, trying Cerebras fallback if available.');
@@ -79,7 +111,11 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}${do
     // Fallback: Cerebras
     if (this.cerebrasApiKey) {
       try {
+        const llmStartTime = performance.now();
         const content = await this.generateWithCerebras(systemPrompt, userMessage);
+        const llmEndTime = performance.now();
+        console.log(`⏱️ [BRAND-INTEL] Cerebras Processing Time: ${(llmEndTime - llmStartTime).toFixed(2)}ms`);
+
         const parsed = this.parseBrandIntel(content);
         if (parsed) return parsed;
         console.warn('⚠️ Cerebras returned no usable JSON.');
@@ -100,17 +136,7 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}${do
 
   private async generateWithCerebras(systemPrompt: string, userMessage: string): Promise<string> {
     console.log('🚀 [BRAND-INTEL] Calling Cerebras for brand intel with model:', this.cerebrasModel);
-    console.log('📤 [BRAND-INTEL] Cerebras Request Payload:');
-    console.log(JSON.stringify({
-      model: this.cerebrasModel,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-    }, null, 2));
-
+    
     const response = await axios.post<any>(
       'https://api.cerebras.ai/v1/chat/completions',
       {
@@ -164,10 +190,8 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}${do
       max_tokens: 1000,
     };
 
-    console.log('📤 [BRAND-INTEL] OpenRouter Request Payload:');
-    console.log(JSON.stringify(requestPayload, null, 2));
-    console.log('📤 [BRAND-INTEL] OpenRouter Request Headers (excluding Authorization):');
-    console.log(JSON.stringify({ ...headers, Authorization: '***REDACTED***' }, null, 2));
+    // console.log('📤 [BRAND-INTEL] OpenRouter Request Payload:');
+    // console.log(JSON.stringify(requestPayload, null, 2));
 
     const response = await axios.post<any>(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -266,16 +290,58 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}${do
       }
     }
 
+    // Generate URL permutations for the brand
+    const brandUrlPermutations = (parsed.homepageUrl || parsed.homepage || parsed.url) 
+      ? this.generateUrlPermutations(parsed.homepageUrl || parsed.homepage || parsed.url) 
+      : [];
+    
+    // Merge URL permutations into brandSynonyms
+    const brandSynonyms = Array.isArray(parsed.brandSynonyms) ? parsed.brandSynonyms : [];
+    // Combine and dedupe
+    const combinedBrandSynonyms = Array.from(new Set([...brandSynonyms, ...brandUrlPermutations]));
+
     return {
       brandName: parsed.brandName || parsed.name || undefined,
+      brandSynonyms: combinedBrandSynonyms,
+      keyProducts: Array.isArray(parsed.keyProducts) ? parsed.keyProducts : [],
+      brandUrls: brandUrlPermutations,
       summary: parsed.summary || parsed.description || undefined,
       industry: parsed.industry || parsed.sector || parsed.vertical || undefined,
       headquarters: parsed.headquarters || parsed.location || parsed.hq || undefined,
       foundedYear: parsed.foundedYear || parsed.founded || parsed.year_founded || null,
       ceo: parsed.ceo || parsed.ceo_name || undefined,
-      competitors: Array.isArray(parsed.competitors) ? parsed.competitors : [],
+      competitors: Array.isArray(parsed.competitors) ? parsed.competitors.map((c: any) => {
+        if (typeof c === 'string') return { name: c, urls: [], synonyms: [] };
+        
+        const compUrlPermutations = c.url ? this.generateUrlPermutations(c.url) : [];
+        const compSynonyms = Array.isArray(c.synonyms) ? c.synonyms : [];
+        const combinedCompSynonyms = Array.from(new Set([...compSynonyms, ...compUrlPermutations]));
+        
+        return {
+          name: c.name,
+          url: c.url,
+          urls: compUrlPermutations,
+          synonyms: combinedCompSynonyms,
+          products: Array.isArray(c.products) ? c.products : []
+        };
+      }) : [],
       homepageUrl: parsed.homepageUrl || parsed.homepage || parsed.url || undefined,
     };
+  }
+
+  private generateUrlPermutations(domain: string): string[] {
+    if (!domain) return [];
+    // Clean domain first (remove protocol, www, trailing slash)
+    const cleanDomain = domain.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '');
+    
+    return [
+      cleanDomain,
+      `www.${cleanDomain}`,
+      `https://${cleanDomain}`,
+      `https://www.${cleanDomain}`,
+      `http://${cleanDomain}`,
+      `http://www.${cleanDomain}`
+    ];
   }
 
   private previewForLog(text: string, max: number = 800): string {
@@ -305,4 +371,3 @@ Return JSON strictly matching the BrandIntel schema.  Input was: ${rawInput}${do
 }
 
 export const llmBrandIntelService = new LLMBrandIntelService();
-

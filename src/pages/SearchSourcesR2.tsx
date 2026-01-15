@@ -11,8 +11,10 @@ import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrendsChart';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 import { fetchRecommendations, type Recommendation } from '../api/recommendationsApi';
+
 import { KeyTakeaways } from '../components/SourcesR2/KeyTakeaways';
 import { generateKeyTakeaways, type KeyTakeaway } from '../utils/SourcesTakeawayGenerator';
+import { SourceTypeDistribution } from '../components/SourcesR2/SourceTypeDistribution';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -598,6 +600,8 @@ export const SearchSourcesR2 = () => {
         )}
 
         <KeyTakeaways takeaways={keyTakeaways} isLoading={isLoading && !sourcesForFilters.length} />
+
+        <SourceTypeDistribution sources={sourceData} isLoading={isLoading && !sourcesForFilters.length} />
 
         {isProcessedReady ? (
           <SummaryCards

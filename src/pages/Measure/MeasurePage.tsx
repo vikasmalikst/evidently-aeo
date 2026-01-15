@@ -31,7 +31,6 @@ import { useCachedData } from '../../hooks/useCachedData';
 import type { DashboardScoreMetric } from '../dashboard/types';
 
 // Search Visibility components
-import { VisibilityTabs } from '../../components/Visibility/VisibilityTabs';
 import { ChartControls } from '../../components/Visibility/ChartControls';
 import { VisibilityChart } from '../../components/Visibility/VisibilityChart';
 import { VisibilityTable } from '../../components/Visibility/VisibilityTable';
@@ -186,7 +185,6 @@ export const MeasurePage = () => {
   const selectedKpi = parseMetricType(kpiParam) || 'visibility';
   
   // Chart state
-  const [activeTab, setActiveTab] = useState<'brand' | 'competitive'>('brand');
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
   const [llmFilters, setLlmFilters] = useState<string[]>([]);
@@ -233,14 +231,28 @@ export const MeasurePage = () => {
     const startISO = new Date(visibilityStartDate).toISOString();
     const endISO = new Date(visibilityEndDate + 'T23:59:59').toISOString();
     const params = new URLSearchParams({ startDate: startISO, endDate: endISO });
+    // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
+    if (llmFilters.length > 0) {
+      // We need to pass the label (e.g. "GPT-4") not the normalized ID (e.g. "gpt-4")
+      // Map selected IDs back to labels
+      const selectedLabels = llmFilters
+        .map(id => allLlmOptions.find(opt => opt.value === id)?.label)
+        .filter(Boolean); // remove undefined
+      
+      if (selectedLabels.length > 0) {
+        params.append('collectors', selectedLabels.join(','));
+      }
+    }
+
     return `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
-  }, [selectedBrandId, visibilityStartDate, visibilityEndDate, reloadToken]);
+  }, [selectedBrandId, visibilityStartDate, visibilityEndDate, reloadToken, llmFilters, allLlmOptions]);
 
   // Fetch visibility data
-  const { data: visibilityResponse, isLoading: visibilityLoading, error: visibilityError, refetch: refetchVisibility } = useCachedData<ApiResponse<DashboardPayload>>(
+  const { data: visibilityResponse, loading: visibilityLoading, error: visibilityError, refetch: refetchVisibility } = useCachedData<ApiResponse<DashboardPayload>>(
     visibilityEndpoint,
     {},
-    { requiresAuth: true, enabled: !!visibilityEndpoint }
+    { requiresAuth: true },
+    { enabled: !!visibilityEndpoint }
   );
 
   // Process visibility data into chart models
@@ -363,14 +375,23 @@ export const MeasurePage = () => {
   useEffect(() => {
     setBrandModels(processedData.brandModels);
     setCompetitorModels(processedData.competitorModels);
-    setAllLlmOptions(processedData.llmOptions);
+    
+    // Only update options if we have them, to prevent partial updates from wiping the list
+    // OR if we are currently viewing "All" (no filters), so we can capture the full list.
+    if (llmFilters.length === 0 && processedData.llmOptions.length > 0) {
+      setAllLlmOptions(processedData.llmOptions);
+    } else if (allLlmOptions.length === 0 && processedData.llmOptions.length > 0) {
+       // fallback initialization
+       setAllLlmOptions(processedData.llmOptions);
+    }
+    
     if (processedData.brandModels.length > 0 || processedData.competitorModels.length > 0) {
       setIsSelectionInitialized(false);
     }
   }, [processedData]);
 
   // Current models based on active tab
-  const currentModels = activeTab === 'brand' ? brandModels : competitorModels;
+  const currentModels = competitorModels;
   const llmOptions = allLlmOptions;
   const chartDateLabels = processedData.chartDateLabels || chartLabels;
 
@@ -382,11 +403,9 @@ export const MeasurePage = () => {
       if (stillValid.length > 0) return stillValid;
       return availableModels.map((model) => model.id);
     });
-  }, [activeTab, currentModels]);
+  }, [currentModels]);
 
-  useEffect(() => {
-    setIsSelectionInitialized(false);
-  }, [activeTab]);
+
 
   useEffect(() => {
     if (currentModels.length > 0 && selectedModels.length > 0) {
@@ -714,15 +733,18 @@ export const MeasurePage = () => {
           >
             <div className="border-b border-[#e7ecff] bg-white p-6">
               <div className="flex flex-col gap-6">
-                {/* KPI Toggle and LLM Selectors Row */}
+                {/* KPI Toggle */}
                 <div className="flex items-start justify-between gap-4">
                   <KpiToggle metricType={metricType} onChange={handleKpiSelect} />
-                  {activeTab === 'competitive' && llmOptions.filter((o) => o.value !== 'all').length > 0 && (
-                    <div className="flex flex-col gap-2 flex-shrink-0">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8690a8] text-right">
-                        LLM Filter
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 justify-end">
+                </div>
+
+                {/* LLM Filter Section */}
+                {llmOptions.length > 0 && (
+                  <div className="flex flex-col gap-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
+                      LLM Filter
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => setLlmFilters([])}
@@ -760,26 +782,9 @@ export const MeasurePage = () => {
                               </button>
                             );
                           })}
-                      </div>
                     </div>
-                  )}
-                </div>
-                {/* View Mode Section */}
-                <div className="flex flex-col gap-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
-                    View Mode
                   </div>
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="flex items-center bg-white">
-                      <VisibilityTabs activeTab={activeTab} onTabChange={setActiveTab} />
-                    </div>
-                    <p className="text-xs text-[#8c94b6] md:text-right max-w-xs md:max-w-sm pt-1">
-                      {activeTab === 'brand'
-                        ? 'Focus on how each collector sees your brand.'
-                        : 'Benchmark the selected KPI against competitors.'}
-                    </p>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -802,7 +807,7 @@ export const MeasurePage = () => {
               chartType={chartType}
               selectedModels={selectedModels}
               loading={combinedLoading}
-              activeTab={activeTab}
+              activeTab="competitive"
               models={currentModels}
               metricType={metricType}
             />
@@ -816,7 +821,7 @@ export const MeasurePage = () => {
               <EmptyState message="No visibility records available for the selected brand yet." />
             ) : (
               <VisibilityTable
-                activeTab={activeTab}
+                activeTab="competitive"
                 models={currentModels}
                 selectedModels={selectedModels}
                 onModelToggle={handleModelToggle}

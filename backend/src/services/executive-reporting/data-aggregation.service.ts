@@ -685,7 +685,8 @@ export class DataAggregationService {
             .from('recommendations')
             .select('*')
             .eq('brand_id', brandId)
-            // Optional: Limit to recent history if needed, but for pipeline we want all active
+            // Limit to max recent recommendations (e.g., last 3 months or just 200 items) to keep report relevant?
+            // For now, fetch all to show complete pipeline history for this brand
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -697,15 +698,37 @@ export class DataAggregationService {
         const endIso = periodEnd.toISOString();
 
         // Count statuses
-        // Generated: Strictly created within this period
+        // Count statuses based on the reporting period (Activity View)
+        // 1. Generated: Recommendations created in this period
         const generated = recs.filter(r => r.created_at >= startIso && r.created_at <= endIso).length;
 
-        // Pipeline States: Cumulative (include all fetched recs)
-        const approved = recs.filter(r => r.is_approved === true || r.review_status === 'approved').length;
-        const rejected = recs.filter(r => r.review_status === 'rejected').length;
-        const needs_review = recs.filter(r => r.review_status === 'pending_review').length;
-        const content_generated = recs.filter(r => r.is_content_generated === true).length;
-        const implemented = recs.filter(r => r.is_completed === true).length;
+        // 2. Pipeline Activity: Count items that MOVED to these states in this period
+        // We use created_at or updated_at as a proxy for when the status changed
+        // This ensures the report shows "Activity in this period" rather than "Total Snapshot"
+        const approved = recs.filter(r =>
+            (r.is_approved === true || r.review_status === 'approved') &&
+            (r.updated_at >= startIso && r.updated_at <= endIso)
+        ).length;
+
+        const rejected = recs.filter(r =>
+            r.review_status === 'rejected' &&
+            (r.updated_at >= startIso && r.updated_at <= endIso)
+        ).length;
+
+        const needs_review = recs.filter(r =>
+            r.review_status === 'pending_review' &&
+            (r.created_at >= startIso && r.created_at <= endIso) // Pending usually means just created
+        ).length;
+
+        const content_generated = recs.filter(r =>
+            r.is_content_generated === true &&
+            (r.updated_at >= startIso && r.updated_at <= endIso)
+        ).length;
+
+        const implemented = recs.filter(r =>
+            r.is_completed === true &&
+            (r.updated_at >= startIso && r.updated_at <= endIso)
+        ).length;
 
         // TODO: Calculate average impact from implemented recommendations
         const averageImpact = {

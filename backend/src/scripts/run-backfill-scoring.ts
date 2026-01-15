@@ -203,6 +203,34 @@ async function main() {
         console.log(`   Backdating complete.`);
     }
 
+    // 5. Log to History
+    console.log('\n📝 Logging to backfill_history...');
+    const details = {
+        resultsFound: results.length,
+        deletedMetrics,
+        deletedCitations,
+        scoringOutput: scoringResult,
+        backdated: preserveDates,
+        errorCount
+    };
+
+    const { error: historyError } = await supabase
+        .from('backfill_history')
+        .insert({
+            brand_id: brandId,
+            customer_id: customerId,
+            target_start_date: start,
+            target_end_date: end,
+            status: errorCount > 0 ? 'completed_with_errors' : 'completed',
+            details: details
+        });
+
+    if (historyError) {
+        console.error('Failed to log to backfill_history:', historyError);
+    } else {
+        console.log('   Logged successfully.');
+    }
+
     console.log('\n✅ Backfill Complete.');
 }
 

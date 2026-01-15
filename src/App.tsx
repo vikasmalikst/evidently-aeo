@@ -27,6 +27,7 @@ import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
 import LandingPage from './pages/LandingPage';
 import { ExecutiveReportingPage } from './pages/ExecutiveReporting/ExecutiveReportingPage';
+import { QueriesAnalysisPage } from './pages/QueriesAnalysis/QueriesAnalysisPage';
 
 // New pages for restructured navigation
 import { MeasurePage } from './pages/Measure';
@@ -163,7 +164,7 @@ function App() {
           path="/analyze/queries"
           element={
             <ProtectedRoute>
-              <Prompts />
+              <QueriesAnalysisPage />
             </ProtectedRoute>
           }
         />

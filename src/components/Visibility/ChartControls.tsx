@@ -37,8 +37,9 @@ export const ChartControls = ({
   selectedBrandId,
   onBrandChange,
   metricType = 'visibility',
-  onMetricTypeChange
-}: ChartControlsProps) => {
+  onMetricTypeChange,
+  hideDateRange = false
+}: ChartControlsProps & { hideDateRange?: boolean }) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -291,30 +292,15 @@ export const ChartControls = ({
       </div>
 
       <div className="flex gap-4 items-center">
-        {brands.length > 1 && selectedBrandId && onBrandChange && 
-          renderDropdown(
-            'brand',
-            'Brand',
-            brands.find(b => b.id === selectedBrandId)?.name,
-            brands.map(b => ({ value: b.id, label: b.name })),
-            onBrandChange
-          )
-        }
-        <DateRangePicker
-          startDate={startDate}
-          endDate={endDate}
-          onStartDateChange={onStartDateChange}
-          onEndDateChange={onEndDateChange}
-          showComparisonInfo={false}
-          variant="popover"
-        />
-        {renderDropdown(
-          'region',
-          'Region',
-          currentRegion?.label,
-          allRegionOptions,
-          onRegionChange,
-          true
+        {!hideDateRange && (
+          <DateRangePicker
+            startDate={startDate}
+            endDate={endDate}
+            onStartDateChange={onStartDateChange}
+            onEndDateChange={onEndDateChange}
+            showComparisonInfo={false}
+            variant="popover"
+          />
         )}
       </div>
     </div>

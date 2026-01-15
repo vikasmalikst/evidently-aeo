@@ -246,6 +246,8 @@ export const ScheduledJobs = () => {
   const [backfillEndDate, setBackfillEndDate] = useState('');
   const [scoringBackfillRunning, setScoringBackfillRunning] = useState(false);
   const [scoringBackfillLogs, setScoringBackfillLogs] = useState<Array<{ ts: string; message: string }>>([]);
+  const [backfillForce, setBackfillForce] = useState(false);
+  const [backfillPreserveDates, setBackfillPreserveDates] = useState(true);
 
   // Get customer_id from auth store or fetch from brand
   const authUser = useAuthStore((state) => state.user);
@@ -763,6 +765,8 @@ export const ScheduledJobs = () => {
         body: JSON.stringify({
           startDate: backfillStartDate,
           endDate: backfillEndDate,
+          force: backfillForce,
+          preserveDates: backfillPreserveDates
         }),
       });
 
@@ -1195,6 +1199,32 @@ export const ScheduledJobs = () => {
                     value={backfillEndDate}
                     onChange={(e) => setBackfillEndDate(e.target.value)}
                   />
+                </div>
+                <div className="mb-4 text-left">
+                  <div className="flex items-center mb-2">
+                    <input
+                      type="checkbox"
+                      id="backfill-force"
+                      className="mr-2 h-4 w-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                      checked={backfillForce}
+                      onChange={(e) => setBackfillForce(e.target.checked)}
+                    />
+                    <label htmlFor="backfill-force" className="text-gray-700 text-sm font-medium">
+                      Force Re-Scoring (Delete existing data)
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="backfill-dates"
+                      className="mr-2 h-4 w-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                      checked={backfillPreserveDates}
+                      onChange={(e) => setBackfillPreserveDates(e.target.checked)}
+                    />
+                    <label htmlFor="backfill-dates" className="text-gray-700 text-sm font-medium">
+                      Preserve Dates (Backdate metrics)
+                    </label>
+                  </div>
                 </div>
               </div>
               <div className="items-center px-4 py-3">

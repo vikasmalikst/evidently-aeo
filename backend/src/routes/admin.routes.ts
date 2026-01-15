@@ -32,11 +32,11 @@ router.use((req, res, next) => {
   // Check if we have a real user from authentication
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
     const token = req.headers.authorization.split(' ')[1];
-    
+
     // If it's a mock token, extract the user ID
     if (token.startsWith('mock-jwt-token-for-')) {
       const userId = token.replace('mock-jwt-token-for-', '');
-      
+
       // Get real user data from database
       authService.getUserProfile(userId).then(user => {
         if (user) {
@@ -68,7 +68,7 @@ router.use((req, res, next) => {
       return;
     }
   }
-  
+
   // Fallback to mock data
   req.user = {
     id: 'temp-admin-user',
@@ -86,7 +86,7 @@ router.use((req, res, next) => {
 router.post('/brands/:brandId/refresh-products', async (req: Request, res: Response) => {
   const { brandId } = req.params;
   const { customer_id } = req.query;
-  
+
   // Set up SSE for real-time logging
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -104,7 +104,7 @@ router.post('/brands/:brandId/refresh-products', async (req: Request, res: Respo
       }
 
       sendLog(`🚀 Starting bulk enrichment for active brands of customer ID: ${customer_id}`);
-      
+
       // Fetch all active brands for this customer
       const { data: brands, error: brandsError } = await supabase
         .from('brands')
@@ -117,7 +117,7 @@ router.post('/brands/:brandId/refresh-products', async (req: Request, res: Respo
         sendLog(`⚠️ No active brands found for customer ${customer_id}`);
       } else {
         sendLog(`📊 Found ${brands.length} brands to enrich`);
-        
+
         for (const brand of brands) {
           sendLog(`-------------------------------------------`);
           sendLog(`🔄 Processing brand: ${brand.name} (${brand.id})`);
@@ -132,14 +132,14 @@ router.post('/brands/:brandId/refresh-products', async (req: Request, res: Respo
     } else {
       await brandProductEnrichmentService.enrichBrand(brandId, sendLog);
     }
-    
+
     res.write(`data: ${JSON.stringify({ status: 'completed' })}\n\n`);
     res.end();
   } catch (error) {
     console.error('Brand product enrichment failed:', error);
-    res.write(`data: ${JSON.stringify({ 
-      status: 'failed', 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    res.write(`data: ${JSON.stringify({
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
     })}\n\n`);
     res.end();
   }
@@ -180,7 +180,7 @@ router.get('/health', async (req: Request, res: Response) => {
 router.get('/global-settings', async (req: Request, res: Response) => {
   try {
     const settings = await globalSettingsService.getGlobalSettings();
-    
+
     res.json({
       success: true,
       data: settings
@@ -202,14 +202,14 @@ router.get('/global-settings/:serviceName', async (req: Request, res: Response) 
   try {
     const { serviceName } = req.params;
     const setting = await globalSettingsService.getGlobalSetting(serviceName);
-    
+
     if (!setting) {
       return res.status(404).json({
         success: false,
         error: 'Global setting not found'
       });
     }
-    
+
     res.json({
       success: true,
       data: setting
@@ -231,7 +231,7 @@ router.put('/global-settings/:serviceName', async (req: Request, res: Response) 
   try {
     const { serviceName } = req.params;
     const updateData = req.body;
-    
+
     // Validate required fields
     if (updateData.enabled_providers && !Array.isArray(updateData.enabled_providers)) {
       return res.status(400).json({
@@ -239,9 +239,9 @@ router.put('/global-settings/:serviceName', async (req: Request, res: Response) 
         error: 'enabled_providers must be an array'
       });
     }
-    
+
     const updatedSetting = await globalSettingsService.updateGlobalSetting(serviceName, updateData);
-    
+
     res.json({
       success: true,
       data: updatedSetting,
@@ -264,7 +264,7 @@ router.get('/global-settings/consolidated-analysis/ollama', async (req: Request,
   try {
     const { getOllamaConfigForUI } = await import('../services/scoring/ollama-client.service');
     const config = await getOllamaConfigForUI();
-    
+
     if (!config) {
       // Return default values if not configured
       return res.json({
@@ -276,7 +276,7 @@ router.get('/global-settings/consolidated-analysis/ollama', async (req: Request,
         }
       });
     }
-    
+
     res.json({
       success: true,
       data: config
@@ -298,7 +298,7 @@ router.get('/global-settings/consolidated-analysis/ollama/health', async (req: R
   try {
     const { checkOllamaHealth } = await import('../services/scoring/ollama-client.service');
     const health = await checkOllamaHealth();
-    
+
     res.json({
       success: true,
       data: health
@@ -319,17 +319,17 @@ router.get('/global-settings/consolidated-analysis/ollama/health', async (req: R
 router.post('/global-settings/consolidated-analysis/ollama/test', async (req: Request, res: Response) => {
   try {
     const { prompt } = req.body;
-    
+
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({
         success: false,
         error: 'prompt is required and must be a string'
       });
     }
-    
+
     const { testOllamaPrompt } = await import('../services/scoring/ollama-client.service');
     const result = await testOllamaPrompt(prompt);
-    
+
     if (result.success) {
       res.json({
         success: true,
@@ -359,28 +359,28 @@ router.post('/global-settings/consolidated-analysis/ollama/test', async (req: Re
 router.get('/brands/:brandId/local-llm', async (req: Request, res: Response) => {
   try {
     const { brandId } = req.params;
-    
+
     if (!brandId) {
       return res.status(400).json({
         success: false,
         error: 'brandId is required'
       });
     }
-    
+
     // Get brand with local_llm column
     const { data: brand, error: brandError } = await supabase
       .from('brands')
       .select('local_llm')
       .eq('id', brandId)
       .single();
-    
+
     if (brandError || !brand) {
       return res.status(404).json({
         success: false,
         error: 'Brand not found'
       });
     }
-    
+
     // Return local_llm config or default values
     if (brand.local_llm && typeof brand.local_llm === 'object') {
       const config = brand.local_llm as any;
@@ -393,7 +393,7 @@ router.get('/brands/:brandId/local-llm', async (req: Request, res: Response) => 
         }
       });
     }
-    
+
     // Return default values if not configured
     res.json({
       success: true,
@@ -420,14 +420,14 @@ router.put('/brands/:brandId/local-llm', async (req: Request, res: Response) => 
   try {
     const { brandId } = req.params;
     const { ollamaUrl, ollamaModel, useOllama } = req.body;
-    
+
     if (!brandId) {
       return res.status(400).json({
         success: false,
         error: 'brandId is required'
       });
     }
-    
+
     // Validate inputs
     if (ollamaUrl && typeof ollamaUrl !== 'string') {
       return res.status(400).json({
@@ -435,21 +435,21 @@ router.put('/brands/:brandId/local-llm', async (req: Request, res: Response) => 
         error: 'ollamaUrl must be a string'
       });
     }
-    
+
     if (ollamaModel && typeof ollamaModel !== 'string') {
       return res.status(400).json({
         success: false,
         error: 'ollamaModel must be a string'
       });
     }
-    
+
     if (useOllama !== undefined && typeof useOllama !== 'boolean') {
       return res.status(400).json({
         success: false,
         error: 'useOllama must be a boolean'
       });
     }
-    
+
     // Validate URL format if provided
     if (ollamaUrl) {
       try {
@@ -461,21 +461,21 @@ router.put('/brands/:brandId/local-llm', async (req: Request, res: Response) => 
         });
       }
     }
-    
+
     // Get existing brand to check if it exists
     const { data: existingBrand, error: fetchError } = await supabase
       .from('brands')
       .select('local_llm')
       .eq('id', brandId)
       .single();
-    
+
     if (fetchError || !existingBrand) {
       return res.status(404).json({
         success: false,
         error: 'Brand not found'
       });
     }
-    
+
     // Build local_llm config
     const existingConfig = (existingBrand.local_llm as any) || {};
     const newConfig = {
@@ -483,20 +483,20 @@ router.put('/brands/:brandId/local-llm', async (req: Request, res: Response) => 
       ollamaUrl: ollamaUrl || existingConfig.ollamaUrl || 'http://localhost:11434',
       ollamaModel: ollamaModel || existingConfig.ollamaModel || 'qwen2.5:latest',
     };
-    
+
     // If useOllama is false, set to null (clean up)
     const localLlmValue = newConfig.useOllama ? newConfig : null;
-    
+
     // Update brand with new local_llm config
     const { error: updateError } = await supabase
       .from('brands')
       .update({ local_llm: localLlmValue })
       .eq('id', brandId);
-    
+
     if (updateError) {
       throw new Error(`Failed to update brand: ${updateError.message}`);
     }
-    
+
     res.json({
       success: true,
       data: {
@@ -522,32 +522,32 @@ router.put('/brands/:brandId/local-llm', async (req: Request, res: Response) => 
 router.get('/brands/:brandId/local-llm/health', async (req: Request, res: Response) => {
   try {
     const { brandId } = req.params;
-    
+
     if (!brandId) {
       return res.status(400).json({
         success: false,
         error: 'brandId is required'
       });
     }
-    
+
     // Verify brand exists first
     const { data: brand, error: brandError } = await supabase
       .from('brands')
       .select('id')
       .eq('id', brandId)
       .single();
-    
+
     if (brandError || !brand) {
       return res.status(404).json({
         success: false,
         error: 'Brand not found'
       });
     }
-    
+
     // Import and use brand-specific health check
     const { checkOllamaHealthForBrand } = await import('../services/scoring/ollama-client.service');
     const health = await checkOllamaHealthForBrand(brandId);
-    
+
     res.json({
       success: true,
       data: health
@@ -571,24 +571,24 @@ router.post('/brands/:brandId/local-llm/test', async (req: Request, res: Respons
   try {
     const { brandId } = req.params;
     const { prompt } = req.body;
-    
+
     if (!brandId) {
       return res.status(400).json({
         success: false,
         error: 'brandId is required'
       });
     }
-    
+
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({
         success: false,
         error: 'prompt is required and must be a string'
       });
     }
-    
+
     const { testOllamaPromptForBrand } = await import('../services/scoring/ollama-client.service');
     const result = await testOllamaPromptForBrand(brandId, prompt);
-    
+
     if (result.success) {
       res.json({
         success: true,
@@ -618,7 +618,7 @@ router.post('/brands/:brandId/local-llm/test', async (req: Request, res: Respons
 router.put('/global-settings/consolidated-analysis/ollama', async (req: Request, res: Response) => {
   try {
     const { ollamaUrl, ollamaModel, useOllama } = req.body;
-    
+
     // Validate inputs
     if (ollamaUrl && typeof ollamaUrl !== 'string') {
       return res.status(400).json({
@@ -626,29 +626,29 @@ router.put('/global-settings/consolidated-analysis/ollama', async (req: Request,
         error: 'ollamaUrl must be a string'
       });
     }
-    
+
     if (ollamaModel && typeof ollamaModel !== 'string') {
       return res.status(400).json({
         success: false,
         error: 'ollamaModel must be a string'
       });
     }
-    
+
     if (useOllama !== undefined && typeof useOllama !== 'boolean') {
       return res.status(400).json({
         success: false,
         error: 'useOllama must be a boolean'
       });
     }
-    
+
     // Get existing setting or create default
     let setting = await globalSettingsService.getGlobalSetting('consolidated_analysis');
-    
+
     const existingMetadata = setting?.metadata || {};
-    
+
     // Compute the actual useOllama value (use provided value or fall back to existing/default)
     const computedUseOllama = useOllama !== undefined ? useOllama : (existingMetadata.useOllama || false);
-    
+
     const newMetadata = {
       ...existingMetadata,
       ollamaUrl: ollamaUrl || existingMetadata.ollamaUrl || 'http://localhost:11434',
@@ -659,7 +659,7 @@ router.put('/global-settings/consolidated-analysis/ollama', async (req: Request,
       default_provider: computedUseOllama ? 'ollama' : 'openrouter',
       enabled_providers: computedUseOllama ? ['ollama'] : ['openrouter'],
     };
-    
+
     if (!setting) {
       // Create new setting
       setting = await globalSettingsService.createGlobalSetting({
@@ -676,7 +676,7 @@ router.put('/global-settings/consolidated-analysis/ollama', async (req: Request,
         metadata: newMetadata,
       });
     }
-    
+
     res.json({
       success: true,
       data: {
@@ -702,7 +702,7 @@ router.put('/global-settings/consolidated-analysis/ollama', async (req: Request,
 router.post('/global-settings', async (req: Request, res: Response) => {
   try {
     const settingData = req.body;
-    
+
     // Validate required fields
     if (!settingData.service_name || !settingData.enabled_providers || !settingData.default_provider) {
       return res.status(400).json({
@@ -710,16 +710,16 @@ router.post('/global-settings', async (req: Request, res: Response) => {
         error: 'service_name, enabled_providers, and default_provider are required'
       });
     }
-    
+
     if (!Array.isArray(settingData.enabled_providers)) {
       return res.status(400).json({
         success: false,
         error: 'enabled_providers must be an array'
       });
     }
-    
+
     const newSetting = await globalSettingsService.createGlobalSetting(settingData);
-    
+
     res.status(201).json({
       success: true,
       data: newSetting,
@@ -745,7 +745,7 @@ router.post('/global-settings', async (req: Request, res: Response) => {
 router.get('/customers', async (req: Request, res: Response) => {
   try {
     const customers = await customerEntitlementsService.getAllCustomerEntitlements();
-    
+
     res.json({
       success: true,
       data: customers
@@ -767,14 +767,14 @@ router.get('/customers/:customerId/entitlements', async (req: Request, res: Resp
   try {
     const { customerId } = req.params;
     const customer = await customerEntitlementsService.getCustomerEntitlements(customerId);
-    
+
     if (!customer) {
       return res.status(404).json({
         success: false,
         error: 'Customer not found'
       });
     }
-    
+
     res.json({
       success: true,
       data: customer
@@ -796,7 +796,7 @@ router.put('/customers/:customerId/entitlements', async (req: Request, res: Resp
   try {
     const { customerId } = req.params;
     const entitlements = req.body;
-    
+
     // Validate entitlements
     const validationErrors = customerEntitlementsService.validateEntitlements(entitlements);
     if (validationErrors.length > 0) {
@@ -806,12 +806,12 @@ router.put('/customers/:customerId/entitlements', async (req: Request, res: Resp
         details: validationErrors
       });
     }
-    
+
     const updatedCustomer = await customerEntitlementsService.updateCustomerEntitlements(
-      customerId, 
+      customerId,
       entitlements
     );
-    
+
     res.json({
       success: true,
       data: updatedCustomer,
@@ -834,12 +834,12 @@ router.post('/customers/:customerId/entitlements', async (req: Request, res: Res
   try {
     const { customerId } = req.params;
     const customEntitlements = req.body;
-    
+
     const updatedCustomer = await customerEntitlementsService.createCustomerEntitlements(
       customerId,
       customEntitlements
     );
-    
+
     res.status(201).json({
       success: true,
       data: updatedCustomer,
@@ -861,7 +861,7 @@ router.post('/customers/:customerId/entitlements', async (req: Request, res: Res
 router.get('/customers/:customerId/entitlements/defaults', async (req: Request, res: Response) => {
   try {
     const defaultEntitlements = customerEntitlementsService.getDefaultEntitlements();
-    
+
     res.json({
       success: true,
       data: defaultEntitlements
@@ -1085,11 +1085,11 @@ router.post('/scheduled-jobs/:jobId/trigger', async (req: Request, res: Response
 router.post('/scoring/backfill-from-cache', async (req: Request, res: Response) => {
   try {
     const { limit = 100 } = req.body;
-    
+
     console.log(`\n🔄 API Triggered: Backfilling scoring from cache (limit: ${limit})`);
-    
+
     const result = await consolidatedScoringService.backfillScoringFromCache(limit);
-    
+
     res.json({
       success: true,
       data: result,
@@ -1643,7 +1643,7 @@ router.post('/brands/:brandId/collect-data-now', async (req: Request, res: Respo
 
     // Determine which collectors to use
     let collectorsToUse = collectors;
-    
+
     // If collectors not explicitly provided, fetch brand's selected collectors from onboarding
     if (!collectorsToUse || collectorsToUse.length === 0) {
       try {
@@ -1755,7 +1755,7 @@ router.post('/brands/:brandId/score-now', async (req: Request, res: Response) =>
     setImmediate(async () => {
       try {
         console.log(`[Admin] Starting background scoring for brand ${brandId}...`);
-        
+
         // Import brand scoring service
         const { brandScoringService } = await import('../services/scoring/brand-scoring.orchestrator');
 
@@ -1886,12 +1886,12 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
             await brandProductEnrichmentService.enrichBrand(brandId, (msg) => console.log(`[Admin-LazyEnrichment] ${msg}`));
           }
         } catch (enrichError) {
-           console.warn(`[Admin] ⚠️ Lazy enrichment failed, proceeding anyway:`, enrichError);
+          console.warn(`[Admin] ⚠️ Lazy enrichment failed, proceeding anyway:`, enrichError);
         }
 
         // Step 1: Determine which collectors to use
         let collectorsToUse = collectors;
-        
+
         // If collectors not explicitly provided, fetch brand's selected collectors from onboarding
         if (!collectorsToUse || collectorsToUse.length === 0) {
           try {
@@ -2011,7 +2011,8 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
  */
 router.post('/brands/:brandId/backfill-scoring', async (req: Request, res: Response) => {
   const { brandId } = req.params;
-  const { startDate, endDate } = req.body;
+  const { startDate, endDate, force, preserveDates } = req.body;
+  const { customer_id } = req.user as any; // Assuming auth middleware populates this, or pass from body if admin
 
   if (!startDate || !endDate) {
     return res.status(400).json({ error: 'startDate and endDate are required' });
@@ -2028,24 +2029,38 @@ router.post('/brands/:brandId/backfill-scoring', async (req: Request, res: Respo
   };
 
   try {
-    sendLog(`🚀 Starting scoring backfill for brand ${brandId}...`);
-    sendLog(`📅 Period: ${startDate} to ${endDate}`);
+    // Get customer_id if not in user (e.g. if super admin)
+    // For now we'll fetch from brand if missing
+    let targetCustomerId = customer_id;
+    if (!targetCustomerId) {
+      const { data: brand } = await supabase
+        .from('brands')
+        .select('customer_id')
+        .eq('id', brandId)
+        .single();
+      targetCustomerId = brand?.customer_id;
+    }
 
-    const result = await consolidatedScoringService.backfillScoringForPeriod(brandId, startDate, endDate);
+    if (!targetCustomerId) {
+      throw new Error('Customer ID not found for brand');
+    }
+
+    // Dynamic import to avoid circular dependencies if any
+    const { brandScoringService } = await import('../services/scoring/brand-scoring.orchestrator');
+
+    const result = await brandScoringService.backfillBrand({
+      brandId,
+      customerId: targetCustomerId,
+      startDate,
+      endDate,
+      force: force === true, // Explicit boolean conversion
+      preserveDates: preserveDates !== false, // Default true
+      sendLog
+    });
 
     sendLog(`\n✨ Backfill complete!`);
     sendLog(`Processed: ${result.processed}`);
-    sendLog(`Positions: ${result.positionsProcessed}`);
-    sendLog(`Sentiments: ${result.sentimentsProcessed}`);
-    sendLog(`Citations: ${result.citationsProcessed}`);
-    sendLog(`Errors: ${result.errors.length}`);
-
-    if (result.errors.length > 0) {
-      sendLog(`\n❌ Errors occurred:`);
-      result.errors.forEach(err => {
-        sendLog(`- Result ${err.collectorResultId}: ${err.error}`);
-      });
-    }
+    sendLog(`Errors: ${result.errorCount}`);
 
     res.write(`data: [DONE]\n\n`);
     res.end();

@@ -103,6 +103,7 @@ interface CompetitorVisibilityEntry {
 interface BrandSummary {
   visibility: number;
   share: number;
+  sentiment?: number | null;
   brandPresencePercentage: number;
   topTopics?: Array<{
     topic: string;
@@ -110,6 +111,13 @@ interface BrandSummary {
     share: number;
     visibility: number;
   }>;
+  timeSeries?: {
+    dates: string[];
+    visibility: number[];
+    share: number[];
+    sentiment: (number | null)[];
+    isRealData?: boolean[];
+  };
 }
 
 interface DashboardPayload {
@@ -198,9 +206,9 @@ export const MeasurePage = () => {
   const kpiSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Date range state
-  const defaultDateRange = getDefaultDateRange();
-  const [visibilityStartDate, setVisibilityStartDate] = useState<string>(defaultDateRange.start);
-  const [visibilityEndDate, setVisibilityEndDate] = useState<string>(defaultDateRange.end);
+  // const defaultDateRange = getDefaultDateRange(); // Removed local default
+  // const [visibilityStartDate, setVisibilityStartDate] = useState<string>(defaultDateRange.start);
+  // const [visibilityEndDate, setVisibilityEndDate] = useState<string>(defaultDateRange.end);
   
   // Dashboard data hook
   const {
@@ -226,10 +234,18 @@ export const MeasurePage = () => {
   useOnboardingOrchestrator(selectedBrandId);
 
   // Build visibility API endpoint
+  // Build visibility API endpoint
   const visibilityEndpoint = useMemo(() => {
-    if (!selectedBrandId || !visibilityStartDate || !visibilityEndDate) return null;
-    const startISO = new Date(visibilityStartDate).toISOString();
-    const endISO = new Date(visibilityEndDate + 'T23:59:59').toISOString();
+    // Use global startDate/endDate from useDashboardData
+    if (!selectedBrandId || !startDate || !endDate) return null;
+    
+    // Ensure date format is YYYY-MM-DD for API
+    // The date picker usually returns YYYY-MM-DD strings directly?
+    // Let's ensure proper ISO formatting if needed, but existing code used strings.
+    // startDate/endDate from useDashboardData are strings.
+    
+    const startISO = new Date(startDate).toISOString();
+    const endISO = new Date(endDate + 'T23:59:59').toISOString();
     const params = new URLSearchParams({ startDate: startISO, endDate: endISO });
     // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
     if (llmFilters.length > 0) {
@@ -245,7 +261,7 @@ export const MeasurePage = () => {
     }
 
     return `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
-  }, [selectedBrandId, visibilityStartDate, visibilityEndDate, reloadToken, llmFilters, allLlmOptions]);
+  }, [selectedBrandId, startDate, endDate, reloadToken, llmFilters, allLlmOptions]);
 
   // Fetch visibility data
   const { data: visibilityResponse, loading: visibilityLoading, error: visibilityError, refetch: refetchVisibility } = useCachedData<ApiResponse<DashboardPayload>>(
@@ -315,22 +331,29 @@ export const MeasurePage = () => {
     if (brandSum) {
       const brandName = selectedBrand?.name || 'Your Brand';
       const topTopic = brandSum.topTopics?.[0]?.topic ?? '—';
+      
+      // Use timeSeries if available, otherwise fall back to static values
+      const brandVisData = brandSum.timeSeries?.visibility ?? buildTimeseries(brandSum.visibility);
+      const brandShareData = brandSum.timeSeries?.share ?? buildTimeseries(brandSum.share * 100);
+      const brandIsRealData = brandSum.timeSeries?.isRealData;
+      
       competitorModelData.push({
         id: normalizeId(brandName),
         name: brandName,
         score: brandSum.visibility,
         shareOfSearch: brandSum.share,
-        sentiment: null,
+        sentiment: brandSum.sentiment ?? null,
         shareOfSearchChange: 0,
         topTopic,
         change: 0,
         referenceCount: 0,
         brandPresencePercentage: brandSum.brandPresencePercentage ?? 0,
-        data: buildTimeseries(brandSum.visibility),
-        shareData: buildTimeseries(brandSum.share * 100),
+        data: brandVisData,
+        shareData: brandShareData,
         brandPresenceData: buildTimeseries(brandSum.brandPresencePercentage ?? 0),
         topTopics: brandSum.topTopics?.map(t => ({ ...t, mentions: 0 })) ?? [],
-        isBrand: true
+        isBrand: true,
+        isRealData: brandIsRealData
       });
     }
     competitors.forEach((comp) => {
@@ -452,18 +475,60 @@ export const MeasurePage = () => {
     }))
   }), [currentModels, metricType, chartDateLabels]);
 
-  // Dashboard KPI metrics
+  // Dashboard KPI metrics - Derived from Filtered Data (visibilityResponse)
   const findScore = (label: string, data: typeof dashboardData): DashboardScoreMetric | undefined =>
     data?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
-  const visibilityMetric = findScore('Visibility Index', dashboardData);
-  const shareMetric = findScore('Share of Answers', dashboardData);
-  const sentimentMetric = findScore('Sentiment Score', dashboardData);
+  const filteredBrandSummary = visibilityResponse?.data?.brandSummary;
+
+  const visibilityMetricValue = filteredBrandSummary?.visibility ?? findScore('Visibility Index', dashboardData)?.value;
+  // Share from brandSummary is already a 0-1 float, so multiply by 100 for display
+  // BUT if the value is already > 1 (like 4.4 meaning 440%), don't multiply again
+  const rawShare = filteredBrandSummary?.share;
+  const shareMetricValue = rawShare !== undefined 
+    ? (rawShare > 1 ? rawShare : rawShare * 100) // If > 1, it's already a percentage
+    : findScore('Share of Answers', dashboardData)?.value;
+  
+  // Re-map sentiment from slices if needed
+  const calculatedSentiment = useMemo(() => {
+     if (!visibilityResponse?.data?.llmVisibility?.length) return undefined;
+     const slices = visibilityResponse.data.llmVisibility;
+     const valid = slices.filter(s => s.sentiment != null);
+     if (!valid.length) return undefined;
+     const sum = valid.reduce((acc, s) => acc + (s.sentiment || 0), 0);
+     return sum / valid.length;
+  }, [visibilityResponse]);
+  
+  const sentimentMetricValueFinal = calculatedSentiment ?? findScore('Sentiment Score', dashboardData)?.value;
+  
+  const brandPresencePercentage = filteredBrandSummary?.brandPresencePercentage ?? 
+     (dashboardData?.totalBrandRows ? Math.min(100, Math.round((dashboardData.brandPresenceRows / dashboardData.totalBrandRows) * 100)) : 0);
+
+  // Construct metrics matching DashboardScoreMetric interface
+  const visibilityMetric: DashboardScoreMetric = { 
+      value: visibilityMetricValue || 0, 
+      delta: 0, 
+      label: 'Visibility Index',
+      description: 'Visibility Index'
+  };
+  const shareMetric: DashboardScoreMetric = { 
+      value: shareMetricValue || 0, 
+      delta: 0, 
+      label: 'Share of Answers',
+      description: 'Share of Answers'
+  };
+  const sentimentMetric: DashboardScoreMetric = { 
+      value: sentimentMetricValueFinal || 0, 
+      delta: 0, 
+      label: 'Sentiment Score',
+      description: 'Sentiment Score'
+  };
+
   const brandPresenceRows = dashboardData?.brandPresenceRows ?? 0;
   const totalBrandRows = dashboardData?.totalBrandRows ?? 0;
-  const brandPresencePercentage = totalBrandRows > 0 
-    ? Math.min(100, Math.round((brandPresenceRows / totalBrandRows) * 100))
-    : 0;
+  // brandPresencePercentage is defined above
+
+
   const competitorEntries = useMemo(
     () => dashboardData?.competitorVisibility ?? [],
     [dashboardData?.competitorVisibility]
@@ -676,52 +741,108 @@ export const MeasurePage = () => {
             />
           )}
           <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-[32px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <p className="text-[15px] text-[#393e51]">{overviewSubtitle}</p>
+            <div className="flex items-center justify-between mb-1">
+              <h1 className="text-[28px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
+              
+              {/* Filters - Simple, Clean Layout */}
+              <div className="flex items-center gap-4">
+                {/* Brand Selector */}
                 {brands.length > 1 && selectedBrandId && (
-                  <div className="flex items-center gap-2">
-                    <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
-                      Brand
-                    </label>
-                    <select
-                      id="brand-selector"
-                      value={selectedBrandId}
-                      onChange={(event) => selectBrand(event.target.value)}
-                      className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
+                  <select
+                    value={selectedBrandId}
+                    onChange={(e) => selectBrand(e.target.value)}
+                    className="text-[13px] border border-[#e2e8f0] rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4]"
+                  >
+                    {brands.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                )}
+
+                {/* LLM Filters */}
+                {llmOptions.length > 0 && (
+                  <div className="flex items-center gap-1.5 bg-white border border-[#e2e8f0] rounded-lg px-3 py-1.5">
+                    <span className="text-[11px] text-[#64748b] font-medium uppercase mr-1">LLMs</span>
+                    <button
+                      type="button"
+                      onClick={() => setLlmFilters([])}
+                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                        llmFilters.length === 0
+                          ? 'bg-[#06b6d4] text-white'
+                          : 'text-[#64748b] hover:bg-[#f1f5f9]'
+                      }`}
                     >
-                      {brands.map((brandOption) => (
-                        <option key={brandOption.id} value={brandOption.id}>{brandOption.name}</option>
-                      ))}
-                    </select>
+                      All
+                    </button>
+                    {llmOptions
+                      .filter((opt) => opt.value !== 'all')
+                      .map((opt) => {
+                        const isActive = llmFilters.includes(opt.value);
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() =>
+                              setLlmFilters((prev) =>
+                                prev.includes(opt.value)
+                                  ? prev.filter((v) => v !== opt.value)
+                                  : [...prev, opt.value]
+                              )
+                            }
+                            className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+                              isActive
+                                ? 'bg-[#06b6d4] ring-1 ring-[#06b6d4]'
+                                : 'hover:bg-[#f1f5f9]'
+                            }`}
+                            title={opt.label}
+                          >
+                            {getLLMIcon(opt.label)}
+                          </button>
+                        );
+                      })}
                   </div>
                 )}
+
+                {/* Date Range */}
+                <DateRangeSelector
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                  showComparisonInfo={false}
+                />
               </div>
-              <DateRangeSelector
-                startDate={startDate}
-                endDate={endDate}
-                onStartDateChange={setStartDate}
-                onEndDateChange={setEndDate}
-                showComparisonInfo={false}
-              />
             </div>
+            <p className="text-[14px] text-[#64748b]">{overviewSubtitle}</p>
           </div>
         </div>
 
         {/* 4 KPI Cards */}
         <div className="grid grid-cols-4 gap-5 mb-6">
-          {metricCards.map(({ key, isActive, ...cardProps }) => (
-            <div 
-              key={key} 
-              className={`cursor-pointer transition-all duration-200 ${isActive ? 'ring-2 ring-[var(--accent-primary)] ring-offset-2 rounded-lg' : ''}`}
-              onClick={() => handleKpiSelect(key as MetricType)}
-            >
-              <MetricCard {...cardProps} />
-            </div>
-          ))}
+          {visibilityLoading ? (
+            // Show skeleton cards when loading
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-xl p-5 border border-[#e4e7ec] shadow-sm animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-2/3 mb-4"></div>
+                <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
+                <div className="space-y-2">
+                  <div className="h-3 bg-gray-200 rounded w-full"></div>
+                  <div className="h-3 bg-gray-200 rounded w-4/5"></div>
+                  <div className="h-3 bg-gray-200 rounded w-3/5"></div>
+                </div>
+              </div>
+            ))
+          ) : (
+            metricCards.map(({ key, isActive, ...cardProps }) => (
+              <div 
+                key={key} 
+                className={`cursor-pointer transition-all duration-200 ${isActive ? 'ring-2 ring-[var(--accent-primary)] ring-offset-2 rounded-lg' : ''}`}
+                onClick={() => handleKpiSelect(key as MetricType)}
+              >
+                <MetricCard {...cardProps} />
+              </div>
+            ))
+          )}
         </div>
 
         {/* Search Visibility Content */}
@@ -738,61 +859,16 @@ export const MeasurePage = () => {
                   <KpiToggle metricType={metricType} onChange={handleKpiSelect} />
                 </div>
 
-                {/* LLM Filter Section */}
-                {llmOptions.length > 0 && (
-                  <div className="flex flex-col gap-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8690a8]">
-                      LLM Filter
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setLlmFilters([])}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${llmFilters.length === 0
-                            ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
-                            : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
-                            }`}
-                        >
-                          All
-                        </button>
-                        {llmOptions
-                          .filter((option) => option.value !== 'all')
-                          .map((option) => {
-                            const isActive = llmFilters.includes(option.value);
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() =>
-                                  setLlmFilters((prev) =>
-                                    prev.includes(option.value)
-                                      ? prev.filter((v) => v !== option.value)
-                                      : [...prev, option.value]
-                                  )
-                                }
-                                className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${isActive
-                                  ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
-                                  : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-                                  }`}
-                                title={option.label}
-                              >
-                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
-                                  {getLLMIcon(option.label)}
-                                </span>
-                              </button>
-                            );
-                          })}
-                    </div>
-                  </div>
-                )}
+                </div>
+
               </div>
-            </div>
 
             <ChartControls
-              startDate={visibilityStartDate}
-              endDate={visibilityEndDate}
-              onStartDateChange={setVisibilityStartDate}
-              onEndDateChange={setVisibilityEndDate}
+              startDate={startDate} // Use global date
+              endDate={endDate}
+              onStartDateChange={setStartDate} // Use global setter
+              onEndDateChange={setEndDate}
+              hideDateRange={true} // Hide local picker
               chartType={chartType}
               onChartTypeChange={setChartType}
               region={region}
@@ -802,15 +878,17 @@ export const MeasurePage = () => {
               onBrandChange={selectBrand}
             />
 
-            <VisibilityChart
-              data={chartData}
-              chartType={chartType}
-              selectedModels={selectedModels}
-              loading={combinedLoading}
-              activeTab="competitive"
-              models={currentModels}
-              metricType={metricType}
-            />
+            <div className="border-t border-[#e7ecff] p-6 bg-[#f9f9fb]/50">
+              <VisibilityChart
+                data={chartData}
+                chartType={chartType}
+                selectedModels={selectedModels}
+                loading={combinedLoading}
+                activeTab="competitive"
+                models={currentModels}
+                metricType={metricType}
+              />
+            </div>
           </div>
 
           {/* Table Section */}

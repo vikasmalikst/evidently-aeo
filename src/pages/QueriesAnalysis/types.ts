@@ -25,12 +25,14 @@ export interface Query {
     text: string; // The query/question text
     topic: string; // The topic this query belongs to
     visibilityScore: number | null; // 0-100
+    soa: number | null; // Share of Answer %
     sentimentScore: number | null; // 0-100
     trend: Trend;
     searchVolume: number | null;
     sentiment: 'positive' | 'neutral' | 'negative';
     // Additional fields mapping to PromptEntry
     promptId?: string;
+    collectorTypes?: string[];
 }
 
 // Portfolio/Performance stats for Queries
@@ -60,7 +62,7 @@ export interface QueriesAnalysisData {
     queries: Query[];
 }
 
-export type SortColumn = 'rank' | 'text' | 'visibility' | 'sentiment' | 'trend' | 'topic';
+export type SortColumn = 'text' | 'visibility' | 'soa' | 'sentiment' | 'trend' | 'topic';
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortState {

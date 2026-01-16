@@ -429,13 +429,17 @@ export const MeasurePage = () => {
   const llmOptions = allLlmOptions;
   const chartDateLabels = processedData.chartDateLabels || chartLabels;
 
-  // Model selection logic
+  // Model selection logic - ensure ALL models (including brand) are selected by default
   useEffect(() => {
     const availableModels = currentModels;
     setSelectedModels((previous) => {
+      // If no previous selection, or all previous selections are invalid, select ALL models
       const stillValid = previous.filter((id) => availableModels.some((model) => model.id === id));
-      if (stillValid.length > 0) return stillValid;
-      return availableModels.map((model) => model.id);
+      if (stillValid.length === 0) {
+        // Select ALL models by default (including brand)
+        return availableModels.map((model) => model.id);
+      }
+      return stillValid;
     });
   }, [currentModels]);
 
@@ -752,35 +756,54 @@ export const MeasurePage = () => {
             />
           )}
           <div className="flex-1">
-            <div className="flex items-center justify-between mb-1">
-              <h1 className="text-[28px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
-
-              {/* Filters - Simple, Clean Layout */}
-              <div className="flex items-center gap-4">
-                {/* Brand Selector */}
-                {brands.length > 1 && selectedBrandId && (
+            {/* Title Row */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-[28px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
+                <p className="text-[14px] text-[#64748b] mt-0.5">{overviewSubtitle}</p>
+              </div>
+              
+              {/* Date Range - Top Right */}
+              <DateRangeSelector
+                startDate={startDate}
+                endDate={endDate}
+                onStartDateChange={setStartDate}
+                onEndDateChange={setEndDate}
+                showComparisonInfo={false}
+              />
+            </div>
+            
+            {/* Filters Row - Below Title */}
+            <div className="flex items-center gap-6 mt-4">
+              {/* Brand Selector */}
+              {brands.length > 1 && selectedBrandId && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">Brand</span>
                   <select
                     value={selectedBrandId}
                     onChange={(e) => selectBrand(e.target.value)}
-                    className="text-[13px] border border-[#e2e8f0] rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4]"
+                    className="text-[13px] border border-[#e2e8f0] rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4] min-w-[180px]"
                   >
                     {brands.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
-                )}
+                </div>
+              )}
 
-                {/* LLM Filters */}
-                {llmOptions.length > 0 && (
-                  <div className="flex items-center gap-1.5 bg-white border border-[#e2e8f0] rounded-lg px-3 py-1.5">
-                    <span className="text-[11px] text-[#64748b] font-medium uppercase mr-1">LLMs</span>
+              {/* LLM Filters - Pill Style */}
+              {llmOptions.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">LLMs</span>
+                  <div className="flex items-center bg-[#f1f5f9] rounded-lg p-1">
                     <button
                       type="button"
                       onClick={() => setLlmFilters([])}
-                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${llmFilters.length === 0
-                        ? 'bg-[#06b6d4] text-white'
-                        : 'text-[#64748b] hover:bg-[#f1f5f9]'
-                        }`}
+                      className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${
+                        llmFilters.length === 0
+                          ? 'bg-white text-[#1a1d29] shadow-sm'
+                          : 'text-[#64748b] hover:text-[#1a1d29]'
+                      }`}
                     >
                       All
                     </button>
@@ -799,30 +822,22 @@ export const MeasurePage = () => {
                                   : [...prev, opt.value]
                               )
                             }
-                            className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${isActive
-                              ? 'bg-[#06b6d4] ring-1 ring-[#06b6d4]'
-                              : 'hover:bg-[#f1f5f9]'
-                              }`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${
+                              isActive
+                                ? 'bg-white text-[#1a1d29] shadow-sm'
+                                : 'text-[#64748b] hover:text-[#1a1d29]'
+                            }`}
                             title={opt.label}
                           >
                             {getLLMIcon(opt.label)}
+                            <span className="hidden sm:inline">{opt.label}</span>
                           </button>
                         );
                       })}
                   </div>
-                )}
-
-                {/* Date Range */}
-                <DateRangeSelector
-                  startDate={startDate}
-                  endDate={endDate}
-                  onStartDateChange={setStartDate}
-                  onEndDateChange={setEndDate}
-                  showComparisonInfo={false}
-                />
-              </div>
+                </div>
+              )}
             </div>
-            <p className="text-[14px] text-[#64748b]">{overviewSubtitle}</p>
           </div>
         </div>
 

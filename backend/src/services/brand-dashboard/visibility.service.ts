@@ -19,6 +19,7 @@ export interface VisibilityCalculationInputs {
     visibilityValues: number[]
     sentimentValues: number[]
     mentions: number
+    positiveCollectorResults?: Set<number> // NEW: Track positive presence
     queries: Map<string, {
       text: string
       shareSum: number
@@ -178,6 +179,7 @@ export class VisibilityService {
       visibilityValues: number[]
       sentimentValues: number[]
       mentions: number
+      positiveCollectorResults?: Set<number>
       queries: Map<string, {
         text: string
         shareSum: number
@@ -234,9 +236,8 @@ export class VisibilityService {
           .slice(0, 3)
 
         // Calculate brand presence percentage - Answer Frequency
-        // Calculate total answers where competitor appeared by summing count across all queries
-        const totalCompetitorAppearances = Array.from(aggregate.queries.values())
-          .reduce((sum, query) => sum + query.count, 0)
+        // Use positiveCollectorResults count which tracks where competitor had > 0 signal (vis/share/mentions)
+        const totalCompetitorAppearances = aggregate.positiveCollectorResults?.size ?? 0
 
         // Direct percentage: (answers with competitor / total answers) * 100
         const brandPresencePercentage = totalResponses > 0
@@ -339,6 +340,7 @@ export class VisibilityService {
       visibilityValues: number[]
       sentimentValues: number[]
       mentions: number
+      positiveCollectorResults?: Set<number>
       queries: Map<string, {
         text: string
         shareSum: number

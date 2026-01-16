@@ -46,11 +46,11 @@ export async function buildDashboardPayload(
   const requestStart = Date.now()
   let lastMark = requestStart
   const mark = (label: string) => {
-    const now = Date.now()
-    const delta = now - lastMark
-    const total = now - requestStart
-    console.log(`[Dashboard] ⏱ ${label}: +${delta}ms (total ${total}ms)`)
-    lastMark = now
+    // const now = Date.now()
+    // const delta = now - lastMark
+    // const total = now - requestStart
+    // console.log(`[Dashboard] ⏱ ${label}: +${delta}ms (total ${total}ms)`)
+    // lastMark = now
   }
 
   const startIsoBound = range.startIso
@@ -172,7 +172,8 @@ export async function buildDashboardPayload(
               .select(
                 `
               *,
-              brand_competitors!inner(competitor_name)
+              brand_competitors!inner(competitor_name),
+              metric_fact:metric_facts!inner(id, collector_result_id, query_id)
             `
               )
               .in('metric_fact_id', chunk)
@@ -287,6 +288,8 @@ export async function buildDashboardPayload(
         })
 
         // Create competitor rows
+
+
         for (const cm of competitorMetricsList) {
           const competitorName = (cm.brand_competitors as any)?.competitor_name
           const csKey = `${mf.id}:${cm.competitor_id}`
@@ -536,6 +539,7 @@ export async function buildDashboardPayload(
         }
       >
       queryIds: Set<string>
+      positiveCollectorResults?: Set<number>
     }
   >()
 
@@ -1033,6 +1037,7 @@ export async function buildDashboardPayload(
         visibilityValues: [],
         sentimentValues: [],
         mentions: 0,
+        positiveCollectorResults: new Set<number>(), // NEW: Track positive presence
         queries: new Map<
           string,
           {
@@ -1085,6 +1090,8 @@ export async function buildDashboardPayload(
         count: 0
       }
 
+
+
     // Track valid share values separately to calculate correct average (matching SQL AVG behavior)
     const newShareSum = competitorQueryAggregate.shareSum + (competitorShare !== null && competitorShare !== undefined && Number.isFinite(competitorShare) ? competitorShare : 0)
     const newCount = competitorQueryAggregate.count + 1
@@ -1100,6 +1107,27 @@ export async function buildDashboardPayload(
       mentionSum: competitorQueryAggregate.mentionSum + competitorMentions,
       count: newCount
     })
+
+    // Track positive presence for this competitor in this query/answer
+    // A competitor is "present" if they have > 0 visibility, share, or mentions
+    const hasPositivePresence = competitorVisibility > 0 || (competitorShare !== null && competitorShare > 0) || competitorMentions > 0
+
+    if (hasPositivePresence) {
+      // We'll track this in the query map as well so we can sum it up later
+      const queryStats = competitorAggregate.queries.get(queryId)!
+      // Add a custom property 'presenceCount' to the query stats object if it doesn't exist
+      // Since the type defines specific fields, we might need to rely on the fact that we can extend it or add a map for it
+      // To be typesafe, let's update the Map definition in the initialization block (requires editing line 1036-1046)
+      // OR simpler: just track a Set of collector_result_ids in the main aggregate
+      if (!competitorAggregate.positiveCollectorResults) {
+        competitorAggregate.positiveCollectorResults = new Set<number>()
+      }
+      // collector_result_id is directly on the flattened positionRow, not nested under metric_fact
+      const crId = row.collector_result_id
+      if (crId) {
+        competitorAggregate.positiveCollectorResults.add(Number(crId))
+      }
+    }
 
     // Track topics for this competitor
     if (topicName) {
@@ -3318,8 +3346,8 @@ export async function buildDashboardPayload(
     brandSummary
   }
 
-  mark('payload computed')
-  console.log(`[Dashboard] ✅ Total dashboard generation time: ${Date.now() - requestStart}ms`)
+  // mark('payload computed')
+  console.log(`[Dashboard] ✅ Generated for ${brand.name} in ${(Date.now() - requestStart).toFixed(0)}ms`)
 
   return payload
 }

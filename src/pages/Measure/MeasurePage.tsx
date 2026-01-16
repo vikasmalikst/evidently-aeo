@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Layout } from '../../components/Layout/Layout';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
@@ -204,6 +205,7 @@ export const MeasurePage = () => {
   const [region, setRegion] = useState('us');
   const [llmFilters, setLlmFilters] = useState<string[]>([]);
   const [allLlmOptions, setAllLlmOptions] = useState<Array<{ value: string; label: string; color?: string }>>([]);
+  const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [isSelectionInitialized, setIsSelectionInitialized] = useState(false);
   const [metricType, setMetricType] = useState<MetricType>(() => parseMetricType(searchParams.get('kpi')) ?? 'visibility');
@@ -791,25 +793,40 @@ export const MeasurePage = () => {
                 </div>
               )}
 
-              {/* LLM Filters - Pill Style */}
+              {/* LLM Filters - Icons Only with Smooth Hover Animation */}
               {llmOptions.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">LLMs</span>
-                  <div className="flex items-center bg-[#f1f5f9] rounded-lg p-1">
+                  <div className="relative flex items-center bg-[#f1f5f9] rounded-xl p-1 gap-0.5">
+                    {/* "All" Button */}
                     <button
                       type="button"
                       onClick={() => setLlmFilters([])}
-                      className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${
-                        llmFilters.length === 0
-                          ? 'bg-white text-[#1a1d29] shadow-sm'
-                          : 'text-[#64748b] hover:text-[#1a1d29]'
-                      }`}
+                      onMouseEnter={() => setHoveredLlmIndex(-1)}
+                      onMouseLeave={() => setHoveredLlmIndex(null)}
+                      className="relative px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors z-10"
                     >
-                      All
+                      {/* Animated Background Pill */}
+                      {hoveredLlmIndex === -1 && (
+                        <motion.span
+                          className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                          layoutId="llm-filter-hover"
+                          transition={{
+                            type: "spring",
+                            bounce: 0,
+                            duration: 0.4
+                          }}
+                        />
+                      )}
+                      <span className={`relative z-10 ${llmFilters.length === 0 ? 'text-[#1a1d29] font-semibold' : 'text-[#64748b]'}`}>
+                        All
+                      </span>
                     </button>
+                    
+                    {/* Individual LLM Buttons */}
                     {llmOptions
                       .filter((opt) => opt.value !== 'all')
-                      .map((opt) => {
+                      .map((opt, index) => {
                         const isActive = llmFilters.includes(opt.value);
                         return (
                           <button
@@ -822,15 +839,30 @@ export const MeasurePage = () => {
                                   : [...prev, opt.value]
                               )
                             }
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${
-                              isActive
-                                ? 'bg-white text-[#1a1d29] shadow-sm'
-                                : 'text-[#64748b] hover:text-[#1a1d29]'
-                            }`}
+                            onMouseEnter={() => setHoveredLlmIndex(index)}
+                            onMouseLeave={() => setHoveredLlmIndex(null)}
+                            className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10"
                             title={opt.label}
                           >
-                            {getLLMIcon(opt.label)}
-                            <span className="hidden sm:inline">{opt.label}</span>
+                            {/* Animated Background Pill */}
+                            {hoveredLlmIndex === index && (
+                              <motion.span
+                                className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                                layoutId="llm-filter-hover"
+                                transition={{
+                                  type: "spring",
+                                  bounce: 0,
+                                  duration: 0.4
+                                }}
+                              />
+                            )}
+                            <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                              {getLLMIcon(opt.label)}
+                            </span>
+                            {/* Active indicator dot */}
+                            {isActive && (
+                              <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#06b6d4] rounded-full" />
+                            )}
                           </button>
                         );
                       })}

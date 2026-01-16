@@ -26,6 +26,7 @@ import {
   type IdentifiedKPI
 } from '../api/recommendationsV3Api';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
+import { apiClient } from '../lib/apiClient';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
@@ -1772,7 +1773,44 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     try {
                                       parsedContent = JSON.parse(jsonMatch[0]);
                                     } catch {
-                                      parsedContent = null;
+                                      // v4.0 Recovery: Try to fix truncated JSON by closing brackets
+                                      if (content.includes('"version":"4.0"') || content.includes('"version": "4.0"')) {
+                                        try {
+                                          // Extract sections array even if incomplete
+                                          const sectionsMatch = content.match(/"sections"\s*:\s*\[([\s\S]*)/);
+                                          if (sectionsMatch) {
+                                            let sectionsStr = sectionsMatch[1];
+                                            // Find complete section objects
+                                            const sections: any[] = [];
+                                            const sectionRegex = /\{\s*"id"\s*:\s*"([^"]+)"\s*,\s*"title"\s*:\s*"([^"]+)"\s*,\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"sectionType"\s*:\s*"([^"]+)"\s*\}/g;
+                                            let match;
+                                            while ((match = sectionRegex.exec(sectionsStr)) !== null) {
+                                              sections.push({
+                                                id: match[1],
+                                                title: match[2],
+                                                content: match[3].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+                                                sectionType: match[4]
+                                              });
+                                            }
+                                            if (sections.length > 0) {
+                                              // Extract title if present
+                                              const titleMatch = content.match(/"contentTitle"\s*:\s*"([^"]+)"/);
+                                              parsedContent = {
+                                                version: '4.0',
+                                                contentTitle: titleMatch ? titleMatch[1] : 'Content (Recovered)',
+                                                sections,
+                                                callToAction: '',
+                                                requiredInputs: []
+                                              };
+                                            }
+                                          }
+                                        } catch (e) {
+                                          console.warn('v4.0 recovery failed:', e);
+                                          parsedContent = null;
+                                        }
+                                      } else {
+                                        parsedContent = null;
+                                      }
                                     }
                                   }
                                 }
@@ -1842,9 +1880,15 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       sectionType: s.sectionType
                                     }));
 
-                                    const response = await fetch('/api/recommendations-v3/refine-content', {
+                                    console.log('[Refine] Sending request with', sectionsWithFeedback.length, 'sections');
+                                    const accessToken = apiClient.getAccessToken();
+                                    
+                                    const response = await fetch(`${apiClient.baseUrl}/recommendations-v3/refine-content`, {
                                       method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
+                                      headers: {
+                                        'Content-Type': 'application/json',
+                                        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+                                      },
                                       body: JSON.stringify({
                                         recommendationId: recId,
                                         sections: sectionsWithFeedback,
@@ -1853,7 +1897,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       })
                                     });
 
+                                    console.log('[Refine] Response status:', response.status);
                                     const result = await response.json();
+                                    console.log('[Refine] Result:', result);
+                                    
                                     if (result.success && result.data?.refinedContent) {
                                       setRefinedContent(prev => {
                                         const next = new Map(prev);
@@ -1866,6 +1913,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                         next.delete(recId);
                                         return next;
                                       });
+                                    } else {
+                                      console.error('[Refine] API returned error:', result.error);
                                     }
                                   } catch (error) {
                                     console.error('Refinement failed:', error);

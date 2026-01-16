@@ -884,9 +884,11 @@ ${contentStyleGuide}
       const parsed = JSON.parse(raw.trim());
       if (this.isValidGeneratedContent(parsed)) {
         return this.normalizeGeneratedContent(parsed);
+      } else {
+        console.warn('[PARSE] Direct parse succeeded but content invalid. Version:', parsed?.version);
       }
-    } catch {
-      // Continue to next strategy
+    } catch (e) {
+      console.warn('[PARSE] Strategy 1 (direct) failed:', (e as Error).message);
     }
 
     // Strategy 2: Extract JSON from markdown code blocks
@@ -1182,11 +1184,11 @@ ${contentStyleGuide}
 
     // Common required fields
     if (!parsed.recommendationId || !parsed.brandName) return false;
-    // Content formats require targetSource; guides do not
-    if (version !== 'guide_v1') {
+    // Content formats require targetSource; guides and v4.0 refinement don't require domain
+    if (version !== 'guide_v1' && version !== '4.0') {
       if (!parsed.targetSource?.domain) return false;
-      // v3.0 and v4.0 don't require 'mode' field
-      if (version !== '3.0' && version !== '4.0' && !parsed.targetSource?.mode) return false;
+      // v3.0 doesn't require 'mode' field
+      if (version !== '3.0' && !parsed.targetSource?.mode) return false;
     }
 
     // Version-specific validation
@@ -1433,17 +1435,36 @@ RULES:
 - Escape newlines as \\\\n in JSON strings
 `;
 
-      // Call LLM using existing Cerebras method
-      const result = await this.callCerebras(refinementPrompt);
-      if (!result?.content) {
-        console.error('[REFINE] Cerebras call failed');
+      // Call LLM using OpenRouter (same as content generation)
+      const orResult = await openRouterCollectorService.executeQuery({
+        collectorType: 'content',
+        prompt: refinementPrompt,
+        maxTokens: 4000,
+        temperature: 0.5,
+        topP: 0.9,
+        enableWebSearch: false
+      });
+
+      if (!orResult?.response) {
+        console.error('[REFINE] OpenRouter call failed');
         return null;
       }
 
+      const resultContent = orResult.response;
+      console.log('[REFINE] OpenRouter model used:', orResult.model_used);
+
       // Parse the response
-      const parsed = this.parseGeneratedContentJson(result.content);
-      if (parsed && this.isValidGeneratedContent(parsed) && parsed.version === '4.0') {
-        return this.normalizeGeneratedContent(parsed) as GeneratedContentJsonV4;
+      console.log('[REFINE] Raw result content length:', resultContent?.length);
+      const parsed = this.parseGeneratedContentJson(resultContent);
+      console.log('[REFINE] Parsed result:', parsed ? 'SUCCESS' : 'NULL');
+      if (parsed) {
+        console.log('[REFINE] Parsed version:', parsed.version);
+        console.log('[REFINE] Has sections:', Array.isArray((parsed as any).sections));
+        const isValid = this.isValidGeneratedContent(parsed);
+        console.log('[REFINE] Is valid:', isValid);
+        if (isValid && parsed.version === '4.0') {
+          return this.normalizeGeneratedContent(parsed) as GeneratedContentJsonV4;
+        }
       }
 
       console.error('[REFINE] Failed to parse refinement response');

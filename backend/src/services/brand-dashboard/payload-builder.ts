@@ -46,11 +46,11 @@ export async function buildDashboardPayload(
   const requestStart = Date.now()
   let lastMark = requestStart
   const mark = (label: string) => {
-    const now = Date.now()
-    const delta = now - lastMark
-    const total = now - requestStart
-    console.log(`[Dashboard] ⏱ ${label}: +${delta}ms (total ${total}ms)`)
-    lastMark = now
+    // const now = Date.now()
+    // const delta = now - lastMark
+    // const total = now - requestStart
+    // console.log(`[Dashboard] ⏱ ${label}: +${delta}ms (total ${total}ms)`)
+    // lastMark = now
   }
 
   const startIsoBound = range.startIso
@@ -151,10 +151,14 @@ export async function buildDashboardPayload(
         return { data: [], error: null }
       }
 
+      // Build all chunks upfront
+      const chunks: string[][] = []
       for (let i = 0; i < metricFactIds.length; i += chunkSize) {
-        const chunk = metricFactIds.slice(i, i + chunkSize)
+        chunks.push(metricFactIds.slice(i, i + chunkSize))
+      }
 
-        // Run the 4 table fetches in parallel to avoid 4x sequential latency per chunk.
+      // Helper to fetch all 4 tables for a single chunk
+      const fetchChunkData = async (chunk: string[]) => {
         const [
           brandMetricsResult,
           competitorMetricsResult,
@@ -168,7 +172,8 @@ export async function buildDashboardPayload(
               .select(
                 `
               *,
-              brand_competitors!inner(competitor_name)
+              brand_competitors!inner(competitor_name),
+              metric_fact:metric_facts!inner(id, collector_result_id, query_id)
             `
               )
               .in('metric_fact_id', chunk)
@@ -200,10 +205,23 @@ export async function buildDashboardPayload(
           console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentResult.error)
         }
 
-        brandMetricsRows.push(...brandMetricsResult.data)
-        competitorMetricsRows.push(...competitorMetricsResult.data)
-        brandSentimentRows.push(...brandSentimentResult.data)
-        competitorSentimentRows.push(...competitorSentimentResult.data)
+        return {
+          brandMetrics: brandMetricsResult.data,
+          competitorMetrics: competitorMetricsResult.data,
+          brandSentiment: brandSentimentResult.data,
+          competitorSentiment: competitorSentimentResult.data,
+        }
+      }
+
+      // Execute ALL chunks in parallel (no sequential waiting between chunks)
+      const chunkResults = await Promise.all(chunks.map(fetchChunkData))
+
+      // Merge results from all chunks
+      for (const result of chunkResults) {
+        brandMetricsRows.push(...result.brandMetrics)
+        competitorMetricsRows.push(...result.competitorMetrics)
+        brandSentimentRows.push(...result.brandSentiment)
+        competitorSentimentRows.push(...result.competitorSentiment)
       }
 
       const brandMetrics = brandMetricsRows
@@ -270,6 +288,8 @@ export async function buildDashboardPayload(
         })
 
         // Create competitor rows
+
+
         for (const cm of competitorMetricsList) {
           const competitorName = (cm.brand_competitors as any)?.competitor_name
           const csKey = `${mf.id}:${cm.competitor_id}`
@@ -519,6 +539,7 @@ export async function buildDashboardPayload(
         }
       >
       queryIds: Set<string>
+      positiveCollectorResults?: Set<number>
     }
   >()
 
@@ -604,34 +625,37 @@ export async function buildDashboardPayload(
     if (uniqueCollectorResultIds.length > 0) {
       const chunkSize = 200
       const collectorRows: Array<{ id: number; question: string | null }> = []
+      const collectorPromises: Promise<any>[] = []
 
       for (let i = 0; i < uniqueCollectorResultIds.length; i += chunkSize) {
         const chunk = uniqueCollectorResultIds.slice(i, i + chunkSize)
-        const { data, error } = await (async () => {
+        collectorPromises.push((async () => {
           const start = Date.now()
           const result = await supabaseAdmin
             .from('collector_results')
             .select('id, question')
             .in('id', chunk)
-          console.log(`[Dashboard] ⏱ collector results query chunk (${chunk.length}): ${Date.now() - start}ms`)
-          return result
-        })()
-
-        if (error) {
-          console.warn(`[Dashboard] Failed to load collector questions chunk: ${error.message}`)
-          continue
-        }
-
-        ; (data ?? []).forEach((row) => {
-          if (typeof row?.id !== 'number' || !Number.isFinite(row.id)) {
-            return
+          // console.log(`[Dashboard] ⏱ collector results query chunk (${chunk.length}): ${Date.now() - start}ms`)
+          if (result.error) {
+            console.warn(`[Dashboard] Failed to load collector questions chunk: ${result.error.message}`)
+            return []
           }
-          collectorRows.push({
-            id: row.id,
-            question: typeof row.question === 'string' ? row.question : null
-          })
-        })
+          return result.data ?? []
+        })())
       }
+
+      const collectorResults = await Promise.all(collectorPromises)
+      collectorResults.flat().forEach((row) => {
+        if (typeof row?.id !== 'number' || !Number.isFinite(row.id)) {
+          return
+        }
+        collectorRows.push({
+          id: row.id,
+          question: typeof row.question === 'string' ? row.question : null
+        })
+      })
+
+
 
       collectorRows.forEach((collectorRow) => {
         const label =
@@ -641,73 +665,78 @@ export async function buildDashboardPayload(
         queryTextMap.set(`collector-${collectorRow.id}`, label)
       })
     }
-
-    const uniqueQueryIds = Array.from(
-      new Set(
-        positionRows
-          .map((row) => row.query_id)
-          .filter((id): id is string => Boolean(id))
-      )
-    )
-
-    if (uniqueQueryIds.length > 0) {
-      const chunkSize = 200
-      const queryRows: Array<{ id: string; query_text: string | null; topic: string | null; metadata: unknown }> = []
-
-      for (let i = 0; i < uniqueQueryIds.length; i += chunkSize) {
-        const chunk = uniqueQueryIds.slice(i, i + chunkSize)
-        const { data, error } = await (async () => {
-          const start = Date.now()
-          const result = await supabaseAdmin
-            .from('generated_queries')
-            .select('id, query_text, topic, metadata')
-            .in('id', chunk)
-          console.log(`[Dashboard] ⏱ generated queries lookup chunk (${chunk.length}): ${Date.now() - start}ms`)
-          return result
-        })()
-
-        if (error) {
-          console.warn(`[Dashboard] Failed to load generated queries chunk: ${error.message}`)
-          continue
-        }
-
-        ; (data ?? []).forEach((row) => {
-          if (!row?.id) {
-            return
-          }
-          queryRows.push({
-            id: String(row.id),
-            query_text: typeof row.query_text === 'string' ? row.query_text : null,
-            topic: typeof row.topic === 'string' ? row.topic : null,
-            metadata: row.metadata
-          })
-        })
-      }
-
-      queryRows.forEach((query) => {
-        if (!query?.id) {
-          return
-        }
-        const label = typeof query.query_text === 'string' && query.query_text.trim().length > 0
-          ? query.query_text.trim()
-          : 'Unlabeled query'
-        queryTextMap.set(query.id, label)
-
-        // Priority: 1) topic column, 2) metadata.topic_name, 3) metadata.topic
-        const metadata = query.metadata as Record<string, any> | null | undefined
-        const topicName = query.topic ||
-          (typeof metadata?.topic_name === 'string' && metadata.topic_name.trim().length > 0
-            ? metadata.topic_name.trim()
-            : typeof metadata?.topic === 'string' && metadata.topic.trim().length > 0
-              ? metadata.topic.trim()
-              : null)
-
-        if (topicName) {
-          topicByQueryId.set(query.id, topicName)
-        }
-      })
-    }
   }
+
+
+  const uniqueQueryIds = Array.from(
+    new Set(
+      positionRows
+        .map((row) => row.query_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+
+  if (uniqueQueryIds.length > 0) {
+    const chunkSize = 200
+    const queryRows: Array<{ id: string; query_text: string | null; topic: string | null; metadata: unknown }> = []
+    const queryPromises: Promise<any>[] = []
+
+    for (let i = 0; i < uniqueQueryIds.length; i += chunkSize) {
+      const chunk = uniqueQueryIds.slice(i, i + chunkSize)
+      queryPromises.push((async () => {
+        const start = Date.now()
+        const result = await supabaseAdmin
+          .from('generated_queries')
+          .select('id, query_text, topic, metadata')
+          .in('id', chunk)
+        // console.log(`[Dashboard] ⏱ generated queries lookup chunk (${chunk.length}): ${Date.now() - start}ms`)
+        if (result.error) {
+          console.warn(`[Dashboard] Failed to load generated queries chunk: ${result.error.message}`)
+          return []
+        }
+        return result.data ?? []
+      })())
+    }
+
+    const queryResults = await Promise.all(queryPromises)
+    queryResults.flat().forEach((row) => {
+      if (!row?.id) {
+        return
+      }
+      queryRows.push({
+        id: String(row.id),
+        query_text: typeof row.query_text === 'string' ? row.query_text : null,
+        topic: typeof row.topic === 'string' ? row.topic : null,
+        metadata: row.metadata
+      })
+    })
+
+
+
+    queryRows.forEach((query) => {
+      if (!query?.id) {
+        return
+      }
+      const label = typeof query.query_text === 'string' && query.query_text.trim().length > 0
+        ? query.query_text.trim()
+        : 'Unlabeled query'
+      queryTextMap.set(query.id, label)
+
+      // Priority: 1) topic column, 2) metadata.topic_name, 3) metadata.topic
+      const metadata = query.metadata as Record<string, any> | null | undefined
+      const topicName = query.topic ||
+        (typeof metadata?.topic_name === 'string' && metadata.topic_name.trim().length > 0
+          ? metadata.topic_name.trim()
+          : typeof metadata?.topic === 'string' && metadata.topic.trim().length > 0
+            ? metadata.topic.trim()
+            : null)
+
+      if (topicName) {
+        topicByQueryId.set(query.id, topicName)
+      }
+    })
+  }
+
 
   let generatedQueryFallback = 0
   let processedRowCount = 0
@@ -1008,6 +1037,7 @@ export async function buildDashboardPayload(
         visibilityValues: [],
         sentimentValues: [],
         mentions: 0,
+        positiveCollectorResults: new Set<number>(), // NEW: Track positive presence
         queries: new Map<
           string,
           {
@@ -1060,6 +1090,8 @@ export async function buildDashboardPayload(
         count: 0
       }
 
+
+
     // Track valid share values separately to calculate correct average (matching SQL AVG behavior)
     const newShareSum = competitorQueryAggregate.shareSum + (competitorShare !== null && competitorShare !== undefined && Number.isFinite(competitorShare) ? competitorShare : 0)
     const newCount = competitorQueryAggregate.count + 1
@@ -1075,6 +1107,27 @@ export async function buildDashboardPayload(
       mentionSum: competitorQueryAggregate.mentionSum + competitorMentions,
       count: newCount
     })
+
+    // Track positive presence for this competitor in this query/answer
+    // A competitor is "present" if they have > 0 visibility, share, or mentions
+    const hasPositivePresence = competitorVisibility > 0 || (competitorShare !== null && competitorShare > 0) || competitorMentions > 0
+
+    if (hasPositivePresence) {
+      // We'll track this in the query map as well so we can sum it up later
+      const queryStats = competitorAggregate.queries.get(queryId)!
+      // Add a custom property 'presenceCount' to the query stats object if it doesn't exist
+      // Since the type defines specific fields, we might need to rely on the fact that we can extend it or add a map for it
+      // To be typesafe, let's update the Map definition in the initialization block (requires editing line 1036-1046)
+      // OR simpler: just track a Set of collector_result_ids in the main aggregate
+      if (!competitorAggregate.positiveCollectorResults) {
+        competitorAggregate.positiveCollectorResults = new Set<number>()
+      }
+      // collector_result_id is directly on the flattened positionRow, not nested under metric_fact
+      const crId = row.collector_result_id
+      if (crId) {
+        competitorAggregate.positiveCollectorResults.add(Number(crId))
+      }
+    }
 
     // Track topics for this competitor
     if (topicName) {
@@ -3293,8 +3346,8 @@ export async function buildDashboardPayload(
     brandSummary
   }
 
-  mark('payload computed')
-  console.log(`[Dashboard] ✅ Total dashboard generation time: ${Date.now() - requestStart}ms`)
+  // mark('payload computed')
+  console.log(`[Dashboard] ✅ Generated for ${brand.name} in ${(Date.now() - requestStart).toFixed(0)}ms`)
 
   return payload
 }

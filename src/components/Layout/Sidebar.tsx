@@ -76,11 +76,10 @@ export const Sidebar = () => {
   };
 
   const handleNavHover = (path: string) => {
-    // Prefetch-on-hover can overwhelm local dev backend and make pages appear “stuck”.
-    // Disable it in dev completely. (Production build is unaffected.)
-    if (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.DEV) {
-      return;
-    }
+    // Prefetch-on-hover is now enabled in dev to improve perceived performance.
+    // if (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.DEV) {
+    //   return;
+    // }
     const endpoint = getPrefetchEndpoint(path);
     if (endpoint) {
       prefetchNow(endpoint, {}, { requiresAuth: true });

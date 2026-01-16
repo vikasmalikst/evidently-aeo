@@ -1,8 +1,9 @@
 /**
  * Brand Performance Overview Section Component
+ * Features glassmorphism metric cards and styled comparison table
  */
 
-import { IconTrendingUp, IconTrendingDown, IconMinus } from '@tabler/icons-react';
+import { IconTrendingUp, IconTrendingDown, IconMinus, IconChartBar } from '@tabler/icons-react';
 
 interface BrandPerformanceData {
     current: {
@@ -38,188 +39,155 @@ const MetricCard = ({
     delta,
     suffix = '',
     inverseColor = false,
+    index = 0,
 }: {
     label: string;
     value: number;
     delta: { absolute: number; percentage: number };
     suffix?: string;
     inverseColor?: boolean;
+    index?: number;
 }) => {
     const isPositive = inverseColor ? delta.percentage < 0 : delta.percentage > 0;
-    const isNeutral = delta.percentage === 0;
+    const isNeutral = Math.abs(delta.percentage) < 0.1;
 
-    const colorClass = isNeutral
-        ? 'text-[var(--text-muted)]'
+    const trendClass = isNeutral
+        ? 'executive-metric-trend neutral'
         : isPositive
-            ? 'text-green-600'
-            : 'text-red-600';
+            ? 'executive-metric-trend positive'
+            : 'executive-metric-trend negative';
+
+    const cardClass = isNeutral
+        ? 'executive-metric-card'
+        : isPositive
+            ? 'executive-metric-card positive'
+            : 'executive-metric-card negative';
 
     const Icon = isNeutral ? IconMinus : isPositive ? IconTrendingUp : IconTrendingDown;
 
     return (
-        <div className="bg-white p-6 rounded-lg border border-[var(--border-default)]">
-            <div className="text-sm text-[var(--text-muted)] uppercase tracking-wide mb-2">
-                {label}
-            </div>
-            <div className="text-3xl font-bold text-[var(--text-headings)] mb-2">
+        <div 
+            className={cardClass}
+            style={{ animationDelay: `${index * 0.1}s` }}
+        >
+            <div className="executive-metric-label">{label}</div>
+            <div className="executive-metric-value">
                 {value.toFixed(1)}
-                {suffix}
+                {suffix && <span className="text-lg text-[var(--text-caption)] ml-0.5">{suffix}</span>}
             </div>
-            <div className={`flex items-center gap-1 text-sm font-semibold ${colorClass}`}>
-                <Icon className="w-4 h-4" />
+            <div className={trendClass}>
+                <Icon className="w-3.5 h-3.5" />
                 <span>
                     {delta.percentage > 0 ? '+' : ''}
                     {delta.percentage.toFixed(1)}%
                 </span>
-                <span className="text-[var(--text-muted)] font-normal">vs previous</span>
+                <span className="executive-metric-context">vs previous</span>
             </div>
         </div>
     );
 };
 
 export const BrandPerformanceSection = ({ data }: BrandPerformanceSectionProps) => {
-    return (
-        <div className="bg-white rounded-lg p-6 border border-[var(--border-default)]">
-            <h2 className="text-xl font-semibold text-[var(--text-headings)] mb-6">
-                Brand Performance Overview
-            </h2>
+    const getChangeClass = (value: number, inverse = false) => {
+        const isPositive = inverse ? value < 0 : value > 0;
+        if (Math.abs(value) < 0.1) return 'executive-change-neutral';
+        return isPositive ? 'executive-change-positive' : 'executive-change-negative';
+    };
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    return (
+        <div className="executive-section">
+            <div className="executive-section-header">
+                <div className="executive-section-icon performance">
+                    <IconChartBar className="w-5 h-5 text-indigo-600" />
+                </div>
+                <h2 className="executive-section-title">Brand Performance Overview</h2>
+            </div>
+
+            {/* Metric Cards Grid */}
+            <div className="executive-metrics-grid">
                 <MetricCard
                     label="Visibility Score"
                     value={data.current.visibility}
                     delta={data.deltas.visibility}
+                    index={0}
                 />
                 <MetricCard
                     label="Share of Answer"
                     value={data.current.share_of_answer}
                     delta={data.deltas.share_of_answer}
                     suffix="%"
+                    index={1}
                 />
                 <MetricCard
                     label="Avg Position"
                     value={data.current.average_position}
                     delta={data.deltas.average_position}
                     inverseColor={true}
+                    index={2}
                 />
                 <MetricCard
                     label="Sentiment Score"
                     value={data.current.sentiment}
                     delta={data.deltas.sentiment}
+                    index={3}
                 />
             </div>
 
             {/* Comparison Table */}
             <div className="mt-8">
-                <h3 className="text-lg font-semibold text-[var(--text-headings)] mb-4">
+                <h3 className="text-base font-bold text-[var(--text-headings)] mb-4">
                     Period-over-Period Comparison
                 </h3>
-                <div className="overflow-x-auto">
-                    <table className="w-full">
+                <div className="executive-table-container">
+                    <table className="executive-table">
                         <thead>
-                            <tr className="border-b border-[var(--border-default)]">
-                                <th className="text-left py-3 px-4 text-sm font-semibold text-[var(--text-headings)]">
-                                    Metric
-                                </th>
-                                <th className="text-right py-3 px-4 text-sm font-semibold text-[var(--text-headings)]">
-                                    Current
-                                </th>
-                                <th className="text-right py-3 px-4 text-sm font-semibold text-[var(--text-headings)]">
-                                    Previous
-                                </th>
-                                <th className="text-right py-3 px-4 text-sm font-semibold text-[var(--text-headings)]">
-                                    Change
-                                </th>
+                            <tr>
+                                <th>Metric</th>
+                                <th>Current</th>
+                                <th>Previous</th>
+                                <th>Change</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr className="border-b border-[var(--border-default)]">
-                                <td className="py-3 px-4 text-sm text-[var(--text-body)]">Visibility</td>
-                                <td className="py-3 px-4 text-sm text-right text-[var(--text-body)]">
-                                    {data.current.visibility.toFixed(1)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right text-[var(--text-body)]">
-                                    {data.previous.visibility.toFixed(1)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right">
-                                    <span
-                                        className={
-                                            data.deltas.visibility.percentage > 0
-                                                ? 'text-green-600 font-semibold'
-                                                : data.deltas.visibility.percentage < 0
-                                                    ? 'text-red-600 font-semibold'
-                                                    : 'text-[var(--text-muted)]'
-                                        }
-                                    >
+                            <tr>
+                                <td className="font-medium">Visibility</td>
+                                <td>{data.current.visibility.toFixed(1)}</td>
+                                <td>{data.previous.visibility.toFixed(1)}</td>
+                                <td>
+                                    <span className={getChangeClass(data.deltas.visibility.percentage)}>
                                         {data.deltas.visibility.percentage > 0 ? '+' : ''}
                                         {data.deltas.visibility.percentage.toFixed(1)}%
                                     </span>
                                 </td>
                             </tr>
-                            <tr className="border-b border-[var(--border-default)]">
-                                <td className="py-3 px-4 text-sm text-[var(--text-body)]">Share of Answer</td>
-                                <td className="py-3 px-4 text-sm text-right text-[var(--text-body)]">
-                                    {data.current.share_of_answer.toFixed(1)}%
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right text-[var(--text-body)]">
-                                    {data.previous.share_of_answer.toFixed(1)}%
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right">
-                                    <span
-                                        className={
-                                            data.deltas.share_of_answer.percentage > 0
-                                                ? 'text-green-600 font-semibold'
-                                                : data.deltas.share_of_answer.percentage < 0
-                                                    ? 'text-red-600 font-semibold'
-                                                    : 'text-[var(--text-muted)]'
-                                        }
-                                    >
+                            <tr>
+                                <td className="font-medium">Share of Answer</td>
+                                <td>{data.current.share_of_answer.toFixed(1)}%</td>
+                                <td>{data.previous.share_of_answer.toFixed(1)}%</td>
+                                <td>
+                                    <span className={getChangeClass(data.deltas.share_of_answer.percentage)}>
                                         {data.deltas.share_of_answer.percentage > 0 ? '+' : ''}
                                         {data.deltas.share_of_answer.percentage.toFixed(1)}%
                                     </span>
                                 </td>
                             </tr>
-                            <tr className="border-b border-[var(--border-default)]">
-                                <td className="py-3 px-4 text-sm text-[var(--text-body)]">Avg Position</td>
-                                <td className="py-3 px-4 text-sm text-right text-[var(--text-body)]">
-                                    {data.current.average_position.toFixed(1)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right text-[var(--text-body)]">
-                                    {data.previous.average_position.toFixed(1)}
-                                </td>
-                                < td className="py-3 px-4 text-sm text-right">
-                                    <span
-                                        className={
-                                            data.deltas.average_position.percentage < 0
-                                                ? 'text-green-600 font-semibold'
-                                                : data.deltas.average_position.percentage > 0
-                                                    ? 'text-red-600 font-semibold'
-                                                    : 'text-[var(--text-muted)]'
-                                        }
-                                    >
+                            <tr>
+                                <td className="font-medium">Avg Position</td>
+                                <td>{data.current.average_position.toFixed(1)}</td>
+                                <td>{data.previous.average_position.toFixed(1)}</td>
+                                <td>
+                                    <span className={getChangeClass(data.deltas.average_position.percentage, true)}>
                                         {data.deltas.average_position.percentage > 0 ? '+' : ''}
                                         {data.deltas.average_position.percentage.toFixed(1)}%
                                     </span>
                                 </td>
                             </tr>
                             <tr>
-                                <td className="py-3 px-4 text-sm text-[var(--text-body)]">Sentiment</td>
-                                <td className="py-3 px-4 text-sm text-right text-[var(--text-body)]">
-                                    {data.current.sentiment.toFixed(2)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right text-[var(--text-body)]">
-                                    {data.previous.sentiment.toFixed(2)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right">
-                                    <span
-                                        className={
-                                            data.deltas.sentiment.percentage > 0
-                                                ? 'text-green-600 font-semibold'
-                                                : data.deltas.sentiment.percentage < 0
-                                                    ? 'text-red-600 font-semibold'
-                                                    : 'text-[var(--text-muted)]'
-                                        }
-                                    >
+                                <td className="font-medium">Sentiment</td>
+                                <td>{data.current.sentiment.toFixed(2)}</td>
+                                <td>{data.previous.sentiment.toFixed(2)}</td>
+                                <td>
+                                    <span className={getChangeClass(data.deltas.sentiment.percentage)}>
                                         {data.deltas.sentiment.percentage > 0 ? '+' : ''}
                                         {data.deltas.sentiment.percentage.toFixed(1)}%
                                     </span>
@@ -232,3 +200,4 @@ export const BrandPerformanceSection = ({ data }: BrandPerformanceSectionProps) 
         </div>
     );
 };
+

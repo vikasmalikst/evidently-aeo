@@ -99,6 +99,13 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [feedbackText, setFeedbackText] = useState('');
   const [selectedRecommendationForRegen, setSelectedRecommendationForRegen] = useState<RecommendationV3 | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  
+  // v4.0 Interactive Refinement state
+  const [sectionFeedback, setSectionFeedback] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> feedback)
+  const [sectionEdits, setSectionEdits] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> editedContent)
+  const [globalReferences, setGlobalReferences] = useState<Map<string, string>>(new Map()); // recId -> references
+  const [refiningIds, setRefiningIds] = useState<Set<string>>(new Set()); // Track which recommendations are being refined
+  const [refinedContent, setRefinedContent] = useState<Map<string, any>>(new Map()); // recId -> refined v4.0 content
 
   const isColdStart = dataMaturity === 'cold_start';
 
@@ -1769,6 +1776,379 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     }
                                   }
                                 }
+                              }
+
+                              // Handle v4.0 format (sectioned content with interactive refinement)
+                              if (parsedContent && parsedContent.version === '4.0') {
+                                const v4Content = refinedContent.get(rec.id || '') || parsedContent;
+                                const sections = v4Content.sections || [];
+                                const contentTitle = v4Content.contentTitle || '';
+                                const callToAction = v4Content.callToAction || '';
+                                const requiredInputs = v4Content.requiredInputs || [];
+                                const recId = rec.id || '';
+                                const isRefining = refiningIds.has(recId);
+
+                                // Get or initialize section feedback/edits for this recommendation
+                                const recFeedback = sectionFeedback.get(recId) || new Map<string, string>();
+                                const recEdits = sectionEdits.get(recId) || new Map<string, string>();
+                                const refs = globalReferences.get(recId) || '';
+
+                                // Highlight [FILL_IN: ...] markers
+                                const highlightFillIns = (text: string) => {
+                                  if (!text) return text;
+                                  return text.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
+                                };
+
+                                // Handle section feedback update
+                                const updateSectionFeedback = (sectionId: string, feedback: string) => {
+                                  setSectionFeedback(prev => {
+                                    const next = new Map(prev);
+                                    const recMap = new Map(next.get(recId) || new Map());
+                                    recMap.set(sectionId, feedback);
+                                    next.set(recId, recMap);
+                                    return next;
+                                  });
+                                };
+
+                                // Handle section edit update
+                                const updateSectionEdit = (sectionId: string, content: string) => {
+                                  setSectionEdits(prev => {
+                                    const next = new Map(prev);
+                                    const recMap = new Map(next.get(recId) || new Map());
+                                    recMap.set(sectionId, content);
+                                    next.set(recId, recMap);
+                                    return next;
+                                  });
+                                };
+
+                                // Handle references update
+                                const updateReferences = (refs: string) => {
+                                  setGlobalReferences(prev => {
+                                    const next = new Map(prev);
+                                    next.set(recId, refs);
+                                    return next;
+                                  });
+                                };
+
+                                // Handle refinement
+                                const handleRefine = async () => {
+                                  setRefiningIds(prev => new Set(prev).add(recId));
+                                  try {
+                                    const sectionsWithFeedback = sections.map((s: any) => ({
+                                      id: s.id,
+                                      title: s.title,
+                                      content: recEdits.get(s.id) || s.content,
+                                      feedback: recFeedback.get(s.id) || '',
+                                      sectionType: s.sectionType
+                                    }));
+
+                                    const response = await fetch('/api/recommendations-v3/refine-content', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        recommendationId: recId,
+                                        sections: sectionsWithFeedback,
+                                        references: refs,
+                                        brandName: v4Content.brandName || ''
+                                      })
+                                    });
+
+                                    const result = await response.json();
+                                    if (result.success && result.data?.refinedContent) {
+                                      setRefinedContent(prev => {
+                                        const next = new Map(prev);
+                                        next.set(recId, result.data.refinedContent);
+                                        return next;
+                                      });
+                                      // Clear feedback after successful refinement
+                                      setSectionFeedback(prev => {
+                                        const next = new Map(prev);
+                                        next.delete(recId);
+                                        return next;
+                                      });
+                                    }
+                                  } catch (error) {
+                                    console.error('Refinement failed:', error);
+                                  } finally {
+                                    setRefiningIds(prev => {
+                                      const next = new Set(prev);
+                                      next.delete(recId);
+                                      return next;
+                                    });
+                                  }
+                                };
+
+                                // Check if any feedback exists
+                                const hasFeedback = Array.from(recFeedback.values()).some(f => f.trim().length > 0) || refs.trim().length > 0;
+
+                                return (
+                                  <div className="space-y-4">
+                                    {/* Header with overall title */}
+                                    <div className="bg-gradient-to-r from-[#00bcdc] to-[#06c686] rounded-lg p-4 text-white">
+                                      <h3 className="text-[18px] font-bold">{contentTitle}</h3>
+                                      <p className="text-[12px] opacity-80 mt-1">v4.0 · Sectioned Content · {sections.length} sections</p>
+                                    </div>
+
+                                    {/* Section Cards */}
+                                    {sections.map((section: any, idx: number) => {
+                                      const editedContent = recEdits.get(section.id) || section.content;
+                                      const feedback = recFeedback.get(section.id) || '';
+                                      const isEditingSection = editingId === `${recId}_${section.id}`;
+
+                                      return (
+                                        <div key={section.id} className="bg-white border border-[#e2e8f0] rounded-lg shadow-sm overflow-hidden">
+                                          {/* Section Header */}
+                                          <div className="flex items-center justify-between p-3 bg-[#f8fafc] border-b border-[#e2e8f0]">
+                                            <div className="flex items-center gap-2">
+                                              <span className="w-6 h-6 rounded-full bg-[#00bcdc] text-white text-[11px] font-bold flex items-center justify-center">
+                                                {idx + 1}
+                                              </span>
+                                              <h4 className="text-[14px] font-semibold text-[#1a1d29]">{section.title}</h4>
+                                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#e2e8f0] text-[#64748b] capitalize">
+                                                {section.sectionType}
+                                              </span>
+                                            </div>
+                                            <button
+                                              onClick={() => {
+                                                if (isEditingSection) {
+                                                  setEditingId(null);
+                                                } else {
+                                                  setEditingId(`${recId}_${section.id}`);
+                                                }
+                                              }}
+                                              className="px-2 py-1 text-[11px] text-[#64748b] hover:text-[#00bcdc] transition-colors"
+                                            >
+                                              {isEditingSection ? '✓ Done' : '✎ Edit'}
+                                            </button>
+                                          </div>
+
+                                          {/* Section Content */}
+                                          <div className="p-4">
+                                            {isEditingSection ? (
+                                              <textarea
+                                                className="w-full min-h-[150px] p-3 bg-[#f8fafc] border border-[#00bcdc] rounded-lg text-[13px] text-[#1a1d29] focus:outline-none focus:ring-2 focus:ring-[#00bcdc]"
+                                                value={editedContent}
+                                                onChange={(e) => updateSectionEdit(section.id, e.target.value)}
+                                              />
+                                            ) : (
+                                              <div 
+                                                className="text-[13px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap"
+                                                dangerouslySetInnerHTML={{ __html: highlightFillIns(editedContent) }}
+                                              />
+                                            )}
+                                          </div>
+
+                                          {/* Feedback Input */}
+                                          <div className="px-4 pb-4">
+                                            <div className="bg-[#fef3c7] border border-[#fcd34d] rounded-lg p-3">
+                                              <label className="text-[11px] font-semibold text-[#92400e] block mb-1">
+                                                💬 Feedback for this section
+                                              </label>
+                                              <textarea
+                                                className="w-full p-2 bg-white border border-[#fcd34d] rounded text-[12px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-1 focus:ring-[#f59e0b]"
+                                                placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
+                                                rows={2}
+                                                value={feedback}
+                                                onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+
+                                    {/* Call to Action */}
+                                    {callToAction && (
+                                      <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg p-4">
+                                        <p className="text-[12px] font-semibold text-[#166534] mb-1">📢 Call to Action</p>
+                                        <p className="text-[13px] text-[#166534]">{callToAction}</p>
+                                      </div>
+                                    )}
+
+                                    {/* Required Inputs */}
+                                    {requiredInputs.length > 0 && (
+                                      <div className="bg-[#fef3c7] border border-[#fcd34d] rounded-lg p-4">
+                                        <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
+                                        <ul className="list-disc pl-5 space-y-1">
+                                          {requiredInputs.map((input: string, idx: number) => (
+                                            <li key={idx} className="text-[12px] text-[#92400e]">{input}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+
+                                    {/* Global References */}
+                                    <div className="bg-[#f1f5f9] border border-[#cbd5e1] rounded-lg p-4">
+                                      <label className="text-[12px] font-semibold text-[#475569] block mb-2">
+                                        📎 Additional References (optional)
+                                      </label>
+                                      <textarea
+                                        className="w-full p-3 bg-white border border-[#cbd5e1] rounded-lg text-[12px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-1 focus:ring-[#00bcdc]"
+                                        placeholder="Add any additional context, URLs, or reference material..."
+                                        rows={2}
+                                        value={refs}
+                                        onChange={(e) => updateReferences(e.target.value)}
+                                      />
+                                    </div>
+
+                                    {/* Refine Button */}
+                                    <div className="flex items-center gap-3">
+                                      <button
+                                        onClick={handleRefine}
+                                        disabled={isRefining || !hasFeedback}
+                                        className={`flex-1 py-3 rounded-lg text-[14px] font-semibold transition-colors flex items-center justify-center gap-2 ${
+                                          isRefining || !hasFeedback
+                                            ? 'bg-[#e2e8f0] text-[#94a3b8] cursor-not-allowed'
+                                            : 'bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] text-white hover:from-[#7c3aed] hover:to-[#9333ea]'
+                                        }`}
+                                      >
+                                        {isRefining ? (
+                                          <>
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                            Refining...
+                                          </>
+                                        ) : (
+                                          <>
+                                            🔄 Refine with Feedback
+                                          </>
+                                        )}
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          const fullContent = sections.map((s: any) => `## ${s.title}\n\n${recEdits.get(s.id) || s.content}`).join('\n\n');
+                                          navigator.clipboard.writeText(fullContent);
+                                        }}
+                                        className="px-6 py-3 bg-[#00bcdc] text-white rounded-lg text-[14px] font-semibold hover:bg-[#0096b0] transition-colors flex items-center gap-2"
+                                      >
+                                        📋 Copy All
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              // Handle v3.0 format (dual content: guide + publishable)
+                              if (parsedContent && parsedContent.version === '3.0') {
+                                const v3Content = parsedContent as any;
+                                const publishableContent = v3Content.publishableContent;
+                                const requiredInputs = v3Content.requiredInputs || [];
+
+                                // Highlight [FILL_IN: ...] markers
+                                const highlightFillIns = (text: string) => {
+                                  if (!text) return text;
+                                  return text.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
+                                };
+
+                                return (
+                                  <div className="space-y-4">
+                                    {/* Publishable Content Section */}
+                                    {publishableContent && publishableContent.content && (
+                                      <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+                                        {/* Header */}
+                                        <div className="flex items-center justify-between p-4 border-b border-[#e2e8f0]">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-[#06c686]"></div>
+                                            <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
+                                              📝 Publishable Content
+                                            </h4>
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white capitalize">
+                                              {publishableContent.type?.replace(/_/g, ' ') || 'Content'}
+                                            </span>
+                                            <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
+                                              AI Generated. Review before publishing.
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            {editingId === rec.id ? (
+                                              <>
+                                                <button
+                                                  onClick={() => handleSaveEdit(rec.id!)}
+                                                  className="px-3 py-1.5 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconDeviceFloppy size={14} />
+                                                  Save
+                                                </button>
+                                                <button
+                                                  onClick={() => setEditingId(null)}
+                                                  className="px-3 py-1.5 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconX size={14} />
+                                                  Cancel
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <button
+                                                  onClick={() => {
+                                                    setEditingId(rec.id!);
+                                                    setEditBuffer(unescapeNewlines(publishableContent.content || ''));
+                                                  }}
+                                                  className="px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconPencil size={14} />
+                                                  Edit
+                                                </button>
+                                                <button
+                                                  onClick={() => navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''))}
+                                                  className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                  </svg>
+                                                  Copy
+                                                </button>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Content */}
+                                        <div className="p-6">
+                                          {publishableContent.title && (
+                                            <div className="mb-4">
+                                              <h5 className="text-[16px] font-semibold text-[#1a1d29]">{publishableContent.title}</h5>
+                                            </div>
+                                          )}
+
+                                          {/* Main Content */}
+                                          {editingId === rec.id ? (
+                                            <textarea
+                                              className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
+                                              value={editBuffer}
+                                              onChange={(e) => setEditBuffer(e.target.value)}
+                                              autoFocus
+                                            />
+                                          ) : (
+                                            <div 
+                                              className="prose prose-sm max-w-none text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans"
+                                              dangerouslySetInnerHTML={{ __html: highlightFillIns(unescapeNewlines(publishableContent.content)) }}
+                                            />
+                                          )}
+
+                                          {/* Call to Action */}
+                                          {publishableContent.callToAction && (
+                                            <div className="mt-4 p-3 bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg">
+                                              <p className="text-[12px] font-semibold text-[#166534] mb-1">Call to Action</p>
+                                              <p className="text-[13px] text-[#166534]">{publishableContent.callToAction}</p>
+                                            </div>
+                                          )}
+
+                                          {/* Required Inputs */}
+                                          {requiredInputs.length > 0 && (
+                                            <div className="mt-4 p-3 bg-[#fef3c7] border border-[#fcd34d] rounded-lg">
+                                              <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
+                                              <ul className="list-disc pl-5 space-y-1">
+                                                {requiredInputs.map((input: string, idx: number) => (
+                                                  <li key={idx} className="text-[12px] text-[#92400e]">{input}</li>
+                                                ))}
+                                              </ul>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
                               }
 
                               // Handle v2.0 format (new structure with separate sections)

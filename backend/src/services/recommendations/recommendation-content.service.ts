@@ -109,7 +109,48 @@ type GeneratedContentJsonV2 = {
   complianceNotes: string[];
 };
 
-type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2;
+// NEW v3.0 format: Simplified - Publishable Content Only
+type GeneratedContentJsonV3 = {
+  version: '3.0';
+  recommendationId: string;
+  brandName: string;
+  targetSource: {
+    domain: string;
+    sourceType: 'reddit' | 'linkedin' | 'dev_to' | 'youtube' | 'article_site' | 'owned_site' | 'other';
+  };
+  // Ready-to-publish content: THE ACTUAL CONTENT to copy/paste
+  publishableContent: {
+    type: 'reddit_post' | 'linkedin_post' | 'article' | 'case_study' | 'video_script' | 'blog_post' | 'other';
+    title: string;
+    content: string;  // The actual post/article ready to use
+    callToAction: string;
+  };
+  requiredInputs: string[];  // [FILL_IN:] markers user needs to complete
+};
+
+// NEW v4.0 format: Sectioned Content with Interactive Refinement
+type ContentSection = {
+  id: string;           // e.g., "executive_summary", "key_strategies"
+  title: string;        // e.g., "Executive Summary"
+  content: string;      // The actual section text
+  sectionType: 'summary' | 'context' | 'strategies' | 'case_study' | 'faq' | 'cta' | 'custom';
+};
+
+type GeneratedContentJsonV4 = {
+  version: '4.0';
+  recommendationId: string;
+  brandName: string;
+  targetSource: {
+    domain: string;
+    sourceType: 'reddit' | 'linkedin' | 'dev_to' | 'youtube' | 'article_site' | 'owned_site' | 'other';
+  };
+  contentTitle: string;                    // Overall title of the content
+  sections: ContentSection[];              // Array of structured sections
+  callToAction: string;                    // Final CTA
+  requiredInputs: string[];                // [FILL_IN:] markers user needs to complete
+};
+
+type GeneratedContentJson = GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4;
 type GeneratedAnyJson = GeneratedContentJson | GeneratedGuideJsonV1;
 
 // Cold-start guide format (Step 2/3 for cold_start)
@@ -147,32 +188,60 @@ type GeneratedGuideJsonV1 = {
   nextBestActions?: string[];
 };
 
-// Source detection utility
-function detectSourceType(domain: string): 'youtube' | 'article_site' | 'collaboration_target' | 'other' {
+// Source detection utility - enhanced for v3.0 source-specific content
+function detectSourceTypeV3(domain: string): 'reddit' | 'linkedin' | 'dev_to' | 'youtube' | 'article_site' | 'owned_site' | 'other' {
   const domainLower = domain.toLowerCase().trim();
-  
+
+  // Owned site detection (check first)
+  if (domainLower === 'owned-site' || domainLower === 'owned_site') {
+    return 'owned_site';
+  }
+
   // YouTube detection
   const youtubeDomains = ['youtube.com', 'youtu.be', 'm.youtube.com', 'www.youtube.com'];
   if (youtubeDomains.some(d => domainLower.includes(d))) {
     return 'youtube';
   }
-  
+
+  // Reddit detection
+  if (domainLower.includes('reddit.com') || domainLower.includes('reddit')) {
+    return 'reddit';
+  }
+
+  // LinkedIn detection
+  if (domainLower.includes('linkedin.com') || domainLower.includes('linkedin')) {
+    return 'linkedin';
+  }
+
+  // Dev.to detection
+  if (domainLower.includes('dev.to')) {
+    return 'dev_to';
+  }
+
   // Known editorial/article sites
   const articleSitePatterns = [
     'techcrunch', 'forbes', 'wired', 'theverge', 'engadget', 'ars-technica',
     'healthline', 'webmd', 'mayoclinic', 'nih.gov', 'medicalnewstoday',
-    'medium', 'dev.to', 'hashnode', 'smashingmagazine', 'css-tricks',
+    'medium', 'hashnode', 'smashingmagazine', 'css-tricks',
     'wikipedia', 'britannica', 'encyclopedia',
     'nytimes', 'wsj', 'theguardian', 'bbc', 'cnn', 'reuters',
-    'hbr', 'harvard', 'stanford', 'mit.edu',
-    'reddit', 'quora', 'stackoverflow', 'stackexchange'
+    'hbr', 'harvard', 'stanford', 'mit.edu', 'atlassian.com',
+    'quora', 'stackoverflow', 'stackexchange'
   ];
-  
+
   if (articleSitePatterns.some(pattern => domainLower.includes(pattern))) {
     return 'article_site';
   }
-  
-  // Default to other (will be determined by mode)
+
+  // Default to other
+  return 'other';
+}
+
+// Legacy function for backward compatibility
+function detectSourceType(domain: string): 'youtube' | 'article_site' | 'collaboration_target' | 'other' {
+  const v3Type = detectSourceTypeV3(domain);
+  if (v3Type === 'youtube') return 'youtube';
+  if (['reddit', 'linkedin', 'dev_to', 'article_site'].includes(v3Type)) return 'article_site';
   return 'other';
 }
 
@@ -262,16 +331,16 @@ Your content should help the customer's brand improve the targeted KPI by execut
     const detectedSourceType = detectSourceType(rec.citation_source || '');
     const isYouTube = detectedSourceType === 'youtube';
     const isArticleSite = detectedSourceType === 'article_site';
-    
+
     // Determine mode (for external sites, prefer collaboration; for owned/YouTube, prefer post_on_source)
-    const preferredMode = (isYouTube || rec.citation_source?.includes(brand?.name?.toLowerCase() || '')) 
-      ? 'post_on_source' 
+    const preferredMode = (isYouTube || rec.citation_source?.includes(brand?.name?.toLowerCase() || ''))
+      ? 'post_on_source'
       : 'pitch_collaboration';
 
     // Build source type description
-    const sourceTypeDesc = isYouTube 
+    const sourceTypeDesc = isYouTube
       ? 'YOUTUBE - Generate a video script'
-      : isArticleSite 
+      : isArticleSite
         ? 'ARTICLE SITE - Generate article content'
         : 'OTHER - Generate appropriate content type';
 
@@ -377,7 +446,172 @@ CONSTRAINTS:
 - Be specific: name pages, sections, checklists, and concrete deliverables.
 `;
 
-    const contentInstructions = `You are a senior marketing consultant and AEO strategist.
+    // NEW v3.0: Dual content prompt with source-specific formats
+    const detectSourceTypeV3 = (source: string): string => {
+      source = source.toLowerCase();
+      if (source.includes('youtube.com') || source.includes('youtu.be')) return 'youtube';
+      if (source.includes('reddit.com')) return 'reddit';
+      if (source.includes('linkedin.com')) return 'linkedin';
+      if (source.includes('dev.to')) return 'dev_to';
+      // Check if it's an owned site (e.g., brand's own domain)
+      if (brand?.name && source.includes(brand.name.toLowerCase().replace(/\s/g, ''))) return 'owned_site';
+      // Generic article sites (e.g., blogs, news sites)
+      if (source.includes('.com') || source.includes('.org') || source.includes('.net')) return 'article_site';
+      return 'other';
+    };
+
+    const sourceTypeV3 = detectSourceTypeV3(rec.citation_source || '');
+
+    // Source-specific content guidance
+    const getSourceContentGuidance = (sourceType: string): { contentType: string; format: string; tone: string; example: string } => {
+      switch (sourceType) {
+        case 'reddit':
+          return {
+            contentType: 'reddit_post',
+            format: 'Conversational text post with story structure',
+            tone: 'Casual, authentic, community-first. NO marketing speak. Ask a question at the end.',
+            example: 'Start with a hook about your experience, share the problem, explain what you did, show results, ask for community input.'
+          };
+        case 'linkedin':
+          return {
+            contentType: 'linkedin_post',
+            format: 'Professional thought leadership post with data points',
+            tone: 'Professional but accessible. Use short paragraphs. Include 1-2 data points.',
+            example: 'Hook with a bold statement, share insight, provide actionable takeaway, end with engaging question.'
+          };
+        case 'dev_to':
+          return {
+            contentType: 'article',
+            format: 'Technical tutorial or guide with code examples if applicable',
+            tone: 'Educational, developer-friendly. Include practical examples.',
+            example: 'Start with problem, explain solution step-by-step, include code snippets or configs, summarize learnings.'
+          };
+        case 'youtube':
+          return {
+            contentType: 'video_script',
+            format: 'Video script with timestamps, scenes, and dialogue',
+            tone: 'Engaging, friendly, expert. Visual cues and on-screen text included.',
+            example: 'Hook (0:00-0:15), Problem (0:15-0:45), Solution (0:45-2:30), Results (2:30-3:30), CTA (3:30-4:00).'
+          };
+        case 'owned_site':
+          return {
+            contentType: 'blog_post',
+            format: 'SEO-optimized blog post with H1, H2, FAQ structure',
+            tone: 'Authoritative, brand voice. Include structured data hints.',
+            example: 'TL;DR summary, problem statement, solution explanation, case study/example, FAQ section, CTA.'
+          };
+        case 'article_site':
+          return {
+            contentType: 'article',
+            format: 'Guest article or case study format',
+            tone: 'Professional, data-driven. Align with publication style.',
+            example: 'Lead with insight, support with evidence, provide actionable takeaways, end with call to action.'
+          };
+        default:
+          return {
+            contentType: 'other',
+            format: 'Appropriate content format for the target',
+            tone: 'Professional and clear',
+            example: 'Hook, main content, call to action.'
+          };
+      }
+    };
+
+    const sourceGuidance = getSourceContentGuidance(sourceTypeV3);
+
+    // v4.0 Prompt: Generate structured sections for interactive refinement
+    const contentInstructionsV4 = `You are a senior content strategist. Generate AEO-optimized content as STRUCTURED SECTIONS.
+
+RETURN ONLY VALID JSON. No markdown, no explanations.
+
+BRAND: ${brand?.name || 'Brand'} (${brand?.industry || 'Unknown industry'})
+TARGET: ${rec.citation_source || 'Unknown'} (${sourceTypeV3})
+ACTION: ${rec.action}
+KPI: ${rec.kpi}
+
+=== OUTPUT: STRUCTURED SECTIONS ===
+
+Generate content as an array of 5-7 distinct sections. Each section should be:
+- Self-contained and valuable on its own
+- AEO-optimized with clear headings that match search queries
+- 100-200 words per section
+
+REQUIRED SECTIONS:
+1. "executive_summary" - TL;DR with key takeaways (2-3 bullet points)
+2. "context" - Why this matters / The problem being solved
+3. "strategies" - Key approaches or steps (numbered list)
+4. "case_study" - Real example with metrics (use [FILL_IN:] for specifics)
+5. "faq" - 2-3 FAQ-style Q&As that AI models love to cite
+6. "cta" - Clear call to action
+
+=== TONE: ${sourceTypeV3.toUpperCase()} ===
+${sourceTypeV3 === 'reddit' ? `Conversational, first-person, genuine questions` :
+        sourceTypeV3 === 'linkedin' ? `Professional, data-driven, thought leadership` :
+          sourceTypeV3 === 'youtube' ? `Spoken dialogue with [VISUAL:] cues` :
+            `Professional, clear, actionable`}
+
+=== CRITICAL: REAL CONTENT ===
+Write ACTUAL sentences. NOT "this section should cover..." but the REAL text.
+
+=== JSON SCHEMA v4.0 ===
+{
+  "version": "4.0",
+  "recommendationId": "${rec.id}",
+  "brandName": "${brand?.name || 'Brand'}",
+  "targetSource": { "domain": "${rec.citation_source || ''}", "sourceType": "${sourceTypeV3}" },
+  "contentTitle": "<compelling overall title>",
+  "sections": [
+    {
+      "id": "executive_summary",
+      "title": "Executive Summary",
+      "content": "<2-3 bullet points summarizing key takeaways>",
+      "sectionType": "summary"
+    },
+    {
+      "id": "context",
+      "title": "<Why X Matters / The Problem>",
+      "content": "<2-3 paragraphs explaining the context>",
+      "sectionType": "context"
+    },
+    {
+      "id": "strategies",
+      "title": "Key Strategies",
+      "content": "<numbered list of 3-5 actionable strategies>",
+      "sectionType": "strategies"
+    },
+    {
+      "id": "case_study",
+      "title": "Case Study: [FILL_IN: Company Name]",
+      "content": "<real-world example with metrics using [FILL_IN:] for specifics>",
+      "sectionType": "case_study"
+    },
+    {
+      "id": "faq",
+      "title": "Frequently Asked Questions",
+      "content": "<2-3 Q&A pairs formatted as Q: ... A: ...>",
+      "sectionType": "faq"
+    },
+    {
+      "id": "next_steps",
+      "title": "Next Steps",
+      "content": "<actionable next steps for the reader>",
+      "sectionType": "cta"
+    }
+  ],
+  "callToAction": "<final CTA with link placeholder>",
+  "requiredInputs": ["<[FILL_IN: X] items across all sections>"]
+}
+
+RULES:
+- Each section.content = REAL TEXT, not descriptions
+- Use [FILL_IN: specific thing] for data you don't know
+- Escape newlines as \\\\n in JSON strings
+- No competitor mentions
+`;
+
+    // Decide which prompt to use: v4.0 sectioned (default) or guide_v1 (cold start)
+    const useV4 = !isColdStartGuide; // Use v4 for normal content generation
+    const contentInstructions = useV4 ? contentInstructionsV4 : `You are a senior marketing consultant and AEO strategist.
 
 CRITICAL: You MUST return ONLY valid JSON. Do NOT include markdown code blocks, do NOT include any text before or after the JSON, do NOT include explanations. Return ONLY the raw JSON object starting with { and ending with }.
 
@@ -389,7 +623,7 @@ GOAL:
 - For article sites: Generate full article with H1/H2/FAQ structure.
 
 OUTPUT RULES (to ensure valid JSON):
-- You MUST escape newlines in any string values using \\n (no literal newlines inside JSON strings).
+- You MUST escape newlines in any string values using \\\\n (no literal newlines inside JSON strings).
 - Do NOT use placeholders like [Client], [Company], or <insert>. If a detail is missing, omit it and add it to requiredInputs.
 - Do NOT invent customer names, certifications, study results, or performance claims. If missing, put in requiredInputs.
 - CRITICAL: Do NOT introduce any new brand/company/community names besides the brandName and the citation source domain. Use "a customer" if needed.
@@ -408,7 +642,7 @@ STRICT FORMAT v2.0 (must match exactly):
   "publishableContent": {
     "type": "${contentTypeValue}",
     "title": "<compelling title for the content>",
-    "content": "<FULL, READY-TO-PUBLISH DRAFT HERE (escape newlines as \\n)>",
+    "content": "<FULL, READY-TO-PUBLISH DRAFT HERE (escape newlines as \\\\n)>",
     "metadata": {
       ${metadataTemplate}
     }
@@ -430,6 +664,11 @@ ${contentStyleGuide}
 
     const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${isColdStartGuide ? guideInstructions : contentInstructions}`;
 
+    // Log the prompt being sent
+    console.log('\n📤 [RecommendationContentService] ========== PROMPT ==========');
+    console.log(prompt);
+    console.log('📤 [RecommendationContentService] ========== END PROMPT ==========\n');
+
     // Call providers - Ollama (if enabled) → OpenRouter → Cerebras
     let content: string | null = null;
     let providerUsed: RecommendationContentProvider | undefined;
@@ -444,23 +683,23 @@ ${contentStyleGuide}
           ? 'You are a senior marketing consultant and AEO strategist. Generate implementation guides for recommendations. Respond only with valid JSON, no markdown code blocks, no explanations.'
           : 'You are a senior marketing consultant and AEO strategist. Generate content for recommendations. Respond only with valid JSON, no markdown code blocks, no explanations.';
         const ollamaResponse = await callOllamaAPI(systemMessage, prompt, rec.brand_id);
-        
+
         // Ollama returns JSON string, may need parsing
         let parsedContent = ollamaResponse;
-        
+
         // Remove markdown code blocks if present
         if (parsedContent.includes('```json')) {
           parsedContent = parsedContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
         } else if (parsedContent.includes('```')) {
           parsedContent = parsedContent.replace(/```\s*/g, '');
         }
-        
+
         // Extract JSON object if wrapped in other text
         const jsonMatch = parsedContent.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           parsedContent = jsonMatch[0];
         }
-        
+
         content = parsedContent;
         if (content) {
           providerUsed = 'ollama';
@@ -481,7 +720,7 @@ ${contentStyleGuide}
         const or = await openRouterCollectorService.executeQuery({
           collectorType: 'content',
           prompt,
-          maxTokens: isColdStartGuide ? 2600 : 2000, // Guides are longer than content drafts
+          maxTokens: isColdStartGuide ? 2600 : 4000, // v4.0 needs 4000 for 6 sections
           temperature: isColdStartGuide ? 0.4 : 0.6,
           topP: 0.9,
           enableWebSearch: false
@@ -505,6 +744,12 @@ ${contentStyleGuide}
     }
 
     if (!content) return null;
+
+    // Log the response received
+    console.log('\n📥 [RecommendationContentService] ========== RESPONSE ==========');
+    console.log(`Provider: ${providerUsed || 'unknown'}, Model: ${modelUsed || 'unknown'}`);
+    console.log(content);
+    console.log('📥 [RecommendationContentService] ========== END RESPONSE ==========\n');
 
     const parsed = this.parseGeneratedContentJson(content);
     if (!parsed) {
@@ -565,10 +810,10 @@ ${contentStyleGuide}
           focus_area: rec.focus_area,
           format: parsed
             ? ((parsed as any).version === '2.0'
-                ? 'json_v2'
-                : (parsed as any).version === 'guide_v1'
-                  ? 'guide_v1'
-                  : 'json_v1')
+              ? 'json_v2'
+              : (parsed as any).version === 'guide_v1'
+                ? 'guide_v1'
+                : 'json_v1')
             : 'raw_text',
           raw_response: parsed ? content : undefined
         },
@@ -609,7 +854,7 @@ ${contentStyleGuide}
             },
             { role: 'user', content: prompt }
           ],
-          max_tokens: 2000, // Increased to handle v2.0 format with multiple sections
+          max_tokens: 4000, // Increased for v4.0 sectioned content with 6 sections
           temperature: 0.6
         })
       });
@@ -647,7 +892,7 @@ ${contentStyleGuide}
     // Strategy 2: Extract JSON from markdown code blocks
     try {
       let cleaned = raw.trim();
-      
+
       // Remove markdown code blocks
       const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
       if (jsonBlockMatch) {
@@ -684,7 +929,7 @@ ${contentStyleGuide}
     // Strategy 4: Fix incomplete/truncated JSON (missing closing braces/quotes)
     try {
       let cleaned = raw.trim();
-      
+
       // Remove markdown code blocks first
       const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
       if (jsonBlockMatch) {
@@ -696,33 +941,33 @@ ${contentStyleGuide}
           cleaned = jsonMatch[0];
         }
       }
-      
+
       // Count opening vs closing braces/brackets
       const openBraces = (cleaned.match(/\{/g) || []).length;
       const closeBraces = (cleaned.match(/\}/g) || []).length;
       const openBrackets = (cleaned.match(/\[/g) || []).length;
       const closeBrackets = (cleaned.match(/\]/g) || []).length;
-      
+
       let fixed = cleaned;
-      
+
       // Fix incomplete strings - find fields that have opening quotes but no closing quotes
       // Find pattern like: "fieldName": "incomplete value... (no closing quote)
       // We'll find the last incomplete string and close it properly
-      
+
       // Look for field patterns that end without a closing quote before the string ends
       // Pattern: "fieldName": "value... (end of string)
       const incompleteFieldPattern = /"([^"]+)":\s*"([^"]*)$/;
       const incompleteMatch = fixed.match(incompleteFieldPattern);
-      
+
       if (incompleteMatch) {
         // We have an incomplete field - close it
         const fieldName = incompleteMatch[1];
         const incompleteValue = incompleteMatch[2];
-        
+
         // Find the position where this field starts
         const fieldKey = `"${fieldName}": "`;
         const fieldStartPos = fixed.lastIndexOf(fieldKey);
-        
+
         if (fieldStartPos >= 0) {
           // Extract everything before the incomplete field
           const beforeField = fixed.substring(0, fieldStartPos + fieldKey.length);
@@ -732,26 +977,26 @@ ${contentStyleGuide}
             .replace(/\\/g, '\\\\')  // Escape backslashes first
             .replace(/"/g, '\\"')    // Escape quotes
             .replace(/\n/g, '\\n');  // Escape newlines
-          
+
           // Reconstruct with properly closed string
           fixed = beforeField + valueToClose + '"';
         }
       }
-      
+
       // Add missing closing brackets/braces
       const missingBrackets = openBrackets - closeBrackets;
       const missingBraces = openBraces - closeBraces;
-      
+
       if (missingBrackets > 0) {
         fixed += ']'.repeat(missingBrackets);
       }
       if (missingBraces > 0) {
         fixed += '}'.repeat(missingBraces);
       }
-      
+
       // Try to fix trailing commas
       fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
-      
+
       try {
         const parsed = JSON.parse(fixed);
         if (this.isValidGeneratedContent(parsed)) {
@@ -769,42 +1014,42 @@ ${contentStyleGuide}
       let cleaned = raw.trim();
       const jsonMatch = cleaned.match(/\{[\s\S]*/);
       if (!jsonMatch) return null;
-      
+
       cleaned = jsonMatch[0];
-      
+
       // Try to extract what we can and construct a minimal valid structure
       const versionMatch = cleaned.match(/"version"\s*:\s*"([^"]+)"/);
       const version = versionMatch ? versionMatch[1] : '2.0';
-      
+
       const recIdMatch = cleaned.match(/"recommendationId"\s*:\s*"([^"]+)"/);
       const recId = recIdMatch ? recIdMatch[1] : '';
-      
+
       const brandMatch = cleaned.match(/"brandName"\s*:\s*"([^"]+)"/);
       const brandName = brandMatch ? brandMatch[1] : '';
-      
+
       const domainMatch = cleaned.match(/"domain"\s*:\s*"([^"]+)"/);
       const domain = domainMatch ? domainMatch[1] : '';
-      
+
       const modeMatch = cleaned.match(/"mode"\s*:\s*"([^"]+)"/);
       const mode = modeMatch ? modeMatch[1] : 'post_on_source';
-      
+
       const sourceTypeMatch = cleaned.match(/"sourceType"\s*:\s*"([^"]+)"/);
       const sourceType = sourceTypeMatch ? sourceTypeMatch[1] : 'other';
-      
+
       // Try to extract email subject if present
       const emailSubjectMatch = cleaned.match(/"subjectLine"\s*:\s*"([^"]+)"/);
       const emailSubject = emailSubjectMatch ? emailSubjectMatch[1] : '';
-      
+
       // Helper function to extract string value (complete or incomplete)
       const extractStringValue = (fieldName: string): string => {
         const fieldPattern = new RegExp(`"${fieldName}"\\s*:\\s*"`);
         const match = cleaned.match(fieldPattern);
         if (!match) return '';
-        
+
         const startPos = match.index! + match[0].length;
         let pos = startPos;
         let foundClosing = false;
-        
+
         // Look for the closing quote (handle escaped characters)
         while (pos < cleaned.length) {
           if (cleaned[pos] === '\\' && pos + 1 < cleaned.length) {
@@ -816,10 +1061,10 @@ ${contentStyleGuide}
             pos++;
           }
         }
-        
+
         // Extract the value (even if incomplete)
         const value = cleaned.substring(startPos, foundClosing ? pos : cleaned.length);
-        
+
         // Unescape the value
         return value
           .replace(/\\n/g, '\n')
@@ -828,20 +1073,20 @@ ${contentStyleGuide}
           .replace(/\\r/g, '\r')
           .replace(/\\\\/g, '\\');
       };
-      
+
       // Extract email body (might be incomplete)
       const emailBody = extractStringValue('emailBody');
-      
+
       // Try to extract content title and body
       const contentTitleMatch = cleaned.match(/"title"\s*:\s*"([^"]+)"/);
       const contentTitle = contentTitleMatch ? contentTitleMatch[1] : '';
-      
+
       // Extract content body (might be incomplete)
       const content = extractStringValue('content');
-      
+
       const contentTypeMatch = cleaned.match(/"type"\s*:\s*"([^"]+)"/);
       const contentType = contentTypeMatch ? contentTypeMatch[1] : 'other';
-      
+
       // Only proceed if we have minimum required fields (content can be empty if truncated, we'll handle it)
       if (recId && brandName && domain) {
         const reconstructed: any = {
@@ -863,7 +1108,7 @@ ${contentStyleGuide}
           requiredInputs: [],
           complianceNotes: []
         };
-        
+
         // Add collaboration email if we have subject (body can be partial/truncated)
         if (emailSubject) {
           reconstructed.collaborationEmail = {
@@ -872,7 +1117,7 @@ ${contentStyleGuide}
             cta: emailBody ? 'Please contact us to discuss further.' : 'Please regenerate content to get the complete email body.'
           };
         }
-        
+
         // Try to extract keyPoints if present
         const keyPointsMatch = cleaned.match(/"keyPoints"\s*:\s*\[(.*?)\]/s);
         if (keyPointsMatch) {
@@ -883,7 +1128,7 @@ ${contentStyleGuide}
             // Ignore if can't parse
           }
         }
-        
+
         if (this.isValidGeneratedContent(reconstructed)) {
           console.log('✅ [RecommendationContentService] Successfully reconstructed JSON from partial response');
           return this.normalizeGeneratedContent(reconstructed);
@@ -930,38 +1175,92 @@ ${contentStyleGuide}
 
   private isValidGeneratedContent(parsed: any): boolean {
     if (!parsed || typeof parsed !== 'object') return false;
-    
+
     // Check version
     const version = parsed.version;
-    if (version !== '1.0' && version !== '2.0' && version !== 'guide_v1') return false;
-    
+    if (version !== '1.0' && version !== '2.0' && version !== '3.0' && version !== '4.0' && version !== 'guide_v1') return false;
+
     // Common required fields
     if (!parsed.recommendationId || !parsed.brandName) return false;
     // Content formats require targetSource; guides do not
     if (version !== 'guide_v1') {
-      if (!parsed.targetSource?.domain || !parsed.targetSource?.mode) return false;
+      if (!parsed.targetSource?.domain) return false;
+      // v3.0 and v4.0 don't require 'mode' field
+      if (version !== '3.0' && version !== '4.0' && !parsed.targetSource?.mode) return false;
     }
-    
+
     // Version-specific validation
     if (version === '1.0') {
       return !!parsed.whatToPublishOrSend?.readyToPaste;
     } else if (version === '2.0') {
       // v2.0 requires publishableContent
       if (!parsed.publishableContent?.content || !parsed.publishableContent?.type) return false;
-      // Collaboration email is optional even for collaboration mode
       return true;
+    } else if (version === '3.0') {
+      // v3.0 simplified: requires publishableContent only
+      const hasContent = parsed.publishableContent?.content && parsed.publishableContent?.type;
+      return !!hasContent;
+    } else if (version === '4.0') {
+      // v4.0 requires sections array with at least 2 sections
+      const hasSections = Array.isArray(parsed.sections) && parsed.sections.length >= 2;
+      const hasTitle = !!parsed.contentTitle;
+      return !!(hasSections && hasTitle);
     } else if (version === 'guide_v1') {
       // Guide v1: require at least an implementation plan or success criteria to be useful
       const hasPlan = Array.isArray(parsed.implementationPlan) && parsed.implementationPlan.length > 0;
       const hasSuccess = !!parsed.successCriteria;
       return hasPlan || hasSuccess;
     }
-    
+
     return false;
   }
 
-  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedGuideJsonV1>): GeneratedAnyJson {
+  private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedGuideJsonV1>): GeneratedAnyJson {
     const version = parsed.version || '1.0';
+
+    // Handle v4.0 (sectioned content for interactive refinement)
+    if (version === '4.0') {
+      const p4 = parsed as Partial<GeneratedContentJsonV4>;
+      return {
+        version: '4.0',
+        recommendationId: String(p4.recommendationId || ''),
+        brandName: String(p4.brandName || ''),
+        targetSource: {
+          domain: String(p4.targetSource?.domain || ''),
+          sourceType: (p4.targetSource?.sourceType as any) || 'other'
+        },
+        contentTitle: String(p4.contentTitle || ''),
+        sections: Array.isArray(p4.sections) ? p4.sections.map(s => ({
+          id: String(s.id || ''),
+          title: String(s.title || ''),
+          content: String(s.content || ''),
+          sectionType: (s.sectionType as any) || 'custom'
+        })) : [],
+        callToAction: String(p4.callToAction || ''),
+        requiredInputs: Array.isArray(p4.requiredInputs) ? p4.requiredInputs : []
+      };
+    }
+
+    // Handle v3.0 (simplified: publishable content only)
+    if (version === '3.0') {
+      const p3 = parsed as Partial<GeneratedContentJsonV3>;
+      return {
+        version: '3.0',
+        recommendationId: String(p3.recommendationId || ''),
+        brandName: String(p3.brandName || ''),
+        targetSource: {
+          domain: String(p3.targetSource?.domain || ''),
+          sourceType: (p3.targetSource?.sourceType as any) || 'other'
+        },
+        publishableContent: {
+          type: (p3.publishableContent?.type as any) || 'other',
+          title: String(p3.publishableContent?.title || ''),
+          content: String(p3.publishableContent?.content || ''),
+          callToAction: String(p3.publishableContent?.callToAction || '')
+        },
+        requiredInputs: Array.isArray(p3.requiredInputs) ? p3.requiredInputs : []
+      };
+    }
 
     // Handle guide_v1 (cold-start implementation guides)
     if (version === 'guide_v1') {
@@ -980,7 +1279,7 @@ ${contentStyleGuide}
         nextBestActions: Array.isArray(g.nextBestActions) ? g.nextBestActions : []
       };
     }
-    
+
     // Handle v1.0 format (backward compatibility)
     if (version === '1.0') {
       const p1 = parsed as Partial<GeneratedContentJsonV1>;
@@ -1019,7 +1318,7 @@ ${contentStyleGuide}
         complianceNotes: complianceNotes.map(String).slice(0, 12)
       } as GeneratedContentJsonV1;
     }
-    
+
     // Handle v2.0 format
     const v2Parsed = parsed as Partial<GeneratedContentJsonV2>;
     const keyPoints = Array.isArray(v2Parsed.keyPoints) ? v2Parsed.keyPoints : [];
@@ -1027,7 +1326,7 @@ ${contentStyleGuide}
     const complianceNotes = Array.isArray(v2Parsed.complianceNotes) ? v2Parsed.complianceNotes : [];
     const publishableContent = v2Parsed.publishableContent || {} as any;
     const metadata = publishableContent.metadata || {};
-    
+
     const normalized: GeneratedContentJsonV2 = {
       version: '2.0',
       recommendationId: String(parsed.recommendationId || ''),
@@ -1057,7 +1356,7 @@ ${contentStyleGuide}
       requiredInputs: requiredInputs.map(String).slice(0, 12),
       complianceNotes: complianceNotes.map(String).slice(0, 12)
     };
-    
+
     // Add collaborationEmail if present
     if (v2Parsed.collaborationEmail) {
       normalized.collaborationEmail = {
@@ -1066,8 +1365,93 @@ ${contentStyleGuide}
         cta: String(v2Parsed.collaborationEmail.cta || '')
       };
     }
-    
+
     return normalized;
+  }
+
+  /**
+   * Refine content sections based on user feedback
+   */
+  async refineContent(
+    recommendationId: string,
+    sections: Array<{
+      id: string;
+      title: string;
+      content: string;
+      feedback: string;
+    }>,
+    references: string,
+    brandName: string
+  ): Promise<GeneratedContentJsonV4 | null> {
+    try {
+      // Build the refinement prompt
+      const sectionFeedback = sections.map(s => {
+        const feedbackLine = s.feedback?.trim() ? `\nUSER FEEDBACK: "${s.feedback}"` : '\nUSER FEEDBACK: (no feedback - keep as is)';
+        return `
+### ${s.title}
+${s.content}
+${feedbackLine}`;
+      }).join('\n\n');
+
+      const refinementPrompt = `You are refining content based on user feedback. Improve each section according to the feedback while maintaining AEO optimization.
+
+RETURN ONLY VALID JSON. No markdown, no explanations.
+
+=== ORIGINAL SECTIONS WITH FEEDBACK ===
+${sectionFeedback}
+
+${references ? `=== ADDITIONAL REFERENCES ===\n${references}\n` : ''}
+
+=== INSTRUCTIONS ===
+1. Address ALL user feedback for each section
+2. Keep sections that have no feedback mostly the same (minor polish only)
+3. Maintain AEO optimization: clear headings, specific numbers, FAQ format
+4. Use [FILL_IN: X] for specific data you don't know
+5. Keep the same section structure (id and sectionType)
+
+=== JSON SCHEMA v4.0 ===
+{
+  "version": "4.0",
+  "recommendationId": "${recommendationId}",
+  "brandName": "${brandName}",
+  "targetSource": { "domain": "", "sourceType": "article_site" },
+  "contentTitle": "<improved overall title>",
+  "sections": [
+    {
+      "id": "<same as original>",
+      "title": "<improved title>",
+      "content": "<improved content addressing feedback>",
+      "sectionType": "<same as original>"
+    }
+  ],
+  "callToAction": "<improved CTA>",
+  "requiredInputs": ["<list of [FILL_IN:] items>"]
+}
+
+RULES:
+- Each section.content = REAL TEXT, improved based on feedback
+- Escape newlines as \\\\n in JSON strings
+`;
+
+      // Call LLM using existing Cerebras method
+      const result = await this.callCerebras(refinementPrompt);
+      if (!result?.content) {
+        console.error('[REFINE] Cerebras call failed');
+        return null;
+      }
+
+      // Parse the response
+      const parsed = this.parseGeneratedContentJson(result.content);
+      if (parsed && this.isValidGeneratedContent(parsed) && parsed.version === '4.0') {
+        return this.normalizeGeneratedContent(parsed) as GeneratedContentJsonV4;
+      }
+
+      console.error('[REFINE] Failed to parse refinement response');
+      return null;
+    } catch (error) {
+      console.error('[REFINE] Error refining content:', error);
+      return null;
+    }
   }
 }
 

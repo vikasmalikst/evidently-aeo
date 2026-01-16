@@ -3025,7 +3025,7 @@ export async function buildDashboardPayload(
     competitorAggregates,
     totalShareUniverse,
     totalQueries,
-    totalResponses,
+    totalBrandRows, // Use totalBrandRows (Universe) as the denominator, not totalResponses (which includes competitor rows)
     knownCompetitors,
     competitorTimeSeriesData
   )

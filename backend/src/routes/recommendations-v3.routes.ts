@@ -846,6 +846,88 @@ router.post('/generate-content-bulk', authenticateToken, async (req, res) => {
 });
 
 /**
+ * POST /api/recommendations-v3/refine-content
+ * 
+ * Refine content sections based on user feedback (Interactive refinement loop).
+ * Takes original sections with per-section feedback and generates improved content.
+ * 
+ * Request body:
+ *   - recommendationId: string
+ *   - sections: Array<{ id, title, content, feedback }>
+ *   - references: string (optional additional context)
+ *   - brandName: string
+ */
+router.post('/refine-content', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    const { recommendationId, sections, references, brandName } = req.body;
+
+    if (!recommendationId || !sections || !Array.isArray(sections)) {
+      return res.status(400).json({
+        success: false,
+        error: 'recommendationId and sections array are required'
+      });
+    }
+
+    // Verify recommendation belongs to customer
+    const { data: recommendation, error: recError } = await supabaseAdmin
+      .from('recommendations')
+      .select('id, customer_id')
+      .eq('id', recommendationId)
+      .eq('customer_id', customerId)
+      .single();
+
+    if (recError || !recommendation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Recommendation not found'
+      });
+    }
+
+    console.log(`🔄 [RecommendationsV3 Refine] Refining ${sections.length} sections for recommendation ${recommendationId}`);
+
+    // Call refinement service
+    const refinedContent = await recommendationContentService.refineContent(
+      recommendationId,
+      sections,
+      references || '',
+      brandName || ''
+    );
+
+    if (!refinedContent) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to refine content'
+      });
+    }
+
+    console.log(`✅ [RecommendationsV3 Refine] Successfully refined content with ${refinedContent.sections.length} sections`);
+
+    return res.json({
+      success: true,
+      data: {
+        refinedContent
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [RecommendationsV3 Refine] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to refine content'
+    });
+  }
+});
+
+/**
  * POST /api/recommendations-v3/generate-guides-bulk
  *
  * Cold-start Step 2: Generate implementation guides for approved recommendations.

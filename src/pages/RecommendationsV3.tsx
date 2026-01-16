@@ -1283,6 +1283,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                       console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${step}`);
 
                       setRecommendations(recommendationsWithIds);
+                      // Update allRecommendations for Step 1 to ensure filter works correctly
+                      // This prevents race condition where filter useEffect clears recommendations
+                      if (step === 1) {
+                        setAllRecommendations(recommendationsWithIds);
+                      }
                       setError(null);
 
                       // Load content/guides for Step 3

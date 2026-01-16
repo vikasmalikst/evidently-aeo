@@ -1156,7 +1156,10 @@ Return ONLY a JSON array with the personalized recommendations.`;
           focusSources: 'owned-site',
           contentFocus: 'Technical Optimization',
           source: 'domain_audit', // Mark as domain audit recommendation
-          howToFix: howToFix // Include step-by-step fix instructions
+          howToFix: howToFix, // Include step-by-step fix instructions
+          visibilityScore: context.visibilityIndex,
+          soa: context.shareOfAnswers,
+          sentiment: context.sentimentScore
         };
 
         recommendations.push(rec);

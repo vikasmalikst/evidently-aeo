@@ -17,6 +17,7 @@ import { recommendationContentService } from '../services/recommendations/recomm
 import { supabaseAdmin } from '../config/database';
 import { brandService } from '../services/brand.service';
 import { brandDashboardService } from '../services/brand-dashboard';
+import { regenerateContentService } from '../services/recommendations/regenerate-content.service';
 
 const router = express.Router();
 
@@ -1533,6 +1534,77 @@ router.get('/brand/:brandId/latest', authenticateToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to fetch latest generation. Please try again later.'
+    });
+  }
+});
+
+/**
+ * POST /api/recommendations-v3/:id/regenerate
+ * 
+ * Regenerate content for a recommendation based on user feedback.
+ * Limited to one regeneration per recommendation.
+ * 
+ * Request body:
+ *   - feedback: string (required) - User's specific feedback for regeneration
+ * 
+ * Response:
+ *   - success: boolean
+ *   - data: { content: any, regenRetry: number }
+ *   - error?: string
+ */
+router.post('/:id/regenerate', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    const recommendationId = req.params.id;
+    const { feedback } = req.body;
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    if (!recommendationId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Recommendation ID is required'
+      });
+    }
+
+    if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Feedback is required and must be a non-empty string'
+      });
+    }
+
+    if (feedback.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'Feedback must be at least 10 characters long'
+      });
+    }
+
+    console.log(`🔄 [RecommendationsV3 POST /:id/regenerate] Regenerating content for ${recommendationId}`);
+
+    const result = await regenerateContentService.regenerateContent(
+      recommendationId,
+      customerId,
+      feedback.trim()
+    );
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+
+  } catch (error) {
+    console.error('❌ [RecommendationsV3 POST /:id/regenerate] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to regenerate content. Please try again later.'
     });
   }
 });

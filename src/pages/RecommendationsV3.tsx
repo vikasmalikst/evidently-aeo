@@ -21,6 +21,7 @@ import {
   getKPIsV3,
   getLatestGenerationV3,
   updateRecommendationStatusV3,
+  regenerateContentV3,
   type RecommendationV3,
   type IdentifiedKPI
 } from '../api/recommendationsV3Api';
@@ -94,6 +95,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState<string>('');
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [selectedRecommendationForRegen, setSelectedRecommendationForRegen] = useState<RecommendationV3 | null>(null);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
 
   const isColdStart = dataMaturity === 'cold_start';
 
@@ -1095,6 +1100,49 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     setEditingId(null);
   };
 
+  const handleRegenerateContent = async () => {
+    if (!selectedRecommendationForRegen?.id || !feedbackText.trim()) return;
+
+    const recommendationId = selectedRecommendationForRegen.id;
+    setRegeneratingId(recommendationId);
+    setShowFeedbackModal(false);
+
+    try {
+      console.log(`🔄 [RecommendationsV3] Regenerating content for ${recommendationId}...`);
+
+      const response = await regenerateContentV3(recommendationId, feedbackText.trim());
+
+      if (response.success && response.data) {
+        console.log(`✅ [RecommendationsV3] Content regenerated successfully`);
+
+        // Update contentMap with new content
+        setContentMap(prev => {
+          const next = new Map(prev);
+          next.set(recommendationId, response.data!.content);
+          return next;
+        });
+
+        // Update recommendation's regenRetry count
+        setRecommendations(prev => prev.map(rec =>
+          rec.id === recommendationId
+            ? { ...rec, regenRetry: response.data!.regenRetry }
+            : rec
+        ));
+
+        setError(null);
+      } else {
+        setError(response.error || 'Failed to regenerate content');
+      }
+    } catch (err: any) {
+      console.error('Error regenerating content:', err);
+      setError(err.message || 'Failed to regenerate content');
+    } finally {
+      setRegeneratingId(null);
+      setFeedbackText('');
+      setSelectedRecommendationForRegen(null);
+    }
+  };
+
   // Handle select recommendation
   const handleSelect = (id: string, selected: boolean) => {
     setSelectedIds(prev => {
@@ -1807,6 +1855,28 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                   <IconPencil size={14} />
                                                   Edit
                                                 </button>
+                                                {regeneratingId === rec.id ? (
+                                                  <span className="inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
+                                                    <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
+                                                    Regenerating...
+                                                  </span>
+                                                ) : (rec.regenRetry || 0) >= 1 ? (
+                                                  <span className="inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium border bg-[#f3f4f6] text-[#6b7280] border-[#d1d5db] cursor-not-allowed">
+                                                    Regenerated
+                                                  </span>
+                                                ) : (
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setSelectedRecommendationForRegen(rec);
+                                                      setShowFeedbackModal(true);
+                                                    }}
+                                                    className="px-3 py-1.5 bg-[#8b5cf6] text-white rounded text-[11px] font-medium hover:bg-[#7c3aed] transition-colors flex items-center gap-1.5"
+                                                  >
+                                                    <IconSparkles size={14} />
+                                                    Regenerate
+                                                  </button>
+                                                )}
                                                 <button
                                                   onClick={(e) => {
                                                     e.stopPropagation();
@@ -1973,6 +2043,27 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                 <IconPencil size={14} />
                                                 Edit
                                               </button>
+                                              {regeneratingId === rec.id ? (
+                                                <span className="inline-flex items-center px-3 py-1 rounded text-[11px] font-medium border bg-[#fef3c7] text-[#92400e] border-[#fde68a]">
+                                                  <div className="w-3 h-3 border-2 border-[#92400e] border-t-transparent rounded-full animate-spin mr-1.5" />
+                                                  Regenerating...
+                                                </span>
+                                              ) : (rec.regenRetry || 0) >= 1 ? (
+                                                <span className="inline-flex items-center px-3 py-1 rounded text-[11px] font-medium border bg-[#f3f4f6] text-[#6b7280] border-[#d1d5db] cursor-not-allowed">
+                                                  Regenerated
+                                                </span>
+                                              ) : (
+                                                <button
+                                                  onClick={() => {
+                                                    setSelectedRecommendationForRegen(rec);
+                                                    setShowFeedbackModal(true);
+                                                  }}
+                                                  className="px-3 py-1 bg-[#8b5cf6] text-white rounded text-[11px] font-medium hover:bg-[#7c3aed] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconSparkles size={14} />
+                                                  Regenerate
+                                                </button>
+                                              )}
                                               <button
                                                 onClick={() => {
                                                   navigator.clipboard.writeText(readyToPasteText || '');
@@ -2254,6 +2345,82 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           </>
         )}
       </div>
+      {/* Feedback Modal for Regeneration */}
+      {showFeedbackModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-[#f3e8ff] rounded-full flex items-center justify-center">
+                <IconSparkles size={24} className="text-[#8b5cf6]" />
+              </div>
+              <div>
+                <h2 className="text-[20px] font-bold text-[#1a1d29]">
+                  Regenerate Content with Feedback
+                </h2>
+                <p className="text-[13px] text-[#64748b]">
+                  Provide specific feedback to improve the generated content
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-[14px] font-semibold text-[#1a1d29] mb-2">
+                Your Feedback <span className="text-[#ef4444]">*</span>
+              </label>
+              <textarea
+                className="w-full h-32 p-4 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8b5cf6] focus:border-transparent text-[14px] text-[#1a1d29] leading-relaxed resize-none"
+                placeholder="Example: Make the tone more professional, add more technical details about the product features, or focus more on the benefits for enterprise customers..."
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+                autoFocus
+              />
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-[12px] text-[#64748b]">
+                  Minimum 10 characters required
+                </p>
+                <p className={`text-[12px] ${feedbackText.length >= 10 ? 'text-[#06c686]' : 'text-[#94a3b8]'}`}>
+                  {feedbackText.length} characters
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-[#fef3c7] border border-[#fde68a] rounded-lg p-4 mb-6">
+              <div className="flex items-start gap-2">
+                <IconAlertCircle size={18} className="text-[#92400e] mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-[13px] font-semibold text-[#92400e] mb-1">
+                    One-Time Regeneration
+                  </p>
+                  <p className="text-[12px] text-[#92400e]">
+                    You can only regenerate content once per recommendation. Make sure your feedback is specific and actionable.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setShowFeedbackModal(false);
+                  setFeedbackText('');
+                  setSelectedRecommendationForRegen(null);
+                }}
+                className="flex-1 py-3 px-4 bg-white border border-[#e2e8f0] text-[#64748b] rounded-lg text-[14px] font-semibold hover:bg-[#f8fafc] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRegenerateContent}
+                disabled={feedbackText.trim().length < 10}
+                className="flex-1 py-3 px-4 bg-[#8b5cf6] text-white rounded-lg text-[14px] font-semibold hover:bg-[#7c3aed] transition-all shadow-lg hover:shadow-xl active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#8b5cf6] disabled:hover:shadow-lg"
+              >
+                Regenerate Content
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">

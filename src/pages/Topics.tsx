@@ -39,6 +39,9 @@ interface BackendTopic {
   industryAvgSentiment?: number | null; // Competitor average sentiment (-1..1, or already normalized by backend)
   industryAvgSoATrend?: { direction: 'up' | 'down' | 'neutral'; delta: number } | null;
   industryBrandCount?: number; // Number of brands in competitor average calculation
+  competitorSoAMap?: Record<string, number>;
+  competitorVisibilityMap?: Record<string, number>;
+  competitorSentimentMap?: Record<string, number>;
 }
 
 interface TopicsApiResponse {
@@ -136,7 +139,10 @@ function transformTopicsData(backendTopics: BackendTopic[], topicDeltaMap?: Map<
         industryAvgVisibility,
         industryAvgSentiment,
         industryTrend: industryTrend,
-        industryBrandCount: t.industryBrandCount || 0
+        industryBrandCount: t.industryBrandCount || 0,
+        competitorSoAMap: t.competitorSoAMap,
+        competitorVisibilityMap: t.competitorVisibilityMap,
+        competitorSentimentMap: t.competitorSentimentMap
       };
     })
     // Sort by SoA (descending), then by priority, then alphabetically

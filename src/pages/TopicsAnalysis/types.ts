@@ -36,6 +36,9 @@ export interface Topic {
   industryAvgSentiment?: number | null; // Industry average sentiment (0-100)
   industryTrend?: Trend; // Industry trend
   industryBrandCount?: number; // Number of brands in industry average
+  competitorSoAMap?: Record<string, number>; // Map of competitor name to SoA
+  competitorVisibilityMap?: Record<string, number>; // Map of competitor name to Visibility
+  competitorSentimentMap?: Record<string, number>; // Map of competitor name to Sentiment
 }
 
 export interface Category {

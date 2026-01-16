@@ -125,6 +125,10 @@ export interface CompetitorVisibility {
     collectorType: string
     mentions: number
   }>
+  metadata?: {
+    logo?: string
+    domain?: string
+  }
   // Time-series data: arrays of daily values
   timeSeries?: {
     dates: string[] // ISO date strings (YYYY-MM-DD)
@@ -218,6 +222,11 @@ export interface BrandDashboardPayload {
   topBrandSources: TopBrandSource[]
   topTopics: TopicPerformanceRow[]
   brandSummary?: BrandSummary
+  completedRecommendations?: Array<{
+    id: string
+    action: string
+    completedAt: string
+  }>
 }
 
 export interface DashboardDateRange {

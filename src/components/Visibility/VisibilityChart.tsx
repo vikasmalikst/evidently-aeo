@@ -13,6 +13,8 @@ import {
   Filler
 } from 'chart.js';
 import { useChartResize } from '../../hooks/useChartResize';
+import { Activity } from 'lucide-react';
+import { formatDateLabel } from '../../utils/dateFormatting';
 
 ChartJS.register(
   CategoryScale,
@@ -24,6 +26,34 @@ ChartJS.register(
   Legend,
   Filler
 );
+
+const getOrCreateTooltip = (chart: any) => {
+  let tooltipEl = chart.canvas.parentNode.querySelector('div.chartjs-tooltip');
+
+  if (!tooltipEl) {
+    tooltipEl = document.createElement('div');
+    tooltipEl.classList.add('chartjs-tooltip');
+    tooltipEl.style.background = 'rgba(26, 29, 41, 0.96)';
+    tooltipEl.style.borderRadius = '4px';
+    tooltipEl.style.color = 'white';
+    tooltipEl.style.opacity = '1';
+    tooltipEl.style.pointerEvents = 'none';
+    tooltipEl.style.position = 'absolute';
+    tooltipEl.style.transform = 'translate(-50%, 0)';
+    tooltipEl.style.transition = 'all .1s ease';
+    tooltipEl.style.zIndex = '100';
+    tooltipEl.style.border = '1px solid #c6c9d2';
+    tooltipEl.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+
+    const table = document.createElement('table');
+    table.style.margin = '0px';
+
+    tooltipEl.appendChild(table);
+    chart.canvas.parentNode.appendChild(tooltipEl);
+  }
+
+  return tooltipEl;
+};
 
 const chartColors = {
   viz01: '#06b6d4',
@@ -60,7 +90,32 @@ interface Model {
   id: string;
   name: string;
   color?: string;
+  logo?: string;
+  domain?: string;
 }
+
+const buildLogoSources = (src?: string, domain?: string) => {
+  const cleanDomain = domain
+    ?.replace(/^https?:\/\//, '')
+    .split('/')[0]
+    .trim();
+
+  const candidates = [
+    src,
+    cleanDomain ? `https://logo.clearbit.com/${cleanDomain}` : null,
+    cleanDomain ? `https://www.google.com/s2/favicons?domain=${cleanDomain}&sz=64` : null,
+    cleanDomain ? `https://icon.horse/icon/${cleanDomain}` : null,
+  ];
+
+  // Remove falsy and duplicate entries while preserving order
+  const seen = new Set<string>();
+  return candidates.filter((url): url is string => {
+    if (!url) return false;
+    if (seen.has(url)) return false;
+    seen.add(url);
+    return true;
+  });
+};
 
 interface VisibilityChartProps {
   data: {
@@ -78,23 +133,101 @@ interface VisibilityChartProps {
   activeTab: string;
   models?: Model[];
   metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
+  completedRecommendations?: Array<{
+    id: string;
+    action: string;
+    completedAt: string;
+  }>;
 }
 
-export const VisibilityChart = memo(({
-  data,
-  chartType = 'line',
-  selectedModels = [],
-  loading = false,
-  activeTab = 'brand',
-  models = [],
-  metricType = 'visibility'
-}: VisibilityChartProps) => {
+export const VisibilityChart = memo((props: VisibilityChartProps) => {
+  const {
+    data,
+    chartType = 'line',
+    selectedModels = [],
+    loading = false,
+    activeTab = 'brand',
+    models = [],
+    metricType = 'visibility',
+    completedRecommendations = []
+  } = props;
+
   const chartRef = useRef<any>(null);
+  const failedUrls = useRef(new Set<string>());
   const [focusedDataset, setFocusedDataset] = useState<number | null>(null);
+
+  // Plugin for rendering vertical lines for recommendations
+  const recommendationLinesPlugin = useMemo(() => ({
+    id: 'recommendationLines',
+    afterDraw: (chart: any) => {
+      if (!completedRecommendations.length || !chart.scales.x) return;
+      const { ctx, chartArea: { top, bottom, left, right }, scales: { x } } = chart;
+      const labels = chart.data.labels;
+
+      completedRecommendations.forEach((rec) => {
+        const dateStr = rec.completedAt.split('T')[0];
+        const label = formatDateLabel(dateStr);
+        const index = labels.indexOf(label);
+
+        if (index !== -1) {
+          const xPos = x.getPixelForValue(labels[index]);
+          if (xPos >= left && xPos <= right) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#7c3aed'; // Purple color for improvement events
+            ctx.setLineDash([6, 4]);
+            ctx.moveTo(xPos, top);
+            ctx.lineTo(xPos, bottom);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      });
+    }
+  }), [completedRecommendations]);
 
   useEffect(() => {
     setFocusedDataset(null);
   }, [selectedModels]);
+
+  const [recMarkers, setRecMarkers] = useState<Array<{ x: number, y: number, action: string, id: string }>>([]);
+
+  // Use a second effect to calculate marker positions after chart renders or data changes
+  useEffect(() => {
+    if (!chartRef.current || !completedRecommendations.length || !data?.labels) {
+      setRecMarkers([]);
+      return;
+    }
+
+    const chart = chartRef.current;
+    const x = chart.scales.x;
+    const top = chart.chartArea.top;
+    const left = chart.chartArea.left;
+    const right = chart.chartArea.right;
+    const labels = chart.data.labels;
+
+    const markers = completedRecommendations.map(rec => {
+      const dateStr = rec.completedAt.split('T')[0];
+      const label = formatDateLabel(dateStr);
+      const index = labels.indexOf(label);
+
+      if (index !== -1) {
+        const xPos = x.getPixelForValue(labels[index]);
+        if (xPos >= left && xPos <= right) {
+          return {
+            x: xPos,
+            y: top,
+            action: rec.action,
+            id: rec.id
+          };
+        }
+      }
+      return null;
+    }).filter((m): m is NonNullable<typeof m> => m !== null);
+
+    setRecMarkers(markers);
+  }, [completedRecommendations, data?.labels, selectedModels, chartType, loading]);
 
   const chartData = useMemo(() => {
     if (!data || selectedModels.length === 0) {
@@ -134,7 +267,7 @@ export const VisibilityChart = memo(({
           const pointRadius = isRealData && isRealData.length === modelData.data.length
             ? isRealData.map((isReal) => (isReal ? (isDimmed ? 2 : 3) : 0)) // Show dot only if real data
             : (isDimmed ? 2 : 3) // Fallback: show all dots if isRealData not available
-          
+
           return {
             label: modelData.label,
             data: modelData.data,
@@ -147,6 +280,8 @@ export const VisibilityChart = memo(({
             tension: 0.4,
             fill: false,
             spanGaps: false,
+            logo: model?.logo, // Pass logo to dataset for tooltip access
+            domain: model?.domain, // Pass domain to dataset
           };
         }
       })
@@ -186,101 +321,34 @@ export const VisibilityChart = memo(({
     // Round up to nearest 10 for cleaner scale
     const paddedMax = maxValue * 1.1;
     const roundedMax = Math.ceil(paddedMax / 10) * 10;
-    
-    // Ensure minimum scale for very small values
-    const minScale = metricType === 'visibility' ? 20 : 10;
-    return Math.max(roundedMax, minScale);
+
+    return roundedMax;
   }, [data, selectedModels, metricType]);
 
   const options = useMemo(() => {
     const isBarChart = chartType === 'bar';
+
     return {
       responsive: true,
-      maintainAspectRatio: true,
-      aspectRatio: 2.8,
+      maintainAspectRatio: false,
       interaction: {
-        intersect: false,
         mode: 'index' as const,
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          min: 0,
-          max: calculatedMax,
-          title: {
-            display: true,
-            text: metricType === 'visibility' 
-              ? 'Visibility Score' 
-              : metricType === 'share' 
-                ? 'Share of Answers (%)'
-                : metricType === 'brandPresence'
-                  ? 'Brand Presence (%)'
-                  : 'Sentiment Score',
-            color: neutrals[700],
-            font: {
-              size: 11,
-              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-              weight: 500,
-            },
-            padding: {
-              top: 0,
-              bottom: 8,
-            },
-          },
-          ticks: {
-            color: neutrals[700],
-            font: {
-              size: 9,
-              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-              weight: 400,
-            },
-            callback: (value: any) => String(value),
-            padding: 8,
-            stepSize: calculatedMax <= 20 ? 5 : calculatedMax <= 50 ? 10 : 20,
-            maxRotation: 0,
-            minRotation: 0,
-          },
-          grid: {
-            color: neutrals[100],
-            lineWidth: 1,
-            drawBorder: false,
-            drawTicks: false,
-          },
-        },
-        x: {
-          ticks: {
-            color: neutrals[700],
-            font: {
-              size: 9,
-              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-              weight: 400,
-            },
-            padding: 8,
-            maxRotation: 0,
-            minRotation: 0,
-          },
-          grid: {
-            display: false,
-            drawBorder: false,
-            drawTicks: false,
-          },
-        },
+        intersect: false,
       },
       plugins: {
         legend: {
           display: true,
-          position: 'bottom' as const,
-          align: 'start' as const,
+          position: 'top' as const,
+          align: 'end' as const,
           labels: {
             usePointStyle: true,
-            pointStyle: isBarChart ? 'rect' : 'line',
-            padding: 15,
+            pointStyle: 'circle',
+            padding: 20,
+            color: neutrals[400],
             font: {
-              size: 11,
+              size: 12,
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-              weight: 400,
             },
-            color: neutrals[700],
             generateLabels: (chart: any) => {
               const datasets = chart.data.datasets || [];
               return datasets.map((dataset: any, index: number) => {
@@ -301,109 +369,267 @@ export const VisibilityChart = memo(({
             setFocusedDataset((prev) => (prev === datasetIndex ? null : datasetIndex));
           },
         },
-      tooltip: {
-        enabled: true,
-        backgroundColor: 'rgba(26, 29, 41, 0.96)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: neutrals[300],
-        borderWidth: 1,
-        padding: 10,
-        displayColors: false,
-        boxPadding: 6,
-        position: 'nearest' as const,
-        xAlign: 'right' as const,
-        yAlign: 'top' as const,
-        caretPadding: 10,
-        cornerRadius: 4,
-        titleFont: {
-          size: 11,
-          weight: 'bold' as const,
-          family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+        tooltip: {
+          enabled: false,
+          position: 'nearest' as const,
+          external: (context: any) => {
+            const { chart, tooltip } = context;
+            const tooltipEl = getOrCreateTooltip(chart);
+
+            // Hide if no tooltip
+            if (tooltip.opacity === 0) {
+              tooltipEl.style.opacity = '0';
+              return;
+            }
+
+            // Set Text
+            if (tooltip.body) {
+              const titleLines = tooltip.title || [];
+              const bodyLines = tooltip.body.map((b: any) => b.lines);
+
+              const tableHead = document.createElement('thead');
+
+              titleLines.forEach((title: string) => {
+                const tr = document.createElement('tr');
+                tr.style.borderWidth = '0';
+
+                const th = document.createElement('th');
+                th.style.borderWidth = '0';
+                th.style.textAlign = 'left';
+                th.style.paddingBottom = '8px';
+                th.style.color = '#ffffff';
+                th.style.fontSize = '12px';
+                th.style.fontWeight = '600';
+                th.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+
+                const text = document.createTextNode(title);
+                th.appendChild(text);
+                tr.appendChild(th);
+                tableHead.appendChild(tr);
+              });
+
+              const tableBody = document.createElement('tbody');
+              bodyLines.forEach((body: string, i: number) => {
+                // Get the dataset to find the logo
+                const dataPoint = tooltip.dataPoints[i];
+                const dataset = chart.data.datasets[dataPoint.datasetIndex];
+
+                const colors = tooltip.labelColors[i];
+                const logoUrl = (dataset as any).logo;
+                const domain = (dataset as any).domain;
+
+                const tr = document.createElement('tr');
+                tr.style.backgroundColor = 'inherit';
+                tr.style.borderWidth = '0';
+
+                const td = document.createElement('td');
+                td.style.borderWidth = '0';
+                td.style.display = 'flex';
+                td.style.alignItems = 'center';
+                td.style.padding = '4px 0';
+
+                // Color indicator or Logo
+                const iconContainer = document.createElement('div');
+                iconContainer.style.width = '16px';
+                iconContainer.style.height = '16px';
+                iconContainer.style.minWidth = '16px';
+                iconContainer.style.marginRight = '8px';
+                iconContainer.style.display = 'flex';
+                iconContainer.style.alignItems = 'center';
+                iconContainer.style.justifyContent = 'center';
+
+                // Fallback to dot helper
+                const renderDot = () => {
+                  const dot = document.createElement('span');
+                  dot.style.background = colors.borderColor;
+                  dot.style.borderColor = colors.borderColor;
+                  dot.style.borderWidth = '2px';
+                  dot.style.display = 'inline-block';
+                  dot.style.height = '8px';
+                  dot.style.width = '8px';
+                  dot.style.borderRadius = '50%';
+                  iconContainer.appendChild(dot);
+                };
+
+                if (logoUrl || domain) {
+                  const img = document.createElement('img');
+                  const candidates = buildLogoSources(logoUrl, domain);
+
+                  if (candidates.length > 0) {
+                    img.src = candidates[0];
+                    img.style.width = '14px';
+                    img.style.height = '14px';
+                    img.style.objectFit = 'contain';
+                    img.style.borderRadius = '2px';
+
+                    img.onerror = () => {
+                      failedUrls.current.add(img.src);
+                      const nextCandidates = candidates.filter(url => !failedUrls.current.has(url));
+                      if (nextCandidates.length > 0) {
+                        img.src = nextCandidates[0];
+                      } else {
+                        img.style.display = 'none';
+                        renderDot();
+                      }
+                    };
+
+                    iconContainer.appendChild(img);
+                  } else {
+                    renderDot();
+                  }
+                } else {
+                  renderDot();
+                }
+
+                td.appendChild(iconContainer);
+
+                const textSpan = document.createElement('span');
+                textSpan.style.color = '#ffffff';
+                textSpan.style.fontSize = '12px';
+                textSpan.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+
+                const labelFull = body[0];
+                const labelParts = labelFull.split(':');
+                const labelName = labelParts[0];
+                const labelValue = labelParts[1];
+
+                const nameSpan = document.createElement('span');
+                nameSpan.style.color = 'rgba(255, 255, 255, 0.7)';
+                nameSpan.style.marginRight = '4px';
+                nameSpan.innerText = labelName + ':';
+
+                const valueSpan = document.createElement('span');
+                valueSpan.style.fontWeight = '600';
+                valueSpan.innerText = labelValue;
+
+                textSpan.appendChild(nameSpan);
+                textSpan.appendChild(valueSpan);
+                td.appendChild(textSpan);
+                tr.appendChild(td);
+                tableBody.appendChild(tr);
+              });
+
+              const root = tooltipEl.querySelector('table');
+
+              // Remove old children
+              while (root.firstChild) {
+                root.firstChild.remove();
+              }
+
+              root.appendChild(tableHead);
+              root.appendChild(tableBody);
+            }
+
+            const { offsetLeft: positionX, offsetTop: positionY } = chart.canvas;
+
+            // Display, position, and set styles for font
+            tooltipEl.style.opacity = '1';
+            tooltipEl.style.left = positionX + tooltip.caretX + 'px';
+            tooltipEl.style.top = positionY + tooltip.caretY + 'px';
+            tooltipEl.style.padding = tooltip.options.padding + 'px ' + tooltip.options.padding + 'px';
+          }
         },
-        bodyFont: {
-          size: 11,
-          family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-        },
-        callbacks: {
-          title: (context: any) => {
-            return context[0]?.label || '';
+      },
+      scales: {
+        x: {
+          grid: {
+            display: false,
           },
-          label: (context: any) => {
-            const label = context.dataset.label || '';
-            const value = context.parsed.y;
-            const suffix = metricType === 'share' || metricType === 'brandPresence' ? '%' : '';
-            return `  ${label}: ${value}${suffix}`;
+          border: {
+            display: false,
+          },
+          ticks: {
+            color: neutrals[400],
+            padding: 10,
+            font: {
+              size: 11,
+              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            },
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 12,
           },
         },
-      },
-      filler: {
-        propagate: false,
-      },
-    },
-      layout: {
-        padding: {
-          top: 16,
-          right: 16,
-          bottom: 40,
-          left: 8,
+        y: {
+          beginAtZero: true,
+          max: calculatedMax,
+          grid: {
+            color: neutrals[100],
+            drawBorder: false,
+          },
+          border: {
+            display: false,
+            dash: [4, 4],
+          },
+          ticks: {
+            color: neutrals[400],
+            padding: 10,
+            font: {
+              size: 11,
+              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            },
+            maxTicksLimit: 6,
+            callback: (value: any) => {
+              if (metricType === 'sentiment') return value.toFixed(1);
+              return value + (metricType === 'share' || metricType === 'brandPresence' ? '%' : '');
+            },
+          },
         },
-      },
-      animation: {
-        duration: 500,
-        easing: 'easeInOutQuart' as const,
       },
     };
   }, [chartType, metricType, calculatedMax]);
 
-  // Handle chart resize on window resize (e.g., when dev tools open/close)
-  // Must be called after chartData is defined
-  useChartResize(chartRef, !loading && !!chartData && selectedModels.length > 0);
-
-  if (loading) {
-    return (
-      <div className="w-full h-full flex items-center justify-center p-6 bg-white">
-        <p className="text-[var(--text-caption)] text-sm">Loading visibility data...</p>
-      </div>
-    );
-  }
-
-  if (models.length === 0) {
-    return (
-      <div className="w-full h-full flex items-center justify-center p-6 bg-white min-h-[400px]">
-        <p className="text-[var(--text-caption)] text-sm text-center">
-          No data available for the selected period
-        </p>
-      </div>
-    );
-  }
-
-  if (selectedModels.length === 0) {
-    return (
-      <div className="w-full h-full flex items-center justify-center p-6 bg-white min-h-[400px]">
-        <p className="text-[var(--text-caption)] text-sm text-center">
-          Select at least one {activeTab === 'brand' ? 'LLM model' : 'brand'} to display
-        </p>
-      </div>
-    );
-  }
-
-  if (!chartData || chartData.datasets.length === 0) {
-    return (
-      <div className="w-full h-full flex items-center justify-center p-6 bg-white min-h-[400px]">
-        <p className="text-[var(--text-caption)] text-sm text-center">
-          No data available for the selected period
-        </p>
-      </div>
-    );
-  }
-
-  const ChartComponent = chartType === 'bar' ? Bar : Line;
-
   return (
-    <div className="w-full h-auto bg-white rounded-lg p-6">
-      <div className="relative w-full">
-        <ChartComponent data={chartData} options={options} ref={chartRef} />
+    <div className="relative w-full h-[320px]">
+      {loading && (
+        <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center backdrop-blur-[1px]">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 border-2 border-[#7c3aed] border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-slate-500 font-medium">Updating chart...</span>
+          </div>
+        </div>
+      )}
+      <div className="w-full h-full relative">
+        {chartData && (
+          <>
+            {chartType === 'bar' ? (
+              <Bar ref={chartRef} data={chartData} options={options as any} plugins={[recommendationLinesPlugin]} />
+            ) : (
+              <Line ref={chartRef} data={chartData} options={options as any} plugins={[recommendationLinesPlugin]} />
+            )}
+
+            {/* Recommendation Markers (Icons on top of lines) */}
+            {recMarkers.map((marker) => (
+              <div
+                key={marker.id}
+                className="absolute z-20 group"
+                style={{
+                  left: `${marker.x}px`,
+                  top: `${marker.y}px`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                <div
+                  className="w-6 h-6 bg-white border-2 border-[#7c3aed] rounded-full flex items-center justify-center shadow-sm cursor-help hover:bg-[#7c3aed] transition-colors duration-200"
+                >
+                  <Activity size={12} className="text-[#7c3aed] group-hover:text-white" />
+                </div>
+
+                {/* Tooltip for Recommendation */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-30">
+                  <div className="bg-[#1a1d29] text-white text-[11px] py-1.5 px-2.5 rounded shadow-xl whitespace-nowrap border border-slate-700">
+                    <div className="font-bold text-[#a78bfa] mb-0.5">Recommendation Completed</div>
+                    <div className="max-w-[200px] whitespace-normal leading-tight">
+                      {marker.action}
+                    </div>
+                  </div>
+                  {/* Arrow */}
+                  <div className="w-2 h-2 bg-[#1a1d29] rotate-45 absolute left-1/2 -translate-x-1/2 -bottom-1 border-r border-b border-slate-700"></div>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );

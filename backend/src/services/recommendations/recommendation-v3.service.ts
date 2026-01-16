@@ -1156,7 +1156,10 @@ Return ONLY a JSON array with the personalized recommendations.`;
           focusSources: 'owned-site',
           contentFocus: 'Technical Optimization',
           source: 'domain_audit', // Mark as domain audit recommendation
-          howToFix: howToFix // Include step-by-step fix instructions
+          howToFix: howToFix, // Include step-by-step fix instructions
+          visibilityScore: context.visibilityIndex,
+          soa: context.shareOfAnswers,
+          sentiment: context.sentimentScore
         };
 
         recommendations.push(rec);
@@ -1440,9 +1443,41 @@ Respond only with the JSON array.`;
         }
       }
 
-      if (!Array.isArray(parsed)) {
-        console.error('❌ [RecommendationV3Service] KPI response is not an array. Type:', typeof parsed);
-        return [];
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        console.warn('⚠️ [RecommendationV3Service] KPI identification returned empty/invalid result, using defaults');
+        const normalizePercent = (value: number | null | undefined) => this.normalizePercent(value);
+        const normalizeSentiment100 = (value: number | null | undefined) =>
+          value === null || value === undefined ? null : Math.max(0, Math.min(100, ((value + 1) / 2) * 100));
+
+        const defaultKpis: IdentifiedKPI[] = [
+          {
+            kpiName: 'Visibility Index',
+            kpiDescription: 'Overall brand visibility across AI responses.',
+            currentValue: normalizePercent(context.visibilityIndex) ?? 0,
+            targetValue: Math.min(100, (normalizePercent(context.visibilityIndex) || 20) + 10),
+            displayOrder: 0
+          },
+          {
+            kpiName: 'SOA %',
+            kpiDescription: 'Share of Answers for your brand compared to competitors.',
+            currentValue: normalizePercent(context.shareOfAnswers) ?? 0,
+            targetValue: Math.min(100, (normalizePercent(context.shareOfAnswers) || 15) + 5),
+            displayOrder: 1
+          }
+        ];
+
+        const sentiment = normalizeSentiment100(context.sentimentScore);
+        if (sentiment !== null) {
+          defaultKpis.push({
+            kpiName: 'Sentiment Score',
+            kpiDescription: 'Brand sentiment across AI citations.',
+            currentValue: sentiment,
+            targetValue: Math.min(100, sentiment + 5),
+            displayOrder: 2
+          });
+        }
+
+        parsed = defaultKpis;
       }
 
       const kpis: IdentifiedKPI[] = parsed.map((kpi: any, index: number) => ({
@@ -1479,7 +1514,8 @@ Respond only with the JSON array.`;
    * Generate recommendations directly (simplified prompt, no KPI identification)
    */
   private async generateRecommendationsDirect(
-    context: BrandContextV3
+    context: BrandContextV3,
+    kpis: IdentifiedKPI[] = []
   ): Promise<RecommendationV3[]> {
     const normalizePercent = (value: number | null | undefined) => this.normalizePercent(value);
     const normalizeSentiment100 = (value: number | null | undefined) =>
@@ -2426,6 +2462,12 @@ Respond only with the JSON array.`;
 
       // Step 2: Generate recommendations (cold-start templates OR LLM)
       let recommendations: RecommendationV3[] = [];
+
+      // Phase 1: Identify KPIs (newly integrated)
+      console.log('📊 [RecommendationV3Service] Phase 1: Identifying key KPIs...');
+      const kpis = await this.identifyKPIs(context);
+      console.log(`✅ [RecommendationV3Service] Identified ${kpis.length} KPI(s)`);
+
       if (flags.coldStartMode && context._dataMaturity === 'cold_start') {
         console.log('🧊 [RecommendationV3Service] Step 2: Using cold-start baseline recommendations (template-driven)...');
         const templates = generateColdStartRecommendations({ brandName: context.brandName, industry: context.industry });
@@ -2440,7 +2482,7 @@ Respond only with the JSON array.`;
       } else {
         console.log('📝 [RecommendationV3Service] Step 2: Generating recommendations with LLM...');
         const llmStartTime = Date.now();
-        recommendations = await this.generateRecommendationsDirect(context);
+        recommendations = await this.generateRecommendationsDirect(context, kpis);
         console.log(`✅ [RecommendationV3Service] LLM generation completed in ${Date.now() - llmStartTime}ms, produced ${recommendations.length} recommendation(s)`);
         if (recommendations.length === 0) {
           console.error(`❌ [RecommendationV3Service] LLM generation returned 0 recommendations!`);
@@ -2503,7 +2545,6 @@ Respond only with the JSON array.`;
       }
 
       // Step 3: Prepare KPIs (Inject "Technical Health" if needed)
-      const kpis: IdentifiedKPI[] = [];
       const hasTechnicalRecs = recommendations.some(r => r.kpi === 'Technical Health');
 
       if (hasTechnicalRecs) {

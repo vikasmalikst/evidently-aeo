@@ -10,7 +10,7 @@ const differentiators = [
     icon: TrendingUp,
     title: "From Tracking to Orchestrating Outcomes",
     description:
-      "Most AEO tools stop at visibility reports. EvidentlyAEO bakes in workflows: Discovery → Action plan → Refinement → Impact. We ensure changes actually ship, not just get recommended.",
+      "Most AEO tools stop at visibility reports. EvidentlyAEO bakes in workflows: Discover Opportunities → To-Do List → Review and Refine → Track Outcomes. We ensure changes actually ship, not just get recommended.",
     highlight: "Ensures changes actually ship",
   },
   {

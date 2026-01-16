@@ -90,6 +90,10 @@ interface CompetitorVisibilityEntry {
     collectorType: string;
     mentions: number;
   }>;
+  metadata?: {
+    logo?: string;
+    domain?: string;
+  };
   sentiment?: number | null;
   timeSeries?: {
     dates: string[];
@@ -152,6 +156,8 @@ interface ModelData {
   color?: string;
   isBrand?: boolean;
   isRealData?: boolean[];
+  logo?: string;
+  domain?: string;
 }
 
 const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -191,7 +197,7 @@ export const MeasurePage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const kpiParam = searchParams.get('kpi');
   const selectedKpi = parseMetricType(kpiParam) || 'visibility';
-  
+
   // Chart state
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
@@ -209,7 +215,7 @@ export const MeasurePage = () => {
   // const defaultDateRange = getDefaultDateRange(); // Removed local default
   // const [visibilityStartDate, setVisibilityStartDate] = useState<string>(defaultDateRange.start);
   // const [visibilityEndDate, setVisibilityEndDate] = useState<string>(defaultDateRange.end);
-  
+
   // Dashboard data hook
   const {
     startDate,
@@ -238,12 +244,12 @@ export const MeasurePage = () => {
   const visibilityEndpoint = useMemo(() => {
     // Use global startDate/endDate from useDashboardData
     if (!selectedBrandId || !startDate || !endDate) return null;
-    
+
     // Ensure date format is YYYY-MM-DD for API
     // The date picker usually returns YYYY-MM-DD strings directly?
     // Let's ensure proper ISO formatting if needed, but existing code used strings.
     // startDate/endDate from useDashboardData are strings.
-    
+
     const startISO = new Date(startDate).toISOString();
     const endISO = new Date(endDate + 'T23:59:59').toISOString();
     const params = new URLSearchParams({ startDate: startISO, endDate: endISO });
@@ -254,7 +260,7 @@ export const MeasurePage = () => {
       const selectedLabels = llmFilters
         .map(id => allLlmOptions.find(opt => opt.value === id)?.label)
         .filter(Boolean); // remove undefined
-      
+
       if (selectedLabels.length > 0) {
         params.append('collectors', selectedLabels.join(','));
       }
@@ -331,12 +337,12 @@ export const MeasurePage = () => {
     if (brandSum) {
       const brandName = selectedBrand?.name || 'Your Brand';
       const topTopic = brandSum.topTopics?.[0]?.topic ?? '—';
-      
+
       // Use timeSeries if available, otherwise fall back to static values
       const brandVisData = brandSum.timeSeries?.visibility ?? buildTimeseries(brandSum.visibility);
       const brandShareData = brandSum.timeSeries?.share ?? buildTimeseries(brandSum.share * 100);
       const brandIsRealData = brandSum.timeSeries?.isRealData;
-      
+
       competitorModelData.push({
         id: normalizeId(brandName),
         name: brandName,
@@ -353,7 +359,9 @@ export const MeasurePage = () => {
         brandPresenceData: buildTimeseries(brandSum.brandPresencePercentage ?? 0),
         topTopics: brandSum.topTopics?.map(t => ({ ...t, mentions: 0 })) ?? [],
         isBrand: true,
-        isRealData: brandIsRealData
+        isRealData: brandIsRealData,
+        logo: selectedBrand?.metadata?.logo || selectedBrand?.metadata?.brand_logo,
+        domain: selectedBrand?.homepage_url || undefined
       });
     }
     competitors.forEach((comp) => {
@@ -381,7 +389,9 @@ export const MeasurePage = () => {
         brandPresenceData,
         topTopics: comp.topTopics ?? [],
         isBrand: false,
-        isRealData
+        isRealData,
+        logo: comp.metadata?.logo,
+        domain: comp.metadata?.domain
       });
     });
 
@@ -398,16 +408,16 @@ export const MeasurePage = () => {
   useEffect(() => {
     setBrandModels(processedData.brandModels);
     setCompetitorModels(processedData.competitorModels);
-    
+
     // Only update options if we have them, to prevent partial updates from wiping the list
     // OR if we are currently viewing "All" (no filters), so we can capture the full list.
     if (llmFilters.length === 0 && processedData.llmOptions.length > 0) {
       setAllLlmOptions(processedData.llmOptions);
     } else if (allLlmOptions.length === 0 && processedData.llmOptions.length > 0) {
-       // fallback initialization
-       setAllLlmOptions(processedData.llmOptions);
+      // fallback initialization
+      setAllLlmOptions(processedData.llmOptions);
     }
-    
+
     if (processedData.brandModels.length > 0 || processedData.competitorModels.length > 0) {
       setIsSelectionInitialized(false);
     }
@@ -485,43 +495,43 @@ export const MeasurePage = () => {
   // Share from brandSummary is already a 0-1 float, so multiply by 100 for display
   // BUT if the value is already > 1 (like 4.4 meaning 440%), don't multiply again
   const rawShare = filteredBrandSummary?.share;
-  const shareMetricValue = rawShare !== undefined 
+  const shareMetricValue = rawShare !== undefined
     ? (rawShare > 1 ? rawShare : rawShare * 100) // If > 1, it's already a percentage
     : findScore('Share of Answers', dashboardData)?.value;
-  
+
   // Re-map sentiment from slices if needed
   const calculatedSentiment = useMemo(() => {
-     if (!visibilityResponse?.data?.llmVisibility?.length) return undefined;
-     const slices = visibilityResponse.data.llmVisibility;
-     const valid = slices.filter(s => s.sentiment != null);
-     if (!valid.length) return undefined;
-     const sum = valid.reduce((acc, s) => acc + (s.sentiment || 0), 0);
-     return sum / valid.length;
+    if (!visibilityResponse?.data?.llmVisibility?.length) return undefined;
+    const slices = visibilityResponse.data.llmVisibility;
+    const valid = slices.filter(s => s.sentiment != null);
+    if (!valid.length) return undefined;
+    const sum = valid.reduce((acc, s) => acc + (s.sentiment || 0), 0);
+    return sum / valid.length;
   }, [visibilityResponse]);
-  
+
   const sentimentMetricValueFinal = calculatedSentiment ?? findScore('Sentiment Score', dashboardData)?.value;
-  
-  const brandPresencePercentage = filteredBrandSummary?.brandPresencePercentage ?? 
-     (dashboardData?.totalBrandRows ? Math.min(100, Math.round((dashboardData.brandPresenceRows / dashboardData.totalBrandRows) * 100)) : 0);
+
+  const brandPresencePercentage = filteredBrandSummary?.brandPresencePercentage ??
+    (dashboardData?.totalBrandRows ? Math.min(100, Math.round((dashboardData.brandPresenceRows / dashboardData.totalBrandRows) * 100)) : 0);
 
   // Construct metrics matching DashboardScoreMetric interface
-  const visibilityMetric: DashboardScoreMetric = { 
-      value: visibilityMetricValue || 0, 
-      delta: 0, 
-      label: 'Visibility Index',
-      description: 'Visibility Index'
+  const visibilityMetric: DashboardScoreMetric = {
+    value: visibilityMetricValue || 0,
+    delta: 0,
+    label: 'Visibility Index',
+    description: 'Visibility Index'
   };
-  const shareMetric: DashboardScoreMetric = { 
-      value: shareMetricValue || 0, 
-      delta: 0, 
-      label: 'Share of Answers',
-      description: 'Share of Answers'
+  const shareMetric: DashboardScoreMetric = {
+    value: shareMetricValue || 0,
+    delta: 0,
+    label: 'Share of Answers',
+    description: 'Share of Answers'
   };
-  const sentimentMetric: DashboardScoreMetric = { 
-      value: sentimentMetricValueFinal || 0, 
-      delta: 0, 
-      label: 'Sentiment Score',
-      description: 'Sentiment Score'
+  const sentimentMetric: DashboardScoreMetric = {
+    value: sentimentMetricValueFinal || 0,
+    delta: 0,
+    label: 'Sentiment Score',
+    description: 'Sentiment Score'
   };
 
   const brandPresenceRows = dashboardData?.brandPresenceRows ?? 0;
@@ -743,7 +753,7 @@ export const MeasurePage = () => {
           <div className="flex-1">
             <div className="flex items-center justify-between mb-1">
               <h1 className="text-[28px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
-              
+
               {/* Filters - Simple, Clean Layout */}
               <div className="flex items-center gap-4">
                 {/* Brand Selector */}
@@ -766,11 +776,10 @@ export const MeasurePage = () => {
                     <button
                       type="button"
                       onClick={() => setLlmFilters([])}
-                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                        llmFilters.length === 0
-                          ? 'bg-[#06b6d4] text-white'
-                          : 'text-[#64748b] hover:bg-[#f1f5f9]'
-                      }`}
+                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${llmFilters.length === 0
+                        ? 'bg-[#06b6d4] text-white'
+                        : 'text-[#64748b] hover:bg-[#f1f5f9]'
+                        }`}
                     >
                       All
                     </button>
@@ -789,11 +798,10 @@ export const MeasurePage = () => {
                                   : [...prev, opt.value]
                               )
                             }
-                            className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
-                              isActive
-                                ? 'bg-[#06b6d4] ring-1 ring-[#06b6d4]'
-                                : 'hover:bg-[#f1f5f9]'
-                            }`}
+                            className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${isActive
+                              ? 'bg-[#06b6d4] ring-1 ring-[#06b6d4]'
+                              : 'hover:bg-[#f1f5f9]'
+                              }`}
                             title={opt.label}
                           >
                             {getLLMIcon(opt.label)}
@@ -834,8 +842,8 @@ export const MeasurePage = () => {
             ))
           ) : (
             metricCards.map(({ key, isActive, ...cardProps }) => (
-              <div 
-                key={key} 
+              <div
+                key={key}
                 className={`cursor-pointer transition-all duration-200 ${isActive ? 'ring-2 ring-[var(--accent-primary)] ring-offset-2 rounded-lg' : ''}`}
                 onClick={() => handleKpiSelect(key as MetricType)}
               >
@@ -859,9 +867,9 @@ export const MeasurePage = () => {
                   <KpiToggle metricType={metricType} onChange={handleKpiSelect} />
                 </div>
 
-                </div>
-
               </div>
+
+            </div>
 
             <ChartControls
               startDate={startDate} // Use global date
@@ -887,6 +895,7 @@ export const MeasurePage = () => {
                 activeTab="competitive"
                 models={currentModels}
                 metricType={metricType}
+                completedRecommendations={dashboardData?.completedRecommendations}
               />
             </div>
           </div>

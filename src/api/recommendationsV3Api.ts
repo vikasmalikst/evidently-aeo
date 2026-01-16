@@ -59,11 +59,12 @@ export interface RecommendationV3 {
   completedAt?: string;
   kpiBeforeValue?: number;
   kpiAfterValue?: number;
-  reviewStatus?: 'pending_review' | 'approved' | 'rejected';
+  reviewStatus?: 'pending_review' | 'approved' | 'rejected' | 'removed';
 
   // Source tracking
   source?: 'domain_audit' | 'ai_generated';
   howToFix?: string[];  // Step-by-step fix instructions (for domain audit recs)
+  regenRetry?: number;  // Number of times content has been regenerated
 }
 
 /**
@@ -561,7 +562,7 @@ export async function getLatestGenerationV3(
  */
 export async function updateRecommendationStatusV3(
   recommendationId: string,
-  status: 'pending_review' | 'approved' | 'rejected'
+  status: 'pending_review' | 'approved' | 'rejected' | 'removed'
 ): Promise<{ success: boolean; data?: { recommendationId: string; status: string }; error?: string }> {
   try {
     const response = await apiClient.patch<{ success: boolean; data?: { recommendationId: string; status: string }; error?: string }>(
@@ -580,6 +581,34 @@ export async function updateRecommendationStatusV3(
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to update recommendation status'
+    };
+  }
+}
+
+/**
+ * Regenerate content for a recommendation based on user feedback
+ */
+export async function regenerateContentV3(
+  recommendationId: string,
+  feedback: string
+): Promise<{ success: boolean; data?: { content: any; regenRetry: number }; error?: string }> {
+  try {
+    const response = await apiClient.post<{ success: boolean; data?: { content: any; regenRetry: number }; error?: string }>(
+      `/recommendations-v3/${recommendationId}/regenerate`,
+      { feedback }
+    );
+
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; data?: { content: any; regenRetry: number }; error?: string };
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      return (response as any).data;
+    }
+    return response as { success: boolean; data?: { content: any; regenRetry: number }; error?: string };
+  } catch (error: any) {
+    console.error('Error regenerating content:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to regenerate content'
     };
   }
 }

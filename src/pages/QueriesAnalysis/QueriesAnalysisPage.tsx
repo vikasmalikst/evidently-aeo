@@ -15,15 +15,15 @@ import type { QueriesAnalysisData, Query, QueriesPortfolio, QueriesPerformance }
 import type { PromptAnalyticsPayload, PromptEntry } from '../../types/prompts';
 
 interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
+    success: boolean;
+    data?: T;
+    error?: string;
+    message?: string;
 }
 
 export const QueriesAnalysisPage = () => {
     const { selectedBrand, selectedBrandId } = useManualBrandDashboard();
-    
+
     // Date Range State
     const [startDate, setStartDate] = useState<string>(() => {
         const end = new Date();
@@ -74,10 +74,10 @@ export const QueriesAnalysisPage = () => {
     // Update Available LLMs from response (collectors list)
     useEffect(() => {
         if (response?.data?.collectors) {
-             setAvailableModels(prev => {
-                 const newSet = new Set([...prev, ...response.data!.collectors]);
-                 return Array.from(newSet).sort();
-             });
+            setAvailableModels(prev => {
+                const newSet = new Set([...prev, ...response.data!.collectors]);
+                return Array.from(newSet).sort();
+            });
         }
     }, [response]);
 
@@ -94,18 +94,40 @@ export const QueriesAnalysisPage = () => {
             // Calculate SoA if responses are available, respecting selectedModels if present
             // Note: If backend handles filtering, p.responses might already be filtered. 
             // unique topic filtering happens later, but here we define the query object.
-            
+
             // We'll calculate "Client-Side SoA" based on available responses in the payload 
             // that match the selected models (if any are selected).
             let relevantResponses = p.responses || [];
             if (selectedModels.length > 0) {
-                 relevantResponses = relevantResponses.filter(r => selectedModels.includes(r.collectorType));
+                relevantResponses = relevantResponses.filter(r => selectedModels.includes(r.collectorType));
             }
 
             let soa: number | null = null;
+            let brandPresence: number | null = null;
+
             if (relevantResponses.length > 0) {
-                 const mentions = relevantResponses.filter(r => (r.brandMentions || 0) > 0).length;
-                 soa = (mentions / relevantResponses.length) * 100;
+                // 1. Brand Presence: % of responses where brand appears (frequency)
+                // Based on: (Count of responses where brand appears) / (Total responses) * 100
+                const responsesWithBrand = relevantResponses.filter(r => (r.brandMentions || 0) > 0).length;
+                brandPresence = (responsesWithBrand / relevantResponses.length) * 100;
+
+                // 2. Share of Answers (SoA): Share of Voice
+                // Based on: (Total Brand Mentions) / (Total Brand Mentions + Total Competitor Mentions) * 100
+                let totalBrandMentions = 0;
+                let totalCompetitorMentions = 0;
+
+                relevantResponses.forEach(r => {
+                    totalBrandMentions += (r.brandMentions || 0);
+                    totalCompetitorMentions += (r.competitorMentions || 0);
+                });
+
+                const totalMentions = totalBrandMentions + totalCompetitorMentions;
+                if (totalMentions > 0) {
+                    soa = (totalBrandMentions / totalMentions) * 100;
+                } else {
+                    // If no one is mentioned, SoA is 0 (or null? standard practice is 0 if no voice exists)
+                    soa = 0;
+                }
             }
 
             return {
@@ -116,8 +138,9 @@ export const QueriesAnalysisPage = () => {
                 topic: p.topic,
                 visibilityScore: p.visibilityScore,
                 soa,
+                brandPresence,
                 sentimentScore: p.sentimentScore,
-                trend: { direction: 'neutral', delta: 0 }, 
+                trend: { direction: 'neutral', delta: 0 },
                 searchVolume: p.volumeCount,
                 sentiment: p.sentimentScore && p.sentimentScore > 60 ? 'positive' : p.sentimentScore && p.sentimentScore < 40 ? 'negative' : 'neutral',
                 collectorTypes: p.collectorTypes
@@ -142,12 +165,12 @@ export const QueriesAnalysisPage = () => {
         return { portfolio, performance, queries };
 
     }, [response, selectedModels]);
-    
+
     // Filter queries based on selected Topic AND selected LLMs
     // (Even if backend filters, we double check here to be sure, and to handle empty states correctly)
     const filteredQueries = useMemo(() => {
         if (!analysisData?.queries) return [];
-        
+
         let filtered = analysisData.queries;
 
         // 1. Filter by Topic
@@ -183,19 +206,19 @@ export const QueriesAnalysisPage = () => {
         return (
             <Layout>
                 <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
-                     <LoadingScreen message="Loading queries analysis..." />
+                    <LoadingScreen message="Loading queries analysis..." />
                 </div>
             </Layout>
         );
     }
-    
+
     const brandName = selectedBrand?.name || 'Your Brand';
 
     return (
         <Layout>
             <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
                 {/* Header */}
-                 <div
+                <div
                     style={{
                         backgroundColor: '#ffffff',
                         padding: '24px',
@@ -206,7 +229,7 @@ export const QueriesAnalysisPage = () => {
                         minHeight: '80px'
                     }}
                 >
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '24px', height: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '24px', height: '100%' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '24px', flex: 1 }}>
                             {selectedBrand && (
                                 <SafeLogo
@@ -237,13 +260,13 @@ export const QueriesAnalysisPage = () => {
                                 className="flex-shrink-0"
                             />
                         </div>
-                     </div>
+                    </div>
                 </div>
 
                 {/* Filters */}
                 <div className="mb-6 flex items-center justify-start gap-80 flex-wrap">
 
-                    
+
                     {/* Topic Filter */}
                     <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Topic:</span>
@@ -263,14 +286,14 @@ export const QueriesAnalysisPage = () => {
                     <div className="h-6 w-px bg-gray-200 mx-2 hidden sm:block"></div>
 
                     {/* LLM Filter */}
-                     <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <button
                             type="button"
                             onClick={() => setSelectedModels([])}
                             className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${selectedModels.length === 0
                                 ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
                                 : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
-                            }`}
+                                }`}
                         >
                             All
                         </button>
@@ -288,7 +311,7 @@ export const QueriesAnalysisPage = () => {
                                     className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${isActive
                                         ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
                                         : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-                                    }`}
+                                        }`}
                                     title={model}
                                 >
                                     <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
@@ -312,12 +335,12 @@ export const QueriesAnalysisPage = () => {
                     </div>
                 )}
 
-                 {/* Fallback Empty */}
-                 {!analysisData && !loading && (
-                      <div className="bg-white p-8 rounded-lg border border-gray-200 text-center">
-                          <p>No data found for this period.</p>
-                      </div>
-                 )}
+                {/* Fallback Empty */}
+                {!analysisData && !loading && (
+                    <div className="bg-white p-8 rounded-lg border border-gray-200 text-center">
+                        <p>No data found for this period.</p>
+                    </div>
+                )}
 
             </div>
         </Layout>

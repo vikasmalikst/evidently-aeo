@@ -99,8 +99,6 @@ export class DashboardService {
         }
       }
 
-      const cachedAgeMs = dashboardCacheService.getAgeMs(cached?.computed_at ?? null)
-
       if (shouldUseCache && cached && dashboardCacheService.isCacheValid(cached.computed_at)) {
         // Ensure totalBrandRows exists for backward compatibility
         const payload: BrandDashboardPayload = { ...cached.payload } as BrandDashboardPayload
@@ -119,7 +117,7 @@ export class DashboardService {
             const enhancedSlice = { ...slice }
             // Ensure totalQueries exists
             if (!('totalQueries' in enhancedSlice) || typeof enhancedSlice.totalQueries !== 'number') {
-              enhancedSlice.totalQueries = enhancedSlice.uniqueQueryIds?.size ?? enhancedSlice.brandPresenceCount ?? 0
+              enhancedSlice.totalQueries = enhancedSlice.uniqueQueryIds?.size || enhancedSlice.brandPresenceCount || 0
             }
             // Ensure brandPresenceCount exists
             if (!('brandPresenceCount' in enhancedSlice) || typeof enhancedSlice.brandPresenceCount !== 'number') {
@@ -127,11 +125,11 @@ export class DashboardService {
             }
             // Ensure visibility exists
             if (!('visibility' in enhancedSlice) || typeof enhancedSlice.visibility !== 'number') {
-              enhancedSlice.visibility = enhancedSlice.shareOfSearch ?? enhancedSlice.share ?? 0
+              enhancedSlice.visibility = enhancedSlice.shareOfSearch || enhancedSlice.share || 0
             }
             // Ensure shareOfSearch exists
             if (!('shareOfSearch' in enhancedSlice) || typeof enhancedSlice.shareOfSearch !== 'number') {
-              enhancedSlice.shareOfSearch = enhancedSlice.share ?? 0
+              enhancedSlice.shareOfSearch = enhancedSlice.share || 0
             }
             // Ensure topTopics exists
             if (!('topTopics' in enhancedSlice) || !Array.isArray(enhancedSlice.topTopics)) {
@@ -190,8 +188,8 @@ export class DashboardService {
             .map(([topic, stats]) => ({
               topic,
               occurrences: stats.occurrences,
-              share: stats.share / payload.llmVisibility.length,
-              visibility: stats.visibility / payload.llmVisibility.length
+              share: stats.share / (payload.llmVisibility.length || 1),
+              visibility: stats.visibility / (payload.llmVisibility.length || 1)
             }))
             .sort((a, b) => b.occurrences - a.occurrences || b.share - a.share)
             .slice(0, 5)
@@ -204,10 +202,26 @@ export class DashboardService {
           }
         }
 
+        // Fetch completed recommendations even if payload is from cache
+        const { data: completedRecsCache } = await supabaseAdmin
+          .from('recommendations')
+          .select('id, action, completed_at')
+          .eq('brand_id', brand.id)
+          .eq('is_completed', true)
+          .gte('completed_at', normalizedRange.startIso)
+          .lte('completed_at', normalizedRange.endIso)
+          .order('completed_at', { ascending: true })
+
+        payload.completedRecommendations = (completedRecsCache || []).map(r => ({
+          id: r.id,
+          action: r.action,
+          completedAt: r.completed_at
+        }))
+
         return payload
       }
 
-
+      // Cache miss: Build fresh payload
       const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange, collectors, timezoneOffset)
 
       // Ensure required fields exist with proper defaults
@@ -258,6 +272,22 @@ export class DashboardService {
         }
       }
 
+      // Fetch completed recommendations for freshly built payload
+      const { data: completedRecsFresh } = await supabaseAdmin
+        .from('recommendations')
+        .select('id, action, completed_at')
+        .eq('brand_id', brand.id)
+        .eq('is_completed', true)
+        .gte('completed_at', normalizedRange.startIso)
+        .lte('completed_at', normalizedRange.endIso)
+        .order('completed_at', { ascending: true })
+
+      payload.completedRecommendations = (completedRecsFresh || []).map(r => ({
+        id: r.id,
+        action: r.action,
+        completedAt: r.completed_at
+      }))
+
       return payload
     } catch (error) {
       console.error('[Dashboard] Error in getBrandDashboard:', error)
@@ -277,4 +307,3 @@ export class DashboardService {
 }
 
 export const dashboardService = new DashboardService()
-

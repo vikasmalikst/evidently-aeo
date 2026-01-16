@@ -222,6 +222,11 @@ export interface BrandDashboardPayload {
   topBrandSources: TopBrandSource[]
   topTopics: TopicPerformanceRow[]
   brandSummary?: BrandSummary
+  completedRecommendations?: Array<{
+    id: string
+    action: string
+    completedAt: string
+  }>
 }
 
 export interface DashboardDateRange {

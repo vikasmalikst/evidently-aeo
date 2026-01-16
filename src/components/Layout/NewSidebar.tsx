@@ -59,13 +59,13 @@ const navItems: NavItem[] = [
   },
   {
     id: 'improve',
-    label: 'Improve',
+    label: 'Improve Outcomes',
     icon: IconSparkles,
     children: [
-      { label: 'Discover', path: '/improve/discover', icon: IconBulb },
-      { label: 'Action Plan', path: '/improve/action-plan', icon: IconChecklist },
-      { label: 'Execute', path: '/improve/execute', icon: IconRocket },
-      { label: 'Impact Tracking', path: '/improve/impact', icon: IconTrendingUp },
+      { label: 'Discover Opportunities', path: '/improve/discover', icon: IconBulb },
+      { label: 'To-Do List', path: '/improve/action-plan', icon: IconChecklist },
+      { label: 'Review and Refine', path: '/improve/execute', icon: IconRocket },
+      { label: 'Track Outcomes', path: '/improve/impact', icon: IconTrendingUp },
     ],
   },
   {
@@ -89,7 +89,7 @@ export const NewSidebar = () => {
 
   // Check if a path or any of its children are active
   const isPathActive = (path: string) => location.pathname === path;
-  
+
   const isChildActive = (children?: NavChild[]) => {
     if (!children) return false;
     return children.some(child => location.pathname === child.path);
@@ -176,35 +176,31 @@ export const NewSidebar = () => {
           {/* Parent item with expand/collapse */}
           <button
             onClick={() => toggleSection(item.id)}
-            className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)] ${
-              active ? 'bg-[var(--bg-secondary)]' : ''
-            }`}
+            className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)] ${active ? 'bg-[var(--bg-secondary)]' : ''
+              }`}
           >
             <div
-              className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${
-                active
+              className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
                   ? 'bg-[var(--accent-primary)] text-white'
                   : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
-              }`}
+                }`}
             >
               <Icon size={20} className="transition-colors duration-300" />
             </div>
 
             <span
-              className={`flex-1 text-left whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${
-                isExpanded
+              className={`flex-1 text-left whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
                   ? 'opacity-100 translate-x-0'
                   : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-              }`}
+                }`}
             >
               {item.label}
             </span>
 
             {/* Chevron for expand/collapse */}
             <span
-              className={`flex-shrink-0 transition-all duration-300 ease-in-out ${
-                isExpanded ? 'opacity-100' : 'opacity-0 w-0'
-              }`}
+              className={`flex-shrink-0 transition-all duration-300 ease-in-out ${isExpanded ? 'opacity-100' : 'opacity-0 w-0'
+                }`}
             >
               {isExpanded_ ? (
                 <IconChevronDown size={16} className="text-[var(--text-caption)]" />
@@ -216,9 +212,8 @@ export const NewSidebar = () => {
 
           {/* Child items */}
           <ul
-            className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              isExpanded_ && isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
-            }`}
+            className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded_ && isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
+              }`}
           >
             {item.children?.map((child) => {
               const ChildIcon = child.icon;
@@ -228,18 +223,16 @@ export const NewSidebar = () => {
                 <li key={child.path}>
                   <Link
                     to={child.path}
-                    className={`flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg transition-all duration-200 ${
-                      childActive
+                    className={`flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg transition-all duration-200 ${childActive
                         ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-medium'
                         : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
-                    }`}
+                      }`}
                   >
                     {ChildIcon && (
                       <ChildIcon
                         size={16}
-                        className={`flex-shrink-0 ${
-                          childActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-caption)]'
-                        }`}
+                        className={`flex-shrink-0 ${childActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-caption)]'
+                          }`}
                       />
                     )}
                     <span className="text-sm whitespace-nowrap">{child.label}</span>
@@ -260,21 +253,19 @@ export const NewSidebar = () => {
           className="flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)]"
         >
           <div
-            className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${
-              active
+            className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
                 ? 'bg-[var(--accent-primary)] text-white'
                 : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
-            }`}
+              }`}
           >
             <Icon size={20} className="transition-colors duration-300" />
           </div>
 
           <span
-            className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${
-              isExpanded
+            className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
                 ? 'opacity-100 translate-x-0'
                 : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-            }`}
+              }`}
           >
             {item.label}
           </span>
@@ -300,21 +291,19 @@ export const NewSidebar = () => {
       <div className="border-t border-[var(--border-default)] p-3 space-y-2">
         <Link
           to="/settings"
-          className={`flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out ${
-            isPathActive('/settings') || location.pathname.startsWith('/settings')
+          className={`flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out ${isPathActive('/settings') || location.pathname.startsWith('/settings')
               ? 'bg-[var(--bg-secondary)] text-[var(--accent-primary)]'
               : 'text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]'
-          }`}
+            }`}
         >
           <div className="flex-shrink-0 relative z-10">
             <IconSettings size={24} className="transition-colors duration-300" />
           </div>
           <span
-            className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${
-              isExpanded
+            className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${isExpanded
                 ? 'opacity-100 translate-x-0'
                 : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-            }`}
+              }`}
           >
             Settings
           </span>
@@ -331,11 +320,10 @@ export const NewSidebar = () => {
               </div>
             </div>
             <span
-              className={`font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${
-                isExpanded
+              className={`font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${isExpanded
                   ? 'opacity-100 translate-x-0 flex-1 min-w-0 truncate block'
                   : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-              }`}
+                }`}
               title={user?.email || ''}
             >
               {user?.email}

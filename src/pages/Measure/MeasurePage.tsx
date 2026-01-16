@@ -895,6 +895,7 @@ export const MeasurePage = () => {
                 activeTab="competitive"
                 models={currentModels}
                 metricType={metricType}
+                completedRecommendations={dashboardData?.completedRecommendations}
               />
             </div>
           </div>

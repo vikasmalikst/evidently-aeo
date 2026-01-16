@@ -59,7 +59,7 @@ export interface RecommendationV3 {
   completedAt?: string;
   kpiBeforeValue?: number;
   kpiAfterValue?: number;
-  reviewStatus?: 'pending_review' | 'approved' | 'rejected';
+  reviewStatus?: 'pending_review' | 'approved' | 'rejected' | 'removed';
 
   // Source tracking
   source?: 'domain_audit' | 'ai_generated';
@@ -561,7 +561,7 @@ export async function getLatestGenerationV3(
  */
 export async function updateRecommendationStatusV3(
   recommendationId: string,
-  status: 'pending_review' | 'approved' | 'rejected'
+  status: 'pending_review' | 'approved' | 'rejected' | 'removed'
 ): Promise<{ success: boolean; data?: { recommendationId: string; status: string }; error?: string }> {
   try {
     const response = await apiClient.patch<{ success: boolean; data?: { recommendationId: string; status: string }; error?: string }>(

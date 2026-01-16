@@ -157,6 +157,11 @@ export interface DashboardPayload {
     avgShare?: number | null;
     brandPresencePercentage?: number | null;
   }>;
+  completedRecommendations?: Array<{
+    id: string;
+    action: string;
+    completedAt: string;
+  }>;
 }
 
 export interface LLMVisibilitySliceUI {

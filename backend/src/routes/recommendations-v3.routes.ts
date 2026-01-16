@@ -12,6 +12,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { recommendationV3Service } from '../services/recommendations/recommendation-v3.service';
+import { dashboardService } from '../services/brand-dashboard/dashboard.service';
 import { recommendationContentService } from '../services/recommendations/recommendation-content.service';
 import { supabaseAdmin } from '../config/database';
 import { brandService } from '../services/brand.service';
@@ -79,7 +80,7 @@ function getSourceKpiValue(params: {
 router.post('/generate', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -93,21 +94,21 @@ router.post('/generate', authenticateToken, async (req, res) => {
     if (!brandId) {
       console.log('📍 [RecommendationsV3] No brandId provided, fetching first brand for customer');
       const brands = await brandService.getBrandsByCustomer(customerId);
-      
+
       if (!brands || brands.length === 0) {
         return res.status(400).json({
           success: false,
           error: 'No brands found. Please complete brand onboarding first.'
         });
       }
-      
+
       brandId = brands[0].id;
       console.log(`📍 [RecommendationsV3] Using first brand: ${brandId}`);
     }
 
     // Generate recommendations
     console.log(`🚀 [RecommendationsV3] Generating recommendations for brand: ${brandId}`);
-    
+
     try {
       const result = await recommendationV3Service.generateRecommendations(brandId, customerId);
 
@@ -179,7 +180,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
 router.get('/:generationId', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -275,7 +276,8 @@ router.get('/:generationId', authenticateToken, async (req, res) => {
       completedAt: rec.completed_at,
       kpiBeforeValue: rec.kpi_before_value,
       kpiAfterValue: rec.kpi_after_value,
-      reviewStatus: rec.review_status || 'pending_review'
+      reviewStatus: (rec.metadata as any)?.is_removed ? 'removed' : (rec.review_status || 'pending_review'),
+      metadata: rec.metadata
     }));
 
     return res.json({
@@ -313,7 +315,7 @@ router.get('/:generationId', authenticateToken, async (req, res) => {
 router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -371,7 +373,7 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
       // Step 4: Completed and approved (exclude rejected/pending recommendations from results)
       query = query.eq('is_completed', true).eq('review_status', 'approved');
     }
-    
+
     console.log(`📊 [RecommendationsV3 Step ${stepNum}] Query filters: generation_id=${generationId}, customer_id=${customerId}, is_approved=${stepNum === 2 ? 'true' : stepNum === 1 ? 'false' : 'any'}, is_content_generated=${stepNum === 2 ? 'false' : stepNum === 3 ? 'true' : 'any'}`);
 
     const { data: recommendationsData, error: recError } = await query.order('display_order', { ascending: true });
@@ -386,7 +388,7 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
 
     console.log(`📊 [RecommendationsV3 Step ${stepNum}] Found ${(recommendationsData || []).length} recommendations`);
     if (stepNum === 2) {
-      console.log(`📊 [RecommendationsV3 Step 2] Approved recommendations:`, 
+      console.log(`📊 [RecommendationsV3 Step 2] Approved recommendations:`,
         (recommendationsData || []).map(r => ({ id: r.id, action: r.action?.substring(0, 40), is_approved: r.is_approved })));
     }
 
@@ -430,7 +432,7 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
           }
         }
       }
-      
+
       return {
         id: rec.id,
         action: rec.action,
@@ -459,7 +461,8 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
         completedAt: rec.completed_at,
         kpiBeforeValue: kpiBeforeValue,
         kpiAfterValue: rec.kpi_after_value,
-        reviewStatus: rec.review_status || 'pending_review'
+        reviewStatus: (rec.metadata as any)?.is_removed ? 'removed' : (rec.review_status || 'pending_review'),
+        metadata: rec.metadata
       };
     });
 
@@ -494,7 +497,7 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
 router.patch('/:recommendationId/approve', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -506,7 +509,7 @@ router.patch('/:recommendationId/approve', authenticateToken, async (req, res) =
     const { recommendationIds } = req.body || {};
 
     // Support both single ID and bulk approve
-    const idsToApprove = recommendationIds && Array.isArray(recommendationIds) 
+    const idsToApprove = recommendationIds && Array.isArray(recommendationIds)
       ? recommendationIds.filter(id => id && typeof id === 'string' && id.length > 10)
       : [recommendationId].filter(id => id && typeof id === 'string' && id.length > 10);
 
@@ -560,7 +563,7 @@ router.patch('/:recommendationId/approve', authenticateToken, async (req, res) =
     const verifiedIds = recommendations.map(r => r.id);
     const { error: updateError } = await supabaseAdmin
       .from('recommendations')
-      .update({ 
+      .update({
         is_approved: true,
         review_status: 'approved' // Also update review_status
       })
@@ -605,7 +608,7 @@ router.patch('/:recommendationId/approve', authenticateToken, async (req, res) =
 router.patch('/:recommendationId/status', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -616,17 +619,17 @@ router.patch('/:recommendationId/status', authenticateToken, async (req, res) =>
     const { recommendationId } = req.params;
     const { status } = req.body;
 
-    if (!status || !['pending_review', 'approved', 'rejected'].includes(status)) {
+    if (!status || !['pending_review', 'approved', 'rejected', 'removed'].includes(status)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid status. Must be one of: pending_review, approved, rejected'
+        error: 'Invalid status. Must be one of: pending_review, approved, rejected, removed'
       });
     }
 
     // Verify recommendation belongs to customer
     const { data: recommendation, error: verifyError } = await supabaseAdmin
       .from('recommendations')
-      .select('id, customer_id, generation_id')
+      .select('id, customer_id, generation_id, metadata')
       .eq('id', recommendationId)
       .eq('customer_id', customerId)
       .single();
@@ -640,9 +643,26 @@ router.patch('/:recommendationId/status', authenticateToken, async (req, res) =>
 
     // Build update object
     const updateData: any = { review_status: status };
-    
+
+    // Workaround for 'removed' status due to DB constraints
+    // If status is 'removed', we store 'rejected' in the DB but set a metadata flag
+    if (status === 'removed') {
+      updateData.review_status = 'rejected';
+      updateData.metadata = {
+        ...(recommendation.metadata || {}),
+        is_removed: true
+      };
+    } else {
+      // If we are setting to something else, remove the is_removed flag if it exists
+      if (recommendation.metadata && (recommendation.metadata as any).is_removed) {
+        const newMetadata = { ...((recommendation.metadata || {}) as any) };
+        delete newMetadata.is_removed;
+        updateData.metadata = newMetadata;
+      }
+    }
+
     // If status is 'approved', also set is_approved = true
-    // If status is 'rejected' or 'pending_review', set is_approved = false
+    // If status is 'rejected' or 'pending_review' or 'removed', set is_approved = false
     if (status === 'approved') {
       updateData.is_approved = true;
     } else {
@@ -692,7 +712,7 @@ router.patch('/:recommendationId/status', authenticateToken, async (req, res) =>
 router.post('/generate-content-bulk', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -833,7 +853,7 @@ router.post('/generate-content-bulk', authenticateToken, async (req, res) => {
 router.post('/generate-guides-bulk', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -966,7 +986,7 @@ router.post('/generate-guides-bulk', authenticateToken, async (req, res) => {
 router.post('/:recommendationId/content', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -1047,7 +1067,7 @@ router.post('/:recommendationId/content', authenticateToken, async (req, res) =>
 router.patch('/:recommendationId/complete', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -1087,7 +1107,7 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
       try {
         // Get KPI name - prefer from linked KPI table (more accurate), fallback to recommendation.kpi field
         let kpiNameToMatch: string | null = null;
-        
+
         // First try to get KPI name from recommendation_v3_kpis table (more reliable)
         if (recommendation.kpi_id) {
           const { data: kpiData } = await supabaseAdmin
@@ -1095,12 +1115,12 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
             .select('kpi_name')
             .eq('id', recommendation.kpi_id)
             .single();
-          
+
           if (kpiData?.kpi_name) {
             kpiNameToMatch = kpiData.kpi_name;
           }
         }
-        
+
         // Fallback to recommendation.kpi field if KPI table lookup didn't work
         if (!kpiNameToMatch && recommendation.kpi) {
           kpiNameToMatch = recommendation.kpi;
@@ -1124,24 +1144,24 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
           const kpiNameLower = kpiNameToMatch.toLowerCase();
           const matchingScore = dashboard.scores?.find((score: any) => {
             const scoreLabel = (score.label || '').toLowerCase();
-            
+
             // Try exact match first
             if (scoreLabel === kpiNameLower || kpiNameLower.includes(scoreLabel) || scoreLabel.includes(kpiNameLower)) {
               return true;
             }
-            
+
             // Then try keyword matching
             if (kpiNameLower.includes('visibility') && scoreLabel.includes('visibility')) {
               return true;
             }
-            if ((kpiNameLower.includes('soa') || kpiNameLower.includes('share of answers') || kpiNameLower.includes('share')) 
-                && (scoreLabel.includes('share') || scoreLabel.includes('answers'))) {
+            if ((kpiNameLower.includes('soa') || kpiNameLower.includes('share of answers') || kpiNameLower.includes('share'))
+              && (scoreLabel.includes('share') || scoreLabel.includes('answers'))) {
               return true;
             }
             if (kpiNameLower.includes('sentiment') && scoreLabel.includes('sentiment')) {
               return true;
             }
-            
+
             return false;
           });
 
@@ -1149,9 +1169,23 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
             kpiBeforeValue = matchingScore.value;
             console.log(`✅ [RecommendationsV3 Complete] Matched KPI "${kpiNameToMatch}" to dashboard score "${matchingScore.label}": ${kpiBeforeValue}`);
           } else {
-            console.warn(`⚠️ [RecommendationsV3 Complete] Could not match KPI "${kpiNameToMatch}" to dashboard score. Available scores:`, 
+            console.warn(`⚠️ [RecommendationsV3 Complete] Could not match KPI "${kpiNameToMatch}" to dashboard score. Available scores:`,
               dashboard.scores?.map((s: any) => s.label));
           }
+
+          // Capture all 3 brand-level scores for Benchmarking in Step 4
+          const scores = dashboard.scores || [];
+          const vizScore = scores.find((s: any) => s.label.toLowerCase().includes('visibility'))?.value ?? 0;
+          const soaScore = scores.find((s: any) => s.label.toLowerCase().includes('soa') || s.label.toLowerCase().includes('share'))?.value ?? 0;
+          const sentScore = scores.find((s: any) => s.label.toLowerCase().includes('sentiment'))?.value ?? 0;
+
+          // Store these in a way the frontend Step 4 can read them as Benchmarked values
+          // We'll update the recommendation record with these values
+          (recommendation as any).currentBrandMetrics = {
+            visibility: vizScore,
+            soa: soaScore,
+            sentiment: sentScore
+          };
         }
       } catch (e) {
         console.error('⚠️ [RecommendationsV3 Complete] Failed to fetch dashboard KPI:', e);
@@ -1180,6 +1214,10 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
         is_completed: true,
         completed_at: new Date().toISOString(),
         kpi_before_value: kpiBeforeValue,
+        // Update benchmarked values with current brand metrics at time of completion
+        visibility_score: (recommendation as any).currentBrandMetrics ? String((recommendation as any).currentBrandMetrics.visibility) : recommendation.visibility_score,
+        soa: (recommendation as any).currentBrandMetrics ? String((recommendation as any).currentBrandMetrics.soa) : recommendation.soa,
+        sentiment: (recommendation as any).currentBrandMetrics ? String((recommendation as any).currentBrandMetrics.sentiment) : recommendation.sentiment,
         review_status: 'approved', // Ensure it's marked as approved so it appears in Step 4
         is_approved: true // Also ensure is_approved is true for consistency
       })
@@ -1220,7 +1258,7 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
 router.get('/:generationId/kpis', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -1230,10 +1268,10 @@ router.get('/:generationId/kpis', authenticateToken, async (req, res) => {
 
     const { generationId } = req.params;
 
-    // Verify generation belongs to customer
+    // Verify generation belongs to customer and get brand_id
     const { data: generation } = await supabaseAdmin
       .from('recommendation_generations')
-      .select('id, customer_id')
+      .select('id, customer_id, brand_id')
       .eq('id', generationId)
       .eq('customer_id', customerId)
       .single();
@@ -1260,14 +1298,89 @@ router.get('/:generationId/kpis', authenticateToken, async (req, res) => {
       });
     }
 
-    const kpis = (kpisData || []).map(kpi => ({
-      id: kpi.id,
-      kpiName: kpi.kpi_name,
-      kpiDescription: kpi.kpi_description,
-      currentValue: kpi.current_value,
-      targetValue: kpi.target_value,
-      displayOrder: kpi.display_order
-    }));
+    // Fetch live dashboard metrics to get current state
+    // This allows "Current Visibility/SOA/Sentiment" columns in Impact page to be truly current
+    let liveMetrics: { visibility?: number; soa?: number; sentiment?: number } = {};
+    if (generation.brand_id) {
+      try {
+        // Fetch dashboard data (using cache if available)
+        const dashboard = await dashboardService.getBrandDashboard(generation.brand_id, customerId);
+
+        // Extract metrics (prefer brandSummary, fall back to scores/top-level)
+        let visibility = dashboard.brandSummary?.visibility ?? dashboard.visibilityPercentage;
+        let soa = dashboard.brandSummary?.share;
+        let sentiment = dashboard.sentimentScore;
+
+        // Fallback to scores array if brandSummary missing
+        if (soa === undefined && dashboard.scores) {
+          const soaScore = dashboard.scores.find(s => s.label === 'Share of Answers');
+          if (soaScore) soa = soaScore.value;
+        }
+
+        // Normalize info
+        liveMetrics = {
+          visibility,
+          soa,
+          sentiment
+        };
+      } catch (err) {
+        console.warn('⚠️ [RecommendationsV3] Failed to fetch live dashboard metrics, falling back to snapshot:', err);
+      }
+    }
+
+    let rawKpis = kpisData || [];
+
+    // Fallback: If no KPIs found in DB, return standard default ones
+    if (rawKpis.length === 0) {
+      console.log('ℹ️ [RecommendationsV3] No KPIs found in DB for generation, returning standard defaults');
+      rawKpis = [
+        {
+          kpi_name: 'Visibility Index',
+          kpi_description: 'Overall brand visibility across AI responses.',
+          current_value: liveMetrics.visibility || 0,
+          target_value: Math.min(100, (liveMetrics.visibility || 20) + 10),
+          display_order: 0
+        },
+        {
+          kpi_name: 'SOA %',
+          kpi_description: 'Share of Answers for your brand compared to competitors.',
+          current_value: liveMetrics.soa || 0,
+          target_value: Math.min(100, (liveMetrics.soa || 15) + 5),
+          display_order: 1
+        },
+        {
+          kpi_name: 'Sentiment Score',
+          kpi_description: 'Brand sentiment across AI citations.',
+          current_value: liveMetrics.sentiment || 0,
+          target_value: Math.min(100, (liveMetrics.sentiment || 70) + 5),
+          display_order: 2
+        }
+      ];
+    }
+
+    const kpis = rawKpis.map(kpi => {
+      let currentValue = kpi.current_value;
+      const name = (kpi.kpi_name || '').toLowerCase();
+
+      // Override with live value if available
+      if (name.includes('visibility') && liveMetrics.visibility !== undefined) {
+        currentValue = liveMetrics.visibility;
+      } else if ((name.includes('share') || name.includes('soa')) && liveMetrics.soa !== undefined) {
+        currentValue = liveMetrics.soa;
+      } else if (name.includes('sentiment') && liveMetrics.sentiment !== undefined) {
+        // Ensure sentiment is on same scale (likely 0-100)
+        currentValue = liveMetrics.sentiment;
+      }
+
+      return {
+        id: kpi.id,
+        kpiName: kpi.kpi_name,
+        kpiDescription: kpi.kpi_description,
+        currentValue: currentValue,
+        targetValue: kpi.target_value,
+        displayOrder: kpi.display_order
+      };
+    });
 
     return res.json({
       success: true,
@@ -1304,7 +1417,7 @@ router.get('/:generationId/kpis', authenticateToken, async (req, res) => {
 router.get('/brand/:brandId/latest', authenticateToken, async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
-    
+
     if (!customerId) {
       return res.status(401).json({
         success: false,
@@ -1398,7 +1511,8 @@ router.get('/brand/:brandId/latest', authenticateToken, async (req, res) => {
       completedAt: rec.completed_at,
       kpiBeforeValue: rec.kpi_before_value,
       kpiAfterValue: rec.kpi_after_value,
-      reviewStatus: rec.review_status || 'pending_review'
+      reviewStatus: (rec.metadata as any)?.is_removed ? 'removed' : (rec.review_status || 'pending_review'),
+      metadata: rec.metadata
     }));
 
     return res.json({

@@ -67,7 +67,7 @@ const faqs = [
     category: "Product & Platform",
     question: "What makes EvidentlyAEO different from other AEO tools?",
     answer:
-      "Most AEO tools stop at visibility reports. EvidentlyAEO is the only full-loop Answer Engine Optimization system that goes from measurement to measurable business outcomes. We bake in workflows (Discovery → Action plan → Refinement → Impact) to ensure changes actually ship. We also offer optional professional services and tie success to AEO outcomes—visibility lift, share-of-answers gains, sentiment improvement—not seat-based or login-based pricing.",
+      "Most AEO tools stop at visibility reports. EvidentlyAEO is the only full-loop Answer Engine Optimization system that goes from measurement to measurable business outcomes. We bake in workflows (Discover Opportunities → To-Do List → Review and Refine → Track Outcomes) to ensure changes actually ship. We also offer optional professional services and tie success to AEO outcomes—visibility lift, share-of-answers gains, sentiment improvement—not seat-based or login-based pricing.",
   },
   {
     category: "Implementation & Onboarding",
@@ -105,22 +105,22 @@ export function FAQSection() {
           </MotionDiv>
 
           <MotionDiv {...defaultAnimationOptions} variants={fadeInUp}>
-          <Accordion type="single" collapsible className="space-y-3">
-            {faqs.map((faq, index) => (
-              <AccordionItem
-                key={index}
-                value={`item-${index}`}
+            <Accordion type="single" collapsible className="space-y-3">
+              {faqs.map((faq, index) => (
+                <AccordionItem
+                  key={index}
+                  value={`item-${index}`}
                   className="border border-border rounded-lg px-6 data-[state=open]:bg-white data-[state=open]:shadow-md transition-all hover:border-cyan-500/50"
-              >
+                >
                   <AccordionTrigger className="text-base font-semibold text-foreground hover:text-cyan-600 py-4 text-left">
-                  {faq.question}
-                </AccordionTrigger>
-                <AccordionContent className="text-sm text-muted-foreground leading-relaxed pb-4">
-                  {faq.answer}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
+                    {faq.question}
+                  </AccordionTrigger>
+                  <AccordionContent className="text-sm text-muted-foreground leading-relaxed pb-4">
+                    {faq.answer}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
           </MotionDiv>
 
           <MotionDiv

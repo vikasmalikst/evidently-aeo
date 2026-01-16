@@ -2,10 +2,10 @@
  * Recommendations V3 Page
  * 
  * KPI-first approach with 4-step workflow:
- * Step 1: Generate & Review - All recommendations with status dropdown (Approved/Rejected/Pending Review)
- * Step 2: Approved Recommendations - Generate content for approved items
- * Step 3: Content Review - Review generated content and mark as completed
- * Step 4: Results Tracking - View KPI improvements (before/after)
+ * Step 1: Discover Opportunities - All recommendations with status dropdown (Approved/Rejected/Pending Review)
+ * Step 2: To-Do List - Generate content for approved items
+ * Step 3: Review and Refine - Review generated content and mark as completed
+ * Step 4: Track Outcomes - View KPI improvements (before/after)
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -28,7 +28,7 @@ import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
-import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX } from '@tabler/icons-react';
 
 interface RecommendationsV3Props {
   initialStep?: number;
@@ -91,6 +91,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
   const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
   const [hasCompletedForStep4, setHasCompletedForStep4] = useState(false); // Drives Step 4 "attention" animation after marking completed
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editBuffer, setEditBuffer] = useState<string>('');
 
   const isColdStart = dataMaturity === 'cold_start';
 
@@ -137,17 +140,17 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const isManuallyNavigatingRef = useRef(false);
   // Track the last step that was manually loaded to prevent useEffect from reloading it
   const lastManuallyLoadedStepRef = useRef<number | null>(null);
-  
+
   useEffect(() => {
     if (!generationId || !selectedBrandId) return;
-    
+
     // Skip loading if we're manually loading data (prevents race conditions)
     // Check both state and ref for reliability
     if (isManuallyLoading || isManuallyNavigatingRef.current) {
       console.log('⏭️ [RecommendationsV3] Skipping loadStepData - manual load in progress');
       return;
     }
-    
+
     // Skip if we just manually loaded this exact step (prevents double loading)
     if (lastManuallyLoadedStepRef.current === currentStep) {
       console.log(`⏭️ [RecommendationsV3] Skipping loadStepData - Step ${currentStep} was just manually loaded`);
@@ -177,7 +180,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           error: response.error,
           fullResponse: response // Log full response for debugging
         });
-        
+
         if (response.success && response.data) {
           if (response.data.dataMaturity !== undefined) {
             setDataMaturity((response.data.dataMaturity as any) || null);
@@ -188,20 +191,20 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           if (missingIds.length > 0) {
             console.warn(`⚠️ [RecommendationsV3] ${missingIds.length} recommendations missing IDs from database`);
           }
-          
+
           // Only keep recommendations with valid IDs (database UUIDs)
           const recommendationsWithIds = response.data.recommendations
             .filter(rec => rec.id && rec.id.length > 10) // Filter out invalid IDs
             .map(rec => ({ ...rec, id: rec.id! })); // Ensure ID is defined
-          
+
           console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${currentStep}`);
           if (currentStep === 2) {
-            console.log(`📊 [RecommendationsV3] Step 2 recommendations (approved only):`, 
-              recommendationsWithIds.map(r => ({ 
-                id: r.id, 
-                action: r.action?.substring(0, 40), 
+            console.log(`📊 [RecommendationsV3] Step 2 recommendations (approved only):`,
+              recommendationsWithIds.map(r => ({
+                id: r.id,
+                action: r.action?.substring(0, 40),
                 isApproved: r.isApproved,
-                isContentGenerated: r.isContentGenerated 
+                isContentGenerated: r.isContentGenerated
               })));
             // Verify all are approved
             const notApproved = recommendationsWithIds.filter(r => !r.isApproved);
@@ -211,7 +214,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             // Debug: Log dataMaturity state
             console.log(`🧊 [RecommendationsV3] Step 2 - dataMaturity: ${dataMaturity}, isColdStart: ${isColdStart}`);
           }
-          
+
           if (recommendationsWithIds.length === 0 && response.data.recommendations.length > 0) {
             setError('Recommendations loaded but no valid IDs found. Please refresh the page.');
           } else {
@@ -230,7 +233,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   return rec;
                 });
               })();
-              
+
               setAllRecommendations(mergedRecommendations);
               // Filter will be applied by the filter useEffect when allRecommendations updates
             } else {
@@ -241,7 +244,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             // Clear any previous errors on successful load
             setError(null);
           }
-          
+
           // For Step 3, load content/guides for each recommendation
           if (currentStep === 3) {
             const isColdStartForThisStep =
@@ -256,7 +259,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
               }
             });
             setExpandedSections(newExpandedSections);
-            
+
             const contentPromises = recommendationsWithIds
               .filter(r => r.id && r.isContentGenerated)
               .map(async (rec) => {
@@ -270,7 +273,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 }
                 return null;
               });
-            
+
             const contentResults = await Promise.all(contentPromises);
             if (isColdStartForThisStep) {
               const newGuideMap = new Map(guideMap);
@@ -374,7 +377,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // Handle brand switching with proper state cleanup
   const handleBrandSwitch = useCallback((newBrandId: string) => {
     console.log(`🔄 [RecommendationsV3] Switching from brand ${selectedBrandId} to ${newBrandId}`);
-    
+
     // Clear all state related to the current brand
     setGenerationId(null);
     setRecommendations([]);
@@ -385,15 +388,15 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     setDataMaturity(null);
     setError(null);
     setStatusFilter('all'); // Reset filter
-    
+
     // Load persisted step for new brand, or default to 1
     const newStep = getPersistedStep(newBrandId);
     setCurrentStep(newStep);
-    
+
     // Now update the brand - this will trigger loadLatestGeneration
     selectBrand(newBrandId);
   }, [selectedBrandId, selectBrand]);
-  
+
   // Load latest generation on mount or when brand changes
   useEffect(() => {
     if (!selectedBrandId) return;
@@ -405,33 +408,33 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       try {
         console.log('📥 [RecommendationsV3] Loading latest generation for brand:', selectedBrandId);
         const response = await getLatestGenerationV3(selectedBrandId);
-        
+
         if (response.success && response.data && response.data.generationId) {
           const genId = response.data.generationId;
           if (response.data.dataMaturity !== undefined) {
             setDataMaturity((response.data.dataMaturity as any) || null);
           }
-          
+
           // Check if this is a different generation than what we currently have
           const isDifferentGeneration = genId !== generationId;
-          
+
           if (isDifferentGeneration) {
             console.log(`🔄 [RecommendationsV3] Switching to generation ${genId} (previous: ${generationId})`);
             setGenerationId(genId);
-            
+
             if (response.data.recommendations && response.data.recommendations.length > 0) {
               // Ensure all recommendations have IDs
               const recommendationsWithIds = response.data.recommendations
                 .filter(rec => rec.id && rec.id.length > 10)
                 .map(rec => ({ ...rec, id: rec.id! }));
-              
+
               if (recommendationsWithIds.length > 0) {
                 setKpis(response.data.kpis || []);
-                
+
                 // Don't auto-change step - use persisted step or keep current step
                 // The user's current step selection should be respected
                 console.log(`✅ [RecommendationsV3] Loaded generation ${genId}, keeping step ${currentStep}`);
-                
+
                 setError(null);
                 // Clear selections when switching brands/generations
                 setSelectedIds(new Set());
@@ -506,32 +509,32 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
 
   // Handle status change for a recommendation
-  const handleStatusChange = async (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected') => {
+  const handleStatusChange = async (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected' | 'removed') => {
     if (!recommendationId) return;
 
     setError(null);
 
     // Optimistically update UI immediately in both filtered and all recommendations
     // Only update reviewStatus - this is the single source of truth synced with database
-    const updateRec = (rec: RecommendationV3) => 
-      rec.id === recommendationId 
+    const updateRec = (rec: RecommendationV3) =>
+      rec.id === recommendationId
         ? { ...rec, reviewStatus: status }
         : rec;
-    
+
     setRecommendations(prev => prev.map(updateRec));
     setAllRecommendations(prev => prev.map(updateRec));
 
     try {
       console.log(`📝 [RecommendationsV3] Updating status for ${recommendationId} to ${status}`);
       const response = await updateRecommendationStatusV3(recommendationId, status);
-      
+
       if (response.success) {
         console.log(`✅ [RecommendationsV3] Successfully updated status for ${recommendationId}`);
         // Status already updated optimistically, no need to update again
       } else {
         // Revert optimistic update on error - restore previous reviewStatus
-        const revertRec = (rec: RecommendationV3) => 
-          rec.id === recommendationId 
+        const revertRec = (rec: RecommendationV3) =>
+          rec.id === recommendationId
             ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review' }
             : rec;
         setRecommendations(prev => prev.map(revertRec));
@@ -541,8 +544,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     } catch (err: any) {
       console.error('Error updating recommendation status:', err);
       // Revert optimistic update on error - restore previous reviewStatus
-      const revertRec = (rec: RecommendationV3) => 
-        rec.id === recommendationId 
+      const revertRec = (rec: RecommendationV3) =>
+        rec.id === recommendationId
           ? { ...rec, reviewStatus: rec.reviewStatus || 'pending_review' }
           : rec;
       setRecommendations(prev => prev.map(revertRec));
@@ -567,7 +570,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     try {
       console.log('📝 [RecommendationsV3] Generating content for all approved recommendations...');
       const response = await generateContentBulkV3(generationId);
-      
+
       console.log('📊 [RecommendationsV3] Bulk content generation response:', {
         success: response.success,
         hasData: !!response.data,
@@ -576,12 +579,12 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
         failed: response.data?.failed,
         error: response.error
       });
-      
+
       if (response.success && response.data) {
         const { total, successful, failed, results } = response.data;
-        
+
         console.log(`✅ [RecommendationsV3] Generated content: ${successful}/${total} successful, ${failed} failed`);
-        
+
         // Store all generated content in contentMap
         const newContentMap = new Map(contentMap);
         results.forEach((result: any) => {
@@ -633,7 +636,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
         });
         setContentMap(newContentMap);
         console.log(`📊 [RecommendationsV3] Stored ${newContentMap.size} content items in contentMap`);
-        
+
         // Reload step 2 data to see updated state
         if (generationId) {
           const step2Response = await getRecommendationsByStepV3(generationId, 2);
@@ -641,27 +644,27 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             setRecommendations(step2Response.data.recommendations);
           }
         }
-        
+
         // Set manual loading flags to prevent useEffect from interfering
         isManuallyNavigatingRef.current = true;
         setIsManuallyLoading(true);
-        
+
         // Move to step 3 to show all generated content
         if (successful > 0) {
           // Small delay to ensure database transactions are committed
           await new Promise(resolve => setTimeout(resolve, 300));
-          
+
           // Load step 3 data to ensure we have all content
           // Mark Step 3 as manually loaded to prevent useEffect from reloading
           setIsManuallyLoading(true);
           isManuallyNavigatingRef.current = true;
           lastManuallyLoadedStepRef.current = 3;
-          
+
           const step3Response = await getRecommendationsByStepV3(generationId, 3);
           if (step3Response.success && step3Response.data) {
             const step3Recs = step3Response.data.recommendations;
             setRecommendations(step3Recs);
-            
+
             // Initialize all recommendations to have expanded sections by default
             const newExpandedSections = new Map(expandedSections);
             step3Recs.forEach(rec => {
@@ -671,7 +674,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
               }
             });
             setExpandedSections(newExpandedSections);
-            
+
             // Load content for all recommendations (with better error handling)
             const contentPromises = step3Recs.map(async (rec: RecommendationV3) => {
               if (rec.id) {
@@ -680,7 +683,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   if (newContentMap.has(rec.id)) {
                     return; // Already have it
                   }
-                  
+
                   // Otherwise fetch from API
                   const contentResponse = await fetchRecommendationContentLatest(rec.id);
                   if (contentResponse?.success && contentResponse.data?.content) {
@@ -688,7 +691,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     // It has a .content property that contains the JSON string or parsed object
                     const contentRecord = contentResponse.data.content as any;
                     let contentToStore: any = null;
-                    
+
                     // The content record has structure: { id, content: "<JSON string>", ... }
                     if (contentRecord.content !== undefined) {
                       // Content is stored in .content property as a JSON string
@@ -709,7 +712,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                       // No .content property, use the record itself
                       contentToStore = contentRecord;
                     }
-                    
+
                     if (contentToStore) {
                       newContentMap.set(rec.id, contentToStore);
                     }
@@ -722,19 +725,20 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             });
             await Promise.all(contentPromises);
             setContentMap(newContentMap);
-            
+
             // Move to step 3 after content is loaded
             setCurrentStep(3);
+            setShowSuccessModal(true);
             setError(null);
           }
         }
-        
+
         // Clear manual loading flags
         setTimeout(() => {
           setIsManuallyLoading(false);
           isManuallyNavigatingRef.current = false;
         }, 300);
-        
+
         if (failed > 0) {
           // Show warning but don't treat as error if some succeeded
           console.warn(`⚠️ [RecommendationsV3] ${failed} recommendation(s) failed to generate content. ${successful} succeeded.`);
@@ -757,7 +761,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           hasData: !!response.data
         });
         setError(response.error || 'Failed to generate content');
-        
+
         // Even if response.success is false, check if we have partial results
         if (response.data && response.data.successful > 0) {
           console.log(`⚠️ [RecommendationsV3] Partial success: ${response.data.successful} succeeded, loading Step 3 anyway...`);
@@ -863,6 +867,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 .map(rec => ({ ...rec, id: rec.id! }));
               setRecommendations(recommendationsWithIds);
               setCurrentStep(3);
+              setShowSuccessModal(true);
               setHasGeneratedContentForStep3(false);
             }
           } finally {
@@ -897,10 +902,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     try {
       console.log(`📝 [RecommendationsV3] Generating content for recommendation ${recommendation.id}...`);
       const response = await generateContentV3(recommendation.id);
-      
+
       if (response.success && response.data) {
         console.log(`✅ [RecommendationsV3] Content generated successfully for ${recommendation.id}`);
-        
+
         // Store content in contentMap (for Step 3)
         setContentMap(prev => new Map(prev).set(recommendation.id!, response.data.content));
 
@@ -913,14 +918,14 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           isManuallyNavigatingRef.current = true;
           setIsManuallyLoading(true);
           lastManuallyLoadedStepRef.current = 3;
-          
+
           try {
             const step3Response = await getRecommendationsByStepV3(generationId, 3);
             if (step3Response.success && step3Response.data) {
               const recommendationsWithIds = step3Response.data.recommendations
                 .filter(rec => rec.id && rec.id.length > 10)
                 .map(rec => ({ ...rec, id: rec.id! }));
-              
+
               // Initialize expanded sections for Step 3 recommendations
               const newExpandedSections = new Map(expandedSections);
               recommendationsWithIds.forEach(rec => {
@@ -929,9 +934,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 }
               });
               setExpandedSections(newExpandedSections);
-              
+
               setRecommendations(recommendationsWithIds);
               setCurrentStep(3);
+              setShowSuccessModal(true);
               setHasGeneratedContentForStep3(false); // Clear the attention animation
               setError(null);
             }
@@ -961,43 +967,43 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   // Handle toggle completion - optimistically navigate to Step 4, then complete in background
   const handleToggleComplete = async (recommendation: RecommendationV3) => {
     if (!recommendation.id || recommendation.isCompleted) return;
-    
+
     setError(null);
-    
+
     // Capture IDs before async operations
     const currentGenerationId = generationId;
     const recommendationIdToComplete = recommendation.id;
     if (!recommendationIdToComplete || !currentGenerationId) return;
-    
+
     // Optimistically mark as completed and navigate to Step 4 immediately
-    const optimisticRec = { 
-      ...recommendation, 
-      isCompleted: true, 
+    const optimisticRec = {
+      ...recommendation,
+      isCompleted: true,
       completedAt: new Date().toISOString(),
       reviewStatus: 'approved' as const, // Ensure it's marked as approved for Step 4 filtering
       isApproved: true
     };
-    
+
     // Navigate to Step 4 immediately (optimistic navigation)
     isManuallyNavigatingRef.current = true;
     setIsManuallyLoading(true);
     lastManuallyLoadedStepRef.current = 4;
-    
+
     try {
       // Load Step 4 data
       const step4Response = await getRecommendationsByStepV3(currentGenerationId, 4);
-      
+
       if (step4Response.success && step4Response.data) {
         const recommendationsWithIds = step4Response.data.recommendations
           .filter(rec => rec.id && rec.id.length > 10)
           .map(rec => ({ ...rec, id: rec.id! }));
-        
+
         // Include the optimistically completed recommendation if it's not already in the list
         const hasOptimisticRec = recommendationsWithIds.some(r => r.id === recommendationIdToComplete);
-        const finalRecommendations = hasOptimisticRec 
-          ? recommendationsWithIds 
+        const finalRecommendations = hasOptimisticRec
+          ? recommendationsWithIds
           : [...recommendationsWithIds, optimisticRec];
-        
+
         setRecommendations(finalRecommendations);
         setCurrentStep(4);
         setHasCompletedForStep4(false);
@@ -1019,14 +1025,14 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       setIsManuallyLoading(false);
       isManuallyNavigatingRef.current = false;
     }
-    
+
     // Complete the recommendation in the background (API call)
     // This ensures the database is updated with correct kpiBeforeValue
     (async () => {
       try {
         console.log(`📝 [RecommendationsV3] Completing recommendation ${recommendationIdToComplete} in background...`);
         const response = await completeRecommendationV3(recommendationIdToComplete);
-        
+
         if (response.success) {
           console.log(`✅ [RecommendationsV3] Successfully completed recommendation ${recommendationIdToComplete} (background)`);
           // Reload Step 4 to get the latest data with correct completedAt timestamp and kpiBeforeValue
@@ -1056,6 +1062,38 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     })();
   };
 
+  const handleSaveEdit = (recommendationId: string) => {
+    if (!recommendationId) return;
+
+    setContentMap(prev => {
+      const next = new Map(prev);
+      const existing = next.get(recommendationId);
+
+      if (typeof existing === 'object' && existing !== null) {
+        // If it's the v2.0 format, we need to update deep inside
+        if (existing.version === '2.0' && existing.publishableContent) {
+          next.set(recommendationId, {
+            ...existing,
+            publishableContent: {
+              ...existing.publishableContent,
+              content: editBuffer
+            }
+          });
+        }
+        // If it has a .content property (DB record format)
+        else if (existing.content !== undefined) {
+          next.set(recommendationId, { ...existing, content: editBuffer });
+        }
+        else {
+          next.set(recommendationId, editBuffer);
+        }
+      } else {
+        next.set(recommendationId, editBuffer);
+      }
+      return next;
+    });
+    setEditingId(null);
+  };
 
   // Handle select recommendation
   const handleSelect = (id: string, selected: boolean) => {
@@ -1177,7 +1215,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   isManuallyNavigatingRef.current = true;
                   setIsManuallyLoading(true);
                   lastManuallyLoadedStepRef.current = step;
-                  
+
                   try {
                     setIsLoading(true);
                     setError(null);
@@ -1193,12 +1231,12 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                       const recommendationsWithIds = response.data.recommendations
                         .filter(rec => rec.id && rec.id.length > 10)
                         .map(rec => ({ ...rec, id: rec.id! }));
-                      
+
                       console.log(`✅ [RecommendationsV3] Loaded ${recommendationsWithIds.length} recommendations for Step ${step}`);
-                      
+
                       setRecommendations(recommendationsWithIds);
                       setError(null);
-                      
+
                       // Load content/guides for Step 3
                       if (step === 3) {
                         setHasGeneratedContentForStep3(false);
@@ -1210,7 +1248,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                           }
                         });
                         setExpandedSections(newExpandedSections);
-                        
+
                         const contentPromises = recommendationsWithIds
                           .filter(r => r.id && r.isContentGenerated)
                           .map(async (rec) => {
@@ -1224,7 +1262,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                             }
                             return null;
                           });
-                        
+
                         const contentResults = await Promise.all(contentPromises);
                         if (isColdStartForThisStep) {
                           const newGuideMap = new Map(guideMap);
@@ -1249,7 +1287,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                       if (step === 4) {
                         setHasCompletedForStep4(false);
                       }
-                      
+
                       setCurrentStep(step);
                     } else {
                       setRecommendations([]);
@@ -1297,12 +1335,12 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           </div>
         ) : (
           <>
-            {/* Step 1: Discovery */}
+            {/* Step 1: Discover Opportunities */}
             {currentStep === 1 && (
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
-                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 1: Discovery</h2>
+                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 1: Discover Opportunities</h2>
                     <p className="text-[13px] text-[#64748b]">Review findings and prioritize recommendations</p>
                   </div>
                   <div className="flex items-end gap-3 flex-wrap">
@@ -1319,12 +1357,12 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
               </div>
             )}
 
-            {/* Step 2: Action Plan */}
+            {/* Step 2: To-Do List */}
             {currentStep === 2 && (
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
-                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: Action Plan</h2>
+                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: To-Do List</h2>
                     <p className="text-[13px] text-[#64748b]">
                       {isColdStart
                         ? 'Generate an execution-ready implementation guide for each approved action (checklists, deliverables, success criteria).'
@@ -1332,23 +1370,44 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     </p>
                   </div>
                 </div>
-                <RecommendationsTableV3
-                  recommendations={recommendations}
-                  showActions={true}
-                  onAction={isColdStart ? handleGenerateGuide : handleGenerateContent}
-                  actionLabel={isColdStart ? 'Generate Guide' : 'Generate'}
-                  actionType={isColdStart ? 'generate-guide' : 'generate-content'}
-                  generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
-                  generatingContentIds={generatingContentIds}
-                />
+                {recommendations.length === 0 ? (
+                  <div className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm p-12 text-center">
+                    <div className="w-16 h-16 bg-[#f0fdf4] rounded-full flex items-center justify-center mx-auto mb-4">
+                      <IconCheck size={32} className="text-[#06c686]" />
+                    </div>
+                    <h3 className="text-[20px] font-semibold text-[#1a1d29] mb-2">
+                      To-Do List is empty
+                    </h3>
+                    <p className="text-[14px] text-[#64748b] max-w-md mx-auto mb-8">
+                      You have no pending tasks in your To-Do List. Review other potential opportunities to find more actions to improve your performance.
+                    </p>
+                    <button
+                      onClick={() => setCurrentStep(1)}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-[#00bcdc] text-white rounded-lg text-[14px] font-bold hover:bg-[#00a8c6] transition-all shadow-md hover:shadow-lg active:scale-95"
+                    >
+                      <IconArrowLeft size={18} />
+                      Go back to Discover Opportunities
+                    </button>
+                  </div>
+                ) : (
+                  <RecommendationsTableV3
+                    recommendations={recommendations}
+                    showActions={true}
+                    onAction={isColdStart ? handleGenerateGuide : handleGenerateContent}
+                    actionLabel={isColdStart ? 'Generate Guide' : 'Generate'}
+                    actionType={isColdStart ? 'generate-guide' : 'generate-content'}
+                    generatedLabel={isColdStart ? 'Guide Ready' : 'Generated'}
+                    generatingContentIds={generatingContentIds}
+                  />
+                )}
               </div>
             )}
 
-            {/* Step 3: Refinement */}
+            {/* Step 3: Review and Refine */}
             {currentStep === 3 && (
               <div>
                 <div className="mb-6">
-                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 3: Refinement</h2>
+                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 3: Review and Refine</h2>
                   <p className="text-[13px] text-[#64748b] mt-1">
                     {isColdStart
                       ? 'Cold-start brands skip content generation. Use Step 2 to review implementation guides, then execute and track results in Step 4.'
@@ -1573,322 +1632,421 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 ) : (
                   <div className="space-y-6">
                     {recommendations.map((rec) => {
-                    const content = rec.id ? contentMap.get(rec.id) : null;
-                    return (
-                      <div key={rec.id} className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden">
-                        {/* Header Section */}
-                        <div className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h3 className="text-[16px] font-semibold text-[#1a1d29] mb-2 leading-tight">{rec.action}</h3>
-                              <div className="flex items-center gap-2">
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
-                                  <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                                  </svg>
-                                  {rec.citationSource}
-                                </span>
+                      const content = rec.id ? contentMap.get(rec.id) : null;
+                      return (
+                        <div key={rec.id} className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden">
+                          {/* Header Section */}
+                          <div className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h3 className="text-[16px] font-semibold text-[#1a1d29] mb-2 leading-tight">{rec.action}</h3>
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
+                                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                                    </svg>
+                                    {rec.citationSource}
+                                  </span>
+                                </div>
                               </div>
+                              {!rec.isCompleted && (
+                                <button
+                                  onClick={() => handleToggleComplete(rec)}
+                                  className="ml-4 px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  Mark as Completed
+                                </button>
+                              )}
+                              {rec.isCompleted && (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-medium bg-[#d1fae5] text-[#065f46] ml-4">
+                                  ✓ Completed
+                                </span>
+                              )}
                             </div>
-                            {!rec.isCompleted && (
-                              <button
-                                onClick={() => handleToggleComplete(rec)}
-                                className="ml-4 px-3 py-1.5 bg-[#06c686] text-white rounded-md text-[12px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                                Mark as Completed
-                              </button>
-                            )}
-                            {rec.isCompleted && (
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-medium bg-[#d1fae5] text-[#065f46] ml-4">
-                                ✓ Completed
-                              </span>
+                          </div>
+
+                          {/* Content Section */}
+                          <div className="p-6">
+                            {content ? (() => {
+                              // Parse content - it might be a string (JSON), object with .content property, or already parsed
+                              let parsedContent: any = null;
+                              let rawContent: string = '';
+
+                              // Strategy 1: Content is already an object
+                              if (typeof content === 'object' && content !== null) {
+                                if (content.content) {
+                                  // Content is in .content property
+                                  if (typeof content.content === 'string') {
+                                    rawContent = content.content;
+                                    try {
+                                      parsedContent = JSON.parse(content.content);
+                                    } catch {
+                                      // Try to extract JSON from string
+                                      const jsonMatch = content.content.match(/\{[\s\S]*\}/);
+                                      if (jsonMatch) {
+                                        try {
+                                          parsedContent = JSON.parse(jsonMatch[0]);
+                                        } catch {
+                                          parsedContent = null;
+                                        }
+                                      }
+                                    }
+                                  } else {
+                                    parsedContent = content.content;
+                                  }
+                                } else {
+                                  parsedContent = content;
+                                }
+                              } else if (typeof content === 'string') {
+                                // Strategy 2: Content is a string - try to parse it
+                                rawContent = content;
+                                try {
+                                  parsedContent = JSON.parse(content);
+                                } catch {
+                                  // Try to extract JSON object from text
+                                  const jsonMatch = content.match(/\{[\s\S]*\}/);
+                                  if (jsonMatch) {
+                                    try {
+                                      parsedContent = JSON.parse(jsonMatch[0]);
+                                    } catch {
+                                      parsedContent = null;
+                                    }
+                                  }
+                                }
+                              }
+
+                              // Handle v2.0 format (new structure with separate sections)
+                              if (parsedContent && parsedContent.version === '2.0') {
+                                const v2Content = parsedContent as any;
+                                const publishableContent = v2Content.publishableContent;
+                                const sourceType = v2Content.targetSource?.sourceType || 'other';
+
+                                // Get expanded state for this recommendation
+                                const sectionState = expandedSections.get(rec.id || '') || { content: true };
+                                const isContentExpanded = sectionState.content;
+
+                                // Toggle function for content section
+                                const toggleContent = () => {
+                                  setExpandedSections(prev => {
+                                    const next = new Map(prev);
+                                    const current = next.get(rec.id || '') || { content: true };
+                                    next.set(rec.id || '', { ...current, content: !current.content });
+                                    return next;
+                                  });
+                                };
+
+                                return (
+                                  <div className="space-y-6">
+                                    {/* Publishable Content Section - Collapsible */}
+                                    {publishableContent && publishableContent.content && (
+                                      <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+                                        {/* Header - Clickable to toggle */}
+                                        <div
+                                          onClick={toggleContent}
+                                          className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#f8fafc] transition-colors border-b border-[#e2e8f0]"
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            {isContentExpanded ? (
+                                              <IconChevronUp size={18} className="text-[#475569]" />
+                                            ) : (
+                                              <IconChevronDown size={18} className="text-[#475569]" />
+                                            )}
+                                            <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
+                                            <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
+                                              {publishableContent.type === 'video_script' ? 'Video Script' :
+                                                publishableContent.type === 'article' ? 'Article Content' :
+                                                  'Publishable Content'}
+                                            </h4>
+                                            {sourceType === 'youtube' && (
+                                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#ff0000] text-white">YouTube</span>
+                                            )}
+                                            {publishableContent.type === 'article' && (
+                                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white">Article</span>
+                                            )}
+                                            <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
+                                              Disclaimer: AI Generated. Review before publishing.
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            {editingId === rec.id ? (
+                                              <>
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleSaveEdit(rec.id!);
+                                                  }}
+                                                  className="px-3 py-1.5 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconDeviceFloppy size={14} />
+                                                  Save
+                                                </button>
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingId(null);
+                                                  }}
+                                                  className="px-3 py-1.5 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconX size={14} />
+                                                  Cancel
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingId(rec.id!);
+                                                    setEditBuffer(unescapeNewlines(publishableContent.content || ''));
+                                                  }}
+                                                  className="px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <IconPencil size={14} />
+                                                  Edit
+                                                </button>
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''));
+                                                  }}
+                                                  className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
+                                                >
+                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                  </svg>
+                                                  Copy
+                                                </button>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Content - Collapsible */}
+                                        {isContentExpanded && (
+                                          <div className="p-6">
+                                            {publishableContent.title && (
+                                              <div className="mb-4">
+                                                <h5 className="text-[16px] font-semibold text-[#1a1d29]">{publishableContent.title}</h5>
+                                              </div>
+                                            )}
+
+                                            {/* Video Script Metadata */}
+                                            {publishableContent.type === 'video_script' && publishableContent.metadata && (
+                                              <div className="mb-4 p-3 bg-[#f0f9ff] rounded border border-[#bae6fd]">
+                                                {publishableContent.metadata.estimatedDuration && (
+                                                  <div className="text-[12px] text-[#0369a1] mb-2">
+                                                    <span className="font-semibold">Duration:</span> {publishableContent.metadata.estimatedDuration}
+                                                  </div>
+                                                )}
+                                                {publishableContent.metadata.scenes && publishableContent.metadata.scenes.length > 0 && (
+                                                  <div className="text-[12px] text-[#0369a1] mb-2">
+                                                    <span className="font-semibold">Scenes:</span> {publishableContent.metadata.scenes.length}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+
+                                            {/* Article Metadata (H1, H2, FAQ) */}
+                                            {publishableContent.type === 'article' && publishableContent.metadata && (
+                                              <div className="mb-4 space-y-3">
+                                                {publishableContent.metadata.h1 && (
+                                                  <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                    <div className="text-[11px] font-semibold text-[#166534] mb-1">H1:</div>
+                                                    <div className="text-[14px] font-semibold text-[#166534]">{publishableContent.metadata.h1}</div>
+                                                  </div>
+                                                )}
+                                                {publishableContent.metadata.h2 && publishableContent.metadata.h2.length > 0 && (
+                                                  <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                    <div className="text-[11px] font-semibold text-[#166534] mb-2">H2 Headings:</div>
+                                                    <ul className="list-disc list-inside space-y-1">
+                                                      {publishableContent.metadata.h2.map((h2: string, idx: number) => (
+                                                        <li key={idx} className="text-[13px] text-[#166534]">{h2}</li>
+                                                      ))}
+                                                    </ul>
+                                                  </div>
+                                                )}
+                                                {publishableContent.metadata.faq && publishableContent.metadata.faq.length > 0 && (
+                                                  <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
+                                                    <div className="text-[11px] font-semibold text-[#166534] mb-2">FAQ Questions:</div>
+                                                    <ul className="list-disc list-inside space-y-1">
+                                                      {publishableContent.metadata.faq.map((faq: string, idx: number) => (
+                                                        <li key={idx} className="text-[13px] text-[#166534]">{faq}</li>
+                                                      ))}
+                                                    </ul>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+
+                                            {/* Main Content */}
+                                            {editingId === rec.id ? (
+                                              <textarea
+                                                className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
+                                                value={editBuffer}
+                                                onChange={(e) => setEditBuffer(e.target.value)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                autoFocus
+                                              />
+                                            ) : (
+                                              <div className="prose prose-sm max-w-none">
+                                                <div className={`text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans ${publishableContent.type === 'video_script' ? 'font-mono' : ''
+                                                  }`}>
+                                                  {unescapeNewlines(publishableContent.content)}
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+
+                              // Handle v1.0 format (backward compatibility)
+                              let readyToPasteText: string | null = null;
+
+                              // Strategy 1: Check structured format (version 1.0)
+                              if (parsedContent && parsedContent.version === '1.0' && parsedContent.whatToPublishOrSend) {
+                                readyToPasteText = parsedContent.whatToPublishOrSend.readyToPaste || null;
+                              }
+                              // Strategy 2: Check nested whatToPublishOrSend
+                              else if (parsedContent?.whatToPublishOrSend?.readyToPaste) {
+                                readyToPasteText = parsedContent.whatToPublishOrSend.readyToPaste;
+                              }
+                              // Strategy 3: Check direct readyToPaste
+                              else if (parsedContent?.readyToPaste) {
+                                readyToPasteText = parsedContent.readyToPaste;
+                              }
+                              // Strategy 4: Try to extract from raw string using regex
+                              else if (rawContent) {
+                                const readyToPasteMatch = rawContent.match(/"readyToPaste"\s*:\s*"([^"\\]*(\\.[^"\\]*)*)"/);
+                                if (readyToPasteMatch && readyToPasteMatch[1]) {
+                                  readyToPasteText = readyToPasteMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                                }
+                              }
+
+                              if (readyToPasteText && readyToPasteText.trim()) {
+                                // Display readyToPaste content in a polished format (v1.0)
+                                return (
+                                  <div className="relative">
+                                    {/* Content Card */}
+                                    <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6 shadow-sm">
+                                      <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
+                                          <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Content</h4>
+                                          <span className="text-[10px] text-[#94a3b8] italic ml-2 hidden lg:inline">
+                                            Disclaimer: AI Generated. Review before publishing.
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {editingId === rec.id ? (
+                                            <>
+                                              <button
+                                                onClick={() => handleSaveEdit(rec.id!)}
+                                                className="px-3 py-1 bg-[#06c686] text-white rounded text-[11px] font-medium hover:bg-[#05a870] transition-colors flex items-center gap-1.5"
+                                              >
+                                                <IconDeviceFloppy size={14} />
+                                                Save
+                                              </button>
+                                              <button
+                                                onClick={() => setEditingId(null)}
+                                                className="px-3 py-1 bg-[#ef4444] text-white rounded text-[11px] font-medium hover:bg-[#dc2626] transition-colors flex items-center gap-1.5"
+                                              >
+                                                <IconX size={14} />
+                                                Cancel
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <button
+                                                onClick={() => {
+                                                  setEditingId(rec.id!);
+                                                  setEditBuffer(readyToPasteText || '');
+                                                }}
+                                                className="px-3 py-1 bg-white border border-[#e2e8f0] text-[#475569] rounded text-[11px] font-medium hover:bg-[#f8fafc] transition-colors flex items-center gap-1.5"
+                                              >
+                                                <IconPencil size={14} />
+                                                Edit
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  navigator.clipboard.writeText(readyToPasteText || '');
+                                                }}
+                                                className="px-3 py-1 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
+                                              >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                </svg>
+                                                Copy
+                                              </button>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="prose prose-sm max-w-none">
+                                        {editingId === rec.id ? (
+                                          <textarea
+                                            className="w-full h-[400px] p-4 bg-white border border-[#00bcdc] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00bcdc] text-[14px] text-[#1a1d29] leading-relaxed font-sans shadow-inner"
+                                            value={editBuffer}
+                                            onChange={(e) => setEditBuffer(e.target.value)}
+                                            autoFocus
+                                          />
+                                        ) : (
+                                          <div className="text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans">
+                                            {readyToPasteText}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              } else {
+                                // Fallback: display raw content or JSON
+                                const fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
+                                return (
+                                  <div className="bg-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6">
+                                    <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-[#64748b]"></div>
+                                      <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Generated Content</h4>
+                                    </div>
+                                    <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
+                                      {fallbackText}
+                                    </pre>
+                                  </div>
+                                );
+                              }
+                            })() : rec.isContentGenerated ? (
+                              <div className="flex items-center justify-center py-12">
+                                <div className="text-center">
+                                  <div className="h-10 w-10 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mx-auto mb-3" />
+                                  <p className="text-[13px] text-[#64748b]">Content is being generated...</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center py-8">
+                                <p className="text-[13px] text-[#64748b]">No content available for this recommendation.</p>
+                              </div>
                             )}
                           </div>
                         </div>
-
-                        {/* Content Section */}
-                        <div className="p-6">
-                          {content ? (() => {
-                            // Parse content - it might be a string (JSON), object with .content property, or already parsed
-                            let parsedContent: any = null;
-                            let rawContent: string = '';
-                            
-                            // Strategy 1: Content is already an object
-                            if (typeof content === 'object' && content !== null) {
-                              if (content.content) {
-                                // Content is in .content property
-                                if (typeof content.content === 'string') {
-                                  rawContent = content.content;
-                                  try {
-                                    parsedContent = JSON.parse(content.content);
-                                  } catch {
-                                    // Try to extract JSON from string
-                                    const jsonMatch = content.content.match(/\{[\s\S]*\}/);
-                                    if (jsonMatch) {
-                                      try {
-                                        parsedContent = JSON.parse(jsonMatch[0]);
-                                      } catch {
-                                        parsedContent = null;
-                                      }
-                                    }
-                                  }
-                                } else {
-                                  parsedContent = content.content;
-                                }
-                              } else {
-                                parsedContent = content;
-                              }
-                            } else if (typeof content === 'string') {
-                              // Strategy 2: Content is a string - try to parse it
-                              rawContent = content;
-                              try {
-                                parsedContent = JSON.parse(content);
-                              } catch {
-                                // Try to extract JSON object from text
-                                const jsonMatch = content.match(/\{[\s\S]*\}/);
-                                if (jsonMatch) {
-                                  try {
-                                    parsedContent = JSON.parse(jsonMatch[0]);
-                                  } catch {
-                                    parsedContent = null;
-                                  }
-                                }
-                              }
-                            }
-                            
-                            // Handle v2.0 format (new structure with separate sections)
-                            if (parsedContent && parsedContent.version === '2.0') {
-                              const v2Content = parsedContent as any;
-                              const publishableContent = v2Content.publishableContent;
-                              const sourceType = v2Content.targetSource?.sourceType || 'other';
-                              
-                              // Get expanded state for this recommendation
-                              const sectionState = expandedSections.get(rec.id || '') || { content: true };
-                              const isContentExpanded = sectionState.content;
-                              
-                              // Toggle function for content section
-                              const toggleContent = () => {
-                                setExpandedSections(prev => {
-                                  const next = new Map(prev);
-                                  const current = next.get(rec.id || '') || { content: true };
-                                  next.set(rec.id || '', { ...current, content: !current.content });
-                                  return next;
-                                });
-                              };
-                              
-                              return (
-                                <div className="space-y-6">
-                                  {/* Publishable Content Section - Collapsible */}
-                                  {publishableContent && publishableContent.content && (
-                                    <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
-                                      {/* Header - Clickable to toggle */}
-                                      <div 
-                                        onClick={toggleContent}
-                                        className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#f8fafc] transition-colors border-b border-[#e2e8f0]"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          {isContentExpanded ? (
-                                            <IconChevronUp size={18} className="text-[#475569]" />
-                                          ) : (
-                                            <IconChevronDown size={18} className="text-[#475569]" />
-                                          )}
-                                          <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
-                                          <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">
-                                            {publishableContent.type === 'video_script' ? 'Video Script' : 
-                                             publishableContent.type === 'article' ? 'Article Content' : 
-                                             'Publishable Content'}
-                                          </h4>
-                                          {sourceType === 'youtube' && (
-                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#ff0000] text-white">YouTube</span>
-                                          )}
-                                          {publishableContent.type === 'article' && (
-                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#06c686] text-white">Article</span>
-                                          )}
-                                        </div>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation(); // Prevent toggle when clicking copy
-                                            navigator.clipboard.writeText(unescapeNewlines(publishableContent.content || ''));
-                                          }}
-                                          className="px-3 py-1.5 bg-[#00bcdc] text-white rounded text-[11px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-1.5"
-                                        >
-                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                          </svg>
-                                          Copy Content
-                                        </button>
-                                      </div>
-                                      
-                                      {/* Content - Collapsible */}
-                                      {isContentExpanded && (
-                                        <div className="p-6">
-                                          {publishableContent.title && (
-                                            <div className="mb-4">
-                                              <h5 className="text-[16px] font-semibold text-[#1a1d29]">{publishableContent.title}</h5>
-                                            </div>
-                                          )}
-                                          
-                                          {/* Video Script Metadata */}
-                                          {publishableContent.type === 'video_script' && publishableContent.metadata && (
-                                            <div className="mb-4 p-3 bg-[#f0f9ff] rounded border border-[#bae6fd]">
-                                              {publishableContent.metadata.estimatedDuration && (
-                                                <div className="text-[12px] text-[#0369a1] mb-2">
-                                                  <span className="font-semibold">Duration:</span> {publishableContent.metadata.estimatedDuration}
-                                                </div>
-                                              )}
-                                              {publishableContent.metadata.scenes && publishableContent.metadata.scenes.length > 0 && (
-                                                <div className="text-[12px] text-[#0369a1] mb-2">
-                                                  <span className="font-semibold">Scenes:</span> {publishableContent.metadata.scenes.length}
-                                                </div>
-                                              )}
-                                            </div>
-                                          )}
-                                          
-                                          {/* Article Metadata (H1, H2, FAQ) */}
-                                          {publishableContent.type === 'article' && publishableContent.metadata && (
-                                            <div className="mb-4 space-y-3">
-                                              {publishableContent.metadata.h1 && (
-                                                <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
-                                                  <div className="text-[11px] font-semibold text-[#166534] mb-1">H1:</div>
-                                                  <div className="text-[14px] font-semibold text-[#166534]">{publishableContent.metadata.h1}</div>
-                                                </div>
-                                              )}
-                                              {publishableContent.metadata.h2 && publishableContent.metadata.h2.length > 0 && (
-                                                <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
-                                                  <div className="text-[11px] font-semibold text-[#166534] mb-2">H2 Headings:</div>
-                                                  <ul className="list-disc list-inside space-y-1">
-                                                    {publishableContent.metadata.h2.map((h2: string, idx: number) => (
-                                                      <li key={idx} className="text-[13px] text-[#166534]">{h2}</li>
-                                                    ))}
-                                                  </ul>
-                                                </div>
-                                              )}
-                                              {publishableContent.metadata.faq && publishableContent.metadata.faq.length > 0 && (
-                                                <div className="p-3 bg-[#f0fdf4] rounded border border-[#bbf7d0]">
-                                                  <div className="text-[11px] font-semibold text-[#166534] mb-2">FAQ Questions:</div>
-                                                  <ul className="list-disc list-inside space-y-1">
-                                                    {publishableContent.metadata.faq.map((faq: string, idx: number) => (
-                                                      <li key={idx} className="text-[13px] text-[#166534]">{faq}</li>
-                                                    ))}
-                                                  </ul>
-                                                </div>
-                                              )}
-                                            </div>
-                                          )}
-                                          
-                                          {/* Main Content */}
-                                          <div className="prose prose-sm max-w-none">
-                                            <div className={`text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans ${
-                                              publishableContent.type === 'video_script' ? 'font-mono' : ''
-                                            }`}>
-                                              {unescapeNewlines(publishableContent.content)}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            }
-                            
-                            // Handle v1.0 format (backward compatibility)
-                            let readyToPasteText: string | null = null;
-                            
-                            // Strategy 1: Check structured format (version 1.0)
-                            if (parsedContent && parsedContent.version === '1.0' && parsedContent.whatToPublishOrSend) {
-                              readyToPasteText = parsedContent.whatToPublishOrSend.readyToPaste || null;
-                            }
-                            // Strategy 2: Check nested whatToPublishOrSend
-                            else if (parsedContent?.whatToPublishOrSend?.readyToPaste) {
-                              readyToPasteText = parsedContent.whatToPublishOrSend.readyToPaste;
-                            }
-                            // Strategy 3: Check direct readyToPaste
-                            else if (parsedContent?.readyToPaste) {
-                              readyToPasteText = parsedContent.readyToPaste;
-                            }
-                            // Strategy 4: Try to extract from raw string using regex
-                            else if (rawContent) {
-                              const readyToPasteMatch = rawContent.match(/"readyToPaste"\s*:\s*"([^"\\]*(\\.[^"\\]*)*)"/);
-                              if (readyToPasteMatch && readyToPasteMatch[1]) {
-                                readyToPasteText = readyToPasteMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
-                              }
-                            }
-                            
-                            if (readyToPasteText && readyToPasteText.trim()) {
-                              // Display readyToPaste content in a polished format (v1.0)
-                              return (
-                                <div className="relative">
-                                  {/* Content Card */}
-                                  <div className="bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6 shadow-sm">
-                                    <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
-                                      <div className="w-1.5 h-1.5 rounded-full bg-[#00bcdc]"></div>
-                                      <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Content</h4>
-                                    </div>
-                                    <div className="prose prose-sm max-w-none">
-                                      <div className="text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans">
-                                        {readyToPasteText}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Copy Button */}
-                                  <button
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(readyToPasteText || '');
-                                    }}
-                                    className="mt-4 px-4 py-2 bg-[#00bcdc] text-white rounded-lg text-[12px] font-medium hover:bg-[#0096b0] transition-colors flex items-center gap-2 shadow-sm"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                    </svg>
-                                    Copy Content
-                                  </button>
-                                </div>
-                              );
-                            } else {
-                              // Fallback: display raw content or JSON
-                              const fallbackText = parsedContent?.raw || rawContent || JSON.stringify(parsedContent, null, 2);
-                              return (
-                                <div className="bg-[#f8fafc] rounded-lg border border-[#e2e8f0] p-6">
-                                  <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e2e8f0]">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#64748b]"></div>
-                                    <h4 className="text-[13px] font-semibold text-[#475569] uppercase tracking-wider">Generated Content</h4>
-                                  </div>
-                                  <pre className="text-[13px] text-[#1a1d29] whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
-                                    {fallbackText}
-                                  </pre>
-                                </div>
-                              );
-                            }
-                          })() : rec.isContentGenerated ? (
-                            <div className="flex items-center justify-center py-12">
-                              <div className="text-center">
-                                <div className="h-10 w-10 rounded-full border-2 border-t-transparent border-[#00bcdc] animate-spin mx-auto mb-3" />
-                                <p className="text-[13px] text-[#64748b]">Content is being generated...</p>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="text-center py-8">
-                              <p className="text-[13px] text-[#64748b]">No content available for this recommendation.</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
+                      );
                     })}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Step 4: Impact Analysis */}
+            {/* Step 4: Track Outcomes */}
             {currentStep === 4 && (
               <div>
-                <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-6">Step 4: Impact Analysis</h2>
+                <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-6">Step 4: Track Outcomes</h2>
+
+                {/* KPI cards removed as requested for more compact table view */}
                 <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -1900,59 +2058,49 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                           <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
                             Domain/Source
                           </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Benchmarked Visibility
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
+                            Visibility (Baseline / Current)
                           </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            New Visibility
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
+                            SOA % (Baseline / Current)
                           </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Benchmarked SOA
+                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider min-w-[160px]">
+                            Sentiment (Baseline / Current)
                           </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            New SOA
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            Benchmarked Sentiment
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#64748b] uppercase tracking-wider">
-                            New Sentiment
+                          <th className="px-6 py-4 text-right text-[12px] font-semibold text-[#64748b] uppercase tracking-wider w-[60px]">
+                            Action
                           </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#e8e9ed]">
                         {recommendations.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="px-6 py-12 text-center text-[14px] text-[#64748b]">
+                            <td colSpan={9} className="px-6 py-12 text-center text-[14px] text-[#64748b]">
                               No completed recommendations found. Complete recommendations in Step 3 to see results here.
                             </td>
                           </tr>
                         ) : (
                           recommendations.map((rec) => {
-                            // Parse current values from recommendation
-                            const currentVisibility = rec.visibilityScore ? parseFloat(rec.visibilityScore) : null;
-                            const currentSOA = rec.soa ? parseFloat(rec.soa) : null;
-                            const currentSentiment = rec.sentiment ? parseFloat(rec.sentiment) : null;
+                            // Parse benchmarked values from recommendation snapshot - robust handling for 0/null
+                            const benchmarkedVisibility = (rec.visibilityScore !== null && rec.visibilityScore !== undefined && rec.visibilityScore !== "") ? parseFloat(String(rec.visibilityScore)) : null;
+                            const benchmarkedSOA = (rec.soa !== null && rec.soa !== undefined && rec.soa !== "") ? parseFloat(String(rec.soa)) : null;
+                            const benchmarkedSentiment = (rec.sentiment !== null && rec.sentiment !== undefined && rec.sentiment !== "") ? parseFloat(String(rec.sentiment)) : null;
 
-                            // For "New" values, we'll use kpiAfterValue if it exists and matches the KPI type
-                            // For now, we'll show "N/A" or "Pending" as new values will be collected later
-                            // If kpiAfterValue exists, map it to the appropriate KPI column
-                            const kpiName = (rec.kpi || '').toLowerCase();
-                            const hasAfterValue = rec.kpiAfterValue !== null && rec.kpiAfterValue !== undefined;
-                            
-                            let newVisibility: number | null = null;
-                            let newSOA: number | null = null;
-                            let newSentiment: number | null = null;
+                            // Get LIVE Current values from the KPIs state
+                            // This ensures "Current" is actually current, not just "After"
+                            let currentVisibility: number | null = null;
+                            let currentSOA: number | null = null;
+                            let currentSentiment: number | null = null;
 
-                            if (hasAfterValue) {
-                              if (kpiName.includes('visibility')) {
-                                newVisibility = rec.kpiAfterValue!;
-                              } else if (kpiName.includes('soa') || kpiName.includes('share')) {
-                                newSOA = rec.kpiAfterValue!;
-                              } else if (kpiName.includes('sentiment')) {
-                                newSentiment = rec.kpiAfterValue!;
-                              }
-                            }
+                            // Helper to find KPI value by name pattern
+                            const getLiveValue = (pattern: string) =>
+                              kpis.find(k => k.kpiName.toLowerCase().includes(pattern))?.currentValue ?? null;
+
+                            // We can use rec.focusArea to determine which MAIN metric matters, 
+                            // but we should try to populate ALL columns if data is available in KPIs
+                            currentVisibility = getLiveValue('visibility');
+                            currentSOA = getLiveValue('share') || getLiveValue('soa');
+                            currentSentiment = getLiveValue('sentiment');
 
                             // Format completion date
                             const formatCompletionDate = (dateString?: string): string | null => {
@@ -1974,7 +2122,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                             const formattedCompletionDate = formatCompletionDate(rec.completedAt);
 
                             return (
-                              <tr key={rec.id} className="hover:bg-[#f9f9fb] transition-colors">
+                              <tr key={rec.id} className="hover:bg-[#f9f9fb] transition-colors group">
                                 {/* Recommendation Action */}
                                 <td className="px-6 py-4">
                                   <div className="text-[14px] font-medium text-[#1a1d29] leading-snug">
@@ -1982,11 +2130,15 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                   </div>
                                   {formattedCompletionDate && (
                                     <div className="text-[11px] text-[#64748b] mt-1.5">
-                                      Completed: {formattedCompletionDate}
+                                      {rec.reviewStatus === 'removed' ? (
+                                        <span className="text-red-500">Deleted</span>
+                                      ) : (
+                                        <span>Completed: {formattedCompletionDate}</span>
+                                      )}
                                     </div>
                                   )}
                                 </td>
-                                
+
                                 {/* Domain/Source */}
                                 <td className="px-6 py-4">
                                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#e0f2fe] text-[#0369a1]">
@@ -1996,94 +2148,97 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     {rec.citationSource || 'N/A'}
                                   </span>
                                 </td>
-                                
-                                {/* Current Visibility */}
+
+                                {/* Visibility Metric Group */}
                                 <td className="px-6 py-4">
-                                  <div className="flex items-center gap-2">
-                                    {currentVisibility !== null && !isNaN(currentVisibility) ? (
-                                      <>
-                                        <div className="w-2 h-2 rounded-full bg-[#3b82f6]"></div>
-                                        <span className="text-[14px] font-semibold text-[#1a1d29]">
-                                          {currentVisibility.toFixed(2)}
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <span className="text-[13px] text-[#94a3b8] italic">N/A</span>
-                                    )}
-                                  </div>
-                                </td>
-                                
-                                {/* New Visibility */}
-                                <td className="px-6 py-4">
-                                  {hasAfterValue && kpiName.includes('visibility') && newVisibility !== null ? (
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
-                                      <span className="text-[14px] font-semibold text-[#06c686]">
-                                        {newVisibility.toFixed(2)}
-                                      </span>
+                                  {benchmarkedVisibility !== null && currentVisibility !== null ? (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center text-[11px] text-[#64748b]">
+                                        <span className="w-16">Baseline:</span>
+                                        <span className="font-medium text-[#1a1d29]">{benchmarkedVisibility.toFixed(2)}</span>
+                                      </div>
+                                      <div className="flex items-center">
+                                        <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
+                                        <div className="flex items-center gap-1.5 text-left">
+                                          <span className={`text-[14px] font-bold ${currentVisibility >= benchmarkedVisibility ? 'text-[#06c686]' : 'text-[#ef4444]'}`}>
+                                            {currentVisibility.toFixed(2)}
+                                          </span>
+                                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentVisibility >= benchmarkedVisibility ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                            {currentVisibility >= benchmarkedVisibility ? '+' : ''}{(currentVisibility - benchmarkedVisibility).toFixed(2)}
+                                          </span>
+                                        </div>
+                                      </div>
                                     </div>
                                   ) : (
                                     <span className="text-[13px] text-[#94a3b8] italic">—</span>
                                   )}
                                 </td>
-                                
-                                {/* Current SOA */}
+
+                                {/* SOA Metric Group */}
                                 <td className="px-6 py-4">
-                                  <div className="flex items-center gap-2">
-                                    {currentSOA !== null && !isNaN(currentSOA) ? (
-                                      <>
-                                        <div className="w-2 h-2 rounded-full bg-[#3b82f6]"></div>
-                                        <span className="text-[14px] font-semibold text-[#1a1d29]">
-                                          {currentSOA.toFixed(2)}
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <span className="text-[13px] text-[#94a3b8] italic">N/A</span>
-                                    )}
-                                  </div>
-                                </td>
-                                
-                                {/* New SOA */}
-                                <td className="px-6 py-4">
-                                  {hasAfterValue && (kpiName.includes('soa') || kpiName.includes('share')) && newSOA !== null ? (
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
-                                      <span className="text-[14px] font-semibold text-[#06c686]">
-                                        {newSOA.toFixed(2)}
-                                      </span>
+                                  {benchmarkedSOA !== null && currentSOA !== null ? (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center text-[11px] text-[#64748b]">
+                                        <span className="w-16">Baseline:</span>
+                                        <span className="font-medium text-[#1a1d29]">{benchmarkedSOA.toFixed(2)}</span>
+                                      </div>
+                                      <div className="flex items-center">
+                                        <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
+                                        <div className="flex items-center gap-1.5 text-left">
+                                          <span className={`text-[14px] font-bold ${currentSOA >= benchmarkedSOA ? 'text-[#06c686]' : 'text-[#ef4444]'}`}>
+                                            {currentSOA.toFixed(2)}
+                                          </span>
+                                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSOA >= benchmarkedSOA ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                            {currentSOA >= benchmarkedSOA ? '+' : ''}{(currentSOA - benchmarkedSOA).toFixed(2)}
+                                          </span>
+                                        </div>
+                                      </div>
                                     </div>
                                   ) : (
                                     <span className="text-[13px] text-[#94a3b8] italic">—</span>
                                   )}
                                 </td>
-                                
-                                {/* Current Sentiment */}
+
+                                {/* Sentiment Metric Group */}
                                 <td className="px-6 py-4">
-                                  <div className="flex items-center gap-2">
-                                    {currentSentiment !== null && !isNaN(currentSentiment) ? (
-                                      <>
-                                        <div className="w-2 h-2 rounded-full bg-[#3b82f6]"></div>
-                                        <span className="text-[14px] font-semibold text-[#1a1d29]">
-                                          {currentSentiment.toFixed(2)}
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <span className="text-[13px] text-[#94a3b8] italic">N/A</span>
-                                    )}
-                                  </div>
-                                </td>
-                                
-                                {/* New Sentiment */}
-                                <td className="px-6 py-4">
-                                  {hasAfterValue && kpiName.includes('sentiment') && newSentiment !== null ? (
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-[#06c686]"></div>
-                                      <span className="text-[14px] font-semibold text-[#06c686]">
-                                        {newSentiment.toFixed(2)}
-                                      </span>
+                                  {benchmarkedSentiment !== null && currentSentiment !== null ? (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center text-[11px] text-[#64748b]">
+                                        <span className="w-16">Baseline:</span>
+                                        <span className="font-medium text-[#1a1d29]">{benchmarkedSentiment.toFixed(2)}</span>
+                                      </div>
+                                      <div className="flex items-center">
+                                        <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
+                                        <div className="flex items-center gap-1.5 text-left">
+                                          <span className={`text-[14px] font-bold ${currentSentiment >= benchmarkedSentiment ? 'text-[#06c686]' : 'text-[#ef4444]'}`}>
+                                            {currentSentiment.toFixed(2)}
+                                          </span>
+                                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSentiment >= benchmarkedSentiment ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                            {currentSentiment >= benchmarkedSentiment ? '+' : ''}{(currentSentiment - benchmarkedSentiment).toFixed(2)}
+                                          </span>
+                                        </div>
+                                      </div>
                                     </div>
                                   ) : (
-                                    <span className="text-[13px] text-[#94a3b8] italic">—</span>
+                                    <span className="text-[13px] text-[#13px] text-[#94a3b8] italic">—</span>
+                                  )}
+                                </td>
+
+                                {/* Delete Action */}
+                                <td className="px-6 py-4 text-right">
+                                  {rec.id && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (confirm('Are you sure you want to remove this completed recommendation? This will hide it from view.')) {
+                                          handleStatusChange(rec.id!, 'removed');
+                                        }
+                                      }}
+                                      className="p-1.5 text-[#94a3b8] hover:text-[#ef4444] hover:bg-[#fef2f2] rounded-md transition-colors"
+                                      title="Remove Recommendation"
+                                    >
+                                      <IconTrash size={16} />
+                                    </button>
                                   )}
                                 </td>
                               </tr>
@@ -2099,6 +2254,31 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
           </>
         )}
       </div>
-    </Layout>
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center animate-in zoom-in-95 duration-200">
+            <div className="w-20 h-20 bg-[#f0fdf4] rounded-full flex items-center justify-center mx-auto mb-6">
+              <IconCheck size={40} className="text-[#06c686]" />
+            </div>
+
+            <h2 className="text-[24px] font-bold text-[#1a1d29] mb-3">
+              Content Generated!
+            </h2>
+
+            <p className="text-[15px] text-[#64748b] leading-relaxed mb-8">
+              Great work! Your strategy and implementation content have been generated successfully. The task has moved to the next step where you can review, refine, and finalize it.
+            </p>
+
+            <button
+              onClick={() => setShowSuccessModal(false)}
+              className="w-full py-4 bg-[#00bcdc] text-white rounded-xl text-[16px] font-bold hover:bg-[#00a8c6] transition-all shadow-lg hover:shadow-xl active:scale-[0.98]"
+            >
+              Continue to Review and Refine
+            </button>
+          </div>
+        </div>
+      )}
+    </Layout >
   );
 };

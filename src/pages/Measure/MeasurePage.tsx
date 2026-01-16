@@ -40,6 +40,7 @@ import { useAuthStore } from '../../store/authStore';
 import { getLLMIcon } from '../../components/Visibility/LLMIcons';
 import '../../styles/visibility.css';
 import { formatDateLabel } from '../../utils/dateFormatting';
+import { AnalyzePrefetcher } from './AnalyzePrefetcher';
 
 type MetricType = 'visibility' | 'share' | 'brandPresence' | 'sentiment';
 
@@ -918,6 +919,7 @@ export const MeasurePage = () => {
           </div>
         </div>
       </div>
+      {selectedBrandId && <AnalyzePrefetcher brandId={selectedBrandId} />}
     </Layout>
   );
 };

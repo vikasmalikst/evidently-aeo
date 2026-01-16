@@ -151,10 +151,14 @@ export async function buildDashboardPayload(
         return { data: [], error: null }
       }
 
+      // Build all chunks upfront
+      const chunks: string[][] = []
       for (let i = 0; i < metricFactIds.length; i += chunkSize) {
-        const chunk = metricFactIds.slice(i, i + chunkSize)
+        chunks.push(metricFactIds.slice(i, i + chunkSize))
+      }
 
-        // Run the 4 table fetches in parallel to avoid 4x sequential latency per chunk.
+      // Helper to fetch all 4 tables for a single chunk
+      const fetchChunkData = async (chunk: string[]) => {
         const [
           brandMetricsResult,
           competitorMetricsResult,
@@ -200,10 +204,23 @@ export async function buildDashboardPayload(
           console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentResult.error)
         }
 
-        brandMetricsRows.push(...brandMetricsResult.data)
-        competitorMetricsRows.push(...competitorMetricsResult.data)
-        brandSentimentRows.push(...brandSentimentResult.data)
-        competitorSentimentRows.push(...competitorSentimentResult.data)
+        return {
+          brandMetrics: brandMetricsResult.data,
+          competitorMetrics: competitorMetricsResult.data,
+          brandSentiment: brandSentimentResult.data,
+          competitorSentiment: competitorSentimentResult.data,
+        }
+      }
+
+      // Execute ALL chunks in parallel (no sequential waiting between chunks)
+      const chunkResults = await Promise.all(chunks.map(fetchChunkData))
+
+      // Merge results from all chunks
+      for (const result of chunkResults) {
+        brandMetricsRows.push(...result.brandMetrics)
+        competitorMetricsRows.push(...result.competitorMetrics)
+        brandSentimentRows.push(...result.brandSentiment)
+        competitorSentimentRows.push(...result.competitorSentiment)
       }
 
       const brandMetrics = brandMetricsRows
@@ -604,34 +621,37 @@ export async function buildDashboardPayload(
     if (uniqueCollectorResultIds.length > 0) {
       const chunkSize = 200
       const collectorRows: Array<{ id: number; question: string | null }> = []
+      const collectorPromises: Promise<any>[] = []
 
       for (let i = 0; i < uniqueCollectorResultIds.length; i += chunkSize) {
         const chunk = uniqueCollectorResultIds.slice(i, i + chunkSize)
-        const { data, error } = await (async () => {
+        collectorPromises.push((async () => {
           const start = Date.now()
           const result = await supabaseAdmin
             .from('collector_results')
             .select('id, question')
             .in('id', chunk)
-          console.log(`[Dashboard] ⏱ collector results query chunk (${chunk.length}): ${Date.now() - start}ms`)
-          return result
-        })()
-
-        if (error) {
-          console.warn(`[Dashboard] Failed to load collector questions chunk: ${error.message}`)
-          continue
-        }
-
-        ; (data ?? []).forEach((row) => {
-          if (typeof row?.id !== 'number' || !Number.isFinite(row.id)) {
-            return
+          // console.log(`[Dashboard] ⏱ collector results query chunk (${chunk.length}): ${Date.now() - start}ms`)
+          if (result.error) {
+            console.warn(`[Dashboard] Failed to load collector questions chunk: ${result.error.message}`)
+            return []
           }
-          collectorRows.push({
-            id: row.id,
-            question: typeof row.question === 'string' ? row.question : null
-          })
-        })
+          return result.data ?? []
+        })())
       }
+
+      const collectorResults = await Promise.all(collectorPromises)
+      collectorResults.flat().forEach((row) => {
+        if (typeof row?.id !== 'number' || !Number.isFinite(row.id)) {
+          return
+        }
+        collectorRows.push({
+          id: row.id,
+          question: typeof row.question === 'string' ? row.question : null
+        })
+      })
+
+
 
       collectorRows.forEach((collectorRow) => {
         const label =
@@ -641,73 +661,78 @@ export async function buildDashboardPayload(
         queryTextMap.set(`collector-${collectorRow.id}`, label)
       })
     }
-
-    const uniqueQueryIds = Array.from(
-      new Set(
-        positionRows
-          .map((row) => row.query_id)
-          .filter((id): id is string => Boolean(id))
-      )
-    )
-
-    if (uniqueQueryIds.length > 0) {
-      const chunkSize = 200
-      const queryRows: Array<{ id: string; query_text: string | null; topic: string | null; metadata: unknown }> = []
-
-      for (let i = 0; i < uniqueQueryIds.length; i += chunkSize) {
-        const chunk = uniqueQueryIds.slice(i, i + chunkSize)
-        const { data, error } = await (async () => {
-          const start = Date.now()
-          const result = await supabaseAdmin
-            .from('generated_queries')
-            .select('id, query_text, topic, metadata')
-            .in('id', chunk)
-          console.log(`[Dashboard] ⏱ generated queries lookup chunk (${chunk.length}): ${Date.now() - start}ms`)
-          return result
-        })()
-
-        if (error) {
-          console.warn(`[Dashboard] Failed to load generated queries chunk: ${error.message}`)
-          continue
-        }
-
-        ; (data ?? []).forEach((row) => {
-          if (!row?.id) {
-            return
-          }
-          queryRows.push({
-            id: String(row.id),
-            query_text: typeof row.query_text === 'string' ? row.query_text : null,
-            topic: typeof row.topic === 'string' ? row.topic : null,
-            metadata: row.metadata
-          })
-        })
-      }
-
-      queryRows.forEach((query) => {
-        if (!query?.id) {
-          return
-        }
-        const label = typeof query.query_text === 'string' && query.query_text.trim().length > 0
-          ? query.query_text.trim()
-          : 'Unlabeled query'
-        queryTextMap.set(query.id, label)
-
-        // Priority: 1) topic column, 2) metadata.topic_name, 3) metadata.topic
-        const metadata = query.metadata as Record<string, any> | null | undefined
-        const topicName = query.topic ||
-          (typeof metadata?.topic_name === 'string' && metadata.topic_name.trim().length > 0
-            ? metadata.topic_name.trim()
-            : typeof metadata?.topic === 'string' && metadata.topic.trim().length > 0
-              ? metadata.topic.trim()
-              : null)
-
-        if (topicName) {
-          topicByQueryId.set(query.id, topicName)
-        }
-      })
-    }
   }
+
+
+  const uniqueQueryIds = Array.from(
+    new Set(
+      positionRows
+        .map((row) => row.query_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+
+  if (uniqueQueryIds.length > 0) {
+    const chunkSize = 200
+    const queryRows: Array<{ id: string; query_text: string | null; topic: string | null; metadata: unknown }> = []
+    const queryPromises: Promise<any>[] = []
+
+    for (let i = 0; i < uniqueQueryIds.length; i += chunkSize) {
+      const chunk = uniqueQueryIds.slice(i, i + chunkSize)
+      queryPromises.push((async () => {
+        const start = Date.now()
+        const result = await supabaseAdmin
+          .from('generated_queries')
+          .select('id, query_text, topic, metadata')
+          .in('id', chunk)
+        // console.log(`[Dashboard] ⏱ generated queries lookup chunk (${chunk.length}): ${Date.now() - start}ms`)
+        if (result.error) {
+          console.warn(`[Dashboard] Failed to load generated queries chunk: ${result.error.message}`)
+          return []
+        }
+        return result.data ?? []
+      })())
+    }
+
+    const queryResults = await Promise.all(queryPromises)
+    queryResults.flat().forEach((row) => {
+      if (!row?.id) {
+        return
+      }
+      queryRows.push({
+        id: String(row.id),
+        query_text: typeof row.query_text === 'string' ? row.query_text : null,
+        topic: typeof row.topic === 'string' ? row.topic : null,
+        metadata: row.metadata
+      })
+    })
+
+
+
+    queryRows.forEach((query) => {
+      if (!query?.id) {
+        return
+      }
+      const label = typeof query.query_text === 'string' && query.query_text.trim().length > 0
+        ? query.query_text.trim()
+        : 'Unlabeled query'
+      queryTextMap.set(query.id, label)
+
+      // Priority: 1) topic column, 2) metadata.topic_name, 3) metadata.topic
+      const metadata = query.metadata as Record<string, any> | null | undefined
+      const topicName = query.topic ||
+        (typeof metadata?.topic_name === 'string' && metadata.topic_name.trim().length > 0
+          ? metadata.topic_name.trim()
+          : typeof metadata?.topic === 'string' && metadata.topic.trim().length > 0
+            ? metadata.topic.trim()
+            : null)
+
+      if (topicName) {
+        topicByQueryId.set(query.id, topicName)
+      }
+    })
+  }
+
 
   let generatedQueryFallback = 0
   let processedRowCount = 0

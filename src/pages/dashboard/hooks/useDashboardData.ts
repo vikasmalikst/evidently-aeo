@@ -11,12 +11,13 @@ import { apiClient } from '../../../lib/apiClient';
 import { prefetchOnIdle } from '../../../lib/prefetch';
 import { onboardingProgressTracker } from '../../../lib/onboardingProgressTracker';
 
+import { useDashboardStore } from '../../../store/dashboardStore';
+
 export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
   const authLoading = useAuthStore((state) => state.isLoading);
-  const defaultDateRange = useMemo(getDefaultDateRange, []);
-  const [startDate, setStartDate] = useState(defaultDateRange.start);
-  const [endDate, setEndDate] = useState(defaultDateRange.end);
+  // Replaced local state with global store
+  const { startDate, endDate, setStartDate, setEndDate } = useDashboardStore();
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();

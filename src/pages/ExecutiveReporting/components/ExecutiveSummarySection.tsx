@@ -1,5 +1,6 @@
 /**
  * Executive Summary Section Component
+ * Features gradient background and polished typography
  */
 
 import { IconSparkles } from '@tabler/icons-react';
@@ -9,31 +10,35 @@ interface ExecutiveSummarySectionProps {
 }
 
 export const ExecutiveSummarySection = ({ summary }: ExecutiveSummarySectionProps) => {
-    // Split summary by bullets
+    // Split summary by bullets or newlines
     const bullets = summary
         .split('\n')
-        .filter(line => line.trim().length > 0);
+        .filter(line => line.trim().length > 0)
+        .map(line => line.replace(/^[-•]\s*/, '').trim());
 
     return (
-        <div className="bg-white rounded-lg p-6 border border-[var(--border-default)]">
-            <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-[var(--accent-primary)]/10 rounded-lg">
+        <div className="executive-section">
+            <div className="executive-section-header">
+                <div className="executive-section-icon summary">
                     <IconSparkles className="w-5 h-5 text-[var(--accent-primary)]" />
                 </div>
-                <h2 className="text-xl font-semibold text-[var(--text-headings)]">
-                    Executive Summary
-                </h2>
+                <h2 className="executive-section-title">Executive Summary</h2>
             </div>
 
-            <div className="bg-[var(--bg-secondary)] border-l-4 border-[var(--accent-primary)] p-6 rounded">
-                <div className="space-y-3">
+            <div className="executive-summary-content">
+                <div className="space-y-1">
                     {bullets.map((bullet, index) => (
-                        <p key={index} className="text-[var(--text-body)] leading-relaxed">
+                        <div 
+                            key={index} 
+                            className="executive-summary-bullet"
+                            style={{ animationDelay: `${index * 0.05}s` }}
+                        >
                             {bullet}
-                        </p>
+                        </div>
                     ))}
                 </div>
             </div>
         </div>
     );
 };
+

@@ -30,6 +30,7 @@ export interface Query {
     trend: Trend;
     searchVolume: number | null;
     sentiment: 'positive' | 'neutral' | 'negative';
+    brandPresence: number | null; // % of answers where brand appears
     // Additional fields mapping to PromptEntry
     promptId?: string;
     collectorTypes?: string[];
@@ -62,7 +63,7 @@ export interface QueriesAnalysisData {
     queries: Query[];
 }
 
-export type SortColumn = 'text' | 'visibility' | 'soa' | 'sentiment' | 'trend' | 'topic';
+export type SortColumn = 'text' | 'visibility' | 'soa' | 'sentiment' | 'trend' | 'topic' | 'brandPresence';
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortState {

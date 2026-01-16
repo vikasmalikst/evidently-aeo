@@ -2232,9 +2232,9 @@ export class BrandService {
             sentimentValues: [],
             brandIds: new Set(),
             timestamps: [],
-            competitorSoAMap: competitorNames && competitorNames.length > 0 ? new Map() : undefined,
-            competitorVisibilityMap: competitorNames && competitorNames.length > 0 ? new Map() : undefined,
-            competitorSentimentMap: competitorNames && competitorNames.length > 0 ? new Map() : undefined
+            competitorSoAMap: new Map(),
+            competitorVisibilityMap: new Map(),
+            competitorSentimentMap: new Map()
           });
         }
 
@@ -2381,36 +2381,34 @@ export class BrandService {
           }
 
           // Calculate per-competitor averages if filtering by multiple competitors
-          if (competitorNames && competitorNames.length > 1) {
-            if (data.competitorSoAMap) {
-              competitorSoA = new Map();
-              data.competitorSoAMap.forEach((values, compName) => {
-                if (values.length > 0) {
-                  const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-                  competitorSoA!.set(compName, avg);
-                }
-              });
-            }
+          if (data.competitorSoAMap) {
+            competitorSoA = new Map();
+            data.competitorSoAMap.forEach((values, compName) => {
+              if (values.length > 0) {
+                const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+                competitorSoA!.set(compName, avg);
+              }
+            });
+          }
 
-            if (data.competitorVisibilityMap) {
-              competitorVisibility = new Map();
-              data.competitorVisibilityMap.forEach((values, compName) => {
-                if (values.length > 0) {
-                  const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-                  competitorVisibility!.set(compName, avg);
-                }
-              });
-            }
+          if (data.competitorVisibilityMap) {
+            competitorVisibility = new Map();
+            data.competitorVisibilityMap.forEach((values, compName) => {
+              if (values.length > 0) {
+                const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+                competitorVisibility!.set(compName, avg);
+              }
+            });
+          }
 
-            if (data.competitorSentimentMap) {
-              competitorSentiment = new Map();
-              data.competitorSentimentMap.forEach((values, compName) => {
-                if (values.length > 0) {
-                  const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-                  competitorSentiment!.set(compName, avg);
-                }
-              });
-            }
+          if (data.competitorSentimentMap) {
+            competitorSentiment = new Map();
+            data.competitorSentimentMap.forEach((values, compName) => {
+              if (values.length > 0) {
+                const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+                competitorSentiment!.set(compName, avg);
+              }
+            });
           }
         }
 

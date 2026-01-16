@@ -60,7 +60,7 @@ export async function buildDashboardPayload(
   const competitorListPromise = (async () => {
     const result = await supabaseAdmin
       .from('brand_competitors')
-      .select('competitor_name')
+      .select('competitor_name, metadata')
       .eq('brand_id', brand.id)
       .order('priority', { ascending: true })
     return result
@@ -3028,6 +3028,27 @@ export async function buildDashboardPayload(
     knownCompetitors,
     competitorTimeSeriesData
   )
+
+  // Map metadata (logo, domain) to competitor visibility results
+  const competitorMetadataMap = new Map<string, { logo?: string; domain?: string }>()
+  if (competitorResult.data) {
+    competitorResult.data.forEach((comp) => {
+      if (comp.competitor_name && comp.metadata) {
+        competitorMetadataMap.set(comp.competitor_name, comp.metadata)
+      }
+    })
+  }
+
+  // Inject metadata into competitorVisibility objects
+  competitorVisibility.forEach((comp) => {
+    const metadata = competitorMetadataMap.get(comp.competitor)
+    if (metadata) {
+      comp.metadata = {
+        logo: metadata.logo,
+        domain: metadata.domain
+      }
+    }
+  })
 
   const queryVisibility = visibilityService.calculateQueryVisibility(
     queryAggregates,

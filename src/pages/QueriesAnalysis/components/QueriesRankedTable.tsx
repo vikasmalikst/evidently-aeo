@@ -10,8 +10,8 @@ interface QueriesRankedTableProps {
   metricType?: 'visibility' | 'sentiment';
 }
 
-export const QueriesRankedTable = ({ 
-  queries, 
+export const QueriesRankedTable = ({
+  queries,
   onRowClick,
 
   selectedQueries: externalSelectedQueries,
@@ -19,7 +19,7 @@ export const QueriesRankedTable = ({
 }: QueriesRankedTableProps) => {
 
   const [sortState, setSortState] = useState<SortState>({ column: 'visibility', direction: 'desc' });
-  
+
   // Use external selectedQueries if provided, otherwise use internal state
   const [internalSelectedQueries, setInternalSelectedQueries] = useState<Set<string>>(() => {
     // Default: all queries selected
@@ -75,21 +75,25 @@ export const QueriesRankedTable = ({
           bVal = b.text.toLowerCase();
           break;
         case 'topic':
-            aVal = a.topic.toLowerCase();
-            bVal = b.topic.toLowerCase();
-            break;
+          aVal = a.topic.toLowerCase();
+          bVal = b.topic.toLowerCase();
+          break;
         case 'visibility':
-            aVal = a.visibilityScore ?? 0;
-            bVal = b.visibilityScore ?? 0;
-            break;
+          aVal = a.visibilityScore ?? 0;
+          bVal = b.visibilityScore ?? 0;
+          break;
         case 'sentiment':
-            aVal = a.sentimentScore ?? 0;
-            bVal = b.sentimentScore ?? 0;
-            break;
+          aVal = a.sentimentScore ?? 0;
+          bVal = b.sentimentScore ?? 0;
+          break;
+        case 'brandPresence':
+          aVal = a.brandPresence ?? 0;
+          bVal = b.brandPresence ?? 0;
+          break;
         case 'soa':
-            aVal = a.soa ?? 0;
-            bVal = b.soa ?? 0;
-            break;
+          aVal = a.soa ?? 0;
+          bVal = b.soa ?? 0;
+          break;
         case 'trend':
           aVal = a.trend.delta;
           bVal = b.trend.delta;
@@ -106,14 +110,71 @@ export const QueriesRankedTable = ({
     return filtered;
   }, [queries, sortState]);
 
-  const formatScore = (val: number | null | undefined) => {
-      if (val === null || val === undefined) return '—';
-      return val.toFixed(1);
+  // Heatmap Logic
+  const metricRanges = useMemo(() => {
+    const getRange = (values: (number | null)[]) => {
+      const valid = values.filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
+      if (!valid.length) return { min: 0, max: 0 };
+      return { min: Math.min(...valid), max: Math.max(...valid) };
+    };
+
+    return {
+      visibility: getRange(queries.map(q => q.visibilityScore)),
+      brandPresence: getRange(queries.map(q => q.brandPresence)),
+      soa: getRange(queries.map(q => q.soa)),
+      sentiment: getRange(queries.map(q => q.sentimentScore))
+    };
+  }, [queries]);
+
+  const heatmapStyle = (metric: keyof typeof metricRanges, value: number | null | undefined) => {
+    if (value === null || value === undefined) return { style: {} };
+
+    const range = metricRanges[metric];
+    const span = range.max - range.min;
+    // If span is 0 (all values same), treat as middle/high based on value? 
+    // Or just default to a neutral color. Let's use 0.5 ratio if span is 0.
+    const ratio = span > 0 ? Math.min(1, Math.max(0, (value - range.min) / span)) : (value > 0 ? 1 : 0);
+
+    // Smooth gradient: low = soft red, mid = warm yellow, high = gentle green
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+    const colorHsl = (() => {
+      if (ratio < 0.5) {
+        const t = ratio * 2;
+        const h = lerp(8, 45, t); // red -> yellow hue
+        const s = lerp(78, 90, t);
+        const l = lerp(92, 88, t);
+        return `hsl(${h} ${s}% ${l}%)`;
+      }
+      const t = (ratio - 0.5) * 2;
+      const h = lerp(45, 120, t); // yellow -> green hue
+      const s = lerp(90, 55, t);
+      const l = lerp(88, 82, t);
+      return `hsl(${h} ${s}% ${l}%)`;
+    })();
+
+    return {
+      style: {
+        backgroundColor: colorHsl,
+        borderRadius: 6, // Slightly smaller radius for table cells
+        padding: '4px 8px', // Add some internal padding for pill look
+        boxShadow: 'inset 0 0 0 1px rgba(15,23,42,0.04)',
+        width: 'fit-content',
+        minWidth: '60px',
+        textAlign: 'center' as const,
+        display: 'inline-block'
+      },
+      textColor: '#0f172a'
+    };
   };
-  
-  const formatSoA = (val: number | null | undefined) => {
-      if (val === null || val === undefined) return '—';
-      return `${val.toFixed(1)}%`;
+
+  const formatScore = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return '—';
+    return val.toFixed(1);
+  };
+
+  const formatPercentage = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return '—';
+    return `${val.toFixed(1)}%`;
   };
 
   const SortButton = ({ column, children }: { column: SortColumn; children: React.ReactNode }) => {
@@ -121,9 +182,8 @@ export const QueriesRankedTable = ({
     return (
       <button
         onClick={() => handleSort(column)}
-        className={`relative flex items-center gap-2 text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide hover:text-[var(--accent500)] transition-colors ${
-          isActive ? 'text-[var(--accent500)]' : ''
-        }`}
+        className={`relative flex items-center gap-2 text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide hover:text-[var(--accent500)] transition-colors ${isActive ? 'text-[var(--accent500)]' : ''
+          }`}
         aria-label={`Sort by ${column} ${isActive ? sortState.direction : 'ascending'}`}
       >
         {children}
@@ -146,51 +206,61 @@ export const QueriesRankedTable = ({
       {/* Table View */}
       <div className="overflow-x-auto">
         <table className="w-full">
-            <thead>
-              <tr className="border-b-2 border-[var(--border-default)] bg-[var(--bg-secondary)]">
+          <thead>
+            <tr className="border-b-2 border-[var(--border-default)] bg-[var(--bg-secondary)]">
 
-                {/* Query */}
-                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[200px]">
-                  <SortButton column="text">Query</SortButton>
-                </th>
+              {/* Query */}
+              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[200px]">
+                <SortButton column="text">Query</SortButton>
+              </th>
 
-                {/* Topic */}
-                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[150px]">
-                    <SortButton column="topic">Topic</SortButton>
-                </th>
+              {/* Topic */}
+              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[150px]">
+                <SortButton column="topic">Topic</SortButton>
+              </th>
 
-                {/* Visibility */}
-                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
-                     <SortButton column="visibility">Visibility</SortButton>
-                </th>
+              {/* Visibility */}
+              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
+                <SortButton column="visibility">Visibility</SortButton>
+              </th>
 
-                 {/* SoA */}
-                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
-                    <SortButton column="soa">SoA</SortButton>
-                </th>
+              {/* Brand Presence (New) */}
+              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
+                <SortButton column="brandPresence">Brand Pres.</SortButton>
+              </th>
 
-                {/* Sentiment */}
-                <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
-                     <SortButton column="sentiment">Sentiment</SortButton>
-                </th>
+              {/* SoA */}
+              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
+                <SortButton column="soa">SoA</SortButton>
+              </th>
+
+              {/* Sentiment */}
+              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[120px]">
+                <SortButton column="sentiment">Sentiment</SortButton>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--border-default)]">
+            {filteredAndSortedQueries.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-3 sm:px-4 lg:px-5 py-12 text-center">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <p className="text-sm font-medium text-[var(--text-headings)]">
+                      No queries found for selected filters
+                    </p>
+                    <p className="text-xs text-[var(--text-caption)]">
+                      Try adjusting your filters to see more results
+                    </p>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border-default)]">
-              {filteredAndSortedQueries.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-3 sm:px-4 lg:px-5 py-12 text-center">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-sm font-medium text-[var(--text-headings)]">
-                        No queries found for selected filters
-                      </p>
-                      <p className="text-xs text-[var(--text-caption)]">
-                        Try adjusting your filters to see more results
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredAndSortedQueries.map((query) => {
+            ) : (
+              filteredAndSortedQueries.map((query) => {
+                const visibilityStyle = heatmapStyle('visibility', query.visibilityScore);
+                const brandPresenceStyle = heatmapStyle('brandPresence', query.brandPresence);
+                const soaStyle = heatmapStyle('soa', query.soa);
+                const sentimentStyle = heatmapStyle('sentiment', query.sentimentScore);
+
                 return (
                   <tr
                     key={query.id}
@@ -203,31 +273,60 @@ export const QueriesRankedTable = ({
                       <span className="text-sm font-medium text-[var(--text-headings)] break-words">{query.text}</span>
                     </td>
                     <td className="px-3 sm:px-4 lg:px-5 py-4">
-                       <span className="px-2 py-0.5 text-xs font-medium rounded-md bg-[var(--bg-secondary)] text-[var(--text-caption)] whitespace-nowrap">
-                          {query.topic}
-                       </span>
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-md bg-[var(--bg-secondary)] text-[var(--text-caption)] whitespace-nowrap">
+                        {query.topic}
+                      </span>
                     </td>
                     <td className="px-3 sm:px-4 lg:px-5 py-4">
-                        <span className="text-sm font-semibold whitespace-nowrap text-[var(--text-body)]">
-                          {formatScore(query.visibilityScore)}
-                        </span>
+                      <span
+                        className="text-sm font-semibold whitespace-nowrap"
+                        style={{
+                          color: visibilityStyle.textColor,
+                          ...visibilityStyle.style
+                        }}
+                      >
+                        {formatScore(query.visibilityScore)}
+                      </span>
                     </td>
-                     <td className="px-3 sm:px-4 lg:px-5 py-4">
-                        <span className="text-sm font-semibold whitespace-nowrap text-[var(--text-body)]">
-                          {formatSoA(query.soa)}
-                        </span>
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
+                      <span
+                        className="text-sm font-semibold whitespace-nowrap"
+                        style={{
+                          color: brandPresenceStyle.textColor,
+                          ...brandPresenceStyle.style
+                        }}
+                      >
+                        {formatPercentage(query.brandPresence)}
+                      </span>
                     </td>
-                     <td className="px-3 sm:px-4 lg:px-5 py-4">
-                        <span className="text-sm font-semibold whitespace-nowrap text-[var(--text-body)]">
-                          {formatScore(query.sentimentScore)}
-                        </span>
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
+                      <span
+                        className="text-sm font-semibold whitespace-nowrap"
+                        style={{
+                          color: soaStyle.textColor,
+                          ...soaStyle.style
+                        }}
+                      >
+                        {formatPercentage(query.soa)}
+                      </span>
+                    </td>
+                    <td className="px-3 sm:px-4 lg:px-5 py-4">
+                      <span
+                        className="text-sm font-semibold whitespace-nowrap"
+                        style={{
+                          color: sentimentStyle.textColor,
+                          ...sentimentStyle.style
+                        }}
+                      >
+                        {formatScore(query.sentimentScore)}
+                      </span>
                     </td>
                   </tr>
                 );
-                })
-              )}
-            </tbody>
-          </table>
+              })
+            )}
+          </tbody>
+        </table>
       </div>
 
     </div>

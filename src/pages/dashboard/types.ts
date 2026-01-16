@@ -54,6 +54,10 @@ export interface CompetitorVisibilityEntry {
     collectorType: string;
     mentions: number;
   }>;
+  metadata?: {
+    logo?: string;
+    domain?: string;
+  };
   timeSeries?: {
     dates: string[];
     visibility: number[];

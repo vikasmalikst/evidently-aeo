@@ -25,6 +25,34 @@ ChartJS.register(
   Filler
 );
 
+const getOrCreateTooltip = (chart: any) => {
+  let tooltipEl = chart.canvas.parentNode.querySelector('div.chartjs-tooltip');
+
+  if (!tooltipEl) {
+    tooltipEl = document.createElement('div');
+    tooltipEl.classList.add('chartjs-tooltip');
+    tooltipEl.style.background = 'rgba(26, 29, 41, 0.96)';
+    tooltipEl.style.borderRadius = '4px';
+    tooltipEl.style.color = 'white';
+    tooltipEl.style.opacity = '1';
+    tooltipEl.style.pointerEvents = 'none';
+    tooltipEl.style.position = 'absolute';
+    tooltipEl.style.transform = 'translate(-50%, 0)';
+    tooltipEl.style.transition = 'all .1s ease';
+    tooltipEl.style.zIndex = '100';
+    tooltipEl.style.border = '1px solid #c6c9d2';
+    tooltipEl.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+
+    const table = document.createElement('table');
+    table.style.margin = '0px';
+
+    tooltipEl.appendChild(table);
+    chart.canvas.parentNode.appendChild(tooltipEl);
+  }
+
+  return tooltipEl;
+};
+
 const chartColors = {
   viz01: '#06b6d4',
   viz02: '#498cf9',
@@ -60,7 +88,35 @@ interface Model {
   id: string;
   name: string;
   color?: string;
+  logo?: string;
+  domain?: string;
 }
+
+const buildLogoSources = (src?: string, domain?: string) => {
+  const cleanDomain = domain
+    ?.replace(/^https?:\/\//, '')
+    .split('/')[0]
+    .trim();
+
+  const logoDevToken = 'pk_LnBYF-jRQ9S_vlHK3xyZzg';
+
+  const candidates = [
+    src,
+    cleanDomain ? `https://logo.clearbit.com/${cleanDomain}` : null,
+    cleanDomain ? `https://img.logo.dev/${cleanDomain}?token=${logoDevToken}` : null,
+    cleanDomain ? `https://icons.duckduckgo.com/ip3/${cleanDomain}.ico` : null,
+    cleanDomain ? `https://www.google.com/s2/favicons?domain=${cleanDomain}&sz=64` : null,
+  ];
+
+  // Remove falsy and duplicate entries while preserving order
+  const seen = new Set<string>();
+  return candidates.filter((url): url is string => {
+    if (!url) return false;
+    if (seen.has(url)) return false;
+    seen.add(url);
+    return true;
+  });
+};
 
 interface VisibilityChartProps {
   data: {
@@ -80,16 +136,19 @@ interface VisibilityChartProps {
   metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
 }
 
-export const VisibilityChart = memo(({
-  data,
-  chartType = 'line',
-  selectedModels = [],
-  loading = false,
-  activeTab = 'brand',
-  models = [],
-  metricType = 'visibility'
-}: VisibilityChartProps) => {
+export const VisibilityChart = memo((props: VisibilityChartProps) => {
+  const {
+    data,
+    chartType = 'line',
+    selectedModels = [],
+    loading = false,
+    activeTab = 'brand',
+    models = [],
+    metricType = 'visibility'
+  } = props;
+
   const chartRef = useRef<any>(null);
+  const failedUrls = useRef(new Set<string>());
   const [focusedDataset, setFocusedDataset] = useState<number | null>(null);
 
   useEffect(() => {
@@ -134,7 +193,7 @@ export const VisibilityChart = memo(({
           const pointRadius = isRealData && isRealData.length === modelData.data.length
             ? isRealData.map((isReal) => (isReal ? (isDimmed ? 2 : 3) : 0)) // Show dot only if real data
             : (isDimmed ? 2 : 3) // Fallback: show all dots if isRealData not available
-          
+
           return {
             label: modelData.label,
             data: modelData.data,
@@ -147,6 +206,8 @@ export const VisibilityChart = memo(({
             tension: 0.4,
             fill: false,
             spanGaps: false,
+            logo: model?.logo, // Pass logo to dataset for tooltip access
+            domain: model?.domain, // Pass domain to dataset
           };
         }
       })
@@ -186,7 +247,7 @@ export const VisibilityChart = memo(({
     // Round up to nearest 10 for cleaner scale
     const paddedMax = maxValue * 1.1;
     const roundedMax = Math.ceil(paddedMax / 10) * 10;
-    
+
     // Ensure minimum scale for very small values
     const minScale = metricType === 'visibility' ? 20 : 10;
     return Math.max(roundedMax, minScale);
@@ -209,9 +270,9 @@ export const VisibilityChart = memo(({
           max: calculatedMax,
           title: {
             display: true,
-            text: metricType === 'visibility' 
-              ? 'Visibility Score' 
-              : metricType === 'share' 
+            text: metricType === 'visibility'
+              ? 'Visibility Score'
+              : metricType === 'share'
                 ? 'Share of Answers (%)'
                 : metricType === 'brandPresence'
                   ? 'Brand Presence (%)'
@@ -301,46 +362,176 @@ export const VisibilityChart = memo(({
             setFocusedDataset((prev) => (prev === datasetIndex ? null : datasetIndex));
           },
         },
-      tooltip: {
-        enabled: true,
-        backgroundColor: 'rgba(26, 29, 41, 0.96)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: neutrals[300],
-        borderWidth: 1,
-        padding: 10,
-        displayColors: false,
-        boxPadding: 6,
-        position: 'nearest' as const,
-        xAlign: 'right' as const,
-        yAlign: 'top' as const,
-        caretPadding: 10,
-        cornerRadius: 4,
-        titleFont: {
-          size: 11,
-          weight: 'bold' as const,
-          family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+        tooltip: {
+          enabled: false,
+          position: 'nearest' as const,
+          external: (context: any) => {
+            const { chart, tooltip } = context;
+            const tooltipEl = getOrCreateTooltip(chart);
+
+            // Hide if no tooltip
+            if (tooltip.opacity === 0) {
+              tooltipEl.style.opacity = '0';
+              return;
+            }
+
+            // Set Text
+            if (tooltip.body) {
+              const titleLines = tooltip.title || [];
+              const bodyLines = tooltip.body.map((b: any) => b.lines);
+
+              const tableHead = document.createElement('thead');
+
+              titleLines.forEach((title: string) => {
+                const tr = document.createElement('tr');
+                tr.style.borderWidth = '0';
+
+                const th = document.createElement('th');
+                th.style.borderWidth = '0';
+                th.style.textAlign = 'left';
+                th.style.paddingBottom = '8px';
+                th.style.color = '#ffffff';
+                th.style.fontSize = '12px';
+                th.style.fontWeight = '600';
+                th.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+
+                const text = document.createTextNode(title);
+                th.appendChild(text);
+                tr.appendChild(th);
+                tableHead.appendChild(tr);
+              });
+
+              const tableBody = document.createElement('tbody');
+              bodyLines.forEach((body: string, i: number) => {
+                // Get the dataset to find the logo
+                const dataPoint = tooltip.dataPoints[i];
+                const dataset = chart.data.datasets[dataPoint.datasetIndex];
+                // We need to look up the original model to get the logo
+                // We can match by dataset label or id?
+                // We can find the model by matching the label or index if we are lucky, but matching ID is safer.
+                // Let's rely on finding the model by ID from `selectedModels` if possible,
+                // OR we can attach metadata to the dataset in `useMemo`.
+                // Let's update `useMemo` later to attach `logo` to the dataset so it's available here easily (context.chart.data.datasets[i]).
+                // Assuming we attach it to dataset as `_logo` or similar. context.dataset has it.
+
+                // Wait, inside `external`, `chart.data.datasets[dataPoint.datasetIndex]` gives us the dataset configuration.
+                // So if I add `logo` property to the dataset in `useMemo`, I can access it here.
+
+                const colors = tooltip.labelColors[i];
+                const logoUrl = (dataset as any).logo;
+                const domain = (dataset as any).domain;
+
+                const tr = document.createElement('tr');
+                tr.style.backgroundColor = 'inherit';
+                tr.style.borderWidth = '0';
+
+                const td = document.createElement('td');
+                td.style.borderWidth = '0';
+                td.style.display = 'flex';
+                td.style.alignItems = 'center';
+                td.style.padding = '4px 0';
+
+                // Color indicator or Logo
+                const iconContainer = document.createElement('div');
+                iconContainer.style.width = '16px';
+                iconContainer.style.height = '16px';
+                iconContainer.style.minWidth = '16px';
+                iconContainer.style.marginRight = '8px';
+                iconContainer.style.display = 'flex';
+                iconContainer.style.alignItems = 'center';
+                iconContainer.style.justifyContent = 'center';
+
+                // Fallback to dot helper
+                const renderDot = () => {
+                  iconContainer.innerHTML = '';
+                  const span = document.createElement('span');
+                  span.style.background = colors.backgroundColor;
+                  span.style.borderColor = colors.borderColor;
+                  span.style.borderWidth = '2px';
+                  span.style.display = 'block';
+                  span.style.width = '12px';
+                  span.style.height = '12px';
+                  span.style.borderRadius = '50%';
+                  iconContainer.appendChild(span);
+                };
+
+                const candidates = buildLogoSources(logoUrl, domain);
+                // Filter out known failed URLs
+                const validCandidates = candidates.filter(url => !failedUrls.current.has(url));
+
+                if (validCandidates.length > 0) {
+                  const img = document.createElement('img');
+                  img.src = validCandidates[0];
+                  img.style.width = '100%';
+                  img.style.height = '100%';
+                  img.style.objectFit = 'contain';
+                  img.style.borderRadius = '2px';
+                  // Add error handler to fallback
+                  img.onerror = () => {
+                    // Mark this URL as failed
+                    failedUrls.current.add(img.src);
+
+                    // Try next valid candidate
+                    const nextCandidates = candidates.filter(url => !failedUrls.current.has(url));
+                    if (nextCandidates.length > 0) {
+                      img.src = nextCandidates[0];
+                    } else {
+                      img.style.display = 'none';
+                      renderDot();
+                    }
+                  };
+                  iconContainer.appendChild(img);
+                } else {
+                  renderDot();
+                }
+
+                const textContainer = document.createElement('div');
+                textContainer.style.flex = '1';
+                textContainer.style.display = 'flex';
+                textContainer.style.justifyContent = 'space-between';
+                textContainer.style.alignItems = 'center';
+                textContainer.style.gap = '12px';
+
+                const textSpan = document.createElement('span');
+                textSpan.innerText = body; // This contains "Label: Value"
+                textSpan.style.color = '#ffffff';
+                textSpan.style.fontSize = '12px';
+                textSpan.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+
+                textContainer.appendChild(textSpan);
+
+                td.appendChild(iconContainer);
+                td.appendChild(textContainer);
+                tr.appendChild(td);
+                tableBody.appendChild(tr);
+              });
+
+              const tableRoot = tooltipEl.querySelector('table');
+              // Remove old children
+              while (tableRoot.firstChild) {
+                tableRoot.firstChild.remove();
+              }
+              // Add new children
+              tableRoot.appendChild(tableHead);
+              tableRoot.appendChild(tableBody);
+            }
+
+            const { offsetLeft: positionX, offsetTop: positionY } = chart.canvas;
+
+            // Display, position, and set styles for font
+            tooltipEl.style.opacity = '1';
+            tooltipEl.style.left = positionX + tooltip.caretX + 'px';
+            tooltipEl.style.top = positionY + tooltip.caretY + 'px';
+            tooltipEl.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+            tooltipEl.style.padding = '8px';
+            // Prevent tooltip from overflowing the chart edge
+            // ... (optional logic)
+          }
         },
-        bodyFont: {
-          size: 11,
-          family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-        },
-        callbacks: {
-          title: (context: any) => {
-            return context[0]?.label || '';
-          },
-          label: (context: any) => {
-            const label = context.dataset.label || '';
-            const value = context.parsed.y;
-            const suffix = metricType === 'share' || metricType === 'brandPresence' ? '%' : '';
-            return `  ${label}: ${value}${suffix}`;
-          },
+        filler: {
+          propagate: false,
         },
       },
-      filler: {
-        propagate: false,
-      },
-    },
       layout: {
         padding: {
           top: 16,

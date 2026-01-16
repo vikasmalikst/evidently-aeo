@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { authService } from '../../lib/auth';
 import { useAuthStore } from '../../store/authStore';
-import { Mail, Lock, User, AlertCircle, CheckCircle, ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, CheckCircle, ArrowRight, Eye, EyeOff, KeyRound, UserPlus } from 'lucide-react';
 // 1. Import 'Variants' type specifically
 import { motion, Variants } from 'framer-motion';
 
@@ -93,19 +93,27 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
     }
   };
 
+  // Common input classes for consistent styling
+  const inputClasses = "w-full pl-11 pr-4 py-3 bg-slate-50/80 border border-slate-200/80 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all duration-200 outline-none";
+  const iconClasses = "absolute left-3.5 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400";
+
   return (
     <motion.div
       variants={formVariants}
       initial="hidden"
       animate="visible"
       exit="exit"
-      className="w-full space-y-6"
+      className="w-full space-y-5"
     >
-      <div className="text-center space-y-2">
-        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
+      {/* Header */}
+      <div className="text-center space-y-1">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 mb-2">
+          <UserPlus className="w-6 h-6 text-white" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
           {step === 'details' ? 'Create an Account' : 'Verify Email'}
         </h2>
-        <p className="text-slate-500">
+        <p className="text-slate-500 text-sm">
           {step === 'details' 
             ? 'Start your journey with intelligent decision making' 
             : `We sent a 6-digit code to ${email}`}
@@ -113,33 +121,37 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
       </div>
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700 font-medium">{error}</p>
+        <div className="p-3.5 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3">
+          <div className="p-1 bg-red-100 rounded-lg flex-shrink-0">
+            <AlertCircle className="w-4 h-4 text-red-600" />
+          </div>
+          <p className="text-sm text-red-700 font-medium pt-0.5">{error}</p>
         </div>
       )}
 
       {success && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
-          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-green-700 font-medium">{success}</p>
+        <div className="p-3.5 bg-green-50 border border-green-100 rounded-xl flex items-start gap-3">
+          <div className="p-1 bg-green-100 rounded-lg flex-shrink-0">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+          </div>
+          <p className="text-sm text-green-700 font-medium pt-0.5">{success}</p>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3">
         {step === 'details' ? (
           <>
             {/* Full Name Input */}
             <div>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <div className="relative group">
+                <User className={iconClasses} />
                 <input
                   id="fullName"
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required
-                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+                  className={inputClasses}
                   placeholder="Full Name"
                 />
               </div>
@@ -147,7 +159,7 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
 
             {/* Email Input */}
             <div>
-              <div className="relative">
+              <div className="relative group">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input
                   id="email"
@@ -155,34 +167,34 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
-                  placeholder="Email"
+                  className={inputClasses}
+                  placeholder="Email address"
                 />
               </div>
             </div>
 
             {/* Password Input */}
             <div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <div className="relative group">
+                <Lock className={iconClasses} />
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full pl-10 pr-12 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+                  className={`${inputClasses} pr-12`}
                   placeholder="Create Password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 focus:outline-none rounded-md hover:bg-slate-100 transition-colors"
+                  className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 focus:outline-none rounded-lg hover:bg-slate-100 transition-colors"
                 >
                   {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
+                    <EyeOff className="w-4 h-4" />
                   ) : (
-                    <Eye className="w-5 h-5" />
+                    <Eye className="w-4 h-4" />
                   )}
                 </button>
               </div>
@@ -193,15 +205,15 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
 
             {/* Confirm Password Input */}
             <div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <div className="relative group">
+                <Lock className={iconClasses} />
                 <input
                   id="confirmPassword"
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+                  className={inputClasses}
                   placeholder="Confirm Password"
                 />
               </div>
@@ -211,15 +223,15 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
           /* OTP Input Step */
           <div className="space-y-4">
             <div>
-              <div className="relative">
-                <KeyRound className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <div className="relative group">
+                <KeyRound className={iconClasses} />
                 <input
                   id="otp"
                   type="text"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   required
-                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all text-center tracking-[0.5em] font-mono text-lg"
+                  className={`${inputClasses} text-center tracking-[0.5em] font-mono text-lg`}
                   placeholder="000000"
                   maxLength={6}
                   autoFocus
@@ -234,7 +246,7 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
               <button 
                 type="button" 
                 onClick={() => setStep('details')}
-                className="text-sm text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline underline-offset-2 transition-colors"
               >
                 Change email address
               </button>
@@ -245,8 +257,10 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-3 px-4 text-white font-bold rounded-lg transition-all disabled:opacity-70 disabled:cursor-not-allowed shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 flex items-center justify-center 
-          bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] mt-2"
+          className="w-full py-3 px-4 text-white font-semibold rounded-xl transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2
+          bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 
+          shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30 
+          active:scale-[0.98] hover:-translate-y-0.5 mt-2"
         >
           {isLoading ? (
             <div className="flex items-center gap-2">
@@ -255,17 +269,28 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
             </div>
           ) : (
             <>
-              {step === 'details' ? 'Continue' : 'Verify & Create Account'} <ArrowRight className="w-5 h-5 ml-2" />
+              {step === 'details' ? 'Continue' : 'Verify & Create Account'}
+              <ArrowRight className="w-4 h-4" />
             </>
           )}
         </button>
       </form>
 
-      <div className="mt-4 text-center text-sm">
-        <span className="text-slate-600">Already have an account? </span>
+      {/* Divider */}
+      <div className="relative py-2">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-slate-200/80"></div>
+        </div>
+        <div className="relative flex justify-center">
+          <span className="px-4 bg-white text-xs text-slate-400 font-medium">or</span>
+        </div>
+      </div>
+
+      <div className="text-center">
+        <span className="text-sm text-slate-600">Already have an account? </span>
         <button
           onClick={onSwitchToLogin}
-          className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+          className="text-sm text-blue-600 hover:text-blue-700 font-semibold hover:underline underline-offset-2 transition-colors"
         >
           Sign in
         </button>

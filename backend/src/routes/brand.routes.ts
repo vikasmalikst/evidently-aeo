@@ -433,114 +433,119 @@ router.get('/:brandId/artifacts', authenticateToken, async (req: Request, res: R
  * GET /brands/:brandId/dashboard
  * Get dashboard analytics for a specific brand
  */
-router.get('/:brandId/dashboard', authenticateToken, async (req: Request, res: Response) => {
-  try {
-    const { brandId } = req.params;
-    const customerId = req.user!.customer_id;
-    const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
-    const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
-    const collectorsQuery = req.query.collectors;
-    const collectors =
-      typeof collectorsQuery === 'string'
-        ? collectorsQuery
-          .split(',')
-          .map((value) => value.trim())
-          .filter((value) => value.length > 0)
-        : Array.isArray(collectorsQuery)
+router.get(
+  '/:brandId/dashboard',
+  authenticateToken,
+  responseCacheMiddleware({ ttlMs: 5 * 60 * 1000 }), // 5 minutes in-memory cache
+  async (req: Request, res: Response) => {
+    try {
+      const { brandId } = req.params;
+      const customerId = req.user!.customer_id;
+      const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+      const collectorsQuery = req.query.collectors;
+      const collectors =
+        typeof collectorsQuery === 'string'
           ? collectorsQuery
-            .map((value) => (typeof value === 'string' ? value : String(value ?? '')))
+            .split(',')
             .map((value) => value.trim())
             .filter((value) => value.length > 0)
-          : undefined;
-    const skipCacheQuery = Array.isArray(req.query.skipCache) ? req.query.skipCache[0] : req.query.skipCache;
-    const skipCache =
-      typeof skipCacheQuery === 'string' &&
-      ['true', '1', 'yes'].includes(skipCacheQuery.toLowerCase());
+          : Array.isArray(collectorsQuery)
+            ? collectorsQuery
+              .map((value) => (typeof value === 'string' ? value : String(value ?? '')))
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
+            : undefined;
+      const skipCacheQuery = Array.isArray(req.query.skipCache) ? req.query.skipCache[0] : req.query.skipCache;
+      const skipCache =
+        typeof skipCacheQuery === 'string' &&
+        ['true', '1', 'yes'].includes(skipCacheQuery.toLowerCase());
 
-    // Extract timezone offset from header (minutes difference between UTC and local)
-    // e.g. 300 for EST (UTC-5)
-    // Default to 0 (UTC) if not provided
-    const timezoneOffsetHeader = req.headers['x-timezone-offset'];
-    const timezoneOffset = timezoneOffsetHeader ? Number(timezoneOffsetHeader) : 0;
+      // Extract timezone offset from header (minutes difference between UTC and local)
+      // e.g. 300 for EST (UTC-5)
+      // Default to 0 (UTC) if not provided
+      const timezoneOffsetHeader = req.headers['x-timezone-offset'];
+      const timezoneOffset = timezoneOffsetHeader ? Number(timezoneOffsetHeader) : 0;
 
-    let dateRange: DashboardDateRange | undefined;
+      let dateRange: DashboardDateRange | undefined;
 
-    if (startQuery || endQuery) {
-      try {
-        const parseDate = (value: string): Date => {
-          const parsed = new Date(value);
-          if (Number.isNaN(parsed.getTime())) {
-            throw new Error(`Invalid date: ${value}`);
+      if (startQuery || endQuery) {
+        try {
+          const parseDate = (value: string): Date => {
+            const parsed = new Date(value);
+            if (Number.isNaN(parsed.getTime())) {
+              throw new Error(`Invalid date: ${value}`);
+            }
+            return parsed;
+          };
+
+          let startDate = startQuery ? parseDate(startQuery) : undefined;
+          let endDate = endQuery ? parseDate(endQuery) : undefined;
+
+          if (endDate && !startDate) {
+            startDate = new Date(endDate);
+            startDate.setUTCDate(startDate.getUTCDate() - 30);
           }
-          return parsed;
-        };
 
-        let startDate = startQuery ? parseDate(startQuery) : undefined;
-        let endDate = endQuery ? parseDate(endQuery) : undefined;
+          if (startDate && !endDate) {
+            endDate = new Date(startDate);
+          }
 
-        if (endDate && !startDate) {
-          startDate = new Date(endDate);
-          startDate.setUTCDate(startDate.getUTCDate() - 30);
+          if (!startDate || !endDate) {
+            throw new Error('Both startDate and endDate are required');
+          }
+
+          startDate.setUTCHours(0, 0, 0, 0);
+          endDate.setUTCHours(23, 59, 59, 999);
+
+          if (startDate.getTime() > endDate.getTime()) {
+            throw new Error('startDate must be before or equal to endDate');
+          }
+
+          dateRange = {
+            start: startDate.toISOString(),
+            end: endDate.toISOString()
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Invalid date range';
+          res.status(400).json({ success: false, error: message });
+          return;
         }
+      }
 
-        if (startDate && !endDate) {
-          endDate = new Date(startDate);
-        }
 
-        if (!startDate || !endDate) {
-          throw new Error('Both startDate and endDate are required');
-        }
-
-        startDate.setUTCHours(0, 0, 0, 0);
-        endDate.setUTCHours(23, 59, 59, 999);
-
-        if (startDate.getTime() > endDate.getTime()) {
-          throw new Error('startDate must be before or equal to endDate');
-        }
-
-        dateRange = {
-          start: startDate.toISOString(),
-          end: endDate.toISOString()
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Invalid date range';
-        res.status(400).json({ success: false, error: message });
+      if (!brandId) {
+        res.status(400).json({ success: false, error: 'Brand ID is required' });
         return;
       }
+
+      const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange, {
+        skipCache,
+        collectors,
+        timezoneOffset
+      });
+
+      res.json({
+        success: true,
+        data: dashboard
+      });
+    } catch (error) {
+      if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
+        // Log as warning without stack trace for expected 404s
+        console.warn(`[Dashboard] Brand not found: ${req.params.brandId} (Customer: ${req.user!.customer_id})`);
+        res.status(404).json({ success: false, error: error.message });
+        return;
+      }
+
+      console.error('Error fetching brand dashboard:', error);
+
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch brand dashboard'
+      });
     }
-
-
-    if (!brandId) {
-      res.status(400).json({ success: false, error: 'Brand ID is required' });
-      return;
-    }
-
-    const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange, {
-      skipCache,
-      collectors,
-      timezoneOffset
-    });
-
-    res.json({
-      success: true,
-      data: dashboard
-    });
-  } catch (error) {
-    if (error instanceof DatabaseError && error.message.toLowerCase().includes('not found')) {
-      // Log as warning without stack trace for expected 404s
-      console.warn(`[Dashboard] Brand not found: ${req.params.brandId} (Customer: ${req.user!.customer_id})`);
-      res.status(404).json({ success: false, error: error.message });
-      return;
-    }
-
-    console.error('Error fetching brand dashboard:', error);
-
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch brand dashboard'
-    });
   }
-});
+);
 
 /**
  * GET /brands/:brandId/prompts

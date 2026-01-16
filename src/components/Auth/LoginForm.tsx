@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { authService } from '../../lib/auth';
 import { useAuthStore } from '../../store/authStore';
-import { Mail, Lock, AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, AlertCircle, ArrowRight, Eye, EyeOff, LogIn } from 'lucide-react';
 // Import motion for animation
 import { motion, type Variants } from 'framer-motion';
 
@@ -45,6 +45,10 @@ export const LoginForm = ({ onSuccess, onSwitchToRegister, onForgotPassword }: L
     setIsLoading(false);
   };
 
+  // Common input classes for consistent styling
+  const inputClasses = "w-full pl-11 pr-4 py-3.5 bg-slate-50/80 border border-slate-200/80 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all duration-200 outline-none";
+  const iconClasses = "absolute left-3.5 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400";
+
   return (
     // Wrap content in motion.div for animation
     <motion.div
@@ -54,68 +58,73 @@ export const LoginForm = ({ onSuccess, onSwitchToRegister, onForgotPassword }: L
       exit="exit"
       className="w-full space-y-6"
     >
-      {/* New Header inside the box */}
+      {/* Header */}
       <div className="text-center space-y-2">
-        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Sign In</h2>
-        <p className="text-slate-500">Enter your credentials to access your account</p>
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 mb-2">
+          <LogIn className="w-7 h-7 text-white" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Sign In</h2>
+        <p className="text-slate-500 text-sm">Enter your credentials to access your account</p>
       </div>
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700 font-medium">{error}</p>
+        <div className="p-3.5 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3">
+          <div className="p-1 bg-red-100 rounded-lg flex-shrink-0">
+            <AlertCircle className="w-4 h-4 text-red-600" />
+          </div>
+          <p className="text-sm text-red-700 font-medium pt-0.5">{error}</p>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Email Input */}
         <div>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <div className="relative group">
+            <Mail className={iconClasses} />
             <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
-              placeholder="Email"
+              className={inputClasses}
+              placeholder="Email address"
             />
           </div>
         </div>
 
         {/* Password Input */}
         <div>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <div className="relative group">
+            <Lock className={iconClasses} />
             <input
               id="password"
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full pl-10 pr-12 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm transition-all"
+              className={`${inputClasses} pr-12`}
               placeholder="Password"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 focus:outline-none rounded-md hover:bg-slate-100 transition-colors"
+              className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 focus:outline-none rounded-lg hover:bg-slate-100 transition-colors"
             >
               {showPassword ? (
-                <EyeOff className="w-5 h-5" />
+                <EyeOff className="w-4 h-4" />
               ) : (
-                <Eye className="w-5 h-5" />
+                <Eye className="w-4 h-4" />
               )}
             </button>
           </div>
         </div>
 
-        <div className="flex items-center justify-end text-sm">
+        <div className="flex items-center justify-end">
           <button
             type="button"
             onClick={onForgotPassword}
-            className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+            className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline underline-offset-2 transition-colors"
           >
             Forgot password?
           </button>
@@ -125,8 +134,10 @@ export const LoginForm = ({ onSuccess, onSwitchToRegister, onForgotPassword }: L
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-3 px-4 text-white font-bold rounded-lg transition-all disabled:opacity-70 disabled:cursor-not-allowed shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 flex items-center justify-center 
-          bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99]"
+          className="w-full py-3.5 px-4 text-white font-semibold rounded-xl transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2
+          bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 
+          shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30 
+          active:scale-[0.98] hover:-translate-y-0.5"
         >
           {isLoading ? (
             <div className="flex items-center gap-2">
@@ -135,19 +146,30 @@ export const LoginForm = ({ onSuccess, onSwitchToRegister, onForgotPassword }: L
             </div>
           ) : (
             <>
-              Sign In <ArrowRight className="w-5 h-5 ml-2" />
+              Sign In
+              <ArrowRight className="w-4 h-4" />
             </>
           )}
         </button>
       </form>
 
-      <div className="mt-4 text-center text-sm">
-        <span className="text-slate-600">Don't have an account? </span>
+      {/* Divider */}
+      <div className="relative py-2">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-slate-200/80"></div>
+        </div>
+        <div className="relative flex justify-center">
+          <span className="px-4 bg-white text-xs text-slate-400 font-medium">or</span>
+        </div>
+      </div>
+
+      <div className="text-center">
+        <span className="text-sm text-slate-600">Don't have an account? </span>
         <button
           onClick={onSwitchToRegister}
-          className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+          className="text-sm text-blue-600 hover:text-blue-700 font-semibold hover:underline underline-offset-2 transition-colors"
         >
-          Sign up
+          Create an account
         </button>
       </div>
     </motion.div>

@@ -12,6 +12,123 @@ import {
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { IconUsers, IconPlus, IconX, IconTrash, IconEdit, IconExternalLink, IconLoader2 } from '@tabler/icons-react';
 
+interface EditableTagListProps {
+  items: string[];
+  onItemsChange: (items: string[]) => void;
+  placeholder: string;
+  colorClass: string;
+  bgClass: string;
+}
+
+// Editable tag list component for aliases and products
+const EditableTagList = ({ items, onItemsChange, placeholder, colorClass, bgClass }: EditableTagListProps) => {
+  const [newItem, setNewItem] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+
+  const handleAdd = () => {
+    if (newItem.trim() && !items.includes(newItem.trim())) {
+      onItemsChange([...items, newItem.trim()]);
+      setNewItem('');
+    }
+  };
+
+  const handleRemove = (index: number) => {
+    onItemsChange(items.filter((_, i) => i !== index));
+  };
+
+  const handleStartEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditingValue(items[index]);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingIndex !== null && editingValue.trim()) {
+      const updated = [...items];
+      updated[editingIndex] = editingValue.trim();
+      onItemsChange(updated);
+      setEditingIndex(null);
+      setEditingValue('');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+    setEditingValue('');
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="px-3 py-2 border border-[var(--border-default)] rounded-lg bg-gray-50/50 min-h-[2.5rem]">
+        {items.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {items.map((item, index) => (
+              <div key={index} className="inline-flex items-center gap-1">
+                {editingIndex === index ? (
+                  <input
+                    type="text"
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    onBlur={handleSaveEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveEdit();
+                      } else if (e.key === 'Escape') {
+                        handleCancelEdit();
+                      }
+                    }}
+                    className="px-2 py-0.5 text-xs border border-[var(--accent-primary)] rounded focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)] bg-white min-w-[80px]"
+                    autoFocus
+                  />
+                ) : (
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 ${bgClass} ${colorClass} rounded text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity`}
+                    onDoubleClick={() => handleStartEdit(index)}
+                    title="Double-click to edit"
+                  >
+                    {item}
+                  </span>
+                )}
+                <button
+                  onClick={() => handleRemove(index)}
+                  className="p-0.5 hover:bg-red-100 rounded text-red-600 transition-colors"
+                  title="Remove"
+                >
+                  <IconX size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-[var(--text-caption)] italic">No items. Add one below.</p>
+        )}
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          type="text"
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              handleAdd();
+            }
+          }}
+          placeholder={placeholder}
+          className="flex-1 px-2 py-1.5 text-xs border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-white"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={!newItem.trim() || items.includes(newItem.trim())}
+          className="px-3 py-1.5 text-xs bg-[var(--accent-primary)] text-white rounded-lg hover:bg-[var(--accent-primary)]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+        >
+          <IconPlus size={14} />
+          Add
+        </button>
+      </div>
+    </div>
+  );
+};
+
 interface CompetitorRowProps {
   competitor: ManagedCompetitor;
   onRemove: () => void;
@@ -288,7 +405,14 @@ export const ManageCompetitors = () => {
                     key={competitor.name}
                     competitor={competitor}
                     onRemove={() => handleRemoveCompetitor(competitor.name)}
-                    onEdit={() => setEditingCompetitor(competitor)}
+                    onEdit={() => {
+                      // Ensure aliases and products are arrays
+                      setEditingCompetitor({
+                        ...competitor,
+                        aliases: competitor.aliases || [],
+                        products: competitor.products || []
+                      });
+                    }}
                   />
                 ))}
               </div>
@@ -406,38 +530,38 @@ export const ManageCompetitors = () => {
           {/* Edit Competitor Modal */}
           {editingCompetitor && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
-                <div className="flex items-center justify-between mb-6">
+              <div className="bg-white rounded-xl p-5 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h2 className="text-2xl font-bold text-[var(--text-headings)]">
+                    <h2 className="text-xl font-bold text-[var(--text-headings)]">
                       Edit Competitor
                     </h2>
-                    <p className="text-sm text-[var(--text-caption)] mt-1">Update competitor details</p>
+                    <p className="text-xs text-[var(--text-caption)] mt-0.5">Update competitor details</p>
                   </div>
                   <button
                     onClick={() => setEditingCompetitor(null)}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                    className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
                   >
-                    <IconX size={24} className="text-[var(--text-caption)]" />
+                    <IconX size={20} className="text-[var(--text-caption)]" />
                   </button>
                 </div>
 
-                <div className="space-y-5">
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-semibold text-[var(--text-headings)] mb-2">
+                    <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
                       Competitor Name
                     </label>
                     <input
                       type="text"
                       value={editingCompetitor.name}
                       disabled
-                      className="w-full px-4 py-3 border border-[var(--border-default)] rounded-xl bg-gray-100 text-[var(--text-caption)] cursor-not-allowed font-medium"
+                      className="w-full px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg bg-gray-100 text-[var(--text-caption)] cursor-not-allowed font-medium"
                     />
-                    <p className="text-[10px] text-[var(--text-caption)] mt-1.5 ml-1">Name cannot be changed</p>
+                    <p className="text-[10px] text-[var(--text-caption)] mt-1 ml-1">Name cannot be changed</p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-[var(--text-headings)] mb-2">
+                    <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
                       Domain or URL
                     </label>
                     <input
@@ -451,47 +575,79 @@ export const ManageCompetitors = () => {
                           url: value.startsWith('http') ? value : (value ? `https://${value}` : undefined),
                         });
                       }}
-                      className="w-full px-4 py-3 border border-[var(--border-default)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-gray-50/50"
+                      className="w-full px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-gray-50/50"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-[var(--text-headings)] mb-2">
+                    <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
                       Industry
                     </label>
                     <input
                       type="text"
                       value={editingCompetitor.industry || ''}
                       onChange={(e) => setEditingCompetitor({ ...editingCompetitor, industry: e.target.value })}
-                      className="w-full px-4 py-3 border border-[var(--border-default)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-gray-50/50"
+                      className="w-full px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-gray-50/50"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-[var(--text-headings)] mb-2">
+                    <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
                       Relevance
                     </label>
                     <select
                       value={editingCompetitor.relevance}
                       onChange={(e) => setEditingCompetitor({ ...editingCompetitor, relevance: e.target.value as any })}
-                      className="w-full px-4 py-3 border border-[var(--border-default)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-gray-50/50 appearance-none"
+                      className="w-full px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-gray-50/50 appearance-none"
                     >
                       <option value="Direct Competitor">Direct Competitor</option>
                       <option value="Indirect Competitor">Indirect Competitor</option>
                     </select>
                   </div>
+
+                  {/* Aliases/Synonyms Section - Editable */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
+                      Competitor Aliases/Synonyms
+                    </label>
+                    <EditableTagList
+                      items={editingCompetitor.aliases || []}
+                      onItemsChange={(aliases) => setEditingCompetitor({ ...editingCompetitor, aliases })}
+                      placeholder="Add alias or synonym..."
+                      colorClass="text-blue-700"
+                      bgClass="bg-blue-100"
+                    />
+                  </div>
+
+                  {/* Products Section - Editable */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
+                      Products
+                    </label>
+                    <EditableTagList
+                      items={editingCompetitor.products || []}
+                      onItemsChange={(products) => setEditingCompetitor({ ...editingCompetitor, products })}
+                      placeholder="Add product name..."
+                      colorClass="text-green-700"
+                      bgClass="bg-green-100"
+                    />
+                  </div>
                 </div>
 
-                <div className="flex gap-4 mt-8">
+                <div className="flex gap-3 mt-5">
                   <button
                     onClick={() => setEditingCompetitor(null)}
-                    className="flex-1 px-4 py-3 border border-[var(--border-default)] rounded-xl hover:bg-gray-50 transition-all font-semibold"
+                    className="flex-1 px-4 py-2 text-sm border border-[var(--border-default)] rounded-lg hover:bg-gray-50 transition-all font-semibold"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={() => handleUpdateCompetitor(editingCompetitor)}
-                    className="flex-1 px-4 py-3 bg-[var(--accent-primary)] text-white rounded-xl hover:bg-[var(--accent-primary)]/90 transition-all shadow-lg font-semibold"
+                    onClick={() => {
+                      // Extract only the fields that can be updated (exclude id and name)
+                      const { id, name, ...updates } = editingCompetitor;
+                      handleUpdateCompetitor(updates);
+                    }}
+                    className="flex-1 px-4 py-2 text-sm bg-[var(--accent-primary)] text-white rounded-lg hover:bg-[var(--accent-primary)]/90 transition-all shadow-lg font-semibold"
                   >
                     Save Changes
                   </button>

@@ -1,6 +1,6 @@
 -- Create ENUM type for report frequency
 DO $$ BEGIN
-  CREATE TYPE report_frequency AS ENUM ('weekly', 'bi-weekly', 'monthly', 'quarterly');
+  CREATE TYPE report_frequency AS ENUM ('weekly', 'bi-weekly', 'monthly', 'quarterly', 'custom');
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
@@ -11,6 +11,13 @@ CREATE TABLE IF NOT EXISTS report_settings (
   brand_id UUID NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
   customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   frequency report_frequency NOT NULL DEFAULT 'monthly',
+  day_of_week TEXT,
+  day_of_month INTEGER,
+  month_in_quarter INTEGER,
+  custom_interval INTEGER,
+  start_date TIMESTAMPTZ,
+  next_run_at TIMESTAMPTZ,
+  last_run_at TIMESTAMPTZ,
   distribution_emails JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

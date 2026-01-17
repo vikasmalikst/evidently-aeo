@@ -8,15 +8,15 @@ import { supabaseAdmin } from '../config/database';
  */
 
 async function createReportSettingsTable() {
-    console.log('🚀 Starting migration: Create report_settings table');
+  console.log('🚀 Starting migration: Create report_settings table');
 
-    try {
-        // Create the report_settings table
-        const { error: createTableError } = await supabaseAdmin.rpc('exec_sql', {
-            sql: `
+  try {
+    // Create the report_settings table
+    const { error: createTableError } = await supabaseAdmin.rpc('exec_sql', {
+      sql: `
         -- Create ENUM type for frequency if it doesn't exist
         DO $$ BEGIN
-          CREATE TYPE report_frequency AS ENUM ('weekly', 'bi-weekly', 'monthly', 'quarterly');
+          CREATE TYPE report_frequency AS ENUM ('weekly', 'bi-weekly', 'monthly', 'quarterly', 'custom');
         EXCEPTION
           WHEN duplicate_object THEN null;
         END $$;
@@ -27,6 +27,13 @@ async function createReportSettingsTable() {
           brand_id UUID NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
           customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
           frequency report_frequency NOT NULL DEFAULT 'monthly',
+          day_of_week TEXT,
+          day_of_month INTEGER,
+          month_in_quarter INTEGER,
+          custom_interval INTEGER,
+          start_date TIMESTAMPTZ,
+          next_run_at TIMESTAMPTZ,
+          last_run_at TIMESTAMPTZ,
           distribution_emails JSONB NOT NULL DEFAULT '[]'::jsonb,
           is_active BOOLEAN NOT NULL DEFAULT true,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -87,18 +94,18 @@ async function createReportSettingsTable() {
             SELECT customer_id FROM users WHERE id = auth.uid()
           ));
       `
-        });
+    });
 
-        if (createTableError) {
-            // If rpc doesn't exist, try direct SQL execution
-            console.log('⚠️  RPC method not available, attempting direct table creation...');
+    if (createTableError) {
+      // If rpc doesn't exist, try direct SQL execution
+      console.log('⚠️  RPC method not available, attempting direct table creation...');
 
-            // Create enum type
-            const { error: enumError } = await supabaseAdmin.from('_migrations').select('*').limit(1);
+      // Create enum type
+      const { error: enumError } = await supabaseAdmin.from('_migrations').select('*').limit(1);
 
-            // Since we can't execute raw SQL directly, we'll need to create the table through Supabase dashboard
-            console.log('⚠️  Please create the table manually in Supabase dashboard with the following schema:');
-            console.log(`
+      // Since we can't execute raw SQL directly, we'll need to create the table through Supabase dashboard
+      console.log('⚠️  Please create the table manually in Supabase dashboard with the following schema:');
+      console.log(`
 Table Name: report_settings
 
 Columns:
@@ -125,31 +132,31 @@ RLS Policies: (Enable RLS)
   - DELETE: customer_id IN (SELECT customer_id FROM users WHERE id = auth.uid())
       `);
 
-            throw new Error('Manual table creation required - see console output for schema');
-        }
-
-        console.log('✅ Successfully created report_settings table');
-        console.log('✅ Created indexes for brand_id and customer_id');
-        console.log('✅ Created updated_at trigger');
-        console.log('✅ Enabled Row Level Security with policies');
-
-    } catch (error) {
-        console.error('❌ Migration failed:', error);
-        throw error;
+      throw new Error('Manual table creation required - see console output for schema');
     }
+
+    console.log('✅ Successfully created report_settings table');
+    console.log('✅ Created indexes for brand_id and customer_id');
+    console.log('✅ Created updated_at trigger');
+    console.log('✅ Enabled Row Level Security with policies');
+
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    throw error;
+  }
 }
 
 // Run the migration
 if (require.main === module) {
-    createReportSettingsTable()
-        .then(() => {
-            console.log('🎉 Migration completed successfully');
-            process.exit(0);
-        })
-        .catch((error) => {
-            console.error('💥 Migration failed:', error);
-            process.exit(1);
-        });
+  createReportSettingsTable()
+    .then(() => {
+      console.log('🎉 Migration completed successfully');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('💥 Migration failed:', error);
+      process.exit(1);
+    });
 }
 
 export { createReportSettingsTable };

@@ -1163,7 +1163,7 @@ router.patch('/:recommendationId/complete', authenticateToken, async (req, res) 
     // Get recommendation with KPI info
     const { data: recommendation, error: recError } = await supabaseAdmin
       .from('recommendations')
-      .select('id, kpi_id, kpi, brand_id, customer_id, is_content_generated, citation_source, focus_area')
+      .select('id, kpi_id, kpi, brand_id, customer_id, is_content_generated, citation_source, focus_area, visibility_score, soa, sentiment')
       .eq('id', recommendationId)
       .eq('customer_id', customerId)
       .single();

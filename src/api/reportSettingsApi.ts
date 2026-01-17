@@ -1,12 +1,19 @@
 import { apiClient } from '../lib/apiClient';
 
-export type ReportFrequency = 'weekly' | 'bi-weekly' | 'monthly' | 'quarterly';
+export type ReportFrequency = 'weekly' | 'bi-weekly' | 'monthly' | 'quarterly' | 'custom';
 
 export interface ReportSettings {
     id: string;
     brand_id: string;
     customer_id: string;
     frequency: ReportFrequency;
+    day_of_week?: string;
+    day_of_month?: number;
+    month_in_quarter?: number;
+    custom_interval?: number;
+    start_date?: string;
+    next_run_at?: string;
+    last_run_at?: string;
     distribution_emails: string[];
     is_active: boolean;
     created_at: string;
@@ -15,6 +22,11 @@ export interface ReportSettings {
 
 export interface ReportSettingsInput {
     frequency: ReportFrequency;
+    day_of_week?: string;
+    day_of_month?: number;
+    month_in_quarter?: number;
+    custom_interval?: number;
+    start_date?: string;
     distribution_emails: string[];
     is_active?: boolean;
 }

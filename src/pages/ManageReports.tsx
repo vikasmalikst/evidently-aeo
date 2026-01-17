@@ -21,22 +21,34 @@ import {
     IconCalendar,
 } from '@tabler/icons-react';
 
-const FREQUENCY_OPTIONS: { value: ReportFrequency; label: string; description: string }[] = [
+const FREQUENCY_OPTIONS: { value: ReportFrequency | 'custom'; label: string; description: string }[] = [
     { value: 'weekly', label: 'Weekly', description: 'Every Monday' },
     { value: 'bi-weekly', label: 'Bi-Weekly', description: 'Every other Monday' },
     { value: 'monthly', label: 'Monthly', description: 'First Monday of each month' },
     { value: 'quarterly', label: 'Quarterly', description: 'First Monday of each quarter' },
+    { value: 'custom', label: 'Custom', description: 'Every X days' },
+];
+
+const DAYS_OF_WEEK = [
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
 ];
 
 export const ManageReports = () => {
     const [brands, setBrands] = useState<BrandResponse[]>([]);
     const [selectedBrandId, setSelectedBrandId] = useState<string>('');
     const [settings, setSettings] = useState<ReportSettings | null>(null);
-    const [frequency, setFrequency] = useState<ReportFrequency>('monthly');
+    const [frequency, setFrequency] = useState<ReportFrequency | 'custom'>('monthly');
     const [emails, setEmails] = useState<string[]>([]);
     const [emailInput, setEmailInput] = useState('');
     const [emailError, setEmailError] = useState('');
     const [isActive, setIsActive] = useState(true);
+
+    // Sub-options state
+    const [selectedDayOfWeek, setSelectedDayOfWeek] = useState<string>('Monday');
+    const [selectedDayOfMonth, setSelectedDayOfMonth] = useState<number>(1);
+    const [selectedMonthInQuarter, setSelectedMonthInQuarter] = useState<number>(1);
+    const [customInterval, setCustomInterval] = useState<number>(7);
+    const [startDate, setStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
     const [isLoadingBrands, setIsLoadingBrands] = useState(true);
     const [isLoadingSettings, setIsLoadingSettings] = useState(false);
@@ -89,6 +101,11 @@ export const ManageReports = () => {
                         setFrequency(data.frequency);
                         setEmails(data.distribution_emails);
                         setIsActive(data.is_active);
+                        if (data.day_of_week) setSelectedDayOfWeek(data.day_of_week);
+                        if (data.day_of_month) setSelectedDayOfMonth(data.day_of_month);
+                        if (data.month_in_quarter) setSelectedMonthInQuarter(data.month_in_quarter);
+                        if (data.custom_interval) setCustomInterval(data.custom_interval);
+                        if (data.start_date) setStartDate(data.start_date.split('T')[0]);
                     } else {
                         // Reset to defaults if no settings exist
                         setFrequency('monthly');
@@ -161,7 +178,12 @@ export const ManageReports = () => {
 
         try {
             const response = await saveReportSettings(selectedBrandId, {
-                frequency,
+                frequency: frequency as any,
+                day_of_week: selectedDayOfWeek,
+                day_of_month: selectedDayOfMonth,
+                month_in_quarter: selectedMonthInQuarter,
+                custom_interval: customInterval,
+                start_date: startDate,
                 distribution_emails: emails,
                 is_active: isActive,
             });
@@ -294,29 +316,111 @@ export const ManageReports = () => {
                                                 <IconCalendar size={18} />
                                                 Report Frequency
                                             </label>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div className="flex flex-wrap gap-2">
                                                 {FREQUENCY_OPTIONS.map((option) => (
                                                     <button
                                                         key={option.value}
                                                         onClick={() => setFrequency(option.value)}
-                                                        className={`p-4 rounded-lg border-2 transition-all text-left ${frequency === option.value
-                                                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5'
-                                                            : 'border-[var(--border-default)] hover:border-[var(--accent-primary)]/30'
+                                                        className={`px-4 py-2 rounded-full border-2 transition-all flex items-center gap-2 whitespace-nowrap ${frequency === option.value
+                                                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5 text-[var(--accent-primary)]'
+                                                            : 'border-[var(--border-default)] hover:border-[var(--accent-primary)]/30 text-[var(--text-caption)]'
                                                             }`}
                                                     >
-                                                        <div className="flex items-center justify-between">
-                                                            <div>
-                                                                <p className="font-bold text-[var(--text-headings)]">{option.label}</p>
-                                                                <p className="text-xs text-[var(--text-caption)] mt-1">
-                                                                    {option.description}
-                                                                </p>
-                                                            </div>
-                                                            {frequency === option.value && (
-                                                                <IconCheck size={20} className="text-[var(--accent-primary)]" />
-                                                            )}
+                                                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${frequency === option.value ? 'border-[var(--accent-primary)]' : 'border-[var(--border-default)]'}`}>
+                                                            {frequency === option.value && <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)]" />}
                                                         </div>
+                                                        <span className="text-sm font-semibold">{option.label}</span>
                                                     </button>
                                                 ))}
+                                            </div>
+
+                                            {/* Frequency Sub-options */}
+                                            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-[var(--border-default)] flex flex-wrap items-center gap-4">
+                                                {(frequency === 'weekly' || frequency === 'bi-weekly') && (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-medium text-[var(--text-body)]">On</span>
+                                                        <select
+                                                            value={selectedDayOfWeek}
+                                                            onChange={(e) => setSelectedDayOfWeek(e.target.value)}
+                                                            className="text-sm px-2 py-1 bg-white border border-[var(--border-default)] rounded focus:outline-none"
+                                                        >
+                                                            {DAYS_OF_WEEK.map(day => (
+                                                                <option key={day} value={day}>{day}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                {frequency === 'monthly' && (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-medium text-[var(--text-body)]">On day</span>
+                                                        <select
+                                                            value={selectedDayOfMonth}
+                                                            onChange={(e) => setSelectedDayOfMonth(parseInt(e.target.value))}
+                                                            className="text-sm px-2 py-1 bg-white border border-[var(--border-default)] rounded focus:outline-none"
+                                                        >
+                                                            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                                                <option key={day} value={day}>{day}</option>
+                                                            ))}
+                                                        </select>
+                                                        <span className="text-sm font-medium text-[var(--text-body)]">of the month</span>
+                                                    </div>
+                                                )}
+
+                                                {frequency === 'quarterly' && (
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-medium text-[var(--text-body)]">In the</span>
+                                                            <select
+                                                                value={selectedMonthInQuarter}
+                                                                onChange={(e) => setSelectedMonthInQuarter(parseInt(e.target.value))}
+                                                                className="text-sm px-2 py-1 bg-white border border-[var(--border-default)] rounded focus:outline-none"
+                                                            >
+                                                                <option value={1}>1st</option>
+                                                                <option value={2}>2nd</option>
+                                                                <option value={3}>3rd</option>
+                                                            </select>
+                                                            <span className="text-sm font-medium text-[var(--text-body)]">month</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-medium text-[var(--text-body)]">on day</span>
+                                                            <select
+                                                                value={selectedDayOfMonth}
+                                                                onChange={(e) => setSelectedDayOfMonth(parseInt(e.target.value))}
+                                                                className="text-sm px-2 py-1 bg-white border border-[var(--border-default)] rounded focus:outline-none"
+                                                            >
+                                                                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                                                    <option key={day} value={day}>{day}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {frequency === 'custom' && (
+                                                    <div className="flex flex-wrap items-center gap-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-medium text-[var(--text-body)]">Every</span>
+                                                            <input
+                                                                type="number"
+                                                                min={1}
+                                                                value={customInterval}
+                                                                onChange={(e) => setCustomInterval(parseInt(e.target.value) || 1)}
+                                                                className="w-16 text-sm px-2 py-1 bg-white border border-[var(--border-default)] rounded focus:outline-none"
+                                                            />
+                                                            <span className="text-sm font-medium text-[var(--text-body)]">days</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-medium text-[var(--text-body)]">starting from</span>
+                                                            <input
+                                                                type="date"
+                                                                value={startDate}
+                                                                onChange={(e) => setStartDate(e.target.value)}
+                                                                className="text-sm px-2 py-1 bg-white border border-[var(--border-default)] rounded focus:outline-none"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 

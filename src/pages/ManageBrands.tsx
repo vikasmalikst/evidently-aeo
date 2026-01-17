@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
-import { getBrands, updateBrandStatus, getBrandStats, type BrandResponse, type BrandStats } from '../api/brandApi';
+import { getBrands, updateBrandStatus, getBrandStats, getBrandById, updateBrand, type BrandResponse, type BrandStats } from '../api/brandApi';
 import { invalidateCache } from '../lib/apiCache';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { 
@@ -15,7 +15,9 @@ import {
   IconListCheck,
   IconQuestionMark,
   IconRobot,
-  IconMessageCircle
+  IconMessageCircle,
+  IconEdit,
+  IconX
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -35,6 +37,123 @@ const KPICard = ({ title, value, icon: Icon, loading }: { title: string, value: 
   </div>
 );
 
+interface EditableTagListProps {
+  items: string[];
+  onItemsChange: (items: string[]) => void;
+  placeholder: string;
+  colorClass: string;
+  bgClass: string;
+}
+
+// Editable tag list component for synonyms and products
+const EditableTagList = ({ items, onItemsChange, placeholder, colorClass, bgClass }: EditableTagListProps) => {
+  const [newItem, setNewItem] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+
+  const handleAdd = () => {
+    if (newItem.trim() && !items.includes(newItem.trim())) {
+      onItemsChange([...items, newItem.trim()]);
+      setNewItem('');
+    }
+  };
+
+  const handleRemove = (index: number) => {
+    onItemsChange(items.filter((_, i) => i !== index));
+  };
+
+  const handleStartEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditingValue(items[index]);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingIndex !== null && editingValue.trim()) {
+      const updated = [...items];
+      updated[editingIndex] = editingValue.trim();
+      onItemsChange(updated);
+      setEditingIndex(null);
+      setEditingValue('');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+    setEditingValue('');
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="px-3 py-2 border border-[var(--border-default)] rounded-lg bg-gray-50/50 min-h-[2.5rem]">
+        {items.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {items.map((item, index) => (
+              <div key={index} className="inline-flex items-center gap-1">
+                {editingIndex === index ? (
+                  <input
+                    type="text"
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    onBlur={handleSaveEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveEdit();
+                      } else if (e.key === 'Escape') {
+                        handleCancelEdit();
+                      }
+                    }}
+                    className="px-2 py-0.5 text-xs border border-[var(--accent-primary)] rounded focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)] bg-white min-w-[80px]"
+                    autoFocus
+                  />
+                ) : (
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 ${bgClass} ${colorClass} rounded text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity`}
+                    onDoubleClick={() => handleStartEdit(index)}
+                    title="Double-click to edit"
+                  >
+                    {item}
+                  </span>
+                )}
+                <button
+                  onClick={() => handleRemove(index)}
+                  className="p-0.5 hover:bg-red-100 rounded text-red-600 transition-colors"
+                  title="Remove"
+                >
+                  <IconX size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-[var(--text-caption)] italic">No items. Add one below.</p>
+        )}
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          type="text"
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              handleAdd();
+            }
+          }}
+          placeholder={placeholder}
+          className="flex-1 px-2 py-1.5 text-xs border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-white"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={!newItem.trim() || items.includes(newItem.trim())}
+          className="px-3 py-1.5 text-xs bg-[var(--accent-primary)] text-white rounded-lg hover:bg-[var(--accent-primary)]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+        >
+          <IconPlus size={14} />
+          Add
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export const ManageBrands = () => {
   const [brands, setBrands] = useState<BrandResponse[]>([]);
   const [stats, setStats] = useState<BrandStats | null>(null);
@@ -44,6 +163,8 @@ export const ManageBrands = () => {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBrand, setSelectedBrand] = useState<BrandResponse | null>(null);
+  const [editingBrand, setEditingBrand] = useState<(BrandResponse & { brand_synonyms?: string[]; brand_products?: string[] }) | null>(null);
+  const [isLoadingBrandData, setIsLoadingBrandData] = useState(false);
   const navigate = useNavigate();
 
   const loadData = useCallback(async () => {
@@ -116,6 +237,73 @@ export const ManageBrands = () => {
 
   const handleAddBrand = () => {
     navigate('/onboarding');
+  };
+
+  const handleEditBrand = async (brand: BrandResponse) => {
+    setIsLoadingBrandData(true);
+    try {
+      const response = await getBrandById(brand.id);
+      if (response.success && response.data) {
+        setEditingBrand({
+          ...brand,
+          brand_synonyms: response.data.brand_synonyms || [],
+          brand_products: response.data.brand_products || []
+        });
+      } else {
+        // If API doesn't return synonyms/products, initialize with empty arrays
+        setEditingBrand({
+          ...brand,
+          brand_synonyms: [],
+          brand_products: []
+        });
+      }
+    } catch (err) {
+      console.error('Error loading brand data:', err);
+      // Still open modal with basic brand data
+      setEditingBrand({
+        ...brand,
+        brand_synonyms: [],
+        brand_products: []
+      });
+    } finally {
+      setIsLoadingBrandData(false);
+    }
+  };
+
+  const handleUpdateBrand = async () => {
+    if (!editingBrand) return;
+
+    try {
+      const updates: {
+        homepage_url?: string;
+        industry?: string;
+        brand_synonyms?: string[];
+        brand_products?: string[];
+      } = {};
+
+      if (editingBrand.homepage_url !== undefined) {
+        updates.homepage_url = editingBrand.homepage_url;
+      }
+      if (editingBrand.industry !== undefined) {
+        updates.industry = editingBrand.industry;
+      }
+      if (editingBrand.brand_synonyms !== undefined) {
+        updates.brand_synonyms = editingBrand.brand_synonyms;
+      }
+      if (editingBrand.brand_products !== undefined) {
+        updates.brand_products = editingBrand.brand_products;
+      }
+
+      const response = await updateBrand(editingBrand.id, updates);
+      if (response.success) {
+        setEditingBrand(null);
+        await loadData(); // Reload brands list
+      } else {
+        setError(response.error || 'Failed to update brand');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update brand');
+    }
   };
 
   const filteredBrands = useMemo(() => {
@@ -304,6 +492,13 @@ export const ManageBrands = () => {
                   </div>
 
                   <div className="flex items-center gap-4 ml-4">
+                    <button
+                      onClick={() => handleEditBrand(brand)}
+                      className="p-2 text-[var(--text-caption)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-secondary)] rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                      title="Edit"
+                    >
+                      <IconEdit size={18} />
+                    </button>
                     <div className="flex flex-col items-end gap-1">
                       <div className="flex items-center gap-2">
                         {updatingId === brand.id && (
@@ -331,6 +526,119 @@ export const ManageBrands = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Edit Brand Modal */}
+          {editingBrand && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-5 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-[var(--text-headings)]">
+                      Edit Brand
+                    </h2>
+                    <p className="text-xs text-[var(--text-caption)] mt-0.5">Update brand details</p>
+                  </div>
+                  <button
+                    onClick={() => setEditingBrand(null)}
+                    className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <IconX size={20} className="text-[var(--text-caption)]" />
+                  </button>
+                </div>
+
+                {isLoadingBrandData ? (
+                  <div className="flex items-center justify-center py-8">
+                    <IconLoader2 size={24} className="animate-spin text-[var(--accent-primary)]" />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
+                        Brand Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editingBrand.name}
+                        disabled
+                        className="w-full px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg bg-gray-100 text-[var(--text-caption)] cursor-not-allowed font-medium"
+                      />
+                      <p className="text-[10px] text-[var(--text-caption)] mt-1 ml-1">Name cannot be changed</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
+                        Domain or URL
+                      </label>
+                      <input
+                        type="text"
+                        value={editingBrand.homepage_url || ''}
+                        onChange={(e) => setEditingBrand({ ...editingBrand, homepage_url: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-gray-50/50"
+                        placeholder="example.com"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
+                        Industry
+                      </label>
+                      <input
+                        type="text"
+                        value={editingBrand.industry || ''}
+                        onChange={(e) => setEditingBrand({ ...editingBrand, industry: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/20 focus:border-[var(--accent-primary)] transition-all bg-gray-50/50"
+                        placeholder="e.g., Technology, Automotive"
+                      />
+                    </div>
+
+                    {/* Brand Synonyms/Aliases Section - Editable */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
+                        Brand Synonyms/Aliases
+                      </label>
+                      <EditableTagList
+                        items={editingBrand.brand_synonyms || []}
+                        onItemsChange={(synonyms) => setEditingBrand({ ...editingBrand, brand_synonyms: synonyms })}
+                        placeholder="Add synonym or alias..."
+                        colorClass="text-blue-700"
+                        bgClass="bg-blue-100"
+                      />
+                    </div>
+
+                    {/* Products Section - Editable */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[var(--text-headings)] mb-1.5">
+                        Products
+                      </label>
+                      <EditableTagList
+                        items={editingBrand.brand_products || []}
+                        onItemsChange={(products) => setEditingBrand({ ...editingBrand, brand_products: products })}
+                        placeholder="Add product name..."
+                        colorClass="text-green-700"
+                        bgClass="bg-green-100"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 mt-5">
+                  <button
+                    onClick={() => setEditingBrand(null)}
+                    className="flex-1 px-4 py-2 text-sm border border-[var(--border-default)] rounded-lg hover:bg-gray-50 transition-all font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateBrand}
+                    disabled={isLoadingBrandData}
+                    className="flex-1 px-4 py-2 text-sm bg-[var(--accent-primary)] text-white rounded-lg hover:bg-[var(--accent-primary)]/90 transition-all shadow-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

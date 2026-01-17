@@ -94,6 +94,40 @@ export async function updateBrandStatus(brandId: string, status: 'active' | 'ina
   }
 }
 
+/**
+ * Update brand details (homepage_url, industry, synonyms, products)
+ */
+export async function updateBrand(
+  brandId: string,
+  updates: {
+    homepage_url?: string;
+    industry?: string;
+    brand_synonyms?: string[];
+    brand_products?: string[];
+  }
+): Promise<ApiResponse<BrandResponse & { brand_synonyms?: string[]; brand_products?: string[] }>> {
+  try {
+    const response = await apiClient.request<ApiResponse<BrandResponse & { brand_synonyms?: string[]; brand_products?: string[] }>>(
+      `/brands/${brandId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      },
+      { requiresAuth: true }
+    );
+    
+    // Invalidate brands cache
+    invalidateCache('/brands');
+    invalidateCache(`/brands/${brandId}`);
+    invalidateCache('/brands/stats');
+    
+    return response;
+  } catch (error) {
+    console.error('❌ Update brand failed:', error);
+    throw error;
+  }
+}
+
 export async function updateBrandWebsiteUrl(brandId: string, websiteUrl: string): Promise<ApiResponse<BrandResponse>> {
   try {
     const response = await apiClient.request<ApiResponse<BrandResponse>>(

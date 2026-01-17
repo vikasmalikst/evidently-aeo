@@ -1158,6 +1158,26 @@ export class BrandService {
         return null;
       }
 
+      // Fetch brand_synonyms and brand_products from brand_products table
+      const { data: brandProductsData, error: brandProductsError } = await supabaseAdmin
+        .from('brand_products')
+        .select('brand_synonyms, brand_products')
+        .eq('brand_id', brandId)
+        .maybeSingle();
+
+      if (brandProductsError) {
+        console.warn(`[BrandService] Failed to load brand_products data: ${brandProductsError.message}`);
+      }
+
+      // Add synonyms and products to brand object
+      if (brandProductsData) {
+        (brand as any).brand_synonyms = brandProductsData.brand_synonyms || [];
+        (brand as any).brand_products = brandProductsData.brand_products || [];
+      } else {
+        (brand as any).brand_synonyms = [];
+        (brand as any).brand_products = [];
+      }
+
       // Transform brand_competitors array to simple competitor names
       if (brand.brand_competitors && Array.isArray(brand.brand_competitors)) {
         brand.competitors = brand.brand_competitors
@@ -1335,9 +1355,10 @@ export class BrandService {
       };
 
       if (updateData.brand_name) updateFields.name = updateData.brand_name;
-      if (updateData.website_url) updateFields.homepage_url = updateData.website_url;
+      if (updateData.website_url !== undefined) updateFields.homepage_url = updateData.website_url;
+      if (updateData.homepage_url !== undefined) updateFields.homepage_url = updateData.homepage_url;
       if (updateData.description) updateFields.summary = updateData.description;
-      if (updateData.industry) updateFields.industry = updateData.industry;
+      if (updateData.industry !== undefined) updateFields.industry = updateData.industry;
       if (updateData.status !== undefined) {
         // Map 'inactive' to 'archived' to satisfy DB constraint
         // constraint brands_status_check check (status = any (array['active'::text, 'archived'::text]))
@@ -1369,8 +1390,63 @@ export class BrandService {
         throw new DatabaseError('Brand not found or not authorized');
       }
 
+      // Update brand_synonyms and brand_products in brand_products table if provided
+      if (updateData.brand_synonyms !== undefined || updateData.brand_products !== undefined) {
+        try {
+          // Fetch current brand_products data
+          const { data: currentBrandProducts, error: fetchError } = await supabaseAdmin
+            .from('brand_products')
+            .select('competitor_data')
+            .eq('brand_id', brandId)
+            .maybeSingle();
+
+          if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "not found" which is OK
+            console.warn(`[BrandService] Failed to fetch brand_products: ${fetchError.message}`);
+          }
+
+          // Prepare update data for brand_products
+          const brandProductsUpdate: any = {
+            brand_id: brandId,
+            updated_at: new Date().toISOString()
+          };
+
+          if (updateData.brand_synonyms !== undefined) {
+            brandProductsUpdate.brand_synonyms = updateData.brand_synonyms;
+          }
+
+          if (updateData.brand_products !== undefined) {
+            brandProductsUpdate.brand_products = updateData.brand_products;
+          }
+
+          // Preserve competitor_data if it exists
+          if (currentBrandProducts?.competitor_data) {
+            brandProductsUpdate.competitor_data = currentBrandProducts.competitor_data;
+          }
+
+          // Upsert brand_products
+          const { error: brandProductsError } = await supabaseAdmin
+            .from('brand_products')
+            .upsert(brandProductsUpdate, {
+              onConflict: 'brand_id'
+            });
+
+          if (brandProductsError) {
+            console.error(`[BrandService] Failed to update brand_products: ${brandProductsError.message}`);
+            // Don't throw - allow brand update to succeed even if brand_products update fails
+          } else {
+            console.log(`[BrandService] Successfully updated brand_products for brand ${brandId}`);
+          }
+        } catch (error) {
+          console.error(`[BrandService] Error updating brand_products:`, error);
+          // Don't throw - allow brand update to succeed
+        }
+      }
+
+      // Fetch updated brand with synonyms and products
+      const brandWithProducts = await this.getBrandById(brandId, customerId);
+
       console.log('✅ Brand updated successfully:', updatedBrand.id);
-      return this.transformBrand(updatedBrand);
+      return brandWithProducts || this.transformBrand(updatedBrand);
     } catch (error) {
       console.error('Error in updateBrand service method:', error);
       if (error instanceof ValidationError || error instanceof DatabaseError) {

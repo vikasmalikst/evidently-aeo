@@ -28,6 +28,7 @@ import { onboardingUtils } from './utils/onboardingUtils';
 import LandingPage from './pages/LandingPage';
 import { ExecutiveReportingPage } from './pages/ExecutiveReporting/ExecutiveReportingPage';
 import { QueriesAnalysisPage } from './pages/QueriesAnalysis/QueriesAnalysisPage';
+import { ManageReports } from './pages/ManageReports';
 
 // New pages for restructured navigation
 import { MeasurePage } from './pages/Measure';
@@ -94,13 +95,13 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route 
-          path="/onboarding/domain-readiness/:brandId" 
+        <Route
+          path="/onboarding/domain-readiness/:brandId"
           element={
             <ProtectedRoute>
               <OnboardingDomainReadinessScreenRoute />
             </ProtectedRoute>
-          } 
+          }
         />
         <Route
           path="/movers-shakers"
@@ -371,6 +372,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ManageCollectors />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/manage-reports"
+          element={
+            <ProtectedRoute>
+              <ManageReports />
             </ProtectedRoute>
           }
         />

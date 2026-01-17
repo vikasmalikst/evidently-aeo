@@ -114,6 +114,7 @@ export interface RecommendationV3Response {
 interface BrandContextV3 {
   brandId: string;
   brandName: string;
+  brandDomain?: string;      // Brand's own domain (for competitor filter whitelist)
   brandSummary?: string;
   industry?: string;
   visibilityIndex?: number;
@@ -714,10 +715,10 @@ Return ONLY a JSON array with the personalized recommendations.`;
     customerId: string
   ): Promise<BrandContextV3 | null> {
     try {
-      // Get brand info
+      // Get brand info (including homepage_url for domain extraction)
       const { data: brand, error: brandError } = await supabaseAdmin
         .from('brands')
-        .select('id, name, industry, summary')
+        .select('id, name, industry, summary, homepage_url')
         .eq('id', brandId)
         .eq('customer_id', customerId)
         .single();
@@ -725,6 +726,25 @@ Return ONLY a JSON array with the personalized recommendations.`;
       if (brandError || !brand) {
         console.error('❌ [RecommendationV3Service] Brand not found:', brandError);
         return null;
+      }
+
+      // Extract brand domain from homepage_url
+      let brandDomain: string | undefined;
+      if (brand.homepage_url) {
+        try {
+          // Handle both full URLs and domain-only formats
+          const url = brand.homepage_url.startsWith('http')
+            ? new URL(brand.homepage_url)
+            : new URL(`https://${brand.homepage_url}`);
+          brandDomain = url.hostname.replace(/^www\./, '');
+          console.log(`🏷️ [RecommendationV3Service] Brand domain extracted: ${brandDomain} (from ${brand.homepage_url})`);
+        } catch (e) {
+          // Fallback: use homepage_url directly if URL parsing fails
+          brandDomain = brand.homepage_url.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+          console.log(`🏷️ [RecommendationV3Service] Brand domain extracted (fallback): ${brandDomain}`);
+        }
+      } else {
+        console.warn(`⚠️ [RecommendationV3Service] No homepage_url found for brand ${brandId}, brand whitelist may not work correctly`);
       }
 
       // Date ranges: Current period (last 30 days) and Previous period (days 31-60)
@@ -905,9 +925,17 @@ Return ONLY a JSON array with the personalized recommendations.`;
       }
 
       // Build competitor exclusion list for filtering (Layer 1: Pre-generation filtering)
+      // Pass brand domain and name to whitelist them from being flagged as competitors
       const competitorExclusionList = competitors && competitors.length > 0
-        ? buildCompetitorExclusionList(competitors)
-        : { names: new Set<string>(), domains: new Set<string>(), nameVariations: new Set<string>(), baseDomains: new Set<string>() };
+        ? buildCompetitorExclusionList(competitors, brandDomain, brand.name)
+        : {
+          names: new Set<string>(),
+          domains: new Set<string>(),
+          nameVariations: new Set<string>(),
+          baseDomains: new Set<string>(),
+          brandDomain: brandDomain,
+          brandName: brand.name
+        };
 
       if (competitors && competitors.length > 0) {
         console.log(`🚫 [RecommendationV3Service] Built competitor exclusion list: ${competitors.length} competitors`);
@@ -1086,6 +1114,7 @@ Return ONLY a JSON array with the personalized recommendations.`;
       return {
         brandId: brand.id,
         brandName: brand.name,
+        brandDomain: brandDomain, // Add brand domain for whitelist filtering
         brandSummary: (brand as any).summary || undefined,
         industry: brand.industry || undefined,
         visibilityIndex,
@@ -1157,9 +1186,9 @@ Return ONLY a JSON array with the personalized recommendations.`;
           contentFocus: 'Technical Optimization',
           source: 'domain_audit', // Mark as domain audit recommendation
           howToFix: howToFix, // Include step-by-step fix instructions
-          visibilityScore: context.visibilityIndex,
-          soa: context.shareOfAnswers,
-          sentiment: context.sentimentScore
+          visibilityScore: context.visibilityIndex !== undefined ? String(Math.round(context.visibilityIndex)) : undefined,
+          soa: context.shareOfAnswers !== undefined ? String(Math.round(context.shareOfAnswers * 10) / 10) : undefined,
+          sentiment: context.sentimentScore !== undefined ? String(Math.round(context.sentimentScore * 100) / 100) : undefined
         };
 
         recommendations.push(rec);
@@ -1707,7 +1736,7 @@ Respond only with the JSON array.`;
           const openRouterPromise = openRouterCollectorService.executeQuery({
             collectorType: 'content',
             prompt,
-            maxTokens: 4000,
+            maxTokens: 8000,
             temperature: 0.5,
             topP: 0.9,
             enableWebSearch: false
@@ -1753,7 +1782,7 @@ Respond only with the JSON array.`;
                   content: prompt
                 }
               ],
-              max_tokens: 4000,
+              max_tokens: 8000,
               temperature: 0.5
             })
           });
@@ -2061,7 +2090,7 @@ Respond only with the JSON array.`;
         const or = await openRouterCollectorService.executeQuery({
           collectorType: 'content',
           prompt,
-          maxTokens: 4000,
+          maxTokens: 8000,
           temperature: 0.5,
           topP: 0.9,
           enableWebSearch: false
@@ -2098,7 +2127,7 @@ Respond only with the JSON array.`;
                   content: prompt
                 }
               ],
-              max_tokens: 4000,
+              max_tokens: 8000,
               temperature: 0.5
             })
           });

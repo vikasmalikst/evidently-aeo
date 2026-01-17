@@ -27,6 +27,11 @@ const settingsNavItems: SettingsNavItem[] = [
     label: 'Manage Collectors',
     path: '/settings/manage-collectors',
   },
+  {
+    id: 'manage-reports',
+    label: 'Manage Reports',
+    path: '/settings/manage-reports',
+  },
 ];
 
 interface SettingsLayoutProps {
@@ -66,11 +71,10 @@ export const SettingsLayout = ({ children }: SettingsLayoutProps) => {
                 <li key={item.id}>
                   <button
                     onClick={() => navigate(item.path)}
-                    className={`w-full flex items-center px-4 py-3 transition-all duration-200 text-left rounded-lg group ${
-                      active
+                    className={`w-full flex items-center px-4 py-3 transition-all duration-200 text-left rounded-lg group ${active
                         ? 'bg-[var(--accent-primary)]/5 text-[var(--accent-primary)] font-semibold border-r-4 border-[var(--accent-primary)]'
                         : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
-                    }`}
+                      }`}
                   >
                     <span className="text-sm">
                       {item.label}

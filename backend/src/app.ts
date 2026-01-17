@@ -26,6 +26,7 @@ import moversShakersRoutes from './routes/movers-shakers.routes';
 import domainReadinessRoutes from './services/domain-readiness/routes';
 import executiveReportingRoutes from './routes/executive-reporting.routes';
 import { contactRouter } from './routes/contact.routes';
+import reportSettingsRoutes from './routes/report-settings.routes';
 // TEMPORARY: User management routes commented out
 // import userManagementRoutes from './routes/user-management.routes';
 
@@ -127,6 +128,7 @@ app.use('/api/recommendations', recommendationsRoutes);
 app.use('/api/recommendations-v3', recommendationsV3Routes);
 app.use('/api/movers-shakers', moversShakersRoutes);
 app.use('/api', domainReadinessRoutes);
+app.use('/api/report-settings', reportSettingsRoutes);
 
 // TEMPORARY: User management routes commented out
 // app.use('/api/users', userManagementRoutes);

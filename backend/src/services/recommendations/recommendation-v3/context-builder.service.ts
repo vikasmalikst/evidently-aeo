@@ -43,7 +43,7 @@ export class ContextBuilderService {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const sixtyDaysAgo = new Date();
       sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-      
+
       const currentStartDate = thirtyDaysAgo.toISOString().split('T')[0];
       const currentEndDate = new Date().toISOString().split('T')[0];
       const previousStartDate = sixtyDaysAgo.toISOString().split('T')[0];
@@ -59,10 +59,10 @@ export class ContextBuilderService {
       }
 
       // Get overall brand metrics (current and previous periods)
-      const { visibilityIndex, shareOfAnswers, sentimentScore } = 
+      const { visibilityIndex, shareOfAnswers, sentimentScore } =
         await this.getBrandMetrics(brandId, customerId, currentStartDate, currentEndDate, USE_OPTIMIZED_RECOMMENDATIONS);
-      
-      const { visibilityIndex: prevVisibilityIndex, shareOfAnswers: prevShareOfAnswers, sentimentScore: prevSentimentScore } = 
+
+      const { visibilityIndex: prevVisibilityIndex, shareOfAnswers: prevShareOfAnswers, sentimentScore: prevSentimentScore } =
         await this.getBrandMetrics(brandId, customerId, previousStartDate, previousEndDate, USE_OPTIMIZED_RECOMMENDATIONS);
 
       // Calculate trends
@@ -74,10 +74,10 @@ export class ContextBuilderService {
 
       // Get competitors
       const competitors = await this.getCompetitorMetrics(
-        brandId, 
-        customerId, 
-        currentStartDate, 
-        currentEndDate, 
+        brandId,
+        customerId,
+        currentStartDate,
+        currentEndDate,
         USE_OPTIMIZED_RECOMMENDATIONS
       );
 
@@ -132,14 +132,14 @@ export class ContextBuilderService {
         const validSent = result.data.filter(m => m.sentiment_score != null);
 
         return {
-          visibilityIndex: validVis.length > 0 
-            ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length 
+          visibilityIndex: validVis.length > 0
+            ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length
             : undefined,
-          shareOfAnswers: validSoa.length > 0 
-            ? validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length 
+          shareOfAnswers: validSoa.length > 0
+            ? validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length
             : undefined,
-          sentimentScore: validSent.length > 0 
-            ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length 
+          sentimentScore: validSent.length > 0
+            ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length
             : undefined
         };
       }
@@ -157,14 +157,14 @@ export class ContextBuilderService {
         const validSent = metrics.filter(m => m.sentiment_score != null);
 
         return {
-          visibilityIndex: validVis.length > 0 
-            ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length 
+          visibilityIndex: validVis.length > 0
+            ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length
             : undefined,
-          shareOfAnswers: validSoa.length > 0 
-            ? validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length 
+          shareOfAnswers: validSoa.length > 0
+            ? validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length
             : undefined,
-          sentimentScore: validSent.length > 0 
-            ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length 
+          sentimentScore: validSent.length > 0
+            ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length
             : undefined
         };
       }
@@ -192,7 +192,7 @@ export class ContextBuilderService {
       .limit(5);
 
     const competitorData: BrandContextV3['competitors'] = [];
-    
+
     if (competitors && competitors.length > 0) {
       for (const comp of competitors) {
         let compVis: number | undefined;
@@ -214,14 +214,14 @@ export class ContextBuilderService {
             const validSoa = result.data.filter(m => m.share_of_answers != null);
             const validSent = result.data.filter(m => m.sentiment_score != null);
 
-            compVis = validVis.length > 0 
-              ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length 
+            compVis = validVis.length > 0
+              ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length
               : undefined;
-            compSoa = validSoa.length > 0 
-              ? validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length 
+            compSoa = validSoa.length > 0
+              ? validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length
               : undefined;
-            compSent = validSent.length > 0 
-              ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length 
+            compSent = validSent.length > 0
+              ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length
               : undefined;
           }
         } else {
@@ -248,14 +248,14 @@ export class ContextBuilderService {
                 const validSoa = compMetrics.filter(m => m.share_of_answers_brand != null);
                 const validSent = compMetrics.filter(m => m.sentiment_score != null);
 
-                compVis = validVis.length > 0 
-                  ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length 
+                compVis = validVis.length > 0
+                  ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length
                   : undefined;
-                compSoa = validSoa.length > 0 
-                  ? validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length 
+                compSoa = validSoa.length > 0
+                  ? validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length
                   : undefined;
-                compSent = validSent.length > 0 
-                  ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length 
+                compSent = validSent.length > 0
+                  ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length
                   : undefined;
               }
             }
@@ -285,13 +285,13 @@ export class ContextBuilderService {
   ): Promise<BrandContextV3['sourceMetrics']> {
     console.log('📊 [ContextBuilder] Fetching source data using source-attribution service...');
     const sourceAttributionStartTime = Date.now();
-    
+
     const sourceAttributionResponse = await sourceAttributionService.getSourceAttribution(
       brandId,
       customerId,
       { start: startDate, end: endDate }
     );
-    
+
     console.log(`✅ [ContextBuilder] Fetched ${sourceAttributionResponse.sources.length} sources in ${Date.now() - sourceAttributionStartTime}ms`);
 
     const sourceMetrics: BrandContextV3['sourceMetrics'] = [];
@@ -326,7 +326,7 @@ export class ContextBuilderService {
    * Calculate trend between current and previous period
    */
   private calculateTrend(
-    current: number | undefined, 
+    current: number | undefined,
     previous: number | undefined
   ): { current: number; previous: number; changePercent: number; direction: 'up' | 'down' | 'stable' } | undefined {
     if (current === undefined || previous === undefined || previous === 0) return undefined;

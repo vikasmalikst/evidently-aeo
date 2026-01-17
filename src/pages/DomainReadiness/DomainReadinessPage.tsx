@@ -120,27 +120,6 @@ export const DomainReadinessPage = () => {
           </div>
 
           <div className="flex items-center gap-4">
-            {brands.length > 1 && (
-              <div className="flex items-center gap-2">
-                <label htmlFor="domain-readiness-brand-selector" className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">
-                  Brand
-                </label>
-                <select
-                  id="domain-readiness-brand-selector"
-                  value={selectedBrandId || ''}
-                  onChange={(event) => selectBrand(event.target.value)}
-                  className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-500 bg-white"
-                  disabled={brandsLoading || loading}
-                >
-                  {brands.map((brandOption) => (
-                    <option key={brandOption.id} value={brandOption.id}>
-                      {brandOption.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             {!!selectedBrand && (
               <div className="flex items-center gap-2">
                 <label

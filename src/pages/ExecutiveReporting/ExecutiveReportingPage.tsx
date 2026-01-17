@@ -204,26 +204,6 @@ export const ExecutiveReportingPage = () => {
 
                             {/* Controls */}
                             <div className="executive-controls">
-                                {brands.length > 1 && (
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                            Brand
-                                        </label>
-                                        <select
-                                            value={selectedBrandId || ''}
-                                            onChange={(e) => selectBrand(e.target.value)}
-                                            disabled={brandsLoading || loading}
-                                            className="executive-select"
-                                        >
-                                            {brands.map((brand) => (
-                                                <option key={brand.id} value={brand.id}>
-                                                    {brand.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-
                                 <button
                                     onClick={() => setIsGenerationModalOpen(true)}
                                     // disabled={generating} // Let modal handle strict state or concurrent check if needed

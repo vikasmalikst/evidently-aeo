@@ -636,30 +636,6 @@ export const Keywords = () => {
           }}
         >
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
-            {brands.length > 1 && selectedBrandId && (
-              <div>
-                <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
-                  Brand
-                </label>
-                <select
-                  value={selectedBrandId}
-                  onChange={(e) => selectBrand(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    border: `1px solid ${COLORS.gridLines}`,
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    backgroundColor: COLORS.bgPrimary,
-                    color: COLORS.textBody,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {brands.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
             <div>
               <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
                 Category

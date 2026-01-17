@@ -892,28 +892,6 @@ export const SearchVisibility = () => {
                 </p>
               </div>
             </div>
-            {brands.length > 1 && selectedBrandId && (
-              <div className="flex items-center gap-2 mb-6">
-                <label
-                  htmlFor="brand-selector"
-                  className="text-xs font-semibold text-[#6c7289] uppercase tracking-wide"
-                >
-                  Brand
-                </label>
-                <select
-                  id="brand-selector"
-                  value={selectedBrandId}
-                  onChange={(event) => selectBrand(event.target.value)}
-                  className="text-sm border border-[#dcdfe5] rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#06b6d4]"
-                >
-                  {brands.map((brand) => (
-                    <option key={brand.id} value={brand.id}>
-                      {brand.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
             {selectedBrand && (
               <p className="text-sm text-[#8b90a7]">
                 Viewing data for <span className="font-medium text-[#1a1d29]">{selectedBrand.name}</span>

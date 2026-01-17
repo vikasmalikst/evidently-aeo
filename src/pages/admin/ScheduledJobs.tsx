@@ -110,48 +110,48 @@ export const ScheduledJobs = () => {
 
   const handleGenerateRecommendations = async () => {
     if (!selectedBrandId && !generateRecsForAllBrands) return;
-    
+
     if (!confirm(`Generate recommendations for ${generateRecsForAllBrands ? 'ALL active brands' : 'the selected brand'}? This may take a while.`)) {
-        return;
+      return;
     }
 
     setGeneratingRecommendations(true);
     try {
-        if (generateRecsForAllBrands) {
-            let successCount = 0;
-            let failCount = 0;
-            
-            // Filter out empty IDs just in case
-            const targetBrands = brands.filter(b => b.id);
-            
-            for (const brand of targetBrands) {
-                 console.log(`Generating for ${brand.name}...`);
-                 try {
-                     const result = await generateRecommendationsV3({ brandId: brand.id });
-                     if (result.success) successCount++;
-                     else {
-                         console.error(`Failed for ${brand.name}:`, result.error);
-                         failCount++;
-                     }
-                 } catch (e) {
-                     console.error(`Exception for ${brand.name}:`, e);
-                     failCount++;
-                 }
+      if (generateRecsForAllBrands) {
+        let successCount = 0;
+        let failCount = 0;
+
+        // Filter out empty IDs just in case
+        const targetBrands = brands.filter(b => b.id);
+
+        for (const brand of targetBrands) {
+          console.log(`Generating for ${brand.name}...`);
+          try {
+            const result = await generateRecommendationsV3({ brandId: brand.id });
+            if (result.success) successCount++;
+            else {
+              console.error(`Failed for ${brand.name}:`, result.error);
+              failCount++;
             }
-            alert(`Generation complete. Success: ${successCount}, Failed: ${failCount}`);
-        } else {
-            const result = await generateRecommendationsV3({ brandId: selectedBrandId! });
-            if (result.success) {
-                alert('Recommendations generated successfully!');
-            } else {
-                alert(`Failed to generate recommendations: ${result.error}`);
-            }
+          } catch (e) {
+            console.error(`Exception for ${brand.name}:`, e);
+            failCount++;
+          }
         }
+        alert(`Generation complete. Success: ${successCount}, Failed: ${failCount}`);
+      } else {
+        const result = await generateRecommendationsV3({ brandId: selectedBrandId! });
+        if (result.success) {
+          alert('Recommendations generated successfully!');
+        } else {
+          alert(`Failed to generate recommendations: ${result.error}`);
+        }
+      }
     } catch (error) {
-        console.error('Error generating recommendations:', error);
-        alert('An error occurred while generating recommendations.');
+      console.error('Error generating recommendations:', error);
+      alert('An error occurred while generating recommendations.');
     } finally {
-        setGeneratingRecommendations(false);
+      setGeneratingRecommendations(false);
     }
   };
 
@@ -161,9 +161,9 @@ export const ScheduledJobs = () => {
 
     setEnrichmentRunning(true);
     setEnrichmentLogs([]);
-    
+
     try {
-      const endpoint = enrichAllBrands 
+      const endpoint = enrichAllBrands
         ? `${apiClient.baseUrl}/admin/brands/bulk/refresh-products?customer_id=${customerId}`
         : `${apiClient.baseUrl}/admin/brands/${selectedBrandId}/refresh-products`;
 
@@ -184,7 +184,7 @@ export const ScheduledJobs = () => {
 
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           const trimmedLine = line.trim();
           if (trimmedLine.startsWith('data: ')) {
@@ -214,7 +214,7 @@ export const ScheduledJobs = () => {
   const [diagnostic, setDiagnostic] = useState<QueriesDiagnosticPayload | null>(null);
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
-  
+
   // Ollama settings state
   const [ollamaSettings, setOllamaSettings] = useState({
     ollamaUrl: 'http://localhost:11434',
@@ -225,7 +225,7 @@ export const ScheduledJobs = () => {
   const [ollamaSaving, setOllamaSaving] = useState(false);
   const [ollamaError, setOllamaError] = useState<string | null>(null);
   const [ollamaSuccess, setOllamaSuccess] = useState<string | null>(null);
-  
+
   // Ollama health check state
   const [ollamaHealth, setOllamaHealth] = useState<{
     healthy: boolean;
@@ -233,7 +233,7 @@ export const ScheduledJobs = () => {
     responseTime?: number;
   } | null>(null);
   const [ollamaHealthChecking, setOllamaHealthChecking] = useState(false);
-  
+
   // Test prompt state
   const [testPrompt, setTestPrompt] = useState('');
   const [testResponse, setTestResponse] = useState<string | null>(null);
@@ -323,7 +323,7 @@ export const ScheduledJobs = () => {
   // Load Ollama settings when brand is selected
   useEffect(() => {
     if (selectedBrandId) {
-    loadOllamaSettings();
+      loadOllamaSettings();
     }
   }, [selectedBrandId]);
 
@@ -393,7 +393,7 @@ export const ScheduledJobs = () => {
       setOllamaSaving(true);
       setOllamaError(null);
       setOllamaSuccess(null);
-      
+
       // Validate URL format
       try {
         new URL(ollamaSettings.ollamaUrl);
@@ -415,7 +415,7 @@ export const ScheduledJobs = () => {
       if (response.success) {
         setOllamaSuccess('Ollama settings saved successfully!');
         setTimeout(() => setOllamaSuccess(null), 3000);
-        
+
         // Auto-check health after saving if Ollama is enabled
         if (ollamaSettings.useOllama) {
           setTimeout(() => checkOllamaHealth(), 500);
@@ -447,7 +447,7 @@ export const ScheduledJobs = () => {
       setTestLoading(true);
       setTestError(null);
       setTestResponse(null);
-      
+
       const response = await apiClient.post<ApiResponse<{ response: string }>>(
         `/admin/brands/${selectedBrandId}/local-llm/test`,
         {
@@ -562,9 +562,9 @@ export const ScheduledJobs = () => {
 
     const brand = brands.find(b => b.id === brandId);
     const brandName = brand?.name || 'Selected Brand';
-    
+
     let currentDiagnostic = diagnostic;
-    
+
     // If diagnostic is not loaded or for a different brand, try to load it now
     if ((!currentDiagnostic || selectedBrandId !== brandId) && brandId && customerId) {
       try {
@@ -597,7 +597,7 @@ export const ScheduledJobs = () => {
 
     const activeQueries = currentDiagnostic?.queries?.active || 0;
     const totalQueries = activeQueries * collectorsCount;
-    
+
     // Calculate expected cost: 1000 queries cost 150 cents (Corrected per user request)
     const expectedCostCents = (totalQueries / 1000) * 150;
     const expectedCostDollars = expectedCostCents / 100;
@@ -620,7 +620,7 @@ export const ScheduledJobs = () => {
 
   const confirmCollectDataNow = async () => {
     if (!collectionPreview) return;
-    
+
     const { brandId } = collectionPreview;
     setShowCollectionModal(false);
 
@@ -655,9 +655,9 @@ export const ScheduledJobs = () => {
 
     const brand = brands.find(b => b.id === brandId);
     const brandName = brand?.name || 'Selected Brand';
-    
+
     let scoringDiag: ScoringDiagnosticPayload | null = null;
-    
+
     try {
       setScoring(true);
       const response = await apiClient.get<ApiResponse<ScoringDiagnosticPayload>>(
@@ -674,7 +674,7 @@ export const ScheduledJobs = () => {
 
     const pendingCount = scoringDiag?.pendingScoringCount || 0;
     const llmProvider = ollamaSettings.useOllama ? 'Local LLM' : 'OpenRouter';
-    
+
     // Cost calculation: 1.5 USD for 1000 results for OpenRouter, 0 for Local LLM
     const costDollars = ollamaSettings.useOllama ? 0 : (pendingCount / 1000) * 1.5;
 
@@ -691,7 +691,7 @@ export const ScheduledJobs = () => {
 
   const confirmScoreNow = async () => {
     if (!scoringPreview) return;
-    
+
     const { brandId } = scoringPreview;
     setShowScoringModal(false);
 
@@ -754,7 +754,7 @@ export const ScheduledJobs = () => {
 
     setScoringBackfillRunning(true);
     setScoringBackfillLogs([]);
-    
+
     try {
       const response = await fetch(`${apiClient.baseUrl}/admin/brands/${selectedBrandId}/backfill-scoring`, {
         method: 'POST',
@@ -780,7 +780,7 @@ export const ScheduledJobs = () => {
 
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           const trimmedLine = line.trim();
           if (trimmedLine.startsWith('data: ')) {
@@ -926,31 +926,9 @@ export const ScheduledJobs = () => {
         </div>
       </div>
 
-      {/* Brand Selector and Quick Actions */}
-      <div className="mb-6 space-y-4">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Brand for Quick Actions
-          </label>
-          <select
-            value={selectedBrandId || ''}
-            onChange={(e) => {
-              if (e.target.value) {
-                selectBrand(e.target.value);
-              }
-            }}
-            className="w-full max-w-md border rounded px-3 py-2"
-          >
-            <option value="">-- Select a brand --</option>
-            {brands.map((brand) => (
-              <option key={brand.id} value={brand.id}>
-                {brand.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {selectedBrandId && (
+      {/* Quick Actions */}
+      {selectedBrandId && (
+        <div className="mb-6 space-y-4">
           <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-semibold text-gray-900">
@@ -1022,21 +1000,21 @@ export const ScheduledJobs = () => {
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-medium text-gray-900 text-indigo-800">Generate Recommendations</h4>
                   <div className="flex items-center">
-                      <label className="flex items-center cursor-pointer">
-                        <div className="relative">
-                          <input 
-                            type="checkbox" 
-                            className="sr-only" 
-                            checked={generateRecsForAllBrands}
-                            onChange={(e) => setGenerateRecsForAllBrands(e.target.checked)}
-                          />
-                          <div className={`block w-10 h-6 rounded-full transition-colors ${generateRecsForAllBrands ? 'bg-indigo-600' : 'bg-gray-400'}`}></div>
-                          <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${generateRecsForAllBrands ? 'transform translate-x-4' : ''}`}></div>
-                        </div>
-                        <div className="ml-3 text-gray-700 text-xs font-medium">
-                          All Brands
-                        </div>
-                      </label>
+                    <label className="flex items-center cursor-pointer">
+                      <div className="relative">
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={generateRecsForAllBrands}
+                          onChange={(e) => setGenerateRecsForAllBrands(e.target.checked)}
+                        />
+                        <div className={`block w-10 h-6 rounded-full transition-colors ${generateRecsForAllBrands ? 'bg-indigo-600' : 'bg-gray-400'}`}></div>
+                        <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${generateRecsForAllBrands ? 'transform translate-x-4' : ''}`}></div>
+                      </div>
+                      <div className="ml-3 text-gray-700 text-xs font-medium">
+                        All Brands
+                      </div>
+                    </label>
                   </div>
                 </div>
                 <p className="text-sm text-gray-600 mb-3">
@@ -1057,9 +1035,9 @@ export const ScheduledJobs = () => {
                   <div className="flex items-center">
                     <label className="flex items-center cursor-pointer">
                       <div className="relative">
-                        <input 
-                          type="checkbox" 
-                          className="sr-only" 
+                        <input
+                          type="checkbox"
+                          className="sr-only"
                           checked={enrichAllBrands}
                           onChange={(e) => setEnrichAllBrands(e.target.checked)}
                         />
@@ -1164,8 +1142,8 @@ export const ScheduledJobs = () => {
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Backfill Scoring Modal */}
       {showBackfillModal && (
@@ -1264,10 +1242,10 @@ export const ScheduledJobs = () => {
             {scoringBackfillLogs.length === 0
               ? 'Initializing scoring backfill...'
               : scoringBackfillLogs.map((l, i) => (
-                  <div key={i} className="mb-1">
-                    <span className="text-gray-500">[{l.ts}]</span> {l.message}
-                  </div>
-                ))}
+                <div key={i} className="mb-1">
+                  <span className="text-gray-500">[{l.ts}]</span> {l.message}
+                </div>
+              ))}
             {scoringBackfillRunning && <div className="animate-pulse inline-block w-2 h-4 bg-teal-400 ml-1"></div>}
           </div>
         </div>
@@ -1289,10 +1267,10 @@ export const ScheduledJobs = () => {
             {enrichmentLogs.length === 0
               ? 'Initializing LLM enrichment...'
               : enrichmentLogs.map((l, i) => (
-                  <div key={i} className="mb-1">
-                    <span className="text-gray-500">[{l.ts}]</span> {l.message}
-                  </div>
-                ))}
+                <div key={i} className="mb-1">
+                  <span className="text-gray-500">[{l.ts}]</span> {l.message}
+                </div>
+              ))}
             {enrichmentRunning && <div className="animate-pulse inline-block w-2 h-4 bg-green-400 ml-1"></div>}
           </div>
         </div>
@@ -1351,12 +1329,12 @@ export const ScheduledJobs = () => {
                     </span>
                   )
                 ) : null}
-                
+
                 <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 flex items-center gap-1">
                   <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
                   Active
                 </span>
-                
+
                 {/* Manual Health Check Button */}
                 <button
                   onClick={checkOllamaHealth}
@@ -1762,18 +1740,18 @@ const CollectionConfirmationModal = ({
             Data Collection Warning
           </h2>
         </div>
-        
+
         <div className="p-6 space-y-4">
           <p className="text-gray-600 font-medium">
             BrightData Collection will start for the following brand:
           </p>
-          
+
           <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-100">
             <div className="flex justify-between items-center pb-2 border-b border-gray-200">
               <span className="text-sm font-semibold text-gray-500">Brand Name</span>
               <span className="font-bold text-gray-900">{preview.brandName}</span>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4 py-2">
               <div className="flex flex-col">
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Number of Prompts</span>
@@ -1784,12 +1762,12 @@ const CollectionConfirmationModal = ({
                 <span className="text-lg font-bold text-gray-800">{preview.collectors}</span>
               </div>
             </div>
-            
+
             <div className="flex justify-between items-center py-2 border-t border-gray-200">
               <span className="text-sm font-semibold text-gray-500">Total Number of Prompts</span>
               <span className="text-lg font-extrabold text-indigo-600">{preview.totalPrompts}</span>
             </div>
-            
+
             <div className="flex justify-between items-center py-2 border-t border-gray-200">
               <div className="flex flex-col">
                 <span className="text-sm font-semibold text-gray-500">Expected Cost</span>
@@ -1806,12 +1784,12 @@ const CollectionConfirmationModal = ({
               <span className="text-sm font-medium text-gray-700 italic">{formatDate(preview.lastCollectedAt)}</span>
             </div>
           </div>
-          
+
           <p className="text-sm text-gray-500 italic text-center">
             This action will incur costs on your BrightData account.
           </p>
         </div>
-        
+
         <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-200">
           <button
             onClick={onClose}
@@ -1873,32 +1851,31 @@ const ScoringConfirmationModal = ({
             Start Scoring Warning
           </h2>
         </div>
-        
+
         <div className="p-6 space-y-4">
           <p className="text-gray-600 font-medium">
             Scoring will start for the following brand:
           </p>
-          
+
           <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-100">
             <div className="flex justify-between items-center pb-2 border-b border-gray-200">
               <span className="text-sm font-semibold text-gray-500">Brand Name</span>
               <span className="font-bold text-gray-900">{preview.brandName}</span>
             </div>
-            
+
             <div className="flex justify-between items-center py-2">
               <span className="text-sm font-semibold text-gray-500">Collector results to be scored</span>
               <span className="text-lg font-bold text-gray-800">{preview.pendingCount}</span>
             </div>
-            
+
             <div className="flex justify-between items-center py-2 border-t border-gray-200">
               <span className="text-sm font-semibold text-gray-500">LLM Provider</span>
-              <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
-                preview.llmProvider === 'Local LLM' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-              }`}>
+              <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${preview.llmProvider === 'Local LLM' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                }`}>
                 {preview.llmProvider}
               </span>
             </div>
-            
+
             <div className="flex justify-between items-center py-2 border-t border-gray-200">
               <div className="flex flex-col">
                 <span className="text-sm font-semibold text-gray-500">Estimated Cost</span>
@@ -1918,12 +1895,12 @@ const ScoringConfirmationModal = ({
               <span className="text-sm font-medium text-gray-700 italic">{formatDate(preview.lastScoredAt)}</span>
             </div>
           </div>
-          
+
           <p className="text-sm text-gray-500 italic text-center">
             The scoring process runs in the background and may take some time depending on the volume.
           </p>
         </div>
-        
+
         <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-200">
           <button
             onClick={onClose}
@@ -2136,7 +2113,7 @@ const RunsHistoryModal = ({ job, onClose }: { job: ScheduledJob; onClose: () => 
                       Duration: {Math.round(
                         (new Date(run.finished_at).getTime() -
                           new Date(run.started_at).getTime()) /
-                          1000
+                        1000
                       )}{' '}
                       seconds
                     </span>

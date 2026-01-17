@@ -219,9 +219,6 @@ export const Prompts = () => {
           llmOptions={llmOptions}
           selectedLLMs={selectedLLMs}
           onLLMChange={handleLLMChange}
-          brands={brands}
-          selectedBrandId={selectedBrandId}
-          onBrandChange={selectBrand}
           startDate={startDate}
           endDate={endDate}
           onStartDateChange={setStartDate}

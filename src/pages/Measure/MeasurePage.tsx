@@ -766,7 +766,7 @@ export const MeasurePage = () => {
                 <h1 className="text-[28px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
                 <p className="text-[14px] text-[#64748b] mt-0.5">{overviewSubtitle}</p>
               </div>
-              
+
               {/* Date Range - Top Right */}
               <DateRangeSelector
                 startDate={startDate}
@@ -776,25 +776,9 @@ export const MeasurePage = () => {
                 showComparisonInfo={false}
               />
             </div>
-            
+
             {/* Filters Row - Below Title */}
             <div className="flex items-center gap-6 mt-4">
-              {/* Brand Selector */}
-              {brands.length > 1 && selectedBrandId && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">Brand</span>
-                  <select
-                    value={selectedBrandId}
-                    onChange={(e) => selectBrand(e.target.value)}
-                    className="text-[13px] border border-[#e2e8f0] rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4] min-w-[180px]"
-                  >
-                    {brands.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               {/* LLM Filters - Icons Only with Smooth Hover Animation */}
               {llmOptions.length > 0 && (
                 <div className="flex items-center gap-2">
@@ -824,7 +808,7 @@ export const MeasurePage = () => {
                         All
                       </span>
                     </button>
-                    
+
                     {/* Individual LLM Buttons */}
                     {llmOptions
                       .filter((opt) => opt.value !== 'all')

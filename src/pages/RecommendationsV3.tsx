@@ -100,7 +100,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [feedbackText, setFeedbackText] = useState('');
   const [selectedRecommendationForRegen, setSelectedRecommendationForRegen] = useState<RecommendationV3 | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
-  
+
   // v4.0 Interactive Refinement state
   const [sectionFeedback, setSectionFeedback] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> feedback)
   const [sectionEdits, setSectionEdits] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> editedContent)
@@ -1233,21 +1233,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              {brands && brands.length > 1 && (
-                <select
-                  value={selectedBrandId || ''}
-                  onChange={(e) => handleBrandSwitch(e.target.value)}
-                  className="px-3 py-2 border border-[#e8e9ed] rounded-md text-[13px] text-[#1a1d29] bg-white focus:outline-none focus:ring-2 focus:ring-[#00bcdc] focus:border-transparent"
-                >
-                  {brands.map((brand) => (
-                    <option key={brand.id} value={brand.id}>
-                      {brand.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
           </div>
 
           {/* Step Indicator */}
@@ -1882,7 +1867,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                     console.log('[Refine] Sending request with', sectionsWithFeedback.length, 'sections');
                                     const accessToken = apiClient.getAccessToken();
-                                    
+
                                     const response = await fetch(`${apiClient.baseUrl}/recommendations-v3/refine-content`, {
                                       method: 'POST',
                                       headers: {
@@ -1900,7 +1885,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     console.log('[Refine] Response status:', response.status);
                                     const result = await response.json();
                                     console.log('[Refine] Result:', result);
-                                    
+
                                     if (result.success && result.data?.refinedContent) {
                                       setRefinedContent(prev => {
                                         const next = new Map(prev);
@@ -1980,7 +1965,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                 onChange={(e) => updateSectionEdit(section.id, e.target.value)}
                                               />
                                             ) : (
-                                              <div 
+                                              <div
                                                 className="text-[13px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap"
                                                 dangerouslySetInnerHTML={{ __html: highlightFillIns(editedContent) }}
                                               />
@@ -2045,11 +2030,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                       <button
                                         onClick={handleRefine}
                                         disabled={isRefining || !hasFeedback}
-                                        className={`flex-1 py-3 rounded-lg text-[14px] font-semibold transition-colors flex items-center justify-center gap-2 ${
-                                          isRefining || !hasFeedback
+                                        className={`flex-1 py-3 rounded-lg text-[14px] font-semibold transition-colors flex items-center justify-center gap-2 ${isRefining || !hasFeedback
                                             ? 'bg-[#e2e8f0] text-[#94a3b8] cursor-not-allowed'
                                             : 'bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] text-white hover:from-[#7c3aed] hover:to-[#9333ea]'
-                                        }`}
+                                          }`}
                                       >
                                         {isRefining ? (
                                           <>
@@ -2168,7 +2152,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                               autoFocus
                                             />
                                           ) : (
-                                            <div 
+                                            <div
                                               className="prose prose-sm max-w-none text-[14px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap font-sans"
                                               dangerouslySetInnerHTML={{ __html: highlightFillIns(unescapeNewlines(publishableContent.content)) }}
                                             />

@@ -55,7 +55,7 @@ export const Dashboard = () => {
     }
 
     const otherBrands = brands.filter((brand) => brand.id !== selectedBrandId);
-    
+
     // Prefetch all other brands when dropdown is focused
     otherBrands.forEach((brand, index) => {
       // Small delay to avoid blocking UI
@@ -65,14 +65,14 @@ export const Dashboard = () => {
           endDate,
         });
         const endpoint = `/brands/${brand.id}/dashboard?${params.toString()}`;
-        
+
         prefetchOnIdle<ApiResponse<DashboardPayload>>(
           endpoint,
           {},
           { requiresAuth: true },
           500 // 500ms timeout
         );
-        
+
         console.debug(`[DASHBOARD] Prefetched on focus for brand: ${brand.name}`);
       }, index * 100); // 100ms stagger between prefetches
     });
@@ -87,7 +87,7 @@ export const Dashboard = () => {
   const sentimentMetric = findScore('Sentiment Score', dashboardData);
   const brandPresenceRows = dashboardData?.brandPresenceRows ?? 0;
   const totalBrandRows = dashboardData?.totalBrandRows ?? 0;
-  const brandPresencePercentage = totalBrandRows > 0 
+  const brandPresencePercentage = totalBrandRows > 0
     ? Math.min(100, Math.round((brandPresenceRows / totalBrandRows) * 100))
     : 0;
   const competitorEntries = useMemo(
@@ -298,31 +298,9 @@ export const Dashboard = () => {
               </h1>
             </div>
             <div className="flex items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <p className="text-[15px] text-[#393e51]">
-                  {overviewSubtitle}
-                </p>
-                {brands.length > 1 && selectedBrandId && (
-                  <div className="flex items-center gap-2">
-                    <label htmlFor="brand-selector" className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">
-                      Brand
-                    </label>
-                    <select
-                      id="brand-selector"
-                      value={selectedBrandId}
-                      onChange={(event) => selectBrand(event.target.value)}
-                      onFocus={handleBrandSelectFocus}
-                      className="text-[13px] border border-[#e8e9ed] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#00bcdc] focus:ring-1 focus:ring-[#00bcdc] bg-white"
-                    >
-                      {brands.map((brandOption) => (
-                        <option key={brandOption.id} value={brandOption.id}>
-                          {brandOption.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
+              <p className="text-[15px] text-[#393e51]">
+                {overviewSubtitle}
+              </p>
               <DateRangeSelector
                 startDate={startDate}
                 endDate={endDate}
@@ -356,8 +334,8 @@ export const Dashboard = () => {
                 .filter((slice) => Number.isFinite(slice.percentage) && slice.percentage >= 0);
               const hasSourceData = sourceSlices.length > 0;
               return hasSourceData ? (
-                <StackedRacingChart 
-                  data={sourceSlices} 
+                <StackedRacingChart
+                  data={sourceSlices}
                   topSourcesByType={dashboardData?.topSourcesByType}
                 />
               ) : (
@@ -377,10 +355,10 @@ export const Dashboard = () => {
                   const totalQueries = slice.totalQueries ?? 0;
                   const brandPresenceCount = slice.brandPresenceCount ?? 0;
                   const totalCollectorResults = slice.totalCollectorResults ?? totalQueries;
-                  const brandPresencePercentage = totalCollectorResults > 0 
+                  const brandPresencePercentage = totalCollectorResults > 0
                     ? Math.min(100, Math.round((brandPresenceCount / totalCollectorResults) * 100))
                     : 0;
-                  
+
                   return {
                     provider: slice.provider,
                     share: slice.shareOfSearch ?? slice.share,

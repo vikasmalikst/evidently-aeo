@@ -30,20 +30,20 @@ export const BrandSelector = () => {
     }, [isOpen]);
 
     const handleBrandChange = (brandId: string) => {
+        // Select the brand first (updates localStorage and state)
+        selectBrand(brandId);
+
         // Clear all cached data to force fresh fetches for the new brand
         cacheManager.clear();
-
-        // Select the brand (updates localStorage and state)
-        selectBrand(brandId);
 
         // Close the dropdown
         setIsOpen(false);
 
-        // Navigate to current route to trigger remount without full page reload
-        // This avoids authentication rate limiting from excessive page reloads
-        const currentPath = location.pathname + location.search;
-        navigate(currentPath, { replace: true });
-        setTimeout(() => navigate(currentPath, { replace: false }), 10);
+        // Use navigation reload to trigger component remount
+        // navigate(0) reloads the current route without full page refresh
+        setTimeout(() => {
+            navigate(0);
+        }, 50);
     };
 
     // Don't render if loading or no brands

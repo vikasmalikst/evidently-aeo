@@ -25,6 +25,9 @@ export interface ManagedCompetitor {
   source?: string;
   priority?: number;
   metadata?: Record<string, unknown>;
+  // Competitor aliases/synonyms and products from brand_products.competitor_data
+  aliases?: string[];
+  products?: string[];
 }
 
 export interface CompetitorConfiguration {

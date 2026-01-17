@@ -44,18 +44,63 @@ export class CompetitorCrudService {
       throw new DatabaseError(`Failed to load competitors: ${competitorError.message}`)
     }
 
-    const competitors: ManagedCompetitor[] = (competitorRows || []).map(row => ({
-      id: row.id,
-      name: row.competitor_name,
-      url: row.competitor_url,
-      domain: row.metadata?.domain || normalizeDomain(row.competitor_url),
-      relevance: row.metadata?.relevance || 'Direct Competitor',
-      industry: row.metadata?.industry,
-      logo: row.metadata?.logo || (row.metadata?.domain ? `https://logo.clearbit.com/${row.metadata.domain}` : undefined),
-      source: row.metadata?.source || 'onboarding',
-      priority: row.priority,
-      metadata: row.metadata || {}
-    }))
+    // Fetch competitor_data from brand_products table
+    const { data: brandProductsData, error: brandProductsError } = await supabaseAdmin
+      .from('brand_products')
+      .select('competitor_data')
+      .eq('brand_id', brandId)
+      .maybeSingle()
+
+    if (brandProductsError) {
+      console.warn(`[CompetitorCrudService] Failed to load competitor_data from brand_products: ${brandProductsError.message}`)
+    }
+
+    const competitorDataMap = brandProductsData?.competitor_data || {}
+    console.log(`[CompetitorCrudService] Loaded competitor_data for brand ${brandId}:`, {
+      hasData: !!brandProductsData,
+      competitorKeys: Object.keys(competitorDataMap),
+      competitorCount: Object.keys(competitorDataMap).length
+    })
+
+    const competitors: ManagedCompetitor[] = (competitorRows || []).map(row => {
+      // Find competitor data from brand_products.competitor_data
+      // Try exact match first, then case-insensitive match
+      const competitorName = row.competitor_name
+      let compData = competitorDataMap[competitorName]
+      
+      if (!compData) {
+        // Try case-insensitive match
+        const entry = Object.entries(competitorDataMap).find(
+          ([key]) => key.toLowerCase() === competitorName.toLowerCase()
+        )
+        compData = entry?.[1] || null
+      }
+
+      if (compData) {
+        console.log(`[CompetitorCrudService] Found data for competitor "${competitorName}":`, {
+          synonyms: compData.synonyms?.length || 0,
+          products: compData.products?.length || 0
+        })
+      } else {
+        console.log(`[CompetitorCrudService] No data found for competitor "${competitorName}" in competitor_data`)
+      }
+
+      return {
+        id: row.id,
+        name: row.competitor_name,
+        url: row.competitor_url,
+        domain: row.metadata?.domain || normalizeDomain(row.competitor_url),
+        relevance: row.metadata?.relevance || 'Direct Competitor',
+        industry: row.metadata?.industry,
+        logo: row.metadata?.logo || (row.metadata?.domain ? `https://logo.clearbit.com/${row.metadata.domain}` : undefined),
+        source: row.metadata?.source || 'onboarding',
+        priority: row.priority,
+        metadata: row.metadata || {},
+        // Add aliases/synonyms and products from competitor_data
+        aliases: compData?.synonyms || [],
+        products: compData?.products || []
+      }
+    })
 
     // If no active config exists but we have competitors, create initial version
     if (!activeConfig && competitors.length > 0) {
@@ -198,7 +243,71 @@ export class CompetitorCrudService {
       url: updates.url || existing.url || buildUrlFromDomain(updates.domain || existing.domain),
       domain: updates.domain || existing.domain || normalizeDomain(updates.url || existing.url),
       logo: updates.logo || existing.logo || (updates.domain || existing.domain ? `https://logo.clearbit.com/${updates.domain || existing.domain}` : undefined),
-      metadata: { ...existing.metadata, ...updates.metadata }
+      metadata: { ...existing.metadata, ...updates.metadata },
+      // Preserve aliases and products if not being updated
+      aliases: updates.aliases !== undefined ? updates.aliases : existing.aliases,
+      products: updates.products !== undefined ? updates.products : existing.products
+    }
+
+    // If aliases or products are being updated, also update brand_products.competitor_data
+    if (updates.aliases !== undefined || updates.products !== undefined) {
+      try {
+        // Fetch current competitor_data from brand_products
+        const { data: brandProductsData, error: fetchError } = await supabaseAdmin
+          .from('brand_products')
+          .select('competitor_data')
+          .eq('brand_id', brandId)
+          .maybeSingle()
+
+        if (fetchError) {
+          console.warn(`[CompetitorCrudService] Failed to fetch competitor_data: ${fetchError.message}`)
+        }
+
+        // Get current competitor_data or initialize empty object
+        const competitorDataMap = brandProductsData?.competitor_data || {}
+        
+        // Update the competitor's data in the map
+        // Use exact name match first, then try case-insensitive
+        const competitorName = existing.name
+        let foundKey = competitorName
+        
+        if (!competitorDataMap[competitorName]) {
+          // Try case-insensitive match
+          const entry = Object.entries(competitorDataMap).find(
+            ([key]) => key.toLowerCase() === competitorName.toLowerCase()
+          )
+          if (entry) {
+            foundKey = entry[0]
+          }
+        }
+
+        // Update or create competitor entry
+        competitorDataMap[foundKey] = {
+          synonyms: updated.aliases || [],
+          products: updated.products || []
+        }
+
+        // Save updated competitor_data back to brand_products
+        const { error: updateError } = await supabaseAdmin
+          .from('brand_products')
+          .upsert({
+            brand_id: brandId,
+            competitor_data: competitorDataMap,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'brand_id'
+          })
+
+        if (updateError) {
+          console.error(`[CompetitorCrudService] Failed to update competitor_data: ${updateError.message}`)
+          // Don't throw - allow the competitor update to proceed even if competitor_data update fails
+        } else {
+          console.log(`[CompetitorCrudService] Successfully updated competitor_data for "${competitorName}"`)
+        }
+      } catch (error) {
+        console.error(`[CompetitorCrudService] Error updating competitor_data:`, error)
+        // Don't throw - allow the competitor update to proceed
+      }
     }
 
     // Create new version with updated competitor

@@ -14,6 +14,10 @@ export interface ManagedCompetitor {
   priority?: number
   metadata?: Record<string, unknown>
   
+  // Competitor aliases/synonyms and products from brand_products.competitor_data
+  aliases?: string[]
+  products?: string[]
+  
   // Version info
   includedInVersions?: number[]
   firstVersionIncluded?: number | null

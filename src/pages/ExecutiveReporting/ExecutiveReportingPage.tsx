@@ -18,6 +18,9 @@ import { DomainReadinessSection } from './components/DomainReadinessSection';
 import { ActionsImpactSection } from './components/ActionsImpactSection';
 import { TopMoversSection } from './components/TopMoversSection';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
+import { ReportGenerationModal } from './components/ReportGenerationModal';
+import { EmailReportModal } from './components/EmailReportModal';
+import { IconMail } from '@tabler/icons-react';
 import '../../styles/executive-reporting.css';
 
 interface ExecutiveReport {
@@ -35,8 +38,9 @@ export const ExecutiveReportingPage = () => {
     const [report, setReport] = useState<ExecutiveReport | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [periodDays, setPeriodDays] = useState<7 | 30 | 60 | 90>(30);
     const [generating, setGenerating] = useState(false);
+    const [isGenerationModalOpen, setIsGenerationModalOpen] = useState(false);
+    const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
 
     // Fetch latest report on mount
     useEffect(() => {
@@ -83,9 +87,7 @@ export const ExecutiveReportingPage = () => {
         try {
             const response = await apiClient.post<{ success: boolean; data: ExecutiveReport }>(
                 `/brands/${selectedBrandId}/executive-reports`,
-                {
-                    period_days: periodDays,
-                }
+                {}
             );
 
             if (response.success && response.data) {
@@ -96,8 +98,28 @@ export const ExecutiveReportingPage = () => {
         } catch (err) {
             console.error('Error generating report:', err);
             setError(err instanceof Error ? err.message : 'Failed to generate report');
+            // Re-throw so modal knows about error
+            throw err;
         } finally {
             setGenerating(false);
+        }
+    };
+
+    const handleEmailReport = async (email: string) => {
+        if (!report || !selectedBrandId) return;
+
+        try {
+            const response = await apiClient.post<{ success: boolean }>(
+                `/brands/${selectedBrandId}/executive-reports/${report.id}/email`,
+                { email }
+            );
+
+            if (!response.success) {
+                throw new Error('Failed to email report');
+            }
+        } catch (err: any) {
+            console.error('Error emailing report:', err);
+            throw new Error(err.message || 'Failed to email report');
         }
     };
 
@@ -201,41 +223,30 @@ export const ExecutiveReportingPage = () => {
                                         </select>
                                     </div>
                                 )}
-                                
-                                <select
-                                    value={periodDays}
-                                    onChange={(e) => setPeriodDays(Number(e.target.value) as 7 | 30 | 60 | 90)}
-                                    className="executive-select"
-                                >
-                                    <option value={7}>Last 7 Days</option>
-                                    <option value={30}>Last 30 Days</option>
-                                    <option value={60}>Last 60 Days</option>
-                                    <option value={90}>Last 90 Days</option>
-                                </select>
 
                                 <button
-                                    onClick={generateReport}
-                                    disabled={generating}
+                                    onClick={() => setIsGenerationModalOpen(true)}
+                                    // disabled={generating} // Let modal handle strict state or concurrent check if needed
                                     className="executive-btn-primary"
                                 >
-                                    {generating ? (
-                                        <>
-                                            <IconLoader className="w-4 h-4 animate-spin" />
-                                            Generating...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <IconFileText className="w-4 h-4" />
-                                            Generate Report
-                                        </>
-                                    )}
+                                    <IconFileText className="w-4 h-4" />
+                                    Generate Report
                                 </button>
 
                                 {report && (
-                                    <button onClick={exportPDF} className="executive-btn-secondary">
-                                        <IconDownload className="w-4 h-4" />
-                                        Export PDF
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={() => setIsEmailModalOpen(true)}
+                                            className="executive-btn-secondary"
+                                        >
+                                            <IconMail className="w-4 h-4" />
+                                            Email Report
+                                        </button>
+                                        <button onClick={exportPDF} className="executive-btn-secondary">
+                                            <IconDownload className="w-4 h-4" />
+                                            Export PDF
+                                        </button>
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -249,84 +260,92 @@ export const ExecutiveReportingPage = () => {
                 </div>
 
                 {/* Report Content */}
-                <div className="max-w-7xl mx-auto p-6">
-                    {report ? (
-                        <div className="space-y-6">
-                            {/* Report Info Bar */}
-                            <div className="executive-info-bar">
-                                <div className="executive-info-item">
-                                    <IconCalendar className="w-4 h-4" />
-                                    <span className="font-medium">Period:</span>
-                                    <span>
-                                        {new Date(report.report_period_start).toLocaleDateString('en-US', { 
-                                            month: 'short', 
-                                            day: 'numeric',
-                                            year: 'numeric'
-                                        })} – {new Date(report.report_period_end).toLocaleDateString('en-US', {
-                                            month: 'short',
-                                            day: 'numeric',
-                                            year: 'numeric'
-                                        })}
-                                    </span>
+                < div className="max-w-7xl mx-auto p-6" >
+                    {
+                        report ? (
+                            <div className="space-y-6" >
+                                {/* Report Info Bar */}
+                                < div className="executive-info-bar" >
+                                    <div className="executive-info-item">
+                                        <IconCalendar className="w-4 h-4" />
+                                        <span className="font-medium">Period:</span>
+                                        <span>
+                                            {new Date(report.report_period_start).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                            })} – {new Date(report.report_period_end).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                            })}
+                                        </span>
+                                    </div>
+                                    <div className="executive-info-divider" />
+                                    <div className="executive-info-item">
+                                        <IconClock className="w-4 h-4" />
+                                        <span className="font-medium">Generated:</span>
+                                        <span>
+                                            {new Date(report.generated_at).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                            })} at {new Date(report.generated_at).toLocaleTimeString('en-US', {
+                                                hour: 'numeric',
+                                                minute: '2-digit'
+                                            })}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="executive-info-divider" />
-                                <div className="executive-info-item">
-                                    <IconClock className="w-4 h-4" />
-                                    <span className="font-medium">Generated:</span>
-                                    <span>
-                                        {new Date(report.generated_at).toLocaleDateString('en-US', {
-                                            month: 'short',
-                                            day: 'numeric',
-                                            year: 'numeric'
-                                        })} at {new Date(report.generated_at).toLocaleTimeString('en-US', {
-                                            hour: 'numeric',
-                                            minute: '2-digit'
-                                        })}
-                                    </span>
-                                </div>
-                            </div>
 
-                            {/* Sections */}
-                            <div className="space-y-6">
-                                {report.executive_summary && (
-                                    <ExecutiveSummarySection summary={report.executive_summary} />
-                                )}
-                                <BrandPerformanceSection data={report.data_snapshot.brand_performance} />
-                                <LLMPerformanceSection data={report.data_snapshot.llm_performance} />
-                                <CompetitiveLandscapeSection data={report.data_snapshot.competitive_landscape} />
-                                <DomainReadinessSection data={report.data_snapshot.domain_readiness} />
-                                <ActionsImpactSection data={report.data_snapshot.actions_impact} />
-                                <TopMoversSection data={report.data_snapshot.top_movers} />
+                                {/* Sections */}
+                                < div className="space-y-6" >
+                                    {
+                                        report.executive_summary && (
+                                            <ExecutiveSummarySection summary={report.executive_summary} />
+                                        )
+                                    }
+                                    < BrandPerformanceSection data={report.data_snapshot.brand_performance} />
+                                    <LLMPerformanceSection data={report.data_snapshot.llm_performance} />
+                                    <CompetitiveLandscapeSection data={report.data_snapshot.competitive_landscape} />
+                                    <DomainReadinessSection data={report.data_snapshot.domain_readiness} />
+                                    <ActionsImpactSection data={report.data_snapshot.actions_impact} />
+                                    <TopMoversSection data={report.data_snapshot.top_movers} />
+                                </div >
+                            </div >
+                        ) : (
+                            <div className="executive-empty-state">
+                                <IconFileText className="executive-empty-icon" />
+                                <h3 className="executive-empty-title">No Reports Yet</h3>
+                                <p className="executive-empty-text">
+                                    Generate your first executive report to get comprehensive AEO insights
+                                </p>
+                                <button
+                                    onClick={() => setIsGenerationModalOpen(true)}
+                                    className="executive-btn-primary"
+                                >
+                                    <IconFileText className="w-4 h-4" />
+                                    Generate First Report
+                                </button>
                             </div>
-                        </div>
-                    ) : (
-                        <div className="executive-empty-state">
-                            <IconFileText className="executive-empty-icon" />
-                            <h3 className="executive-empty-title">No Reports Yet</h3>
-                            <p className="executive-empty-text">
-                                Generate your first executive report to get comprehensive AEO insights
-                            </p>
-                            <button
-                                onClick={generateReport}
-                                disabled={generating}
-                                className="executive-btn-primary"
-                            >
-                                {generating ? (
-                                    <>
-                                        <IconLoader className="w-4 h-4 animate-spin" />
-                                        Generating...
-                                    </>
-                                ) : (
-                                    <>
-                                        <IconFileText className="w-4 h-4" />
-                                        Generate First Report
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </Layout>
+                        )}
+                </div >
+            </div >
+            {/* Generation Modal */}
+            <ReportGenerationModal
+                isOpen={isGenerationModalOpen}
+                onClose={() => setIsGenerationModalOpen(false)}
+                brandName={selectedBrand?.name || 'Brand'}
+                onGenerate={generateReport}
+            />
+
+            {/* Email Modal */}
+            <EmailReportModal
+                isOpen={isEmailModalOpen}
+                onClose={() => setIsEmailModalOpen(false)}
+                brandName={selectedBrand?.name || 'Brand'}
+                onSend={handleEmailReport}
+            />
+        </Layout >
     );
 };

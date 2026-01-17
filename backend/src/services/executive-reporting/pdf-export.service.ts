@@ -87,7 +87,7 @@ export class PdfExportService {
   /**
    * Generate HTML content for the report
    */
-  private generateHTML(report: ExecutiveReport, annotations: any[]): string {
+  public generateHTML(report: ExecutiveReport, annotations: any[]): string {
     const { data_snapshot, executive_summary } = report;
     const brandPerf = data_snapshot.brand_performance;
 
@@ -488,14 +488,17 @@ export class PdfExportService {
    * Render actions & impact section
    */
   private renderActionsImpact(actionsImpact: any): string {
+    if (!actionsImpact?.recommendations) return '';
+
+    const recs = actionsImpact.recommendations;
     return `
       <div class="page">
         <h2>Actions & Impact</h2>
         <div class="metrics-grid">
-          ${this.renderMetricCard('Recommendations Provided', actionsImpact.recommendations.provided, { absolute: 0, percentage: 0 })}
-          ${this.renderMetricCard('Recommendations Approved', actionsImpact.recommendations.approved, { absolute: 0, percentage: 0 })}
-          ${this.renderMetricCard('Content Generated', actionsImpact.recommendations.content_generated, { absolute: 0, percentage: 0 })}
-          ${this.renderMetricCard('Actions Implemented', actionsImpact.recommendations.implemented, { absolute: 0, percentage: 0 })}
+          ${this.renderMetricCard('Recommendations Provided', recs.provided || 0, { absolute: 0, percentage: 0 })}
+          ${this.renderMetricCard('Recommendations Approved', recs.approved || 0, { absolute: 0, percentage: 0 })}
+          ${this.renderMetricCard('Content Generated', recs.content_generated || 0, { absolute: 0, percentage: 0 })}
+          ${this.renderMetricCard('Actions Implemented', recs.implemented || 0, { absolute: 0, percentage: 0 })}
         </div>
       </div>
     `;

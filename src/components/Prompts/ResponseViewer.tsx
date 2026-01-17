@@ -150,8 +150,16 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
             </label>
           </div>
         </div>
+        {/* Query text display in header - sticky while scrolling */}
+        {prompt?.question && (
+          <div className="mt-3 pt-3 border-t border-[var(--border-default)]">
+            <div className="text-sm font-medium text-[var(--text-headings)]">
+              {prompt.question}
+            </div>
+          </div>
+        )}
         {prompt.latestCollectorType && filteredResponses.length === 0 && (
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-caption)] font-medium">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-caption)] font-medium mt-3">
             <span className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
               {prompt.latestCollectorType}
             </span>

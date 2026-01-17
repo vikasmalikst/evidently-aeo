@@ -2029,21 +2029,19 @@ router.post('/brands/:brandId/backfill-scoring', async (req: Request, res: Respo
   };
 
   try {
-    // Get customer_id if not in user (e.g. if super admin)
-    // For now we'll fetch from brand if missing
-    let targetCustomerId = customer_id;
-    if (!targetCustomerId) {
-      const { data: brand } = await supabase
-        .from('brands')
-        .select('customer_id')
-        .eq('id', brandId)
-        .single();
-      targetCustomerId = brand?.customer_id;
+    // Always fetch customer_id from the brand directly - more reliable for admin operations
+    // The user's customer_id might be a placeholder or incorrect for multi-tenant scenarios
+    const { data: brand, error: brandError } = await supabase
+      .from('brands')
+      .select('customer_id')
+      .eq('id', brandId)
+      .single();
+
+    if (brandError || !brand?.customer_id) {
+      throw new Error(`Customer ID not found for brand ${brandId}`);
     }
 
-    if (!targetCustomerId) {
-      throw new Error('Customer ID not found for brand');
-    }
+    const targetCustomerId = brand.customer_id;
 
     // Dynamic import to avoid circular dependencies if any
     const { brandScoringService } = await import('../services/scoring/brand-scoring.orchestrator');

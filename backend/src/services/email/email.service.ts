@@ -97,6 +97,39 @@ export class EmailService {
       return false;
     }
   }
+
+  public async sendExecutiveReport(
+    email: string,
+    reportId: string,
+    brandName: string,
+    period: string,
+    pdfBuffer: Buffer,
+    htmlReport: string
+  ): Promise<boolean> {
+    const subject = `Executive Report: ${brandName} (${period})`;
+
+    try {
+      const mailOptions = {
+        from: `"EvidentlyAEO Reporting" <${process.env.ZOHO_EMAIL}>`,
+        to: email,
+        subject,
+        html: htmlReport, // Use the full HTML report as email body
+        attachments: [
+          {
+            filename: `executive-report-${brandName.replace(/\s+/g, '-').toLowerCase()}-${period.replace(/\s+/g, '-')}.pdf`,
+            content: pdfBuffer,
+          },
+        ],
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      console.log(`Executive report emailed successfully to ${email}`);
+      return true;
+    } catch (error) {
+      console.error('Error sending executive report email:', error);
+      throw new Error('Failed to send email');
+    }
+  }
 }
 
 // Export singleton instance

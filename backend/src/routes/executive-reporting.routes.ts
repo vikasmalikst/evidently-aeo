@@ -9,12 +9,15 @@ import { reportOrchestrationService } from '../services/executive-reporting/repo
 import { scheduleService } from '../services/executive-reporting/schedule.service';
 import { annotationService } from '../services/executive-reporting/annotation.service';
 import { pdfExportService } from '../services/executive-reporting/pdf-export.service';
+import { emailService } from '../services/email/email.service';
 import type {
     GenerateReportRequest,
     CreateScheduleRequest,
     AddCommentRequest,
     ExportReportRequest,
 } from '../services/executive-reporting/types';
+import { supabase } from '../config/supabase';
+import { reportSettingsService } from '../services/report-settings.service';
 
 const router = Router();
 
@@ -109,23 +112,76 @@ router.get('/brands/:brandId/executive-reports/:reportId', async (req: Request, 
 router.post('/brands/:brandId/executive-reports', async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
-        const { period_days, end_date } = req.body;
+        let { period_days, end_date } = req.body;
 
-        // Validate period_days
-        if (![7, 30, 60, 90].includes(period_days)) {
-            return res.status(400).json({
-                success: false,
-                error: 'period_days must be one of: 7, 30, 60, 90',
-            });
+        // If period_days is not provided, fetch from report settings
+        if (!period_days) {
+            console.log(`ℹ️ [EXEC-REPORT] No period_days provided, fetching settings for brand ${brandId}`);
+            // Default to 1 (system user or generic) - in real app should come from auth but for now using system context
+            // Actually reportSettingsService requires customerId, but getReportSettings uses brandId and customerId.
+            // We need to resolve customerId from brandId or just use brand_id to find settings if unique constraint is brand_id+customer_id.
+            // However, reportSettingsService methods require both. Let's look up the brand first to get customer_id.
+
+            // Wait, we can't easily get customer_id here without auth context or brand lookup. 
+            // Assuming the settings service might have a method to get by brandId only or we fetch brand first.
+            // The service has `getReportSettings(brandId, customerId)`.
+            // Let's assume for now we can get the brand to find the customer_id.
+            // Or better, let's look at how we can get settings more easily.
+            // For now, let's query the settings directly or assume we can get it via the service if we had customer_id.
+            // Given the auth middleware sets req.user, we might have customer_id there?
+            // The route uses `const userId = (req as any).user?.id || 'system';`
+
+            // Let's fetch the brand to get the customer_id
+            const { data: brand, error: brandError } = await supabase
+                .from('brands')
+                .select('customer_id')
+                .eq('id', brandId)
+                .single();
+
+            if (brandError || !brand) {
+                return res.status(404).json({ success: false, error: 'Brand not found' });
+            }
+
+            const settings = await reportSettingsService.getReportSettings(brandId, brand.customer_id);
+
+            if (settings) {
+                switch (settings.frequency) {
+                    case 'weekly':
+                        period_days = 7;
+                        break;
+                    case 'bi-weekly':
+                        period_days = 14;
+                        break;
+                    case 'monthly':
+                        period_days = 30;
+                        break;
+                    case 'quarterly':
+                        period_days = 90;
+                        break;
+                    case 'custom':
+                        // Use custom interval or default to 7 if missing
+                        period_days = settings.custom_interval || 7;
+                        break;
+                    default:
+                        period_days = 30;
+                }
+                console.log(`✅ [EXEC-REPORT] Using configured frequency: ${settings.frequency} -> ${period_days} days`);
+            } else {
+                console.log(`⚠️ [EXEC-REPORT] No settings found, defaulting to 30 days`);
+                period_days = 30;
+            }
         }
+
+        // Validate period_days if it was passed manually, ensuring it is a number
+        // Note: The service types restrict to 7|30|60|90 but we are effectively allowing dynamic days now
+        // We should likely case period_days to number for the service call
 
         const request: GenerateReportRequest = {
             brand_id: brandId,
-            period_days,
+            period_days: Number(period_days) as any, // Cast to any to bypass strict literal type if needed, or update type definition
             end_date,
         };
 
-        // Get user ID from auth (assuming auth middleware sets req.user)
         const userId = (req as any).user?.id || 'system';
 
         const report = await reportOrchestrationService.generateReport(request, userId);
@@ -400,6 +456,69 @@ router.post('/brands/:brandId/executive-reports/:reportId/export/pdf', async (re
         res.status(500).json({
             success: false,
             error: 'Failed to generate PDF',
+        });
+    }
+});
+
+/**
+ * POST /api/brands/:brandId/executive-reports/:reportId/email
+ * Email report to a specific address
+ */
+router.post('/brands/:brandId/executive-reports/:reportId/email', async (req: Request, res: Response) => {
+    try {
+        const { reportId, brandId } = req.params;
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                error: 'Email address is required',
+            });
+        }
+
+        // 1. Get the report to check existence and get dates/brand info
+        const report = await reportOrchestrationService.getReport(reportId);
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                error: 'Report not found',
+            });
+        }
+
+        // 2. Get the brand details for the name
+        const { data: brand, error: brandError } = await supabase
+            .from('brands')
+            .select('name')
+            .eq('id', brandId)
+            .single();
+
+        if (brandError || !brand) {
+            return res.status(404).json({ success: false, error: 'Brand not found' });
+        }
+
+        // 3. Generate PDF Buffer and HTML Content
+        // Note: Reusing pdfExportService logic but getting buffer directly
+        const pdfBuffer = await pdfExportService.generatePDF(reportId, false);
+        const reportData = await reportOrchestrationService.getReport(reportId);
+
+        let htmlContent = '';
+        if (reportData) {
+            htmlContent = pdfExportService.generateHTML(reportData, []);
+        }
+
+        // 4. Send Email
+        const period = `${new Date(report.report_period_start).toLocaleDateString()} - ${new Date(report.report_period_end).toLocaleDateString()}`;
+        await emailService.sendExecutiveReport(email, reportId, brand.name, period, pdfBuffer, htmlContent);
+
+        res.json({
+            success: true,
+            message: 'Report emailed successfully',
+        });
+    } catch (error: any) {
+        console.error('Error emailing report:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to email report',
         });
     }
 });

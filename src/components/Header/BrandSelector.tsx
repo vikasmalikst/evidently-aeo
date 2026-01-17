@@ -3,11 +3,14 @@ import { SafeLogo } from '../Onboarding/common/SafeLogo';
 import { ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { cacheManager } from '../../lib/cacheManager';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export const BrandSelector = () => {
     const { brands, selectedBrand, selectBrand, isLoading } = useManualBrandDashboard();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const navigate = useNavigate();
+    const location = useLocation();
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -36,8 +39,11 @@ export const BrandSelector = () => {
         // Close the dropdown
         setIsOpen(false);
 
-        // Force page reload to ensure all components refetch with new brand
-        window.location.reload();
+        // Navigate to current route to trigger remount without full page reload
+        // This avoids authentication rate limiting from excessive page reloads
+        const currentPath = location.pathname + location.search;
+        navigate(currentPath, { replace: true });
+        setTimeout(() => navigate(currentPath, { replace: false }), 10);
     };
 
     // Don't render if loading or no brands

@@ -344,6 +344,7 @@ export const MeasurePage = () => {
       // Use timeSeries if available, otherwise fall back to static values
       const brandVisData = brandSum.timeSeries?.visibility ?? buildTimeseries(brandSum.visibility);
       const brandShareData = brandSum.timeSeries?.share ?? buildTimeseries(brandSum.share * 100);
+      const brandSentData = brandSum.timeSeries?.sentiment ?? buildTimeseries(brandSum.sentiment ?? 0);
       const brandIsRealData = brandSum.timeSeries?.isRealData;
 
       competitorModelData.push({
@@ -359,6 +360,7 @@ export const MeasurePage = () => {
         brandPresencePercentage: brandSum.brandPresencePercentage ?? 0,
         data: brandVisData,
         shareData: brandShareData,
+        sentimentData: brandSentData,
         brandPresenceData: buildTimeseries(brandSum.brandPresencePercentage ?? 0),
         topTopics: brandSum.topTopics?.map(t => ({ ...t, mentions: 0 })) ?? [],
         isBrand: true,

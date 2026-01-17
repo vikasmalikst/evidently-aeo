@@ -91,6 +91,9 @@ export interface RecommendationV3 {
   // Source tracking
   source?: 'domain_audit' | 'ai_generated';
   howToFix?: string[];  // Step-by-step fix instructions (for domain audit recs)
+
+  // Strategic classification (filled by ranking service)
+  strategicRole?: 'Battleground' | 'Stronghold' | 'Opportunity' | 'Standard';
 }
 
 /**

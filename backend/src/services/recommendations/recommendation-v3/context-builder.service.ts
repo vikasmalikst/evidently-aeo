@@ -308,15 +308,91 @@ export class ContextBuilderService {
         })
         .slice(0, 10);
 
+
+      // Calculate start time for competitor metrics fetching
+      const compMetricsStart = Date.now();
+
+      // Fetch competitor metrics for these sources efficiently
+      const domains = topSources.map(s => s.name.toLowerCase().replace(/^www\./, '').trim());
+
+      // We need to find the top competitor for each of these domains
+      // Query extracted_positions for competitor data on these domains
+      const { data: compPositions } = await supabaseAdmin
+        .from('extracted_positions')
+        .select(`
+          domain,
+          competitor_id,
+          share_of_answers_brand,
+          sentiment_score,
+          competitors!inner(name)
+        `)
+        .eq('brand_id', brandId) // Only get competitors for this brand
+        .in('domain', domains)
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .not('competitor_id', 'is', null);
+
+      console.log(`✅ [ContextBuilder] Fetched ${compPositions?.length || 0} competitor positions for source analysis in ${Date.now() - compMetricsStart}ms`);
+
+      // Group by domain -> competitor -> avg metrics
+      const domainCompMap = new Map<string, Array<{ name: string; soa: number; sentiment: number; count: number }>>();
+
+      if (compPositions) {
+        for (const pos of compPositions) {
+          const domain = pos.domain.toLowerCase().replace(/^www\./, '').trim();
+          // Type assertion since we used inner join but TS might not know
+          const compName = (pos.competitors as any)?.name || 'Unknown';
+
+          if (!domainCompMap.has(domain)) {
+            domainCompMap.set(domain, []);
+          }
+
+          const domainComps = domainCompMap.get(domain)!;
+          let compEntry = domainComps.find(c => c.name === compName);
+
+          if (!compEntry) {
+            compEntry = { name: compName, soa: 0, sentiment: 0, count: 0 };
+            domainComps.push(compEntry);
+          }
+
+          compEntry.soa += (pos.share_of_answers_brand || 0);
+          compEntry.sentiment += (pos.sentiment_score || 0);
+          compEntry.count++;
+        }
+      }
+
       for (const source of topSources) {
+        let topCompetitor: { name: string; soa: number; sentiment: number } | undefined;
+
+        const cleanDomain = source.name.toLowerCase().replace(/^www\./, '').trim();
+        const domainComps = domainCompMap.get(cleanDomain);
+
+        if (domainComps && domainComps.length > 0) {
+          // Average out the metrics
+          const averagedComps = domainComps.map(c => ({
+            name: c.name,
+            soa: c.soa / c.count,
+            sentiment: c.sentiment / c.count
+          }));
+
+          // Sort by SOA descending to find the dominant competitor
+          averagedComps.sort((a, b) => b.soa - a.soa);
+
+          // Pick the winner if they have significant presence (> 5% SOA)
+          if (averagedComps[0].soa > 0.05) {
+            topCompetitor = averagedComps[0];
+          }
+        }
+
         sourceMetrics.push({
-          domain: source.name.toLowerCase().replace(/^www\./, '').trim(),
+          domain: cleanDomain,
           mentionRate: Math.round(source.mentionRate * 10) / 10,
           soa: Math.round(source.soa * 10) / 10,
           sentiment: Math.round(source.sentiment * 100) / 100,
           citations: source.citations,
           impactScore: Math.round((source.value || 0) * 10) / 10,
-          visibility: source.visibility ? Math.round(source.visibility) : 0
+          visibility: source.visibility ? Math.round(source.visibility) : 0,
+          topCompetitor
         });
       }
     }

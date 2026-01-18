@@ -1706,6 +1706,12 @@ Respond only with the JSON array.`;
         if (soa !== null) parts.push(`SOA ${soa}%`);
         if (sentiment !== null) parts.push(`Sentiment ${Math.round(sentiment * 10) / 10}`);
         if (visibility !== null) parts.push(`Visibility ${visibility}`);
+
+        // Add top competitor info if available (critical for Battleground strategies)
+        if (s.topCompetitor) {
+          parts.push(`Dominant Competitor: ${s.topCompetitor.name} (${Math.round(s.topCompetitor.soa * 100)}% SOA)`);
+        }
+
         parts.push(')');
         return parts.join(', ');
       }).join('\n  ')
@@ -1743,9 +1749,10 @@ RULES
 - focusArea must be: "visibility", "soa", or "sentiment"
 - priority must be: "High", "Medium", or "Low"
 - effort must be: "Low", "Medium", or "High"
-- **CRITICAL**: Do NOT mention any competitor names, competitor brands, or competitor companies in your recommendations. Do NOT include competitor names in the action, reason, explanation, contentFocus, or any other field. Focus solely on the brand's own strategies and improvements.
 - **PUBLISHING RULE**: Publishing content on a competitor's website is NOT an option. Do not suggest guest posting, commenting, or any form of content placement on domains that belong to competitors.
-- **COMPETITOR EXCLUSION**: Competitor sources have already been filtered out from the available citation sources list. All domains in the list are safe to use.
+- **COMPETITOR EXCLUSION**: Competitor sources have already been filtered out from the available citation sources list.
+- **STRATEGIC COMPARISONS**: You CAN mention competitors in the action, reason, or explanation IF it is for differentiation or comparison (e.g., "Create a comparison guide: Us vs. [Competitor]").
+- **NO PROMOTION**: Do NOT recommend promoting competitors. Never suggest sending users to a competitor's website. Publishing content on a competitor's domain is strictly forbidden.
 ${lowDataGuidance}
 
 Brand Performance
@@ -2831,7 +2838,8 @@ Respond only with the JSON array.`;
 
       const { filtered: finalRecommendations, removed: finalRemoved } = filterCompetitorRecommendations(
         recommendations,
-        exclusionList
+        exclusionList,
+        { allowTextMentions: true } // Allow strategic comparisons in text, but valid source filtering is strictly enforced by Source Safe List
       );
 
       if (finalRemoved.length > 0) {

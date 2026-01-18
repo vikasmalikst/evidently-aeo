@@ -43,7 +43,7 @@ export class ContextBuilderService {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const sixtyDaysAgo = new Date();
       sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-      
+
       const currentStartDate = thirtyDaysAgo.toISOString().split('T')[0];
       const currentEndDate = new Date().toISOString().split('T')[0];
       const previousStartDate = sixtyDaysAgo.toISOString().split('T')[0];
@@ -59,10 +59,10 @@ export class ContextBuilderService {
       }
 
       // Get overall brand metrics (current and previous periods)
-      const { visibilityIndex, shareOfAnswers, sentimentScore } = 
+      const { visibilityIndex, shareOfAnswers, sentimentScore } =
         await this.getBrandMetrics(brandId, customerId, currentStartDate, currentEndDate, USE_OPTIMIZED_RECOMMENDATIONS);
-      
-      const { visibilityIndex: prevVisibilityIndex, shareOfAnswers: prevShareOfAnswers, sentimentScore: prevSentimentScore } = 
+
+      const { visibilityIndex: prevVisibilityIndex, shareOfAnswers: prevShareOfAnswers, sentimentScore: prevSentimentScore } =
         await this.getBrandMetrics(brandId, customerId, previousStartDate, previousEndDate, USE_OPTIMIZED_RECOMMENDATIONS);
 
       // Calculate trends
@@ -74,10 +74,10 @@ export class ContextBuilderService {
 
       // Get competitors
       const competitors = await this.getCompetitorMetrics(
-        brandId, 
-        customerId, 
-        currentStartDate, 
-        currentEndDate, 
+        brandId,
+        customerId,
+        currentStartDate,
+        currentEndDate,
         USE_OPTIMIZED_RECOMMENDATIONS
       );
 
@@ -98,7 +98,9 @@ export class ContextBuilderService {
         sentimentScore,
         trends,
         competitors,
-        sourceMetrics
+        sourceMetrics,
+        // Phase 1: Context Enrichment - Qualitative Context
+        ...(await this.getQualitativeContext(brandId, customerId, currentStartDate))
       };
 
     } catch (error) {
@@ -132,14 +134,14 @@ export class ContextBuilderService {
         const validSent = result.data.filter(m => m.sentiment_score != null);
 
         return {
-          visibilityIndex: validVis.length > 0 
-            ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length 
+          visibilityIndex: validVis.length > 0
+            ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length
             : undefined,
-          shareOfAnswers: validSoa.length > 0 
-            ? validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length 
+          shareOfAnswers: validSoa.length > 0
+            ? validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length
             : undefined,
-          sentimentScore: validSent.length > 0 
-            ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length 
+          sentimentScore: validSent.length > 0
+            ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length
             : undefined
         };
       }
@@ -157,14 +159,14 @@ export class ContextBuilderService {
         const validSent = metrics.filter(m => m.sentiment_score != null);
 
         return {
-          visibilityIndex: validVis.length > 0 
-            ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length 
+          visibilityIndex: validVis.length > 0
+            ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length
             : undefined,
-          shareOfAnswers: validSoa.length > 0 
-            ? validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length 
+          shareOfAnswers: validSoa.length > 0
+            ? validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length
             : undefined,
-          sentimentScore: validSent.length > 0 
-            ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length 
+          sentimentScore: validSent.length > 0
+            ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length
             : undefined
         };
       }
@@ -192,7 +194,7 @@ export class ContextBuilderService {
       .limit(5);
 
     const competitorData: BrandContextV3['competitors'] = [];
-    
+
     if (competitors && competitors.length > 0) {
       for (const comp of competitors) {
         let compVis: number | undefined;
@@ -214,14 +216,14 @@ export class ContextBuilderService {
             const validSoa = result.data.filter(m => m.share_of_answers != null);
             const validSent = result.data.filter(m => m.sentiment_score != null);
 
-            compVis = validVis.length > 0 
-              ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length 
+            compVis = validVis.length > 0
+              ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length
               : undefined;
-            compSoa = validSoa.length > 0 
-              ? validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length 
+            compSoa = validSoa.length > 0
+              ? validSoa.reduce((sum, m) => sum + (m.share_of_answers || 0), 0) / validSoa.length
               : undefined;
-            compSent = validSent.length > 0 
-              ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length 
+            compSent = validSent.length > 0
+              ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length
               : undefined;
           }
         } else {
@@ -248,14 +250,14 @@ export class ContextBuilderService {
                 const validSoa = compMetrics.filter(m => m.share_of_answers_brand != null);
                 const validSent = compMetrics.filter(m => m.sentiment_score != null);
 
-                compVis = validVis.length > 0 
-                  ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length 
+                compVis = validVis.length > 0
+                  ? validVis.reduce((sum, m) => sum + (m.visibility_index || 0), 0) / validVis.length
                   : undefined;
-                compSoa = validSoa.length > 0 
-                  ? validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length 
+                compSoa = validSoa.length > 0
+                  ? validSoa.reduce((sum, m) => sum + (m.share_of_answers_brand || 0), 0) / validSoa.length
                   : undefined;
-                compSent = validSent.length > 0 
-                  ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length 
+                compSent = validSent.length > 0
+                  ? validSent.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / validSent.length
                   : undefined;
               }
             }
@@ -285,13 +287,13 @@ export class ContextBuilderService {
   ): Promise<BrandContextV3['sourceMetrics']> {
     console.log('📊 [ContextBuilder] Fetching source data using source-attribution service...');
     const sourceAttributionStartTime = Date.now();
-    
+
     const sourceAttributionResponse = await sourceAttributionService.getSourceAttribution(
       brandId,
       customerId,
       { start: startDate, end: endDate }
     );
-    
+
     console.log(`✅ [ContextBuilder] Fetched ${sourceAttributionResponse.sources.length} sources in ${Date.now() - sourceAttributionStartTime}ms`);
 
     const sourceMetrics: BrandContextV3['sourceMetrics'] = [];
@@ -306,15 +308,91 @@ export class ContextBuilderService {
         })
         .slice(0, 10);
 
+
+      // Calculate start time for competitor metrics fetching
+      const compMetricsStart = Date.now();
+
+      // Fetch competitor metrics for these sources efficiently
+      const domains = topSources.map(s => s.name.toLowerCase().replace(/^www\./, '').trim());
+
+      // We need to find the top competitor for each of these domains
+      // Query extracted_positions for competitor data on these domains
+      const { data: compPositions } = await supabaseAdmin
+        .from('extracted_positions')
+        .select(`
+          domain,
+          competitor_id,
+          share_of_answers_brand,
+          sentiment_score,
+          competitors!inner(name)
+        `)
+        .eq('brand_id', brandId) // Only get competitors for this brand
+        .in('domain', domains)
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .not('competitor_id', 'is', null);
+
+      console.log(`✅ [ContextBuilder] Fetched ${compPositions?.length || 0} competitor positions for source analysis in ${Date.now() - compMetricsStart}ms`);
+
+      // Group by domain -> competitor -> avg metrics
+      const domainCompMap = new Map<string, Array<{ name: string; soa: number; sentiment: number; count: number }>>();
+
+      if (compPositions) {
+        for (const pos of compPositions) {
+          const domain = pos.domain.toLowerCase().replace(/^www\./, '').trim();
+          // Type assertion since we used inner join but TS might not know
+          const compName = (pos.competitors as any)?.name || 'Unknown';
+
+          if (!domainCompMap.has(domain)) {
+            domainCompMap.set(domain, []);
+          }
+
+          const domainComps = domainCompMap.get(domain)!;
+          let compEntry = domainComps.find(c => c.name === compName);
+
+          if (!compEntry) {
+            compEntry = { name: compName, soa: 0, sentiment: 0, count: 0 };
+            domainComps.push(compEntry);
+          }
+
+          compEntry.soa += (pos.share_of_answers_brand || 0);
+          compEntry.sentiment += (pos.sentiment_score || 0);
+          compEntry.count++;
+        }
+      }
+
       for (const source of topSources) {
+        let topCompetitor: { name: string; soa: number; sentiment: number } | undefined;
+
+        const cleanDomain = source.name.toLowerCase().replace(/^www\./, '').trim();
+        const domainComps = domainCompMap.get(cleanDomain);
+
+        if (domainComps && domainComps.length > 0) {
+          // Average out the metrics
+          const averagedComps = domainComps.map(c => ({
+            name: c.name,
+            soa: c.soa / c.count,
+            sentiment: c.sentiment / c.count
+          }));
+
+          // Sort by SOA descending to find the dominant competitor
+          averagedComps.sort((a, b) => b.soa - a.soa);
+
+          // Pick the winner if they have significant presence (> 5% SOA)
+          if (averagedComps[0].soa > 0.05) {
+            topCompetitor = averagedComps[0];
+          }
+        }
+
         sourceMetrics.push({
-          domain: source.name.toLowerCase().replace(/^www\./, '').trim(),
+          domain: cleanDomain,
           mentionRate: Math.round(source.mentionRate * 10) / 10,
           soa: Math.round(source.soa * 10) / 10,
           sentiment: Math.round(source.sentiment * 100) / 100,
           citations: source.citations,
           impactScore: Math.round((source.value || 0) * 10) / 10,
-          visibility: source.visibility ? Math.round(source.visibility) : 0
+          visibility: source.visibility ? Math.round(source.visibility) : 0,
+          topCompetitor
         });
       }
     }
@@ -326,7 +404,7 @@ export class ContextBuilderService {
    * Calculate trend between current and previous period
    */
   private calculateTrend(
-    current: number | undefined, 
+    current: number | undefined,
     previous: number | undefined
   ): { current: number; previous: number; changePercent: number; direction: 'up' | 'down' | 'stable' } | undefined {
     if (current === undefined || previous === undefined || previous === 0) return undefined;
@@ -338,6 +416,118 @@ export class ContextBuilderService {
       changePercent: Math.round(changePercent * 10) / 10,
       direction
     };
+  }
+
+
+  /**
+   * Phase 1: Fetch Qualitative Context (Keywords, Quotes, Narrative)
+   * Queries consolidated_analysis_cache via collector_results link
+   */
+  private async getQualitativeContext(
+    brandId: string,
+    customerId: string,
+    startDate: string
+  ): Promise<Partial<BrandContextV3>> {
+    try {
+      // Fetch analysis cache joined with collector_results to filter by brand
+      // We limit to 50 recent entires to get a good sample without over-fetching
+      const { data, error } = await supabaseAdmin
+        .from('consolidated_analysis_cache')
+        .select(`
+          keywords,
+          quotes,
+          narrative,
+          collector_results!inner(brand_id, created_at)
+        `)
+        .eq('collector_results.brand_id', brandId)
+        .gte('collector_results.created_at', startDate)
+        .order('created_at', { ascending: false, foreignTable: 'collector_results' })
+        .limit(50);
+
+      if (error) {
+        console.warn('⚠️ [ContextBuilder] Error fetching qualitative context:', error.message);
+        return {};
+      }
+
+      if (!data || data.length === 0) {
+        return {};
+      }
+
+      console.log(`🧠 [ContextBuilder] Fetched ${data.length} analysis records for qualitative context`);
+
+      // Aggregation Logic
+      const aggregatedKeywords = this.aggregateKeywords(data);
+      const strategicNarrative = this.aggregateNarratives(data);
+      const keyQuotes = this.extractTopQuotes(data);
+
+      return {
+        topKeywords: aggregatedKeywords,
+        strategicNarrative,
+        keyQuotes
+      };
+    } catch (err) {
+      console.error('❌ [ContextBuilder] Unexpected error in getQualitativeContext:', err);
+      return {};
+    }
+  }
+
+  /**
+   * Helper: Aggregate Keywords by frequency/relevance
+   */
+  private aggregateKeywords(data: any[]): Array<{ keyword: string; count: number }> {
+    const counts = new Map<string, number>();
+
+    data.forEach(row => {
+      if (Array.isArray(row.keywords)) {
+        row.keywords.forEach((k: any) => {
+          if (k && k.keyword) {
+            const term = k.keyword.toLowerCase().trim();
+            counts.set(term, (counts.get(term) || 0) + 1);
+          }
+        });
+      }
+    });
+
+    return Array.from(counts.entries())
+      .map(([keyword, count]) => ({ keyword, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10); // Top 10 keywords
+  }
+
+  /**
+   * Helper: Aggregate Narratives (Simple concatenation of unique summaries for now)
+   */
+  private aggregateNarratives(data: any[]): string {
+    const narratives = new Set<string>();
+
+    data.forEach(row => {
+      if (row.narrative && row.narrative.brand_summary) {
+        narratives.add(row.narrative.brand_summary);
+      }
+    });
+
+    // Pick top 3 unique narratives to form a summary
+    return Array.from(narratives).slice(0, 3).join(' ');
+  }
+
+  /**
+   * Helper: Extract Top Quotes
+   */
+  private extractTopQuotes(data: any[]): string[] {
+    const quotes: string[] = [];
+
+    data.forEach(row => {
+      if (Array.isArray(row.quotes)) {
+        row.quotes.forEach((q: any) => {
+          if (q && q.text && q.text.length > 20) { // Filter distinct short junk
+            quotes.push(`"${q.text}" (${q.sentiment})`);
+          }
+        });
+      }
+    });
+
+    // Pick last 5 (most recent) - logic is simple for now
+    return quotes.slice(0, 5);
   }
 }
 

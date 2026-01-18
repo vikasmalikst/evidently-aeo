@@ -26,7 +26,7 @@ export interface RecommendationV3 {
   effort: 'Low' | 'Medium' | 'High';
   kpiId?: string;           // Links to identified KPI
   kpi?: string;             // KPI name (for display)
-  
+
   // Additional fields (stored but not shown in simplified table)
   reason?: string;
   explanation?: string;
@@ -41,7 +41,7 @@ export interface RecommendationV3 {
   expectedBoost?: string;
   timeline?: string;
   confidence?: number;
-  
+
   // Workflow flags
   isApproved?: boolean;
   isContentGenerated?: boolean;
@@ -95,7 +95,16 @@ export interface BrandContextV3 {
     citations: number;
     impactScore: number;
     visibility: number;
+    topCompetitor?: {
+      name: string;
+      soa: number;
+      sentiment: number;
+    };
   }>;
+  // Qualitative context from Analysis Service
+  topKeywords?: Array<{ keyword: string; count: number }>;
+  strategicNarrative?: string;
+  keyQuotes?: string[];
 }
 
 /**

@@ -442,6 +442,14 @@ export function filterCompetitorSources<T extends { domain: string }>(
  * Check if a recommendation contains any competitor references
  * Checks all text fields: action, reason, explanation, contentFocus, citationSource, focusSources
  */
+export interface FilterOptions {
+  allowTextMentions?: boolean;
+}
+
+/**
+ * Check if a recommendation contains any competitor references
+ * Checks all text fields: action, reason, explanation, contentFocus, citationSource, focusSources
+ */
 export function recommendationContainsCompetitor<T extends {
   action?: string;
   reason?: string;
@@ -449,8 +457,31 @@ export function recommendationContainsCompetitor<T extends {
   contentFocus?: string;
   citationSource?: string;
   focusSources?: string;
-}>(recommendation: T, exclusionList: CompetitorExclusionList): boolean {
-  // Check all text fields
+}>(
+  recommendation: T,
+  exclusionList: CompetitorExclusionList,
+  options: FilterOptions = {}
+): boolean {
+  // If text mentions are allowed, we ONLY check the source fields for domain matches
+  // We do NOT check the semantic text fields for competitor names
+  if (options.allowTextMentions) {
+    // Strict check: citationSource MUST NOT be a competitor domain
+    if (recommendation.citationSource && isCompetitorDomain(recommendation.citationSource, exclusionList)) {
+      return true;
+    }
+
+    // Strict check: focusSources MUST NOT contain competitor domains
+    if (recommendation.focusSources && containsCompetitorReference(recommendation.focusSources, exclusionList)) {
+      return true;
+    }
+
+    // Strategic Check: Even if text mentions are allowed, we might want to block excessive promotion
+    // For now, we trust the prompt engineering "Marketing Strategist" to compare, not promote.
+
+    return false;
+  }
+
+  // DEFAULT BEHAVIOR (Strict): Check all text fields
   const fieldsToCheck = [
     recommendation.action,
     recommendation.reason,
@@ -487,13 +518,14 @@ export function filterCompetitorRecommendations<T extends {
   focusSources?: string;
 }>(
   recommendations: T[],
-  exclusionList: CompetitorExclusionList
+  exclusionList: CompetitorExclusionList,
+  options: FilterOptions = {}
 ): { filtered: T[]; removed: Array<{ recommendation: T; reason: string }> } {
   const filtered: T[] = [];
   const removed: Array<{ recommendation: T; reason: string }> = [];
 
   for (const rec of recommendations) {
-    const containsCompetitor = recommendationContainsCompetitor(rec, exclusionList);
+    const containsCompetitor = recommendationContainsCompetitor(rec, exclusionList, options);
 
     if (containsCompetitor) {
       // Determine which field triggered the filter

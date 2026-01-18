@@ -1224,9 +1224,12 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     consolidatedCacheData: any,
     llmExtractedProducts: string[]
   ): { brandName: string; brandSynonyms: string[]; brandProducts: string[] } {
-    const brandSynonyms = Array.isArray(brandProductsData?.brand_synonyms)
+    const brandSynonymsRaw = Array.isArray(brandProductsData?.brand_synonyms)
       ? brandProductsData.brand_synonyms.filter((s: string) => s && typeof s === 'string')
       : [];
+
+    // Apply strict filtering
+    const brandSynonyms = this.filterPartialMatches(brandSynonymsRaw, brandName);
 
     // Get products from KB
     const kbProducts = Array.isArray(brandProductsData?.brand_products)
@@ -1244,11 +1247,14 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       : [];
 
     // Combine all products and deduplicate
-    const allProducts = Array.from(new Set([
+    const allProductsRaw = Array.from(new Set([
       ...kbProducts,
       ...cacheProducts,
       ...llmProducts
     ]));
+
+    // Apply strict filtering to products as well
+    const allProducts = this.filterPartialMatches(allProductsRaw, brandName);
 
     return {
       brandName,
@@ -1284,9 +1290,12 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       }
     }
 
-    const kbSynonyms = Array.isArray(competitorData?.synonyms)
+    const kbSynonymsRaw = Array.isArray(competitorData?.synonyms)
       ? competitorData.synonyms.filter((s: string) => s && typeof s === 'string')
       : [];
+
+    // Apply strict filtering
+    const kbSynonyms = this.filterPartialMatches(kbSynonymsRaw, competitorName);
 
     const kbProducts = Array.isArray(competitorData?.products)
       ? competitorData.products.filter((p: string) => p && typeof p === 'string')
@@ -1303,11 +1312,14 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       : [];
 
     // Combine all products and deduplicate
-    const allProducts = Array.from(new Set([
+    const allProductsRaw = Array.from(new Set([
       ...kbProducts,
       ...cacheProducts,
       ...llmProducts
     ]));
+
+    // Apply strict filtering to products as well
+    const allProducts = this.filterPartialMatches(allProductsRaw, competitorName);
 
     return {
       competitorName,
@@ -1501,6 +1513,36 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
           : null;
 
     return topicName;
+  }
+
+  /**
+   * 🆕 Strict filtering: prevent multi-word names (e.g. "Super Bowl") 
+   * from having single-word parts (e.g. "Super", "Bowl") as valid synonyms or products.
+   * This reduces false positives where a partial match is incorrect contextually.
+   */
+  private filterPartialMatches(terms: string[], parentName: string): string[] {
+    if (!terms || terms.length === 0) return [];
+
+    // If parent name is single word, strict filtering doesn't apply the same way
+    if (!parentName.includes(' ')) {
+      return terms;
+    }
+
+    const nameLower = parentName.toLowerCase();
+    const nameWords = nameLower.split(/[\s\-_]+/);
+
+    return terms.filter(t => {
+      if (!t || typeof t !== 'string') return false;
+
+      const termLower = t.toLowerCase();
+
+      // If term is single-word and is present inside the multi-word parent name
+      if (!termLower.includes(' ') && nameWords.includes(termLower)) {
+        return false;
+      }
+
+      return true;
+    });
   }
 
   /**

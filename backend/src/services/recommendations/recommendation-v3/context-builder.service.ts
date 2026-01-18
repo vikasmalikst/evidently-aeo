@@ -98,7 +98,9 @@ export class ContextBuilderService {
         sentimentScore,
         trends,
         competitors,
-        sourceMetrics
+        sourceMetrics,
+        // Phase 1: Context Enrichment - Qualitative Context
+        ...(await this.getQualitativeContext(brandId, customerId, currentStartDate))
       };
 
     } catch (error) {
@@ -338,6 +340,118 @@ export class ContextBuilderService {
       changePercent: Math.round(changePercent * 10) / 10,
       direction
     };
+  }
+
+
+  /**
+   * Phase 1: Fetch Qualitative Context (Keywords, Quotes, Narrative)
+   * Queries consolidated_analysis_cache via collector_results link
+   */
+  private async getQualitativeContext(
+    brandId: string,
+    customerId: string,
+    startDate: string
+  ): Promise<Partial<BrandContextV3>> {
+    try {
+      // Fetch analysis cache joined with collector_results to filter by brand
+      // We limit to 50 recent entires to get a good sample without over-fetching
+      const { data, error } = await supabaseAdmin
+        .from('consolidated_analysis_cache')
+        .select(`
+          keywords,
+          quotes,
+          narrative,
+          collector_results!inner(brand_id, created_at)
+        `)
+        .eq('collector_results.brand_id', brandId)
+        .gte('collector_results.created_at', startDate)
+        .order('created_at', { ascending: false, foreignTable: 'collector_results' })
+        .limit(50);
+
+      if (error) {
+        console.warn('⚠️ [ContextBuilder] Error fetching qualitative context:', error.message);
+        return {};
+      }
+
+      if (!data || data.length === 0) {
+        return {};
+      }
+
+      console.log(`🧠 [ContextBuilder] Fetched ${data.length} analysis records for qualitative context`);
+
+      // Aggregation Logic
+      const aggregatedKeywords = this.aggregateKeywords(data);
+      const strategicNarrative = this.aggregateNarratives(data);
+      const keyQuotes = this.extractTopQuotes(data);
+
+      return {
+        topKeywords: aggregatedKeywords,
+        strategicNarrative,
+        keyQuotes
+      };
+    } catch (err) {
+      console.error('❌ [ContextBuilder] Unexpected error in getQualitativeContext:', err);
+      return {};
+    }
+  }
+
+  /**
+   * Helper: Aggregate Keywords by frequency/relevance
+   */
+  private aggregateKeywords(data: any[]): Array<{ keyword: string; count: number }> {
+    const counts = new Map<string, number>();
+
+    data.forEach(row => {
+      if (Array.isArray(row.keywords)) {
+        row.keywords.forEach((k: any) => {
+          if (k && k.keyword) {
+            const term = k.keyword.toLowerCase().trim();
+            counts.set(term, (counts.get(term) || 0) + 1);
+          }
+        });
+      }
+    });
+
+    return Array.from(counts.entries())
+      .map(([keyword, count]) => ({ keyword, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10); // Top 10 keywords
+  }
+
+  /**
+   * Helper: Aggregate Narratives (Simple concatenation of unique summaries for now)
+   */
+  private aggregateNarratives(data: any[]): string {
+    const narratives = new Set<string>();
+
+    data.forEach(row => {
+      if (row.narrative && row.narrative.brand_summary) {
+        narratives.add(row.narrative.brand_summary);
+      }
+    });
+
+    // Pick top 3 unique narratives to form a summary
+    return Array.from(narratives).slice(0, 3).join(' ');
+  }
+
+  /**
+   * Helper: Extract Top Quotes
+   */
+  private extractTopQuotes(data: any[]): string[] {
+    const quotes: string[] = [];
+
+    data.forEach(row => {
+      if (Array.isArray(row.quotes)) {
+        row.quotes.forEach((q: any) => {
+          if (q && q.text && q.text.length > 20) { // Filter distinct short junk
+            quotes.push(`"${q.text}" (${q.sentiment})`);
+          }
+        });
+      }
+    });
+
+    // Pick last 5 (most recent) - logic is simple for now
+    return quotes.slice(0, 5);
   }
 }
 

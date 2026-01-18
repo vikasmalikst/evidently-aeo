@@ -96,6 +96,10 @@ export interface BrandContextV3 {
     impactScore: number;
     visibility: number;
   }>;
+  // Qualitative context from Analysis Service
+  topKeywords?: Array<{ keyword: string; count: number }>;
+  strategicNarrative?: string;
+  keyQuotes?: string[];
 }
 
 /**

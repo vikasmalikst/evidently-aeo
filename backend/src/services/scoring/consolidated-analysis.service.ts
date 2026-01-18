@@ -68,6 +68,12 @@ export interface ConsolidatedAnalysisResult {
   keywords?: GeneratedKeyword[];
   metrics?: ConsolidatedAnalysisMetrics;
   rawResponse?: string;
+  // Qualitative fields
+  quotes?: Array<{ text: string; sentiment: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL'; entity: string }>;
+  narrative?: {
+    brand_summary: string;
+    competitor_highlight: string;
+  };
 }
 
 // ============================================================================
@@ -200,6 +206,10 @@ export class ConsolidatedAnalysisService {
         },
         llm_provider: llmProvider,
         raw_response: rawResponse || null,
+        // Persist qualitative data
+        keywords: result.keywords || [],
+        quotes: result.quotes || [],
+        narrative: result.narrative || null
       };
 
       const { error } = await this.supabase
@@ -489,6 +499,11 @@ For each keyword, provide:
 - A relevance score (0.0 to 1.0)
 - Brief reasoning (1 sentence)
 
+## TASK 5: Qualitative Insights
+
+1. **Key Quotes:** Extract 1-3 direct quotes or excerpts from the text that best capture the sentiment (positive or negative). Only pick the most impactful ones.
+2. **Narrative Summary:** Write 1-2 sentences explaining WHY the brand or competitors are winning/losing. (e.g., "Competitor X is preferred for simple pricing, while Brand Y is trusted for enterprise features but criticized for complexity.")
+
 ## Answer Text to Analyze:
 ${truncatedAnswer}
 
@@ -540,7 +555,18 @@ Respond with ONLY valid JSON in this exact structure:
         "reasoning": "Reasoning here"
       }
     }
-  ]
+  ],
+  "quotes": [
+    {
+      "text": "The snippet text...",
+      "sentiment": "POSITIVE|NEGATIVE|NEUTRAL",
+      "entity": "BrandName or CompetitorName"
+    }
+  ],
+  "narrative": {
+    "brand_summary": "Why the brand is winning/losing...",
+    "competitor_highlight": "Key strategy/strength of competitors..."
+  }
 }`;
   }
 

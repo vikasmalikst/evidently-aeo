@@ -9,6 +9,31 @@ export interface CustomerEntitlement {
   enabled_countries: string[];
   collector_run_frequencies: Record<string, string>;
   seats: number;
+
+  // New fields for enhanced entitlements management
+  tier?: 'free' | 'paid_enterprise' | 'agency';
+
+  // Scheduling configuration
+  schedule?: {
+    start_date?: string;
+    end_date?: string;
+    time?: string;
+    day_of_week?: number; // 0-6 for Sunday-Saturday
+    day_of_month?: number; // 1-31
+  };
+
+  // Feature flags
+  features?: {
+    measure?: boolean;
+    analyze_citation_sources?: boolean;
+    analyze_topics?: boolean;
+    analyze_queries?: boolean;
+    analyze_answers?: boolean;
+    analyze_domain_readiness?: boolean;
+    analyze_keywords?: boolean;
+    recommendations?: boolean;
+    executive_reporting?: boolean;
+  };
 }
 
 export interface CustomerWithEntitlements {
@@ -82,7 +107,7 @@ export class CustomerEntitlementsService {
    * Update customer entitlements
    */
   async updateCustomerEntitlements(
-    customerId: string, 
+    customerId: string,
     entitlements: CustomerEntitlement
   ): Promise<CustomerWithEntitlements> {
     try {
@@ -134,7 +159,7 @@ export class CustomerEntitlementsService {
    * Create default entitlements for a customer
    */
   async createCustomerEntitlements(
-    customerId: string, 
+    customerId: string,
     entitlements?: Partial<CustomerEntitlement>
   ): Promise<CustomerWithEntitlements> {
     try {
@@ -164,13 +189,13 @@ export class CustomerEntitlementsService {
    * Get customer entitlement value with fallback to default
    */
   getEntitlementValue<T>(
-    customer: CustomerWithEntitlements, 
-    field: keyof CustomerEntitlement, 
+    customer: CustomerWithEntitlements,
+    field: keyof CustomerEntitlement,
     defaultValue: T
   ): { value: T; isFromDB: boolean } {
     const entitlements = customer.settings?.entitlements;
     const dbValue = entitlements?.[field];
-    
+
     return {
       value: dbValue !== undefined ? dbValue as T : defaultValue,
       isFromDB: dbValue !== undefined
@@ -194,32 +219,36 @@ export class CustomerEntitlementsService {
     }
 
     // Validate run_frequency
-    const validFrequencies = ['daily', 'weekly', 'monthly', 'custom'];
+    const validFrequencies = ['daily', 'weekly', 'bi-weekly', 'monthly', 'custom'];
     if (!validFrequencies.includes(entitlements.run_frequency)) {
       errors.push(`Run frequency must be one of: ${validFrequencies.join(', ')}`);
     }
 
-    // Validate seats
-    if (entitlements.seats < 1 || entitlements.seats > 100) {
+    // Validate seats (optional check - only if provided)
+    if (entitlements.seats !== undefined && (entitlements.seats < 1 || entitlements.seats > 100)) {
       errors.push('Seats must be between 1 and 100');
     }
 
-    // Validate enabled_collectors
-    const validCollectors = [
-      'ChatGPT', 'Perplexity', 'Claude', 'Google AI Mode', 
-      'Google Gemini', 'Bing', 'DeepSeek', 'Baidu', 'Grok'
-    ];
-    
-    for (const collector of entitlements.enabled_collectors) {
-      if (!validCollectors.includes(collector)) {
-        errors.push(`Invalid collector: ${collector}. Valid options: ${validCollectors.join(', ')}`);
+    // Validate enabled_collectors (optional check - only if provided)
+    if (entitlements.enabled_collectors && Array.isArray(entitlements.enabled_collectors)) {
+      const validCollectors = [
+        'ChatGPT', 'Perplexity', 'Claude', 'Google AI Mode',
+        'Google Gemini', 'Bing', 'DeepSeek', 'Baidu', 'Grok', 'Gemini'
+      ];
+
+      for (const collector of entitlements.enabled_collectors) {
+        if (!validCollectors.includes(collector)) {
+          errors.push(`Invalid collector: ${collector}. Valid options: ${validCollectors.join(', ')}`);
+        }
       }
     }
 
     // Validate enabled_countries (basic check for 2-letter codes)
-    for (const country of entitlements.enabled_countries) {
-      if (!/^[A-Z]{2}$/.test(country)) {
-        errors.push(`Invalid country code: ${country}. Must be 2-letter ISO code (e.g., US, GB)`);
+    if (entitlements.enabled_countries && Array.isArray(entitlements.enabled_countries)) {
+      for (const country of entitlements.enabled_countries) {
+        if (!/^[A-Z]{2}$/.test(country)) {
+          errors.push(`Invalid country code: ${country}. Must be 2-letter ISO code (e.g., US, GB)`);
+        }
       }
     }
 

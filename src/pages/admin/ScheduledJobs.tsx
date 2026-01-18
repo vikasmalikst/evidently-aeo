@@ -921,6 +921,12 @@ export const ScheduledJobs = () => {
         <h1 className="text-2xl font-bold">Scheduled Jobs</h1>
         <div className="flex space-x-3">
           <button
+            onClick={() => navigate('/admin/entitlements')}
+            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+          >
+            Entitlements
+          </button>
+          <button
             onClick={() => navigate('/admin/data-collection-status')}
             className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
           >

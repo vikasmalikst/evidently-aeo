@@ -21,6 +21,7 @@ import { TopicsPromptsConfigV2 } from './pages/TopicsPromptsConfigV2';
 import MoversAndShakers from './pages/MoversAndShakers';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
+import { CustomerEntitlements } from './pages/admin/CustomerEntitlements';
 import { DomainReadinessPage } from './pages/DomainReadiness/DomainReadinessPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
@@ -401,6 +402,14 @@ function App() {
           element={
             <AdminRoute>
               <DataCollectionStatus />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/entitlements"
+          element={
+            <AdminRoute>
+              <CustomerEntitlements />
             </AdminRoute>
           }
         />

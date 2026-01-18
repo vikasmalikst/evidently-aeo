@@ -114,7 +114,7 @@ export interface RecommendationV3Response {
 /**
  * Brand context for KPI identification
  */
-interface BrandContextV3 {
+export interface BrandContextV3 {
   brandId: string;
   brandName: string;
   brandDomain?: string;      // Brand's own domain (for competitor filter whitelist)
@@ -156,6 +156,11 @@ interface BrandContextV3 {
 
   // Domain Readiness Audit Result
   domainAuditResult?: AeoAuditResult | null;
+
+  // Qualitative Context (from Consolidated Analysis)
+  topKeywords?: Array<{ keyword: string; count: number }>;
+  strategicNarrative?: string;
+  keyQuotes?: string[];
 }
 
 type CerebrasChatResponse = {
@@ -1134,13 +1139,125 @@ Return ONLY a JSON array with the personalized recommendations.`;
           sentiment: competitorAvgSentiment,
           count: competitorData.length
         },
-        domainAuditResult: await domainReadinessService.getLatestAudit(brand.id)
+        domainAuditResult: await domainReadinessService.getLatestAudit(brand.id),
+        ...(await this.getQualitativeContext(brandId, customerId, currentStartDate))
       };
 
     } catch (error) {
       console.error('❌ [RecommendationV3Service] Error gathering context:', error);
       return null;
     }
+  }
+
+  /**
+   * Fetch Qualitative Context (Keywords, Quotes, Narrative)
+   * Queries consolidated_analysis_cache via collector_results link
+   */
+  private async getQualitativeContext(
+    brandId: string,
+    customerId: string,
+    startDate: string
+  ): Promise<Partial<BrandContextV3>> {
+    try {
+      // Fetch analysis cache joined with collector_results to filter by brand
+      // We limit to 50 recent entires to get a good sample without over-fetching
+      const { data, error } = await supabaseAdmin
+        .from('consolidated_analysis_cache')
+        .select(`
+          keywords,
+          quotes,
+          narrative,
+          collector_results!inner(brand_id, created_at)
+        `)
+        .eq('collector_results.brand_id', brandId)
+        .gte('collector_results.created_at', startDate)
+        .order('created_at', { ascending: false, foreignTable: 'collector_results' })
+        .limit(50);
+
+      if (error) {
+        console.warn('⚠️ [RecommendationV3Service] Error fetching qualitative context:', error.message);
+        return {};
+      }
+
+      if (!data || data.length === 0) {
+        return {};
+      }
+
+      console.log(`🧠 [RecommendationV3Service] Fetched ${data.length} analysis records for qualitative context`);
+
+      // Aggregation Logic
+      const aggregatedKeywords = this.aggregateKeywords(data);
+      const strategicNarrative = this.aggregateNarratives(data);
+      const keyQuotes = this.extractTopQuotes(data);
+
+      return {
+        topKeywords: aggregatedKeywords,
+        strategicNarrative,
+        keyQuotes
+      };
+    } catch (err) {
+      console.error('❌ [RecommendationV3Service] Unexpected error in getQualitativeContext:', err);
+      return {};
+    }
+  }
+
+  /**
+   * Helper: Aggregate Keywords by frequency/relevance
+   */
+  private aggregateKeywords(data: any[]): Array<{ keyword: string; count: number }> {
+    const counts = new Map<string, number>();
+
+    data.forEach(row => {
+      if (Array.isArray(row.keywords)) {
+        row.keywords.forEach((k: any) => {
+          if (k && k.keyword) {
+            const term = k.keyword.toLowerCase().trim();
+            counts.set(term, (counts.get(term) || 0) + 1);
+          }
+        });
+      }
+    });
+
+    return Array.from(counts.entries())
+      .map(([keyword, count]) => ({ keyword, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10); // Top 10 keywords
+  }
+
+  /**
+   * Helper: Aggregate Narratives (Simple concatenation of unique summaries for now)
+   */
+  private aggregateNarratives(data: any[]): string {
+    const narratives = new Set<string>();
+
+    data.forEach(row => {
+      if (row.narrative && row.narrative.brand_summary) {
+        narratives.add(row.narrative.brand_summary);
+      }
+    });
+
+    // Pick top 3 unique narratives to form a summary
+    return Array.from(narratives).slice(0, 3).join(' ');
+  }
+
+  /**
+   * Helper: Extract Top Quotes
+   */
+  private extractTopQuotes(data: any[]): string[] {
+    const quotes: string[] = [];
+
+    data.forEach(row => {
+      if (Array.isArray(row.quotes)) {
+        row.quotes.forEach((q: any) => {
+          if (q && q.text && q.text.length > 20) { // Filter distinct short junk
+            quotes.push(`"${q.text}" (${q.sentiment})`);
+          }
+        });
+      }
+    });
+
+    // Pick last 5 (most recent) - logic is simple for now
+    return quotes.slice(0, 5);
   }
 
   /**
@@ -1638,6 +1755,12 @@ ${brandLines.join('\n')}
 
 ${competitorContext}
 
+Voice of Customer & Strategic Context (Use this to better understand *why* the brand wins or loses):
+- Top Keywords: ${context.topKeywords?.map(k => `${k.keyword} (${k.count})`).join(', ') || 'N/A'}
+- Strategic Narrative: ${context.strategicNarrative || 'N/A'}
+- Customer Quotes:
+${context.keyQuotes?.map(q => `  > ${q}`).join('\n') || '  (No quotes available)'}
+
 Available Citation Sources (you MUST use ONLY these exact domains - copy them EXACTLY):
 These are the top sources from the Citations Sources page, sorted by Value score (composite of Visibility, SOA, Sentiment, and Citations).
 Competitor sources have been automatically excluded from this list.
@@ -1654,6 +1777,7 @@ Generate 8-12 recommendations. Each recommendation should:
 4. Have priority (High/Medium/Low) and effort (Low/Medium/High)
 5. Include reason (why this matters), explanation (4-5 sentences), expectedBoost, timeline, confidence
 6. Include focusSources, contentFocus, kpi ("Visibility Index" | "SOA %" | "Sentiment Score")
+7. **CRITICAL**: Use the "Voice of Customer" data (Quotes & Keywords) to write compelling reasons. Explain *why* this action addresses a specific gap found in the narrative or keywords.
 
 IMPORTANT: Do NOT generate impactScore, mentionRate, soa, sentiment, visibilityScore, or citationCount. These will be automatically filled from the source data.
 
@@ -1692,7 +1816,7 @@ Respond only with the JSON array.`;
           console.log('🦙 [RecommendationV3Service] Attempting Ollama API (primary for this brand)...');
           const ollamaStartTime = Date.now();
 
-          const systemMessage = 'You are a senior Brand/AEO expert. Generate actionable recommendations. Respond only with valid JSON arrays.';
+          const systemMessage = 'You are a Senior Marketing Strategist & AEO Expert. You provide confident, direct, and high-impact strategic advice. Avoid generic fluff. Connect every recommendation to the Voice of Customer data provided. Respond only with valid JSON arrays.';
           const ollamaResponse = await callOllamaAPI(systemMessage, prompt, context.brandId);
 
           // Ollama returns JSON string, may need parsing

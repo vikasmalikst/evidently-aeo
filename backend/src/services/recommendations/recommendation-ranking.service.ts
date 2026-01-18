@@ -39,14 +39,6 @@ function normalizePercent100(x: number): number {
   return clamp01((x ?? 0) / 100);
 }
 
-function baseOpportunityFromSource(m: SourceMetric | undefined): number {
-  if (!m) return 0.15; // weak evidence
-  const cit = normalizeCitations(m.citations);
-  const imp = normalizeImpact(m.impactScore);
-  const soa = normalizePercent100(m.soa);
-  // Opportunity is higher when citations+impact are high and SOA is low.
-  return clamp01((cit * 0.5 + imp * 0.5) * (1 - soa));
-}
 
 function computeConfidence(m: SourceMetric | undefined, isTemplate: boolean): number {
   if (isTemplate) return 45;
@@ -55,6 +47,60 @@ function computeConfidence(m: SourceMetric | undefined, isTemplate: boolean): nu
   if (m.citations >= 50) return 78;
   if (m.citations >= 20) return 70;
   return 62;
+}
+
+function getStrategicRole(m: SourceMetric | undefined): RecommendationV3['strategicRole'] {
+  if (!m) return 'Standard';
+
+  const impact = normalizeImpact(m.impactScore); // 0-1
+  const soa = m.soa / 100; // 0-1
+
+  // Battleground: High Impact (>0.7), Low SOA (<0.2)
+  if (impact >= 0.7 && soa <= 0.2) return 'Battleground';
+
+  // Stronghold: High SOA (>0.5)
+  if (soa >= 0.5) return 'Stronghold';
+
+  // Opportunity: High Impact (>0.6), Moderate SOA (0.2-0.5)
+  if (impact >= 0.6 && soa > 0.2 && soa < 0.5) return 'Opportunity';
+
+  return 'Standard';
+}
+
+function calculateScore(m: SourceMetric | undefined, role: RecommendationV3['strategicRole'], isTemplate: boolean, priority: string): number {
+  if (isTemplate) {
+    // Template baseline (legacy logic)
+    return priority === 'High' ? 0.45 : priority === 'Medium' ? 0.28 : 0.16;
+  }
+
+  if (!m) return 0.15; // Weak evidence
+
+  const cit = normalizeCitations(m.citations);
+  const imp = normalizeImpact(m.impactScore);
+  const soa = normalizePercent100(m.soa);
+
+  let roleBoost = 1.0;
+
+  // Strategic weighting
+  switch (role) {
+    case 'Battleground':
+      roleBoost = 1.5; // Top priority: Fight for high-value gaps
+      break;
+    case 'Opportunity':
+      roleBoost = 1.2; // Growth area
+      break;
+    case 'Stronghold':
+      roleBoost = 0.8; // Maintain, but less urgent than failing
+      break;
+    default:
+      roleBoost = 1.0;
+  }
+
+  // Base Opportunity: (Impact + Citations) * (Uncaptured Share)
+  // We heavily weight uncaptured share (1 - soa) to drive "growth" actions
+  const baseScore = (cit * 0.4 + imp * 0.6) * (1 - soa);
+
+  return clamp01(baseScore * roleBoost);
 }
 
 export function rankRecommendationsV3(
@@ -66,30 +112,32 @@ export function rankRecommendationsV3(
 
   const scored = recommendations.map(rec => {
     const m = metricsByDomain.get(rec.citationSource || '');
-    // Template detection: non-domain citationSource markers
     const isTemplate = rec.citationSource === 'owned-site' || rec.citationSource === 'directories';
 
     const effort = effortToNumber[rec.effort] ?? 2;
 
-    // For cold-start templates, keep the template's priority and score them in a stable way.
-    // (Otherwise they'd all get "Low" because there is no sourceMetrics evidence.)
-    const templateBase =
-      rec.priority === 'High' ? 0.45 : rec.priority === 'Medium' ? 0.28 : 0.16;
+    // 1. Determine Strategic Role
+    const strategicRole = isTemplate ? 'Standard' : getStrategicRole(m);
 
-    const opportunity = isTemplate ? templateBase : baseOpportunityFromSource(m);
-    const score = opportunity / effort;
+    // 2. Calculate Opportunity Score
+    const opportunity = calculateScore(m, strategicRole, isTemplate, rec.priority);
 
-    // Determine priority buckets (only override for non-template recommendations)
+    // 3. Final Ranking Score = Opportunity / Effort
+    // We dampen the effort penalty slightly so high-value/hard tasks don't disappear
+    const score = opportunity / Math.pow(effort, 0.8);
+
+    // 4. Derive Priority Label (for UI)
     const priority =
-      isTemplate ? rec.priority : score >= 0.35 ? 'High' : score >= 0.2 ? 'Medium' : 'Low';
+      isTemplate ? rec.priority : score >= 0.30 ? 'High' : score >= 0.15 ? 'Medium' : 'Low';
 
     const confidence = computeConfidence(m, isTemplate);
 
     return {
       rec: {
         ...rec,
-        priority,
+        priority, // Updated priority
         confidence,
+        strategicRole, // NEW: Assign role
         calculatedScore: Math.round(score * 1000) / 1000
       },
       score

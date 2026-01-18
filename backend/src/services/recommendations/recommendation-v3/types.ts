@@ -95,6 +95,11 @@ export interface BrandContextV3 {
     citations: number;
     impactScore: number;
     visibility: number;
+    topCompetitor?: {
+      name: string;
+      soa: number;
+      sentiment: number;
+    };
   }>;
   // Qualitative context from Analysis Service
   topKeywords?: Array<{ keyword: string; count: number }>;

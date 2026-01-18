@@ -23,6 +23,7 @@ import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { DomainReadinessPage } from './pages/DomainReadiness/DomainReadinessPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AdminRoute } from './components/AdminRoute';
 import { featureFlags } from './config/featureFlags';
 import { onboardingUtils } from './utils/onboardingUtils';
 import LandingPage from './pages/LandingPage';
@@ -390,17 +391,17 @@ function App() {
         <Route
           path="/admin/scheduled-jobs"
           element={
-            <ProtectedRoute>
+            <AdminRoute>
               <ScheduledJobs />
-            </ProtectedRoute>
+            </AdminRoute>
           }
         />
         <Route
           path="/admin/data-collection-status"
           element={
-            <ProtectedRoute>
+            <AdminRoute>
               <DataCollectionStatus />
-            </ProtectedRoute>
+            </AdminRoute>
           }
         />
         <Route

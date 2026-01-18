@@ -18,6 +18,7 @@ const createDevUser = (): AuthUser => ({
   fullName: 'Dev User',
   customerId: 'dev-customer-123',
   role: 'admin',
+  accessLevel: 'admin', // Dev user has admin access for testing
 });
 
 const getInitialUser = (): AuthUser | null => {
@@ -31,7 +32,7 @@ const getInitialUser = (): AuthUser | null => {
     }
     return devUser;
   }
-  
+
   return authService.getStoredUser();
 };
 

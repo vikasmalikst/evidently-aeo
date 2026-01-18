@@ -36,9 +36,17 @@ export const requireAdminAccess = async (
       return;
     }
 
-    // Check if user has AL_ADMIN role
-    if (user.role !== 'AL_ADMIN') {
-      console.log(`Admin access denied - Invalid role: ${user.role} for user: ${user.email}`);
+    // Check if user has AL_ADMIN role (Anvaya Labs employees - full access)
+    const isAnvayaAdmin = user.role === 'AL_ADMIN' &&
+      user.email &&
+      user.email.endsWith('@anvayalabs.com');
+
+    // Check if user's customer has admin access level
+    const isCustomerAdmin = req.user.access_level === 'admin';
+
+    // Grant access if EITHER condition is met
+    if (!isAnvayaAdmin && !isCustomerAdmin) {
+      console.log(`Admin access denied for user: ${user.email} (role: ${user.role}, access_level: ${req.user.access_level})`);
       res.status(403).json({
         success: false,
         error: 'Admin access required. Insufficient privileges.'
@@ -46,17 +54,11 @@ export const requireAdminAccess = async (
       return;
     }
 
-    // Check if user email ends with @anvayalabs.com
-    if (!user.email || !user.email.endsWith('@anvayalabs.com')) {
-      console.log(`Admin access denied - Invalid email domain: ${user.email}`);
-      res.status(403).json({
-        success: false,
-        error: 'Admin access restricted to @anvayalabs.com domain'
-      });
-      return;
+    if (isAnvayaAdmin) {
+      console.log(`✅ Anvaya Labs admin access granted to: ${user.email} (${user.role})`);
+    } else {
+      console.log(`✅ Customer admin access granted to: ${user.email} (access_level: ${req.user.access_level})`);
     }
-
-    console.log(`✅ Admin access granted to: ${user.email} (${user.role})`);
     next();
   } catch (error) {
     console.error('Admin middleware error:', error);
@@ -85,10 +87,10 @@ export const optionalAdminAccess = async (
         .single();
 
       if (!userError && user) {
-        const isAdmin = user.role === 'AL_ADMIN' && 
-                       user.email && 
-                       user.email.endsWith('@anvayalabs.com');
-        
+        const isAdmin = user.role === 'AL_ADMIN' &&
+          user.email &&
+          user.email.endsWith('@anvayalabs.com');
+
         // Add admin flag to request
         (req as any).isAdmin = isAdmin;
       }

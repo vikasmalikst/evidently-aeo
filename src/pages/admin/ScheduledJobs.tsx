@@ -4,6 +4,7 @@ import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { generateRecommendationsV3 } from '../../api/recommendationsV3Api';
 import { useAuthStore } from '../../store/authStore';
+import { AdminCustomerBrandSelector } from '../../components/admin/AdminCustomerBrandSelector';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -249,8 +250,16 @@ export const ScheduledJobs = () => {
   const [backfillForce, setBackfillForce] = useState(false);
   const [backfillPreserveDates, setBackfillPreserveDates] = useState(true);
 
+  // Admin customer/brand selection (for admin users only)
+  const [adminSelectedCustomerId, setAdminSelectedCustomerId] = useState<string | null>(null);
+  const [adminSelectedBrandId, setAdminSelectedBrandId] = useState<string | null>(null);
+
   // Get customer_id from auth store or fetch from brand
   const authUser = useAuthStore((state) => state.user);
+
+  // Use admin selections if available, otherwise fall back to normal flow
+  const effectiveCustomerId = adminSelectedCustomerId || customerId;
+  const effectiveBrandId = adminSelectedBrandId || selectedBrandId;
 
   // Fetch customer_id from the selected brand
   useEffect(() => {
@@ -306,13 +315,13 @@ export const ScheduledJobs = () => {
   };
 
   useEffect(() => {
-    if (customerId) {
+    if (effectiveCustomerId) {
       loadJobs();
-      if (selectedBrandId) {
+      if (effectiveBrandId) {
         loadDiagnostic();
       }
     }
-  }, [customerId, selectedBrandId]);
+  }, [effectiveCustomerId, effectiveBrandId]);
 
   useEffect(() => {
     return () => {
@@ -322,10 +331,10 @@ export const ScheduledJobs = () => {
 
   // Load Ollama settings when brand is selected
   useEffect(() => {
-    if (selectedBrandId) {
+    if (effectiveBrandId) {
       loadOllamaSettings();
     }
-  }, [selectedBrandId]);
+  }, [effectiveBrandId]);
 
   // Check health when Ollama is enabled
   useEffect(() => {
@@ -473,10 +482,10 @@ export const ScheduledJobs = () => {
   };
 
   const loadDiagnostic = async () => {
-    if (!selectedBrandId || !customerId) return;
+    if (!effectiveBrandId || !effectiveCustomerId) return;
     try {
       const response = await apiClient.get<ApiResponse<QueriesDiagnosticPayload>>(
-        `/admin/brands/${selectedBrandId}/queries-diagnostic?customer_id=${customerId}`
+        `/admin/brands/${effectiveBrandId}/queries-diagnostic?customer_id=${effectiveCustomerId}`
       );
       if (response.success && response.data) {
         setDiagnostic(response.data);
@@ -489,10 +498,10 @@ export const ScheduledJobs = () => {
   const loadJobs = async () => {
     try {
       setLoading(true);
-      if (!customerId) return;
-      const params = new URLSearchParams({ customer_id: customerId });
-      if (selectedBrandId) {
-        params.append('brand_id', selectedBrandId);
+      if (!effectiveCustomerId) return;
+      const params = new URLSearchParams({ customer_id: effectiveCustomerId });
+      if (effectiveBrandId) {
+        params.append('brand_id', effectiveBrandId);
       }
       const response = await apiClient.get<ApiResponse<ScheduledJob[]>>(
         `/admin/scheduled-jobs?${params.toString()}`
@@ -925,6 +934,14 @@ export const ScheduledJobs = () => {
           </button>
         </div>
       </div>
+
+      {/* Admin Customer & Brand Selector */}
+      <AdminCustomerBrandSelector
+        selectedCustomerId={adminSelectedCustomerId}
+        selectedBrandId={adminSelectedBrandId}
+        onCustomerChange={setAdminSelectedCustomerId}
+        onBrandChange={setAdminSelectedBrandId}
+      />
 
       {/* Quick Actions */}
       {selectedBrandId && (

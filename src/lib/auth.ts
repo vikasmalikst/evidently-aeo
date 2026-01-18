@@ -17,6 +17,7 @@ interface BackendAuthSuccess {
     full_name?: string | null;
     customer_id?: string | null;
     role?: string | null;
+    access_level?: string | null; // Customer access level from backend
   };
   session: {
     access_token: string;
@@ -38,6 +39,7 @@ export interface AuthUser {
   fullName: string | null;
   customerId: string | null;
   role?: string | null;
+  accessLevel?: 'user' | 'admin' | null; // Customer access level for admin portal access
 }
 
 export interface AuthResponse {
@@ -67,12 +69,14 @@ const loadUser = (): AuthUser | null => {
 
 const mapUser = (payload: BackendAuthSuccess): AuthUser => {
   const name = payload.profile.full_name ?? payload.profile.name ?? payload.user.name ?? null;
+  const accessLevel = payload.profile.access_level ?? null;
   return {
     id: payload.user.id,
     email: payload.user.email,
     fullName: name,
     customerId: payload.profile.customer_id ?? payload.user.customer_id ?? null,
     role: payload.profile.role ?? payload.user.role ?? null,
+    accessLevel: accessLevel as 'user' | 'admin' | null
   };
 };
 
@@ -199,14 +203,14 @@ export const authService = {
       // Clear API cache to prevent cross-customer data leakage
       const { clearApiCache } = await import('./apiCache');
       clearApiCache();
-      
+
       // Clear onboarding state
       localStorage.removeItem('onboarding_complete');
       localStorage.removeItem('onboarding_data');
       localStorage.removeItem('onboarding_topics');
       localStorage.removeItem('onboarding_prompts');
       localStorage.removeItem('onboarding_brand');
-      
+
       apiClient.clearAuthTokens();
       persistUser(null);
     }
@@ -303,22 +307,22 @@ export const authService = {
       return user;
     } catch (error) {
       console.warn('Failed to restore authenticated user:', error);
-      
+
       // Only clear tokens if it's an actual authentication error (401)
       // Don't clear on network errors or other issues
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isAuthError = errorMessage.includes('401') || 
-                         errorMessage.includes('Unauthorized') ||
-                         errorMessage.includes('Token expired') ||
-                         errorMessage.includes('Invalid token') ||
-                         errorMessage.includes('Authentication failed') ||
-                         errorMessage.includes('Access token required');
-      
+      const isAuthError = errorMessage.includes('401') ||
+        errorMessage.includes('Unauthorized') ||
+        errorMessage.includes('Token expired') ||
+        errorMessage.includes('Invalid token') ||
+        errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('Access token required');
+
       if (isAuthError) {
-      apiClient.clearAuthTokens();
-      persistUser(null);
+        apiClient.clearAuthTokens();
+        persistUser(null);
       }
-      
+
       return null;
     }
   },

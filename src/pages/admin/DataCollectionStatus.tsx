@@ -4,6 +4,7 @@ import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { useAuthStore } from '../../store/authStore';
+import { AdminCustomerBrandSelector } from '../../components/admin/AdminCustomerBrandSelector';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -42,8 +43,16 @@ export const DataCollectionStatus = () => {
   const { brands, selectedBrandId, selectedBrand, selectBrand } = useManualBrandDashboard();
   const authUser = useAuthStore((state) => state.user);
 
+  // Admin customer/brand selection
+  const [adminSelectedCustomerId, setAdminSelectedCustomerId] = useState<string | null>(null);
+  const [adminSelectedBrandId, setAdminSelectedBrandId] = useState<string | null>(null);
+
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [customerIdError, setCustomerIdError] = useState<string | null>(null);
+
+  // Use admin selections if available, otherwise fall back to normal flow
+  const effectiveCustomerId = adminSelectedCustomerId || customerId;
+  const effectiveBrandId = adminSelectedBrandId || selectedBrandId;
 
   const [brandIdFilter, setBrandIdFilter] = useState<string>('');
   const [collectorFilter, setCollectorFilter] = useState<string>('');
@@ -95,6 +104,13 @@ export const DataCollectionStatus = () => {
     }
   }, [brandIdFilter, selectedBrandId]);
 
+  // Sync brand filter with admin selection
+  useEffect(() => {
+    if (adminSelectedBrandId) {
+      setBrandIdFilter(adminSelectedBrandId);
+    }
+  }, [adminSelectedBrandId]);
+
   useEffect(() => {
     if (from || to) return;
     const end = new Date();
@@ -140,14 +156,14 @@ export const DataCollectionStatus = () => {
 
   const load = useCallback(
     async (nextOffset: number) => {
-      if (!customerId) return;
+      if (!effectiveCustomerId) return;
 
       try {
         setLoading(true);
         setError(null);
 
         const params = new URLSearchParams({
-          customer_id: customerId,
+          customer_id: effectiveCustomerId,
           limit: String(limit),
           offset: String(nextOffset),
           sort_by: sortBy,
@@ -180,7 +196,7 @@ export const DataCollectionStatus = () => {
       }
     },
     [
-      customerId,
+      effectiveCustomerId,
       limit,
       brandIdFilter,
       collectorFilter,
@@ -205,17 +221,17 @@ export const DataCollectionStatus = () => {
   };
 
   useEffect(() => {
-    if (!customerId) return;
+    if (!effectiveCustomerId) return;
     load(0);
-  }, [customerId, brandIdFilter, collectorFilter, from, to, collectionStatus, scoringStatus, rawAnswer, sortBy, sortOrder, load]);
+  }, [effectiveCustomerId, brandIdFilter, collectorFilter, from, to, collectionStatus, scoringStatus, rawAnswer, sortBy, sortOrder, load]);
 
   useEffect(() => {
-    if (!customerId) return;
+    if (!effectiveCustomerId) return;
     const interval = setInterval(() => {
       load(offset);
     }, 600000);
     return () => clearInterval(interval);
-  }, [customerId, load, offset]);
+  }, [effectiveCustomerId, load, offset]);
 
   const canPrev = offset > 0;
   const canNext = offset + limit < total;
@@ -254,6 +270,14 @@ export const DataCollectionStatus = () => {
           </button>
         </div>
       </div>
+
+      {/* Admin Customer & Brand Selector */}
+      <AdminCustomerBrandSelector
+        selectedCustomerId={adminSelectedCustomerId}
+        selectedBrandId={adminSelectedBrandId}
+        onCustomerChange={setAdminSelectedCustomerId}
+        onBrandChange={setAdminSelectedBrandId}
+      />
 
       <div className="bg-white rounded-lg shadow p-6 mb-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -338,11 +362,10 @@ export const DataCollectionStatus = () => {
                   setOffset(0);
                   setRawAnswer('any');
                 }}
-                className={`px-4 py-2 text-sm font-medium border border-gray-300 rounded-l-lg focus:z-10 focus:ring-2 focus:ring-blue-500 ${
-                  rawAnswer === 'any'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
+                className={`px-4 py-2 text-sm font-medium border border-gray-300 rounded-l-lg focus:z-10 focus:ring-2 focus:ring-blue-500 ${rawAnswer === 'any'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
               >
                 All
               </button>
@@ -352,11 +375,10 @@ export const DataCollectionStatus = () => {
                   setOffset(0);
                   setRawAnswer('missing');
                 }}
-                className={`px-4 py-2 text-sm font-medium border-t border-b border-gray-300 focus:z-10 focus:ring-2 focus:ring-blue-500 ${
-                  rawAnswer === 'missing'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
+                className={`px-4 py-2 text-sm font-medium border-t border-b border-gray-300 focus:z-10 focus:ring-2 focus:ring-blue-500 ${rawAnswer === 'missing'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
               >
                 Null
               </button>
@@ -366,11 +388,10 @@ export const DataCollectionStatus = () => {
                   setOffset(0);
                   setRawAnswer('present');
                 }}
-                className={`px-4 py-2 text-sm font-medium border border-gray-300 rounded-r-lg focus:z-10 focus:ring-2 focus:ring-blue-500 ${
-                  rawAnswer === 'present'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
+                className={`px-4 py-2 text-sm font-medium border border-gray-300 rounded-r-lg focus:z-10 focus:ring-2 focus:ring-blue-500 ${rawAnswer === 'present'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
               >
                 Non-null
               </button>
@@ -472,7 +493,7 @@ export const DataCollectionStatus = () => {
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th 
+                <th
                   className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('id')}
                 >
@@ -483,7 +504,7 @@ export const DataCollectionStatus = () => {
                     )}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('createdAt')}
                 >
@@ -494,7 +515,7 @@ export const DataCollectionStatus = () => {
                     )}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('brandName')}
                 >
@@ -505,7 +526,7 @@ export const DataCollectionStatus = () => {
                     )}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('collectorType')}
                 >
@@ -516,7 +537,7 @@ export const DataCollectionStatus = () => {
                     )}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('status')}
                 >
@@ -527,7 +548,7 @@ export const DataCollectionStatus = () => {
                     )}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('scoringStatus')}
                 >
@@ -538,7 +559,7 @@ export const DataCollectionStatus = () => {
                     )}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('rawAnswerPresent')}
                 >
@@ -576,21 +597,20 @@ export const DataCollectionStatus = () => {
                     <td className="px-4 py-3 whitespace-nowrap">
                       {r.createdAt
                         ? new Date(r.createdAt).toLocaleString(undefined, {
-                            month: 'numeric',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
+                          month: 'numeric',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
                         : ''}
                     </td>
                     <td className="px-4 py-3">{r.brandName || r.brandId}</td>
                     <td className="px-4 py-3">{r.collectorType}</td>
                     <td
-                      className={`px-4 py-3 ${
-                        r.status === 'failed' || r.status === 'failed_retry'
-                          ? 'cursor-pointer text-red-700 hover:underline'
-                          : ''
-                      }`}
+                      className={`px-4 py-3 ${r.status === 'failed' || r.status === 'failed_retry'
+                        ? 'cursor-pointer text-red-700 hover:underline'
+                        : ''
+                        }`}
                       onClick={() => {
                         if (!(r.status === 'failed' || r.status === 'failed_retry')) {
                           return;
@@ -606,11 +626,10 @@ export const DataCollectionStatus = () => {
                       {r.status || ''}
                     </td>
                     <td
-                      className={`px-4 py-3 ${
-                        r.scoringStatus === 'error'
-                          ? 'cursor-pointer text-red-700 hover:underline'
-                          : ''
-                      }`}
+                      className={`px-4 py-3 ${r.scoringStatus === 'error'
+                        ? 'cursor-pointer text-red-700 hover:underline'
+                        : ''
+                        }`}
                       onClick={() => {
                         if (r.scoringStatus !== 'error') {
                           return;

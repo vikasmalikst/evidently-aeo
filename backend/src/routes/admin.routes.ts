@@ -855,6 +855,49 @@ router.post('/customers/:customerId/entitlements', async (req: Request, res: Res
 });
 
 /**
+ * GET /api/admin/customers/:customerId/brands
+ * Get all brands for a specific customer
+ */
+router.get('/customers/:customerId/brands', async (req: Request, res: Response) => {
+  try {
+    const { customerId } = req.params;
+
+    if (!customerId) {
+      return res.status(400).json({
+        success: false,
+        error: 'customerId is required'
+      });
+    }
+
+    // Fetch brands for the customer
+    const { data: brands, error } = await supabase
+      .from('brands')
+      .select('id, name, slug, customer_id, status')
+      .eq('customer_id', customerId)
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching brands for customer:', error);
+      return res.status(500).json({
+        success: false,
+        error: `Failed to fetch brands: ${error.message}`
+      });
+    }
+
+    res.json({
+      success: true,
+      data: brands || []
+    });
+  } catch (error) {
+    console.error('Error fetching customer brands:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch customer brands'
+    });
+  }
+});
+
+/**
  * GET /api/admin/customers/:customerId/entitlements/defaults
  * Get default entitlements template
  */

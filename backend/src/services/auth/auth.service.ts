@@ -1,12 +1,12 @@
 import { supabaseAdmin, supabaseClient } from '../../config/database';
 import { generateToken, generateRefreshToken } from '../../utils/jwt';
-import { 
-  User, 
-  UserProfile, 
-  Customer, 
-  AuthRequest, 
-  AuthResponse, 
-  AuthError, 
+import {
+  User,
+  UserProfile,
+  Customer,
+  AuthRequest,
+  AuthResponse,
+  AuthError,
   DatabaseError
 } from '../../types/auth';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,7 +19,7 @@ export class AuthService {
   async getCurrentUser(): Promise<User | null> {
     try {
       const { data: { user }, error } = await supabaseClient.auth.getUser();
-      
+
       if (error || !user) {
         return null;
       }
@@ -113,6 +113,7 @@ export class AuthService {
         avatar_url: null,
         provider: 'email',
         customer_id: customer.id,
+        access_level: customer.access_level || 'user', // Include access_level from customers table
         created_at: customer.created_at,
         updated_at: customer.updated_at
       };
@@ -146,12 +147,12 @@ export class AuthService {
         if (!authData.email) {
           throw new DatabaseError('Email is required');
         }
-        
+
         // Generate unique slug
         const baseSlug = authData.email.split('@')[0]?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'unknown';
         const randomSuffix = uuidv4().split('-')[0].substring(0, 6);
         const emailSlug = `${baseSlug}-${randomSuffix}`;
-        
+
         const { data: newCustomer, error: newCustomerError } = await supabaseAdmin
           .from('customers')
           .insert({
@@ -201,7 +202,8 @@ export class AuthService {
         role: null,
         avatar_url: null,
         provider: 'google',
-        customer_id: customer.id
+        customer_id: customer.id,
+        access_level: customer.access_level || 'user' // Include access_level from customers table
       };
 
       return {
@@ -246,7 +248,7 @@ export class AuthService {
         throw new AuthError('Failed to exchange code for tokens');
       }
 
-      const tokenData = await tokenResponse.json() as{
+      const tokenData = await tokenResponse.json() as {
         access_token: string;
       };
 
@@ -305,7 +307,7 @@ export class AuthService {
       // For now, we'll get the user from the token payload
       const { verifyToken } = await import('../../utils/jwt');
       verifyToken(accessToken);
-      
+
       return await this.getCurrentUser();
     } catch (error) {
       console.error('Error validating session:', error);

@@ -22,6 +22,7 @@ export interface UserProfile {
   avatar_url?: string | null;
   provider: string;
   customer_id: string | null;
+  access_level?: string | null; // Customer access level: 'user' or 'admin'
   preferences?: Record<string, any> | null;
   last_login_at?: string | null;
   created_at?: string | null;
@@ -33,6 +34,7 @@ export interface Customer {
   id: string;
   name: string;
   email: string;
+  access_level?: string | null; // Customer access level: 'user' or 'admin'
   created_at: string;
   updated_at: string;
 }

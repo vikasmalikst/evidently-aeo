@@ -14,6 +14,7 @@ declare global {
         customer_id: string | null;
         role?: string | null;
         full_name?: string | null;
+        access_level?: string | null; // Customer access level
       };
     }
   }
@@ -46,7 +47,7 @@ export const authenticateToken = async (
 
   try {
     const token = extractTokenFromHeader(req.headers.authorization);
-    
+
     if (!token) {
       res.status(401).json({
         success: false,
@@ -57,10 +58,10 @@ export const authenticateToken = async (
 
     // Verify token
     const payload = verifyToken(token);
-    
+
     // Get user from database using the user ID from the token
     const user = await authService.getUserProfile(payload.sub);
-    
+
     if (!user) {
       res.status(401).json({
         success: false,
@@ -75,13 +76,14 @@ export const authenticateToken = async (
       email: user.email,
       customer_id: user.customer_id,
       role: user.role,
-      full_name: user.full_name
+      full_name: user.full_name,
+      access_level: user.access_level || 'user' // Include access_level from customer
     };
 
     next();
   } catch (error) {
     console.error('Authentication error:', error);
-    
+
     if (error instanceof AuthError) {
       res.status(error.statusCode).json({
         success: false,
@@ -108,18 +110,19 @@ export const optionalAuth = async (
 ): Promise<void> => {
   try {
     const token = extractTokenFromHeader(req.headers.authorization);
-    
+
     if (token) {
       const payload = verifyToken(token);
       const user = await authService.getUserProfile(payload.sub);
-      
+
       if (user) {
         req.user = {
           id: user.id,
           email: user.email,
           customer_id: user.customer_id,
           role: user.role,
-          full_name: user.full_name
+          full_name: user.full_name,
+          access_level: user.access_level || 'user' // Include access_level
         };
       }
     }
@@ -146,7 +149,7 @@ export const validateCustomer = (customerIdParam: string = 'customerId') => {
     }
 
     const customerId = req.params[customerIdParam];
-    
+
     if (!customerId) {
       res.status(400).json({
         success: false,

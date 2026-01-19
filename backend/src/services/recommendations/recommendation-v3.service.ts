@@ -142,6 +142,11 @@ export interface BrandContextV3 {
     citations: number;
     impactScore: number;
     visibility: number;
+    topCompetitor?: {
+      name: string;
+      soa: number;
+      sentiment: number;
+    };
   }>;
   // Internal fields for competitor filtering (not exposed in prompt)
   _competitorExclusionList?: CompetitorExclusionList;

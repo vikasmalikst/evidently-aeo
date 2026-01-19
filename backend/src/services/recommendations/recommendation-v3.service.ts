@@ -166,6 +166,16 @@ export interface BrandContextV3 {
   topKeywords?: Array<{ keyword: string; count: number }>;
   strategicNarrative?: string;
   keyQuotes?: string[];
+
+  // Phase 7: Graph Insights
+  graphInsights?: {
+    opportunityGaps: Array<{
+      topic: string;
+      score: number;
+      context: string;
+      evidence: string[];
+    }>;
+  };
 }
 
 type CerebrasChatResponse = {
@@ -1737,6 +1747,13 @@ Respond only with the JSON array.`;
 - Average Sentiment: ${context._competitorAvgMetrics.sentiment !== undefined ? Math.round(context._competitorAvgMetrics.sentiment * 10) / 10 : 'N/A'}`
       : 'No industry benchmark data available';
 
+    // Phase 7: Graph Algorithm Insights
+    // This injects specific "Opportunity Gaps" found by the Knowledge Graph
+    const graphContext = context.graphInsights?.opportunityGaps && context.graphInsights.opportunityGaps.length > 0
+      ? `CONFIRMED COMPETITOR WEAKNESSES (Use these for 'Battleground' comparisons):
+${context.graphInsights.opportunityGaps.map(g => `- Weakness: "${g.topic}" (Score: ${g.score.toFixed(1)})\n  Context: ${g.context}\n  Evidence: "${g.evidence[0] || 'N/A'}"`).join('\n')}`
+      : 'No graph insights available.';
+
     const lowDataMode = context._dataMaturity === 'low_data';
     const lowDataGuidance = lowDataMode
       ? `\nLOW-DATA MODE (important):\n- The brand has limited evidence/signals. Avoid making strong assumptions.\n- Prefer owned-site actions and foundational improvements that reliably create measurable signals.\n- If recommending external work, keep it conservative and tied to the provided safe sources list.\n- Use “audit/verify/optimize” language where you suspect basics already exist.\n`
@@ -1767,6 +1784,11 @@ ${brandLines.join('\n')}
 
 ${competitorContext}
 
+Known Competitors (for comparison context only):
+${context.competitors && context.competitors.length > 0 ? context.competitors.map(c => `- ${c.name}`).join('\n') : 'No specific competitors identified.'}
+    
+${graphContext}
+
 Voice of Customer & Strategic Context (Use this to better understand *why* the brand wins or loses):
 - Top Keywords: ${context.topKeywords?.map(k => `${k.keyword} (${k.count})`).join(', ') || 'N/A'}
 - Strategic Narrative: ${context.strategicNarrative || 'N/A'}
@@ -1790,6 +1812,7 @@ Generate 8-12 recommendations. Each recommendation should:
 5. Include reason (why this matters), explanation (4-5 sentences), expectedBoost, timeline, confidence
 6. Include focusSources, contentFocus, kpi ("Visibility Index" | "SOA %" | "Sentiment Score")
 7. **CRITICAL**: Use the "Voice of Customer" data (Quotes & Keywords) to write compelling reasons. Explain *why* this action addresses a specific gap found in the narrative or keywords.
+8. **STRATEGIC ATTACK**: Check 'CONFIRMED COMPETITOR WEAKNESSES'. If a competitor is weak in an area (e.g., 'Durability'), explicitly recommend highlighting your brand's strength in that specific area as a differentiating factor.
 
 IMPORTANT: Do NOT generate impactScore, mentionRate, soa, sentiment, visibilityScore, or citationCount. These will be automatically filled from the source data.
 

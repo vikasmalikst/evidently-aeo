@@ -186,6 +186,7 @@ export class GraphRecommendationService {
      */
     private ensureEdge(source: string, target: string, type: EdgeType, sourceId: number, quotes: string[] = []) {
         if (!source || !target) return;
+        if (source === target) return; // Prevent self-loops
         if (!this.graph.hasNode(source) || !this.graph.hasNode(target)) return;
 
         // In a multi-graph, we can add multiple edges.

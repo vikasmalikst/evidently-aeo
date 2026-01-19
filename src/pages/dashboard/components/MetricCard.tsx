@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp, ChevronDown, HelpCircle } from 'lucide-react';
 import type { MetricCardProps } from '../types';
 import { InfoTooltip } from './InfoTooltip';
 
@@ -13,7 +13,8 @@ export const MetricCard = ({
   linkTo,
   description,
   comparisons = [],
-  comparisonSuffix = ''
+  comparisonSuffix = '',
+  onHelpClick
 }: MetricCardProps) => {
   const hasComparisons = comparisons.length > 0;
   const maxComparisonValue = hasComparisons
@@ -21,7 +22,19 @@ export const MetricCard = ({
     : 0;
 
   return (
-    <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 flex flex-col">
+    <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 flex flex-col relative group/card">
+      {onHelpClick && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onHelpClick();
+          }}
+          className="absolute top-3 right-3 p-1.5 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-all opacity-0 group-hover/card:opacity-100 focus:opacity-100"
+          aria-label="Learn more about this KPI"
+        >
+          <HelpCircle size={18} />
+        </button>
+      )}
       <div className="flex items-center gap-2 mb-3">
         <div
           className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -38,9 +51,8 @@ export const MetricCard = ({
         <div className="text-[28px] font-bold text-[#1a1d29] leading-none">{value}</div>
         {trend.direction !== 'stable' && (
           <div
-            className={`flex items-center gap-0.5 text-[11px] font-semibold pb-1 ${
-              trend.direction === 'up' ? 'text-[#06c686]' : 'text-[#f94343]'
-            }`}
+            className={`flex items-center gap-0.5 text-[11px] font-semibold pb-1 ${trend.direction === 'up' ? 'text-[#06c686]' : 'text-[#f94343]'
+              }`}
           >
             {trend.direction === 'up' ? (
               <ChevronUp size={12} strokeWidth={2.5} />

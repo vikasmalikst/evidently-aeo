@@ -596,21 +596,37 @@ export class ContextBuilderService {
       // 4. Extract Insights
       // For each competitor, find opportunity gaps
       const allGaps: any[] = [];
+      const allBattlegrounds: any[] = [];
+      const allStrongholds: any[] = [];
+
       for (const comp of competitorNames) {
+        // 1. Weaknesses
         const gaps = graphRecommendationService.getOpportunityGaps(comp);
         allGaps.push(...gaps);
+
+        // 2. Battlegrounds (High Contention)
+        const battles = graphRecommendationService.getBattlegrounds(brandName, comp);
+        allBattlegrounds.push(...battles);
+
+        // 3. Competitor Strongholds (Envy)
+        const strengths = graphRecommendationService.getCompetitorStrongholds(comp);
+        allStrongholds.push(...strengths);
       }
 
       // Sort globally by score
       const topGaps = allGaps.sort((a, b) => b.score - a.score).slice(0, 5);
+      const topBattlegrounds = allBattlegrounds.sort((a, b) => b.score - a.score).slice(0, 3);
+      const topStrongholds = allStrongholds.sort((a, b) => b.score - a.score).slice(0, 3);
 
-      if (topGaps.length > 0) {
-        console.log(`🚀 [ContextBuilder] Found ${topGaps.length} Opportunity Gaps via Graph`);
+      if (topGaps.length > 0 || topBattlegrounds.length > 0) {
+        console.log(`🚀 [ContextBuilder] Graph Insights: ${topGaps.length} Gaps, ${topBattlegrounds.length} Battles, ${topStrongholds.length} Strongholds`);
       }
 
       return {
-        opportunityGaps: topGaps
-      };
+        opportunityGaps: topGaps,
+        battlegrounds: topBattlegrounds,
+        competitorStrongholds: topStrongholds
+      } as any;
 
     } catch (err) {
       console.error('❌ [ContextBuilder] Graph Analysis Failed:', err);

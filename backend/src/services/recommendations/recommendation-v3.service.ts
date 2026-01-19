@@ -175,6 +175,17 @@ export interface BrandContextV3 {
       context: string;
       evidence: string[];
     }>;
+    battlegrounds?: Array<{
+      topic: string;
+      score: number;
+      context: string;
+    }>;
+    competitorStrongholds?: Array<{
+      topic: string;
+      score: number;
+      context: string;
+      evidence: string[];
+    }>;
   };
 }
 
@@ -1748,11 +1759,27 @@ Respond only with the JSON array.`;
       : 'No industry benchmark data available';
 
     // Phase 7: Graph Algorithm Insights
-    // This injects specific "Opportunity Gaps" found by the Knowledge Graph
-    const graphContext = context.graphInsights?.opportunityGaps && context.graphInsights.opportunityGaps.length > 0
-      ? `CONFIRMED COMPETITOR WEAKNESSES (Use these for 'Battleground' comparisons):
-${context.graphInsights.opportunityGaps.map(g => `- Weakness: "${g.topic}" (Score: ${g.score.toFixed(1)})\n  Context: ${g.context}\n  Evidence: "${g.evidence[0] || 'N/A'}"`).join('\n')}`
-      : 'No graph insights available.';
+    // This injects specific "Opportunity Gaps", "Battlegrounds", and "Strongholds" found by the Knowledge Graph
+    let graphContextParts: string[] = [];
+
+    if (context.graphInsights?.opportunityGaps && context.graphInsights.opportunityGaps.length > 0) {
+      graphContextParts.push(`CONFIRMED COMPETITOR WEAKNESSES (Attack these gaps):
+${context.graphInsights.opportunityGaps.map(g => `- Weakness: "${g.topic}" (Score: ${g.score.toFixed(1)})\n  Context: ${g.context}\n  Evidence: "${g.evidence[0] || 'N/A'}"`).join('\n')}`);
+    }
+
+    if (context.graphInsights?.battlegrounds && context.graphInsights.battlegrounds.length > 0) {
+      graphContextParts.push(`ACTIVE BATTLEGROUNDS (High contention - differentiate here):
+${context.graphInsights.battlegrounds.map(g => `- Topic: "${g.topic}" (Score: ${g.score.toFixed(1)})\n  Context: ${g.context}`).join('\n')}`);
+    }
+
+    if (context.graphInsights?.competitorStrongholds && context.graphInsights.competitorStrongholds.length > 0) {
+      graphContextParts.push(`COMPETITOR STRONGHOLDS (Learn from their success / "Envy" strategy):
+${context.graphInsights.competitorStrongholds.map(g => `- Strength: "${g.topic}" (Score: ${g.score.toFixed(1)})\n  Context: ${g.context}`).join('\n')}`);
+    }
+
+    const graphContext = graphContextParts.length > 0
+      ? `GRAPH-DRIVEN STRATEGIC CONTEXT:\n${graphContextParts.join('\n\n')}`
+      : 'No specific graph insights available (insufficient data overlap).';
 
     const lowDataMode = context._dataMaturity === 'low_data';
     const lowDataGuidance = lowDataMode

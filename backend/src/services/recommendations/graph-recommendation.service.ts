@@ -91,7 +91,10 @@ export class GraphRecommendationService {
         this.ensureNode('MIXED', NodeType.SENTIMENT);
 
         for (const result of results) {
-            if (!result.analysis) continue;
+            if (!result.analysis) {
+                console.warn(`[GraphService] Skipping result ${result.id} - Analysis object missing`);
+                continue;
+            }
             this.processResult(brandName, result);
         }
 
@@ -103,6 +106,10 @@ export class GraphRecommendationService {
      */
     private processResult(brandName: string, item: { id: number; analysis: ConsolidatedAnalysisResult; competitorNames: string[] }) {
         const { analysis, id } = item;
+        console.log(`[GraphService] Processing Result ${id}: Keywords=${analysis.keywords?.length || 0}, Products=${analysis.products?.brand?.length || 0}`);
+        if (analysis.keywords && !Array.isArray(analysis.keywords)) {
+            console.warn(`[GraphService] WARN: Keywords is not an array for result ${id}:`, analysis.keywords);
+        }
 
         // A. Process Products
         const products = analysis.products?.brand || [];
@@ -273,9 +280,114 @@ export class GraphRecommendationService {
 
         return gaps.sort((a, b) => b.score - a.score).slice(0, 3);
     }
+    /**
+     * Insight 2: Battlegrounds
+     * Logic: Topics where BOTH Brand and Competitor have significant presence.
+     */
+    public getBattlegrounds(brandName: string, competitorName: string): GraphInsight[] {
+        const battlegrounds: GraphInsight[] = [];
+
+        this.graph.forEachNode((node, attr) => {
+            if (attr.type !== NodeType.TOPIC) return;
+
+            // Must be connected to BOTH
+            if (!this.graph.hasEdge(brandName, node) || !this.graph.hasEdge(competitorName, node)) return;
+
+            // Calculate contention score (sum of weights)
+            const brandWeight = this.graph.getEdgeAttribute(brandName, node, 'weight');
+            const compWeight = this.graph.getEdgeAttribute(competitorName, node, 'weight');
+            const contentionScore = (brandWeight + compWeight) * (attr.centralityScore || 1);
+
+            battlegrounds.push({
+                type: 'battleground',
+                topic: node,
+                score: contentionScore,
+                evidence: [], // Could fetch evidence from both
+                context: `High contention topic between ${brandName} and ${competitorName}`
+            });
+        });
+
+        return battlegrounds.sort((a, b) => b.score - a.score).slice(0, 3);
+    }
 
     /**
-     * Insight 2: Source Toxicity Score
+     * Insight 3: Competitor Strongholds (Envy)
+     * Logic: Topics where Competitor -> Topic -> Positive is strong.
+     */
+    public getCompetitorStrongholds(competitorName: string): GraphInsight[] {
+        const strongholds: GraphInsight[] = [];
+
+        this.graph.forEachNode((node, attr) => {
+            if (attr.type !== NodeType.TOPIC) return;
+
+            if (!this.graph.hasEdge(competitorName, node)) return;
+
+            // Check Path: Competitor -> Topic -> POSITIVE
+            const compPosWeight = this.getPathWeight(competitorName, node, 'POSITIVE');
+
+            if (compPosWeight > 0) {
+                const evidence = this.getEvidence(node, 'POSITIVE');
+                strongholds.push({
+                    type: 'strength',
+                    topic: node,
+                    score: compPosWeight * (attr.centralityScore || 1),
+                    evidence: evidence,
+                    context: `${competitorName} is dominating ${node} with positive sentiment`
+                });
+            }
+        });
+
+        return strongholds.sort((a, b) => b.score - a.score).slice(0, 3);
+    }
+
+    /**
+     * Insight 4: Keyword Quadrant Data
+     * Returns flattened data for UI Visualization (Sentiment vs Strength)
+     */
+    public getKeywordQuadrantData(): Array<{ topic: string; sentiment: number; strength: number; narrative: string }> {
+        const data: Array<{ topic: string; sentiment: number; strength: number; narrative: string }> = [];
+
+        // Find max centrality to normalize
+        let maxCentrality = 0;
+        this.graph.forEachNode((node, attr) => {
+            if (attr.type === NodeType.TOPIC && attr.centralityScore) {
+                if (attr.centralityScore > maxCentrality) maxCentrality = attr.centralityScore;
+            }
+        });
+
+        this.graph.forEachNode((node, attr) => {
+            if (attr.type !== NodeType.TOPIC) return;
+
+            // Calculate Sentiment Score (-1 to 1)
+            const posWeight = this.graph.hasEdge(node, 'POSITIVE') ? this.graph.getEdgeAttribute(node, 'POSITIVE', 'weight') : 0;
+            const negWeight = this.graph.hasEdge(node, 'NEGATIVE') ? this.graph.getEdgeAttribute(node, 'NEGATIVE', 'weight') : 0;
+
+            let sentimentScore = 0;
+            const total = posWeight + negWeight;
+            if (total > 0) {
+                // Formula: (Pos - Neg) / Total => Range [-1, 1]
+                sentimentScore = (posWeight - negWeight) / total;
+                // Scale to -100 to 100 for UI
+                sentimentScore = Math.round(sentimentScore * 100);
+            }
+
+            // Strength = Normalized Centrality (0-100)
+            const rawScore = attr.centralityScore || 0;
+            const strength = maxCentrality > 0 ? Math.round((rawScore / maxCentrality) * 100) : 0;
+
+            data.push({
+                topic: node,
+                sentiment: sentimentScore,
+                strength: strength,
+                narrative: attr.communityId ? `Narrative ${attr.communityId}` : 'General'
+            });
+        });
+
+        // Sort by strength descending
+        return data.sort((a, b) => b.strength - a.strength);
+    }
+    /**
+     * Insight 4: Source Toxicity Score
      * (Placeholder - requires Source Nodes which we haven't implemented fully yet)
      */
     public getSourceToxicity(): any {

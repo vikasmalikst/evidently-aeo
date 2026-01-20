@@ -1867,5 +1867,149 @@ router.get('/analyze/keyword-mapping', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * GRAPH-BASED KEYWORD SENTIMENT (Sentiment Landscape 2)
+ * Uses the actual PageRank-based Graph algorithm from Recommendation Engine
+ * Returns TOP keywords by centrality (importance in the graph)
+ */
+router.get('/analyze/keyword-mapping-graph', authenticateToken, async (req, res) => {
+  try {
+    const { brandId, limit = '20', source } = req.query;
+    if (!brandId) {
+      return res.status(400).json({ success: false, error: 'brandId required' });
+    }
+
+    console.log(`[Analyze Graph API] Building graph for brand ${brandId} (Source: ${source || 'All'})...`);
+
+    // 1. Get brand info
+    const { data: brand } = await supabaseAdmin
+      .from('brands')
+      .select('name')
+      .eq('id', brandId)
+      .single();
+
+    if (!brand) {
+      return res.status(404).json({ success: false, error: 'Brand not found' });
+    }
+
+    // 2. Get competitors for this brand
+    const { data: competitors } = await supabaseAdmin
+      .from('competitors')
+      .select('name')
+      .eq('brand_id', brandId);
+
+    const competitorNames = competitors?.map(c => c.name) || [];
+
+    // 3. Fetch consolidated_analysis_cache using efficient JOIN
+    let query = supabaseAdmin
+      .from('consolidated_analysis_cache')
+      .select(`
+        collector_result_id, 
+        keywords, 
+        sentiment, 
+        products, 
+        quotes,
+        collector_results!inner(brand_id, source)
+      `)
+      .eq('collector_results.brand_id', brandId);
+
+    // Filter by source if provided
+    if (source && String(source).trim() !== '') {
+      query = query.ilike('collector_results.source', `%${String(source).trim()}%`);
+    }
+
+    const { data: cacheData, error: cacheError } = await query;
+
+    if (cacheError) {
+      console.error('❌ [Analyze Graph API] Cache Query Error:', cacheError);
+      return res.status(500).json({ success: false, error: 'Database error fetching graph data' });
+    }
+
+    // Fetch ALL distinct sources for the filter dropdown
+    // We do this separately to ensure the dropdown has all options even when filtered
+    const { data: allSources } = await supabaseAdmin
+      .from('collector_results')
+      .select('source')
+      .eq('brand_id', brandId)
+      .not('source', 'is', null);
+
+    const distinctSources = Array.from(new Set(allSources?.map(s => s.source).filter(Boolean) || [])).sort();
+
+    if (!cacheData || cacheData.length === 0) {
+      console.log('⚠️ [Analyze Graph API] No cache data found for brand');
+      return res.json({ success: true, data: [], sources: distinctSources });
+    }
+
+    // 4. Transform cache data for graph building
+    const graphResults = cacheData.map(row => ({
+      id: row.collector_result_id,
+      analysis: {
+        keywords: row.keywords || [],
+        sentiment: row.sentiment || {},
+        products: row.products || {},
+        quotes: row.quotes || [],
+        citations: {} // Add empty citations object to satisfy type
+      } as any,
+      competitorNames
+    }));
+
+    // 5. Build Graph
+    // ... (rest of code)
+
+    // 6. Return Data + Sources
+    // (Need to update the response block below)
+
+    // 5. Build the graph using PageRank algorithm
+    graphRecommendationService.buildGraph(brand.name, graphResults);
+    graphRecommendationService.runAlgorithms(); // Run PageRank + Louvain
+
+    // 6. Get keyword quadrant data (uses PageRank centrality)
+    const quadrantData = graphRecommendationService.getKeywordQuadrantData();
+
+    // 7. Limit to top N keywords by strength (centrality)
+    const topLimit = parseInt(limit as string) || 20;
+    const topKeywords = quadrantData.slice(0, topLimit);
+
+    // 8. Transform to match frontend expected format
+    const data = topKeywords.map(kw => {
+      // Convert -100..100 sentiment to 0..100
+      const sentimentNormalized = Math.round((kw.sentiment + 100) / 2);
+
+      let sentimentLabel = 'NEUTRAL';
+      if (kw.sentiment > 20) sentimentLabel = 'POSITIVE';
+      else if (kw.sentiment < -20) sentimentLabel = 'NEGATIVE';
+
+      return {
+        keyword: kw.topic,
+        sentiment: sentimentNormalized, // 0-100 scale
+        sentimentLabel,
+        strength: kw.strength, // PageRank-based centrality (0-100)
+        narrative: kw.narrative,
+        // For compatibility with existing UI
+        mentions: kw.strength, // Use strength as a proxy
+        positiveVotes: kw.sentiment > 0 ? Math.abs(kw.sentiment) : 0,
+        negativeVotes: kw.sentiment < 0 ? Math.abs(kw.sentiment) : 0,
+        neutralVotes: kw.sentiment === 0 ? 50 : 0
+      };
+    });
+
+    console.log(`[Analyze Graph API] Generated ${data.length} TOP keywords using PageRank.`);
+
+    return res.json({
+      success: true,
+      data,
+      sources: distinctSources
+    });
+    // No code here
+
+  } catch (error) {
+    console.error('❌ [Analyze Graph Keywords] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch graph-based keyword mapping'
+    });
+  }
+});
+
 export default router;
 

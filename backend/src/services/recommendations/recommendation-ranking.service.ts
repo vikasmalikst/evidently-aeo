@@ -1,4 +1,4 @@
-import type { RecommendationV3 } from './recommendation-v3.service';
+import type { RecommendationV3 } from './recommendation.types';
 
 type SourceMetric = {
   domain: string;

@@ -7,6 +7,7 @@ import { SearchSourcesR2 } from './pages/SearchSourcesR2';
 import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
+import { SentimentLandscape2 } from './pages/SentimentLandscape2';
 import { RecommendationsV3 } from './pages/RecommendationsV3';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
@@ -184,6 +185,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Keywords />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analyze/keywords-graph"
+          element={
+            <ProtectedRoute>
+              <SentimentLandscape2 />
             </ProtectedRoute>
           }
         />

@@ -54,6 +54,7 @@ const navItems: NavItem[] = [
       { label: 'Queries', path: '/analyze/queries', icon: IconMessageQuestion },
       { label: 'Queries & Answers', path: '/analyze/queries-answers', icon: IconMessages },
       { label: 'Keywords', path: '/analyze/keywords', icon: IconKey },
+      { label: 'Sentiment Graph', path: '/analyze/keywords-graph', icon: IconKey },
       { label: 'Domain Readiness', path: '/analyze/domain-readiness', icon: IconShieldCheck },
     ],
   },

@@ -2660,22 +2660,28 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                 {/* Visibility Metric Group */}
                                 <td className="px-6 py-4">
-                                  {benchmarkedVisibility !== null && currentVisibility !== null ? (
+                                  {benchmarkedVisibility !== null || currentVisibility !== null ? (
                                     <div className="space-y-1">
                                       <div className="flex items-center text-[11px] text-[#64748b]">
                                         <span className="w-16">Baseline:</span>
-                                        <span className="font-medium text-[#1a1d29]">{benchmarkedVisibility.toFixed(2)}</span>
+                                        <span className="font-medium text-[#1a1d29]">{benchmarkedVisibility !== null ? benchmarkedVisibility.toFixed(2) : '—'}</span>
                                       </div>
                                       <div className="flex items-center">
                                         <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
-                                        <div className="flex items-center gap-1.5 text-left">
-                                          <span className={`text-[14px] font-bold ${currentVisibility >= benchmarkedVisibility ? 'text-[#06c686]' : 'text-[#ef4444]'}`}>
-                                            {currentVisibility.toFixed(2)}
-                                          </span>
-                                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentVisibility >= benchmarkedVisibility ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
-                                            {currentVisibility >= benchmarkedVisibility ? '+' : ''}{(currentVisibility - benchmarkedVisibility).toFixed(2)}
-                                          </span>
-                                        </div>
+                                        {currentVisibility !== null ? (
+                                          <div className="flex items-center gap-1.5 text-left">
+                                            <span className={`text-[14px] font-bold ${benchmarkedVisibility !== null && currentVisibility >= benchmarkedVisibility ? 'text-[#06c686]' : (benchmarkedVisibility === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
+                                              {currentVisibility.toFixed(2)}
+                                            </span>
+                                            {benchmarkedVisibility !== null && (
+                                              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentVisibility >= benchmarkedVisibility ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                                {currentVisibility >= benchmarkedVisibility ? '+' : ''}{(currentVisibility - benchmarkedVisibility).toFixed(2)}
+                                              </span>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
+                                        )}
                                       </div>
                                     </div>
                                   ) : (
@@ -2685,22 +2691,28 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                 {/* SOA Metric Group */}
                                 <td className="px-6 py-4">
-                                  {benchmarkedSOA !== null && currentSOA !== null ? (
+                                  {benchmarkedSOA !== null || currentSOA !== null ? (
                                     <div className="space-y-1">
                                       <div className="flex items-center text-[11px] text-[#64748b]">
                                         <span className="w-16">Baseline:</span>
-                                        <span className="font-medium text-[#1a1d29]">{benchmarkedSOA.toFixed(2)}</span>
+                                        <span className="font-medium text-[#1a1d29]">{benchmarkedSOA !== null ? benchmarkedSOA.toFixed(2) : '—'}</span>
                                       </div>
                                       <div className="flex items-center">
                                         <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
-                                        <div className="flex items-center gap-1.5 text-left">
-                                          <span className={`text-[14px] font-bold ${currentSOA >= benchmarkedSOA ? 'text-[#06c686]' : 'text-[#ef4444]'}`}>
-                                            {currentSOA.toFixed(2)}
-                                          </span>
-                                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSOA >= benchmarkedSOA ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
-                                            {currentSOA >= benchmarkedSOA ? '+' : ''}{(currentSOA - benchmarkedSOA).toFixed(2)}
-                                          </span>
-                                        </div>
+                                        {currentSOA !== null ? (
+                                          <div className="flex items-center gap-1.5 text-left">
+                                            <span className={`text-[14px] font-bold ${benchmarkedSOA !== null && currentSOA >= benchmarkedSOA ? 'text-[#06c686]' : (benchmarkedSOA === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
+                                              {currentSOA.toFixed(2)}
+                                            </span>
+                                            {benchmarkedSOA !== null && (
+                                              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSOA >= benchmarkedSOA ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                                {currentSOA >= benchmarkedSOA ? '+' : ''}{(currentSOA - benchmarkedSOA).toFixed(2)}
+                                              </span>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
+                                        )}
                                       </div>
                                     </div>
                                   ) : (
@@ -2710,22 +2722,28 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                 {/* Sentiment Metric Group */}
                                 <td className="px-6 py-4">
-                                  {benchmarkedSentiment !== null && currentSentiment !== null ? (
+                                  {benchmarkedSentiment !== null || currentSentiment !== null ? (
                                     <div className="space-y-1">
                                       <div className="flex items-center text-[11px] text-[#64748b]">
                                         <span className="w-16">Baseline:</span>
-                                        <span className="font-medium text-[#1a1d29]">{benchmarkedSentiment.toFixed(2)}</span>
+                                        <span className="font-medium text-[#1a1d29]">{benchmarkedSentiment !== null ? benchmarkedSentiment.toFixed(2) : '—'}</span>
                                       </div>
                                       <div className="flex items-center">
                                         <span className="w-16 text-[12px] text-[#64748b]">Current:</span>
-                                        <div className="flex items-center gap-1.5 text-left">
-                                          <span className={`text-[14px] font-bold ${currentSentiment >= benchmarkedSentiment ? 'text-[#06c686]' : 'text-[#ef4444]'}`}>
-                                            {currentSentiment.toFixed(2)}
-                                          </span>
-                                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSentiment >= benchmarkedSentiment ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
-                                            {currentSentiment >= benchmarkedSentiment ? '+' : ''}{(currentSentiment - benchmarkedSentiment).toFixed(2)}
-                                          </span>
-                                        </div>
+                                        {currentSentiment !== null ? (
+                                          <div className="flex items-center gap-1.5 text-left">
+                                            <span className={`text-[14px] font-bold ${benchmarkedSentiment !== null && currentSentiment >= benchmarkedSentiment ? 'text-[#06c686]' : (benchmarkedSentiment === null ? 'text-[#1a1d29]' : 'text-[#ef4444]')}`}>
+                                              {currentSentiment.toFixed(2)}
+                                            </span>
+                                            {benchmarkedSentiment !== null && (
+                                              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${currentSentiment >= benchmarkedSentiment ? 'bg-[#ecfdf5] text-[#059669]' : 'bg-[#fef2f2] text-[#dc2626]'}`}>
+                                                {currentSentiment >= benchmarkedSentiment ? '+' : ''}{(currentSentiment - benchmarkedSentiment).toFixed(2)}
+                                              </span>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[13px] text-[#94a3b8] italic">Waiting...</span>
+                                        )}
                                       </div>
                                     </div>
                                   ) : (

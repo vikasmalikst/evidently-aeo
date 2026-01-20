@@ -1,6 +1,6 @@
 
 import { rankRecommendationsV3, RankingInputs } from '../services/recommendations/recommendation-ranking.service';
-import { RecommendationV3 } from '../services/recommendations/recommendation-v3.service';
+import { RecommendationV3 } from '../services/recommendations/recommendation.types';
 
 const mockRecs: RecommendationV3[] = [
     {

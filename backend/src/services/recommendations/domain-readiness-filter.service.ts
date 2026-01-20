@@ -9,7 +9,7 @@
  */
 
 import { AeoAuditResult, TestResult } from '../domain-readiness/types';
-import { RecommendationV3 } from './recommendation-v3.service';
+import { RecommendationV3 } from './recommendation.types';
 
 // ============================================================================
 // KEYWORD MAPPING: Domain Readiness Test → Recommendation Keywords

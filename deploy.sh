@@ -10,22 +10,6 @@ PROJECT_DIR="/home/dev/projects/evidently"
 BACKEND_DIR="$PROJECT_DIR/backend"
 LOG_DIR="/home/dev/logs"
 
-# Load NVM and use correct Node version
-export NVM_DIR="$HOME/.nvm"
-if [ -s "$NVM_DIR/nvm.sh" ]; then
-    source "$NVM_DIR/nvm.sh"
-    if [ -f "$PROJECT_DIR/.nvmrc" ]; then
-        print_info "Using Node version from .nvmrc"
-        nvm use
-    else
-        print_info "Using Node version 20"
-        nvm use 20 || nvm install 20
-    fi
-fi
-
-# Print current Node version for verification
-print_info "Current Node version: $(node -v)"
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -44,6 +28,22 @@ print_warn() {
 print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
+
+# Load NVM and use correct Node version
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    source "$NVM_DIR/nvm.sh"
+    if [ -f "$PROJECT_DIR/.nvmrc" ]; then
+        print_info "Using Node version from .nvmrc"
+        nvm use
+    else
+        print_info "Using Node version 20"
+        nvm use 20 || nvm install 20
+    fi
+fi
+
+# Print current Node version for verification
+print_info "Current Node version: $(node -v)"
 
 # Check if running as correct user
 if [ "$USER" != "dev" ]; then

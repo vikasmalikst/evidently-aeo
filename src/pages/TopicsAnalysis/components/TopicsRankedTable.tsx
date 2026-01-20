@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp, ChevronDown, HelpCircle } from 'lucide-react';
+import { KpiType } from '../../../components/EducationalDrawer/EducationalContentDrawer';
 import type { Topic, SortColumn, SortState } from '../types';
 import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 
@@ -11,9 +12,11 @@ interface TopicsRankedTableProps {
   onSelectedTopicsChange?: (selectedTopics: Set<string>) => void;
   selectedCategory?: string;
   brandFavicon?: string;
+  brandName?: string;
   metricType?: 'share' | 'visibility' | 'sentiment';
   competitors?: ManagedCompetitor[];
   selectedCompetitors?: Set<string>;
+  onHelpClick?: (key: KpiType) => void;
 }
 
 // Get competitor average SOA for a topic (from backend data)
@@ -51,9 +54,11 @@ export const TopicsRankedTable = ({
   onSelectedTopicsChange,
   selectedCategory: externalSelectedCategory,
   brandFavicon,
+  brandName,
   metricType = 'share',
   competitors = [],
   selectedCompetitors = new Set(),
+  onHelpClick,
 }: TopicsRankedTableProps) => {
 
   // Model functions removed - topics are now distinct, not grouped by model
@@ -197,44 +202,61 @@ export const TopicsRankedTable = ({
     );
   };
 
-  // Helper to get heatmap style for a cell based on SoA value
-  const getHeatmapStyle = (soA: number, isCompetitor: boolean = false) => {
-    // Normalize SoA: Brand SoA comes in as 0-5 scale, Competitor SoA comes in as 0-100 scale then converted to 0-5
-    // But wait, the table code converts everything to 0-100 for display
-
-    // Let's standardise on the 0-5 scale for color logic matching getSoAColor
-    // If it's > 5, assume it's a percentage and divide by 20 ?? 
-    // Actually, existing getSoAColor usage implies topic.soA is 0-5 scale.
-    // Competitor values in map are numbers. Let's see how they are used:
-    // "color = getSoAColor(val / 20)" implies val is 0-100.
-
-    // So the input `soA` to this function should be on 0-5 scale for consistency with getSoAColor
-
+  // Helper to get heatmap style for a cell based on a 0-5 scale value
+  const getHeatmapStyle = (value: number, type: 'share' | 'visibility' | 'sentiment' = 'share') => {
     let backgroundColor = 'transparent';
     let color = 'inherit';
 
-    // Logic matches getSoAColor but uses opacity for background
-    if (soA >= 3.0) {
-      backgroundColor = 'rgba(0, 188, 220, 0.15)'; // Cyan
-      color = '#007a8e'; // Darker cyan for text
-    } else if (soA >= 2.0) {
-      backgroundColor = 'rgba(13, 124, 150, 0.15)'; // Teal
-      color = '#095c70';
-    } else if (soA >= 1.0) {
-      backgroundColor = 'rgba(249, 115, 22, 0.15)'; // Orange
-      color = '#c25409';
+    if (type === 'sentiment') {
+      // Sentiment specific: Green (Positive) -> Yellow (Neutral) -> Red (Negative)
+      if (value >= 3.75) { // corresponds to > 75 on 0-100 scale
+        backgroundColor = 'rgba(18, 183, 106, 0.1)'; // Success (Green)
+        color = '#027a48';
+      } else if (value >= 2.5) { // corresponds to 50-75
+        backgroundColor = 'rgba(247, 144, 9, 0.1)'; // Warning (Orange/Yellow)
+        color = '#b54708';
+      } else { // < 50
+        backgroundColor = 'rgba(217, 45, 32, 0.1)'; // Error (Red)
+        color = '#991b1b';
+      }
     } else {
-      // For very low values, maybe just a very light grey or stick to the scheme?
-      // The "Gap" color #1a1d29 is dark.
-      backgroundColor = 'rgba(26, 29, 41, 0.05)'; // Navy/Grey
-      color = '#1a1d29';
+      // SOA/Visibility: Cyan -> Teal -> Orange
+      if (value >= 3.0) {
+        backgroundColor = 'rgba(0, 188, 220, 0.15)'; // Cyan
+        color = '#007a8e';
+      } else if (value >= 2.0) {
+        backgroundColor = 'rgba(13, 124, 150, 0.15)'; // Teal
+        color = '#095c70';
+      } else if (value >= 1.0) {
+        backgroundColor = 'rgba(249, 115, 22, 0.15)'; // Orange
+        color = '#c25409';
+      } else {
+        backgroundColor = 'rgba(26, 29, 41, 0.05)'; // Navy/Grey
+        color = '#1a1d29';
+      }
     }
 
     return { backgroundColor, color };
   };
 
   return (
-    <div className="bg-white border border-[var(--primary200)] rounded-lg overflow-hidden shadow-sm">
+    <div className="bg-white border border-[var(--primary200)] rounded-lg overflow-hidden shadow-sm relative">
+      {/* Help Icon in Top Right Corner */}
+      {onHelpClick && (
+        <div className="absolute top-2 right-2 z-30">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onHelpClick('topics-table-guide');
+            }}
+            className="text-slate-400 hover:text-indigo-500 transition-colors p-1.5 rounded-full hover:bg-slate-100 bg-white/80 backdrop-blur-sm shadow-sm border border-slate-100"
+            title="Table Guide"
+          >
+            <HelpCircle size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Table View */}
       <div className="overflow-x-auto relative">
         <table className="w-full border-collapse">
@@ -273,51 +295,55 @@ export const TopicsRankedTable = ({
               </th>
               <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[100px]">
                 <div className="flex items-center gap-1.5">
-                  {brandFavicon && (
-                    <img
-                      src={brandFavicon}
-                      alt="Brand"
-                      className="w-3 h-3 flex-shrink-0"
-                      style={{ width: '12px', height: '12px' }}
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  )}
-                  <SortButton column="soA">{metricHeaderLabel}</SortButton>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {brandFavicon && (
+                        <img
+                          src={brandFavicon}
+                          alt="Brand"
+                          className="w-3 h-3 flex-shrink-0"
+                          style={{ width: '12px', height: '12px' }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                      <span className="text-[10px] font-bold text-[var(--accent500)] uppercase tracking-wider">{metricHeaderLabel}</span>
+                    </div>
+                    <SortButton column="soA">{brandName || metricHeaderLabel}</SortButton>
+                  </div>
                 </div>
               </th>
 
               {/* Dynamic Competitor Columns */}
               {competitors.filter(c => selectedCompetitors.size === 0 || selectedCompetitors.has(c.name.toLowerCase())).map((competitor) => (
                 <th key={competitor.id} className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[140px]">
-                  <div className="flex items-center gap-2">
-                    {competitor.logo && (
-                      <img
-                        src={competitor.logo}
-                        alt={competitor.name}
-                        className="w-4 h-4 object-contain rounded-sm"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    )}
-                    <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide whitespace-nowrap">
-                      {competitor.name}
-                    </span>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{metricHeaderLabel}</span>
+                    <div className="flex items-center gap-2">
+                      {competitor.logo && (
+                        <img
+                          src={competitor.logo}
+                          alt={competitor.name}
+                          className="w-4 h-4 object-contain rounded-sm"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                      <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide whitespace-nowrap">
+                        {competitor.name}
+                      </span>
+                    </div>
                   </div>
                 </th>
               ))}
-
-              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[150px] sticky right-0 z-20 bg-[var(--bg-secondary)] shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                <SortButton column="sources">Top Sources</SortButton>
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-default)]">
             {filteredAndSortedTopics.length === 0 ? (
               <tr>
-                <td colSpan={5 + (competitors.filter(c => selectedCompetitors.size === 0 || selectedCompetitors.has(c.name.toLowerCase())).length)} className="px-3 sm:px-4 lg:px-5 py-12 text-center">
+                <td colSpan={4 + (competitors.filter(c => selectedCompetitors.size === 0 || selectedCompetitors.has(c.name.toLowerCase())).length)} className="px-3 sm:px-4 lg:px-5 py-12 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <p className="text-sm font-medium text-[var(--text-headings)]">
                       No topics found for selected filters
@@ -368,83 +394,76 @@ export const TopicsRankedTable = ({
                       </div>
                     </td>
                     <td className="px-1 sm:px-2 py-4">
-                      {/* Reduced padding to allow background to look like a cell fill if we style the div, or style the TD? 
-                          Let's style the inner div to be a pill/block
-                       */}
-                      {metricType === 'share' ? (
-                        (() => {
-                          const soAScale = topic.soA; // 0-5 scale
-                          const heatmapStyle = getHeatmapStyle(soAScale);
+                      {(() => {
+                        let valueForScale = 0;
+                        let hasData = false;
 
-                          return topic.soA > 0 ? (
-                            <div className="flex items-center justify-center py-2 px-3 rounded-md" style={heatmapStyle}>
-                              <span className="text-sm font-bold whitespace-nowrap">
-                                {(topic.currentSoA || topic.soA * 20).toFixed(1)}%
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-center py-2 px-3 rounded-md">
-                              <span className="text-sm text-[var(--text-caption)]" title="Share of Answer data not yet available">
-                                —
-                              </span>
+                        if (metricType === 'visibility') {
+                          valueForScale = (topic.currentVisibility ?? 0) / 20; // 0-100 -> 0-5
+                          hasData = topic.currentVisibility !== null && topic.currentVisibility !== undefined;
+                        } else if (metricType === 'sentiment') {
+                          valueForScale = (topic.currentSentiment ?? 0) / 20; // 0-100 -> 0-5
+                          hasData = topic.currentSentiment !== null && topic.currentSentiment !== undefined;
+                        } else {
+                          // share
+                          valueForScale = topic.soA; // 0-5
+                          hasData = topic.soA > 0;
+                        }
+
+                        if (!hasData) {
+                          return (
+                            <div className="flex items-center justify-center py-2 px-3">
+                              <span className="text-sm text-[var(--text-caption)]">—</span>
                             </div>
                           );
-                        })()
-                      ) : (
-                        <span className="text-sm font-semibold whitespace-nowrap px-4" title={metricTooltipLabel}>
-                          {formatMetricValue(topic)}
-                        </span>
-                      )}
+                        }
+
+                        const heatmapStyle = getHeatmapStyle(valueForScale, metricType);
+                        return (
+                          <div className="flex items-center justify-center py-2 px-3 rounded-md" style={heatmapStyle}>
+                            <span className="text-sm font-bold whitespace-nowrap">
+                              {formatMetricValue(topic)}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Dynamic Competitor Cells */}
                     {competitors.filter(c => selectedCompetitors.size === 0 || selectedCompetitors.has(c.name.toLowerCase())).map((competitor) => {
                       const compKey = competitor.name.toLowerCase();
                       let rawValue: number | undefined;
+                      let normalizedValue = 0;
                       let displayValue = '—';
-                      let heatmapStyle = {};
 
                       if (metricType === 'share') {
-                        // SoA
-                        const val = topic.competitorSoAMap?.[compKey];
-                        if (val !== undefined) {
-                          rawValue = val;
-                          displayValue = `${val.toFixed(1)}%`;
-                          // Convert 0-100 to 0-5 scale for color logic
-                          heatmapStyle = getHeatmapStyle(val / 20, true);
+                        rawValue = topic.competitorSoAMap?.[compKey];
+                        if (rawValue !== undefined) {
+                          displayValue = `${rawValue.toFixed(1)}%`;
+                          normalizedValue = rawValue / 20;
                         }
                       } else if (metricType === 'visibility') {
-                        // Visibility
-                        const val = topic.competitorVisibilityMap?.[compKey];
-                        if (val !== undefined) {
-                          rawValue = val;
-                          displayValue = val.toFixed(1);
+                        rawValue = topic.competitorVisibilityMap?.[compKey];
+                        if (rawValue !== undefined) {
+                          displayValue = rawValue.toFixed(1);
+                          normalizedValue = rawValue / 20;
                         }
                       } else {
-                        // Sentiment
-                        const val = topic.competitorSentimentMap?.[compKey];
-                        if (val !== undefined) {
-                          rawValue = val;
-                          displayValue = val.toFixed(1);
+                        rawValue = topic.competitorSentimentMap?.[compKey];
+                        if (rawValue !== undefined) {
+                          displayValue = rawValue.toFixed(1);
+                          normalizedValue = rawValue / 20;
                         }
                       }
 
                       return (
                         <td key={competitor.id} className="px-1 sm:px-2 py-4">
                           {rawValue !== undefined ? (
-                            metricType === 'share' ? (
-                              <div className="flex items-center justify-center py-2 px-3 rounded-md" style={heatmapStyle}>
-                                <span
-                                  className="text-sm font-bold whitespace-nowrap"
-                                >
-                                  {displayValue}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-sm font-semibold whitespace-nowrap px-4">
+                            <div className="flex items-center justify-center py-2 px-3 rounded-md" style={getHeatmapStyle(normalizedValue, metricType)}>
+                              <span className="text-sm font-bold whitespace-nowrap">
                                 {displayValue}
                               </span>
-                            )
+                            </div>
                           ) : (
                             <div className="flex items-center justify-center py-2 px-3">
                               <span className="text-sm text-[var(--text-caption)]">—</span>
@@ -453,47 +472,6 @@ export const TopicsRankedTable = ({
                         </td>
                       );
                     })}
-
-                    <td className="px-3 sm:px-4 lg:px-5 py-4 sticky right-0 z-10 bg-white group-hover:bg-[var(--bg-secondary)]/50 transition-colors shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                      {topic.sources.length > 0 ? (() => {
-                        // Get only the first (top) source
-                        const topSource = topic.sources[0];
-                        // Extract domain from URL or use name if it's already a domain
-                        let domain = topSource.name;
-                        if (topSource.url) {
-                          try {
-                            const url = new URL(topSource.url);
-                            domain = url.hostname.replace(/^www\./, '');
-                          } catch {
-                            domain = topSource.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
-                          }
-                        }
-
-                        // Generate favicon URL for the domain
-                        const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
-
-                        return (
-                          <div className="flex items-center gap-2">
-                            <img
-                              src={faviconUrl}
-                              alt=""
-                              className="w-4 h-4 flex-shrink-0"
-                              onError={(e) => {
-                                // Hide favicon if it fails to load
-                                e.currentTarget.style.display = 'none';
-                              }}
-                            />
-                            <span className="text-sm text-[var(--text-body)] font-medium truncate max-w-[120px]" title={domain}>
-                              {domain}
-                            </span>
-                          </div>
-                        );
-                      })() : (
-                        <span className="text-sm text-[var(--text-caption)]" title="Source citation data not yet available">
-                          —
-                        </span>
-                      )}
-                    </td>
                   </tr>
                 );
               })

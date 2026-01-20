@@ -15,6 +15,7 @@ import { formatDateWithYear } from '../../utils/dateFormatting';
 import type { Competitor } from './utils/competitorColors';
 import type { TopicsAnalysisData, Topic } from './types';
 import type { PodId } from './components/CompactMetricsPods';
+import { EducationalContentDrawer, type KpiType } from '../../components/EducationalDrawer/EducationalContentDrawer';
 
 type TopicsMetricType = 'share' | 'visibility' | 'sentiment';
 
@@ -341,7 +342,7 @@ export const TopicsAnalysisPage = ({
     : undefined;
 
   const lastSentFilters = useRef<string>('');
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<number | null>(null);
   const primaryModel = selectedModels[0] ?? '';
   const selectedModel = primaryModel; // backward compatibility for downstream props
 
@@ -437,6 +438,15 @@ export const TopicsAnalysisPage = ({
     return data.topics.filter(topic => selectedTopics.has(topic.id));
   }, [data.topics, selectedTopics]);
 
+  // Drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerKpiType, setDrawerKpiType] = useState<KpiType>('topics-feature-guide');
+
+  const handleHelpClick = (key: string) => {
+    setDrawerKpiType(key as KpiType);
+    setDrawerOpen(true);
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -504,7 +514,7 @@ export const TopicsAnalysisPage = ({
                   Topics Analysis {brandName && `— ${brandName}`}
                 </h1>
                 <p style={{ fontSize: '14px', fontFamily: 'IBM Plex Sans, sans-serif', color: '#393e51', margin: 0 }}>
-                  Monitor your brand's presence across AI search engines by topic
+                  Benchmark your Brand's performance across different Topics in different LLM answers and against your Competitors.
                 </p>
               </div>
             </div>
@@ -530,6 +540,7 @@ export const TopicsAnalysisPage = ({
             metricType={metricType}
             onChange={(value) => setMetricType(value as TopicsMetricType)}
             allowedMetricTypes={['share', 'visibility', 'sentiment']}
+            onHelpClick={handleHelpClick}
           />
 
           {/* LLM Selector/Filter Icons - aligned to the right */}
@@ -605,7 +616,8 @@ export const TopicsAnalysisPage = ({
             onDeselectAllCompetitors={handleDeselectAllCompetitors}
             selectedCompetitor={selectedCompetitors.size === normalizedCompetitors.length ? "all" : Array.from(selectedCompetitors)[0] || "all"}
             brandFavicon={brandFavicon}
-            isLoadingCompetitors={isLoadingCompetitors || isLoading || isRefreshing}
+            isLoadingCompetitors={externalIsLoadingCompetitors}
+            onHelpClick={handleHelpClick}
             onExport={() => {
               // Export functionality - can be implemented later
             }}
@@ -626,6 +638,8 @@ export const TopicsAnalysisPage = ({
               competitors,
               selectedCompetitors,
               brandFavicon,
+              brandName: selectedBrand?.name,
+              onHelpClick: handleHelpClick,
               selectedModel,
               aiModels: [],
             } as any)}
@@ -639,6 +653,12 @@ export const TopicsAnalysisPage = ({
         onClose={handleCloseModal}
         topic={selectedTopic}
         metricType={metricType}
+      />
+
+      <EducationalContentDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        kpiType={drawerKpiType}
       />
     </Layout>
   );

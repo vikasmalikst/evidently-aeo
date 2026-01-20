@@ -49,7 +49,7 @@ const navItems: NavItem[] = [
     label: 'Analyze',
     icon: IconAnalyze,
     children: [
-      { label: 'Top Citation Sources', path: '/analyze/citation-sources', icon: IconQuote },
+      { label: 'Citation Sources', path: '/analyze/citation-sources', icon: IconQuote },
       { label: 'Topics', path: '/analyze/topics', icon: IconCategory },
       { label: 'Queries', path: '/analyze/queries', icon: IconMessageQuestion },
       { label: 'Queries & Answers', path: '/analyze/queries-answers', icon: IconMessages },

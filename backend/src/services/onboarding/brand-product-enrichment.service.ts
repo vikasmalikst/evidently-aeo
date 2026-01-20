@@ -71,10 +71,27 @@ Please provide comprehensive synonyms (legal names, abbreviations, common misspe
     }
   }
 
+  private generateUrlPermutations(domain: string): string[] {
+    if (!domain) return [];
+    // Clean domain first (remove protocol, www, trailing slash)
+    const cleanDomain = domain.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '');
+    
+    return [
+      cleanDomain,
+      `www.${cleanDomain}`,
+      `https://${cleanDomain}`,
+      `https://www.${cleanDomain}`,
+      `http://${cleanDomain}`,
+      `http://www.${cleanDomain}`
+    ];
+  }
+
   private async generateEnrichment(params: {
     brandName: string;
     industry?: string | null;
     competitors: string[];
+    brandDomain?: string;
+    competitorDomains?: Record<string, string>;
     forceOpenRouter?: boolean;
     brandIdForOllamaDecision?: string;
   }, logger: (msg: string) => void): Promise<EnrichmentResult> {
@@ -86,32 +103,64 @@ Please provide comprehensive synonyms (legal names, abbreviations, common misspe
       !!params.brandIdForOllamaDecision &&
       (await shouldUseOllama(params.brandIdForOllamaDecision));
 
+    let result: EnrichmentResult;
+
     if (canUseOllama) {
       logger(`🦙 Using local Ollama LLM for enrichment...`);
       const response = await callOllamaAPI(systemPrompt, userPrompt, params.brandIdForOllamaDecision!);
-      return this.parseEnrichmentResponse(response, logger);
+      result = this.parseEnrichmentResponse(response, logger);
+    } else {
+      logger(`🌐 Using OpenRouter (gpt-4o-mini) for enrichment...`);
+      const orResult = await this.openRouterService.executeQuery({
+        prompt: userPrompt,
+        systemPrompt: systemPrompt,
+        model: 'openai/gpt-4o-mini',
+        collectorType: 'content',
+      });
+      result = this.parseEnrichmentResponse(orResult.response, logger);
     }
 
-    logger(`🌐 Using OpenRouter (gpt-4o-mini) for enrichment...`);
-    const orResult = await this.openRouterService.executeQuery({
-      prompt: userPrompt,
-      systemPrompt: systemPrompt,
-      model: 'openai/gpt-4o-mini',
-      collectorType: 'content',
-    });
-    return this.parseEnrichmentResponse(orResult.response, logger);
+    // Post-process: Add URL permutations
+    if (params.brandDomain) {
+      const perms = this.generateUrlPermutations(params.brandDomain);
+      const existing = new Set(result.brand.synonyms || []);
+      perms.forEach(p => existing.add(p));
+      result.brand.synonyms = Array.from(existing);
+    }
+
+    if (params.competitorDomains) {
+      Object.entries(result.competitors).forEach(([name, data]) => {
+        // Find domain for this competitor (case-insensitive name match)
+        const compDomain = Object.entries(params.competitorDomains || {}).find(
+          ([k]) => k.toLowerCase() === name.toLowerCase()
+        )?.[1];
+
+        if (compDomain) {
+          const perms = this.generateUrlPermutations(compDomain);
+          const existing = new Set(data.synonyms || []);
+          perms.forEach(p => existing.add(p));
+          data.synonyms = Array.from(existing);
+        }
+      });
+    }
+
+    return result;
   }
 
   async previewEnrichment(params: {
     brandName: string;
     industry?: string | null;
     competitors: string[];
+    brandDomain?: string;
+    competitorDomains?: Record<string, string>;
   }, logger: (msg: string) => void): Promise<EnrichmentResult> {
     return this.generateEnrichment(
       {
         brandName: params.brandName,
         industry: params.industry,
         competitors: params.competitors,
+        brandDomain: params.brandDomain,
+        competitorDomains: params.competitorDomains,
         forceOpenRouter: true,
       },
       logger

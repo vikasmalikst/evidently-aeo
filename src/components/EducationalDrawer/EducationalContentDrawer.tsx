@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, HelpCircle, BookOpen, Target, BarChart2, Lightbulb, LineChart, Flag, DivideCircle, Table, MousePointer2, ArrowUpDown, CheckSquare, Calendar, PieChart, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export type KpiType = 'visibility' | 'share' | 'sentiment' | 'brandPresence' | 'trend-analysis' | 'table-guide' | 'source-distribution' | 'source-priority' | 'source-reputation' | 'source-growth' | 'source-monitor' | 'table-feature-guide' | 'metric-impact-score' | 'metric-mention' | 'metric-soa' | 'metric-sentiment' | 'metric-citations' | 'trend-chart-guide';
+export type KpiType = 'visibility' | 'share' | 'sentiment' | 'brandPresence' | 'trend-analysis' | 'table-guide' | 'source-distribution' | 'source-priority' | 'source-reputation' | 'source-growth' | 'source-monitor' | 'table-feature-guide' | 'metric-impact-score' | 'metric-mention' | 'metric-soa' | 'metric-sentiment' | 'metric-citations' | 'trend-chart-guide' | 'topics-feature-guide' | 'topics-chart-guide' | 'topics-table-guide';
 
 interface Section {
     title: string;
@@ -473,6 +473,129 @@ const contentMap: Record<KpiType, EducationalContent> = {
                 title: 'Selected Sources',
                 content: 'These charts reflect the specific sources you have selected in the table above (via checkboxes).',
                 icon: CheckSquare,
+                colorClass: 'text-emerald-500',
+                bgClass: 'bg-emerald-50/50 border-emerald-100/50'
+            }
+        ]
+    },
+    'topics-feature-guide': {
+        title: 'Topics Analysis Guide',
+        typeLabel: 'Feature Guide',
+        sections: [
+            {
+                title: 'Data Filtering',
+                content: (
+                    <div className="space-y-2">
+                        <p><strong>KPI Selector:</strong> Switch between Visibility Score, Share of Answers, and Sentiment Score to see different angles of your topics performance.</p>
+                        <p><strong>LLM Selector:</strong> Filter the data by specific AI models (e.g., Perplexity, GPT-4, Claude) using the chips on the right.</p>
+
+                    </div>
+                ),
+                icon: MousePointer2,
+                colorClass: 'text-indigo-500',
+                bgClass: 'bg-indigo-50/50 border-indigo-100/50'
+            },
+            {
+                title: 'Date Range Selector',
+                content: 'Use the date picker in the top right to analyze performance over specific periods. Compare current performance against historical data to spot trends.',
+                icon: Calendar,
+                colorClass: 'text-blue-500',
+                bgClass: 'bg-blue-50/50 border-blue-100/50'
+            },
+            {
+                title: 'Summary Cards',
+                content: (
+                    <ul className="space-y-1 list-disc pl-4 text-gray-700">
+                        <li><strong>Topics:</strong> Total number of topics tracked in this view.</li>
+                        <li><strong>Avg Score:</strong> The average value of your selected KPI (Visibility, SOA, etc.) across all topics.</li>
+                        <li><strong>Trending:</strong> The percentage change in your Average Score compared to the previous period.</li>
+                        <li><strong>Gaps:</strong> Number of topics where your KPI score is below a critical threshold (e.g., {'<'}10% SOA).</li>
+                    </ul>
+                ),
+                icon: BarChart2,
+                colorClass: 'text-emerald-500',
+                bgClass: 'bg-emerald-50/50 border-emerald-100/50'
+            },
+            {
+                title: 'How to Use',
+                content: 'Use this section to benchmark your brand\'s performance across different topics. Look for "Gaps" to identify topics where you are underperforming and need to create better content.',
+                icon: Lightbulb,
+                colorClass: 'text-amber-500',
+                bgClass: 'bg-amber-50/30 border-amber-100/50'
+            }
+        ]
+    },
+    'topics-chart-guide': {
+        title: 'Topics Chart Guide',
+        typeLabel: 'Feature Guide',
+        sections: [
+            {
+                title: 'Competitor Selector',
+                content: 'Use the circular icons at the top left of the chart to filter the view. Click any competitor logo to toggle their data on or off. This helps you isolate specific comparisons.',
+                icon: MousePointer2,
+                colorClass: 'text-indigo-500',
+                bgClass: 'bg-indigo-50/50 border-indigo-100/50'
+            },
+            {
+                title: 'Data Interpretation',
+                content: 'The chart displays the average value of your selected KPI (e.g., Share of Answer) for the visible topics. Longer bars indicate stronger performance in that topic.',
+                icon: BarChart2,
+                colorClass: 'text-blue-500',
+                bgClass: 'bg-blue-50/50 border-blue-100/50'
+            },
+            {
+                title: 'Default Behavior',
+                content: 'By default, data for all tracked competitors is shown. You can select or unselect individual competitors to customize the view for your specific analysis needs.',
+                icon: Users,
+                colorClass: 'text-emerald-500',
+                bgClass: 'bg-emerald-50/50 border-emerald-100/50'
+            }
+        ]
+    },
+    'topics-table-guide': {
+        title: 'Topics Table Guide',
+        typeLabel: 'Feature Guide',
+        sections: [
+            {
+                title: 'Brand vs Competitors',
+                content: 'This table compares your brand\'s performance against selected competitors for the chosen KPI across different topics. It helps identify exactly where you are winning or falling behind.',
+                icon: Target,
+                colorClass: 'text-indigo-500',
+                bgClass: 'bg-indigo-50/50 border-indigo-100/50'
+            },
+            {
+                title: 'Reading the Heatmap',
+                content: (
+                    <div className="space-y-3">
+                        <p>Colors indicate performance levels relative to the average:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="flex items-center gap-2 px-2 py-1 rounded bg-[rgba(0,188,220,0.1)] border border-[rgba(0,188,220,0.2)]">
+                                <div className="w-2 h-2 rounded-full bg-[#00bcdc]" />
+                                <span className="text-[10px] font-bold text-[#007a8e]">Strong</span>
+                            </div>
+                            <div className="flex items-center gap-2 px-2 py-1 rounded bg-[rgba(13,124,150,0.1)] border border-[rgba(13,124,150,0.2)]">
+                                <div className="w-2 h-2 rounded-full bg-[#0d7c96]" />
+                                <span className="text-[10px] font-bold text-[#095c70]">Competitive</span>
+                            </div>
+                            <div className="flex items-center gap-2 px-2 py-1 rounded bg-[rgba(249,115,22,0.1)] border border-[rgba(249,115,22,0.2)]">
+                                <div className="w-2 h-2 rounded-full bg-[#f97316]" />
+                                <span className="text-[10px] font-bold text-[#c25409]">Opportunity</span>
+                            </div>
+                            <div className="flex items-center gap-2 px-2 py-1 rounded bg-[rgba(26,29,41,0.05)] border border-[rgba(26,29,41,0.1)]">
+                                <div className="w-2 h-2 rounded-full bg-[#1a1d29]" />
+                                <span className="text-[10px] font-bold text-[#1a1d29]">Gap</span>
+                            </div>
+                        </div>
+                    </div>
+                ),
+                icon: BarChart2,
+                colorClass: 'text-blue-500',
+                bgClass: 'bg-blue-50/50 border-blue-100/50'
+            },
+            {
+                title: 'Topic Categorization',
+                content: 'Topics are automatically categorized (e.g., "Awareness", "Comparison") to help you understand user intent and where your brand is most relevant.',
+                icon: PieChart,
                 colorClass: 'text-emerald-500',
                 bgClass: 'bg-emerald-50/50 border-emerald-100/50'
             }

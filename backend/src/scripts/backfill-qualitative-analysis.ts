@@ -83,7 +83,7 @@ async function runBackfill() {
 
     // 3. Process each candidate
     for (const [index, result] of candidates.entries()) {
-        console.log(`\n[${index + 1}/${candidates.length}] Processing Result ID: ${result.id} (${result.brands?.name || 'Unknown Brand'})...`);
+        console.log(`\n[${index + 1}/${candidates.length}] Processing Result ID: ${result.id} (${result.brands?.[0]?.name || 'Unknown Brand'})...`);
 
         try {
             const rawAnswer = typeof result.raw_answer === 'string'
@@ -119,8 +119,8 @@ async function runBackfill() {
                 rawAnswer: rawAnswer,
                 citations: result.citations || [],
                 competitorNames: result.competitors || [],
-                brandName: result.brand || result.brands?.name || 'Brand',
-                brandMetadata: { id: result.brand_id, name: result.brand || result.brands?.name },
+                brandName: result.brand || result.brands?.[0]?.name || 'Brand',
+                brandMetadata: { id: result.brand_id, name: result.brand || result.brands?.[0]?.name },
                 competitorMetadata: new Map()
             });
 

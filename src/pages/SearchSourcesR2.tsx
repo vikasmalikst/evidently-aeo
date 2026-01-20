@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
+import { HelpCircle } from 'lucide-react';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
@@ -15,6 +16,7 @@ import { fetchRecommendations, type Recommendation } from '../api/recommendation
 import { KeyTakeaways } from '../components/SourcesR2/KeyTakeaways';
 import { generateKeyTakeaways, type KeyTakeaway } from '../utils/SourcesTakeawayGenerator';
 import { SourceTypeDistribution } from '../components/SourcesR2/SourceTypeDistribution';
+import { EducationalContentDrawer, type KpiType } from '../components/EducationalDrawer/EducationalContentDrawer';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -211,6 +213,13 @@ export const SearchSourcesR2 = () => {
   const [trendMetric, setTrendMetric] = useState<'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations'>('impactScore');
   const [sourceSearchQuery, setSourceSearchQuery] = useState<string>(() => highlightSource || '');
   const [hasInitializedTrendSelection, setHasInitializedTrendSelection] = useState(false);
+  const [isHelpDrawerOpen, setIsHelpDrawerOpen] = useState(false);
+  const [helpKpi, setHelpKpi] = useState<KpiType | null>(null);
+
+  const handleHelpClick = (kpi: KpiType) => {
+    setHelpKpi(kpi);
+    setIsHelpDrawerOpen(true);
+  };
 
   // Update date range from URL params and auto-search for highlighted source
   useEffect(() => {
@@ -578,7 +587,7 @@ export const SearchSourcesR2 = () => {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Citations Sources</h1>
-              <p style={{ margin: 0, color: '#475569' }}>Understand how your sources perform across visibility, share of answer, sentiment, and citations.</p>
+              <p style={{ margin: 0, color: '#475569' }}>Benchmark your Brand's performance across different channels and sources used by LLMs.</p>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -601,7 +610,11 @@ export const SearchSourcesR2 = () => {
 
         <KeyTakeaways takeaways={keyTakeaways} isLoading={isLoading && !sourcesForFilters.length} />
 
-        <SourceTypeDistribution sources={sourceData} isLoading={isLoading && !sourcesForFilters.length} />
+        <SourceTypeDistribution
+          sources={sourceData}
+          isLoading={isLoading && !sourcesForFilters.length}
+          onHelpClick={() => handleHelpClick('source-distribution')}
+        />
 
         {isProcessedReady ? (
           <SummaryCards
@@ -610,6 +623,7 @@ export const SearchSourcesR2 = () => {
             onSelect={(key) => {
               setActiveQuadrant(key as EnhancedSource['quadrant'] | null);
             }}
+            onHelpClick={(key) => handleHelpClick(`source-${key}` as any)}
           />
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
@@ -717,11 +731,21 @@ export const SearchSourcesR2 = () => {
                 onDeselectAll: deselectAllTrendSources
               }}
               highlightedSourceName={highlightSource}
+              onHelpClick={(key) => handleHelpClick(key as any)}
             />
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <div>
-                  <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Impact Score Trends</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Impact Score Trends</h3>
+                    <button
+                      onClick={() => handleHelpClick('trend-chart-guide')}
+                      className="text-slate-400 hover:text-indigo-500 transition-colors p-1 rounded-full hover:bg-indigo-50"
+                      aria-label="Impact Score Trends Guide"
+                    >
+                      <HelpCircle size={14} />
+                    </button>
+                  </div>
                   <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>
                     Top 10 sources - Daily trends for the last 7 days
                   </p>
@@ -857,6 +881,11 @@ export const SearchSourcesR2 = () => {
           </>
         )}
       </div>
+      <EducationalContentDrawer
+        isOpen={isHelpDrawerOpen}
+        onClose={() => setIsHelpDrawerOpen(false)}
+        kpiType={helpKpi}
+      />
     </Layout>
   );
 };

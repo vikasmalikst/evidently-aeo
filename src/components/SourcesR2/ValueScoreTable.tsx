@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { HelpCircle } from 'lucide-react';
 
 export interface ValueScoreSource {
   name: string;
@@ -39,6 +40,7 @@ interface ValueScoreTableProps {
   pagination?: {
     pageSize: number;
   };
+  onHelpClick?: (key: string) => void;
 }
 
 type SortKey = 'name' | 'type' | 'valueScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' | 'quadrant';
@@ -67,7 +69,7 @@ const normalizeDomain = (value: string | null | undefined): string => {
   return raw.replace(/^www\./, '').split('/')[0];
 };
 
-export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection, highlightedSourceName, disableSorting, pagination }: ValueScoreTableProps) => {
+export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSelection, highlightedSourceName, disableSorting, pagination, onHelpClick }: ValueScoreTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('valueScore');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -159,7 +161,7 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
         if (!aSelected && bSelected) return 1;
         // Both selected or both unselected - continue with normal sort
       }
-      
+
       // Normal sort logic
       const dir = sortDir === 'asc' ? 1 : -1;
       const aVal = (a as any)[sortKey];
@@ -240,7 +242,21 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, height: '100%', boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 16, color: '#1a1d29', fontWeight: 700 }}>Top Sources</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <h3 style={{ margin: 0, fontSize: 16, color: '#1a1d29', fontWeight: 700 }}>Top Sources</h3>
+            {onHelpClick && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onHelpClick('table-feature-guide');
+                }}
+                className="text-slate-400 hover:text-indigo-500 transition-colors p-1 rounded-full hover:bg-indigo-50"
+                aria-label="Table Feature Guide"
+              >
+                <HelpCircle size={14} />
+              </button>
+            )}
+          </div>
           <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Composite score based on Visibility, SOA, Sentiment, Citations and Topics</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -338,7 +354,7 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
             >
               Prev
             </button>
-            
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '0 4px' }}>
               {getPageNumbers().map((p, i) => (
                 <button
@@ -433,19 +449,84 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                 Type {sortIndicator('type')}
               </th>
               <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('valueScore')}>
-                Impact Score {sortIndicator('valueScore')}
+                <div className="flex items-center justify-end gap-1">
+                  Impact Score {sortIndicator('valueScore')}
+                  {onHelpClick && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHelpClick('metric-impact-score');
+                      }}
+                      className="text-slate-400 hover:text-emerald-500 transition-colors opacity-50 hover:opacity-100"
+                    >
+                      <HelpCircle size={12} />
+                    </button>
+                  )}
+                </div>
               </th>
               <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('mentionRate')}>
-                Mention % {sortIndicator('mentionRate')}
+                <div className="flex items-center justify-end gap-1">
+                  Mention % {sortIndicator('mentionRate')}
+                  {onHelpClick && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHelpClick('metric-mention');
+                      }}
+                      className="text-slate-400 hover:text-blue-500 transition-colors opacity-50 hover:opacity-100"
+                    >
+                      <HelpCircle size={12} />
+                    </button>
+                  )}
+                </div>
               </th>
               <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('soa')}>
-                SOA % {sortIndicator('soa')}
+                <div className="flex items-center justify-end gap-1">
+                  SOA % {sortIndicator('soa')}
+                  {onHelpClick && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHelpClick('metric-soa');
+                      }}
+                      className="text-slate-400 hover:text-purple-500 transition-colors opacity-50 hover:opacity-100"
+                    >
+                      <HelpCircle size={12} />
+                    </button>
+                  )}
+                </div>
               </th>
               <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('sentiment')}>
-                Sentiment {sortIndicator('sentiment')}
+                <div className="flex items-center justify-end gap-1">
+                  Sentiment {sortIndicator('sentiment')}
+                  {onHelpClick && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHelpClick('metric-sentiment');
+                      }}
+                      className="text-slate-400 hover:text-rose-500 transition-colors opacity-50 hover:opacity-100"
+                    >
+                      <HelpCircle size={12} />
+                    </button>
+                  )}
+                </div>
               </th>
               <th style={{ ...headerCellBase, textAlign: 'right' }} onClick={() => toggleSort('citations')}>
-                Citations {sortIndicator('citations')}
+                <div className="flex items-center justify-end gap-1">
+                  Citations {sortIndicator('citations')}
+                  {onHelpClick && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHelpClick('metric-citations');
+                      }}
+                      className="text-slate-400 hover:text-indigo-500 transition-colors opacity-50 hover:opacity-100"
+                    >
+                      <HelpCircle size={12} />
+                    </button>
+                  )}
+                </div>
               </th>
               <th style={{ ...headerCellBase, textAlign: 'center' }} onClick={() => toggleSort('quadrant')}>
                 Category {sortIndicator('quadrant')}
@@ -459,127 +540,127 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                 s.name.toLowerCase().includes(highlightedSourceName.toLowerCase()) ||
                 highlightedSourceName.toLowerCase().includes(s.name.toLowerCase())
               );
-              
+
               return (
-              <tr 
-                key={s.name} 
-                style={{ 
-                  borderTop: '1px solid #e5e7eb',
-                  backgroundColor: isHighlighted ? '#fef3c7' : undefined,
-                  borderLeft: isHighlighted ? '4px solid #f59e0b' : undefined,
-                  transition: 'background-color 0.3s ease, border-left 0.3s ease'
-                }}
-              >
-                {trendSelection && (() => {
-                  const isChecked = trendSelection.selectedNames.has(s.name);
-                  const isAtLimit = !isChecked && trendSelection.selectedNames.size >= trendSelection.maxSelected;
-                  return (
-                    <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        disabled={isAtLimit}
-                        onChange={() => trendSelection.onToggle(s.name)}
-                        aria-label={`Toggle ${s.name} in Impact Score Trends`}
-                        style={{ cursor: isAtLimit ? 'not-allowed' : 'pointer' }}
-                      />
-                    </td>
-                  );
-                })()}
-                <td style={{ padding: '10px 8px', color: '#0f172a', fontWeight: 600 }}>{s.name}</td>
-                <td style={{ padding: '10px 8px', color: '#475569' }}>{s.type}</td>
-                {(() => {
-                  const { style, textColor } = heatmapStyle('valueScore', s.valueScore);
-                  return (
-                <td
+                <tr
+                  key={s.name}
                   style={{
-                    padding: '10px 8px',
-                    textAlign: 'right',
-                    color: textColor || '#0f172a',
-                    fontWeight: 700,
-                    ...style
+                    borderTop: '1px solid #e5e7eb',
+                    backgroundColor: isHighlighted ? '#fef3c7' : undefined,
+                    borderLeft: isHighlighted ? '4px solid #f59e0b' : undefined,
+                    transition: 'background-color 0.3s ease, border-left 0.3s ease'
                   }}
                 >
-                  {s.valueScore.toFixed(1)}
-                </td>
-                  );
-                })()}
-                {(() => {
-                  const { style, textColor } = heatmapStyle('mentionRate', s.mentionRate);
-                  return (
-                <td
-                  style={{
-                    padding: '10px 8px',
-                    textAlign: 'right',
-                    color: textColor || '#0f172a',
-                    ...style
-                  }}
-                >
-                  {s.mentionRate.toFixed(1)}%
-                </td>
-                  );
-                })()}
-                {(() => {
-                  const { style, textColor } = heatmapStyle('soa', s.soa);
-                  return (
-                <td
-                  style={{
-                    padding: '10px 8px',
-                    textAlign: 'right',
-                    color: textColor || '#0f172a',
-                    ...style
-                  }}
-                >
-                  {s.soa.toFixed(1)}%
-                </td>
-                  );
-                })()}
-                {(() => {
-                  const { style, textColor } = heatmapStyle('sentiment', s.sentiment);
-                  return (
-                <td
-                  style={{
-                    padding: '10px 8px',
-                    textAlign: 'right',
-                    color: textColor || '#0f172a',
-                    ...style
-                  }}
-                >
-                  {Math.round(s.sentiment)}
-                </td>
-                  );
-                })()}
-                {(() => {
-                  const { style, textColor } = heatmapStyle('citations', s.citations);
-                  return (
-                <td
-                  style={{
-                    padding: '10px 8px',
-                    textAlign: 'right',
-                    color: textColor || '#0f172a',
-                    ...style
-                  }}
-                >
-                  {s.citations}
-                </td>
-                  );
-                })()}
-                <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '4px 10px',
-                      borderRadius: 999,
-                      backgroundColor: zoneStyles[s.quadrant]?.bg || '#e2e8f0',
-                      color: zoneStyles[s.quadrant]?.text || '#0f172a',
-                      fontWeight: 700,
-                      fontSize: 12
-                    }}
-                  >
-                    {zoneStyles[s.quadrant]?.label || s.quadrant}
-                  </span>
-                </td>
-              </tr>
+                  {trendSelection && (() => {
+                    const isChecked = trendSelection.selectedNames.has(s.name);
+                    const isAtLimit = !isChecked && trendSelection.selectedNames.size >= trendSelection.maxSelected;
+                    return (
+                      <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          disabled={isAtLimit}
+                          onChange={() => trendSelection.onToggle(s.name)}
+                          aria-label={`Toggle ${s.name} in Impact Score Trends`}
+                          style={{ cursor: isAtLimit ? 'not-allowed' : 'pointer' }}
+                        />
+                      </td>
+                    );
+                  })()}
+                  <td style={{ padding: '10px 8px', color: '#0f172a', fontWeight: 600 }}>{s.name}</td>
+                  <td style={{ padding: '10px 8px', color: '#475569' }}>{s.type}</td>
+                  {(() => {
+                    const { style, textColor } = heatmapStyle('valueScore', s.valueScore);
+                    return (
+                      <td
+                        style={{
+                          padding: '10px 8px',
+                          textAlign: 'right',
+                          color: textColor || '#0f172a',
+                          fontWeight: 700,
+                          ...style
+                        }}
+                      >
+                        {s.valueScore.toFixed(1)}
+                      </td>
+                    );
+                  })()}
+                  {(() => {
+                    const { style, textColor } = heatmapStyle('mentionRate', s.mentionRate);
+                    return (
+                      <td
+                        style={{
+                          padding: '10px 8px',
+                          textAlign: 'right',
+                          color: textColor || '#0f172a',
+                          ...style
+                        }}
+                      >
+                        {s.mentionRate.toFixed(1)}%
+                      </td>
+                    );
+                  })()}
+                  {(() => {
+                    const { style, textColor } = heatmapStyle('soa', s.soa);
+                    return (
+                      <td
+                        style={{
+                          padding: '10px 8px',
+                          textAlign: 'right',
+                          color: textColor || '#0f172a',
+                          ...style
+                        }}
+                      >
+                        {s.soa.toFixed(1)}%
+                      </td>
+                    );
+                  })()}
+                  {(() => {
+                    const { style, textColor } = heatmapStyle('sentiment', s.sentiment);
+                    return (
+                      <td
+                        style={{
+                          padding: '10px 8px',
+                          textAlign: 'right',
+                          color: textColor || '#0f172a',
+                          ...style
+                        }}
+                      >
+                        {Math.round(s.sentiment)}
+                      </td>
+                    );
+                  })()}
+                  {(() => {
+                    const { style, textColor } = heatmapStyle('citations', s.citations);
+                    return (
+                      <td
+                        style={{
+                          padding: '10px 8px',
+                          textAlign: 'right',
+                          color: textColor || '#0f172a',
+                          ...style
+                        }}
+                      >
+                        {s.citations}
+                      </td>
+                    );
+                  })()}
+                  <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '4px 10px',
+                        borderRadius: 999,
+                        backgroundColor: zoneStyles[s.quadrant]?.bg || '#e2e8f0',
+                        color: zoneStyles[s.quadrant]?.text || '#0f172a',
+                        fontWeight: 700,
+                        fontSize: 12
+                      }}
+                    >
+                      {zoneStyles[s.quadrant]?.label || s.quadrant}
+                    </span>
+                  </td>
+                </tr>
               );
             })}
           </tbody>

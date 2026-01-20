@@ -30,7 +30,7 @@ import { apiClient } from '../lib/apiClient';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
-import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX } from '@tabler/icons-react';
+import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle } from '@tabler/icons-react';
 
 interface RecommendationsV3Props {
   initialStep?: number;
@@ -100,6 +100,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [feedbackText, setFeedbackText] = useState('');
   const [selectedRecommendationForRegen, setSelectedRecommendationForRegen] = useState<RecommendationV3 | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [activeFeedbackSection, setActiveFeedbackSection] = useState<string | null>(null); // recId_sectionId
 
   // v4.0 Interactive Refinement state
   const [sectionFeedback, setSectionFeedback] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> feedback)
@@ -1942,19 +1943,66 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                 {section.sectionType}
                                               </span>
                                             </div>
-                                            <button
-                                              onClick={() => {
-                                                if (isEditingSection) {
-                                                  setEditingId(null);
-                                                } else {
-                                                  setEditingId(`${recId}_${section.id}`);
-                                                }
-                                              }}
-                                              className="px-2 py-1 text-[11px] text-[#64748b] hover:text-[#00bcdc] transition-colors"
-                                            >
-                                              {isEditingSection ? '✓ Done' : '✎ Edit'}
-                                            </button>
+                                            <div className="flex items-center gap-2">
+                                              <button
+                                                onClick={() => {
+                                                  const sectionKey = `${recId}_${section.id}`;
+                                                  setActiveFeedbackSection(activeFeedbackSection === sectionKey ? null : sectionKey);
+                                                }}
+                                                className={`p-1 rounded-md transition-colors relative ${feedback.trim().length > 0 ? 'text-[#f59e0b] bg-[#fff7ed]' : 'text-[#64748b] hover:text-[#00bcdc] hover:bg-[#f1f5f9]'}`}
+                                                title="Feedback"
+                                              >
+                                                <IconMessageCircle size={16} />
+                                                {feedback.trim().length > 0 && (
+                                                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#f59e0b] rounded-full border border-white"></span>
+                                                )}
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  if (isEditingSection) {
+                                                    setEditingId(null);
+                                                  } else {
+                                                    setEditingId(`${recId}_${section.id}`);
+                                                  }
+                                                }}
+                                                className="px-2 py-1 text-[11px] text-[#64748b] hover:text-[#00bcdc] transition-colors"
+                                              >
+                                                {isEditingSection ? '✓ Done' : '✎ Edit'}
+                                              </button>
+                                            </div>
                                           </div>
+
+                                          {/* Feedback Popover */}
+                                          {activeFeedbackSection === `${recId}_${section.id}` && (
+                                            <div className="absolute top-12 right-4 z-50 w-[320px] bg-white border border-[#fcd34d] rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                                              <div className="bg-[#fffbeb] px-4 py-2 border-b border-[#fcd34d] flex items-center justify-between">
+                                                <span className="text-[12px] font-bold text-[#92400e]">Feedback for {section.title}</span>
+                                                <button
+                                                  onClick={() => setActiveFeedbackSection(null)}
+                                                  className="text-[#92400e] hover:bg-[#fef3c7] p-1 rounded-md"
+                                                >
+                                                  <IconX size={14} />
+                                                </button>
+                                              </div>
+                                              <div className="p-4">
+                                                <textarea
+                                                  className="w-full p-3 bg-white border border-[#fcd34d] rounded-lg text-[13px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] min-h-[100px]"
+                                                  placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
+                                                  autoFocus
+                                                  value={feedback}
+                                                  onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
+                                                />
+                                                <div className="mt-3 flex justify-end">
+                                                  <button
+                                                    onClick={() => setActiveFeedbackSection(null)}
+                                                    className="px-4 py-1.5 bg-[#fcd34d] text-[#92400e] text-[12px] font-bold rounded-lg hover:bg-[#fbbf24] transition-colors"
+                                                  >
+                                                    Done
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
 
                                           {/* Section Content */}
                                           <div className="p-4">
@@ -1970,22 +2018,6 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                 dangerouslySetInnerHTML={{ __html: highlightFillIns(editedContent) }}
                                               />
                                             )}
-                                          </div>
-
-                                          {/* Feedback Input */}
-                                          <div className="px-4 pb-4">
-                                            <div className="bg-[#fef3c7] border border-[#fcd34d] rounded-lg p-3">
-                                              <label className="text-[11px] font-semibold text-[#92400e] block mb-1">
-                                                💬 Feedback for this section
-                                              </label>
-                                              <textarea
-                                                className="w-full p-2 bg-white border border-[#fcd34d] rounded text-[12px] text-[#1a1d29] placeholder-[#94a3b8] focus:outline-none focus:ring-1 focus:ring-[#f59e0b]"
-                                                placeholder="E.g., 'Add more specific metrics' or 'Make this more relevant to enterprise'"
-                                                rows={2}
-                                                value={feedback}
-                                                onChange={(e) => updateSectionFeedback(section.id, e.target.value)}
-                                              />
-                                            </div>
                                           </div>
                                         </div>
                                       );
@@ -2031,8 +2063,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                         onClick={handleRefine}
                                         disabled={isRefining || !hasFeedback}
                                         className={`flex-1 py-3 rounded-lg text-[14px] font-semibold transition-colors flex items-center justify-center gap-2 ${isRefining || !hasFeedback
-                                            ? 'bg-[#e2e8f0] text-[#94a3b8] cursor-not-allowed'
-                                            : 'bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] text-white hover:from-[#7c3aed] hover:to-[#9333ea]'
+                                          ? 'bg-[#e2e8f0] text-[#94a3b8] cursor-not-allowed'
+                                          : 'bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] text-white hover:from-[#7c3aed] hover:to-[#9333ea]'
                                           }`}
                                       >
                                         {isRefining ? (

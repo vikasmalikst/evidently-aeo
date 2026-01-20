@@ -134,14 +134,14 @@ module.exports = {
       out_file: '/home/dev/logs/evidently-backend-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      
+
       // Auto-restart configuration
       watch: false,
       max_memory_restart: '1G',
-      
+
       // Graceful shutdown
       kill_timeout: 5000,
-      
+
       // Advanced settings
       min_uptime: '10s',
       max_restarts: 10,
@@ -149,8 +149,7 @@ module.exports = {
     },
     {
       name: 'job-scheduler',
-      script: 'npm',
-      args: 'run cron:job:scheduler',
+      script: './dist/cron/unified-job-scheduler.js',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',
@@ -168,11 +167,11 @@ module.exports = {
       out_file: '/home/dev/logs/job-scheduler-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      
+
       // Auto-restart configuration
       watch: false,
       max_memory_restart: '500M',
-      
+
       // Advanced settings
       min_uptime: '10s',
       max_restarts: 10,
@@ -180,8 +179,7 @@ module.exports = {
     },
     {
       name: 'job-worker',
-      script: 'npm',
-      args: 'run cron:job:worker',
+      script: './dist/cron/unified-job-worker.js',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',
@@ -199,11 +197,11 @@ module.exports = {
       out_file: '/home/dev/logs/job-worker-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      
+
       // Auto-restart configuration
       watch: false,
       max_memory_restart: '1G',
-      
+
       // Advanced settings
       min_uptime: '10s',
       max_restarts: 10,
@@ -211,8 +209,7 @@ module.exports = {
     },
     {
       name: 'query-execution-cleanup',
-      script: 'npm',
-      args: 'run cron:query-execution:cleanup',
+      script: './dist/cron/queryExecutionCleanup.cron.js',
       cwd: '/home/dev/projects/evidently/backend',
       instances: 1,
       exec_mode: 'fork',
@@ -229,11 +226,11 @@ module.exports = {
       out_file: '/home/dev/logs/query-execution-cleanup-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      
+
       // Auto-restart configuration
       watch: false,
       max_memory_restart: '500M',
-      
+
       // Advanced settings
       min_uptime: '10s',
       max_restarts: 10,

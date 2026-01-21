@@ -681,13 +681,40 @@ export class DataAggregationService {
 
         // Fetch Pipeline: created within period OR active status
         // We fetch all recent recommendations to show the full pipeline state
-        const { data: recommendations, error } = await supabaseAdmin
+        // 1. Get the latest generation ID for this brand to match UI "Latest Run" view
+        const { data: latestGen, error: latestGenError } = await supabaseAdmin
+            .from('recommendations')
+            .select('generation_id, created_at')
+            .eq('brand_id', brandId)
+            .not('generation_id', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (latestGenError) {
+            console.error('❌ [EXEC-REPORT] Error fetching latest generation:', latestGenError);
+        }
+
+        const latestGenerationId = latestGen?.generation_id;
+        console.log(`🔎 [EXEC-REPORT] Latest Generation ID for ${brandId}: ${latestGenerationId}`);
+        if (latestGen) {
+            console.log(`🔎 [EXEC-REPORT] Found generation from: ${latestGen.created_at}`);
+        }
+
+        // 2. Fetch recommendations for the LATEST generation only
+        let query = supabaseAdmin
             .from('recommendations')
             .select('*')
-            .eq('brand_id', brandId)
-            // Limit to max recent recommendations (e.g., last 3 months or just 200 items) to keep report relevant?
-            // For now, fetch all to show complete pipeline history for this brand
-            .order('created_at', { ascending: false });
+            .eq('brand_id', brandId);
+
+        if (latestGenerationId) {
+            query = query.eq('generation_id', latestGenerationId);
+        } else {
+            // Fallback if no generation ID found (shouldn't happen for active brands)
+            query = query.order('created_at', { ascending: false }).limit(50);
+        }
+
+        const { data: recommendations, error } = await query;
 
         if (error) {
             console.error('❌ [EXEC-REPORT] Error fetching recommendations:', error);
@@ -697,37 +724,39 @@ export class DataAggregationService {
         const startIso = periodStart.toISOString();
         const endIso = periodEnd.toISOString();
 
-        // Count statuses
-        // Count statuses based on the reporting period (Activity View)
-        // 1. Generated: Recommendations created in this period
-        const generated = recs.filter(r => r.created_at >= startIso && r.created_at <= endIso).length;
+        // Count statuses based on Current Snapshot (matching Improve page UI tabs)
+        // 1. Generated: Total distinct recommendations generated
+        const generated = recs.length;
 
-        // 2. Pipeline Activity: Count items that MOVED to these states in this period
-        // We use created_at or updated_at as a proxy for when the status changed
-        // This ensures the report shows "Activity in this period" rather than "Total Snapshot"
+        // 2. Pending: Pending review and not moving forward yet
+        const needs_review = recs.filter(r =>
+            (r.review_status === 'pending_review' || !r.review_status) &&
+            !r.is_completed &&
+            !r.is_approved &&
+            !r.is_content_generated
+        ).length;
+
+        // 3. Approved: Approved but waiting for content
         const approved = recs.filter(r =>
             (r.is_approved === true || r.review_status === 'approved') &&
-            (r.updated_at >= startIso && r.updated_at <= endIso)
+            !r.is_content_generated &&
+            !r.is_completed
         ).length;
 
-        const rejected = recs.filter(r =>
-            r.review_status === 'rejected' &&
-            (r.updated_at >= startIso && r.updated_at <= endIso)
-        ).length;
-
-        const needs_review = recs.filter(r =>
-            r.review_status === 'pending_review' &&
-            (r.created_at >= startIso && r.created_at <= endIso) // Pending usually means just created
-        ).length;
-
+        // 4. Content: Content generated but not implemented
         const content_generated = recs.filter(r =>
             r.is_content_generated === true &&
-            (r.updated_at >= startIso && r.updated_at <= endIso)
+            !r.is_completed
         ).length;
 
+        // 5. Implemented: Completed recommendations
         const implemented = recs.filter(r =>
-            r.is_completed === true &&
-            (r.updated_at >= startIso && r.updated_at <= endIso)
+            r.is_completed === true
+        ).length;
+
+        // 6. Rejected: Rejected recommendations
+        const rejected = recs.filter(r =>
+            r.review_status === 'rejected'
         ).length;
 
         // TODO: Calculate average impact from implemented recommendations

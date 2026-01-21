@@ -743,62 +743,80 @@ export class OptimizedMetricsHelper {
     }
 
     try {
-      // Build query: metric_facts with joins to brand_metrics, brand_sentiment, and competitor_metrics
-      let query = this.supabase
-        .from('metric_facts')
-        .select(`
-          collector_result_id,
-          brand_id,
-          topic,
-          processed_at,
-          created_at,
-          brand_metrics!inner(
-            share_of_answers,
-            total_brand_mentions,
-            visibility_index,
-            brand_positions
-          ),
-          brand_sentiment(
-            sentiment_score
-          ),
-          competitor_metrics(
-            competitor_id,
-            share_of_answers,
-            visibility_index,
-            brand_competitors!inner(
-              competitor_name
+      const BATCH_SIZE = 50;
+      const chunks = [];
+      for (let i = 0; i < collectorResultIds.length; i += BATCH_SIZE) {
+        chunks.push(collectorResultIds.slice(i, i + BATCH_SIZE));
+      }
+
+      console.log(`   ⚡ [fetchSourceAttributionMetrics] Processing ${collectorResultIds.length} IDs in ${chunks.length} batches`);
+
+      const allData: any[] = [];
+
+      for (const chunk of chunks) {
+        // Build query: metric_facts with joins to brand_metrics, brand_sentiment, and competitor_metrics
+        let query = this.supabase
+          .from('metric_facts')
+          .select(`
+            collector_result_id,
+            brand_id,
+            topic,
+            processed_at,
+            created_at,
+            brand_metrics!inner(
+              share_of_answers,
+              total_brand_mentions,
+              visibility_index,
+              brand_positions
+            ),
+            brand_sentiment(
+              sentiment_score
+            ),
+            competitor_metrics(
+              competitor_id,
+              share_of_answers,
+              visibility_index,
+              brand_competitors!inner(
+                competitor_name
+              )
             )
-          )
-        `)
-        .in('collector_result_id', collectorResultIds)
-        .eq('brand_id', brandId);
+          `)
+          .in('collector_result_id', chunk)
+          .eq('brand_id', brandId);
 
-      // Add date filters if provided
-      if (startDate) {
-        query = query.gte('processed_at', startDate);
+        // Add date filters if provided
+        if (startDate) {
+          query = query.gte('processed_at', startDate);
+        }
+        if (endDate) {
+          query = query.lte('processed_at', endDate);
+        }
+
+        const { data: batchData, error: batchError } = await query;
+
+        if (batchError) {
+          console.error(`   ❌ [fetchSourceAttributionMetrics] Batch error:`, batchError);
+          // If a batch fails, we should probably fail the whole request or log and continue?
+          // Throwing ensures we hit the catch block and downstream handles it (legacy fallback if I implement it).
+          throw new Error(batchError.message);
+        }
+
+        if (batchData) {
+          allData.push(...batchData);
+        }
       }
-      if (endDate) {
-        query = query.lte('processed_at', endDate);
-      }
 
-      const { data, error } = await query;
+      const data = allData;
 
-      console.log(`   🔍 [fetchSourceAttributionMetrics] Query params:`, {
+      console.log(`   🔍 [fetchSourceAttributionMetrics] Query completed. Total rows: ${data.length}`, {
         collectorResultIds: collectorResultIds.length,
         brandId,
         startDate,
         endDate,
+        batches: chunks.length
       });
 
-      if (error) {
-        console.error(`   ❌ [fetchSourceAttributionMetrics] Query error:`, error);
-        return {
-          success: false,
-          data: [],
-          error: error.message,
-          duration_ms: Date.now() - startTime,
-        };
-      }
+      // Error check moved to batch loop
 
       console.log(`   📊 [fetchSourceAttributionMetrics] Raw query result: ${data?.length || 0} rows`);
 

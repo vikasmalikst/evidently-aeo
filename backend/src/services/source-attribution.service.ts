@@ -134,6 +134,8 @@ export class SourceAttributionService {
 
       const brandDomain = brandData?.website_url ? new URL(brandData.website_url).hostname.replace(/^www\./, '') : null
 
+
+
       // Step 4: Fetch citations - this is the main source of data
       const citationsStartTime = Date.now();
       const { data: citationsData, error: citationsError } = await supabaseAdmin
@@ -186,6 +188,13 @@ export class SourceAttributionService {
           .filter((id): id is number => typeof id === 'number')
       ))
       stepTimings['ids_extraction'] = Date.now() - idsExtractionStartTime;
+
+      // ... lines 200-280 omitted for brevity in thought, but need to be careful with replace_file_content range ...
+      // Actually I should do multiple chunks or one large chunk surrounding the affected area.
+      // The affected area is scattered.
+      // I will do two chunks.
+      // Chunk 1: Lines 169-182 (Citations check)
+
 
       // Step 6: Fetch queries for prompts and topics
       const queriesStartTime = Date.now();
@@ -279,6 +288,7 @@ export class SourceAttributionService {
       if (collectorResultIds.length > 0) {
         // Feature flag: default ON. Set USE_OPTIMIZED_SOURCE_ATTRIBUTION=false to force legacy behavior.
         const USE_OPTIMIZED_SOURCE_ATTRIBUTION = process.env.USE_OPTIMIZED_SOURCE_ATTRIBUTION !== 'false';
+        let useLegacy = !USE_OPTIMIZED_SOURCE_ATTRIBUTION;
 
         if (USE_OPTIMIZED_SOURCE_ATTRIBUTION) {
           console.log('   ⚡ [Source Attribution] Using optimized query (metric_facts + brand_metrics + brand_sentiment)');
@@ -291,6 +301,8 @@ export class SourceAttributionService {
 
           if (result.error) {
             console.warn('[SourceAttribution] Failed to fetch optimized positions:', result.error);
+            console.log('   ⚠️ [Source Attribution] Falling back to legacy query (extracted_positions)');
+            useLegacy = true;
           } else {
             extractedPositions = result.data.map(row => ({
               collector_result_id: row.collector_result_id,
@@ -306,7 +318,9 @@ export class SourceAttributionService {
             stepTimings['extracted_positions_query'] = result.duration_ms;
             console.log(`   ⚡ [Source Attribution] Optimized query completed in ${result.duration_ms}ms (${extractedPositions.length} rows)`);
           }
-        } else {
+        }
+
+        if (useLegacy) {
           console.log('   📋 [Source Attribution] Using legacy query (extracted_positions)');
           const { data: positionsData, error: positionsError } = await supabaseAdmin
             .from('extracted_positions')
@@ -907,12 +921,14 @@ export class SourceAttributionService {
         const normalizedCitations = maxCitations > 0 ? Math.min(100, (aggregate.citations / maxCitations) * 100) : 0
         const normalizedTopics = maxTopics > 0 ? Math.min(100, (aggregate.topics.size / maxTopics) * 100) : 0
 
-        const value = round(
-          (normalizedVisibility * 0.2) +
-          (normalizedSOA * 0.2) +
+        // Weights matching Frontend (SearchSourcesR2.tsx):
+        // Mention: 0.3, SOA: 0.3, Sentiment: 0.2, Citations: 0.1, Topics: 0.1
+        const impactScore = round(
+          (mentionRate * 0.3) +
+          (normalizedSOA * 0.3) +
           (normalizedSentiment * 0.2) +
-          (normalizedCitations * 0.2) +
-          (normalizedTopics * 0.2),
+          (normalizedCitations * 0.1) +
+          (normalizedTopics * 0.1),
           1
         )
 
@@ -968,7 +984,7 @@ export class SourceAttributionService {
           visibilityChange: round(visibilityChange, 1),
           averagePosition: round(avgPosition, 1),
           averagePositionChange: round(positionChange, 1),
-          value: value,
+          value: impactScore,
           // Use prompts from collector_results.question, fallback to query_text from generated_queries
           prompts: (() => {
             const promptsFromCollector = Array.from(aggregate.prompts)
@@ -1268,6 +1284,7 @@ export class SourceAttributionService {
           shareValues: number[]
           sentimentValues: number[]
           visibilityValues: number[]
+          positionValues: number[]
           mentionCounts: number[]
           topics: Set<string>
           queryIds: Set<string>
@@ -1299,6 +1316,7 @@ export class SourceAttributionService {
             shareValues: [],
             sentimentValues: [],
             visibilityValues: [],
+            positionValues: [],
             mentionCounts: [],
             topics: new Set<string>(),
             queryIds: new Set<string>(),
@@ -1361,39 +1379,86 @@ export class SourceAttributionService {
       const totalResponsesCount = totalResponses || 1
       stepTimings['total_responses'] = Date.now() - totalResponsesStartTime;
 
-      // Step 8: Convert aggregates to source data
+      // Step 8: Calculate Global Maxes for Normalization
+      let globalMaxCitations = 1
+      let globalMaxTopics = 1
+      // Use fixed max sentiment of 1.0 (assuming 0-1 scale) or calculate from data if needed
+      // But to match "no normalization" request better, let's use the actual max found
+      let globalMaxSentiment = 1
+
+      for (const ag of sourceAggregates.values()) {
+        globalMaxCitations = Math.max(globalMaxCitations, ag.citations)
+        globalMaxTopics = Math.max(globalMaxTopics, ag.topics.size)
+        const avgSent = ag.sentimentValues.length > 0 ? average(ag.sentimentValues) : 0
+        globalMaxSentiment = Math.max(globalMaxSentiment, avgSent)
+      }
+      globalMaxSentiment = Math.max(globalMaxSentiment, 1)
+
+      // Step 9: Convert aggregates to source data
       const sources: SourceAttributionData[] = []
 
       for (const [sourceKey, aggregate] of sourceAggregates.entries()) {
         const avgShare = aggregate.shareValues.length > 0 ? average(aggregate.shareValues) : 0
         const avgSentiment = aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
+        const avgVisibility = aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
+        const avgPosition = aggregate.positionValues.length > 0 ? average(aggregate.positionValues) : 0
 
         const uniqueCollectorResults = aggregate.collectorResultIds.size
         const mentionRate = totalResponsesCount > 0 ? (uniqueCollectorResults / totalResponsesCount) * 100 : 0
 
         const sourceType = getSourceType(aggregate.category, aggregate.domain)
 
+        // Calculate Impact Score
+        const normalizedSOA = Math.min(100, Math.max(0, avgShare))
+        const normalizedSentiment = (avgSentiment / globalMaxSentiment) * 100
+        const normalizedCitations = (aggregate.citations / globalMaxCitations) * 100
+        const normalizedTopics = (aggregate.topics.size / globalMaxTopics) * 100
+
+        // Weights matching Frontend (SearchSourcesR2.tsx):
+        // Mention: 0.3, SOA: 0.3, Sentiment: 0.2, Citations: 0.1, Topics: 0.1
+        const impactScore = round(
+          (mentionRate * 0.3) +
+          (normalizedSOA * 0.3) +
+          (normalizedSentiment * 0.2) +
+          (normalizedCitations * 0.1) +
+          (normalizedTopics * 0.1),
+          1
+        )
+
+        // Calculate Simplistic Deltas from Previous Period
+        // NOTE: previousSourceAggregates is not available in this function currently.
+        const mentionChange = 0
+        const soaChange = 0
+        const sentimentChange = 0
+        const visibilityChange = 0
+        const positionChange = 0
+
         sources.push({
           name: aggregate.domain,
           url: aggregate.url,
           type: sourceType,
           mentionRate: round(mentionRate, 1),
-          mentionChange: 0, // TODO: Calculate from previous period if needed
+          mentionChange: round(mentionChange, 1),
           soa: round(avgShare, 1),
-          soaChange: 0, // TODO: Calculate from previous period if needed
+          soaChange: round(soaChange, 1),
           sentiment: round(avgSentiment, 2),
-          sentimentChange: 0, // TODO: Calculate from previous period if needed
+          sentimentChange: round(sentimentChange, 2),
           citations: aggregate.citations,
           topics: Array.from(aggregate.topics),
           prompts: Array.from(aggregate.prompts).length > 0
             ? Array.from(aggregate.prompts)
             : Array.from(aggregate.queryIds).map(qId => queryMap.get(qId)?.query_text || '').filter(Boolean),
-          pages: Array.from(aggregate.pages)
+          pages: Array.from(aggregate.pages),
+          visibility: round(avgVisibility, 1),
+          visibilityChange: round(visibilityChange, 1),
+          averagePosition: round(avgPosition, 1),
+          averagePositionChange: round(positionChange, 1),
+          value: impactScore
         })
       }
 
-      // Sort by mention rate descending
-      sources.sort((a, b) => b.mentionRate - a.mentionRate)
+      // Sort by Impact Score (value) descending
+      sources.sort((a, b) => (b.value || 0) - (a.value || 0))
 
       // Calculate overall metrics
       const overallMentionRate = sources.length > 0
@@ -1407,9 +1472,9 @@ export class SourceAttributionService {
       const payload: SourceAttributionResponse = {
         sources,
         overallMentionRate,
-        overallMentionChange: 0, // TODO: Calculate from previous period if needed
+        overallMentionChange: 0,
         avgSentiment,
-        avgSentimentChange: 0, // TODO: Calculate from previous period if needed
+        avgSentimentChange: 0,
         totalSources: sources.length,
         dateRange: { start: startIso, end: endIso }
       }

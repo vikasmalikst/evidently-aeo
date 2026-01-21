@@ -39,8 +39,7 @@ const getOrCreateTooltip = (chart: any) => {
     tooltipEl.style.opacity = '1';
     tooltipEl.style.pointerEvents = 'none';
     tooltipEl.style.position = 'absolute';
-    tooltipEl.style.transform = 'translate(-50%, 0)';
-    tooltipEl.style.transition = 'all .1s ease';
+    // tooltipEl.style.transform = 'translate(-50%, 0)'; // Moved to external handler for dynamic positioning
     tooltipEl.style.zIndex = '100';
     tooltipEl.style.border = '1px solid #c6c9d2';
     tooltipEl.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
@@ -408,13 +407,28 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
                 tableHead.appendChild(tr);
               });
 
+              // Sort data points by value (descending) to show highest value on top
+              const dataPoints = tooltip.dataPoints || [];
+              const sortedIndices = dataPoints
+                .map((dp: any, i: number) => ({ index: i, value: dp.raw as number }))
+                .sort((a: any, b: any) => {
+                  // Handle potential non-numeric values gracefully
+                  const valA = typeof a.value === 'number' ? a.value : 0;
+                  const valB = typeof b.value === 'number' ? b.value : 0;
+                  return valB - valA;
+                })
+                .map((item: any) => item.index);
+
               const tableBody = document.createElement('tbody');
-              bodyLines.forEach((body: string, i: number) => {
+
+              // Iterate using sorted indices
+              sortedIndices.forEach((sortedIndex: number) => {
+                const body = bodyLines[sortedIndex];
                 // Get the dataset to find the logo
-                const dataPoint = tooltip.dataPoints[i];
+                const dataPoint = tooltip.dataPoints[sortedIndex];
                 const dataset = chart.data.datasets[dataPoint.datasetIndex];
 
-                const colors = tooltip.labelColors[i];
+                const colors = tooltip.labelColors[sortedIndex];
                 const logoUrl = (dataset as any).logo;
                 const domain = (dataset as any).domain;
 
@@ -524,8 +538,32 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
 
             // Display, position, and set styles for font
             tooltipEl.style.opacity = '1';
+
+            // Smart Positioning Logic
+            const tooltipRect = tooltipEl.getBoundingClientRect();
+            const canvasRect = chart.canvas.getBoundingClientRect();
+
+            // Check if tooltip exceeds viewport bottom
+            // We adding a safety margin of 20px
+            const viewportBottom = window.innerHeight;
+            const tooltipBottomPos = canvasRect.top + tooltip.caretY + tooltipRect.height + 20; // +20 margin
+
+            let topPos = positionY + tooltip.caretY;
+
+            if (tooltipBottomPos > viewportBottom) {
+              // Position ABOVE the cursor
+              tooltipEl.style.transform = 'translate(-50%, -100%)';
+              // Add some spacing (10px) above caret
+              topPos = positionY + tooltip.caretY - 10;
+            } else {
+              // Position BELOW the cursor (default)
+              tooltipEl.style.transform = 'translate(-50%, 0)';
+              // Add some spacing (10px) below caret
+              topPos = positionY + tooltip.caretY + 10;
+            }
+
             tooltipEl.style.left = positionX + tooltip.caretX + 'px';
-            tooltipEl.style.top = positionY + tooltip.caretY + 'px';
+            tooltipEl.style.top = topPos + 'px';
             tooltipEl.style.padding = tooltip.options.padding + 'px ' + tooltip.options.padding + 'px';
           }
         },

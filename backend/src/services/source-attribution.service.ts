@@ -22,6 +22,8 @@ export interface SourceAttributionData {
   visibilityChange?: number // Change in visibility index
   averagePosition?: number // Average position (1-10)
   averagePositionChange?: number // Change in average position
+  appearanceRate?: number // Brand Presence rate (0-100)
+  appearanceRateChange?: number // Change in Appearance Rate
   value?: number // Composite score based on Visibility, SOA, Sentiment, Citations and Topics
 }
 
@@ -365,6 +367,7 @@ export class SourceAttributionService {
       const mentionCountsByCollectorResult = new Map<number, number[]>()
       const visibilityByCollectorResult = new Map<number, number[]>()
       const positionByCollectorResult = new Map<number, number[]>()
+      const appearanceByCollectorResult = new Map<number, number[]>()
 
       for (const position of extractedPositions) {
         if (position.collector_result_id) {
@@ -407,6 +410,15 @@ export class SourceAttributionService {
             }
             positionByCollectorResult.get(collectorId)!.push(toNumber(position.average_position))
           }
+
+          // Collect appearance values (1 if total_brand_mentions > 0, else 0)
+          if (isBrandRow && position.total_brand_mentions !== null && position.total_brand_mentions !== undefined) {
+            if (!appearanceByCollectorResult.has(collectorId)) {
+              appearanceByCollectorResult.set(collectorId, [])
+            }
+            const mentions = toNumber(position.total_brand_mentions)
+            appearanceByCollectorResult.get(collectorId)!.push(mentions > 0 ? 1 : 0)
+          }
         }
       }
 
@@ -426,6 +438,12 @@ export class SourceAttributionService {
       const avgPositionByCollectorResult = new Map<number, number>()
       for (const [collectorId, positionValues] of positionByCollectorResult.entries()) {
         avgPositionByCollectorResult.set(collectorId, average(positionValues))
+      }
+
+      // Calculate average appearance per collector result (will be 0 or 1 usually)
+      const avgAppearanceByCollectorResult = new Map<number, number>()
+      for (const [collectorId, appearanceValues] of appearanceByCollectorResult.entries()) {
+        avgAppearanceByCollectorResult.set(collectorId, average(appearanceValues))
       }
 
       // Collect sentiment values (brand rows only) from extracted_positions
@@ -481,6 +499,7 @@ export class SourceAttributionService {
           sentimentValues: number[]
           visibilityValues: number[]
           positionValues: number[]
+          appearanceValues: number[]
           mentionCounts: number[]
           topics: Set<string>
           queryIds: Set<string>
@@ -518,6 +537,7 @@ export class SourceAttributionService {
             sentimentValues: [],
             visibilityValues: [],
             positionValues: [],
+            appearanceValues: [],
             mentionCounts: [],
             topics: new Set<string>(),
             queryIds: new Set<string>(),
@@ -590,6 +610,12 @@ export class SourceAttributionService {
             const avgPosition = avgPositionByCollectorResult.get(citation.collector_result_id)
             if (avgPosition !== undefined) {
               aggregate.positionValues.push(avgPosition)
+            }
+
+            // Add appearance from extracted_positions
+            const avgAppearance = avgAppearanceByCollectorResult.get(citation.collector_result_id)
+            if (avgAppearance !== undefined) {
+              aggregate.appearanceValues.push(avgAppearance)
             }
 
             // Get mention counts from extracted_positions (once per collector_result_id)
@@ -673,6 +699,8 @@ export class SourceAttributionService {
         positionArray?: number[];
         visibility: number;
         visibilityArray?: number[];
+        appearance: number;
+        appearanceArray?: number[];
         processedCollectorResultIds: Set<number>;
       }>()
 
@@ -689,6 +717,7 @@ export class SourceAttributionService {
           sentiment_score?: number | null;
           visibility_index?: number | null;
           average_position?: number | null;
+          total_brand_mentions?: number | null;
           competitor_name?: string | null;
         }> = [];
 
@@ -703,6 +732,7 @@ export class SourceAttributionService {
           if (!result.error && result.data) {
             previousPositions = result.data.map(row => ({
               collector_result_id: row.collector_result_id,
+              total_brand_mentions: row.total_brand_mentions,
               share_of_answers_brand: row.share_of_answers_brand,
               sentiment_score: row.sentiment_score,
               visibility_index: row.visibility_index,
@@ -713,7 +743,7 @@ export class SourceAttributionService {
         } else {
           const { data } = await supabaseAdmin
             .from('extracted_positions')
-            .select('collector_result_id, share_of_answers_brand, sentiment_score, visibility_index, brand_positions, competitor_name')
+            .select('collector_result_id, share_of_answers_brand, total_brand_mentions, sentiment_score, visibility_index, brand_positions, competitor_name')
             .in('collector_result_id', previousCollectorIds)
             .eq('brand_id', brandId)
             .gte('processed_at', previousStart.toISOString())
@@ -729,6 +759,7 @@ export class SourceAttributionService {
         const previousSentimentValuesByCollectorResult = new Map<number, number[]>()
         const previousPositionValuesByCollectorResult = new Map<number, number[]>()
         const previousVisibilityValuesByCollectorResult = new Map<number, number[]>()
+        const previousAppearanceValuesByCollectorResult = new Map<number, number[]>()
 
         if (previousPositions) {
           for (const position of previousPositions) {
@@ -763,6 +794,14 @@ export class SourceAttributionService {
                 previousVisibilityValuesByCollectorResult.get(collectorId)!.push(toNumber(position.visibility_index) * 100)
               }
 
+              if (isBrandRow && position.total_brand_mentions !== null && position.total_brand_mentions !== undefined) {
+                if (!previousAppearanceValuesByCollectorResult.has(collectorId)) {
+                  previousAppearanceValuesByCollectorResult.set(collectorId, [])
+                }
+                const mentions = toNumber(position.total_brand_mentions)
+                previousAppearanceValuesByCollectorResult.get(collectorId)!.push(mentions > 0 ? 1 : 0)
+              }
+
               if (isBrandRow && position.sentiment_score !== null && position.sentiment_score !== undefined) {
                 const score = toNumber(position.sentiment_score)
                 if (Number.isFinite(score)) {
@@ -793,6 +832,10 @@ export class SourceAttributionService {
         }
 
         const previousAvgVisibilityByCollectorResult = new Map<number, number>()
+        const previousAvgAppearanceByCollectorResult = new Map<number, number>()
+        for (const [collectorId, appearanceValues] of previousAppearanceValuesByCollectorResult.entries()) {
+          previousAvgAppearanceByCollectorResult.set(collectorId, average(appearanceValues))
+        }
         for (const [collectorId, visibilityValues] of previousVisibilityValuesByCollectorResult.entries()) {
           previousAvgVisibilityByCollectorResult.set(collectorId, average(visibilityValues))
         }
@@ -817,6 +860,8 @@ export class SourceAttributionService {
               positionArray: [],
               visibility: 0,
               visibilityArray: [],
+              appearance: 0,
+              appearanceArray: [],
               processedCollectorResultIds: new Set<number>()
             })
           }
@@ -851,6 +896,12 @@ export class SourceAttributionService {
             if (avgVisibility !== undefined) {
               if (!prev.visibilityArray) prev.visibilityArray = []
               prev.visibilityArray.push(avgVisibility)
+            }
+
+            const avgAppearance = previousAvgAppearanceByCollectorResult.get(citation.collector_result_id)
+            if (avgAppearance !== undefined) {
+              if (!prev.appearanceArray) prev.appearanceArray = []
+              prev.appearanceArray.push(avgAppearance)
             }
 
             prev.processedCollectorResultIds.add(citation.collector_result_id)
@@ -898,6 +949,7 @@ export class SourceAttributionService {
         const avgSentiment = aggregate.sentimentValues.length > 0 ? average(aggregate.sentimentValues) : 0
         const avgVisibility = aggregate.visibilityValues.length > 0 ? average(aggregate.visibilityValues) : 0
         const avgPosition = aggregate.positionValues.length > 0 ? average(aggregate.positionValues) : 0
+        const avgAppearance = aggregate.appearanceValues.length > 0 ? average(aggregate.appearanceValues) * 100 : 0
         const totalMentions = aggregate.mentionCounts.reduce((sum, count) => sum + count, 0)
 
         // Mention Rate: percentage of total collector results where this source is cited
@@ -952,12 +1004,16 @@ export class SourceAttributionService {
         const previousVisibility = previous && previous.visibilityArray && previous.visibilityArray.length > 0
           ? average(previous.visibilityArray)
           : (previous ? previous.visibility : 0)
+        const previousAppearance = previous && previous.appearanceArray && previous.appearanceArray.length > 0
+          ? average(previous.appearanceArray) * 100
+          : (previous ? previous.appearance * 100 : 0)
 
         const mentionChange = mentionRate - previousMentionRate
         const soaChange = avgShare - previousSoa
         const sentimentChange = avgSentiment - previousSentiment
         const positionChange = avgPosition - previousPosition
         const visibilityChange = avgVisibility - previousVisibility
+        const appearanceChange = avgAppearance - previousAppearance
 
         // Determine if this is the brand's own domain
         const isBrandDomain = brandDomain && (
@@ -984,6 +1040,8 @@ export class SourceAttributionService {
           visibilityChange: round(visibilityChange, 1),
           averagePosition: round(avgPosition, 1),
           averagePositionChange: round(positionChange, 1),
+          appearanceRate: round(avgAppearance, 1),
+          appearanceRateChange: round(appearanceChange, 1),
           value: impactScore,
           // Use prompts from collector_results.question, fallback to query_text from generated_queries
           prompts: (() => {

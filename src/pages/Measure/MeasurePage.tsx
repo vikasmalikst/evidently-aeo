@@ -462,17 +462,25 @@ export const MeasurePage = () => {
   const llmOptions = allLlmOptions;
   const chartDateLabels = processedData.chartDateLabels || chartLabels;
 
-  // Model selection logic - ensure ALL models (including brand) are selected by default
+  const prevModelIdsRef = useRef<string[]>([]);
+
   useEffect(() => {
     const availableModels = currentModels;
+    const currentIds = availableModels.map(m => m.id);
+    const prevIds = prevModelIdsRef.current;
+    const newIds = currentIds.filter(id => !prevIds.includes(id));
+    
+    prevModelIdsRef.current = currentIds;
+
     setSelectedModels((previous) => {
-      // If no previous selection, or all previous selections are invalid, select ALL models
       const stillValid = previous.filter((id) => availableModels.some((model) => model.id === id));
-      if (stillValid.length === 0) {
-        // Select ALL models by default (including brand)
-        return availableModels.map((model) => model.id);
+      const combined = [...new Set([...stillValid, ...newIds])];
+
+      if (combined.length === 0 && availableModels.length > 0) {
+         return availableModels.map(m => m.id);
       }
-      return stillValid;
+
+      return combined;
     });
   }, [currentModels]);
 

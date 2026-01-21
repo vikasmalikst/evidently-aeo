@@ -17,6 +17,9 @@ import type {
     TrendDataPoint,
     TopMoverItem,
     CompetitorMetrics,
+    OpportunitiesData,
+    OpportunityItem,
+    TrackOutcomeItem,
 } from './types';
 import { SourceAttributionService } from '../source-attribution.service';
 
@@ -44,6 +47,7 @@ export class DataAggregationService {
             domainReadiness,
             actionsImpact,
             topMovers,
+            opportunities,
         ] = await Promise.all([
             this.aggregateBrandPerformance(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
             this.aggregateLLMPerformance(brandId, periodStart, periodEnd),
@@ -51,6 +55,7 @@ export class DataAggregationService {
             this.aggregateDomainReadiness(brandId, periodStart, periodEnd),
             this.aggregateActionsImpact(brandId, periodStart, periodEnd),
             this.calculateTopMovers(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
+            this.aggregateOpportunities(brandId),
         ]);
 
         return {
@@ -60,6 +65,7 @@ export class DataAggregationService {
             domain_readiness: domainReadiness,
             actions_impact: actionsImpact,
             top_movers: topMovers,
+            opportunities: opportunities,
         };
     }
 
@@ -1207,6 +1213,100 @@ export class DataAggregationService {
             appearance_rate: 0,
             share_of_answer: 0,
             sentiment: 0,
+        };
+    }
+
+    /**
+     * Aggregate opportunities (Discover, To-Do, Refine, Track)
+     */
+    async aggregateOpportunities(brandId: string): Promise<OpportunitiesData> {
+        console.log(`💡 [EXEC-REPORT] Aggregating opportunities for ${brandId}`);
+
+        // 1. Get the latest generation ID for this brand
+        const { data: latestGen } = await supabaseAdmin
+            .from('recommendations')
+            .select('generation_id, customer_id')
+            .eq('brand_id', brandId)
+            .not('generation_id', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (!latestGen?.generation_id) {
+            console.warn(`⚠️ [EXEC-REPORT] No recommendations found for brand ${brandId}`);
+            return {
+                discover: [],
+                todo: [],
+                refine: [],
+                track: [],
+            };
+        }
+
+        const { generation_id: generationId, customer_id: customerId } = latestGen;
+
+        // 2. Fetch ALL recommendations for this generation
+        const { data: recommendations, error } = await supabaseAdmin
+            .from('recommendations')
+            .select('*')
+            .eq('generation_id', generationId)
+            .eq('customer_id', customerId)
+            .order('display_order', { ascending: true });
+
+        if (error || !recommendations) {
+            console.error('❌ [EXEC-REPORT] Error fetching recommendations:', error);
+            return {
+                discover: [],
+                todo: [],
+                refine: [],
+                track: [],
+            };
+        }
+
+        // 3. Map to internal types and filter by step
+        const discover: OpportunityItem[] = [];
+        const todo: OpportunityItem[] = [];
+        const refine: OpportunityItem[] = [];
+        const track: TrackOutcomeItem[] = [];
+
+        recommendations.forEach(rec => {
+            const item: OpportunityItem = {
+                id: rec.id,
+                action: rec.action,
+                citationSource: rec.citation_source || 'N/A',
+                focusArea: rec.focus_area || 'N/A',
+                priority: rec.priority || 'Medium',
+                effort: rec.effort || 'Medium',
+            };
+
+            // Mapping logic based on RecommendationV3 workflow steps
+            if (rec.is_completed) {
+                if (rec.review_status === 'approved') {
+                    track.push({
+                        ...item,
+                        visibility_baseline: rec.visibility_score ? parseFloat(rec.visibility_score) : null,
+                        visibility_current: null, // Will be handled in frontend or fetched separately if needed
+                        soa_baseline: rec.soa ? parseFloat(rec.soa) : null,
+                        soa_current: null,
+                        sentiment_baseline: rec.sentiment ? parseFloat(rec.sentiment) : null,
+                        sentiment_current: null,
+                        completed_at: rec.completed_at,
+                    });
+                }
+            } else if (rec.is_content_generated) {
+                refine.push(item);
+            } else if (rec.is_approved) {
+                todo.push(item);
+            } else if (rec.review_status !== 'rejected') {
+                // If not approved/generated/completed and not rejected, it's a new discovery
+                discover.push(item);
+            }
+        });
+
+        return {
+            discover,
+            todo,
+            refine,
+            track,
         };
     }
 }

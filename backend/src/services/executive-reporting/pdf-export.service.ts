@@ -158,6 +158,9 @@ export class PdfExportService {
 
         <!-- Actions & Impact -->
         ${this.renderActionsImpact(data_snapshot.actions_impact)}
+        
+        <!-- Strategic Growth Opportunities -->
+        ${this.renderOpportunities(data_snapshot.opportunities)}
 
         <!-- Top Movers -->
         ${this.renderTopMovers(data_snapshot.top_movers)}
@@ -319,6 +322,40 @@ export class PdfExportService {
           page-break-before: always;
         }
       }
+
+      .opportunity-section {
+        margin-bottom: 40px;
+      }
+
+      .opportunity-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+        font-size: 11px;
+      }
+
+      .opportunity-table th, .opportunity-table td {
+        border: 1px solid #e2e8f0;
+        padding: 8px;
+        text-align: left;
+      }
+
+      .opportunity-table th {
+        background: #f1f5f9;
+        font-weight: bold;
+      }
+
+      .priority-badge {
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        font-size: 9px;
+        font-weight: bold;
+      }
+
+      .priority-high { background: #fee2e2; color: #b91c1c; }
+      .priority-medium { background: #fef3c7; color: #b45309; }
+      .priority-low { background: #dcfce7; color: #15803d; }
     `;
   }
 
@@ -500,6 +537,73 @@ export class PdfExportService {
           ${this.renderMetricCard('Content Generated', recs.content_generated || 0, { absolute: 0, percentage: 0 })}
           ${this.renderMetricCard('Actions Implemented', recs.implemented || 0, { absolute: 0, percentage: 0 })}
         </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render Strategic Growth Opportunities section
+   */
+  private renderOpportunities(opportunities: any): string {
+    if (!opportunities) return '';
+
+    const renderTable = (title: string, items: any[], columns: { label: string, key: string }[], showMetrics: boolean = false) => {
+      if (!items || items.length === 0) return '';
+
+      const headerRow = columns.map(col => `<th>${col.label}</th>`).join('');
+      const bodyRows = items.map(item => {
+        const cells = columns.map(col => {
+          let val = item[col.key];
+          if (col.key === 'priority') {
+            const cls = `priority-${val.toLowerCase()}`;
+            return `<td><span class="priority-badge ${cls}">${val}</span></td>`;
+          }
+          if (typeof val === 'number') val = val.toFixed(1);
+          return `<td>${val || '—'}</td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
+
+      return `
+        <div class="opportunity-section">
+          <h3>${title}</h3>
+          <table class="opportunity-table">
+            <thead>
+              <tr>${headerRow}</tr>
+            </thead>
+            <tbody>
+              ${bodyRows}
+            </tbody>
+          </table>
+        </div>
+      `;
+    };
+
+    const standardCols = [
+      { label: 'Action', key: 'action' },
+      { label: 'Source', key: 'citationSource' },
+      { label: 'Focus', key: 'focusArea' },
+      { label: 'Priority', key: 'priority' },
+      { label: 'Effort', key: 'effort' }
+    ];
+
+    const trackCols = [
+      { label: 'Action', key: 'action' },
+      { label: 'Source', key: 'citationSource' },
+      { label: 'Baseline Visibility', key: 'visibility_baseline' },
+      { label: 'Baseline SOA%', key: 'soa_baseline' },
+      { label: 'Completed', key: 'completed_at' }
+    ];
+
+    return `
+      <div class="page">
+        <h2>Strategic Growth Opportunities</h2>
+        <p style="margin-bottom: 20px; color: #64748b; font-size: 13px;">AI-powered recommendations mapped across the implementation lifecycle.</p>
+        
+        ${renderTable('Discover Opportunities', opportunities.discover, standardCols)}
+        ${renderTable('To-Do List (Approved)', opportunities.todo, standardCols)}
+        ${renderTable('Review & Refine', opportunities.refine, standardCols)}
+        ${renderTable('Track Outcomes (Completed)', opportunities.track, trackCols, true)}
       </div>
     `;
   }

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Download, HelpCircle } from 'lucide-react';
+import { Download } from 'lucide-react';
+import { HelpButton } from '../../../components/common/HelpButton';
 import { TopicsRacingBarChart } from './TopicsRacingBarChart';
 import { TopicsBarChart } from './TopicsBarChart';
 import { TopicsAreaChart } from './TopicsAreaChart';
@@ -187,14 +188,12 @@ export const TopicAnalysisMultiView = ({
         {/* Export Control */}
         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
           {onHelpClick && (
-            <button
+            <HelpButton
               onClick={() => onHelpClick('topics-chart-guide')}
-              className="p-2 rounded-full transition-all duration-200 bg-transparent text-[#6c7289] hover:text-[#212534] flex-shrink-0"
-              title="Help"
-              aria-label="Chart Guide"
-            >
-              <HelpCircle size={18} />
-            </button>
+              className="p-2 flex-shrink-0"
+              size={18}
+              label="Chart Guide"
+            />
           )}
         </div>
       </div>

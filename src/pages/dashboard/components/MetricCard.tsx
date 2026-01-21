@@ -1,5 +1,6 @@
 
-import { ChevronUp, ChevronDown, HelpCircle } from 'lucide-react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
+import { HelpButton } from '../../../components/common/HelpButton';
 import type { MetricCardProps } from '../types';
 import { InfoTooltip } from './InfoTooltip';
 
@@ -24,16 +25,15 @@ export const MetricCard = ({
   return (
     <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 flex flex-col relative group/card">
       {onHelpClick && (
-        <button
+        <HelpButton
           onClick={(e) => {
-            e.stopPropagation();
+            e?.stopPropagation();
             onHelpClick();
           }}
-          className="absolute top-3 right-3 p-1.5 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-all opacity-0 group-hover/card:opacity-100 focus:opacity-100"
-          aria-label="Learn more about this KPI"
-        >
-          <HelpCircle size={18} />
-        </button>
+          className="!absolute top-3 right-3 z-10 opacity-0 group-hover/card:opacity-100 focus:opacity-100"
+          label="Learn more about this KPI"
+          size={18}
+        />
       )}
       <div className="flex items-center gap-2 mb-3">
         <div

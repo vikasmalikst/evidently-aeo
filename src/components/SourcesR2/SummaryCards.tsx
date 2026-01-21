@@ -1,4 +1,4 @@
-import { HelpCircle } from 'lucide-react';
+import { HelpButton } from '../common/HelpButton';
 
 interface SummaryCardMeta {
   label: string;
@@ -54,16 +54,15 @@ export const SummaryCards = ({ counts, active = null, onSelect, onHelpClick }: S
               <span style={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>{meta.label}</span>
             </div>
             {onHelpClick && (
-              <button
+              <HelpButton
                 onClick={(e) => {
-                  e.stopPropagation();
+                  e?.stopPropagation();
                   onHelpClick(key);
                 }}
-                className="opacity-0 group-hover/card:opacity-100 p-1 text-slate-300 hover:text-blue-500 transition-opacity relative z-10 cursor-pointer"
-                aria-label={`Learn about ${meta.label}`}
-              >
-                <HelpCircle size={14} />
-              </button>
+                className="opacity-0 group-hover/card:opacity-100 p-1 relative z-10"
+                label={`Learn about ${meta.label}`}
+                size={14}
+              />
             )}
           </div>
           {meta.description && (

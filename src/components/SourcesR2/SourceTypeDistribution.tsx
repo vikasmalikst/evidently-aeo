@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { SourceData } from '../../pages/SearchSourcesR2';
-import { HelpCircle } from 'lucide-react';
+import { HelpButton } from '../common/HelpButton';
 
 interface SourceTypeDistributionProps {
   sources: SourceData[];
@@ -71,13 +71,11 @@ export const SourceTypeDistribution = ({ sources, isLoading = false, onHelpClick
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-extrabold text-slate-900 m-0">Source Type Distribution</h3>
         {onHelpClick && (
-          <button
+          <HelpButton
             onClick={onHelpClick}
-            className="p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
-            aria-label="Learn about source types"
-          >
-            <HelpCircle size={18} />
-          </button>
+            label="Learn about source types"
+            size={18}
+          />
         )}
       </div>
 
@@ -103,16 +101,15 @@ export const SourceTypeDistribution = ({ sources, isLoading = false, onHelpClick
               <div className="w-3 h-3 rounded-[2px]" style={{ backgroundColor: item.color }}></div>
               <span className="text-xs font-medium text-slate-500">{item.label}</span>
               {onHelpClick && (
-                <button
+                <HelpButton
                   onClick={(e) => {
-                    e.stopPropagation();
+                    e?.stopPropagation();
                     onHelpClick();
                   }}
-                  className="opacity-0 group-hover/legend-item:opacity-100 p-0.5 text-slate-300 hover:text-blue-500 transition-all cursor-pointer"
-                  aria-label={`Learn about ${item.label}`}
-                >
-                  <HelpCircle size={12} />
-                </button>
+                  className="opacity-0 group-hover/legend-item:opacity-100 p-0.5"
+                  label={`Learn about ${item.label}`}
+                  size={12}
+                />
               )}
             </div>
             <span className="text-sm font-extrabold text-slate-900 ml-5">

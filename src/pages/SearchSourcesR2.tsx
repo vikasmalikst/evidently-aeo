@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
-import { HelpCircle } from 'lucide-react';
+import { HelpButton } from '../components/common/HelpButton';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
@@ -738,13 +738,11 @@ export const SearchSourcesR2 = () => {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Impact Score Trends</h3>
-                    <button
+                    <HelpButton
                       onClick={() => handleHelpClick('trend-chart-guide')}
-                      className="text-slate-400 hover:text-indigo-500 transition-colors p-1 rounded-full hover:bg-indigo-50"
-                      aria-label="Impact Score Trends Guide"
-                    >
-                      <HelpCircle size={14} />
-                    </button>
+                      label="Impact Score Trends Guide"
+                      size={14}
+                    />
                   </div>
                   <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#64748b' }}>
                     Top 10 sources - Daily trends for the last 7 days

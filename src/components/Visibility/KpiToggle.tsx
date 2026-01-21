@@ -1,4 +1,5 @@
-import { PieChart, TrendingUp, Heart, Eye, HelpCircle } from 'lucide-react';
+import { PieChart, TrendingUp, Heart, Eye } from 'lucide-react';
+import { HelpButton } from '../common/HelpButton';
 
 type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence';
 
@@ -51,13 +52,12 @@ export const KpiToggle = ({ metricType, onChange, allowedMetricTypes, onHelpClic
           Select KPI
         </div>
         {onHelpClick && (
-          <button
+          <HelpButton
             onClick={() => onHelpClick('topics-feature-guide')}
-            className="text-slate-400 hover:text-indigo-500 transition-colors p-0.5 rounded-full hover:bg-indigo-50"
-            aria-label="Topics Feature Guide"
-          >
-            <HelpCircle size={14} />
-          </button>
+            className="p-0.5"
+            size={14}
+            label="Topics Feature Guide"
+          />
         )}
       </div>
       <div className="flex items-center gap-0 border-b border-[#e3e7f3]">

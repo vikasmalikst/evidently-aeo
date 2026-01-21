@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { HelpCircle } from 'lucide-react';
+import { HelpButton } from '../common/HelpButton';
 
 export interface ValueScoreSource {
   name: string;
@@ -245,16 +245,14 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <h3 style={{ margin: 0, fontSize: 16, color: '#1a1d29', fontWeight: 700 }}>Top Sources</h3>
             {onHelpClick && (
-              <button
+              <HelpButton
                 onClick={(e) => {
-                  e.stopPropagation();
+                  e?.stopPropagation();
                   onHelpClick('table-feature-guide');
                 }}
-                className="text-slate-400 hover:text-indigo-500 transition-colors p-1 rounded-full hover:bg-indigo-50"
-                aria-label="Table Feature Guide"
-              >
-                <HelpCircle size={14} />
-              </button>
+                label="Table Feature Guide"
+                size={14}
+              />
             )}
           </div>
           <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Composite score based on Visibility, SOA, Sentiment, Citations and Topics</p>
@@ -452,15 +450,14 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                 <div className="flex items-center justify-end gap-1">
                   Impact Score {sortIndicator('valueScore')}
                   {onHelpClick && (
-                    <button
+                    <HelpButton
                       onClick={(e) => {
-                        e.stopPropagation();
+                        e?.stopPropagation();
                         onHelpClick('metric-impact-score');
                       }}
-                      className="text-slate-400 hover:text-emerald-500 transition-colors opacity-50 hover:opacity-100"
-                    >
-                      <HelpCircle size={12} />
-                    </button>
+                      className="opacity-50 hover:opacity-100"
+                      size={12}
+                    />
                   )}
                 </div>
               </th>
@@ -468,15 +465,14 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                 <div className="flex items-center justify-end gap-1">
                   Mention % {sortIndicator('mentionRate')}
                   {onHelpClick && (
-                    <button
+                    <HelpButton
                       onClick={(e) => {
-                        e.stopPropagation();
+                        e?.stopPropagation();
                         onHelpClick('metric-mention');
                       }}
-                      className="text-slate-400 hover:text-blue-500 transition-colors opacity-50 hover:opacity-100"
-                    >
-                      <HelpCircle size={12} />
-                    </button>
+                      className="opacity-50 hover:opacity-100"
+                      size={12}
+                    />
                   )}
                 </div>
               </th>
@@ -484,15 +480,14 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                 <div className="flex items-center justify-end gap-1">
                   SOA % {sortIndicator('soa')}
                   {onHelpClick && (
-                    <button
+                    <HelpButton
                       onClick={(e) => {
-                        e.stopPropagation();
+                        e?.stopPropagation();
                         onHelpClick('metric-soa');
                       }}
-                      className="text-slate-400 hover:text-purple-500 transition-colors opacity-50 hover:opacity-100"
-                    >
-                      <HelpCircle size={12} />
-                    </button>
+                      className="opacity-50 hover:opacity-100"
+                      size={12}
+                    />
                   )}
                 </div>
               </th>
@@ -500,15 +495,14 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                 <div className="flex items-center justify-end gap-1">
                   Sentiment {sortIndicator('sentiment')}
                   {onHelpClick && (
-                    <button
+                    <HelpButton
                       onClick={(e) => {
-                        e.stopPropagation();
+                        e?.stopPropagation();
                         onHelpClick('metric-sentiment');
                       }}
-                      className="text-slate-400 hover:text-rose-500 transition-colors opacity-50 hover:opacity-100"
-                    >
-                      <HelpCircle size={12} />
-                    </button>
+                      className="opacity-50 hover:opacity-100"
+                      size={12}
+                    />
                   )}
                 </div>
               </th>
@@ -516,15 +510,14 @@ export const ValueScoreTable = ({ sources, maxRows, maxHeight = '60vh', trendSel
                 <div className="flex items-center justify-end gap-1">
                   Citations {sortIndicator('citations')}
                   {onHelpClick && (
-                    <button
+                    <HelpButton
                       onClick={(e) => {
-                        e.stopPropagation();
+                        e?.stopPropagation();
                         onHelpClick('metric-citations');
                       }}
-                      className="text-slate-400 hover:text-indigo-500 transition-colors opacity-50 hover:opacity-100"
-                    >
-                      <HelpCircle size={12} />
-                    </button>
+                      className="opacity-50 hover:opacity-100"
+                      size={12}
+                    />
                   )}
                 </div>
               </th>

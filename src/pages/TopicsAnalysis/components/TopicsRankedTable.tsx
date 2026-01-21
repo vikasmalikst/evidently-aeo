@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ChevronUp, ChevronDown, HelpCircle } from 'lucide-react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
+import { HelpButton } from '../../../components/common/HelpButton';
 import { KpiType } from '../../../components/EducationalDrawer/EducationalContentDrawer';
 import type { Topic, SortColumn, SortState } from '../types';
 import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
@@ -244,16 +245,15 @@ export const TopicsRankedTable = ({
       {/* Help Icon in Top Right Corner */}
       {onHelpClick && (
         <div className="absolute top-2 right-2 z-30">
-          <button
+          <HelpButton
             onClick={(e) => {
-              e.stopPropagation();
+              e?.stopPropagation();
               onHelpClick('topics-table-guide');
             }}
-            className="text-slate-400 hover:text-indigo-500 transition-colors p-1.5 rounded-full hover:bg-slate-100 bg-white/80 backdrop-blur-sm shadow-sm border border-slate-100"
-            title="Table Guide"
-          >
-            <HelpCircle size={16} />
-          </button>
+            className="p-1.5 bg-white/80 backdrop-blur-sm shadow-sm border border-slate-100"
+            size={16}
+            label="Table Guide"
+          />
         </div>
       )}
 

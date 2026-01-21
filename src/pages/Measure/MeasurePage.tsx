@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../../components/Layout/Layout';
+import { HelpButton } from '../../components/common/HelpButton';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import {
@@ -21,7 +22,12 @@ import {
   Activity,
   Target,
   Eye,
-  HelpCircle
+  Search,
+  Filter,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Info as InfoIcon
 } from 'lucide-react';
 import { useDashboardData } from '../dashboard/hooks/useDashboardData';
 import { useOnboardingOrchestrator } from '../../hooks/useOnboardingOrchestrator';
@@ -916,13 +922,12 @@ export const MeasurePage = () => {
                 {/* KPI Toggle */}
                 <div className="flex items-start justify-between gap-4">
                   <KpiToggle metricType={metricType} onChange={handleKpiSelect} />
-                  <button
+                  <HelpButton
                     onClick={() => handleHelpClick('trend-analysis')}
-                    className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
-                    aria-label="How to read this chart"
-                  >
-                    <HelpCircle size={20} />
-                  </button>
+                    label="How to read this chart"
+                    size={20}
+                    className="flex-shrink-0"
+                  />
                 </div>
 
               </div>
@@ -962,13 +967,11 @@ export const MeasurePage = () => {
           <div className="flex flex-col flex-1 bg-white rounded-lg overflow-hidden shadow-sm">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white">
               <h3 className="font-semibold text-gray-900">Detailed Breakdown</h3>
-              <button
+              <HelpButton
                 onClick={() => handleHelpClick('table-guide')}
-                className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
-                aria-label="How to use this table"
-              >
-                <HelpCircle size={20} />
-              </button>
+                label="How to use this table"
+                size={20}
+              />
             </div>
             {combinedLoading ? (
               <EmptyState message="Loading visibility data…" />

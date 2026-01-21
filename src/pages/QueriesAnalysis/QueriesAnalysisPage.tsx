@@ -28,7 +28,7 @@ export const QueriesAnalysisPage = () => {
     const [startDate, setStartDate] = useState<string>(() => {
         const end = new Date();
         const start = new Date(end);
-        start.setDate(start.getDate() - 29);
+        start.setDate(start.getDate() - 6);
         const formatDate = (date: Date) => {
             const y = date.getFullYear();
             const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -55,8 +55,8 @@ export const QueriesAnalysisPage = () => {
     const promptsEndpoint = useMemo(() => {
         if (!selectedBrandId) return null;
         const params = new URLSearchParams({
-            startDate: startDate ? new Date(startDate + 'T00:00:00Z').toISOString() : '',
-            endDate: endDate ? new Date(endDate + 'T23:59:59.999Z').toISOString() : ''
+            startDate: startDate ? new Date(startDate + 'T00:00:00').toISOString() : '',
+            endDate: endDate ? new Date(endDate + 'T23:59:59.999').toISOString() : ''
         });
         if (selectedModels.length > 0) {
             params.set('collectors', selectedModels.join(','));

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+
 import { ChevronUp, ChevronDown, HelpCircle } from 'lucide-react';
 import type { MetricCardProps } from '../types';
 import { InfoTooltip } from './InfoTooltip';
@@ -105,11 +105,7 @@ export const MetricCard = ({
         </div>
       )}
 
-      <div className="mt-4 pt-3 border-t border-[#e8e9ed]">
-        <Link to={linkTo} className="text-[12px] text-[#64748b] hover:text-[#00bcdc] transition-colors">
-          See analysis →
-        </Link>
-      </div>
+
     </div>
   );
 };

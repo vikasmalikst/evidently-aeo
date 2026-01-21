@@ -539,29 +539,37 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
             // Display, position, and set styles for font
             tooltipEl.style.opacity = '1';
 
-            // Smart Positioning Logic
+            // Smart Positioning Logic (Clamped to Chart Area)
             const tooltipRect = tooltipEl.getBoundingClientRect();
-            const canvasRect = chart.canvas.getBoundingClientRect();
 
-            // Check if tooltip exceeds viewport bottom
-            // We adding a safety margin of 20px
-            const viewportBottom = window.innerHeight;
-            const tooltipBottomPos = canvasRect.top + tooltip.caretY + tooltipRect.height + 20; // +20 margin
+            // chart.canvas.height gives the internal canvas height, but we want the CSS height
+            // However, positionY is 0 relative to parent if parent is the container. 
+            // Better to use chart.chartArea to know the drawing bounds, but tooltip usually floats over the whole canvas.
+            // Let's rely on the parent container height which is 320px
+            const chartHeight = chart.canvas.parentNode.clientHeight || 320;
+            const tooltipHeight = tooltipRect.height;
 
-            let topPos = positionY + tooltip.caretY;
+            // Default position: below the cursor
+            let topPos = positionY + tooltip.caretY + 10;
 
-            if (tooltipBottomPos > viewportBottom) {
-              // Position ABOVE the cursor
-              tooltipEl.style.transform = 'translate(-50%, -100%)';
-              // Add some spacing (10px) above caret
-              topPos = positionY + tooltip.caretY - 10;
-            } else {
-              // Position BELOW the cursor (default)
-              tooltipEl.style.transform = 'translate(-50%, 0)';
-              // Add some spacing (10px) below caret
-              topPos = positionY + tooltip.caretY + 10;
+            // Check if it overflows the bottom of the chart container
+            if (topPos + tooltipHeight > chartHeight) {
+              // Try positioning above
+              topPos = positionY + tooltip.caretY - tooltipHeight - 10;
             }
 
+            // If it NOW overflows the top (unlikely but possible if at very top), clamp it
+            if (topPos < 0) {
+              topPos = 0; // Stick to top
+            }
+
+            // If it STILL overflows the bottom (because it was clamped from top, or cursor is in middle but tooltip is huge)
+            // Force clamp to bottom edge
+            if (topPos + tooltipHeight > chartHeight) {
+              topPos = chartHeight - tooltipHeight;
+            }
+
+            tooltipEl.style.transform = 'translate(-50%, 0)'; // Alway center horizontally, manual Y pos
             tooltipEl.style.left = positionX + tooltip.caretX + 'px';
             tooltipEl.style.top = topPos + 'px';
             tooltipEl.style.padding = tooltip.options.padding + 'px ' + tooltip.options.padding + 'px';

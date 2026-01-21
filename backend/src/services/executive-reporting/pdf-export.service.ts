@@ -124,7 +124,7 @@ export class PdfExportService {
           <div class="metrics-grid">
             ${this.renderMetricCard('Visibility Score', brandPerf.current.visibility, brandPerf.deltas.visibility)}
             ${this.renderMetricCard('Share of Answer', brandPerf.current.share_of_answer, brandPerf.deltas.share_of_answer, '%')}
-            ${this.renderMetricCard('Avg Position', brandPerf.current.average_position, brandPerf.deltas.average_position)}
+            ${this.renderMetricCard('Brand Presence', brandPerf.current.appearance_rate, brandPerf.deltas.appearance_rate, '%')}
             ${this.renderMetricCard('Sentiment Score', brandPerf.current.sentiment, brandPerf.deltas.sentiment)}
           </div>
 
@@ -141,7 +141,7 @@ export class PdfExportService {
             <tbody>
               ${this.renderComparisonRow('Visibility', brandPerf.current.visibility, brandPerf.previous.visibility, brandPerf.deltas.visibility)}
               ${this.renderComparisonRow('Share of Answer', brandPerf.current.share_of_answer, brandPerf.previous.share_of_answer, brandPerf.deltas.share_of_answer, '%')}
-              ${this.renderComparisonRow('Avg Position', brandPerf.current.average_position, brandPerf.previous.average_position, brandPerf.deltas.average_position)}
+              ${this.renderComparisonRow('Brand Presence', brandPerf.current.appearance_rate, brandPerf.previous.appearance_rate, brandPerf.deltas.appearance_rate, '%')}
               ${this.renderComparisonRow('Sentiment', brandPerf.current.sentiment, brandPerf.previous.sentiment, brandPerf.deltas.sentiment)}
             </tbody>
           </table>
@@ -430,7 +430,7 @@ export class PdfExportService {
         <tr>
           <td>${llmName}</td>
           <td>${metrics.visibility?.toFixed(1) || 'N/A'}</td>
-          <td>${metrics.average_position?.toFixed(1) || 'N/A'}</td>
+          <td>${metrics.appearance_rate?.toFixed(1) || 'N/A'}%</td>
           <td>${metrics.share_of_answer?.toFixed(1) || 'N/A'}%</td>
         </tr>
       `)
@@ -444,7 +444,7 @@ export class PdfExportService {
             <tr>
               <th>LLM</th>
               <th>Visibility</th>
-              <th>Avg Position</th>
+              <th>Brand Presence</th>
               <th>Share of Answer</th>
             </tr>
           </thead>
@@ -464,19 +464,6 @@ export class PdfExportService {
       return '';
     }
 
-    const compRows = competitive.competitors
-      .map((comp: any) => `
-        <tr>
-          <td>${comp.name}</td>
-          <td>${comp.current.visibility?.toFixed(1) || 'N/A'}</td>
-          <td>${comp.current.share_of_answer?.toFixed(1) || 'N/A'}%</td>
-          <td class="metric-change ${comp.deltas.share_of_answer.percentage > 0 ? 'negative' : 'positive'}">
-            ${comp.deltas.share_of_answer.percentage > 0 ? '+' : ''}${comp.deltas.share_of_answer.percentage.toFixed(1)}%
-          </td>
-        </tr>
-      `)
-      .join('');
-
     return `
       <div class="page">
         <h2>Competitive Landscape</h2>
@@ -486,17 +473,29 @@ export class PdfExportService {
               <th>Competitor</th>
               <th>Visibility</th>
               <th>SOA</th>
+              <th>Brand Presence</th>
               <th>SOA Change</th>
             </tr>
           </thead>
           <tbody>
-            ${compRows}
+            ${competitive.competitors
+        .map((comp: any) => `
+                <tr>
+                  <td>${comp.name}</td>
+                  <td>${comp.current.visibility?.toFixed(1) || 'N/A'}</td>
+                  <td>${comp.current.share_of_answer?.toFixed(1) || 'N/A'}%</td>
+                  <td>${comp.current.appearance_rate?.toFixed(1) || '0.0'}%</td>
+                  <td class="metric-change ${comp.deltas.share_of_answer.percentage > 0 ? 'negative' : 'positive'}">
+                    ${comp.deltas.share_of_answer.percentage > 0 ? '+' : ''}${comp.deltas.share_of_answer.percentage.toFixed(1)}%
+                  </td>
+                </tr>
+              `)
+        .join('')}
           </tbody>
         </table>
       </div>
     `;
   }
-
   /**
    * Render domain readiness section
    */
@@ -517,8 +516,8 @@ export class PdfExportService {
             `
         : ''
       }
-      </div>
-    `;
+</div>
+  `;
   }
 
   /**

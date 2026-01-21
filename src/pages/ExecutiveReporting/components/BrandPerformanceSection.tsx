@@ -66,7 +66,7 @@ const MetricCard = ({
     const Icon = isNeutral ? IconMinus : isPositive ? IconTrendingUp : IconTrendingDown;
 
     return (
-        <div 
+        <div
             className={cardClass}
             style={{ animationDelay: `${index * 0.1}s` }}
         >
@@ -119,10 +119,10 @@ export const BrandPerformanceSection = ({ data }: BrandPerformanceSectionProps) 
                     index={1}
                 />
                 <MetricCard
-                    label="Avg Position"
-                    value={data.current.average_position}
-                    delta={data.deltas.average_position}
-                    inverseColor={true}
+                    label="Brand Presence"
+                    value={data.current.appearance_rate}
+                    delta={data.deltas.appearance_rate}
+                    suffix="%"
                     index={2}
                 />
                 <MetricCard
@@ -172,13 +172,13 @@ export const BrandPerformanceSection = ({ data }: BrandPerformanceSectionProps) 
                                 </td>
                             </tr>
                             <tr>
-                                <td className="font-medium">Avg Position</td>
-                                <td>{data.current.average_position.toFixed(1)}</td>
-                                <td>{data.previous.average_position.toFixed(1)}</td>
+                                <td className="font-medium">Brand Presence</td>
+                                <td>{data.current.appearance_rate.toFixed(1)}%</td>
+                                <td>{data.previous.appearance_rate.toFixed(1)}%</td>
                                 <td>
-                                    <span className={getChangeClass(data.deltas.average_position.percentage, true)}>
-                                        {data.deltas.average_position.percentage > 0 ? '+' : ''}
-                                        {data.deltas.average_position.percentage.toFixed(1)}%
+                                    <span className={getChangeClass(data.deltas.appearance_rate.percentage)}>
+                                        {data.deltas.appearance_rate.percentage > 0 ? '+' : ''}
+                                        {data.deltas.appearance_rate.percentage.toFixed(1)}%
                                     </span>
                                 </td>
                             </tr>

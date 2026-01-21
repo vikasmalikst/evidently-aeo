@@ -60,7 +60,7 @@ export const LLMPerformanceSection = ({ data }: { data: any }) => {
                         <tr>
                             <th>LLM</th>
                             <th>Visibility</th>
-                            <th>Avg Position</th>
+                            <th>Brand Presence</th>
                             <th>SOA</th>
                             <th>Sentiment</th>
                         </tr>
@@ -80,7 +80,7 @@ export const LLMPerformanceSection = ({ data }: { data: any }) => {
                                     </div>
                                 </td>
                                 <td>{metrics.visibility?.toFixed(1) || 'N/A'}</td>
-                                <td>{metrics.average_position?.toFixed(1) || 'N/A'}</td>
+                                <td>{metrics.appearance_rate?.toFixed(1) || 'N/A'}%</td>
                                 <td>{metrics.share_of_answer?.toFixed(1) || 'N/A'}%</td>
                                 <td>
                                     <span className={getSentimentClass(metrics.sentiment || 0)}>
@@ -123,7 +123,7 @@ export const CompetitiveLandscapeSection = ({ data }: { data: any }) => {
                         <tr>
                             <th>Competitor</th>
                             <th>Visibility</th>
-                            <th>Avg Position</th>
+                            <th>Brand Presence</th>
                             <th>SOA</th>
                             <th>Sentiment</th>
                         </tr>
@@ -148,7 +148,7 @@ export const CompetitiveLandscapeSection = ({ data }: { data: any }) => {
                                     </div>
                                 </td>
                                 <td>{comp.current?.visibility?.toFixed(1) || '0.0'}</td>
-                                <td>{comp.current?.average_position?.toFixed(1) || 'N/A'}</td>
+                                <td>{comp.current?.appearance_rate?.toFixed(1) || '0.0'}%</td>
                                 <td>{comp.current?.share_of_answer?.toFixed(1) || '0.0'}%</td>
                                 <td>
                                     <span className={getSentimentClass(comp.current?.sentiment || 0)}>
@@ -440,7 +440,7 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                                         }`}>
                                         {isPos ? (isGood ? '↑' : '↓') : (val > 0 ? '↑' : '↓')}
                                         {displayVal.toFixed(1)}
-                                        {(metricKey === 'soa' || metricKey === 'visibility') && '%'}
+                                        {(metricKey === 'soa' || metricKey === 'visibility' || metricKey === 'appearance_rate') && '%'}
                                     </div>
                                 </div>
                             </div>
@@ -532,11 +532,11 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                                     metricKey="sentiment"
                                 />
                                 <MetricCard
-                                    title="Avg. Position"
+                                    title="Brand Presence"
                                     icon={IconTarget}
-                                    gains={data.sources.position_gains}
-                                    losses={data.sources.position_losses}
-                                    metricKey="average_position"
+                                    gains={data.sources.presence_gains}
+                                    losses={data.sources.presence_losses}
+                                    metricKey="appearance_rate"
                                 />
                             </div>
                         )}

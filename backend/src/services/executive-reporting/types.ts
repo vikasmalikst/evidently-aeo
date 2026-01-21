@@ -227,6 +227,8 @@ export interface TopMoversData {
         sentiment_losses: TopMoverItem[];
         position_gains: TopMoverItem[];
         position_losses: TopMoverItem[];
+        presence_gains: TopMoverItem[];
+        presence_losses: TopMoverItem[];
     };
 }
 
@@ -241,6 +243,7 @@ export interface TopMoverItem {
         share_of_answer?: { absolute: number; percentage: number };
         soa?: { absolute: number; percentage: number };
         sentiment?: { absolute: number; percentage: number };
+        appearance_rate?: { absolute: number; percentage: number };
         combined_score?: { absolute: number; percentage: number };
     };
 }

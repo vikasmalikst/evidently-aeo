@@ -113,8 +113,16 @@ export const VisibilityTable = memo(({
                   </span>
                 </div>
               </th>
-              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] min-w-[150px] whitespace-nowrap">
-                Brand Presence
+              <th
+                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px] whitespace-nowrap"
+                onClick={() => handleSort('brandPresencePercentage')}
+              >
+                <div className="flex items-center gap-2">
+                  Brand Presence
+                  <span className="text-xs text-[var(--text-caption)] min-w-[12px]">
+                    {sortConfig.key === 'brandPresencePercentage' && (sortConfig.direction === 'desc' ? '↓' : '↑')}
+                  </span>
+                </div>
               </th>
               <th
                 className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px] whitespace-nowrap"

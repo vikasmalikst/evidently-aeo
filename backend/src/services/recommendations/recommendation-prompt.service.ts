@@ -118,11 +118,7 @@ ${graphContext}
 Known Competitors (for comparison context only):
 ${context.competitors && context.competitors.length > 0 ? context.competitors.map(c => `- ${c.name}`).join('\n') : 'No specific competitors identified.'}
     
-Voice of Customer & Strategic Context (Use this to better understand *why* the brand wins or loses):
-- Top Keywords: ${context.topKeywords?.map(k => `${k.keyword} (${k.count})`).join(', ') || 'N/A'}
-- Strategic Narrative: ${context.strategicNarrative || 'N/A'}
-- Customer Quotes:
-${context.keyQuotes?.map(q => `  > ${q}`).join('\n') || '  (No quotes available)'}
+
 
 Available Citation Sources (you MUST use ONLY these exact domains - copy them EXACTLY):
 These are the top sources from the Citations Sources page, sorted by Value score (composite of Visibility, SOA, Sentiment, and Citations).
@@ -139,14 +135,17 @@ Generate 8-12 recommendations. Each recommendation should:
 4. Have priority (High/Medium/Low) and effort (Low/Medium/High)
 5. Include reason (why this matters), explanation (4-5 sentences), expectedBoost, timeline, confidence
 6. Include focusSources, contentFocus, kpi ("Visibility Index" | "SOA %" | "Sentiment Score")
-7. **CRITICAL**: Use the "Voice of Customer" data (Quotes & Keywords) to write compelling reasons. Explain *why* this action addresses a specific gap found in the narrative or keywords.
-8. **MANDATORY STRATEGIC ATTACK**: You MUST generate at least 3 recommendations that directly address the 'CONFIRMED COMPETITOR WEAKNESSES' or 'ACTIVE BATTLEGROUNDS' listed above.
-   - If a competitor is failing at 'Cheap Tickets' (Opportunity Gap), you MUST recommend creating content/pages about 'Cheap Tickets' on your owned site or relevant sources.
-   - Use the specific topic names from the Graph Context in your "action" or "reason".
+7. **MANDATORY STRATEGIC ATTACK**: You MUST generate at least 3 recommendations that:
+   - Explicitly NAME the competitor from the Graph Context (e.g., "ASM", "Bullseye Event Group")
+   - Reference the exact topic from Graph Context (e.g., "Cheap Super Bowl Tickets")
+   - Explain WHY attacking this weakness or battleground helps the brand
+   - Frame the action as a direct attack or differentiation move
+   - If a competitor is failing at a topic (Opportunity Gap), create content specifically targeting that topic
+   - If a topic is a Battleground, create differentiation content showing why you're better
 
 IMPORTANT: Do NOT generate impactScore, mentionRate, soa, sentiment, visibilityScore, or citationCount. These will be automatically filled from the source data.
 
-Return ONLY a JSON array like:
+Return ONLY a JSON array. Here are two examples showing different recommendation types:
 [
   {
     "action": "Create FAQ content on reddit.com about enterprise security",
@@ -158,10 +157,25 @@ Return ONLY a JSON array like:
     "reason": "Reddit has high citation volume but low visibility for this brand",
     "explanation": "Reddit is a high-traffic platform with significant citation opportunities. Creating structured FAQ content will improve citation opportunities and brand mentions in AI responses.",
     "expectedBoost": "+5-10%",
-    "focusSources": "reddit.com, stackoverflow.com",
+    "focusSources": "reddit.com",
     "contentFocus": "Technical FAQs and troubleshooting guides",
     "timeline": "2-4 weeks",
     "confidence": 75
+  },
+  {
+    "action": "Create a comparison page 'insiderSports vs ASM Pricing' targeting 'Cheap Super Bowl Tickets'",
+    "citationSource": "insidersports.com.au",
+    "focusArea": "visibility",
+    "priority": "High",
+    "effort": "Medium",
+    "kpi": "Visibility Index",
+    "reason": "Graph analysis shows ASM is failing at 'Cheap Super Bowl Tickets' with negative sentiment. This is an opportunity to capture their dissatisfied audience.",
+    "explanation": "ASM's weakness on affordable tickets represents a direct market opportunity. Creating comparison content that positions insiderSports as the affordable alternative will capture users searching for cheaper options. Include specific pricing comparisons and value propositions.",
+    "expectedBoost": "+8-15%",
+    "focusSources": "insidersports.com.au",
+    "contentFocus": "Pricing comparison, value positioning, affordable ticket options",
+    "timeline": "2-4 weeks",
+    "confidence": 80
   }
 ]
 

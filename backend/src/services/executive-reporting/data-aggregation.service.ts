@@ -407,6 +407,7 @@ export class DataAggregationService {
             includeSentiment: true,
         });
 
+        const totalQueries = brandResult.data?.length || 0;
         const landscape: any[] = [];
 
         if (brandResult.success && brandResult.data) {
@@ -445,7 +446,12 @@ export class DataAggregationService {
                 ? positionValues.reduce((sum, v) => sum + v, 0) / positionValues.length
                 : 0;
 
-            console.log(`[EXEC-REPORT] Brand aggregated values: vis=${visibility.toFixed(2)}, soa=${shareOfAnswer.toFixed(2)}, sent=${sentiment.toFixed(2)}, avgPos=${averagePosition.toFixed(2)}`);
+            const brandPresenceCount = rows.filter(r => (Number(r.total_brand_mentions) || 0) > 0).length;
+            const brandAppearanceRate = totalQueries > 0 ? (brandPresenceCount / totalQueries) * 100 : 0;
+
+            console.log(`[EXEC-REPORT] Brand presence: count=${brandPresenceCount}, total=${totalQueries}, rate=${brandAppearanceRate.toFixed(2)}%`);
+
+            console.log(`[EXEC-REPORT] Brand aggregated values: vis=${visibility.toFixed(2)}, soa=${shareOfAnswer.toFixed(2)}, sent=${sentiment.toFixed(2)}, avgPos=${averagePosition.toFixed(2)}, pres=${brandAppearanceRate.toFixed(2)}%`);
 
             landscape.push({
                 name: brandName,
@@ -455,11 +461,21 @@ export class DataAggregationService {
                     share_of_answer: Number(shareOfAnswer.toFixed(2)),
                     sentiment: Number(sentiment.toFixed(2)),
                     average_position: Number(averagePosition.toFixed(2)),
-                    appearance_rate: 0
+                    appearance_rate: Number(brandAppearanceRate.toFixed(2))
                 },
                 deltas: {
-                    share_of_answer: { percentage: 0 },
-                    visibility: { percentage: 0 }
+                    share_of_answer: { absolute: 0, percentage: 0 },
+                    visibility: { absolute: 0, percentage: 0 },
+                    appearance_rate: { absolute: 0, percentage: 0 },
+                    average_position: { absolute: 0, percentage: 0 },
+                    sentiment: { absolute: 0, percentage: 0 }
+                },
+                previous: {
+                    visibility: 0,
+                    share_of_answer: 0,
+                    sentiment: 0,
+                    average_position: 0,
+                    appearance_rate: 0
                 },
                 website_url: brandUrl
             });
@@ -505,6 +521,9 @@ export class DataAggregationService {
                             }
                         });
 
+                        const presenceCount = rows.filter(r => (Number(r.competitor_mentions) || 0) > 0).length;
+                        console.log(`🔍 [EXEC-REPORT] ${competitor.competitor_name} presence: count=${presenceCount}, rows=${rows.length}, rate=${rows.length > 0 ? (presenceCount / rows.length * 100).toFixed(2) : 0}%`);
+
                         console.log(`[EXEC-REPORT] ${competitor.competitor_name} data points: vis=${visibilityValues.length}, soa=${shareValues.length}, sent=${sentimentValues.length}, pos=${positionValues.length}`);
 
                         const visibility = visibilityValues.length > 0
@@ -519,8 +538,11 @@ export class DataAggregationService {
                         const averagePosition = positionValues.length > 0
                             ? positionValues.reduce((sum, v) => sum + v, 0) / positionValues.length
                             : 0;
+                        const appearanceRate = totalQueries > 0
+                            ? (presenceCount / totalQueries) * 100
+                            : 0;
 
-                        console.log(`[EXEC-REPORT] ${competitor.competitor_name} aggregated: vis=${visibility.toFixed(2)}, soa=${shareOfAnswer.toFixed(2)}, sent=${sentiment.toFixed(2)}, avgPos=${averagePosition.toFixed(2)}`);
+                        console.log(`[EXEC-REPORT] ${competitor.competitor_name} aggregated: vis=${visibility.toFixed(2)}, soa=${shareOfAnswer.toFixed(2)}, sent=${sentiment.toFixed(2)}, avgPos=${averagePosition.toFixed(2)}, pres=${appearanceRate.toFixed(2)}%`);
 
                         landscape.push({
                             name: competitor.competitor_name,
@@ -530,11 +552,21 @@ export class DataAggregationService {
                                 share_of_answer: Number(shareOfAnswer.toFixed(2)),
                                 sentiment: Number(sentiment.toFixed(2)),
                                 average_position: Number(averagePosition.toFixed(2)),
-                                appearance_rate: 0
+                                appearance_rate: Number(appearanceRate.toFixed(2))
                             },
                             deltas: {
-                                share_of_answer: { percentage: 0 },
-                                visibility: { percentage: 0 }
+                                share_of_answer: { absolute: 0, percentage: 0 },
+                                visibility: { absolute: 0, percentage: 0 },
+                                appearance_rate: { absolute: 0, percentage: 0 },
+                                average_position: { absolute: 0, percentage: 0 },
+                                sentiment: { absolute: 0, percentage: 0 }
+                            },
+                            previous: {
+                                visibility: 0,
+                                share_of_answer: 0,
+                                sentiment: 0,
+                                average_position: 0,
+                                appearance_rate: 0
                             },
                             website_url: competitor.metadata?.domain || competitor.competitor_url || ''
                         });
@@ -816,6 +848,8 @@ export class DataAggregationService {
                     sentiment_losses: [],
                     position_gains: [],
                     position_losses: [],
+                    presence_gains: [],
+                    presence_losses: [],
                 },
             };
         }
@@ -1020,6 +1054,8 @@ export class DataAggregationService {
                 sentiment_losses: [],
                 position_gains: [],
                 position_losses: [],
+                presence_gains: [],
+                presence_losses: [],
             };
         }
 
@@ -1078,6 +1114,10 @@ export class DataAggregationService {
         const sentiment_gains = getMovers('sentiment', 'sentiment', 'sentimentChange', true);
         const sentiment_losses = getMovers('sentiment', 'sentiment', 'sentimentChange', false);
 
+        // Brand Presence (Appearance Rate)
+        const presence_gains = getMovers('appearance_rate', 'appearanceRate', 'appearanceRateChange', true);
+        const presence_losses = getMovers('appearance_rate', 'appearanceRate', 'appearanceRateChange', false);
+
         // Position - Inverted logic: Gain is negative change (rank 5 -> 1 is change of -4)
         const position_gains = sources
             .filter(s => (s.averagePositionChange || 0) < 0) // Improvement
@@ -1126,6 +1166,8 @@ export class DataAggregationService {
             sentiment_losses,
             position_gains,
             position_losses,
+            presence_gains,
+            presence_losses,
         };
     }
 
@@ -1183,18 +1225,24 @@ export class DataAggregationService {
     }
 
     private calculateLLMAvgPosition(results: any[]): number {
-        // TODO: Calculate average position from extracted positions
-        return 0;
+        const positions = results
+            .map(r => Number(r.average_position))
+            .filter(p => !isNaN(p) && p > 0);
+
+        if (positions.length === 0) return 0;
+        return positions.reduce((a, b) => a + b, 0) / positions.length;
     }
 
     private calculateLLMAppearanceRate(results: any[]): number {
-        // TODO: Calculate appearance rate
-        return 0;
+        if (!results || results.length === 0) return 0;
+        const presenceCount = results.filter(r => (Number(r.total_brand_mentions) || 0) > 0).length;
+        return (presenceCount / results.length) * 100;
     }
 
     private calculateLLMSOA(results: any[]): number {
-        // TODO: Calculate share of answer
-        return 0;
+        if (!results || results.length === 0) return 0;
+        const soaSum = results.reduce((sum, r) => sum + (Number(r.share_of_answer) || 0), 0);
+        return soaSum / results.length;
     }
 
     /**

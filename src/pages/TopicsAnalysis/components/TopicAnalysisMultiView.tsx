@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Download } from 'lucide-react';
+import { HelpButton } from '../../../components/common/HelpButton';
 import { TopicsRacingBarChart } from './TopicsRacingBarChart';
 import { TopicsBarChart } from './TopicsBarChart';
 import { TopicsAreaChart } from './TopicsAreaChart';
@@ -35,6 +36,7 @@ interface TopicAnalysisMultiViewProps {
   brandName?: string;
   isLoadingCompetitors?: boolean; // Loading state for competitor data
   onExport?: () => void;
+  onHelpClick?: (key: string) => void;
 }
 
 export const TopicAnalysisMultiView = ({
@@ -59,12 +61,13 @@ export const TopicAnalysisMultiView = ({
   brandName,
   isLoadingCompetitors = false,
   onExport,
+  onHelpClick,
 }: TopicAnalysisMultiViewProps) => {
   const [chartType, setChartType] = useState<ChartType>(defaultChartType);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [internalSelectedCategory] = useState<string>('all');
-  
+
   const selectedCategory = externalSelectedCategory ?? internalSelectedCategory;
   void _onCategoryChange;
 
@@ -83,12 +86,12 @@ export const TopicAnalysisMultiView = ({
   // Also filter by category if one is selected
   const preparedTopics = useMemo(() => {
     let filtered = [...topics];
-    
+
     // Apply category filter if one is selected
     if (selectedCategory && selectedCategory !== 'all') {
       filtered = filtered.filter(topic => topic.category === selectedCategory);
     }
-    
+
     return filtered
       .map(topic => ({
         ...topic,
@@ -181,18 +184,16 @@ export const TopicAnalysisMultiView = ({
             />
           )}
         </div>
-        
+
         {/* Export Control */}
         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
-          {onExport && (
-            <button
-              onClick={onExport}
-              className="p-2 rounded-full transition-all duration-200 bg-transparent text-[#6c7289] hover:text-[#212534] flex-shrink-0"
-              title="Export"
-              aria-label="Export data"
-            >
-              <Download size={18} />
-            </button>
+          {onHelpClick && (
+            <HelpButton
+              onClick={() => onHelpClick('topics-chart-guide')}
+              className="p-2 flex-shrink-0"
+              size={18}
+              label="Chart Guide"
+            />
           )}
         </div>
       </div>

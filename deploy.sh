@@ -29,6 +29,22 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Load NVM and use correct Node version
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    source "$NVM_DIR/nvm.sh"
+    if [ -f "$PROJECT_DIR/.nvmrc" ]; then
+        print_info "Using Node version from .nvmrc"
+        nvm use
+    else
+        print_info "Using Node version 20"
+        nvm use 20 || nvm install 20
+    fi
+fi
+
+# Print current Node version for verification
+print_info "Current Node version: $(node -v)"
+
 # Check if running as correct user
 if [ "$USER" != "dev" ]; then
     print_warn "This script is designed to run as 'dev' user. Current user: $USER"

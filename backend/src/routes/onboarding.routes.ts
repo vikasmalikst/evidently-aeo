@@ -217,12 +217,13 @@ router.post('/competitors', authenticateToken, async (req: Request, res: Respons
 
 router.post('/brand-products/preview', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { brand_name, industry, competitors } = req.body ?? {};
+    const { brand_name, industry, competitors, website_url } = req.body ?? {};
 
     console.log('🔍 [BACKEND] Received brand-products/preview request:', {
       brand_name,
       competitors_count: Array.isArray(competitors) ? competitors.length : 0,
-      competitors: competitors
+      competitors: competitors,
+      website_url
     });
 
     if (!brand_name || typeof brand_name !== 'string') {
@@ -236,11 +237,22 @@ router.post('/brand-products/preview', authenticateToken, async (req: Request, r
           .filter((c: any) => typeof c === 'string' && c.trim().length > 0)
       : [];
 
+    const competitorDomains: Record<string, string> = {};
+    if (Array.isArray(competitors)) {
+      competitors.forEach((c: any) => {
+        if (typeof c !== 'string' && c?.name && c?.url) {
+          competitorDomains[c.name] = c.url;
+        }
+      });
+    }
+
     const result = await brandProductEnrichmentService.previewEnrichment(
       {
         brandName: brand_name,
         industry: typeof industry === 'string' ? industry : undefined,
         competitors: competitorNames,
+        brandDomain: typeof website_url === 'string' ? website_url : undefined,
+        competitorDomains: Object.keys(competitorDomains).length > 0 ? competitorDomains : undefined,
       },
       (msg: string) => console.log(msg)
     );

@@ -134,6 +134,21 @@ export class SourceAttributionCacheService {
     }
   }
 
+  async invalidateCache(brandId: string, customerId: string): Promise<void> {
+    console.log(`[SourceAttribution] Invalidating cache for brand ${brandId}`)
+    const { error } = await supabaseAdmin
+      .from('source_attribution_snapshots')
+      .delete()
+      .eq('brand_id', brandId)
+      .eq('customer_id', customerId)
+
+    if (error) {
+      console.error('[SourceAttribution] Failed to invalidate cache:', error)
+    } else {
+      console.log(`[SourceAttribution] Cache invalidated successfully for brand ${brandId}`)
+    }
+  }
+
   getAgeMs(computedAt: string | null | undefined): number | null {
     return this.getSnapshotAgeMs(computedAt)
   }

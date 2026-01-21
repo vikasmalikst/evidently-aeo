@@ -101,7 +101,11 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
       const response = await fetchBrandProductsPreview({
         brand_name: brand.companyName,
         industry: brand.industry,
-        competitors: competitorNames.map((name) => ({ name })),
+        competitors: competitors.map((c) => ({
+          name: c.name,
+          url: c.url || (c.domain ? `https://${c.domain}` : undefined),
+        })),
+        website_url: brand.website || (brand.domain ? `https://${brand.domain}` : undefined),
       });
 
       if (!response.success || !response.data) {

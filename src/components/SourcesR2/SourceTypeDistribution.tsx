@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import type { SourceData } from '../../pages/SearchSourcesR2';
-import { Info } from 'lucide-react';
+import { HelpButton } from '../common/HelpButton';
 
 interface SourceTypeDistributionProps {
   sources: SourceData[];
   isLoading?: boolean;
+  onHelpClick?: () => void;
 }
 
 type SourceType = 'editorial' | 'corporate' | 'ugc' | 'reference' | 'institutional' | 'brand';
@@ -20,7 +21,7 @@ const TYPE_CONFIG: Record<SourceType, { label: string; color: string; order: num
   institutional: { label: 'Institutional', color: '#10B981', order: 6 }, // Green
 } as any; // Cast as any to handle potential mismatches or extra keys safely in runtime if needed
 
-export const SourceTypeDistribution = ({ sources, isLoading = false }: SourceTypeDistributionProps) => {
+export const SourceTypeDistribution = ({ sources, isLoading = false, onHelpClick }: SourceTypeDistributionProps) => {
   const distribution = useMemo(() => {
     if (!sources.length) return [];
 
@@ -49,33 +50,33 @@ export const SourceTypeDistribution = ({ sources, isLoading = false }: SourceTyp
   }, [sources]);
 
   if (isLoading) {
-      return (
-        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-[0_8px_18px_rgba(15,23,42,0.05)] animate-pulse">
-             <div className="h-6 w-48 bg-gray-200 rounded mb-4"></div>
-             <div className="h-8 w-full bg-gray-200 rounded mb-6"></div>
-             <div className="grid grid-cols-2 gap-4">
-                 <div className="h-4 w-24 bg-gray-200 rounded"></div>
-                 <div className="h-4 w-24 bg-gray-200 rounded"></div>
-             </div>
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-[0_8px_18px_rgba(15,23,42,0.05)] animate-pulse">
+        <div className="h-6 w-48 bg-gray-200 rounded mb-4"></div>
+        <div className="h-8 w-full bg-gray-200 rounded mb-6"></div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="h-4 w-24 bg-gray-200 rounded"></div>
+          <div className="h-4 w-24 bg-gray-200 rounded"></div>
         </div>
-      )
+      </div>
+    )
   }
 
   if (sources.length === 0) {
-      return null;
+    return null;
   }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-[0_8px_18px_rgba(15,23,42,0.05)]">
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-extrabold text-slate-900 m-0">Source Type Distribution</h3>
-        <div className="group relative">
-            <Info size={14} className="text-slate-400 cursor-help" />
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                Breakdown of unique sources by their type.
-                <div className="absolute top-full left-1/2 -translate-x-1/2 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-800"></div>
-            </div>
-        </div>
+        {onHelpClick && (
+          <HelpButton
+            onClick={onHelpClick}
+            label="Learn about source types"
+            size={18}
+          />
+        )}
       </div>
 
       {/* Stacked Bar */}
@@ -87,7 +88,7 @@ export const SourceTypeDistribution = ({ sources, isLoading = false }: SourceTyp
             className="h-full relative group first:rounded-l last:rounded-r transition-all hover:opacity-90"
             title={`${item.label}: ${item.count} sources (${item.percentage.toFixed(1)}%)`}
           >
-             {/* Small separator if needed, but flex handles it cleanly. */}
+            {/* Small separator if needed, but flex handles it cleanly. */}
           </div>
         ))}
       </div>
@@ -95,17 +96,30 @@ export const SourceTypeDistribution = ({ sources, isLoading = false }: SourceTyp
       {/* Legend Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-y-4 gap-x-8">
         {distribution.map((item) => (
-          <div key={item.type} className="flex flex-col gap-1">
-             <div className="flex items-center gap-2">
-                 <div className="w-3 h-3 rounded-[2px]" style={{ backgroundColor: item.color }}></div>
-                 <span className="text-xs font-medium text-slate-500">{item.label}</span>
-             </div>
-             <span className="text-sm font-extrabold text-slate-900 ml-5">
-                 {item.percentage.toFixed(1)}%
-             </span>
+          <div key={item.type} className="flex flex-col gap-1 group/legend-item">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-[2px]" style={{ backgroundColor: item.color }}></div>
+              <span className="text-xs font-medium text-slate-500">{item.label}</span>
+              {onHelpClick && (
+                <HelpButton
+                  onClick={(e) => {
+                    e?.stopPropagation();
+                    onHelpClick();
+                  }}
+                  className="opacity-0 group-hover/legend-item:opacity-100 p-0.5"
+                  label={`Learn about ${item.label}`}
+                  size={12}
+                />
+              )}
+            </div>
+            <span className="text-sm font-extrabold text-slate-900 ml-5">
+              {item.percentage.toFixed(1)}%
+            </span>
           </div>
         ))}
       </div>
     </div>
   );
 };
+
+

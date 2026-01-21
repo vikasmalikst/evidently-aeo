@@ -18,6 +18,7 @@ import {
     IconTarget
 } from '@tabler/icons-react';
 import { SafeLogo } from '../../../components/Onboarding/common/SafeLogo';
+import { ReadinessDial } from './ReadinessDial';
 
 // Map LLM names to their associated domains for logo resolution
 const getLLMDomain = (llmName: string): string | undefined => {
@@ -59,7 +60,7 @@ export const LLMPerformanceSection = ({ data }: { data: any }) => {
                         <tr>
                             <th>LLM</th>
                             <th>Visibility</th>
-                            <th>Avg Position</th>
+                            <th>Brand Presence</th>
                             <th>SOA</th>
                             <th>Sentiment</th>
                         </tr>
@@ -79,7 +80,7 @@ export const LLMPerformanceSection = ({ data }: { data: any }) => {
                                     </div>
                                 </td>
                                 <td>{metrics.visibility?.toFixed(1) || 'N/A'}</td>
-                                <td>{metrics.average_position?.toFixed(1) || 'N/A'}</td>
+                                <td>{metrics.appearance_rate?.toFixed(1) || 'N/A'}%</td>
                                 <td>{metrics.share_of_answer?.toFixed(1) || 'N/A'}%</td>
                                 <td>
                                     <span className={getSentimentClass(metrics.sentiment || 0)}>
@@ -122,7 +123,7 @@ export const CompetitiveLandscapeSection = ({ data }: { data: any }) => {
                         <tr>
                             <th>Competitor</th>
                             <th>Visibility</th>
-                            <th>Avg Position</th>
+                            <th>Brand Presence</th>
                             <th>SOA</th>
                             <th>Sentiment</th>
                         </tr>
@@ -147,7 +148,7 @@ export const CompetitiveLandscapeSection = ({ data }: { data: any }) => {
                                     </div>
                                 </td>
                                 <td>{comp.current?.visibility?.toFixed(1) || '0.0'}</td>
-                                <td>{comp.current?.average_position?.toFixed(1) || 'N/A'}</td>
+                                <td>{comp.current?.appearance_rate?.toFixed(1) || '0.0'}%</td>
                                 <td>{comp.current?.share_of_answer?.toFixed(1) || '0.0'}%</td>
                                 <td>
                                     <span className={getSentimentClass(comp.current?.sentiment || 0)}>
@@ -202,14 +203,11 @@ export const DomainReadinessSection = ({ data }: { data: any }) => {
                 {/* Overall Score */}
                 <div className="executive-overall-score">
                     <div className="executive-score-label">Overall Readiness</div>
-                    <div className="executive-score-value">
-                        {overall_score?.toFixed(0) || 0}
-                        <span className="executive-score-suffix">/100</span>
-                    </div>
-                    <div className={getDeltaClass(score_delta?.percentage || 0)}>
-                        {score_delta?.percentage > 0 ? '↑' : score_delta?.percentage < 0 ? '↓' : ''}
-                        {Math.abs(score_delta?.percentage || 0).toFixed(1)}% vs previous
-                    </div>
+                    <ReadinessDial
+                        score={overall_score || 0}
+                        scoreDelta={score_delta}
+                        size={220}
+                    />
                 </div>
 
                 {/* Sub-scores Table */}
@@ -291,16 +289,24 @@ export const ActionsImpactSection = ({ data }: { data: any }) => {
         { label: 'Implemented', value: recommendations.implemented || 0, icon: <IconTarget className="w-5 h-5 text-blue-500" />, cssClass: 'implemented' },
     ];
 
-    const implementationRate = recommendations.approved > 0
-        ? ((recommendations.implemented / recommendations.approved) * 100)
+    // Calculate cumulative totals for rates since backend returns disjoint snapshot counts
+    const totalApproved = (recommendations.approved || 0) +
+        (recommendations.content_generated || 0) +
+        (recommendations.implemented || 0);
+
+    // Implementation Efficiency: % of approved strategies that are live
+    const implementationRate = totalApproved > 0
+        ? ((recommendations.implemented / totalApproved) * 100)
         : 0;
 
+    // Strategy Approval: % of total generated ideas that got approved
     const strategyApproval = recommendations.generated > 0
-        ? ((recommendations.approved / recommendations.generated) * 100)
+        ? ((totalApproved / recommendations.generated) * 100)
         : 0;
 
-    const contentVelocity = recommendations.approved > 0
-        ? ((recommendations.content_generated / recommendations.approved) * 100)
+    // Content Velocity: % of approved strategies that have moved to content or beyond
+    const contentVelocity = totalApproved > 0
+        ? (((recommendations.content_generated + recommendations.implemented) / totalApproved) * 100)
         : 0;
 
     return (
@@ -390,7 +396,7 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                 {/* Table Header */}
                 <div className="grid grid-cols-[1fr_45px_55px] gap-1.5 px-2 py-1 bg-gray-50 rounded-md mb-2 text-[10px] font-medium text-gray-400 uppercase tracking-wider">
                     <div>Source</div>
-                    <div className="text-center">Impact</div>
+                    <div className="text-center" title="Impact Score (0-100)">Impact</div>
                     <div className="text-right">Change</div>
                 </div>
 
@@ -399,12 +405,18 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                         const val = item.changes?.[metricKey]?.absolute || 0;
                         const isPos = metricKey === 'average_position';
 
-                        // For position: gains are negative deltas, losses are positive deltas
-                        // We want to show ↑ for gains and ↓ for losses
-                        const displayGain = isPos ? val < 0 : val > 0;
-                        const displayVal = isPos ? Math.abs(val) : val;
+                        // For position: gains are negative deltas (rank 5 -> 1), losses are positive deltas
+                        // For others: gains are positive, losses are negative
+                        // We want to color CODE based on "Good/Bad"
+                        const isGood = isPos ? val < 0 : val > 0;
+                        const displayVal = Math.abs(val);
 
                         const impact = item.impact_score || 0;
+
+                        // Impact Badge Color Steps
+                        let impactColor = 'bg-gray-100 text-gray-600 border-gray-200';
+                        if (impact >= 80) impactColor = 'bg-indigo-100 text-indigo-700 border-indigo-200';
+                        else if (impact >= 50) impactColor = 'bg-purple-50 text-purple-700 border-purple-100';
 
                         return (
                             <div
@@ -418,17 +430,17 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                                 </div>
 
                                 <div className="flex justify-center">
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${impactColor}`}>
                                         {impact}
                                     </span>
                                 </div>
 
                                 <div className="flex justify-end">
-                                    <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${displayGain ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                    <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${isGood ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
                                         }`}>
-                                        {displayGain ? '↑' : '↓'}
-                                        {displayVal.toFixed(isPos ? 1 : 1)}
-                                        {(metricKey === 'soa' || metricKey === 'visibility') && '%'}
+                                        {isPos ? (isGood ? '↑' : '↓') : (val > 0 ? '↑' : '↓')}
+                                        {displayVal.toFixed(1)}
+                                        {(metricKey === 'soa' || metricKey === 'visibility' || metricKey === 'appearance_rate') && '%'}
                                     </div>
                                 </div>
                             </div>
@@ -471,31 +483,7 @@ export const TopMoversSection = ({ data }: { data: any }) => {
             </div>
 
             <div className="space-y-12">
-                {/* Search Queries Section */}
-                <div className="relative">
-                    <div className="flex items-center gap-2 mb-6 ml-1">
-                        <div className="w-1.5 h-6 bg-indigo-500 rounded-full"></div>
-                        <h3 className="text-base font-bold text-gray-800 uppercase tracking-widest text-xs">Search Intent & Share</h3>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 scale-[0.99] origin-left">
-                        <MetricCard
-                            title="Share of Answer (Market Share)"
-                            icon={IconSearch}
-                            gains={data.queries?.gains || []}
-                            losses={data.queries?.losses || []}
-                            metricKey="share_of_answer"
-                        />
-                        {data.topics?.gains && data.topics.gains.length > 0 && (
-                            <MetricCard
-                                title="Hot Topics"
-                                icon={IconTarget}
-                                gains={data.topics.gains}
-                                losses={[]} // Topics currently only has gains (top movers)
-                                metricKey="combined_score"
-                            />
-                        )}
-                    </div>
-                </div>
+
 
                 {/* Citation Sources Matrix */}
                 {data.sources && (
@@ -544,11 +532,11 @@ export const TopMoversSection = ({ data }: { data: any }) => {
                                     metricKey="sentiment"
                                 />
                                 <MetricCard
-                                    title="Avg. Position"
+                                    title="Brand Presence"
                                     icon={IconTarget}
-                                    gains={data.sources.position_gains}
-                                    losses={data.sources.position_losses}
-                                    metricKey="average_position"
+                                    gains={data.sources.presence_gains}
+                                    losses={data.sources.presence_losses}
+                                    metricKey="appearance_rate"
                                 />
                             </div>
                         )}

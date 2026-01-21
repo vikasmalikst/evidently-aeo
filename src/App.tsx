@@ -407,6 +407,14 @@ function App() {
           }
         />
         <Route
+          path="/admin/scheduled-tasks"
+          element={
+            <AdminRoute>
+              <ScheduledJobs />
+            </AdminRoute>
+          }
+        />
+        <Route
           path="/admin/data-collection-status"
           element={
             <AdminRoute>

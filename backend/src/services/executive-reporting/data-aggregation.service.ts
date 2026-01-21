@@ -17,6 +17,9 @@ import type {
     TrendDataPoint,
     TopMoverItem,
     CompetitorMetrics,
+    OpportunitiesData,
+    OpportunityItem,
+    TrackOutcomeItem,
 } from './types';
 import { SourceAttributionService } from '../source-attribution.service';
 
@@ -44,6 +47,7 @@ export class DataAggregationService {
             domainReadiness,
             actionsImpact,
             topMovers,
+            opportunities,
         ] = await Promise.all([
             this.aggregateBrandPerformance(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
             this.aggregateLLMPerformance(brandId, periodStart, periodEnd),
@@ -51,6 +55,7 @@ export class DataAggregationService {
             this.aggregateDomainReadiness(brandId, periodStart, periodEnd),
             this.aggregateActionsImpact(brandId, periodStart, periodEnd),
             this.calculateTopMovers(brandId, periodStart, periodEnd, comparisonStart, comparisonEnd),
+            this.aggregateOpportunities(brandId),
         ]);
 
         return {
@@ -60,6 +65,7 @@ export class DataAggregationService {
             domain_readiness: domainReadiness,
             actions_impact: actionsImpact,
             top_movers: topMovers,
+            opportunities: opportunities,
         };
     }
 
@@ -401,6 +407,7 @@ export class DataAggregationService {
             includeSentiment: true,
         });
 
+        const totalQueries = brandResult.data?.length || 0;
         const landscape: any[] = [];
 
         if (brandResult.success && brandResult.data) {
@@ -439,7 +446,12 @@ export class DataAggregationService {
                 ? positionValues.reduce((sum, v) => sum + v, 0) / positionValues.length
                 : 0;
 
-            console.log(`[EXEC-REPORT] Brand aggregated values: vis=${visibility.toFixed(2)}, soa=${shareOfAnswer.toFixed(2)}, sent=${sentiment.toFixed(2)}, avgPos=${averagePosition.toFixed(2)}`);
+            const brandPresenceCount = rows.filter(r => (Number(r.total_brand_mentions) || 0) > 0).length;
+            const brandAppearanceRate = totalQueries > 0 ? (brandPresenceCount / totalQueries) * 100 : 0;
+
+            console.log(`[EXEC-REPORT] Brand presence: count=${brandPresenceCount}, total=${totalQueries}, rate=${brandAppearanceRate.toFixed(2)}%`);
+
+            console.log(`[EXEC-REPORT] Brand aggregated values: vis=${visibility.toFixed(2)}, soa=${shareOfAnswer.toFixed(2)}, sent=${sentiment.toFixed(2)}, avgPos=${averagePosition.toFixed(2)}, pres=${brandAppearanceRate.toFixed(2)}%`);
 
             landscape.push({
                 name: brandName,
@@ -449,11 +461,21 @@ export class DataAggregationService {
                     share_of_answer: Number(shareOfAnswer.toFixed(2)),
                     sentiment: Number(sentiment.toFixed(2)),
                     average_position: Number(averagePosition.toFixed(2)),
-                    appearance_rate: 0
+                    appearance_rate: Number(brandAppearanceRate.toFixed(2))
                 },
                 deltas: {
-                    share_of_answer: { percentage: 0 },
-                    visibility: { percentage: 0 }
+                    share_of_answer: { absolute: 0, percentage: 0 },
+                    visibility: { absolute: 0, percentage: 0 },
+                    appearance_rate: { absolute: 0, percentage: 0 },
+                    average_position: { absolute: 0, percentage: 0 },
+                    sentiment: { absolute: 0, percentage: 0 }
+                },
+                previous: {
+                    visibility: 0,
+                    share_of_answer: 0,
+                    sentiment: 0,
+                    average_position: 0,
+                    appearance_rate: 0
                 },
                 website_url: brandUrl
             });
@@ -499,6 +521,9 @@ export class DataAggregationService {
                             }
                         });
 
+                        const presenceCount = rows.filter(r => (Number(r.competitor_mentions) || 0) > 0).length;
+                        console.log(`🔍 [EXEC-REPORT] ${competitor.competitor_name} presence: count=${presenceCount}, rows=${rows.length}, rate=${rows.length > 0 ? (presenceCount / rows.length * 100).toFixed(2) : 0}%`);
+
                         console.log(`[EXEC-REPORT] ${competitor.competitor_name} data points: vis=${visibilityValues.length}, soa=${shareValues.length}, sent=${sentimentValues.length}, pos=${positionValues.length}`);
 
                         const visibility = visibilityValues.length > 0
@@ -513,8 +538,11 @@ export class DataAggregationService {
                         const averagePosition = positionValues.length > 0
                             ? positionValues.reduce((sum, v) => sum + v, 0) / positionValues.length
                             : 0;
+                        const appearanceRate = totalQueries > 0
+                            ? (presenceCount / totalQueries) * 100
+                            : 0;
 
-                        console.log(`[EXEC-REPORT] ${competitor.competitor_name} aggregated: vis=${visibility.toFixed(2)}, soa=${shareOfAnswer.toFixed(2)}, sent=${sentiment.toFixed(2)}, avgPos=${averagePosition.toFixed(2)}`);
+                        console.log(`[EXEC-REPORT] ${competitor.competitor_name} aggregated: vis=${visibility.toFixed(2)}, soa=${shareOfAnswer.toFixed(2)}, sent=${sentiment.toFixed(2)}, avgPos=${averagePosition.toFixed(2)}, pres=${appearanceRate.toFixed(2)}%`);
 
                         landscape.push({
                             name: competitor.competitor_name,
@@ -524,11 +552,21 @@ export class DataAggregationService {
                                 share_of_answer: Number(shareOfAnswer.toFixed(2)),
                                 sentiment: Number(sentiment.toFixed(2)),
                                 average_position: Number(averagePosition.toFixed(2)),
-                                appearance_rate: 0
+                                appearance_rate: Number(appearanceRate.toFixed(2))
                             },
                             deltas: {
-                                share_of_answer: { percentage: 0 },
-                                visibility: { percentage: 0 }
+                                share_of_answer: { absolute: 0, percentage: 0 },
+                                visibility: { absolute: 0, percentage: 0 },
+                                appearance_rate: { absolute: 0, percentage: 0 },
+                                average_position: { absolute: 0, percentage: 0 },
+                                sentiment: { absolute: 0, percentage: 0 }
+                            },
+                            previous: {
+                                visibility: 0,
+                                share_of_answer: 0,
+                                sentiment: 0,
+                                average_position: 0,
+                                appearance_rate: 0
                             },
                             website_url: competitor.metadata?.domain || competitor.competitor_url || ''
                         });
@@ -681,13 +719,40 @@ export class DataAggregationService {
 
         // Fetch Pipeline: created within period OR active status
         // We fetch all recent recommendations to show the full pipeline state
-        const { data: recommendations, error } = await supabaseAdmin
+        // 1. Get the latest generation ID for this brand to match UI "Latest Run" view
+        const { data: latestGen, error: latestGenError } = await supabaseAdmin
+            .from('recommendations')
+            .select('generation_id, created_at')
+            .eq('brand_id', brandId)
+            .not('generation_id', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (latestGenError) {
+            console.error('❌ [EXEC-REPORT] Error fetching latest generation:', latestGenError);
+        }
+
+        const latestGenerationId = latestGen?.generation_id;
+        console.log(`🔎 [EXEC-REPORT] Latest Generation ID for ${brandId}: ${latestGenerationId}`);
+        if (latestGen) {
+            console.log(`🔎 [EXEC-REPORT] Found generation from: ${latestGen.created_at}`);
+        }
+
+        // 2. Fetch recommendations for the LATEST generation only
+        let query = supabaseAdmin
             .from('recommendations')
             .select('*')
-            .eq('brand_id', brandId)
-            // Limit to max recent recommendations (e.g., last 3 months or just 200 items) to keep report relevant?
-            // For now, fetch all to show complete pipeline history for this brand
-            .order('created_at', { ascending: false });
+            .eq('brand_id', brandId);
+
+        if (latestGenerationId) {
+            query = query.eq('generation_id', latestGenerationId);
+        } else {
+            // Fallback if no generation ID found (shouldn't happen for active brands)
+            query = query.order('created_at', { ascending: false }).limit(50);
+        }
+
+        const { data: recommendations, error } = await query;
 
         if (error) {
             console.error('❌ [EXEC-REPORT] Error fetching recommendations:', error);
@@ -697,37 +762,39 @@ export class DataAggregationService {
         const startIso = periodStart.toISOString();
         const endIso = periodEnd.toISOString();
 
-        // Count statuses
-        // Count statuses based on the reporting period (Activity View)
-        // 1. Generated: Recommendations created in this period
-        const generated = recs.filter(r => r.created_at >= startIso && r.created_at <= endIso).length;
+        // Count statuses based on Current Snapshot (matching Improve page UI tabs)
+        // 1. Generated: Total distinct recommendations generated
+        const generated = recs.length;
 
-        // 2. Pipeline Activity: Count items that MOVED to these states in this period
-        // We use created_at or updated_at as a proxy for when the status changed
-        // This ensures the report shows "Activity in this period" rather than "Total Snapshot"
+        // 2. Pending: Pending review and not moving forward yet
+        const needs_review = recs.filter(r =>
+            (r.review_status === 'pending_review' || !r.review_status) &&
+            !r.is_completed &&
+            !r.is_approved &&
+            !r.is_content_generated
+        ).length;
+
+        // 3. Approved: Approved but waiting for content
         const approved = recs.filter(r =>
             (r.is_approved === true || r.review_status === 'approved') &&
-            (r.updated_at >= startIso && r.updated_at <= endIso)
+            !r.is_content_generated &&
+            !r.is_completed
         ).length;
 
-        const rejected = recs.filter(r =>
-            r.review_status === 'rejected' &&
-            (r.updated_at >= startIso && r.updated_at <= endIso)
-        ).length;
-
-        const needs_review = recs.filter(r =>
-            r.review_status === 'pending_review' &&
-            (r.created_at >= startIso && r.created_at <= endIso) // Pending usually means just created
-        ).length;
-
+        // 4. Content: Content generated but not implemented
         const content_generated = recs.filter(r =>
             r.is_content_generated === true &&
-            (r.updated_at >= startIso && r.updated_at <= endIso)
+            !r.is_completed
         ).length;
 
+        // 5. Implemented: Completed recommendations
         const implemented = recs.filter(r =>
-            r.is_completed === true &&
-            (r.updated_at >= startIso && r.updated_at <= endIso)
+            r.is_completed === true
+        ).length;
+
+        // 6. Rejected: Rejected recommendations
+        const rejected = recs.filter(r =>
+            r.review_status === 'rejected'
         ).length;
 
         // TODO: Calculate average impact from implemented recommendations
@@ -781,6 +848,8 @@ export class DataAggregationService {
                     sentiment_losses: [],
                     position_gains: [],
                     position_losses: [],
+                    presence_gains: [],
+                    presence_losses: [],
                 },
             };
         }
@@ -985,6 +1054,8 @@ export class DataAggregationService {
                 sentiment_losses: [],
                 position_gains: [],
                 position_losses: [],
+                presence_gains: [],
+                presence_losses: [],
             };
         }
 
@@ -1043,6 +1114,10 @@ export class DataAggregationService {
         const sentiment_gains = getMovers('sentiment', 'sentiment', 'sentimentChange', true);
         const sentiment_losses = getMovers('sentiment', 'sentiment', 'sentimentChange', false);
 
+        // Brand Presence (Appearance Rate)
+        const presence_gains = getMovers('appearance_rate', 'appearanceRate', 'appearanceRateChange', true);
+        const presence_losses = getMovers('appearance_rate', 'appearanceRate', 'appearanceRateChange', false);
+
         // Position - Inverted logic: Gain is negative change (rank 5 -> 1 is change of -4)
         const position_gains = sources
             .filter(s => (s.averagePositionChange || 0) < 0) // Improvement
@@ -1091,6 +1166,8 @@ export class DataAggregationService {
             sentiment_losses,
             position_gains,
             position_losses,
+            presence_gains,
+            presence_losses,
         };
     }
 
@@ -1148,18 +1225,24 @@ export class DataAggregationService {
     }
 
     private calculateLLMAvgPosition(results: any[]): number {
-        // TODO: Calculate average position from extracted positions
-        return 0;
+        const positions = results
+            .map(r => Number(r.average_position))
+            .filter(p => !isNaN(p) && p > 0);
+
+        if (positions.length === 0) return 0;
+        return positions.reduce((a, b) => a + b, 0) / positions.length;
     }
 
     private calculateLLMAppearanceRate(results: any[]): number {
-        // TODO: Calculate appearance rate
-        return 0;
+        if (!results || results.length === 0) return 0;
+        const presenceCount = results.filter(r => (Number(r.total_brand_mentions) || 0) > 0).length;
+        return (presenceCount / results.length) * 100;
     }
 
     private calculateLLMSOA(results: any[]): number {
-        // TODO: Calculate share of answer
-        return 0;
+        if (!results || results.length === 0) return 0;
+        const soaSum = results.reduce((sum, r) => sum + (Number(r.share_of_answer) || 0), 0);
+        return soaSum / results.length;
     }
 
     /**
@@ -1178,6 +1261,100 @@ export class DataAggregationService {
             appearance_rate: 0,
             share_of_answer: 0,
             sentiment: 0,
+        };
+    }
+
+    /**
+     * Aggregate opportunities (Discover, To-Do, Refine, Track)
+     */
+    async aggregateOpportunities(brandId: string): Promise<OpportunitiesData> {
+        console.log(`💡 [EXEC-REPORT] Aggregating opportunities for ${brandId}`);
+
+        // 1. Get the latest generation ID for this brand
+        const { data: latestGen } = await supabaseAdmin
+            .from('recommendations')
+            .select('generation_id, customer_id')
+            .eq('brand_id', brandId)
+            .not('generation_id', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (!latestGen?.generation_id) {
+            console.warn(`⚠️ [EXEC-REPORT] No recommendations found for brand ${brandId}`);
+            return {
+                discover: [],
+                todo: [],
+                refine: [],
+                track: [],
+            };
+        }
+
+        const { generation_id: generationId, customer_id: customerId } = latestGen;
+
+        // 2. Fetch ALL recommendations for this generation
+        const { data: recommendations, error } = await supabaseAdmin
+            .from('recommendations')
+            .select('*')
+            .eq('generation_id', generationId)
+            .eq('customer_id', customerId)
+            .order('display_order', { ascending: true });
+
+        if (error || !recommendations) {
+            console.error('❌ [EXEC-REPORT] Error fetching recommendations:', error);
+            return {
+                discover: [],
+                todo: [],
+                refine: [],
+                track: [],
+            };
+        }
+
+        // 3. Map to internal types and filter by step
+        const discover: OpportunityItem[] = [];
+        const todo: OpportunityItem[] = [];
+        const refine: OpportunityItem[] = [];
+        const track: TrackOutcomeItem[] = [];
+
+        recommendations.forEach(rec => {
+            const item: OpportunityItem = {
+                id: rec.id,
+                action: rec.action,
+                citationSource: rec.citation_source || 'N/A',
+                focusArea: rec.focus_area || 'N/A',
+                priority: rec.priority || 'Medium',
+                effort: rec.effort || 'Medium',
+            };
+
+            // Mapping logic based on RecommendationV3 workflow steps
+            if (rec.is_completed) {
+                if (rec.review_status === 'approved') {
+                    track.push({
+                        ...item,
+                        visibility_baseline: rec.visibility_score ? parseFloat(rec.visibility_score) : null,
+                        visibility_current: null, // Will be handled in frontend or fetched separately if needed
+                        soa_baseline: rec.soa ? parseFloat(rec.soa) : null,
+                        soa_current: null,
+                        sentiment_baseline: rec.sentiment ? parseFloat(rec.sentiment) : null,
+                        sentiment_current: null,
+                        completed_at: rec.completed_at,
+                    });
+                }
+            } else if (rec.is_content_generated) {
+                refine.push(item);
+            } else if (rec.is_approved) {
+                todo.push(item);
+            } else if (rec.review_status !== 'rejected') {
+                // If not approved/generated/completed and not rejected, it's a new discovery
+                discover.push(item);
+            }
+        });
+
+        return {
+            discover,
+            todo,
+            refine,
+            track,
         };
     }
 }

@@ -1,5 +1,6 @@
-import { Link } from 'react-router-dom';
+
 import { ChevronUp, ChevronDown } from 'lucide-react';
+import { HelpButton } from '../../../components/common/HelpButton';
 import type { MetricCardProps } from '../types';
 import { InfoTooltip } from './InfoTooltip';
 
@@ -13,7 +14,8 @@ export const MetricCard = ({
   linkTo,
   description,
   comparisons = [],
-  comparisonSuffix = ''
+  comparisonSuffix = '',
+  onHelpClick
 }: MetricCardProps) => {
   const hasComparisons = comparisons.length > 0;
   const maxComparisonValue = hasComparisons
@@ -21,7 +23,18 @@ export const MetricCard = ({
     : 0;
 
   return (
-    <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 flex flex-col">
+    <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-5 flex flex-col relative group/card">
+      {onHelpClick && (
+        <HelpButton
+          onClick={(e) => {
+            e?.stopPropagation();
+            onHelpClick();
+          }}
+          className="!absolute top-3 right-3 z-10 opacity-0 group-hover/card:opacity-100 focus:opacity-100"
+          label="Learn more about this KPI"
+          size={18}
+        />
+      )}
       <div className="flex items-center gap-2 mb-3">
         <div
           className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -38,9 +51,8 @@ export const MetricCard = ({
         <div className="text-[28px] font-bold text-[#1a1d29] leading-none">{value}</div>
         {trend.direction !== 'stable' && (
           <div
-            className={`flex items-center gap-0.5 text-[11px] font-semibold pb-1 ${
-              trend.direction === 'up' ? 'text-[#06c686]' : 'text-[#f94343]'
-            }`}
+            className={`flex items-center gap-0.5 text-[11px] font-semibold pb-1 ${trend.direction === 'up' ? 'text-[#06c686]' : 'text-[#f94343]'
+              }`}
           >
             {trend.direction === 'up' ? (
               <ChevronUp size={12} strokeWidth={2.5} />
@@ -93,11 +105,7 @@ export const MetricCard = ({
         </div>
       )}
 
-      <div className="mt-4 pt-3 border-t border-[#e8e9ed]">
-        <Link to={linkTo} className="text-[12px] text-[#64748b] hover:text-[#00bcdc] transition-colors">
-          See analysis →
-        </Link>
-      </div>
+
     </div>
   );
 };

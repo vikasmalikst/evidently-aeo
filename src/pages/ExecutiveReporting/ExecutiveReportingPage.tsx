@@ -16,6 +16,7 @@ import { LLMPerformanceSection } from './components/LLMPerformanceSection';
 import { CompetitiveLandscapeSection } from './components/CompetitiveLandscapeSection';
 import { DomainReadinessSection } from './components/DomainReadinessSection';
 import { ActionsImpactSection } from './components/ActionsImpactSection';
+import { OpportunitiesSection } from './components/OpportunitiesSection';
 import { TopMoversSection } from './components/TopMoversSection';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { ReportGenerationModal } from './components/ReportGenerationModal';
@@ -290,6 +291,7 @@ export const ExecutiveReportingPage = () => {
                                     <CompetitiveLandscapeSection data={report.data_snapshot.competitive_landscape} />
                                     <DomainReadinessSection data={report.data_snapshot.domain_readiness} />
                                     <ActionsImpactSection data={report.data_snapshot.actions_impact} />
+                                    <OpportunitiesSection data={report.data_snapshot.opportunities} />
                                     <TopMoversSection data={report.data_snapshot.top_movers} />
                                 </div >
                             </div >

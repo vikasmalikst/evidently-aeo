@@ -8,6 +8,7 @@
 import { supabase } from '../../config/supabase';
 import { dataAggregationService } from './data-aggregation.service';
 import { executiveSummaryService } from './executive-summary.service';
+import { sourceAttributionCacheService } from '../source-attribution-cache.service';
 import type { ExecutiveReport, GenerateReportRequest, ReportDataSnapshot } from './types';
 
 export class ReportOrchestrationService {
@@ -16,6 +17,18 @@ export class ReportOrchestrationService {
      */
     async generateReport(request: GenerateReportRequest, userId: string): Promise<ExecutiveReport> {
         console.log(`📊 [REPORT-ORCH] Generating report for brand ${request.brand_id}`);
+
+        // Fetch brand to get customer_id for cache invalidation
+        const { data: brand } = await supabase
+            .from('brands')
+            .select('customer_id')
+            .eq('id', request.brand_id)
+            .single();
+
+        if (brand && brand.customer_id) {
+            console.log(`🧹 [REPORT-ORCH] Invalidating source attribution cache for brand ${request.brand_id}`);
+            await sourceAttributionCacheService.invalidateCache(request.brand_id, brand.customer_id);
+        }
 
         // Calculate date ranges
         const { periodStart, periodEnd, comparisonStart, comparisonEnd } = this.calculateDateRanges(

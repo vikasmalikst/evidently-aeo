@@ -194,6 +194,7 @@ export interface MetricCardProps {
   description?: string;
   comparisons?: Array<{ label: string; value: number; isBrand?: boolean }>;
   comparisonSuffix?: string;
+  onHelpClick?: () => void;
 }
 
 export interface ActionCardProps {

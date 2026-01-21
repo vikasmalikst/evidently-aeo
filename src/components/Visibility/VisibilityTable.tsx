@@ -2,7 +2,7 @@ import React, { useState, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { getLLMIcon } from './LLMIcons';
-import { BrandIcon } from './BrandIcon';
+import { SafeLogo } from '../Onboarding/common/SafeLogo';
 
 interface Model {
   id: string;
@@ -23,6 +23,8 @@ interface Model {
     mentions: number;
   }>;
   isBrand?: boolean;
+  logo?: string;
+  domain?: string;
 }
 
 interface VisibilityTableProps {
@@ -77,6 +79,63 @@ export const VisibilityTable = memo(({
     setExpandedRow(expandedRow === modelId ? null : modelId);
   };
 
+  // Heatmap Logic
+  const metricRanges = React.useMemo(() => {
+    const getRange = (values: (number | null | undefined)[]) => {
+      const valid = values.filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
+      if (!valid.length) return { min: 0, max: 0 };
+      return { min: Math.min(...valid), max: Math.max(...valid) };
+    };
+
+    return {
+      score: getRange(models.map(m => m.score)),
+      shareOfSearch: getRange(models.map(m => m.shareOfSearch)),
+      brandPresence: getRange(models.map(m => m.brandPresencePercentage)),
+      sentiment: getRange(models.map(m => m.sentiment))
+    };
+  }, [models]);
+
+  const heatmapStyle = (metric: keyof typeof metricRanges, value: number | null | undefined) => {
+    if (value === null || value === undefined) return { style: {} };
+
+    const range = metricRanges[metric];
+    const span = range.max - range.min;
+    // If span is 0 (all values same), treat as middle/high based on value? 
+    // Or just default to a neutral color. Let's use 0.5 ratio if span is 0.
+    const ratio = span > 0 ? Math.min(1, Math.max(0, (value - range.min) / span)) : (value > 0 ? 1 : 0);
+
+    // Smooth gradient: low = soft red, mid = warm yellow, high = gentle green
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+    const colorHsl = (() => {
+      if (ratio < 0.5) {
+        const t = ratio * 2;
+        const h = lerp(8, 45, t); // red -> yellow hue
+        const s = lerp(78, 90, t);
+        const l = lerp(92, 88, t);
+        return `hsl(${h} ${s}% ${l}%)`;
+      }
+      const t = (ratio - 0.5) * 2;
+      const h = lerp(45, 120, t); // yellow -> green hue
+      const s = lerp(90, 55, t);
+      const l = lerp(88, 82, t);
+      return `hsl(${h} ${s}% ${l}%)`;
+    })();
+
+    return {
+      style: {
+        backgroundColor: colorHsl,
+        borderRadius: 6, // Slightly smaller radius for table cells
+        padding: '4px 8px', // Add some internal padding for pill look
+        boxShadow: 'inset 0 0 0 1px rgba(15,23,42,0.04)',
+        width: 'fit-content',
+        minWidth: '60px',
+        textAlign: 'center' as const,
+        display: 'inline-block'
+      },
+      textColor: '#0f172a'
+    };
+  };
+
   return (
     <div className="w-full h-full flex flex-col overflow-hidden border border-[var(--border-default)] rounded-b-lg">
       <div className="overflow-auto flex-1">
@@ -111,8 +170,16 @@ export const VisibilityTable = memo(({
                   </span>
                 </div>
               </th>
-              <th className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] min-w-[150px] whitespace-nowrap">
-                Brand Presence
+              <th
+                className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px] whitespace-nowrap"
+                onClick={() => handleSort('brandPresencePercentage')}
+              >
+                <div className="flex items-center gap-2">
+                  Brand Presence
+                  <span className="text-xs text-[var(--text-caption)] min-w-[12px]">
+                    {sortConfig.key === 'brandPresencePercentage' && (sortConfig.direction === 'desc' ? '↓' : '↑')}
+                  </span>
+                </div>
               </th>
               <th
                 className="px-4 py-3 bg-[var(--bg-secondary)] text-[var(--text-body)] font-semibold text-left border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--table-row-hover-bg)] transition-colors min-w-[150px] whitespace-nowrap"
@@ -137,12 +204,16 @@ export const VisibilityTable = memo(({
               const isUp = hasChange && (model.change ?? 0) > 0;
               const expanded = expandedRow === model.id;
 
+              const scoreStyle = heatmapStyle('score', model.score);
+              const shareStyle = heatmapStyle('shareOfSearch', model.shareOfSearch);
+              const brandPresenceStyle = heatmapStyle('brandPresence', model.brandPresencePercentage);
+              const sentimentStyle = heatmapStyle('sentiment', model.sentiment);
+
               return (
                 <React.Fragment key={model.id}>
                   <tr
-                    className={`transition-colors cursor-pointer ${
-                      model.isBrand ? 'bg-[#f0f9ff] hover:bg-[#e0f2fe]' : ''
-                    }`}
+                    className={`transition-colors cursor-pointer ${model.isBrand ? 'bg-[#f0f9ff] hover:bg-[#e0f2fe]' : ''
+                      }`}
                     onClick={() => handleRowClick(model.id)}
                   >
                     <td className="px-3 py-3 border-b border-[var(--border-default)] text-center whitespace-nowrap">
@@ -156,7 +227,15 @@ export const VisibilityTable = memo(({
                     <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <div className="flex items-center gap-3">
                         {activeTab === 'brand' ? getLLMIcon(model.name) : (
-                          <BrandIcon brandName={model.name} />
+                          <div className="flex-shrink-0 w-6 h-6">
+                            <SafeLogo
+                              src={model.logo}
+                              domain={model.domain}
+                              alt={model.name}
+                              size={24}
+                              className="w-6 h-6 rounded object-contain"
+                            />
+                          </div>
                         )}
                         <span className={`text-[var(--text-body)] font-semibold ${model.isBrand ? 'text-[#0d7c96]' : ''}`}>
                           {model.name}
@@ -166,46 +245,68 @@ export const VisibilityTable = memo(({
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-[var(--text-body)]">
+                        <div
+                          className="text-sm font-semibold whitespace-nowrap flex items-center gap-2"
+                          style={{
+                            color: scoreStyle.textColor,
+                            ...scoreStyle.style
+                          }}
+                        >
                           {model.score}
-                        </span>
-                        {hasChange && (
-                          <span
-                            className={`inline-flex items-center gap-0.5 font-semibold text-xs ${
-                              isUp ? 'text-[var(--status-up)]' : 'text-[var(--status-down)]'
-                            }`}
-                          >
-                            {isUp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            {Math.abs(model.change ?? 0)} pts
-                          </span>
-                        )}
+                          {hasChange && (
+                            <span
+                              className={`inline-flex items-center gap-0.5 font-semibold text-xs ml-1 ${isUp ? 'text-[var(--status-up)]' : 'text-[var(--status-down)]'
+                                }`}
+                            >
+                              {isUp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              {Math.abs(model.change ?? 0)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-[var(--text-body)]">
+                        <div
+                          className="text-sm font-semibold whitespace-nowrap flex items-center gap-2"
+                          style={{
+                            color: shareStyle.textColor,
+                            ...shareStyle.style
+                          }}
+                        >
                           {model.shareOfSearch}%
-                        </span>
-                        {model.shareOfSearchChange !== undefined && model.shareOfSearchChange !== 0 && (
-                          <span
-                            className={`inline-flex items-center gap-0.5 font-semibold text-xs ${
-                              model.shareOfSearchChange > 0 ? 'text-[var(--status-up)]' : 'text-[var(--status-down)]'
-                            }`}
-                          >
-                            {model.shareOfSearchChange > 0 ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            {Math.abs(model.shareOfSearchChange)}%
-                          </span>
-                        )}
+                          {model.shareOfSearchChange !== undefined && model.shareOfSearchChange !== 0 && (
+                            <span
+                              className={`inline-flex items-center gap-0.5 font-semibold text-xs ml-1 ${model.shareOfSearchChange > 0 ? 'text-[var(--status-up)]' : 'text-[var(--status-down)]'
+                                }`}
+                            >
+                              {model.shareOfSearchChange > 0 ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              {Math.abs(model.shareOfSearchChange)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
-                      <span className="text-sm font-semibold text-[var(--text-body)]">
+                      <span
+                        className="text-sm font-semibold text-[var(--text-body)]"
+                        style={{
+                          color: brandPresenceStyle.textColor,
+                          ...brandPresenceStyle.style
+                        }}
+                      >
                         {model.brandPresencePercentage > 0 ? `${model.brandPresencePercentage}%` : '—'}
                       </span>
                     </td>
                     <td className="px-4 py-3 border-b border-[var(--border-default)] whitespace-nowrap">
                       {model.sentiment !== null && model.sentiment !== undefined ? (
-                        <span className="text-sm font-semibold text-[var(--text-body)]">
+                        <span
+                          className="text-sm font-semibold text-[var(--text-body)]"
+                          style={{
+                            color: sentimentStyle.textColor,
+                            ...sentimentStyle.style
+                          }}
+                        >
                           {model.sentiment.toFixed(1).replace(/\.0$/, '')}
                         </span>
                       ) : (
@@ -264,13 +365,12 @@ export const VisibilityTable = memo(({
                             <p className="text-sm text-[var(--text-body)]">
                               Visibility change:{' '}
                               <span
-                                className={`font-semibold ${
-                                  model.change && model.change > 0
-                                    ? 'text-[var(--status-up)]'
-                                    : model.change && model.change < 0
-                                      ? 'text-[var(--status-down)]'
-                                      : ''
-                                }`}
+                                className={`font-semibold ${model.change && model.change > 0
+                                  ? 'text-[var(--status-up)]'
+                                  : model.change && model.change < 0
+                                    ? 'text-[var(--status-down)]'
+                                    : ''
+                                  }`}
                               >
                                 {model.change ? `${model.change > 0 ? '+' : ''}${model.change} pts` : 'Stable'}
                               </span>
@@ -278,13 +378,12 @@ export const VisibilityTable = memo(({
                             <p className="text-sm text-[var(--text-body)] mt-1">
                               {activeTab === 'competitive' ? 'Share of Answers' : 'Share of Answers'} change:{' '}
                               <span
-                                className={`font-semibold ${
-                                  model.shareOfSearchChange && model.shareOfSearchChange > 0
-                                    ? 'text-[var(--status-up)]'
-                                    : model.shareOfSearchChange && model.shareOfSearchChange < 0
-                                      ? 'text-[var(--status-down)]'
-                                      : ''
-                                }`}
+                                className={`font-semibold ${model.shareOfSearchChange && model.shareOfSearchChange > 0
+                                  ? 'text-[var(--status-up)]'
+                                  : model.shareOfSearchChange && model.shareOfSearchChange < 0
+                                    ? 'text-[var(--status-down)]'
+                                    : ''
+                                  }`}
                               >
                                 {model.shareOfSearchChange
                                   ? `${model.shareOfSearchChange > 0 ? '+' : ''}${model.shareOfSearchChange}%`

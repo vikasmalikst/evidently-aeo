@@ -124,7 +124,7 @@ export class PdfExportService {
           <div class="metrics-grid">
             ${this.renderMetricCard('Visibility Score', brandPerf.current.visibility, brandPerf.deltas.visibility)}
             ${this.renderMetricCard('Share of Answer', brandPerf.current.share_of_answer, brandPerf.deltas.share_of_answer, '%')}
-            ${this.renderMetricCard('Avg Position', brandPerf.current.average_position, brandPerf.deltas.average_position)}
+            ${this.renderMetricCard('Brand Presence', brandPerf.current.appearance_rate, brandPerf.deltas.appearance_rate, '%')}
             ${this.renderMetricCard('Sentiment Score', brandPerf.current.sentiment, brandPerf.deltas.sentiment)}
           </div>
 
@@ -141,7 +141,7 @@ export class PdfExportService {
             <tbody>
               ${this.renderComparisonRow('Visibility', brandPerf.current.visibility, brandPerf.previous.visibility, brandPerf.deltas.visibility)}
               ${this.renderComparisonRow('Share of Answer', brandPerf.current.share_of_answer, brandPerf.previous.share_of_answer, brandPerf.deltas.share_of_answer, '%')}
-              ${this.renderComparisonRow('Avg Position', brandPerf.current.average_position, brandPerf.previous.average_position, brandPerf.deltas.average_position)}
+              ${this.renderComparisonRow('Brand Presence', brandPerf.current.appearance_rate, brandPerf.previous.appearance_rate, brandPerf.deltas.appearance_rate, '%')}
               ${this.renderComparisonRow('Sentiment', brandPerf.current.sentiment, brandPerf.previous.sentiment, brandPerf.deltas.sentiment)}
             </tbody>
           </table>
@@ -158,6 +158,9 @@ export class PdfExportService {
 
         <!-- Actions & Impact -->
         ${this.renderActionsImpact(data_snapshot.actions_impact)}
+        
+        <!-- Strategic Growth Opportunities -->
+        ${this.renderOpportunities(data_snapshot.opportunities)}
 
         <!-- Top Movers -->
         ${this.renderTopMovers(data_snapshot.top_movers)}
@@ -319,6 +322,40 @@ export class PdfExportService {
           page-break-before: always;
         }
       }
+
+      .opportunity-section {
+        margin-bottom: 40px;
+      }
+
+      .opportunity-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+        font-size: 11px;
+      }
+
+      .opportunity-table th, .opportunity-table td {
+        border: 1px solid #e2e8f0;
+        padding: 8px;
+        text-align: left;
+      }
+
+      .opportunity-table th {
+        background: #f1f5f9;
+        font-weight: bold;
+      }
+
+      .priority-badge {
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        font-size: 9px;
+        font-weight: bold;
+      }
+
+      .priority-high { background: #fee2e2; color: #b91c1c; }
+      .priority-medium { background: #fef3c7; color: #b45309; }
+      .priority-low { background: #dcfce7; color: #15803d; }
     `;
   }
 
@@ -393,7 +430,7 @@ export class PdfExportService {
         <tr>
           <td>${llmName}</td>
           <td>${metrics.visibility?.toFixed(1) || 'N/A'}</td>
-          <td>${metrics.average_position?.toFixed(1) || 'N/A'}</td>
+          <td>${metrics.appearance_rate?.toFixed(1) || 'N/A'}%</td>
           <td>${metrics.share_of_answer?.toFixed(1) || 'N/A'}%</td>
         </tr>
       `)
@@ -407,7 +444,7 @@ export class PdfExportService {
             <tr>
               <th>LLM</th>
               <th>Visibility</th>
-              <th>Avg Position</th>
+              <th>Brand Presence</th>
               <th>Share of Answer</th>
             </tr>
           </thead>
@@ -427,19 +464,6 @@ export class PdfExportService {
       return '';
     }
 
-    const compRows = competitive.competitors
-      .map((comp: any) => `
-        <tr>
-          <td>${comp.name}</td>
-          <td>${comp.current.visibility?.toFixed(1) || 'N/A'}</td>
-          <td>${comp.current.share_of_answer?.toFixed(1) || 'N/A'}%</td>
-          <td class="metric-change ${comp.deltas.share_of_answer.percentage > 0 ? 'negative' : 'positive'}">
-            ${comp.deltas.share_of_answer.percentage > 0 ? '+' : ''}${comp.deltas.share_of_answer.percentage.toFixed(1)}%
-          </td>
-        </tr>
-      `)
-      .join('');
-
     return `
       <div class="page">
         <h2>Competitive Landscape</h2>
@@ -449,17 +473,29 @@ export class PdfExportService {
               <th>Competitor</th>
               <th>Visibility</th>
               <th>SOA</th>
+              <th>Brand Presence</th>
               <th>SOA Change</th>
             </tr>
           </thead>
           <tbody>
-            ${compRows}
+            ${competitive.competitors
+        .map((comp: any) => `
+                <tr>
+                  <td>${comp.name}</td>
+                  <td>${comp.current.visibility?.toFixed(1) || 'N/A'}</td>
+                  <td>${comp.current.share_of_answer?.toFixed(1) || 'N/A'}%</td>
+                  <td>${comp.current.appearance_rate?.toFixed(1) || '0.0'}%</td>
+                  <td class="metric-change ${comp.deltas.share_of_answer.percentage > 0 ? 'negative' : 'positive'}">
+                    ${comp.deltas.share_of_answer.percentage > 0 ? '+' : ''}${comp.deltas.share_of_answer.percentage.toFixed(1)}%
+                  </td>
+                </tr>
+              `)
+        .join('')}
           </tbody>
         </table>
       </div>
     `;
   }
-
   /**
    * Render domain readiness section
    */
@@ -480,8 +516,8 @@ export class PdfExportService {
             `
         : ''
       }
-      </div>
-    `;
+</div>
+  `;
   }
 
   /**
@@ -500,6 +536,73 @@ export class PdfExportService {
           ${this.renderMetricCard('Content Generated', recs.content_generated || 0, { absolute: 0, percentage: 0 })}
           ${this.renderMetricCard('Actions Implemented', recs.implemented || 0, { absolute: 0, percentage: 0 })}
         </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render Strategic Growth Opportunities section
+   */
+  private renderOpportunities(opportunities: any): string {
+    if (!opportunities) return '';
+
+    const renderTable = (title: string, items: any[], columns: { label: string, key: string }[], showMetrics: boolean = false) => {
+      if (!items || items.length === 0) return '';
+
+      const headerRow = columns.map(col => `<th>${col.label}</th>`).join('');
+      const bodyRows = items.map(item => {
+        const cells = columns.map(col => {
+          let val = item[col.key];
+          if (col.key === 'priority') {
+            const cls = `priority-${val.toLowerCase()}`;
+            return `<td><span class="priority-badge ${cls}">${val}</span></td>`;
+          }
+          if (typeof val === 'number') val = val.toFixed(1);
+          return `<td>${val || '—'}</td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
+
+      return `
+        <div class="opportunity-section">
+          <h3>${title}</h3>
+          <table class="opportunity-table">
+            <thead>
+              <tr>${headerRow}</tr>
+            </thead>
+            <tbody>
+              ${bodyRows}
+            </tbody>
+          </table>
+        </div>
+      `;
+    };
+
+    const standardCols = [
+      { label: 'Action', key: 'action' },
+      { label: 'Source', key: 'citationSource' },
+      { label: 'Focus', key: 'focusArea' },
+      { label: 'Priority', key: 'priority' },
+      { label: 'Effort', key: 'effort' }
+    ];
+
+    const trackCols = [
+      { label: 'Action', key: 'action' },
+      { label: 'Source', key: 'citationSource' },
+      { label: 'Baseline Visibility', key: 'visibility_baseline' },
+      { label: 'Baseline SOA%', key: 'soa_baseline' },
+      { label: 'Completed', key: 'completed_at' }
+    ];
+
+    return `
+      <div class="page">
+        <h2>Strategic Growth Opportunities</h2>
+        <p style="margin-bottom: 20px; color: #64748b; font-size: 13px;">AI-powered recommendations mapped across the implementation lifecycle.</p>
+        
+        ${renderTable('Discover Opportunities', opportunities.discover, standardCols)}
+        ${renderTable('To-Do List (Approved)', opportunities.todo, standardCols)}
+        ${renderTable('Review & Refine', opportunities.refine, standardCols)}
+        ${renderTable('Track Outcomes (Completed)', opportunities.track, trackCols, true)}
       </div>
     `;
   }

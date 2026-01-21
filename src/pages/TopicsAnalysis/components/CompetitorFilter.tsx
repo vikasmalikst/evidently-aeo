@@ -19,7 +19,7 @@ export const CompetitorFilter = ({
   isLoading = false,
 }: CompetitorFilterProps) => {
   // Check if all competitors are selected (same logic as LLM filter - when all are selected, "All" button is active)
-  const allSelected = competitors.length > 0 && 
+  const allSelected = competitors.length > 0 &&
     selectedCompetitors.size === competitors.length &&
     competitors.every(c => selectedCompetitors.has(c.name.toLowerCase()));
 
@@ -36,14 +36,21 @@ export const CompetitorFilter = ({
         type="button"
         onClick={onSelectAll}
         disabled={isLoading}
-        className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${
-          allSelected
-            ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
-            : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-        } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-        title="Select all competitors"
+        className={`group flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all relative ${allSelected
+          ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
+          : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
+          } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+        aria-label="Select all competitors"
       >
         All
+
+        {/* Custom Tooltip */}
+        {!isLoading && (
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-[#1a1d29] text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-[100] translate-y-1 group-hover:translate-y-0">
+            Select all competitors
+            <div className="absolute top-full left-1/2 -translate-x-1/2 border-[4px] border-transparent border-t-[#1a1d29]" />
+          </div>
+        )}
       </button>
 
       {/* Individual competitor toggle buttons - show even when loading */}
@@ -56,17 +63,23 @@ export const CompetitorFilter = ({
             type="button"
             onClick={() => onCompetitorToggle(competitor.name)}
             disabled={isLoading}
-            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all relative ${
-              isSelected
-                ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
-                : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            title={competitor.name}
+            className={`group flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all relative ${isSelected
+              ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
+              : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             aria-label={`Filter by ${competitor.name}`}
           >
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
               <BrandIcon brandName={competitor.name} size={24} />
             </span>
+
+            {/* Custom Tooltip */}
+            {!isLoading && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-[#1a1d29] text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-[100] translate-y-1 group-hover:translate-y-0">
+                {competitor.name}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-[4px] border-transparent border-t-[#1a1d29]" />
+              </div>
+            )}
           </button>
         );
       }) : null}

@@ -160,7 +160,8 @@ export interface BrandProductsPreviewResponse {
 export async function fetchBrandProductsPreview(params: {
   brand_name: string;
   industry?: string;
-  competitors: Array<string | { name: string }>;
+  competitors: Array<string | { name: string; url?: string }>;
+  website_url?: string;
 }): Promise<BrandProductsPreviewResponse> {
   return apiClient.request<BrandProductsPreviewResponse>(
     '/onboarding/brand-products/preview',
@@ -170,6 +171,7 @@ export async function fetchBrandProductsPreview(params: {
         brand_name: params.brand_name,
         industry: params.industry,
         competitors: params.competitors,
+        website_url: params.website_url,
       }),
     },
     { requiresAuth: true, timeout: 120000 }

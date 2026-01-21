@@ -14,13 +14,20 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../../components/Layout/Layout';
+import { HelpButton } from '../../components/common/HelpButton';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import {
   MessageSquare,
   Activity,
   Target,
-  Eye
+  Eye,
+  Search,
+  Filter,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Info as InfoIcon
 } from 'lucide-react';
 import { useDashboardData } from '../dashboard/hooks/useDashboardData';
 import { useOnboardingOrchestrator } from '../../hooks/useOnboardingOrchestrator';
@@ -42,6 +49,7 @@ import { getLLMIcon } from '../../components/Visibility/LLMIcons';
 import '../../styles/visibility.css';
 import { formatDateLabel } from '../../utils/dateFormatting';
 import { AnalyzePrefetcher } from './AnalyzePrefetcher';
+import { EducationalContentDrawer, KpiType as DrawerKpiType } from '../../components/EducationalDrawer/EducationalContentDrawer';
 
 type MetricType = 'visibility' | 'share' | 'brandPresence' | 'sentiment';
 
@@ -213,6 +221,15 @@ export const MeasurePage = () => {
   const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
   const kpiSectionRef = useRef<HTMLDivElement | null>(null);
+
+  // Educational Drawer State
+  const [isHelpDrawerOpen, setIsHelpDrawerOpen] = useState(false);
+  const [helpKpi, setHelpKpi] = useState<DrawerKpiType | null>(null);
+
+  const handleHelpClick = useCallback((kpi: DrawerKpiType) => {
+    setHelpKpi(kpi);
+    setIsHelpDrawerOpen(true);
+  }, []);
 
   // Date range state
   // const defaultDateRange = getDefaultDateRange(); // Removed local default
@@ -624,7 +641,8 @@ export const MeasurePage = () => {
           comparisons: buildComparisons('visibility'),
           comparisonSuffix: comparisonSuffix.visibility,
           description: 'How prominent is your brand in LLM answers.(based on number of appearances and positions)',
-          isActive: selectedKpi === 'visibility'
+          isActive: selectedKpi === 'visibility',
+          onHelpClick: () => handleHelpClick('visibility')
         },
         {
           key: 'share',
@@ -638,7 +656,8 @@ export const MeasurePage = () => {
           comparisons: buildComparisons('share'),
           comparisonSuffix: comparisonSuffix.share,
           description: '% of time you brand appeaars compared to your defined competitors. ',
-          isActive: selectedKpi === 'share'
+          isActive: selectedKpi === 'share',
+          onHelpClick: () => handleHelpClick('share')
         },
         {
           key: 'sentiment',
@@ -652,7 +671,8 @@ export const MeasurePage = () => {
           comparisons: buildComparisons('sentiment'),
           comparisonSuffix: comparisonSuffix.sentiment,
           description: 'Tone of the answers cited by LLMs from Brand\'s perspective (scaled 1-100)',
-          isActive: selectedKpi === 'sentiment'
+          isActive: selectedKpi === 'sentiment',
+          onHelpClick: () => handleHelpClick('sentiment')
         },
         {
           key: 'brandPresence',
@@ -666,7 +686,8 @@ export const MeasurePage = () => {
           comparisons: buildComparisons('brandPresence'),
           comparisonSuffix: comparisonSuffix.brandPresence,
           description: '% of Answers that mention your brand\'s name in the answers.',
-          isActive: selectedKpi === 'brandPresence'
+          isActive: selectedKpi === 'brandPresence',
+          onHelpClick: () => handleHelpClick('brandPresence')
         }
       ];
     },
@@ -678,7 +699,9 @@ export const MeasurePage = () => {
       dashboardData?.trendPercentage,
       competitorEntries,
       brandLabel,
-      selectedKpi
+      brandLabel,
+      selectedKpi,
+      handleHelpClick
     ]
   );
 
@@ -899,6 +922,12 @@ export const MeasurePage = () => {
                 {/* KPI Toggle */}
                 <div className="flex items-start justify-between gap-4">
                   <KpiToggle metricType={metricType} onChange={handleKpiSelect} />
+                  <HelpButton
+                    onClick={() => handleHelpClick('trend-analysis')}
+                    label="How to read this chart"
+                    size={20}
+                    className="flex-shrink-0"
+                  />
                 </div>
 
               </div>
@@ -936,6 +965,14 @@ export const MeasurePage = () => {
 
           {/* Table Section */}
           <div className="flex flex-col flex-1 bg-white rounded-lg overflow-hidden shadow-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white">
+              <h3 className="font-semibold text-gray-900">Detailed Breakdown</h3>
+              <HelpButton
+                onClick={() => handleHelpClick('table-guide')}
+                label="How to use this table"
+                size={20}
+              />
+            </div>
             {combinedLoading ? (
               <EmptyState message="Loading visibility data…" />
             ) : currentModels.length === 0 ? (
@@ -953,6 +990,12 @@ export const MeasurePage = () => {
         </div>
       </div>
       {selectedBrandId && <AnalyzePrefetcher brandId={selectedBrandId} />}
+
+      <EducationalContentDrawer
+        isOpen={isHelpDrawerOpen}
+        onClose={() => setIsHelpDrawerOpen(false)}
+        kpiType={helpKpi}
+      />
     </Layout>
   );
 };

@@ -25,6 +25,33 @@ export interface ReportDataSnapshot {
     traffic_attribution?: TrafficAttributionData; // Optional if GA not connected
     actions_impact: ActionsImpactData;
     top_movers: TopMoversData;
+    opportunities: OpportunitiesData;
+}
+
+export interface OpportunityItem {
+    id: string;
+    action: string;
+    citationSource: string;
+    focusArea: string;
+    priority: string;
+    effort: string;
+}
+
+export interface TrackOutcomeItem extends OpportunityItem {
+    visibility_baseline: number | null;
+    visibility_current: number | null;
+    soa_baseline: number | null;
+    soa_current: number | null;
+    sentiment_baseline: number | null;
+    sentiment_current: number | null;
+    completed_at: string | null;
+}
+
+export interface OpportunitiesData {
+    discover: OpportunityItem[];
+    todo: OpportunityItem[];
+    refine: OpportunityItem[];
+    track: TrackOutcomeItem[];
 }
 
 export interface BrandPerformanceData {
@@ -200,6 +227,8 @@ export interface TopMoversData {
         sentiment_losses: TopMoverItem[];
         position_gains: TopMoverItem[];
         position_losses: TopMoverItem[];
+        presence_gains: TopMoverItem[];
+        presence_losses: TopMoverItem[];
     };
 }
 
@@ -214,6 +243,7 @@ export interface TopMoverItem {
         share_of_answer?: { absolute: number; percentage: number };
         soa?: { absolute: number; percentage: number };
         sentiment?: { absolute: number; percentage: number };
+        appearance_rate?: { absolute: number; percentage: number };
         combined_score?: { absolute: number; percentage: number };
     };
 }

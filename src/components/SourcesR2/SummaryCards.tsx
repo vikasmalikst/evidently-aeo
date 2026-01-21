@@ -1,3 +1,5 @@
+import { HelpButton } from '../common/HelpButton';
+
 interface SummaryCardMeta {
   label: string;
   color: string;
@@ -8,6 +10,7 @@ interface SummaryCardsProps {
   counts: Record<string, number>;
   active?: string | null;
   onSelect?: (quadrant: string | null) => void;
+  onHelpClick?: (key: string) => void;
 }
 
 const defaultCardMeta: Record<string, SummaryCardMeta> = {
@@ -17,7 +20,7 @@ const defaultCardMeta: Record<string, SummaryCardMeta> = {
   monitor: { label: 'Monitor', color: '#cbd5e1' }
 };
 
-export const SummaryCards = ({ counts, active = null, onSelect }: SummaryCardsProps) => {
+export const SummaryCards = ({ counts, active = null, onSelect, onHelpClick }: SummaryCardsProps) => {
   const cardMeta = defaultCardMeta;
 
   return (
@@ -34,6 +37,7 @@ export const SummaryCards = ({ counts, active = null, onSelect }: SummaryCardsPr
             cursor: onSelect ? 'pointer' : 'default',
             transition: 'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease'
           }}
+          className="group/card"
           onClick={() => onSelect?.(active === key ? null : key)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -44,9 +48,22 @@ export const SummaryCards = ({ counts, active = null, onSelect }: SummaryCardsPr
           role={onSelect ? 'button' : undefined}
           tabIndex={onSelect ? 0 : -1}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ width: 10, height: 10, borderRadius: '50%', background: meta.color }} />
-            <span style={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>{meta.label}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: meta.color }} />
+              <span style={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>{meta.label}</span>
+            </div>
+            {onHelpClick && (
+              <HelpButton
+                onClick={(e) => {
+                  e?.stopPropagation();
+                  onHelpClick(key);
+                }}
+                className="opacity-0 group-hover/card:opacity-100 p-1 relative z-10"
+                label={`Learn about ${meta.label}`}
+                size={14}
+              />
+            )}
           </div>
           {meta.description && (
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6, lineHeight: 1.4 }}>

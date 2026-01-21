@@ -39,8 +39,7 @@ const getOrCreateTooltip = (chart: any) => {
     tooltipEl.style.opacity = '1';
     tooltipEl.style.pointerEvents = 'none';
     tooltipEl.style.position = 'absolute';
-    tooltipEl.style.transform = 'translate(-50%, 0)';
-    tooltipEl.style.transition = 'all .1s ease';
+    // tooltipEl.style.transform = 'translate(-50%, 0)'; // Moved to external handler for dynamic positioning
     tooltipEl.style.zIndex = '100';
     tooltipEl.style.border = '1px solid #c6c9d2';
     tooltipEl.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
@@ -408,13 +407,28 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
                 tableHead.appendChild(tr);
               });
 
+              // Sort data points by value (descending) to show highest value on top
+              const dataPoints = tooltip.dataPoints || [];
+              const sortedIndices = dataPoints
+                .map((dp: any, i: number) => ({ index: i, value: dp.raw as number }))
+                .sort((a: any, b: any) => {
+                  // Handle potential non-numeric values gracefully
+                  const valA = typeof a.value === 'number' ? a.value : 0;
+                  const valB = typeof b.value === 'number' ? b.value : 0;
+                  return valB - valA;
+                })
+                .map((item: any) => item.index);
+
               const tableBody = document.createElement('tbody');
-              bodyLines.forEach((body: string, i: number) => {
+
+              // Iterate using sorted indices
+              sortedIndices.forEach((sortedIndex: number) => {
+                const body = bodyLines[sortedIndex];
                 // Get the dataset to find the logo
-                const dataPoint = tooltip.dataPoints[i];
+                const dataPoint = tooltip.dataPoints[sortedIndex];
                 const dataset = chart.data.datasets[dataPoint.datasetIndex];
 
-                const colors = tooltip.labelColors[i];
+                const colors = tooltip.labelColors[sortedIndex];
                 const logoUrl = (dataset as any).logo;
                 const domain = (dataset as any).domain;
 
@@ -524,8 +538,40 @@ export const VisibilityChart = memo((props: VisibilityChartProps) => {
 
             // Display, position, and set styles for font
             tooltipEl.style.opacity = '1';
+
+            // Smart Positioning Logic (Clamped to Chart Area)
+            const tooltipRect = tooltipEl.getBoundingClientRect();
+
+            // chart.canvas.height gives the internal canvas height, but we want the CSS height
+            // However, positionY is 0 relative to parent if parent is the container. 
+            // Better to use chart.chartArea to know the drawing bounds, but tooltip usually floats over the whole canvas.
+            // Let's rely on the parent container height which is 320px
+            const chartHeight = chart.canvas.parentNode.clientHeight || 320;
+            const tooltipHeight = tooltipRect.height;
+
+            // Default position: below the cursor
+            let topPos = positionY + tooltip.caretY + 10;
+
+            // Check if it overflows the bottom of the chart container
+            if (topPos + tooltipHeight > chartHeight) {
+              // Try positioning above
+              topPos = positionY + tooltip.caretY - tooltipHeight - 10;
+            }
+
+            // If it NOW overflows the top (unlikely but possible if at very top), clamp it
+            if (topPos < 0) {
+              topPos = 0; // Stick to top
+            }
+
+            // If it STILL overflows the bottom (because it was clamped from top, or cursor is in middle but tooltip is huge)
+            // Force clamp to bottom edge
+            if (topPos + tooltipHeight > chartHeight) {
+              topPos = chartHeight - tooltipHeight;
+            }
+
+            tooltipEl.style.transform = 'translate(-50%, 0)'; // Alway center horizontally, manual Y pos
             tooltipEl.style.left = positionX + tooltip.caretX + 'px';
-            tooltipEl.style.top = positionY + tooltip.caretY + 'px';
+            tooltipEl.style.top = topPos + 'px';
             tooltipEl.style.padding = tooltip.options.padding + 'px ' + tooltip.options.padding + 'px';
           }
         },

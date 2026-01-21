@@ -79,6 +79,7 @@ interface LlmVisibilitySlice {
     visibility: number[];
     share: number[];
     sentiment: (number | null)[];
+    brandPresence?: number[];
     isRealData?: boolean[];
   };
 }
@@ -110,6 +111,7 @@ interface CompetitorVisibilityEntry {
     visibility: number[];
     share: number[];
     sentiment: (number | null)[];
+    brandPresencePercentage?: number[];
     isRealData?: boolean[];
   };
 }
@@ -130,6 +132,7 @@ interface BrandSummary {
     visibility: number[];
     share: number[];
     sentiment: (number | null)[];
+    brandPresencePercentage?: number[];
     isRealData?: boolean[];
   };
 }
@@ -321,7 +324,7 @@ export const MeasurePage = () => {
       const visData = slice.timeSeries?.visibility ?? buildTimeseries(slice.visibility ?? 0);
       const shareData = slice.timeSeries?.share ?? buildTimeseries((slice.shareOfSearch ?? slice.share ?? 0) * 100);
       const sentData = slice.timeSeries?.sentiment ?? buildTimeseries(slice.sentiment ?? 0);
-      const brandPresenceData = buildTimeseries(
+      const brandPresenceData = slice.timeSeries?.brandPresence ?? buildTimeseries(
         slice.totalCollectorResults && slice.totalCollectorResults > 0
           ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
           : 0
@@ -378,7 +381,7 @@ export const MeasurePage = () => {
         data: brandVisData,
         shareData: brandShareData,
         sentimentData: brandSentData,
-        brandPresenceData: buildTimeseries(brandSum.brandPresencePercentage ?? 0),
+        brandPresenceData: brandSum.timeSeries?.brandPresencePercentage ?? buildTimeseries(brandSum.brandPresencePercentage ?? 0),
         topTopics: brandSum.topTopics?.map(t => ({ ...t, mentions: 0 })) ?? [],
         isBrand: true,
         isRealData: brandIsRealData,
@@ -391,7 +394,7 @@ export const MeasurePage = () => {
       const visData = comp.timeSeries?.visibility ?? buildTimeseries(comp.visibility);
       const shareData = comp.timeSeries?.share ?? buildTimeseries(comp.share * 100);
       const sentData = comp.timeSeries?.sentiment ?? buildTimeseries(comp.sentiment ?? 0);
-      const brandPresenceData = buildTimeseries(comp.brandPresencePercentage ?? 0);
+      const brandPresenceData = comp.timeSeries?.brandPresencePercentage ?? buildTimeseries(comp.brandPresencePercentage ?? 0);
       const isRealData = comp.timeSeries?.isRealData;
 
       competitorModelData.push({

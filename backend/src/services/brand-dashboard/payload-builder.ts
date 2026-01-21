@@ -3238,6 +3238,7 @@ export async function buildDashboardPayload(
       visibility: number[]
       share: number[]
       sentiment: (number | null)[]
+      brandPresencePercentage: number[]
       isRealData?: boolean[]
     } | undefined = undefined
 
@@ -3246,12 +3247,14 @@ export async function buildDashboardPayload(
       const aggregatedVisibility: number[] = []
       const aggregatedShare: number[] = []
       const aggregatedSentiment: (number | null)[] = []
+      const aggregatedBrandPresence: number[] = []
       const aggregatedIsRealData: boolean[] = []
 
       allDates.forEach((date, dateIndex) => {
         let visibilityValues: number[] = []
         let shareValues: number[] = []
         let sentimentValues: number[] = []
+        let brandPresenceValues: number[] = []
         let hasRealData = false
 
         timeSeriesData.forEach((ts) => {
@@ -3266,6 +3269,10 @@ export async function buildDashboardPayload(
             if (ts.sentiment[idx] !== null && ts.sentiment[idx] !== undefined) {
               sentimentValues.push(ts.sentiment[idx] as number)
             }
+            // Aggregate brand presence: average percentages across collectors
+            if (ts.brandPresence[idx] !== undefined) {
+              brandPresenceValues.push(ts.brandPresence[idx])
+            }
             if (ts.isRealData && ts.isRealData[idx]) {
               hasRealData = true
             }
@@ -3276,6 +3283,7 @@ export async function buildDashboardPayload(
         aggregatedVisibility.push(visibilityValues.length > 0 ? round(average(visibilityValues)) : 0)
         aggregatedShare.push(shareValues.length > 0 ? round(average(shareValues)) : 0)
         aggregatedSentiment.push(sentimentValues.length > 0 ? round(average(sentimentValues), 2) : null)
+        aggregatedBrandPresence.push(brandPresenceValues.length > 0 ? round(average(brandPresenceValues)) : 0)
         aggregatedIsRealData.push(hasRealData)
       })
 
@@ -3287,6 +3295,7 @@ export async function buildDashboardPayload(
           visibility: aggregatedVisibility,
           share: aggregatedShare,
           sentiment: aggregatedSentiment,
+          brandPresencePercentage: aggregatedBrandPresence,
           isRealData: aggregatedIsRealData
         }
       }

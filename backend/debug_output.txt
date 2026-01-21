@@ -1,0 +1,171 @@
+Inspecting data for Failing ID: 10287 vs Working ID: 10482
+
+--- Collector Result ID: 10287 (Google AIO) ---
+Competitors (Type: object): [
+  "Australian Sports Marketing (ASM)",
+  "Bullseye Event Group",
+  "Events Travel",
+  "Mates’ Escapes"
+]
+Raw Answer Length: 1969
+Metadata: {
+  "intent": "data_collection",
+  "locale": "en-US",
+  "country": "AU",
+  "success": true,
+  "provider": "brightdata_google_aio",
+  "collectors": [
+    "chatgpt",
+    "bing_copilot",
+    "perplexity",
+    "grok",
+    "google_aio",
+    "gemini"
+  ],
+  "dataset_id": "gd_mcswdt6z2elth3zqr2",
+  "snapshot_id": "sd_mkkn6vxrr92mqnntx",
+  "collected_at": "2026-01-19T04:08:17.895Z",
+  "collected_by": "async_polling",
+  "suppress_scoring": true,
+  "status_transitions": [
+    {
+      "at": "2026-01-19T04:05:30.806Z",
+      "to": "processing",
+      "from": null,
+      "source": "data_collection:init",
+      "brand_id": "583be119-67da-47bb-8a29-2950eb4da3ea",
+      "customer_id": "157c845c-9e87-4146-8479-cb8d045212bf",
+      "execution_id": "0acf925d-e9cc-4f78-98a1-5ac907be55a3",
+      "collector_type": "Google AIO"
+    },
+    {
+      "at": "2026-01-19T04:05:31.306Z",
+      "to": "processing",
+      "from": "processing",
+      "reason": "running",
+      "source": "data_collection:updateExecutionStatus",
+      "execution_id": "0acf925d-e9cc-4f78-98a1-5ac907be55a3",
+      "collector_type": "Google AIO"
+    },
+    {
+      "at": "2026-01-19T04:05:34.132Z",
+      "to": "processing",
+      "from": "processing",
+      "reason": "running",
+      "source": "data_collection:updateExecutionStatus",
+      "execution_id": "0acf925d-e9cc-4f78-98a1-5ac907be55a3",
+      "collector_type": "Google AIO",
+      "brightdata_snapshot_id": "sd_mkkn6vxrr92mqnntx"
+    },
+    {
+      "at": "2026-01-19T04:08:18.396Z",
+      "to": "completed",
+      "from": "processing",
+      "reason": "raw_answer_stored",
+      "source": "brightdata:polling",
+      "brand_id": "583be119-67da-47bb-8a29-2950eb4da3ea",
+      "customer_id": "157c845c-9e87-4146-8479-cb8d045212bf",
+      "execution_id": "0acf925d-e9cc-4f78-98a1-5ac907be55a3",
+      "collector_type": "google_aio",
+      "brightdata_snapshot_id": "sd_mkkn6vxrr92mqnntx"
+    }
+  ],
+  "last_status_transition": {
+    "at": "2026-01-19T04:08:18.396Z",
+    "to": "completed",
+    "from": "processing",
+    "reason": "raw_answer_stored",
+    "source": "brightdata:polling",
+    "brand_id": "583be119-67da-47bb-8a29-2950eb4da3ea",
+    "customer_id": "157c845c-9e87-4146-8479-cb8d045212bf",
+    "execution_id": "0acf925d-e9cc-4f78-98a1-5ac907be55a3",
+    "collector_type": "google_aio",
+    "brightdata_snapshot_id": "sd_mkkn6vxrr92mqnntx"
+  }
+}
+Topic: Pricing & Value
+
+--- Collector Result ID: 10482 (Gemini) ---
+Competitors (Type: object): [
+  "Australian Sports Marketing (ASM)",
+  "Bullseye Event Group",
+  "Events Travel",
+  "Mates’ Escapes"
+]
+Raw Answer Length: 3188
+Metadata: {
+  "intent": "data_collection",
+  "locale": "en-US",
+  "country": "AU",
+  "success": true,
+  "provider": "brightdata_gemini",
+  "collectors": [
+    "chatgpt",
+    "bing_copilot",
+    "perplexity",
+    "grok",
+    "google_aio",
+    "gemini"
+  ],
+  "dataset_id": "gd_mbz66arm2mf9cu856y",
+  "snapshot_id": "sd_mkl6hfys1e8c8g7wuv",
+  "collected_at": "2026-01-19T13:09:24.416Z",
+  "collected_by": "async_polling",
+  "suppress_scoring": true,
+  "status_transitions": [
+    {
+      "at": "2026-01-19T13:05:35.536Z",
+      "to": "processing",
+      "from": null,
+      "source": "data_collection:init",
+      "brand_id": "583be119-67da-47bb-8a29-2950eb4da3ea",
+      "customer_id": "157c845c-9e87-4146-8479-cb8d045212bf",
+      "execution_id": "09ca0774-d6f9-40c5-a126-2117e6e90689",
+      "collector_type": "Gemini"
+    },
+    {
+      "at": "2026-01-19T13:05:36.416Z",
+      "to": "processing",
+      "from": "processing",
+      "reason": "running",
+      "source": "data_collection:updateExecutionStatus",
+      "execution_id": "09ca0774-d6f9-40c5-a126-2117e6e90689",
+      "collector_type": "Gemini"
+    },
+    {
+      "at": "2026-01-19T13:05:39.199Z",
+      "to": "processing",
+      "from": "processing",
+      "reason": "running",
+      "source": "data_collection:updateExecutionStatus",
+      "execution_id": "09ca0774-d6f9-40c5-a126-2117e6e90689",
+      "collector_type": "Gemini",
+      "brightdata_snapshot_id": "sd_mkl6hfys1e8c8g7wuv"
+    },
+    {
+      "at": "2026-01-19T13:09:25.032Z",
+      "to": "completed",
+      "from": "processing",
+      "reason": "raw_answer_stored",
+      "source": "brightdata:polling",
+      "brand_id": "583be119-67da-47bb-8a29-2950eb4da3ea",
+      "customer_id": "157c845c-9e87-4146-8479-cb8d045212bf",
+      "execution_id": "09ca0774-d6f9-40c5-a126-2117e6e90689",
+      "collector_type": "gemini",
+      "brightdata_snapshot_id": "sd_mkl6hfys1e8c8g7wuv"
+    }
+  ],
+  "last_status_transition": {
+    "at": "2026-01-19T13:09:25.032Z",
+    "to": "completed",
+    "from": "processing",
+    "reason": "raw_answer_stored",
+    "source": "brightdata:polling",
+    "brand_id": "583be119-67da-47bb-8a29-2950eb4da3ea",
+    "customer_id": "157c845c-9e87-4146-8479-cb8d045212bf",
+    "execution_id": "09ca0774-d6f9-40c5-a126-2117e6e90689",
+    "collector_type": "gemini",
+    "brightdata_snapshot_id": "sd_mkl6hfys1e8c8g7wuv"
+  }
+}
+Topic: Provider Selection & Comparison

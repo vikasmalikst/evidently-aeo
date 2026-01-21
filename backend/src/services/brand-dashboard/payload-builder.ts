@@ -470,28 +470,51 @@ export async function buildDashboardPayload(
   }
 
   // Generate all dates in the range for time-series
-  // IMPORTANT: Parse YYYY-MM-DD strings as calendar dates and use UTC methods to avoid timezone shifts
-  // This ensures date ranges are generated correctly regardless of server timezone
+  // IMPORTANT: Apply timezone offset to convert UTC bounds to local dates
+  // This ensures the date range matches the user's local timezone
   const generateDateRange = (start: string, end: string): string[] => {
     const dates: string[] = []
 
-    // Parse date strings (YYYY-MM-DD) as calendar dates in UTC
-    const [startYear, startMonth, startDay] = start.split('-').map(Number)
-    const [endYear, endMonth, endDay] = end.split('-').map(Number)
+    // Apply timezone offset to convert UTC bounds to local dates
+    const offsetMinutes = options.timezoneOffset || 0
 
-    const startDate = new Date(Date.UTC(startYear, startMonth - 1, startDay))
-    const endDate = new Date(Date.UTC(endYear, endMonth - 1, endDay))
-    const current = new Date(startDate)
+    console.log(`[TimeSeries] 🕐 Timezone offset: ${offsetMinutes} minutes`)
+    console.log(`[TimeSeries] 📅 UTC bounds: ${start} to ${end}`)
+
+    // Parse ISO timestamps and apply timezone offset
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+
+    // Shift by timezone offset to get local dates
+    // offsetMinutes is (UTC - Local), so we subtract to get local time
+    const localStart = new Date(startDate.getTime() - (offsetMinutes * 60 * 1000))
+    const localEnd = new Date(endDate.getTime() - (offsetMinutes * 60 * 1000))
+
+    // Extract YYYY-MM-DD in local timezone
+    const startDateStr = localStart.toISOString().split('T')[0]
+    const endDateStr = localEnd.toISOString().split('T')[0]
+
+    console.log(`[TimeSeries] 📅 Local dates: ${startDateStr} to ${endDateStr}`)
+
+    // Generate range using UTC methods (to avoid further timezone shifts)
+    const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number)
+    const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number)
+
+    const current = new Date(Date.UTC(startYear, startMonth - 1, startDay))
+    const endUTC = new Date(Date.UTC(endYear, endMonth - 1, endDay))
 
     // Generate dates using UTC methods to avoid timezone shifts
-    while (current <= endDate) {
+    while (current <= endUTC) {
       dates.push(current.toISOString().split('T')[0])
       current.setUTCDate(current.getUTCDate() + 1)
     }
+
+    console.log(`[TimeSeries] 📊 Generated ${dates.length} dates: ${dates[0]} to ${dates[dates.length - 1]}`)
+
     return dates
   }
 
-  const allDates = generateDateRange(startIsoBound.split('T')[0], endIsoBound.split('T')[0])
+  const allDates = generateDateRange(startIsoBound, endIsoBound)
 
   const trendPercentage = 0
   const knownCompetitors =

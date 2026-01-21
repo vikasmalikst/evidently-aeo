@@ -272,7 +272,16 @@ export const MeasurePage = () => {
 
     const startISO = new Date(startDate).toISOString();
     const endISO = new Date(endDate + 'T23:59:59').toISOString();
-    const params = new URLSearchParams({ startDate: startISO, endDate: endISO });
+
+    // Get timezone offset in minutes (UTC - Local)
+    // For EST (UTC-5), this will be 300 minutes
+    const timezoneOffset = new Date().getTimezoneOffset();
+
+    const params = new URLSearchParams({
+      startDate: startISO,
+      endDate: endISO,
+      timezoneOffset: timezoneOffset.toString()
+    });
     // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
     if (llmFilters.length > 0) {
       // We need to pass the label (e.g. "GPT-4") not the normalized ID (e.g. "gpt-4")

@@ -267,9 +267,13 @@ export const SearchVisibility = () => {
       return null;
     }
 
+    // Get timezone offset in minutes (UTC - Local)
+    const timezoneOffset = new Date().getTimezoneOffset();
+
     const params = new URLSearchParams({
       startDate: dateRange.startDate,
-      endDate: dateRange.endDate
+      endDate: dateRange.endDate,
+      timezoneOffset: timezoneOffset.toString()
     });
     if (activeTab === 'competitive' && llmFilters.length > 0) {
       params.append('collectors', llmFilters.map((v) => v.toLowerCase()).join(','));

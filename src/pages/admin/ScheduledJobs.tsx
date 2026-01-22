@@ -518,7 +518,7 @@ export const ScheduledJobs = () => {
     try {
       const response = await apiClient.post<ApiResponse<unknown>>('/admin/scheduled-jobs', {
         ...jobData,
-        customer_id: customerId,
+        customer_id: effectiveCustomerId,
         brand_id: selectedBrandId || brands[0]?.id,
       });
       if (response.success) {
@@ -573,10 +573,10 @@ export const ScheduledJobs = () => {
     let currentDiagnostic = diagnostic;
 
     // If diagnostic is not loaded or for a different brand, try to load it now
-    if ((!currentDiagnostic || selectedBrandId !== brandId) && brandId && customerId) {
+    if ((!currentDiagnostic || selectedBrandId !== brandId) && brandId && effectiveCustomerId) {
       try {
         const response = await apiClient.get<ApiResponse<QueriesDiagnosticPayload>>(
-          `/admin/brands/${brandId}/queries-diagnostic?customer_id=${customerId}`
+          `/admin/brands/${brandId}/queries-diagnostic?customer_id=${effectiveCustomerId}`
         );
         if (response.success && response.data) {
           currentDiagnostic = response.data;
@@ -636,7 +636,7 @@ export const ScheduledJobs = () => {
       const response = await apiClient.post<ApiResponse<{ queriesExecuted: number }>>(
         `/admin/brands/${brandId}/collect-data-now`,
         {
-          customer_id: customerId,
+          customer_id: effectiveCustomerId,
         }
       );
       if (response.success && response.data) {
@@ -655,7 +655,7 @@ export const ScheduledJobs = () => {
       alert('Please select a brand first');
       return;
     }
-    if (!customerId) {
+    if (!effectiveCustomerId) {
       alert('Customer ID not available. Please select a brand.');
       return;
     }
@@ -668,7 +668,7 @@ export const ScheduledJobs = () => {
     try {
       setScoring(true);
       const response = await apiClient.get<ApiResponse<ScoringDiagnosticPayload>>(
-        `/admin/brands/${brandId}/scoring-diagnostic?customer_id=${customerId}`
+        `/admin/brands/${brandId}/scoring-diagnostic?customer_id=${effectiveCustomerId}`
       );
       if (response.success && response.data) {
         scoringDiag = response.data;
@@ -705,7 +705,7 @@ export const ScheduledJobs = () => {
     try {
       setScoring(true);
       const response = await apiClient.post<ApiResponse<unknown>>(`/admin/brands/${brandId}/score-now`, {
-        customer_id: customerId,
+        customer_id: effectiveCustomerId,
       });
       if (response.success) {
         alert(`Scoring started in background! ${response.message || 'Check job run history for progress.'}`);
@@ -835,7 +835,7 @@ export const ScheduledJobs = () => {
 
     let finished = false;
 
-    const url = `${apiClient.baseUrl}/admin/scheduled-jobs/backfill-raw-answer-from-snapshots/stream`;
+    const url = `${apiClient.baseUrl}/admin/scheduled-jobs/backfill-raw-answer-from-snapshots/stream?token=${apiClient.getAccessToken()}`;
     const es = new EventSource(url);
     backfillEventSourceRef.current = es;
 

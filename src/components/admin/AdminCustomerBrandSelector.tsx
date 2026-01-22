@@ -41,6 +41,7 @@ export const AdminCustomerBrandSelector = ({
     const [brands, setBrands] = useState<Brand[]>([]);
     const [loadingCustomers, setLoadingCustomers] = useState(true);
     const [loadingBrands, setLoadingBrands] = useState(false);
+    const [fetchError, setFetchError] = useState<string | null>(null);
 
     // Load all customers on mount
     useEffect(() => {
@@ -71,11 +72,13 @@ export const AdminCustomerBrandSelector = ({
         const fetchBrands = async () => {
             if (!selectedCustomerId) {
                 setBrands([]);
+                setFetchError(null);
                 return;
             }
 
             try {
                 setLoadingBrands(true);
+                setFetchError(null);
                 const response = await apiClient.get<{ success: boolean; data: Brand[] }>(
                     `/admin/customers/${selectedCustomerId}/brands`
                 );
@@ -85,9 +88,10 @@ export const AdminCustomerBrandSelector = ({
                 } else {
                     setBrands([]);
                 }
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Failed to load brands for customer:', error);
                 setBrands([]);
+                setFetchError(error.message || 'Failed to fetch');
             } finally {
                 setLoadingBrands(false);
             }
@@ -95,6 +99,8 @@ export const AdminCustomerBrandSelector = ({
 
         fetchBrands();
     }, [selectedCustomerId]);
+
+
 
     const handleCustomerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const customerId = e.target.value || null;
@@ -150,9 +156,11 @@ export const AdminCustomerBrandSelector = ({
                         <option value="">
                             {!selectedCustomerId
                                 ? 'Select a customer first...'
-                                : brands.length === 0 && !loadingBrands
-                                    ? 'No brands found'
-                                    : 'Select a brand...'}
+                                : fetchError
+                                    ? `Error: ${fetchError}`
+                                    : brands.length === 0 && !loadingBrands
+                                        ? 'No brands found'
+                                        : 'Select a brand...'}
                         </option>
                         {brands.map((brand) => (
                             <option key={brand.id} value={brand.id}>

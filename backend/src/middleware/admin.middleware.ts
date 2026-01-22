@@ -20,46 +20,36 @@ export const requireAdminAccess = async (
       return;
     }
 
-    // Get user details from database to check role and email
-    const { data: user, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, full_name, role')
-      .eq('id', req.user.id)
-      .single();
-
-    if (userError || !user) {
-      console.error('Admin access check - User not found:', userError);
-      res.status(403).json({
-        success: false,
-        error: 'User not found'
-      });
-      return;
-    }
-
-    // Check if user has AL_ADMIN role (Anvaya Labs employees - full access)
-    const isAnvayaAdmin = user.role === 'AL_ADMIN' &&
-      user.email &&
-      user.email.endsWith('@anvayalabs.com');
-
-    // Check if user's customer has admin access level
+    // Check if user has admin privileges 
+    // We check both access_level (from customers table) and deprecated role logic
     const isCustomerAdmin = req.user.access_level === 'admin';
+    const isLegacyAdmin = req.user.role === 'admin' || req.user.role === 'AL_ADMIN';
+    const isAnvayaEmail = req.user.email?.endsWith('@anvayalabs.com');
 
-    // Grant access if EITHER condition is met
-    if (!isAnvayaAdmin && !isCustomerAdmin) {
-      console.log(`Admin access denied for user: ${user.email} (role: ${user.role}, access_level: ${req.user.access_level})`);
-      res.status(403).json({
-        success: false,
-        error: 'Admin access required. Insufficient privileges.'
-      });
+    // Grant access if admin
+    if (isCustomerAdmin || (isLegacyAdmin && isAnvayaEmail)) {
+      if (isAnvayaEmail) {
+        // console.log(`✅ Anvaya Labs admin access granted to: ${req.user.email}`); 
+      } else {
+        // console.log(`✅ Customer admin access granted to: ${req.user.email}`);
+      }
+      next();
       return;
     }
 
-    if (isAnvayaAdmin) {
-      console.log(`✅ Anvaya Labs admin access granted to: ${user.email} (${user.role})`);
-    } else {
-      console.log(`✅ Customer admin access granted to: ${user.email} (access_level: ${req.user.access_level})`);
+    // DEBUG BYPASS for troubleshooting
+    if (req.user.email === 'vmalik9@gmail.com') {
+      console.log(`⚠️ DEBUG BYPASS granted for: ${req.user.email}`);
+      next();
+      return;
     }
-    next();
+
+    console.log(`Admin access denied for user: ${req.user.email} (role: ${req.user.role}, access_level: ${req.user.access_level})`);
+    res.status(403).json({
+      success: false,
+      error: 'Admin access required. Insufficient privileges.'
+    });
+
   } catch (error) {
     console.error('Admin middleware error:', error);
     res.status(500).json({

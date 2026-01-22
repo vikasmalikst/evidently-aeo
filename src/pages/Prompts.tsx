@@ -64,8 +64,8 @@ export const Prompts = () => {
     const endpointStart = performance.now();
     if (!selectedBrandId || brandsLoading) return null;
     const params = new URLSearchParams({
-      startDate: startDate ? new Date(startDate + 'T00:00:00Z').toISOString() : '',
-      endDate: endDate ? new Date(endDate + 'T23:59:59.999Z').toISOString() : ''
+      startDate: startDate ? new Date(startDate + 'T00:00:00').toISOString() : '',
+      endDate: endDate ? new Date(endDate + 'T23:59:59.999').toISOString() : ''
     });
 
     // Filter by collector on backend so visibility/sentiment reflect the selected LLMs

@@ -51,6 +51,11 @@ export const AuthPage = () => {
   }, [navigate]);
 
   const handleSuccess = async (isRegistration: boolean = false) => {
+    // Clear any stale admin impersonation context - we need user's own context first
+    try {
+      localStorage.removeItem('admin-selection-storage');
+    } catch { /* ignore storage errors */ }
+
     if (isRegistration) {
       console.log('🆕 New user registration - redirecting to onboarding');
       if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
@@ -116,19 +121,19 @@ export const AuthPage = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 lg:p-12 relative overflow-hidden">
-      
+
       {/* Soft mesh gradient background */}
       <div className="absolute inset-0">
         {/* Base gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-indigo-50/60" />
-        
+
         {/* Soft decorative blobs */}
         <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-gradient-to-br from-blue-200/40 via-indigo-100/30 to-transparent rounded-full blur-3xl" />
         <div className="absolute top-1/4 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-violet-200/30 via-purple-100/20 to-transparent rounded-full blur-3xl" />
         <div className="absolute -bottom-40 left-1/4 w-[600px] h-[600px] bg-gradient-to-br from-cyan-100/40 via-blue-100/30 to-transparent rounded-full blur-3xl" />
-        
+
         {/* Subtle dot pattern */}
-        <div 
+        <div
           className="absolute inset-0 opacity-[0.35]"
           style={{
             backgroundImage: `radial-gradient(circle at 1px 1px, rgb(148 163 184 / 0.4) 1px, transparent 0)`,
@@ -136,15 +141,15 @@ export const AuthPage = () => {
           }}
         />
       </div>
-      
+
       {/* Animated Particle Background */}
       <HeroBackground />
 
       {/* --- MAIN CONTENT --- */}
       <div className="w-full max-w-screen-xl grid lg:grid-cols-2 gap-10 lg:gap-16 items-center relative z-10">
-        
+
         {/* Left Side: Text Content */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
@@ -170,7 +175,7 @@ export const AuthPage = () => {
                 <span className="absolute -bottom-1 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-600 rounded-full opacity-60" />
               </span>
             </h1>
-            
+
             <p className="text-lg text-slate-600 leading-relaxed">
               Make confident decisions on your brand{' '}
               <span className="inline-flex items-center gap-1.5 font-bold text-slate-900">
@@ -180,12 +185,12 @@ export const AuthPage = () => {
               — From Hours to Minutes.
             </p>
           </div>
-          
+
           {/* Selling Points */}
           <ul className="space-y-4">
             {sellingPoints.map((point, index) => (
-              <motion.li 
-                key={point.title} 
+              <motion.li
+                key={point.title}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.4, delay: 0.1 + index * 0.1 }}
@@ -201,7 +206,7 @@ export const AuthPage = () => {
         </motion.div>
 
         {/* Right Side: Authentication Form */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
@@ -209,14 +214,14 @@ export const AuthPage = () => {
         >
           {/* Glow Effect Behind Card */}
           <div className="absolute w-[480px] h-[480px] bg-gradient-to-br from-blue-500/20 via-indigo-500/10 to-purple-500/20 rounded-full blur-3xl pointer-events-none lg:translate-x-12" />
-          
+
           {/* Card */}
           <div className="w-full max-w-[480px] relative">
             {/* Glassmorphism Card */}
             <div className="relative bg-white/80 backdrop-blur-xl border border-white/60 shadow-2xl shadow-slate-900/10 rounded-3xl p-8 sm:p-10 overflow-hidden ring-1 ring-slate-900/5">
               {/* Subtle gradient overlay inside card */}
               <div className="absolute inset-0 bg-gradient-to-br from-white via-white to-blue-50/50 pointer-events-none" />
-              
+
               {/* Card content */}
               <div className="relative z-10">
                 <AnimatePresence mode="wait">

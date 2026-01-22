@@ -23,60 +23,8 @@ const router = Router();
 let isBackfillRawAnswerRunning = false;
 
 // Apply authentication and admin access to all routes
-// TEMPORARY: Skip authentication for testing
-// router.use(authenticateToken);
-// router.use(requireAdminAccess);
-
-// TEMPORARY: Mock admin middleware for testing
-router.use((req, res, next) => {
-  // Check if we have a real user from authentication
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    const token = req.headers.authorization.split(' ')[1];
-
-    // If it's a mock token, extract the user ID
-    if (token.startsWith('mock-jwt-token-for-')) {
-      const userId = token.replace('mock-jwt-token-for-', '');
-
-      // Get real user data from database
-      authService.getUserProfile(userId).then(user => {
-        if (user) {
-          req.user = {
-            id: user.id,
-            email: user.email,
-            customer_id: user.customer_id,
-            role: user.role,
-            full_name: user.full_name
-          };
-        } else {
-          // Fallback to mock data
-          req.user = {
-            id: 'temp-admin-user',
-            email: 'admin@anvayalabs.com',
-            customer_id: 'temp-customer-id'
-          };
-        }
-        next();
-      }).catch(() => {
-        // Fallback to mock data on error
-        req.user = {
-          id: 'temp-admin-user',
-          email: 'admin@anvayalabs.com',
-          customer_id: 'temp-customer-id'
-        };
-        next();
-      });
-      return;
-    }
-  }
-
-  // Fallback to mock data
-  req.user = {
-    id: 'temp-admin-user',
-    email: 'admin@anvayalabs.com',
-    customer_id: 'temp-customer-id'
-  };
-  next();
-});
+router.use(authenticateToken);
+router.use(requireAdminAccess);
 
 /**
  * POST /api/admin/brands/:brandId/refresh-products
@@ -870,11 +818,16 @@ router.get('/customers/:customerId/brands', async (req: Request, res: Response) 
     }
 
     // Fetch brands for the customer - include metadata and homepage_url for logos
+    console.log(`[Admin] Fetching brands for customer: ${customerId}`);
     const { data: brands, error } = await supabase
       .from('brands')
       .select('id, name, slug, customer_id, status, metadata, homepage_url')
       .eq('customer_id', customerId)
       .order('name', { ascending: true });
+
+    if (brands) {
+      console.log(`[Admin] Found ${brands.length} brands for customer ${customerId}`);
+    }
 
     if (error) {
       console.error('Error fetching brands for customer:', error);

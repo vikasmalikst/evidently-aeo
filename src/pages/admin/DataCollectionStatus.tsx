@@ -4,7 +4,7 @@ import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { useAuthStore } from '../../store/authStore';
-import { AdminCustomerBrandSelector } from '../../components/admin/AdminCustomerBrandSelector';
+import { useAdminStore } from '../../store/adminStore';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -43,9 +43,7 @@ export const DataCollectionStatus = () => {
   const { brands, selectedBrandId, selectedBrand, selectBrand } = useManualBrandDashboard();
   const authUser = useAuthStore((state) => state.user);
 
-  // Admin customer/brand selection
-  const [adminSelectedCustomerId, setAdminSelectedCustomerId] = useState<string | null>(null);
-  const [adminSelectedBrandId, setAdminSelectedBrandId] = useState<string | null>(null);
+  const { selectedCustomerId: adminSelectedCustomerId, selectedBrandId: adminSelectedBrandId } = useAdminStore();
 
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [customerIdError, setCustomerIdError] = useState<string | null>(null);
@@ -254,30 +252,16 @@ export const DataCollectionStatus = () => {
             <p className="text-sm text-gray-500">Monitor and manage the status of data collection and scoring across all collectors</p>
           </div>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => navigate('/admin/scheduled-jobs')}
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-          >
-            Back to Scheduled Jobs
-          </button>
-          <button
-            onClick={() => load(offset)}
-            disabled={loading || !customerId}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Refresh
-          </button>
-        </div>
+        <button
+          onClick={() => load(offset)}
+          disabled={loading || !customerId}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Refresh
+        </button>
       </div>
 
-      {/* Admin Customer & Brand Selector */}
-      <AdminCustomerBrandSelector
-        selectedCustomerId={adminSelectedCustomerId}
-        selectedBrandId={adminSelectedBrandId}
-        onCustomerChange={setAdminSelectedCustomerId}
-        onBrandChange={setAdminSelectedBrandId}
-      />
+      {/* Admin Customer & Brand Selector removed - now in AdminLayout */}
 
       <div className="bg-white rounded-lg shadow p-6 mb-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

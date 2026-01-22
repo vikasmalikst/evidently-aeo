@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../../lib/apiClient';
+import { SafeLogo } from '../Onboarding/common/SafeLogo';
 
 interface Customer {
     id: string;
@@ -15,6 +16,12 @@ interface Brand {
     slug: string;
     customer_id: string;
     status?: string;
+    homepage_url?: string | null;
+    metadata?: {
+        logo?: string;
+        brand_logo?: string;
+        [key: string]: any;
+    };
 }
 
 interface AdminCustomerBrandSelectorProps {
@@ -153,6 +160,22 @@ export const AdminCustomerBrandSelector = ({
                             </option>
                         ))}
                     </select>
+
+                    {/* Brand Logo Preview */}
+                    {selectedBrandId && brands.find(b => b.id === selectedBrandId) && (
+                        <div className="mt-2 flex items-center gap-2">
+                            <SafeLogo
+                                src={brands.find(b => b.id === selectedBrandId)?.metadata?.logo || brands.find(b => b.id === selectedBrandId)?.metadata?.brand_logo}
+                                domain={brands.find(b => b.id === selectedBrandId)?.homepage_url || undefined}
+                                alt={brands.find(b => b.id === selectedBrandId)?.name || ''}
+                                size={32}
+                                className="w-8 h-8 rounded object-contain bg-white border border-gray-200"
+                            />
+                            <span className="text-xs text-gray-600">
+                                {brands.find(b => b.id === selectedBrandId)?.name}
+                            </span>
+                        </div>
+                    )}
                     {loadingBrands && (
                         <p className="text-xs text-gray-500 mt-1">Loading brands...</p>
                     )}

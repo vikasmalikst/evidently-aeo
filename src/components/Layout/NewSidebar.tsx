@@ -76,6 +76,19 @@ const navItems: NavItem[] = [
   },
 ];
 
+const adminNavItems: NavItem[] = [
+  {
+    id: 'admin',
+    label: 'Admin',
+    icon: IconShieldCheck,
+    children: [
+      { label: 'Entitlements', path: '/admin/entitlements', icon: IconChecklist },
+      { label: 'Scheduled Jobs', path: '/admin/scheduled-jobs', icon: IconGauge },
+      { label: 'Data Collection Status', path: '/admin/data-collection-status', icon: IconAnalyze },
+    ],
+  },
+];
+
 export const NewSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -181,8 +194,8 @@ export const NewSidebar = () => {
           >
             <div
               className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
-                  ? 'bg-[var(--accent-primary)] text-white'
-                  : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
+                ? 'bg-[var(--accent-primary)] text-white'
+                : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
                 }`}
             >
               <Icon size={20} className="transition-colors duration-300" />
@@ -190,8 +203,8 @@ export const NewSidebar = () => {
 
             <span
               className={`flex-1 text-left whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
-                  ? 'opacity-100 translate-x-0'
-                  : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+                ? 'opacity-100 translate-x-0'
+                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
                 }`}
             >
               {item.label}
@@ -224,8 +237,8 @@ export const NewSidebar = () => {
                   <Link
                     to={child.path}
                     className={`flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg transition-all duration-200 ${childActive
-                        ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-medium'
-                        : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
+                      ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-medium'
+                      : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
                       }`}
                   >
                     {ChildIcon && (
@@ -254,8 +267,8 @@ export const NewSidebar = () => {
         >
           <div
             className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
-                ? 'bg-[var(--accent-primary)] text-white'
-                : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
+              ? 'bg-[var(--accent-primary)] text-white'
+              : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
               }`}
           >
             <Icon size={20} className="transition-colors duration-300" />
@@ -263,8 +276,8 @@ export const NewSidebar = () => {
 
           <span
             className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
-                ? 'opacity-100 translate-x-0'
-                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+              ? 'opacity-100 translate-x-0'
+              : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
               }`}
           >
             {item.label}
@@ -285,6 +298,7 @@ export const NewSidebar = () => {
       <nav className="flex-1 py-6 overflow-y-auto">
         <ul className="space-y-1 px-3">
           {navItems.map(renderNavItem)}
+          {(user?.role === 'AL_ADMIN' || user?.accessLevel === 'admin') && adminNavItems.map(renderNavItem)}
         </ul>
       </nav>
 
@@ -292,8 +306,8 @@ export const NewSidebar = () => {
         <Link
           to="/settings"
           className={`flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out ${isPathActive('/settings') || location.pathname.startsWith('/settings')
-              ? 'bg-[var(--bg-secondary)] text-[var(--accent-primary)]'
-              : 'text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]'
+            ? 'bg-[var(--bg-secondary)] text-[var(--accent-primary)]'
+            : 'text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]'
             }`}
         >
           <div className="flex-shrink-0 relative z-10">
@@ -301,8 +315,8 @@ export const NewSidebar = () => {
           </div>
           <span
             className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${isExpanded
-                ? 'opacity-100 translate-x-0'
-                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+              ? 'opacity-100 translate-x-0'
+              : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
               }`}
           >
             Settings
@@ -321,8 +335,8 @@ export const NewSidebar = () => {
             </div>
             <span
               className={`font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${isExpanded
-                  ? 'opacity-100 translate-x-0 flex-1 min-w-0 truncate block'
-                  : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+                ? 'opacity-100 translate-x-0 flex-1 min-w-0 truncate block'
+                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
                 }`}
               title={user?.email || ''}
             >

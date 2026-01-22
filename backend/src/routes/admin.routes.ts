@@ -869,10 +869,10 @@ router.get('/customers/:customerId/brands', async (req: Request, res: Response) 
       });
     }
 
-    // Fetch brands for the customer
+    // Fetch brands for the customer - include metadata and homepage_url for logos
     const { data: brands, error } = await supabase
       .from('brands')
-      .select('id, name, slug, customer_id, status')
+      .select('id, name, slug, customer_id, status, metadata, homepage_url')
       .eq('customer_id', customerId)
       .order('name', { ascending: true });
 

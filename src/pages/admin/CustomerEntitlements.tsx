@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../lib/apiClient';
+import { useAdminStore } from '../../store/adminStore';
 
 interface Customer {
     id: string;
@@ -89,7 +90,7 @@ const DAYS_OF_WEEK = [
 export const CustomerEntitlements = () => {
     const navigate = useNavigate();
     const [customers, setCustomers] = useState<Customer[]>([]);
-    const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+    const { selectedCustomerId } = useAdminStore();
     const [entitlements, setEntitlements] = useState<CustomerEntitlement>(DEFAULT_ENTITLEMENTS);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -216,52 +217,21 @@ export const CustomerEntitlements = () => {
     return (
         <div className="p-8 max-w-6xl mx-auto">
             {/* Header */}
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold">Customer Entitlements</h1>
-                    <p className="text-sm text-gray-600 mt-1">
-                        Manage customer tier, limits, collectors, and feature access
-                    </p>
-                </div>
-                <div className="flex gap-3">
-                    <button
-                        onClick={() => navigate('/admin/scheduled-jobs')}
-                        className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-                    >
-                        Scheduled Jobs
-                    </button>
-                    <button
-                        onClick={() => navigate('/admin/data-collection-status')}
-                        className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-                    >
-                        Data Collection
-                    </button>
-                </div>
+            <div className="mb-6">
+                <h1 className="text-2xl font-bold">Customer Entitlements</h1>
+                <p className="text-sm text-gray-600 mt-1">
+                    Manage customer tier, limits, collectors, and feature access
+                </p>
             </div>
 
-            {/* Customer Selection */}
-            <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Select Customer</label>
-                <select
-                    value={selectedCustomerId}
-                    onChange={(e) => setSelectedCustomerId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                    <option value="">-- Select a customer --</option>
-                    {customers.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                            {customer.email} ({customer.name})
-                        </option>
-                    ))}
-                </select>
-            </div>
+            {/* Customer Selection removed - now in AdminLayout */}
 
             {/* Message Display */}
             {message && (
                 <div
                     className={`mb-6 p-4 rounded-lg ${message.type === 'success'
-                            ? 'bg-green-50 text-green-800 border border-green-200'
-                            : 'bg-red-50 text-red-800 border border-red-200'
+                        ? 'bg-green-50 text-green-800 border border-green-200'
+                        : 'bg-red-50 text-red-800 border border-red-200'
                         }`}
                 >
                     {message.text}

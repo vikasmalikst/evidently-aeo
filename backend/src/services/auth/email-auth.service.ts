@@ -15,7 +15,7 @@ export interface EmailAuthRequest {
 export class EmailAuthService {
   private isPublicEmailDomain(email: string): boolean {
     const publicDomains = [
-      'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 
+      'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
       'aol.com', 'icloud.com', 'protonmail.com', 'zoho.com',
       'yandex.com', 'mail.com', 'gmx.com', 'live.com', 'msn.com',
       'me.com', 'mac.com', 'inbox.com', 'fastmail.com'
@@ -109,17 +109,17 @@ export class EmailAuthService {
 
       if (customerError || !newCustomer) {
         console.error('Customer creation error:', customerError);
-        
+
         // Handle specific database errors
         if (customerError?.code === '23505') { // unique_violation
           if (customerError.message?.includes('customers_slug_key')) {
-             throw new DatabaseError('Unable to create account handle. Please try again.');
+            throw new DatabaseError('Unable to create account handle. Please try again.');
           }
           if (customerError.message?.includes('customers_email_key')) {
-             throw new AuthError('User with this email already exists');
+            throw new AuthError('User with this email already exists');
           }
         }
-        
+
         throw new DatabaseError(`Failed to create customer: ${customerError?.message || 'Unknown error'}`);
       }
 
@@ -213,11 +213,11 @@ export class EmailAuthService {
           errorDetails: customerError?.details,
           errorHint: customerError?.hint
         });
-        
+
         // Check if this is an authentication error (invalid service role key)
-        if (customerError?.message?.includes('Invalid authentication credentials') || 
-            customerError?.message?.includes('JWT') ||
-            customerError?.code === 'PGRST301') {
+        if (customerError?.message?.includes('Invalid authentication credentials') ||
+          customerError?.message?.includes('JWT') ||
+          customerError?.code === 'PGRST301') {
           console.error('❌ CRITICAL: Supabase authentication failed!');
           console.error('   This usually means:');
           console.error('   1. SUPABASE_SERVICE_ROLE_KEY is incorrect');
@@ -225,18 +225,18 @@ export class EmailAuthService {
           console.error('   3. The service role key and URL are from different projects');
           throw new DatabaseError('Supabase authentication failed. Please check your SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.');
         }
-        
+
         // If customer doesn't exist but user authenticated, create customer record
         if (customerError?.code === 'PGRST116') {
           // PGRST116 = no rows returned
           console.log(`Customer record not found for ${email}, creating one...`);
-          
+
           const customerId = uuidv4();
           // Generate unique slug
           const baseSlug = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
           const randomSuffix = uuidv4().split('-')[0].substring(0, 6);
           const customerSlug = `${baseSlug}-${randomSuffix}`;
-          
+
           const { data: newCustomer, error: createError } = await supabaseAdmin
             .from('customers')
             .insert({
@@ -252,10 +252,10 @@ export class EmailAuthService {
             console.error('Failed to create customer record:', createError);
             throw new DatabaseError(`Customer not found and could not be created: ${createError?.message || 'Unknown error'}`);
           }
-          
+
           // Use the newly created customer
           const customer = newCustomer;
-          
+
           // Continue with login using new customer
           const accessToken = generateToken({
             sub: customer.id,
@@ -298,7 +298,7 @@ export class EmailAuthService {
             }
           };
         }
-        
+
         throw new DatabaseError(`Customer not found: ${customerError?.message || 'Unknown error'}`);
       }
 
@@ -357,22 +357,43 @@ export class EmailAuthService {
   async resetPassword(email: string, newPassword: string): Promise<void> {
     try {
       // 1. Find the user by email in Supabase Auth
-      // Note: listUsers is not efficient for large user bases but Supabase Admin API 
-      // doesn't expose getUserByEmail directly in all versions.
-      // Optimally we would store auth_user_id in our customers table.
-      
-      const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-      
-      if (listError) {
-        throw new AuthError(`Failed to list users: ${listError.message}`);
-      }
+      // We need to paginate through all users since listUsers() has a default limit of 50
+      let user: any = null;
+      let page = 1;
+      const perPage = 100;
 
-      // Explicitly type user or cast to any to avoid TS error with never
-      const user = (users as any[]).find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+      while (!user) {
+        const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers({
+          page,
+          perPage
+        });
+
+        if (listError) {
+          throw new AuthError(`Failed to list users: ${listError.message}`);
+        }
+
+        // If no more users, break
+        if (!users || users.length === 0) {
+          break;
+        }
+
+        // Find user in this page
+        user = (users as any[]).find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+
+        // If we found the user or this page had fewer users than perPage (last page), break
+        if (user || users.length < perPage) {
+          break;
+        }
+
+        page++;
+      }
 
       if (!user) {
+        console.error(`Password reset: User not found for email: ${email}`);
         throw new AuthError('User not found');
       }
+
+      console.log(`Password reset: Found user ${user.id} for email ${email}`);
 
       // 2. Update the user's password
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
@@ -383,6 +404,8 @@ export class EmailAuthService {
       if (updateError) {
         throw new AuthError(`Failed to update password: ${updateError.message}`);
       }
+
+      console.log(`Password reset: Successfully updated password for user ${user.id}`);
 
     } catch (error) {
       console.error('Password reset error:', error);

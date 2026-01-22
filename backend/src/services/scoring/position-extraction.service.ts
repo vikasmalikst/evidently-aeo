@@ -1228,8 +1228,10 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       ? brandProductsData.brand_synonyms.filter((s: string) => s && typeof s === 'string')
       : [];
 
-    // Apply strict filtering
-    const brandSynonyms = this.filterPartialMatches(brandSynonymsRaw, brandName);
+    // Trust KB synonyms (skip strict filtering for DB content)
+    // "Strict filtering" caused issues for multi-word brands where a single word (e.g. "Jira" in "Atlassian Jira")
+    // is a valid synonym but was filtered out because it's part of the brand name.
+    const brandSynonyms = brandSynonymsRaw;
 
     // Get products from KB
     const kbProducts = Array.isArray(brandProductsData?.brand_products)
@@ -1246,15 +1248,16 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
       : [];
 
-    // Combine all products and deduplicate
-    const allProductsRaw = Array.from(new Set([
-      ...kbProducts,
-      ...cacheProducts,
-      ...llmProducts
-    ]));
+    // Filter only the non-trusted sources
+    const filteredCacheProducts = this.filterPartialMatches(cacheProducts, brandName);
+    const filteredLlmProducts = this.filterPartialMatches(llmProducts, brandName);
 
-    // Apply strict filtering to products as well
-    const allProducts = this.filterPartialMatches(allProductsRaw, brandName);
+    // Combine all products (Trust KB products)
+    const allProducts = Array.from(new Set([
+      ...kbProducts,
+      ...filteredCacheProducts,
+      ...filteredLlmProducts
+    ]));
 
     return {
       brandName,
@@ -1294,8 +1297,8 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       ? competitorData.synonyms.filter((s: string) => s && typeof s === 'string')
       : [];
 
-    // Apply strict filtering
-    const kbSynonyms = this.filterPartialMatches(kbSynonymsRaw, competitorName);
+    // Trust KB synonyms (skip strict filtering)
+    const kbSynonyms = kbSynonymsRaw;
 
     const kbProducts = Array.isArray(competitorData?.products)
       ? competitorData.products.filter((p: string) => p && typeof p === 'string')
@@ -1311,15 +1314,16 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
       : [];
 
-    // Combine all products and deduplicate
-    const allProductsRaw = Array.from(new Set([
-      ...kbProducts,
-      ...cacheProducts,
-      ...llmProducts
-    ]));
+    // Filter only the non-trusted sources
+    const filteredCacheProducts = this.filterPartialMatches(cacheProducts, competitorName);
+    const filteredLlmProducts = this.filterPartialMatches(llmProducts, competitorName);
 
-    // Apply strict filtering to products as well
-    const allProducts = this.filterPartialMatches(allProductsRaw, competitorName);
+    // Combine all products (Trust KB products)
+    const allProducts = Array.from(new Set([
+      ...kbProducts,
+      ...filteredCacheProducts,
+      ...filteredLlmProducts
+    ]));
 
     return {
       competitorName,
@@ -1545,17 +1549,7 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     });
   }
 
-  /**
-   * Batch save all operations for a single collector_result together
-   * OPTIMIZATION: Saves positions and sentiment in one unified batch operation
-   * This reduces database round trips from 5+ operations to 1 batch per collector_result
-   * 
-   * Writes to: metric_facts, brand_metrics, competitor_metrics, brand_sentiment, competitor_sentiment
-   * Returns: metric_fact_id, brand_id, and competitorIdMap for use by calling functions
-   * 
-   * ATOMICITY NOTE: Uses upsert operations which are atomic at the row level.
-   * All operations for one collector_result are batched together for efficiency.
-   */
+
   public async batchSaveCollectorResult(
     positionPayload: PositionExtractionPayload,
     sentimentData?: {

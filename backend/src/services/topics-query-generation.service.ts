@@ -1,28 +1,36 @@
 /**
- * New Topics & Query Generation Service
+ * Unified Topics & Trending Generation Service
  * 
- * This service implements the improved prompt approach that generates
- * topics and queries together, organized by intent archetypes.
+ * Single LLM call that returns both:
+ * - AI-generated topics (grouped by intent category)
+ * - Trending keywords for the brand
  * 
- * Key improvements:
- * - Flexible topic count (3-7 per intent, not fixed 5)
- * - Better topic-query alignment
- * - More structured intent system
- * - Filters to top 15-20 most relevant topics
+ * Optimizations:
+ * - Compact prompt (no long context)
+ * - No description/priority in output (cleaner JSON)
+ * - Post-validation to reject question-like topics
+ * - Aspect-based comparison topics
  */
 
 import axios from 'axios';
 
-export interface TopicWithQuery {
+// Simplified topic (no description/priority)
+export interface TopicItem {
   intentArchetype: string;
   topic: string;
-  description: string;
-  priority: number;
 }
 
-export interface TopicsAndQueriesResponse {
+// Trending keyword item
+export interface TrendingItem {
+  keyword: string;
+  category: string;
+}
+
+// Unified response from the single LLM call
+export interface UnifiedTopicsResponse {
   primaryDomain: string;
-  topics: TopicWithQuery[];
+  topics: TopicItem[];
+  trending: TrendingItem[];
 }
 
 export interface TopicsAndQueriesRequest {
@@ -30,35 +38,57 @@ export interface TopicsAndQueriesRequest {
   industry?: string;
   competitors?: string[];
   description?: string;
-  maxTopics?: number; // Default: 20, max: 50
+  /**
+   * Compact keyword list from website scraping.
+   */
+  websiteContent?: string;
+  /**
+   * Brand keywords from website.
+   */
+  brandKeywords?: string[];
+  /**
+   * Industry keywords from website.
+   */
+  industryKeywords?: string[];
+  maxTopics?: number; // Default: 20
 }
 
+// Comparison aspects for more specific topics
+const COMPARISON_ASPECTS = [
+  'pricing',
+  'integrations',
+  'implementation',
+  'reporting',
+  'AP/AR automation',
+  'forecasting',
+  'security',
+  'user experience',
+];
+
+// Question words to reject
+const QUESTION_WORDS = ['what', 'how', 'why', 'when', 'where', 'who', 'which', 'explain', 'tell', 'describe'];
+
 class TopicsQueryGenerationService {
-  private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
-  private cerebrasModel = process.env['CEREBRAS_MODEL'] || 'gpt-4o-mini';
   private openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-  private openRouterModel = (() => {
-    const envModel = process.env['OPENROUTER_TOPICS_MODEL'];
-    const defaultModel = 'openai/gpt-4o-mini';
-    const model = envModel || defaultModel;
-    
-    console.log(`📋 [TOPICS] Using OpenRouter model: ${model}`);
-    return model;
-  })();
+  private openRouterModel = process.env['OPENROUTER_TOPICS_MODEL'] || 'openai/gpt-4o-mini';
   private openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
   private openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
+  private cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
+  private cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
 
   /**
-   * Generate topics and queries using the new improved prompt
+   * Generate topics AND trending keywords in a single LLM call
    */
   async generateTopicsAndQueries(
     request: TopicsAndQueriesRequest
-  ): Promise<TopicsAndQueriesResponse> {
+  ): Promise<UnifiedTopicsResponse> {
     const maxTopics = request.maxTopics || 20;
     const prompt = this.buildPrompt(request);
     let lastError: unknown;
 
-    // Primary: OpenRouter (gpt-4o-mini)
+    console.log(`📋 [TOPICS] Using OpenRouter model: ${this.openRouterModel}`);
+
+    // Primary: OpenRouter
     if (this.openRouterApiKey) {
       try {
         return await this.generateWithOpenRouter(prompt, maxTopics);
@@ -66,19 +96,17 @@ class TopicsQueryGenerationService {
         console.error('❌ OpenRouter topics generation failed, attempting fallback...', error);
         lastError = error;
       }
-    } else {
-      console.warn('⚠️ OPENROUTER_API_KEY is not configured. Skipping primary provider.');
-    }
 
-    // Fallback: OpenRouter with gpt-5-nano-2025-08-07
-    if (this.openRouterApiKey) {
+      // Fallback: OpenRouter with gpt-5-nano
       try {
         console.log('🔄 [TOPICS] Retrying with gpt-5-nano-2025-08-07 fallback...');
         return await this.generateWithOpenRouterFallback(prompt, maxTopics);
       } catch (error) {
-        console.error('❌ OpenRouter fallback (gpt-5-nano-2025-08-07) also failed, attempting Cerebras...', error);
+        console.error('❌ OpenRouter fallback also failed, attempting Cerebras...', error);
         lastError = lastError || error;
       }
+    } else {
+      console.warn('⚠️ OPENROUTER_API_KEY is not configured. Skipping primary provider.');
     }
 
     // Final Fallback: Cerebras
@@ -94,88 +122,192 @@ class TopicsQueryGenerationService {
     }
 
     throw new Error(
-      `Failed to generate topics and queries: ${
-        lastError instanceof Error ? lastError.message : 'No provider succeeded'
-      }`
+      `Failed to generate topics: ${lastError instanceof Error ? lastError.message : 'No provider succeeded'}`
     );
   }
 
   /**
-   * Build the improved prompt
+   * Build a compact, precise prompt
    */
   private buildPrompt(request: TopicsAndQueriesRequest): string {
-    const { brandName, industry, competitors, description } = request;
+    const {
+      brandName,
+      industry,
+      competitors,
+      description,
+      websiteContent,
+      brandKeywords,
+      industryKeywords,
+    } = request;
 
-    return `You are an AEO (Answer Engine Optimization) Topic Architect.  
-Your job: generate a structured list of meaningful Topics for the brand the user will input.
+    // Enforce an even count so we can request a strict 50/50 split
+    const requested = request.maxTopics || 20;
+    const totalTopics = requested % 2 === 0 ? requested : Math.max(2, requested - 1);
+    const brandTopicCount = Math.floor(totalTopics / 2);
+    const industryTopicCount = totalTopics - brandTopicCount;
 
-The user provides: **Brand Name: ${brandName}**
-${industry ? `Industry: ${industry}` : ''}
-${description ? `Brand Description: ${description}` : ''}
-${competitors && competitors.length > 0 ? `Competitors: ${competitors.join(', ')}` : ''}
+    const competitorList = competitors?.slice(0, 5).join(', ') || '';
+    const brandKw = brandKeywords?.slice(0, 5).join(', ') || '';
+    const industryKw = industryKeywords?.slice(0, 12).join(', ') || '';
+    const aspectList = COMPARISON_ASPECTS.join(', ');
 
-Your tasks:
+    return `Generate topics and trending keywords for "${brandName}".
 
-1. Determine the brand's **primary domain of value**.  
-   - This may be a product category, a service category, a content/education domain, a mission area, or a marketplace.  
-   - Choose the single domain that best reflects how most users interact with the brand.  
-   - If the brand spans many domains, pick the one with highest user impact and note any major secondary domains in your description.
+INPUT:
+- Brand: ${brandName}
+${industry ? `- Industry: ${industry}` : ''}
+${description ? `- Description: ${description}` : ''}
+${competitorList ? `- Competitors: ${competitorList}` : ''}
+${websiteContent ? `- ${websiteContent}` : ''}
+${brandKw ? `- Brand keywords: ${brandKw}` : ''}
+${industryKw ? `- Industry keywords: ${industryKw}` : ''}
 
-2. Using that domain, generate Topics grouped by the following **10 user Intent Archetypes**:  
-   - best_of  
-   - comparison  
-   - alternatives  
-   - pricing_or_value  
-   - use_case  
-   - how_to  
-   - problem_solving  
-   - beginner_explain  
-   - expert_explain  
-   - technical_deep_dive
+OUTPUT TWO ARRAYS IN JSON:
 
-3. For **each Intent Archetype**, generate **3-7 distinct Topics** (not fixed 5).  
-   - Generate more topics for intents that are highly relevant to this brand
-   - Generate fewer (or skip) intents that are less relevant
-   - Topics must be short descriptive phrases (not full questions).  
-   - Avoid overlap or duplication across intent groups.  
-   - Topics must reflect real-world user thinking for that brand + domain.  
-   - Avoid heavy internal jargon or feature names; focus on user-level concepts.
+1. "topics" (${totalTopics} items TOTAL): AI-generated topic phrases grouped by intent.
+   Intent categories: awareness, comparison, purchase, support
+   
+   RULES:
+   - 2-5 words each (max 6 for "X vs Y" comparisons)
+   - NO question marks
+   - Do NOT start with: what/how/why/when/where/who/which
+   - Neutral tone (not promotional)
+   - For comparison: MUST include an aspect (${aspectList})
+     Example: "${brandName} vs ${competitors?.[0] || 'Competitor'} pricing" NOT just "${brandName} vs ${competitors?.[0] || 'Competitor'}"
+   - STRICT QUOTA (must comply exactly):
+     - Exactly ${brandTopicCount} BRAND topics: MUST include the exact brand string "${brandName}" (case-insensitive match).
+     - Exactly ${industryTopicCount} INDUSTRY topics: MUST NOT include "${brandName}" anywhere.
+   - INDUSTRY topics should describe the market/problem/category (NOT the company), using industry terms (e.g. workflows, roles, use cases, features).
+   - BRAND topics should still be useful for search intent (not just "${brandName} features" repeated).
 
-4. For each Topic include a **1–2 sentence description** explaining what the topic is about.
+2. "trending" (6-8 items): Short trending keyword phrases users search now.
+   RULES:
+   - 1-4 words each
+   - Keyword-like (nouns), not questions
+   - Categories: Trending, Comparison, Features, Pricing, Support, Alternatives
 
-5. For each Topic, assign a **priority score (1-5)** based on:
-   - Relevance to the brand's primary domain
-   - Likely user search volume
-   - Business value potential
-
-6. **Output format (CRITICAL - Return ONLY valid JSON):**
-\`\`\`json
+RETURN ONLY THIS JSON (no markdown, no explanation):
 {
-  "primaryDomain": "1-2 sentence description of the brand's primary domain of value",
+  "primaryDomain": "1 sentence about brand's main value",
   "topics": [
-    {
-      "intentArchetype": "best_of|comparison|alternatives|pricing_or_value|use_case|how_to|problem_solving|beginner_explain|expert_explain|technical_deep_dive",
-      "topic": "short descriptive phrase (2-5 words)",
-      "description": "1-2 sentence explanation",
-      "priority": 1-5
-    }
+    {"intentArchetype": "awareness|comparison|purchase|support", "topic": "short phrase"}
+  ],
+  "trending": [
+    {"keyword": "short phrase", "category": "Trending|Comparison|Features|Pricing|Support|Alternatives"}
   ]
-}
-\`\`\`
-
-CRITICAL REQUIREMENTS:
-- Return ONLY the JSON object. No markdown code fences, no explanations, no text before or after.
-- Generate topics that are specific to this brand and industry
-- Prioritize topics that are most relevant to the brand's primary domain
-- Total topics should be between 20-50 (aim for quality over quantity)
-
-Focus on generating the most relevant and valuable topics for "${brandName}".`;
+}`;
   }
 
   /**
-   * Parse the LLM response
+   * Validate and fix a single topic
+   * Returns null if topic should be rejected
    */
-  private parseResponse(content: string): TopicsAndQueriesResponse {
+  private validateTopic(topic: string): string | null {
+    if (!topic || typeof topic !== 'string') return null;
+
+    let cleaned = topic.trim();
+
+    // Reject if has question mark
+    if (cleaned.includes('?')) {
+      console.log(`🚫 Rejected topic (question mark): "${cleaned}"`);
+      return null;
+    }
+
+    // Check if starts with question word
+    const lowerTopic = cleaned.toLowerCase();
+    for (const qw of QUESTION_WORDS) {
+      if (lowerTopic === qw || lowerTopic.startsWith(`${qw} `)) {
+        // Try to fix simple cases
+        const fixed = this.fixQuestionTopic(cleaned, qw);
+        if (fixed) {
+          console.log(`🔧 Fixed topic: "${cleaned}" → "${fixed}"`);
+          return fixed;
+        }
+        console.log(`🚫 Rejected topic (question word): "${cleaned}"`);
+        return null;
+      }
+    }
+
+    // Check word count (max 7 words)
+    const words = cleaned.split(/\s+/).filter(w => w.length > 0);
+    if (words.length > 7) {
+      console.log(`🚫 Rejected topic (too long): "${cleaned}"`);
+      return null;
+    }
+
+    // Check minimum length
+    if (cleaned.length < 3) {
+      return null;
+    }
+
+    return cleaned;
+  }
+
+  /**
+   * Try to fix a question-like topic into a keyword phrase
+   */
+  private fixQuestionTopic(topic: string, questionWord: string): string | null {
+    const lower = topic.toLowerCase();
+    
+    // "What is X" -> "X basics" or "X overview"
+    if (lower.startsWith('what is ')) {
+      const rest = topic.substring(8).trim();
+      if (rest.length > 2) return `${rest} basics`;
+    }
+
+    // "How to X" -> "X guide" or just remove "how to"
+    if (lower.startsWith('how to ')) {
+      const rest = topic.substring(7).trim();
+      if (rest.length > 2) return rest;
+    }
+
+    // "How does X work" -> "X functionality"
+    if (lower.startsWith('how does ') && lower.includes(' work')) {
+      const rest = topic.substring(9).replace(/\s+work.*$/i, '').trim();
+      if (rest.length > 2) return `${rest} functionality`;
+    }
+
+    // Generic: just remove the question word
+    const withoutQw = topic.replace(new RegExp(`^${questionWord}\\s+`, 'i'), '').trim();
+    if (withoutQw.length > 5 && withoutQw.split(/\s+/).length <= 6) {
+      return withoutQw;
+    }
+
+    return null;
+  }
+
+  /**
+   * Validate trending keyword
+   */
+  private validateTrending(keyword: string): string | null {
+    if (!keyword || typeof keyword !== 'string') return null;
+
+    const cleaned = keyword.trim();
+
+    // Reject questions
+    if (cleaned.includes('?')) return null;
+
+    // Check word count (max 5)
+    const words = cleaned.split(/\s+/).filter(w => w.length > 0);
+    if (words.length > 5) return null;
+
+    // Check for question words
+    const lower = cleaned.toLowerCase();
+    for (const qw of QUESTION_WORDS) {
+      if (lower === qw || lower.startsWith(`${qw} `)) {
+        return null;
+      }
+    }
+
+    if (cleaned.length < 3) return null;
+
+    return cleaned;
+  }
+
+  /**
+   * Parse and validate LLM response
+   */
+  private parseResponse(content: string, maxTopics: number): UnifiedTopicsResponse {
     // Remove markdown code fences if present
     let cleaned = content.trim();
     if (cleaned.startsWith('```json')) {
@@ -192,34 +324,58 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
 
     try {
       const parsed = JSON.parse(jsonMatch[0]);
-      
+
       // Validate structure
-      if (!parsed.primaryDomain || !Array.isArray(parsed.topics)) {
-        throw new Error('Invalid response structure');
+      if (!parsed.primaryDomain) {
+        parsed.primaryDomain = 'General';
       }
 
-      // Validate and normalize topics
-      const topics: TopicWithQuery[] = parsed.topics
-        .filter((t: any) => 
-          t.intentArchetype && 
-          t.topic && 
-          t.description && 
-          typeof t.priority === 'number'
-        )
-        .map((t: any) => ({
-          intentArchetype: t.intentArchetype,
-          topic: t.topic.trim(),
-          description: t.description.trim(),
-          priority: Math.max(1, Math.min(5, Math.round(t.priority))), // Clamp to 1-5
-        }));
+      // Process and validate topics
+      const rawTopics = Array.isArray(parsed.topics) ? parsed.topics : [];
+      const validTopics: TopicItem[] = [];
+      let rejectedCount = 0;
 
-      if (topics.length === 0) {
-        throw new Error('No valid topics found in response');
+      for (const t of rawTopics) {
+        if (!t?.topic || !t?.intentArchetype) continue;
+
+        const validatedTopic = this.validateTopic(t.topic);
+        if (validatedTopic) {
+          validTopics.push({
+            intentArchetype: this.normalizeIntentArchetype(t.intentArchetype),
+            topic: validatedTopic,
+          });
+        } else {
+          rejectedCount++;
+        }
       }
+
+      console.log(`✅ [TOPICS] Validated ${validTopics.length} topics (rejected ${rejectedCount})`);
+
+      // Process and validate trending
+      const rawTrending = Array.isArray(parsed.trending) ? parsed.trending : [];
+      const validTrending: TrendingItem[] = [];
+
+      for (const tr of rawTrending) {
+        if (!tr?.keyword) continue;
+
+        const validatedKeyword = this.validateTrending(tr.keyword);
+        if (validatedKeyword) {
+          validTrending.push({
+            keyword: validatedKeyword,
+            category: tr.category || 'Trending',
+          });
+        }
+      }
+
+      console.log(`✅ [TRENDING] Validated ${validTrending.length} keywords`);
+
+      // Limit topics
+      const limitedTopics = validTopics.slice(0, maxTopics);
 
       return {
         primaryDomain: parsed.primaryDomain.trim(),
-        topics,
+        topics: limitedTopics,
+        trending: validTrending.slice(0, 8),
       };
     } catch (error) {
       console.error('❌ Failed to parse response:', error);
@@ -229,59 +385,42 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
   }
 
   /**
-   * Call Cerebras as fallback provider
+   * Normalize intent archetype to our 4 categories
    */
-  private async generateWithCerebras(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
-    console.log('🤖 Generating topics and queries with Cerebras (fallback)...');
-    console.log('📝 Topics prompt preview:', this.previewForLog(prompt));
-
-    const response = await axios.post<any>(
-      'https://api.cerebras.ai/v1/chat/completions',
-      {
-        model: this.cerebrasModel,
-        messages: [
-          { role: 'system', content: 'You are an AEO (Answer Engine Optimization) Topic & Query Architect. Always respond with valid JSON only.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 4000, // Increased for larger output
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${this.cerebrasApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 90000, // 90 seconds for larger responses
-      }
-    );
-
-    const content = response.data?.choices?.[0]?.message?.content ?? '';
-    if (!content.trim()) {
-      throw new Error('Empty response from Cerebras API');
+  private normalizeIntentArchetype(archetype: string): string {
+    const lower = (archetype || '').toLowerCase().trim();
+    
+    // Map to our 4 main categories
+    if (lower.includes('comparison') || lower.includes('alternative') || lower.includes('vs')) {
+      return 'comparison';
     }
-
-    console.log('🔍 Cerebras topics response preview:', this.previewForLog(content));
-    return this.processResponse(content, maxTopics);
+    if (lower.includes('pricing') || lower.includes('purchase') || lower.includes('value') || lower.includes('cost')) {
+      return 'purchase';
+    }
+    if (lower.includes('support') || lower.includes('problem') || lower.includes('troubleshoot')) {
+      return 'support';
+    }
+    // Default to awareness
+    return 'awareness';
   }
 
   /**
-   * Call OpenRouter as primary provider (gpt-4o-mini)
+   * Call OpenRouter (primary)
    */
-  private async generateWithOpenRouter(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
-    console.log('🌐 [TOPICS] Generating topics and queries with OpenRouter (primary: gpt-4o-mini)...');
-    console.log(`🤖 [TOPICS] Using model: ${this.openRouterModel}`);
-    console.log('📝 [TOPICS] Topics prompt preview:', this.previewForLog(prompt));
+  private async generateWithOpenRouter(prompt: string, maxTopics: number): Promise<UnifiedTopicsResponse> {
+    console.log('🌐 [TOPICS] Generating with OpenRouter (primary)...');
+    console.log('📝 [TOPICS] Prompt preview:', this.previewForLog(prompt));
 
     const response = await axios.post<any>(
       'https://openrouter.ai/api/v1/chat/completions',
       {
         model: this.openRouterModel,
         messages: [
-          { role: 'system', content: 'You are an AEO (Answer Engine Optimization) Topic & Query Architect. Always respond with valid JSON only.' },
+          { role: 'system', content: 'Generate topics and trending keywords. Return only valid JSON.' },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.7,
-        max_tokens: 4000,
+        temperature: 0.6,
+        max_tokens: 2500,
       },
       {
         headers: {
@@ -290,7 +429,7 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
           ...(this.openRouterSiteUrl ? { 'HTTP-Referer': this.openRouterSiteUrl } : {}),
           ...(this.openRouterSiteTitle ? { 'X-Title': this.openRouterSiteTitle } : {}),
         },
-        timeout: 90000,
+        timeout: 60000,
       }
     );
 
@@ -299,27 +438,27 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
       throw new Error('Empty response from OpenRouter API');
     }
 
-    console.log('🔍 OpenRouter topics response preview:', this.previewForLog(content));
-    return this.processResponse(content, maxTopics);
+    console.log('🔍 OpenRouter response preview:', this.previewForLog(content));
+    return this.parseResponse(content, maxTopics);
   }
 
   /**
-   * Call OpenRouter with fallback model (gpt-5-nano-2025-08-07)
+   * Call OpenRouter fallback model
    */
-  private async generateWithOpenRouterFallback(prompt: string, maxTopics: number): Promise<TopicsAndQueriesResponse> {
+  private async generateWithOpenRouterFallback(prompt: string, maxTopics: number): Promise<UnifiedTopicsResponse> {
     const fallbackModel = 'openai/gpt-5-nano-2025-08-07';
-    console.log(`🔄 [TOPICS] Generating topics with OpenRouter fallback model: ${fallbackModel}`);
+    console.log(`🔄 [TOPICS] Generating with OpenRouter fallback: ${fallbackModel}`);
 
     const response = await axios.post<any>(
       'https://openrouter.ai/api/v1/chat/completions',
       {
         model: fallbackModel,
         messages: [
-          { role: 'system', content: 'You are an AEO (Answer Engine Optimization) Topic & Query Architect. Always respond with valid JSON only.' },
+          { role: 'system', content: 'Generate topics and trending keywords. Return only valid JSON.' },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.7,
-        max_tokens: 4000,
+        temperature: 0.6,
+        max_tokens: 2500,
       },
       {
         headers: {
@@ -328,7 +467,7 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
           ...(this.openRouterSiteUrl ? { 'HTTP-Referer': this.openRouterSiteUrl } : {}),
           ...(this.openRouterSiteTitle ? { 'X-Title': this.openRouterSiteTitle } : {}),
         },
-        timeout: 90000,
+        timeout: 60000,
       }
     );
 
@@ -337,69 +476,62 @@ Focus on generating the most relevant and valuable topics for "${brandName}".`;
       throw new Error('Empty response from OpenRouter fallback API');
     }
 
-    console.log('🔍 OpenRouter fallback topics response preview:', this.previewForLog(content));
-    return this.processResponse(content, maxTopics);
+    console.log('🔍 OpenRouter fallback response preview:', this.previewForLog(content));
+    return this.parseResponse(content, maxTopics);
   }
 
   /**
-   * Parse, filter, and rank LLM output
+   * Call Cerebras (final fallback)
    */
-  private processResponse(content: string, maxTopics: number): TopicsAndQueriesResponse {
-    const parsed = this.parseResponse(content);
-    const filtered = this.filterAndRankTopics(parsed.topics, maxTopics);
+  private async generateWithCerebras(prompt: string, maxTopics: number): Promise<UnifiedTopicsResponse> {
+    console.log('🤖 Generating with Cerebras (fallback)...');
+    console.log('📝 Prompt preview:', this.previewForLog(prompt));
 
-    console.log(`✅ Generated ${filtered.length} topics (from ${parsed.topics.length} total)`);
-
-    return {
-      primaryDomain: parsed.primaryDomain,
-      topics: filtered,
-    };
-  }
-
-  /**
-   * Filter and rank topics by priority, limiting to maxTopics
-   */
-  private filterAndRankTopics(
-    topics: TopicWithQuery[],
-    maxTopics: number
-  ): TopicWithQuery[] {
-    // Sort by priority (descending), then by intent archetype for consistency
-    const sorted = [...topics].sort((a, b) => {
-      if (b.priority !== a.priority) {
-        return b.priority - a.priority;
+    const response = await axios.post<any>(
+      'https://api.cerebras.ai/v1/chat/completions',
+      {
+        model: this.cerebrasModel,
+        messages: [
+          { role: 'system', content: 'Generate topics and trending keywords. Return only valid JSON.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.6,
+        max_tokens: 2500,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.cerebrasApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 60000,
       }
-      return a.intentArchetype.localeCompare(b.intentArchetype);
-    });
+    );
 
-    // Take top N topics
-    return sorted.slice(0, maxTopics);
+    const content = response.data?.choices?.[0]?.message?.content ?? '';
+    if (!content.trim()) {
+      throw new Error('Empty response from Cerebras API');
+    }
+
+    console.log('🔍 Cerebras response preview:', this.previewForLog(content));
+    return this.parseResponse(content, maxTopics);
   }
 
   /**
-   * Map intent archetypes to existing category system
-   * Maps new 10 archetypes to 4 existing categories for backward compatibility
+   * Map intent archetype to category (for backward compatibility)
    */
   mapIntentToCategory(intentArchetype: string): 'awareness' | 'comparison' | 'purchase' | 'post-purchase support' {
-    const mapping: Record<string, 'awareness' | 'comparison' | 'purchase' | 'post-purchase support'> = {
-      'best_of': 'awareness',
-      'comparison': 'comparison',
-      'alternatives': 'comparison',
-      'pricing_or_value': 'purchase',
-      'use_case': 'awareness',
-      'how_to': 'awareness',
-      'problem_solving': 'post-purchase support',
-      'beginner_explain': 'awareness',
-      'expert_explain': 'awareness',
-      'technical_deep_dive': 'awareness',
-    };
-
-    return mapping[intentArchetype] || 'awareness';
+    const normalized = this.normalizeIntentArchetype(intentArchetype);
+    if (normalized === 'support') return 'post-purchase support';
+    return normalized as 'awareness' | 'comparison' | 'purchase';
   }
 
-  private previewForLog(text: string, max: number = 800): string {
+  private previewForLog(text: string, max: number = 600): string {
     return text.length > max ? `${text.substring(0, max)}...` : text;
   }
 }
 
 export const topicsQueryGenerationService = new TopicsQueryGenerationService();
 
+// Backward compatibility aliases
+export type TopicsAndQueriesResponse = UnifiedTopicsResponse;
+export type TopicWithQuery = TopicItem & { description?: string; priority?: number };

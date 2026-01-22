@@ -1,28 +1,23 @@
 import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { onboardingIntelService } from '../services/onboarding';
-import { trendingKeywordsService } from '../services/keywords/trending-keywords.service';
-import { aeoCategorizationService } from '../services/aeo-categorization.service';
 import { brandService } from '../services/brand.service';
 import { topicsQueryGenerationService } from '../services/topics-query-generation.service';
 import { brandProductEnrichmentService } from '../services/onboarding/brand-product-enrichment.service';
+import { websiteScraperService } from '../services/website-scraper.service';
+import { promptGenerationService } from '../services/prompt-generation.service';
 
 const router = Router();
 
-// Request deduplication cache for topics endpoint
-const topicsRequestCache = new Map<string, Promise<any>>();
-// Request deduplication cache for prompts endpoint
-const promptsRequestCache = new Map<string, Promise<any>>();
-const DEDUP_WINDOW_MS = 5000; // 5 seconds
-
 function getTopicsRequestKey(req: Request): string {
-  const { brand_name, industry, brand_id, customer_id } = {
+  const { brand_name, industry, brand_id, website_url, customer_id } = {
     brand_name: req.body?.brand_name,
     industry: req.body?.industry,
     brand_id: req.body?.brand_id,
+    website_url: req.body?.website_url,
     customer_id: (req as any).user?.customer_id
   };
-  return `${customer_id || 'anon'}:${brand_id || 'no-id'}:${brand_name || 'no-name'}:${industry || 'no-industry'}`;
+  return `${customer_id || 'anon'}:${brand_id || 'no-id'}:${brand_name || 'no-name'}:${industry || 'no-industry'}:${website_url || 'no-website'}`;
 }
 
 function getPromptsRequestKey(req: Request): string {
@@ -267,9 +262,14 @@ router.post('/brand-products/preview', authenticateToken, async (req: Request, r
   }
 });
 
+// Request deduplication caches
+const topicsRequestCache = new Map<string, Promise<any>>();
+const promptsRequestCache = new Map<string, Promise<any>>();
+const DEDUP_WINDOW_MS = 5000; // 5 seconds
+
 /**
  * POST /onboarding/topics
- * Generate topics for brand using trending keywords and AI categorization
+ * Generate topics AND trending keywords in a SINGLE LLM call
  */
 router.post('/topics', authenticateToken, async (req: Request, res: Response) => {
   const requestKey = getTopicsRequestKey(req);
@@ -282,22 +282,20 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       const result = await existingRequest;
       return res.json(result);
     } catch (error) {
-      // If the existing request failed, remove it and continue with new request
       topicsRequestCache.delete(requestKey);
     }
   }
 
   // Create a new request promise
   const requestPromise = (async () => {
-    const { brand_name, industry, competitors = [], locale = 'en-US', country = 'US', brand_id, website_url } = req.body;
+    const { brand_name, industry, competitors = [], brand_id, website_url } = req.body;
     const customer_id = req.user?.customer_id;
 
     if (!brand_name || typeof brand_name !== 'string') {
       throw { status: 400, message: 'Brand name is required' };
     }
 
-    console.log(`🎯 Generating topics for ${brand_name} in ${industry || 'General'} industry`);
-    console.log(`🔍 Topic generation params:`, { brand_name, brand_id, website_url, customer_id });
+    console.log(`🎯 [TOPICS] Generating topics for ${brand_name} in ${industry || 'General'} industry`);
 
     // Try to get existing brand data from database
     let existingBrand = null;
@@ -307,141 +305,110 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
 
     if (customer_id) {
       try {
-        // Try to find brand by ID first, then by name/URL
         if (brand_id) {
-          console.log(`🔍 Looking up brand by ID: ${brand_id}`);
           existingBrand = await brandService.getBrandById(brand_id, customer_id);
-          if (existingBrand) {
-            console.log(`✅ Found brand by ID: ${existingBrand.name} (requested: ${brand_name})`);
-            // Verify the brand ID matches the brand name - if not, ignore it
-            if (existingBrand.name.toLowerCase() !== brand_name.toLowerCase()) {
-              console.warn(`⚠️ Brand ID ${brand_id} points to "${existingBrand.name}" but request is for "${brand_name}" - ignoring brand_id`);
-              existingBrand = null;
-            }
+          if (existingBrand && existingBrand.name.toLowerCase() !== brand_name.toLowerCase()) {
+            existingBrand = null;
           }
         }
         
         if (!existingBrand) {
-          console.log(`🔍 Looking up brand by name/URL: name="${brand_name}", url="${website_url}"`);
-          existingBrand = await brandService.findBrandByUrlOrName(
-            website_url,
-            brand_name,
-            customer_id
-          );
+          existingBrand = await brandService.findBrandByUrlOrName(website_url, brand_name, customer_id);
         }
 
         if (existingBrand) {
-          console.log(`✅ Found existing brand: ${existingBrand.name} (matches request for: ${brand_name})`);
-          
-          // Use existing brand data
           brandIndustry = existingBrand.industry || industry || 'General';
           brandCompetitors = existingBrand.competitors || competitors;
-          
-          // Get existing topics from database
           existingTopics = await brandService.getBrandTopics(existingBrand.id, customer_id);
           console.log(`📋 Found ${existingTopics.length} existing topics in database`);
         }
       } catch (brandError) {
-        console.log('⚠️ Could not fetch existing brand data, using provided values:', brandError);
+        console.log('⚠️ Could not fetch existing brand data:', brandError);
       }
     }
 
-    // Fetch topics and trending keywords in PARALLEL (not sequential)
-    const [topicsAndQueriesResult, trendingResult] = await Promise.all([
-      // Primary: Generate AI topics
-      topicsQueryGenerationService.generateTopicsAndQueries({
-        brandName: brand_name,
-        industry: brandIndustry || industry || 'General',
-        competitors: brandCompetitors,
-        maxTopics: 20
-      }),
-      // Parallel: Fetch trending keywords (with timeout to not block too long)
-      Promise.race([
-        trendingKeywordsService.getTrendingKeywords({
-          brand: brand_name,
-          industry: brandIndustry || 'General',
-          competitors: brandCompetitors,
-          locale,
-          country,
-          max_keywords: 6
-        }).then((result) => {
-          if (result.success && result.data) {
-            return result.data.keywords.slice(0, 6).map((kw: any, index: number) => ({
-              id: `trend-${index}`,
-              name: kw.keyword,
-              source: 'trending' as const,
-              relevance: Math.round((kw.trend_score || 0.9) * 100),
-              trendingIndicator: (kw.trend_score || 0.9) > 0.85 ? 'rising' : 'stable'
-            }));
-          }
-          return [];
-        }).catch((trendingError) => {
-          console.warn('⚠️ Trending keywords failed (continuing without trending topics):', trendingError);
-          return [];
-        }),
-        // 15 second timeout (increased from 10 to give more time)
-        new Promise<any[]>((resolve) => setTimeout(() => {
-          console.warn('⏱️ [TRENDING] Timeout after 15s, returning empty trending topics');
-          resolve([]);
-        }, 15000))
-      ])
-    ]);
+    // Scrape homepage (best-effort) for keywords
+    let scrapeResult = null;
+    if (website_url && typeof website_url === 'string' && website_url.trim()) {
+      try {
+        console.log(`🕸️ [TOPICS] Scraping homepage: ${website_url}`);
+        scrapeResult = await websiteScraperService.scrapeHomepage(website_url, {
+          brandName: brand_name,
+          timeoutMs: 6000,
+          maxKeywords: 15
+        });
+      } catch (scrapeError) {
+        console.warn('⚠️ [TOPICS] Scraping failed (continuing without):', scrapeError);
+      }
+    }
 
-    console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics with queries using new service`);
-    console.log(`📊 [TRENDING] Received ${trendingResult.length} trending topics for frontend`);
+    // Single LLM call for BOTH topics AND trending
+    const unifiedResult = await topicsQueryGenerationService.generateTopicsAndQueries({
+      brandName: brand_name,
+      industry: brandIndustry || industry || 'General',
+      competitors: brandCompetitors,
+      description: existingBrand?.summary || existingBrand?.description || undefined,
+      websiteContent: scrapeResult?.websiteContent,
+      brandKeywords: scrapeResult?.brandKeywords,
+      industryKeywords: scrapeResult?.industryKeywords,
+      maxTopics: 20
+    });
 
-    // Organize topics by category using intent archetype mapping
+    console.log(`✅ [TOPICS] Generated ${unifiedResult.topics.length} topics + ${unifiedResult.trending.length} trending keywords`);
+
+    // Format trending for frontend (from unified LLM response)
+    const trendingForFrontend = unifiedResult.trending.map((tr, index) => ({
+      id: `trend-${index}`,
+      name: tr.keyword,
+      source: 'trending' as const,
+      relevance: 90,
+      trendingIndicator: 'rising' as const
+    }));
+
+    // Organize topics by category
     const aiGenerated: Record<string, any[]> = {
       awareness: [],
       comparison: [],
       purchase: [],
-      'post-purchase support': []
+      support: []
     };
 
-    topicsAndQueriesResult.topics.forEach((topicWithQuery: any, index: number) => {
-      const category = topicsQueryGenerationService.mapIntentToCategory(topicWithQuery.intentArchetype);
-      const categoryKey = category === 'post-purchase support' ? 'post-purchase support' : category;
+    unifiedResult.topics.forEach((topicItem, index) => {
+      const category = topicsQueryGenerationService.mapIntentToCategory(topicItem.intentArchetype);
+      const categoryKey = category === 'post-purchase support' ? 'support' : category;
 
       if (aiGenerated[categoryKey]) {
         aiGenerated[categoryKey].push({
           id: `ai-${index}`,
-          name: topicWithQuery.topic,
-          description: topicWithQuery.description,
+          name: topicItem.topic,
           source: 'ai_generated' as const,
-          category: category,
-          relevance: topicWithQuery.priority * 20, // Convert 1-5 priority to 20-100 relevance
-          priority: topicWithQuery.priority
+          category: categoryKey,
+          relevance: 80
         });
       }
     });
 
     // Include existing topics from database
-    const existingTopicsFormatted = existingTopics.map((topic: any, index: number) => {
+    existingTopics.forEach((topic: any, index: number) => {
       const topicName = topic.topic_name || topic.topic || topic;
       const category = topic.category || 'awareness';
-      const categoryKey = category === 'support' || category === 'post-purchase support' ? 'post-purchase support' : category;
+      const categoryKey = category === 'support' || category === 'post-purchase support' ? 'support' : category;
 
-      return {
-        id: `existing-${index}`,
-        name: topicName,
-        source: 'existing' as const,
-        category: category,
-        relevance: 90
-      };
-    });
-
-    // Merge existing topics into appropriate categories
-    existingTopicsFormatted.forEach((topic) => {
-      const categoryKey = topic.category === 'support' || topic.category === 'post-purchase support' ? 'post-purchase support' : topic.category;
       if (aiGenerated[categoryKey]) {
-        const exists = aiGenerated[categoryKey].some(t => t.name.toLowerCase() === topic.name.toLowerCase());
+        const exists = aiGenerated[categoryKey].some(t => t.name.toLowerCase() === topicName.toLowerCase());
         if (!exists) {
-          aiGenerated[categoryKey].push(topic);
+          aiGenerated[categoryKey].push({
+            id: `existing-${index}`,
+            name: topicName,
+            source: 'existing' as const,
+            category: categoryKey,
+            relevance: 90
+          });
         }
       }
     });
 
-    // Add minimal preset topics (keep a small set for fallback)
+    // Minimal preset topics (fallback)
     const preset = [
       { id: 'preset-1', name: 'Product features', source: 'preset' as const, relevance: 85 },
       { id: 'preset-2', name: 'Customer testimonials', source: 'preset' as const, relevance: 82 },
@@ -449,41 +416,26 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
       { id: 'preset-4', name: 'Security and compliance', source: 'preset' as const, relevance: 78 }
     ];
 
-    // Map 'post-purchase support' back to 'support' for frontend compatibility
-    const aiGeneratedForFrontend = {
-      awareness: Array.isArray(aiGenerated.awareness) ? aiGenerated.awareness : [],
-      comparison: Array.isArray(aiGenerated.comparison) ? aiGenerated.comparison : [],
-      purchase: Array.isArray(aiGenerated.purchase) ? aiGenerated.purchase : [],
-      support: Array.isArray(aiGenerated['post-purchase support']) ? aiGenerated['post-purchase support'] : []
-    };
-
     const response = {
-      trending: trendingResult, // Use trending topics from parallel fetch
-      aiGenerated: aiGeneratedForFrontend,
+      trending: trendingForFrontend,
+      aiGenerated,
       preset,
       existing_count: existingTopics.length,
-      primaryDomain: topicsAndQueriesResult.primaryDomain
+      primaryDomain: unifiedResult.primaryDomain
     };
 
-    console.log(`✅ Generated ${topicsAndQueriesResult.topics.length} topics using new service, ${Object.values(aiGenerated).flat().length} total AI topics, and found ${existingTopics.length} existing topics`);
+    console.log(`✅ [TOPICS] Final: ${unifiedResult.topics.length} AI topics, ${trendingForFrontend.length} trending, ${existingTopics.length} existing`);
 
-    return {
-      success: true,
-      data: response
-    };
+    return { success: true, data: response };
   })();
 
   // Store the promise in cache
   topicsRequestCache.set(requestKey, requestPromise);
 
-  // Clean up cache after request completes (success or failure)
+  // Clean up cache after request completes
   requestPromise
-    .then(() => {
-      setTimeout(() => topicsRequestCache.delete(requestKey), DEDUP_WINDOW_MS);
-    })
-    .catch(() => {
-      topicsRequestCache.delete(requestKey);
-    });
+    .then(() => setTimeout(() => topicsRequestCache.delete(requestKey), DEDUP_WINDOW_MS))
+    .catch(() => topicsRequestCache.delete(requestKey));
 
   // Handle the request
   try {
@@ -491,10 +443,7 @@ router.post('/topics', authenticateToken, async (req: Request, res: Response) =>
     res.json(result);
   } catch (error: any) {
     if (error.status) {
-      res.status(error.status).json({
-        success: false,
-        error: error.message
-      });
+      res.status(error.status).json({ success: false, error: error.message });
     } else {
       console.error('❌ Failed to generate topics:', error);
       res.status(500).json({
@@ -590,59 +539,6 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
       }
     }
 
-    // Use OpenRouter as primary (gpt-4o-mini), fallback to gpt-5-nano, then Cerebras, then Gemini
-    const openRouterApiKey = process.env['OPENROUTER_API_KEY'];
-    const openRouterModel = process.env['OPENROUTER_MODEL'] || 'openai/gpt-4o-mini';
-    const openRouterFallbackModel = 'openai/gpt-5-nano-2025-08-07';
-    const openRouterSiteUrl = process.env['OPENROUTER_SITE_URL'];
-    const openRouterSiteTitle = process.env['OPENROUTER_SITE_TITLE'];
-    const cerebrasApiKey = process.env['CEREBRAS_API_KEY'];
-    const cerebrasModel = process.env['CEREBRAS_MODEL'] || 'qwen-3-235b-a22b-instruct-2507';
-    // Standardize on GOOGLE_GEMINI_API_KEY (fallback to GEMINI_API_KEY for compatibility)
-    const geminiApiKey = process.env['GOOGLE_GEMINI_API_KEY'] || process.env['GEMINI_API_KEY'];
-
-    let generatedQueries: Array<{ topic: string; query: string }> = [];
-
-    // Helper function to extract JSON array from text
-    const extractJsonArray = (text: string): string | null => {
-      let cleanText = text.trim();
-      
-      // Remove markdown code blocks if present
-      if (cleanText.startsWith('```json')) {
-        cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      } else if (cleanText.startsWith('```')) {
-        cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-      }
-      
-      // Find complete JSON array by counting brackets
-      let bracketCount = 0;
-      let startIndex = -1;
-      
-      for (let i = 0; i < cleanText.length; i++) {
-        if (cleanText[i] === '[') {
-          if (startIndex === -1) {
-            startIndex = i;
-          }
-          bracketCount++;
-        } else if (cleanText[i] === ']') {
-          bracketCount--;
-          if (bracketCount === 0 && startIndex !== -1) {
-            return cleanText.substring(startIndex, i + 1);
-          }
-        }
-      }
-      
-      // Fallback to regex if bracket counting didn't work
-      const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
-      return jsonMatch ? jsonMatch[0] : null;
-    };
-
-    // Build prompt for query generation
-    const finalIndustry = brandIndustry || industry || 'General';
-    const finalCompetitors = brandCompetitors.length > 0 
-      ? `Competitors: ${brandCompetitors.join(', ')}. ` 
-      : '';
-    
     // Extract topic names from topic objects (topics can be strings or objects with 'name' property)
     const topicNames = topics.map((t: any) => {
       if (typeof t === 'string') return t;
@@ -653,289 +549,21 @@ router.post('/prompts', authenticateToken, async (req: Request, res: Response) =
 
     console.log(`📝 [PROMPTS] Extracted ${topicNames.length} topic names:`, topicNames.slice(0, 5), topicNames.length > 5 ? '...' : '');
     
-    const prompt = `You are an SEO expert. Generate 3-5 realistic, neutral search queries for each topic in the ${finalIndustry} industry. ${finalCompetitors}
+    const finalIndustry = brandIndustry || industry || 'General';
 
-CRITICAL RULES:
-- Queries must be NEUTRAL and INDUSTRY-FOCUSED
-- DO NOT include the brand name "${brand_name}" in any query
-- DO NOT include competitor names in queries (unless it's a comparison query)
-- Queries should help users find and evaluate options in the ${finalIndustry} industry
-- Think from customer perspective: "How would someone search when researching ${finalIndustry} options?"
+    // Use dedicated prompt generation service
+    const promptResult = await promptGenerationService.generatePrompts({
+      brandName: brand_name,
+      industry: finalIndustry,
+      competitors: brandCompetitors,
+      topics: topicNames,
+    });
 
-Topics:
-${topicNames.map((t, i) => `${i + 1}. ${t}`).join('\n')}
-
-CRITICAL: Return ONLY a valid JSON array. No explanations, no markdown, no code blocks. Just the JSON array.
-Format:
-[
-  {"topic": "Topic Name", "query": "neutral industry-focused search query without brand name"},
-  {"topic": "Topic Name", "query": "another neutral search query"}
-]
-
-Generate queries that real users would type into Google. Make them specific, actionable, and NEUTRAL (no brand mentions).`;
-
-    let openRouterFailed = false;
-    let cerebrasFailed = false;
-    let geminiFailed = false;
-
-    console.log('📝 Prompts generation prompt preview:', prompt.substring(0, 500) + '...');
-    
-    // Try OpenRouter first (primary)
-    if (openRouterApiKey && openRouterApiKey !== 'your_openrouter_api_key_here') {
-      try {
-        console.log('🌐 [PROMPTS FLOW] Step 1: Attempting prompt generation with OpenRouter (primary)...');
-        const headers: Record<string, string> = {
-          'Authorization': `Bearer ${openRouterApiKey}`,
-          'Content-Type': 'application/json',
-        };
-        if (openRouterSiteUrl) {
-          headers['HTTP-Referer'] = openRouterSiteUrl;
-        }
-        if (openRouterSiteTitle) {
-          headers['X-Title'] = openRouterSiteTitle;
-        }
-
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: openRouterModel,
-            messages: [
-              { role: 'system', content: 'You are an SEO expert. Always respond with valid JSON arrays only. No explanations, no markdown, no code blocks.' },
-              { role: 'user', content: prompt }
-            ],
-            temperature: 0.7,
-            max_tokens: 2000,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json() as any;
-          const generatedText = data.choices?.[0]?.message?.content || '';
-          
-          if (generatedText) {
-            const jsonStr = extractJsonArray(generatedText);
-            if (jsonStr) {
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  generatedQueries = parsed;
-                  console.log(`✅ [PROMPTS FLOW] Step 1 SUCCESS: Generated ${parsed.length} queries using OpenRouter`);
-                  console.log(`🔍 [PROMPTS FLOW] OpenRouter response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
-                }
-              } catch (parseError) {
-                console.error('❌ Failed to parse OpenRouter JSON response:', parseError);
-                openRouterFailed = true;
-              }
-            } else {
-              console.warn('⚠️ No valid JSON array found in OpenRouter response');
-              openRouterFailed = true;
-            }
-          } else {
-            openRouterFailed = true;
-          }
-        } else {
-          const errorText = await response.text();
-          console.error(`❌ [PROMPTS FLOW] Step 1 FAILED: OpenRouter API error: ${response.status} ${errorText}`);
-          openRouterFailed = true;
-        }
-      } catch (openRouterError) {
-        console.error('❌ [PROMPTS FLOW] Step 1 FAILED: OpenRouter API request failed:', openRouterError);
-        openRouterFailed = true;
-      }
-    } else {
-      console.warn('⚠️ [PROMPTS FLOW] Step 1 SKIPPED: OpenRouter API key not configured');
-      openRouterFailed = true;
-    }
-
-    // Fallback to OpenRouter with gpt-5-nano-2025-08-07 if primary failed
-    if (generatedQueries.length === 0 && openRouterApiKey && openRouterApiKey !== 'your_openrouter_api_key_here') {
-      try {
-        console.log(`🔄 [PROMPTS FLOW] Step 2: Attempting prompt generation with OpenRouter fallback (${openRouterFallbackModel})...`);
-        const headers: Record<string, string> = {
-          'Authorization': `Bearer ${openRouterApiKey}`,
-          'Content-Type': 'application/json',
-        };
-        if (openRouterSiteUrl) {
-          headers['HTTP-Referer'] = openRouterSiteUrl;
-        }
-        if (openRouterSiteTitle) {
-          headers['X-Title'] = openRouterSiteTitle;
-        }
-
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: openRouterFallbackModel,
-            messages: [
-              { role: 'system', content: 'You are an SEO expert. Always respond with valid JSON arrays only. No explanations, no markdown, no code blocks.' },
-              { role: 'user', content: prompt }
-            ],
-            temperature: 0.7,
-            max_tokens: 2000,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json() as any;
-          const generatedText = data.choices?.[0]?.message?.content || '';
-          
-          if (generatedText) {
-            const jsonStr = extractJsonArray(generatedText);
-            if (jsonStr) {
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  generatedQueries = parsed;
-                  console.log(`✅ [PROMPTS FLOW] Step 2 SUCCESS: Generated ${parsed.length} queries using OpenRouter fallback (${openRouterFallbackModel})`);
-                  console.log(`🔍 [PROMPTS FLOW] OpenRouter fallback response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
-                }
-              } catch (parseError) {
-                console.error('❌ Failed to parse OpenRouter fallback JSON response:', parseError);
-              }
-            }
-          }
-        } else {
-          const errorText = await response.text();
-          console.error(`❌ [PROMPTS FLOW] Step 2 FAILED: OpenRouter fallback API error: ${response.status} ${errorText}`);
-        }
-      } catch (fallbackError) {
-        console.error('❌ [PROMPTS FLOW] Step 2 FAILED: OpenRouter fallback API request failed:', fallbackError);
-      }
-    }
-
-    // Fallback to Cerebras if OpenRouter failed
-    if (generatedQueries.length === 0 && cerebrasApiKey && cerebrasApiKey !== 'your_cerebras_api_key_here') {
-      try {
-        console.log('🧠 [PROMPTS FLOW] Step 3: Attempting prompt generation with Cerebras (tertiary)...');
-        const response = await fetch('https://api.cerebras.ai/v1/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${cerebrasApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: cerebrasModel,
-            prompt: prompt,
-            max_tokens: 2000,
-            temperature: 0.7,
-            stop: ['---END---']
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json() as any;
-          const generatedText = data.choices?.[0]?.text || '';
-          
-          if (generatedText) {
-            const jsonStr = extractJsonArray(generatedText);
-            if (jsonStr) {
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  generatedQueries = parsed;
-                  console.log(`✅ [PROMPTS FLOW] Step 2 SUCCESS: Generated ${parsed.length} queries using Cerebras`);
-                  console.log(`🔍 [PROMPTS FLOW] Cerebras response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
-                }
-              } catch (parseError) {
-                console.error('❌ Failed to parse Cerebras JSON response:', parseError);
-                cerebrasFailed = true;
-              }
-            } else {
-              console.warn('⚠️ No valid JSON array found in Cerebras response');
-              cerebrasFailed = true;
-            }
-          } else {
-            cerebrasFailed = true;
-          }
-        } else {
-          console.error(`❌ [PROMPTS FLOW] Step 2 FAILED: Cerebras API error: ${response.status} ${response.statusText}`);
-          cerebrasFailed = true;
-        }
-      } catch (cerebrasError) {
-        console.error('❌ [PROMPTS FLOW] Step 2 FAILED: Cerebras API request failed:', cerebrasError);
-        cerebrasFailed = true;
-      }
-    } else if (generatedQueries.length === 0) {
-      console.warn('⚠️ [PROMPTS FLOW] Step 2 SKIPPED: Cerebras API key not configured');
-      cerebrasFailed = true;
-    }
-
-    // Fallback to Gemini if both OpenRouter and Cerebras failed
-    if (generatedQueries.length === 0 && geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
-      try {
-        console.log('🤖 [PROMPTS FLOW] Step 3: Attempting prompt generation with Gemini (tertiary fallback)...');
-        const geminiModel = process.env['GOOGLE_GEMINI_MODEL'] || 'gemini-1.5-flash-002';
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                role: 'user',
-                parts: [{
-                  text: `You are an SEO expert. Return only valid JSON arrays. No explanations, no markdown, no code blocks.\n\n${prompt}`,
-                }],
-              }],
-              generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 2000,
-              },
-            }),
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json() as any;
-          const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          
-          if (generatedText) {
-            const jsonStr = extractJsonArray(generatedText);
-            if (jsonStr) {
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  generatedQueries = parsed;
-                  console.log(`✅ [PROMPTS FLOW] Step 3 SUCCESS: Generated ${parsed.length} queries using Gemini`);
-                  console.log(`🔍 [PROMPTS FLOW] Gemini response preview:`, JSON.stringify(parsed).substring(0, 500) + '...');
-                }
-              } catch (parseError) {
-                console.error('❌ Failed to parse Gemini JSON response:', parseError);
-                geminiFailed = true;
-              }
-            } else {
-              console.warn('⚠️ No valid JSON array found in Gemini response');
-              geminiFailed = true;
-            }
-          } else {
-            geminiFailed = true;
-          }
-        } else {
-          const errorText = await response.text();
-          console.error(`❌ [PROMPTS FLOW] Step 3 FAILED: Gemini API error: ${response.status} ${errorText}`);
-          geminiFailed = true;
-        }
-      } catch (geminiError) {
-        console.error('❌ [PROMPTS FLOW] Step 3 FAILED: Gemini API request failed:', geminiError);
-        geminiFailed = true;
-      }
-    } else if (generatedQueries.length === 0) {
-      console.warn('⚠️ [PROMPTS FLOW] Step 3 SKIPPED: Gemini API key not configured');
-      geminiFailed = true;
-    }
-
-    // If all providers failed, throw error
-    if (generatedQueries.length === 0) {
-      const errorMsg = 'Prompt generation failed: All providers (OpenRouter, Cerebras, Gemini) failed';
-      console.error(`❌ ${errorMsg}`);
-      throw new Error(errorMsg);
-    }
+    console.log(`✅ [PROMPTS] Generated ${promptResult.queries.length} queries using ${promptResult.providerUsed}`);
 
     // Group queries by topic
     const promptsByTopic: Record<string, string[]> = {};
-    generatedQueries.forEach((item) => {
+    promptResult.queries.forEach((item) => {
       if (item.topic && item.query) {
         if (!promptsByTopic[item.topic]) {
           promptsByTopic[item.topic] = [];
@@ -945,12 +573,12 @@ Generate queries that real users would type into Google. Make them specific, act
     });
 
     // Format response as array of topic-prompts pairs
-    const result = topics.map(topic => ({
+    const result = topicNames.map(topic => ({
       topic,
       prompts: promptsByTopic[topic] || []
     }));
 
-    console.log(`✅ Generated ${generatedQueries.length} prompts for ${Object.keys(promptsByTopic).length} topics`);
+    console.log(`✅ Generated ${promptResult.queries.length} prompts for ${Object.keys(promptsByTopic).length} topics`);
 
     return {
       success: true,

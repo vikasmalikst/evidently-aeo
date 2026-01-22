@@ -19,6 +19,8 @@ export const AdminLayout = () => {
             localStorage.removeItem('manual-dashboard:selected-brand');
         }
         cacheManager.clear();
+        // Dispatch custom event for real-time sync
+        window.dispatchEvent(new CustomEvent('admin-impersonation-change'));
     };
 
     const handleBrandChange = (id: string | null) => {
@@ -29,8 +31,8 @@ export const AdminLayout = () => {
             localStorage.removeItem('manual-dashboard:selected-brand');
         }
         cacheManager.clear();
-        // Soft reload/navigate to update context across the app
-        navigate(window.location.pathname, { replace: true });
+        // Dispatch custom event for real-time sync across all components
+        window.dispatchEvent(new CustomEvent('admin-impersonation-change'));
     };
 
     return (

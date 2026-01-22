@@ -74,24 +74,47 @@ export const useManualBrandDashboard = (
     }
   })
 
-  // Listen for storage changes to detect impersonation updates
+  // Listen for storage changes and custom events to detect impersonation updates
   useEffect(() => {
     const handleStorageChange = () => {
       const currentImpersonation = localStorage.getItem('admin-impersonation:customer-id')
+      const currentBrand = localStorage.getItem('manual-dashboard:selected-brand')
+
       if (currentImpersonation !== impersonationCustomerId) {
         setImpersonationCustomerId(currentImpersonation)
       }
+
+      // Also update selected brand from localStorage
+      if (currentBrand && currentBrand !== selectedBrandId) {
+        setSelectedBrandId(currentBrand)
+      }
+    }
+
+    // Listen for custom event from AdminLayout for immediate sync
+    const handleAdminChange = () => {
+      const currentImpersonation = localStorage.getItem('admin-impersonation:customer-id')
+      const currentBrand = localStorage.getItem('manual-dashboard:selected-brand')
+
+      // Force update both impersonation and brand selection
+      setImpersonationCustomerId(currentImpersonation)
+      if (currentBrand) {
+        setSelectedBrandId(currentBrand)
+      }
+      // Trigger a reload to refetch brands for the new context
+      setReloadToken((prev) => prev + 1)
     }
 
     // Check periodically for localStorage changes (since storage event doesn't fire for same-tab changes)
     const interval = setInterval(handleStorageChange, 500)
     window.addEventListener('storage', handleStorageChange)
+    window.addEventListener('admin-impersonation-change', handleAdminChange)
 
     return () => {
       clearInterval(interval)
       window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('admin-impersonation-change', handleAdminChange)
     }
-  }, [impersonationCustomerId])
+  }, [impersonationCustomerId, selectedBrandId])
 
   const reload = useCallback(() => {
     setReloadToken((prev) => prev + 1)

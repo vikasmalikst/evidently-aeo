@@ -5,6 +5,7 @@ import type { OnboardingCompetitor } from '../../types/onboarding';
 import { fetchPromptsForTopics } from '../../api/onboardingApi';
 import { Spinner } from './common/Spinner';
 import { OnboardingTooltip } from './common/OnboardingTooltip';
+import { useAuthStore } from '../../store/authStore';
 
 export interface PromptWithTopic {
   prompt: string;
@@ -22,6 +23,9 @@ function isCustomPrompt(prompt: string, customPrompts: Record<string, string[]>)
 }
 
 export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPromptsChange }: PromptConfigurationProps) => {
+  const { user } = useAuthStore();
+  const maxQueries = user?.settings?.entitlements?.max_queries ?? 5; // Default to 5 if not set
+
   const [customPrompt, setCustomPrompt] = useState('');
   const [selectedTopicForCustom, setSelectedTopicForCustom] = useState('');
   const [showCustomModal, setShowCustomModal] = useState(false);
@@ -163,6 +167,11 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
     if (isSelected) {
       onPromptsChange(selectedPrompts.filter(p => !(p.prompt === prompt && p.topic === topicName)));
     } else {
+      // Check limits
+      if (selectedPrompts.length >= maxQueries) {
+        // Could show a toast here if we had a toast system
+        return;
+      }
       onPromptsChange([...selectedPrompts, promptWithTopic]);
     }
   };
@@ -284,8 +293,8 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
               <IconPlus size={18} />
               Add Custom Prompt
             </button>
-            <div className="prompt-counter">
-              <strong>{selectedPrompts.length}</strong> prompts selected
+            <div className={`prompt-counter ${selectedPrompts.length >= maxQueries ? 'text-amber-600' : ''}`}>
+              <strong>{selectedPrompts.length}</strong> / {maxQueries} prompts selected
             </div>
           </div>
         </div>
@@ -508,12 +517,13 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
                         const isSelected = selectedPrompts.some(p => p.prompt === prompt && p.topic === topic.name);
                         const isCustom = isCustomPrompt(prompt, customPromptsByTopic);
                         return (
-                          <label key={prompt} className="prompt-checkbox-item">
+                          <label key={prompt} className={`prompt-checkbox-item ${!isSelected && selectedPrompts.length >= maxQueries ? 'opacity-50 cursor-not-allowed' : ''}`}>
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => handleTogglePrompt(prompt, topic.name)}
                               className="prompt-checkbox"
+                              disabled={!isSelected && selectedPrompts.length >= maxQueries}
                             />
                             <span className="prompt-label">
                               {prompt}

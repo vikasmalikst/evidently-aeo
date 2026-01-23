@@ -219,7 +219,7 @@ export const NewSidebar = () => {
           {/* Parent item with expand/collapse */}
           <button
             onClick={() => toggleSection(item.id)}
-            className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)] ${active ? 'bg-[var(--bg-secondary)]' : ''
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)] ${active ? 'bg-[var(--bg-secondary)]' : ''
               }`}
           >
             <div
@@ -272,11 +272,11 @@ export const NewSidebar = () => {
                         className={`flex-shrink-0 ${childActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-caption)]'} ${isChildLocked ? 'opacity-50' : ''}`}
                       />
                     )}
-                    <span className={`text-sm whitespace-nowrap ${isChildLocked ? 'text-[var(--text-caption)]' : ''}`}>
+                    <span className={`text-sm whitespace-nowrap truncate flex-1 min-w-0 ${isChildLocked ? 'text-[var(--text-caption)]' : ''}`}>
                       {child.label}
                     </span>
                     {isChildLocked && (
-                      <span className="ml-auto text-[10px] font-bold tracking-wide text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1.5 py-0.5 rounded shadow-sm flex-shrink-0">
+                      <span className="ml-2 text-[10px] font-bold tracking-wide text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1.5 py-0.5 rounded shadow-sm flex-shrink-0">
                          PRO
                       </span>
                     )}
@@ -286,13 +286,13 @@ export const NewSidebar = () => {
               return (
                 <li key={child.path} title={isChildLocked ? "Contact sales to unlock" : ""}>
                    {isChildLocked ? (
-                      <div className="flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg cursor-not-allowed opacity-80 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-3 pl-10 pr-3 py-2 rounded-lg cursor-not-allowed opacity-80 hover:bg-gray-50 transition-colors">
                         {content}
                       </div>
                    ) : (
                       <Link
                         to={child.path}
-                        className={`flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg transition-all duration-200 ${childActive
+                        className={`flex items-center gap-3 pl-10 pr-3 py-2 rounded-lg transition-all duration-200 ${childActive
                           ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-medium'
                           : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
                           }`}
@@ -339,13 +339,13 @@ export const NewSidebar = () => {
     return (
       <li key={item.id} title={isLocked ? "Contact sales to unlock" : ""}>
         {isLocked ? (
-            <div className="flex items-center gap-3 px-3 py-3 rounded-lg cursor-not-allowed group opacity-80 hover:bg-gray-50 transition-colors">
+            <div className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-not-allowed group opacity-80 hover:bg-gray-50 transition-colors">
                {content}
             </div>
         ) : (
             <Link
               to={item.path!}
-              className="flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)]"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)]"
             >
               {content}
             </Link>
@@ -360,19 +360,28 @@ export const NewSidebar = () => {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className="fixed left-0 top-16 h-[calc(100vh-4rem)] bg-white border-r border-[var(--border-default)] flex flex-col shadow-sm z-50 transition-all duration-300 ease-in-out"
-      style={{ width: isExpanded ? '260px' : '72px' }}
+      style={{ width: isExpanded ? '300px' : '72px' }}
     >
-      <nav className="flex-1 py-6 overflow-y-auto">
-        <ul className="space-y-1 px-3">
+      <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden no-scrollbar">
+        <style>{`
+          .no-scrollbar::-webkit-scrollbar {
+            display: none;
+          }
+          .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+          }
+        `}</style>
+        <ul className="space-y-0.5 px-3">
           {navItems.map(renderNavItem)}
           {(user?.role === 'AL_ADMIN' || user?.accessLevel === 'admin') && adminNavItems.map(renderNavItem)}
         </ul>
       </nav>
 
-      <div className="border-t border-[var(--border-default)] p-3 space-y-2">
+      <div className="border-t border-[var(--border-default)] p-3 space-y-1">
         <Link
           to="/settings"
-          className={`flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out ${isPathActive('/settings') || location.pathname.startsWith('/settings')
+          className={`flex items-center gap-3 px-3 py-2 rounded-lg w-full transition-all duration-300 ease-in-out ${isPathActive('/settings') || location.pathname.startsWith('/settings')
             ? 'bg-[var(--bg-secondary)] text-[var(--accent-primary)]'
             : 'text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]'
             }`}

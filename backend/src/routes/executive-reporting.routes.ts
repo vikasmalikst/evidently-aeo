@@ -9,7 +9,9 @@ import { reportOrchestrationService } from '../services/executive-reporting/repo
 import { scheduleService } from '../services/executive-reporting/schedule.service';
 import { annotationService } from '../services/executive-reporting/annotation.service';
 import { pdfExportService } from '../services/executive-reporting/pdf-export.service';
+import { pdfExportServiceV2 } from '../services/executive-reporting/pdf-export-v2.service';
 import { emailService } from '../services/email/email.service';
+import { emailServiceV2 } from '../services/email/email-v2.service';
 import type {
     GenerateReportRequest,
     CreateScheduleRequest,
@@ -516,6 +518,74 @@ router.post('/brands/:brandId/executive-reports/:reportId/email', async (req: Re
         });
     } catch (error: any) {
         console.error('Error emailing report:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to email report',
+        });
+    }
+});
+
+/**
+ * POST /api/brands/:brandId/executive-reports/:reportId/export/pdf-v2
+ * Export report as PDF (V2 - Visual Mirror)
+ */
+router.post('/brands/:brandId/executive-reports/:reportId/export/pdf-v2', async (req: Request, res: Response) => {
+    try {
+        const { reportId, brandId } = req.params;
+
+        console.log(`📄 [API] Generating V2 PDF for report ${reportId}`);
+        const pdfBuffer = await pdfExportServiceV2.generatePDF(reportId, brandId);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="executive-report-v2-${reportId}.pdf"`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        console.error('Error generating V2 PDF:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to generate V2 PDF',
+        });
+    }
+});
+
+/**
+ * POST /api/brands/:brandId/executive-reports/:reportId/email-v2
+ * Email report to a specific address (V2 - Visual Mirror)
+ */
+router.post('/brands/:brandId/executive-reports/:reportId/email-v2', async (req: Request, res: Response) => {
+    try {
+        const { reportId, brandId } = req.params;
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                error: 'Email address is required',
+            });
+        }
+
+        console.log(`📧 [API] Sending V2 Email for report ${reportId} to ${email}`);
+        
+        // 1. Get brand details for the email subject/body
+        const { data: brand, error: brandError } = await supabase
+            .from('brands')
+            .select('name')
+            .eq('id', brandId)
+            .single();
+
+        if (brandError || !brand) {
+            return res.status(404).json({ success: false, error: 'Brand not found' });
+        }
+
+        // 2. Send Email
+        await emailServiceV2.sendExecutiveReport(email, reportId, brandId, brand.name);
+
+        res.json({
+            success: true,
+            message: 'Report emailed successfully (V2)',
+        });
+    } catch (error: any) {
+        console.error('Error emailing V2 report:', error);
         res.status(500).json({
             success: false,
             error: error.message || 'Failed to email report',

@@ -52,6 +52,15 @@ export const useManualBrandDashboard = (
 
   const [brands, setBrands] = useState<ManualBrandSummary[]>([])
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(() => {
+    // Check URL params first (for PDF/Email generation support)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const brandIdParam = params.get('brandId')
+      if (brandIdParam) {
+        return brandIdParam
+      }
+    }
+
     if (!persistSelection) {
       return null
     }

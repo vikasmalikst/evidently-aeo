@@ -90,7 +90,7 @@ export const EmailReportModal: React.FC<EmailReportModalProps> = ({
                             disabled={!email || loading || status === 'success'}
                             className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${status === 'success'
                                     ? 'bg-green-500 hover:bg-green-600 text-white'
-                                    : 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-dark)] text-white shadow-lg shadow-blue-500/20'
+                                    : 'bg-[#00bcdc] hover:bg-[#0096b0] text-white shadow-lg shadow-blue-500/20'
                                 } disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
                             {loading ? (

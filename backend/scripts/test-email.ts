@@ -9,8 +9,8 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 
 async function testEmail() {
   console.log('Testing Email Service...');
-  console.log('ZOHO_MAIL_USER:', process.env.ZOHO_MAIL_USER ? 'Set' : 'Missing');
-  console.log('ZOHO_MAIL_PASSWORD:', process.env.ZOHO_MAIL_PASSWORD ? 'Set' : 'Missing');
+  console.log('ZOHO_EMAIL:', process.env.ZOHO_EMAIL ? 'Set' : 'Missing');
+  console.log('ZOHO_PASSWORD:', process.env.ZOHO_PASSWORD ? 'Set' : 'Missing');
 
   const emailService = new EmailService();
   const to = 'vmalik9@gmail.com';

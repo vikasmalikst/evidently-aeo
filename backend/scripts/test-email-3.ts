@@ -11,8 +11,8 @@ dotenv.config({ path: envPath });
 const backendEnvPath = path.join(__dirname, '../.env');
 dotenv.config({ path: backendEnvPath });
 
-console.log('ZOHO_MAIL_USER:', process.env.ZOHO_MAIL_USER);
-console.log('ZOHO_MAIL_PASSWORD:', process.env.ZOHO_MAIL_PASSWORD ? '******' : 'undefined');
+console.log('ZOHO_EMAIL:', process.env.ZOHO_EMAIL);
+console.log('ZOHO_PASSWORD:', process.env.ZOHO_PASSWORD ? '******' : 'undefined');
 
 async function run() {
   try {

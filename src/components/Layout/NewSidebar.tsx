@@ -85,6 +85,7 @@ const adminNavItems: NavItem[] = [
       { label: 'Entitlements', path: '/admin/entitlements', icon: IconChecklist },
       { label: 'Scheduled Jobs', path: '/admin/scheduled-jobs', icon: IconGauge },
       { label: 'Data Collection Status', path: '/admin/data-collection-status', icon: IconAnalyze },
+      { label: 'Collection Stats', path: '/admin/collection-stats', icon: IconChartBar },
     ],
   },
 ];

@@ -97,7 +97,31 @@ export class DataCollectionJobService {
 
       const maxQueries = entitlements?.max_queries ?? 1000;
       const enabledCountries = entitlements?.enabled_countries ?? ['US'];
-      const enabledCollectors = entitlements?.enabled_collectors ?? ['chatgpt', 'perplexity'];
+
+      // Helper to normalize collector names
+      const normalizeCollectorName = (name: string): string => {
+        const n = name.toLowerCase().trim();
+        const map: Record<string, string> = {
+          'chatgpt': 'chatgpt',
+          'google ai mode': 'google_aio',
+          'google_aio': 'google_aio',
+          'perplexity': 'perplexity',
+          'claude': 'claude',
+          'grok': 'grok',
+          'bing copilot': 'bing_copilot',
+          'bing_copilot': 'bing_copilot',
+          'gemini': 'gemini',
+          'google gemini': 'gemini',
+          'deepseek': 'deepseek',
+          'baidu': 'baidu',
+          'bing': 'bing',
+          'mistral': 'mistral'
+        };
+        return map[n] || n;
+      };
+
+      const rawEnabledCollectors = entitlements?.enabled_collectors ?? ['chatgpt', 'perplexity'];
+      const enabledCollectors = rawEnabledCollectors.map(normalizeCollectorName);
 
       // Get active queries for this brand
       let queryBuilder = supabase

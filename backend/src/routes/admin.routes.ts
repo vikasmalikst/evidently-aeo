@@ -1708,6 +1708,7 @@ router.post('/brands/:brandId/collect-data-now', async (req: Request, res: Respo
             console.log(`[Admin] Brand ${brandId} has an explicit empty collectors selection`);
           } else {
             console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+            collectorsToUse = mapAIModelsToCollectors([]);
           }
         }
       } catch (error) {
@@ -1956,6 +1957,7 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
                 console.log(`[Admin] Brand ${brandId} has an explicit empty collectors selection`);
               } else {
                 console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+                collectorsToUse = mapAIModelsToCollectors([]);
               }
             }
           } catch (error) {

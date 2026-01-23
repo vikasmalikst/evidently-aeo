@@ -7,6 +7,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import { dataCollectionService, QueryExecutionRequest } from '../data-collection/data-collection.service';
 import { brandProductEnrichmentService } from '../onboarding/brand-product-enrichment.service';
+import { customerEntitlementsService } from '../customer-entitlements.service';
 
 loadEnvironment();
 
@@ -64,7 +65,7 @@ export class DataCollectionJobService {
     try {
       // Get active queries for this brand from onboarding
       // These are queries that were selected during onboarding and are still active
-      
+
       // First, let's check what queries exist (for debugging)
       const { data: allQueries, error: allQueriesError } = await supabase
         .from('generated_queries')
@@ -90,8 +91,15 @@ export class DataCollectionJobService {
         console.error(`   Error fetching all queries:`, allQueriesError);
       }
 
-      // Now get only active queries
-      // Try boolean true first, then fallback to string 'true' if needed
+      // Fetch customer entitlements
+      const customerEntitlements = await customerEntitlementsService.getCustomerEntitlements(customerId);
+      const entitlements = customerEntitlements?.settings?.entitlements;
+
+      const maxQueries = entitlements?.max_queries ?? 1000;
+      const enabledCountries = entitlements?.enabled_countries ?? ['US'];
+      const enabledCollectors = entitlements?.enabled_collectors ?? ['chatgpt', 'perplexity'];
+
+      // Get active queries for this brand
       let queryBuilder = supabase
         .from('generated_queries')
         .select('id, query_text, topic, intent, locale, country')
@@ -104,30 +112,44 @@ export class DataCollectionJobService {
         queryBuilder = queryBuilder.gt('created_at', options.since);
       }
 
-      const { data: queries, error: queriesError } = await queryBuilder;
+      const { data: rawQueries, error: queriesError } = await queryBuilder;
 
       if (queriesError) {
         console.error(`❌ [DEBUG] Query error:`, queriesError);
         throw new Error(`Failed to fetch queries: ${queriesError.message}`);
       }
 
-      console.log(`   Active queries found: ${queries?.length || 0}`);
+      // Filter queries based on entitlements (country)
+      const queries = (rawQueries || []).filter(q => {
+        // If query has no specific country, assume it's allowed (or default to US check)
+        // If it has a country, check if it's in enabled_countries
+        if (!q.country) return true;
+        return enabledCountries.includes(q.country);
+      });
+
+      console.log(`   Active queries found: ${rawQueries?.length || 0} (Filtered by country: ${queries.length})`);
+
+      // Enforce max queries limit
+      if (queries.length > maxQueries) {
+        console.warn(`⚠️ Query limit exceeded for customer ${customerId}. Allowed: ${maxQueries}, Found: ${queries.length}. Truncating list.`);
+        queries.length = maxQueries;
+      }
 
       // If no queries found with boolean true, try filtering manually (in case is_active is stored as string)
       if (!queries || queries.length === 0) {
         console.log(`⚠️ No active queries found with boolean is_active=true`);
-        
+
         // Fallback: Filter manually if is_active might be stored as string
         if (allQueries && allQueries.length > 0) {
           const activeQueries = allQueries.filter(q => {
             const isActive = q.is_active;
             return isActive === true || isActive === 'true' || isActive === 1 || isActive === '1';
           });
-          
+
           if (activeQueries.length > 0) {
             console.log(`   ✅ Found ${activeQueries.length} active queries using fallback filter`);
             console.log(`   ⚠️ Note: is_active appears to be stored as ${typeof activeQueries[0].is_active}, not boolean`);
-            
+
             // Use the manually filtered queries
             const executionRequests: QueryExecutionRequest[] = activeQueries.map((query) => ({
               queryId: query.id,
@@ -178,7 +200,7 @@ export class DataCollectionJobService {
             return result;
           }
         }
-        
+
         console.log(`   Checked: brand_id=${brandId}, customer_id=${customerId}, is_active=true`);
         if (allQueries && allQueries.length > 0) {
           const activeCount = allQueries.filter(q => q.is_active === true || q.is_active === 'true').length;
@@ -200,7 +222,7 @@ export class DataCollectionJobService {
         locale: options?.locale || query.locale || 'en-US',
         country: options?.country || query.country || 'US',
         suppressScoring: options?.suppressScoring === true,
-        collectors: options?.collectors || [
+        collectors: (options?.collectors || [
           'chatgpt',
           'google_aio',
           'perplexity',
@@ -208,7 +230,7 @@ export class DataCollectionJobService {
           'grok',
           'bing_copilot',
           'gemini'
-        ],
+        ]).filter(c => enabledCollectors.includes(c)),
       }));
 
       // Execute queries through data collection service

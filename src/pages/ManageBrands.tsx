@@ -3,6 +3,7 @@ import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { getBrands, updateBrandStatus, getBrandStats, getBrandById, updateBrand, type BrandResponse, type BrandStats } from '../api/brandApi';
 import { invalidateCache } from '../lib/apiCache';
+import { useAuthStore } from '../store/authStore';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { 
   IconBuildingStore, 
@@ -164,8 +165,15 @@ export const ManageBrands = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBrand, setSelectedBrand] = useState<BrandResponse | null>(null);
   const [editingBrand, setEditingBrand] = useState<(BrandResponse & { brand_synonyms?: string[]; brand_products?: string[] }) | null>(null);
+
   const [isLoadingBrandData, setIsLoadingBrandData] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  
+  // Get max brands entitlement
+  const maxBrands = user?.settings?.entitlements?.max_brands ?? Infinity;
+  const currentBrandCount = stats?.totalBrands || brands.length || 0;
+  const isBrandLimitReached = currentBrandCount >= maxBrands;
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -337,13 +345,34 @@ export const ManageBrands = () => {
                 <p className="text-sm text-[var(--text-caption)] mt-1">View and configure your monitored brands</p>
               </div>
             </div>
-            <button
-              onClick={handleAddBrand}
-              className="flex items-center gap-2 bg-[var(--accent-primary)] text-white px-4 py-2.5 rounded-lg hover:opacity-90 transition-all font-medium text-sm shadow-sm"
-            >
-              <IconPlus size={18} />
-              Add Brand
-            </button>
+            <div className="flex items-center gap-3">
+              {isBrandLimitReached && (
+                  <div className="hidden sm:flex flex-col items-end mr-2">
+                    <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">
+                      Limit Reached: {currentBrandCount}/{maxBrands}
+                    </span>
+                  </div>
+              )}
+              <button
+                onClick={() => {
+                  if (isBrandLimitReached) {
+                    // TODO: Show meaningful upgrade modal
+                    alert(`You've reached your plan limit of ${maxBrands} brands. Please upgrade to add more.`);
+                    return;
+                  }
+                  handleAddBrand();
+                }}
+                disabled={isLoading || isStatsLoading}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm ${
+                  (isBrandLimitReached || isLoading || isStatsLoading)
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200' 
+                    : 'bg-[var(--accent-primary)] text-white hover:opacity-90'
+                }`}
+              >
+                {isLoading || isStatsLoading ? <IconLoader2 size={18} className="animate-spin" /> : isBrandLimitReached ? <IconBuildingStore size={18} /> : <IconPlus size={18} />}
+                Add Brand
+              </button>
+            </div>
           </div>
 
           {/* KPIs */}

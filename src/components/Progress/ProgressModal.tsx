@@ -261,10 +261,10 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
                 </span>
               </div>
             )}
-            <p className="text-xs text-gray-400 mt-3">
+            {/* <p className="text-xs text-gray-400 mt-3">
               {lastProgressAtSecondsAgo !== null ? `Last update: ${formatTime(lastProgressAtSecondsAgo)} ago` : 'Waiting for first progress update…'}
               {consecutiveFailures > 0 ? ` • Retries: ${consecutiveFailures}` : ''}
-            </p>
+            </p> */}
           </div>
         )}
       </div>

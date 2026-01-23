@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { IconTrash, IconPlus, IconCheck, IconChevronLeft } from '@tabler/icons-react';
+import React, { useEffect, useState } from 'react';
+import { IconTrash, IconPlus, IconCheck, IconChevronLeft, IconSparkles, IconEdit } from '@tabler/icons-react';
 import type { Topic } from '../../types/topic';
 import type { PromptWithTopic } from './PromptConfiguration';
 import { getBrightdataCountries, type BrightdataCountry } from '../../api/promptManagementApi';
@@ -18,37 +18,6 @@ interface ReviewStepProps {
   title?: string;
   description?: string;
 }
-
-const AutoResizeTextarea: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  className?: string;
-}> = ({ value, onChange, placeholder, className }) => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const resize = () => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  };
-
-  useEffect(() => {
-    resize();
-  }, [value]);
-
-  return (
-    <textarea
-      ref={textareaRef}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={className}
-      rows={1}
-      placeholder={placeholder}
-    />
-  );
-};
 
 export const ReviewStep: React.FC<ReviewStepProps> = ({ 
   initialData, 
@@ -123,7 +92,6 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       prompts.push({
         topic: row.topic,
         prompt: row.prompt,
-        // country/locale can be stored if the type is updated
       });
     });
 
@@ -132,112 +100,469 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
 
   return (
     <div className="review-step">
+      <style>{`
+        .review-step {
+          --glass-bg: rgba(255, 255, 255, 0.85);
+          --glass-border: rgba(255, 255, 255, 0.6);
+          --gradient-primary: linear-gradient(135deg, #00bcdc 0%, #498cf9 100%);
+          --row-hover: rgba(0, 188, 220, 0.04);
+        }
+        
+        .review-header {
+          margin-bottom: 28px;
+          animation: fadeIn 0.4s ease-out;
+        }
+        
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .review-header-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 14px;
+          background: var(--gradient-primary);
+          border-radius: 100px;
+          color: white;
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 14px;
+          box-shadow: 0 4px 12px rgba(0, 188, 220, 0.25);
+        }
+        
+        .review-title {
+          font-size: 26px;
+          font-weight: 700;
+          color: var(--text-headings);
+          margin: 0 0 8px 0;
+          font-family: 'Sora', sans-serif;
+        }
+        
+        .review-subtitle {
+          font-size: 14px;
+          color: var(--text-caption);
+          margin: 0;
+        }
+        
+        .review-table-container {
+          background: var(--glass-bg);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          border: 1px solid var(--border-default);
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+          animation: fadeInUp 0.5s ease-out 0.1s both;
+        }
+        
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(15px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .review-table {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+        }
+        
+        .review-table-header {
+          background: linear-gradient(135deg, rgba(0, 188, 220, 0.06) 0%, rgba(73, 140, 249, 0.04) 100%);
+          border-bottom: 1px solid var(--border-default);
+        }
+        
+        .review-table-header th {
+          padding: 16px 20px;
+          text-align: left;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.8px;
+          color: var(--text-caption);
+        }
+        
+        .review-table-header th:nth-child(1) { width: 22%; }
+        .review-table-header th:nth-child(2) { width: 48%; }
+        .review-table-header th:nth-child(3) { width: 18%; }
+        .review-table-header th:nth-child(4) { width: 12%; text-align: center; }
+        
+        .review-table-body tr {
+          border-bottom: 1px solid var(--border-default);
+          transition: all 0.2s ease;
+        }
+        
+        .review-table-body tr:last-child {
+          border-bottom: none;
+        }
+        
+        .review-table-body tr:hover {
+          background: var(--row-hover);
+        }
+        
+        .review-table-body td {
+          padding: 12px 20px;
+          vertical-align: middle;
+        }
+        
+        .review-input {
+          width: 100%;
+          padding: 12px 14px;
+          border: 1.5px solid var(--border-default);
+          border-radius: 10px;
+          font-size: 14px;
+          color: var(--text-body);
+          background: white;
+          transition: all 0.2s ease;
+          outline: none;
+          font-family: inherit;
+        }
+        
+        .review-input:hover {
+          border-color: var(--primary300);
+        }
+        
+        .review-input:focus {
+          border-color: var(--accent-primary);
+          box-shadow: 0 0 0 3px rgba(0, 188, 220, 0.1);
+        }
+        
+        .review-input::placeholder {
+          color: var(--text-caption);
+          opacity: 0.7;
+        }
+        
+        .review-input--topic {
+          font-weight: 500;
+        }
+        
+        .review-input--prompt {
+          min-height: 48px;
+          resize: none;
+          overflow: hidden;
+          line-height: 1.5;
+        }
+        
+        .review-select-wrapper {
+          position: relative;
+        }
+        
+        .review-select {
+          width: 100%;
+          padding: 12px 14px;
+          padding-right: 36px;
+          border: 1.5px solid var(--border-default);
+          border-radius: 10px;
+          font-size: 14px;
+          color: var(--text-body);
+          background: white;
+          transition: all 0.2s ease;
+          outline: none;
+          font-family: inherit;
+          cursor: pointer;
+          appearance: none;
+          -webkit-appearance: none;
+        }
+        
+        .review-select:hover {
+          border-color: var(--primary300);
+        }
+        
+        .review-select:focus {
+          border-color: var(--accent-primary);
+          box-shadow: 0 0 0 3px rgba(0, 188, 220, 0.1);
+        }
+        
+        .review-select-arrow {
+          position: absolute;
+          right: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          pointer-events: none;
+          color: var(--text-caption);
+        }
+        
+        .review-delete-btn {
+          width: 40px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: none;
+          background: transparent;
+          border-radius: 10px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          color: var(--text-caption);
+          margin: 0 auto;
+        }
+        
+        .review-delete-btn:hover {
+          background: rgba(239, 68, 68, 0.1);
+          color: #ef4444;
+        }
+        
+        .review-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 20px;
+          animation: fadeInUp 0.5s ease-out 0.2s both;
+        }
+        
+        .review-add-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 18px;
+          border: 2px dashed var(--accent-primary);
+          border-radius: 10px;
+          background: transparent;
+          color: var(--accent-primary);
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-family: inherit;
+        }
+        
+        .review-add-btn:hover {
+          background: rgba(0, 188, 220, 0.08);
+          border-style: solid;
+        }
+        
+        .review-row-count {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 16px;
+          background: var(--bg-secondary);
+          border-radius: 100px;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-caption);
+        }
+        
+        .review-row-count-num {
+          color: var(--accent-primary);
+          font-weight: 700;
+        }
+        
+        .review-actions {
+          display: flex;
+          gap: 16px;
+          margin-top: 32px;
+          animation: fadeInUp 0.5s ease-out 0.3s both;
+        }
+        
+        .review-btn-back {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 16px 24px;
+          border: 2px solid var(--border-default);
+          border-radius: 12px;
+          background: white;
+          color: var(--text-body);
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-family: inherit;
+        }
+        
+        .review-btn-back:hover {
+          border-color: var(--primary300);
+          background: var(--bg-secondary);
+        }
+        
+        .review-btn-confirm {
+          flex: 2;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 16px 24px;
+          border: none;
+          border-radius: 12px;
+          background: var(--gradient-primary);
+          color: white;
+          font-size: 15px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          font-family: inherit;
+          box-shadow: 0 6px 20px rgba(0, 188, 220, 0.3);
+        }
+        
+        .review-btn-confirm:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 30px rgba(0, 188, 220, 0.4);
+        }
+        
+        .review-btn-confirm:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+        }
+        
+        .review-empty-state {
+          text-align: center;
+          padding: 48px 24px;
+          color: var(--text-caption);
+        }
+        
+        .review-empty-icon {
+          width: 56px;
+          height: 56px;
+          margin: 0 auto 16px;
+          background: var(--bg-secondary);
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--text-caption);
+        }
+        
+        .review-empty-text {
+          font-size: 15px;
+          font-weight: 500;
+          margin: 0 0 4px 0;
+        }
+        
+        .review-empty-hint {
+          font-size: 13px;
+          margin: 0;
+          opacity: 0.7;
+        }
+      `}</style>
+      
       <div className="onboarding-modal-body p-6">
-        <div className="mb-6">
-          <h3 className="text-xl font-semibold text-[var(--text-headings)] mb-2">
-            {title}
-          </h3>
-          <p className="text-sm text-[var(--text-caption)]">
-            {description}
-          </p>
+        {/* Header */}
+        <div className="review-header">
+          <div className="review-header-badge">
+            <IconEdit size={14} />
+            Configuration
+          </div>
+          <h3 className="review-title">{title}</h3>
+          <p className="review-subtitle">{description}</p>
         </div>
 
-        <div className="overflow-x-auto max-h-[400px] border border-[var(--border-default)] rounded-xl">
-          <table className="min-w-full divide-y divide-[var(--border-default)]">
-            <thead className="bg-[var(--bg-secondary)]">
+        {/* Table */}
+        <div className="review-table-container">
+          <table className="review-table">
+            <thead className="review-table-header">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--text-caption)] uppercase tracking-wider">
-                  Topic
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--text-caption)] uppercase tracking-wider">
-                  Prompt
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--text-caption)] uppercase tracking-wider">
-                  Country
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-[var(--text-caption)] uppercase tracking-wider">
-                  Actions
-                </th>
+                <th>Topic</th>
+                <th>Prompt</th>
+                <th>Country</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--border-default)] bg-[var(--bg-primary)]">
-              {data.map((row, idx) => (
-                <tr key={idx} className="hover:bg-[var(--bg-secondary)]/50 transition-colors group">
-                  <td className="px-4 py-2 align-middle">
-                    <input
-                      value={row.topic}
-                      onChange={(e) => updateRow(idx, 'topic', e.target.value)}
-                      className="w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm bg-[var(--bg-primary)] focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)] transition-all outline-none"
-                      placeholder="e.g. Pricing"
-                    />
-                  </td>
-                  <td className="px-4 py-2 align-middle">
-                    <textarea
-                      value={row.prompt}
-                      onChange={(e) => updateRow(idx, 'prompt', e.target.value)}
-                      className="w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm bg-[var(--bg-primary)] focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)] transition-all resize-none overflow-y-auto outline-none"
-                      placeholder="e.g. How much does it cost?"
-                    />
-                  </td>
-                  <td className="px-4 py-2 align-middle">
-                    <span className="inline-flex w-full">
-                      <select
-                        value={row.country}
-                        onChange={(e) => updateRow(idx, 'country', e.target.value)}
-                        className="w-full h-12 px-3 py-2 border border-[var(--border-default)] rounded-lg text-sm bg-[var(--bg-primary)] focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)] transition-all appearance-none cursor-pointer outline-none"
-                      >
-                        {countries.length === 0 ? (
-                          <option value={row.country}>{getFlagEmoji(row.country)} {row.country}</option>
-                        ) : (
-                          countries.map((c) => (
-                            <option key={c.code} value={c.code.toUpperCase()}>
-                              {getFlagEmoji(c.code)} {c.code.toUpperCase()}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 align-middle text-right">
-                    <button
-                      onClick={() => removeRow(idx)}
-                      className="h-12 w-12 inline-flex items-center justify-center rounded-lg hover:bg-[var(--bg-secondary)] transition-colors"
-                      title="Delete row"
-                    >
-                      <IconTrash size={18} className="text-[var(--text-caption)] hover:text-red-500" />
-                    </button>
+            <tbody className="review-table-body">
+              {data.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>
+                    <div className="review-empty-state">
+                      <div className="review-empty-icon">
+                        <IconSparkles size={24} />
+                      </div>
+                      <p className="review-empty-text">No prompts configured yet</p>
+                      <p className="review-empty-hint">Click "Add New Row" to get started</p>
+                    </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                data.map((row, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <input
+                        type="text"
+                        value={row.topic}
+                        onChange={(e) => updateRow(idx, 'topic', e.target.value)}
+                        className="review-input review-input--topic"
+                        placeholder="e.g. Pricing"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={row.prompt}
+                        onChange={(e) => updateRow(idx, 'prompt', e.target.value)}
+                        className="review-input review-input--prompt"
+                        placeholder="e.g. How much does it cost?"
+                      />
+                    </td>
+                    <td>
+                      <div className="review-select-wrapper">
+                        <select
+                          value={row.country}
+                          onChange={(e) => updateRow(idx, 'country', e.target.value)}
+                          className="review-select"
+                        >
+                          {countries.length === 0 ? (
+                            <option value={row.country}>{getFlagEmoji(row.country)} {row.country}</option>
+                          ) : (
+                            countries.map((c) => (
+                              <option key={c.code} value={c.code.toUpperCase()}>
+                                {getFlagEmoji(c.code)} {c.code.toUpperCase()}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                        <span className="review-select-arrow">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => removeRow(idx)}
+                        className="review-delete-btn"
+                        title="Delete row"
+                      >
+                        <IconTrash size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
-        <div className="mt-4 flex justify-between items-center">
-          <button
-            onClick={addRow}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/5 rounded-lg transition-all"
-          >
-            <IconPlus size={18} /> Add New Row
+        {/* Footer */}
+        <div className="review-footer">
+          <button onClick={addRow} className="review-add-btn">
+            <IconPlus size={18} />
+            Add New Row
           </button>
-          <div className="text-xs text-[var(--text-caption)] font-medium">
-            {data.length} rows
+          <div className="review-row-count">
+            <span className="review-row-count-num">{data.length}</span>
+            <span>{data.length === 1 ? 'row' : 'rows'}</span>
           </div>
         </div>
 
-        <div className="mt-8 flex gap-3">
-          <button
-            onClick={onBack}
-            className="flex-1 py-3 rounded-xl border border-[var(--border-default)] text-[var(--text-body)] font-bold hover:bg-[var(--bg-secondary)] transition-all flex items-center justify-center gap-2"
-          >
-            <IconChevronLeft size={20} /> Back
+        {/* Action Buttons */}
+        <div className="review-actions">
+          <button onClick={onBack} className="review-btn-back">
+            <IconChevronLeft size={20} />
+            Back
           </button>
           <button
             onClick={handleConfirm}
             disabled={data.length === 0 || data.some(r => !r.topic.trim() || !r.prompt.trim())}
-            className="flex-1 py-3 rounded-xl bg-[var(--accent-primary)] text-white font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="review-btn-confirm"
           >
-            <IconCheck size={20} /> Confirm & Continue
+            <IconCheck size={20} />
+            Confirm & Continue
           </button>
         </div>
       </div>

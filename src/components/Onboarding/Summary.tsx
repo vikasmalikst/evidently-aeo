@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, Sparkles, Edit2, Save, X, Rocket, Target, TrendingUp, BarChart3 } from 'lucide-react';
 import { SafeLogo } from './common/SafeLogo';
 import { OnboardingTooltip } from './common/OnboardingTooltip';
+import { ExpandableTextCell } from './common/ExpandableTextCell';
 import { fetchBrandProductsPreview } from '../../api/onboardingApi';
 import type { BrandProductsEnrichment, OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 
@@ -280,41 +281,41 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
       animate={{ opacity: 1 }}
     >
       {/* Main Card */}
-      <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-8 md:p-10">
+      <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-6 md:p-8">
         
         {/* Header */}
         <motion.div 
-          className="text-center mb-10"
+          className="text-center mb-6"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
           <motion.div
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-400 to-cyan-600 shadow-lg shadow-cyan-200 mb-4"
+            className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-400 to-cyan-600 shadow-lg shadow-cyan-200 mb-3"
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
           >
-            <Sparkles size={32} className="text-white" />
+            <Sparkles size={24} className="text-white" />
           </motion.div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Ready to Launch</h1>
-          <p className="text-gray-500">Review and refine your brand and competitor products</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Ready to Launch</h1>
+          <p className="text-gray-500 text-sm">Review and refine your brand and competitor products</p>
         </motion.div>
 
         {/* Brand Info Card */}
         <motion.div 
-          className="bg-gradient-to-r from-gray-50 to-cyan-50/30 rounded-2xl p-6 mb-8 border border-gray-100"
+          className="bg-gradient-to-r from-gray-50 to-cyan-50/30 rounded-2xl p-4 mb-6 border border-gray-100"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <div className="flex justify-between items-start mb-4">
-            <h3 className="font-semibold text-gray-900">Brand Information</h3>
+          <div className="flex justify-between items-start mb-3">
+            <h3 className="font-semibold text-gray-900 text-sm">Brand Information</h3>
             {!isEditingBrand && onUpdateBrand && (
               <button
                 onClick={() => setIsEditingBrand(true)}
-                className="flex items-center gap-1.5 text-cyan-600 hover:text-cyan-700 text-sm font-medium transition-colors"
+                className="flex items-center gap-1.5 text-cyan-600 hover:text-cyan-700 text-xs font-medium transition-colors"
               >
-                <Edit2 size={14} />
+                <Edit2 size={12} />
                 Edit
               </button>
             )}
@@ -328,38 +329,38 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Industry</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Industry</label>
                     <input
                       type="text"
                       value={editIndustry}
                       onChange={(e) => setEditIndustry(e.target.value)}
                       placeholder="e.g. SaaS, E-commerce"
-                      className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors"
+                      className="w-full px-3 py-2 bg-white border-2 border-gray-200 rounded-lg text-sm focus:border-cyan-500 focus:outline-none transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Website</label>
                     <input
                       type="text"
                       value={editWebsite}
                       onChange={(e) => setEditWebsite(e.target.value)}
                       placeholder="e.g. brand.com"
-                      className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition-colors"
+                      className="w-full px-3 py-2 bg-white border-2 border-gray-200 rounded-lg text-sm focus:border-cyan-500 focus:outline-none transition-colors"
                     />
                   </div>
                 </div>
-                <div className="flex justify-end gap-3 mt-4">
+                <div className="flex justify-end gap-2 mt-3">
                   <button
                     onClick={handleCancelEdit}
-                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors"
+                    className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveBrandDetails}
-                    className="px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600 transition-colors"
+                    className="px-3 py-1.5 bg-cyan-500 text-white rounded-lg text-xs font-medium hover:bg-cyan-600 transition-colors"
                   >
                     Save Changes
                   </button>
@@ -368,21 +369,21 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
             ) : (
               <motion.div 
                 key="view"
-                className="grid grid-cols-3 gap-6"
+                className="grid grid-cols-3 gap-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Brand Name</p>
-                  <p className="font-medium text-gray-900">{brand.companyName}</p>
+                  <p className="font-medium text-base text-gray-900">{brand.companyName}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Industry</p>
-                  <p className="font-medium text-gray-900">{brand.industry || '-'}</p>
+                  <p className="font-medium text-base text-gray-900">{brand.industry || '-'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Website</p>
-                  <p className="font-medium text-gray-900">{brand.website || '-'}</p>
+                  <p className="font-medium text-base text-gray-900">{brand.website || '-'}</p>
                 </div>
               </motion.div>
             )}
@@ -396,7 +397,7 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm"
+              className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm"
             >
               {enrichmentError}
             </motion.div>
@@ -411,20 +412,20 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
             transition={{ delay: 0.2 }}
           >
             {/* Tip */}
-            <div className="mb-6 p-4 bg-cyan-50 border-l-4 border-cyan-500 rounded-r-xl">
-              <p className="text-sm text-gray-700">
+            <div className="mb-4 p-3 bg-cyan-50 border-l-4 border-cyan-500 rounded-r-xl">
+              <p className="text-xs text-gray-700">
                 <strong className="text-cyan-700">Tip:</strong> Click any field below to edit synonyms or products. Separate multiple items with commas.
               </p>
             </div>
 
             {/* Table */}
-            <div className="overflow-hidden rounded-2xl border border-gray-200">
+            <div className="overflow-hidden rounded-xl border border-gray-200">
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '25%' }}>Brand</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '35%' }}>Alias (Synonyms)</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '40%' }}>Commercial Products</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '25%' }}>Brand</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '35%' }}>Alias (Synonyms)</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: '40%' }}>Commercial Products</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -436,51 +437,47 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
                       transition={{ delay: index * 0.05 }}
                       className={row.type === 'Brand' ? 'bg-cyan-50/30' : 'bg-white hover:bg-gray-50'}
                     >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
                           <SafeLogo
                             src={row.logo}
                             domain={row.domain}
                             alt={row.name}
-                            size={36}
-                            className="w-9 h-9 rounded-lg object-contain bg-white p-1 border border-gray-100"
+                            size={32}
+                            className="w-8 h-8 rounded-lg object-contain bg-white p-1 border border-gray-100"
                           />
-                          <span className="font-medium text-gray-900">{row.name}</span>
+                          <span className="text-sm font-medium text-gray-900">{row.name}</span>
                           {row.type === 'Brand' && (
-                            <span className="px-2 py-0.5 bg-cyan-100 text-cyan-700 text-xs font-semibold rounded-full">You</span>
+                            <span className="px-1.5 py-0.5 bg-cyan-100 text-cyan-700 text-[10px] font-semibold rounded-full">You</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <textarea
+                      <td className="px-4 py-3">
+                        <ExpandableTextCell
                           value={row.synonymsText}
-                          onChange={(e) => {
+                          onChange={(value) => {
                             if (row.type === 'Brand') {
-                              setDraftBrandSynonyms(e.target.value);
+                              setDraftBrandSynonyms(value);
                             } else {
-                              setDraftCompetitorSynonyms((prev) => ({ ...prev, [row.name]: e.target.value }));
+                              setDraftCompetitorSynonyms((prev) => ({ ...prev, [row.name]: value }));
                             }
                           }}
                           placeholder="Add synonyms..."
                           disabled={isSubmitting}
-                          rows={2}
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-cyan-500 focus:outline-none resize-none transition-colors"
                         />
                       </td>
-                      <td className="px-6 py-4">
-                        <textarea
+                      <td className="px-4 py-3">
+                        <ExpandableTextCell
                           value={row.productsText}
-                          onChange={(e) => {
+                          onChange={(value) => {
                             if (row.type === 'Brand') {
-                              setDraftBrandProducts(e.target.value);
+                              setDraftBrandProducts(value);
                             } else {
-                              setDraftCompetitorProducts((prev) => ({ ...prev, [row.name]: e.target.value }));
+                              setDraftCompetitorProducts((prev) => ({ ...prev, [row.name]: value }));
                             }
                           }}
                           placeholder="Add products..."
                           disabled={isSubmitting}
-                          rows={2}
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-cyan-500 focus:outline-none resize-none transition-colors"
                         />
                       </td>
                     </motion.tr>
@@ -502,7 +499,7 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
         )}
 
         {/* What's Next Section */}
-        <motion.div 
+        {/* <motion.div 
           className="mt-8 p-6 bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl text-white"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -531,7 +528,7 @@ export const Summary = ({ brand, competitors, onComplete, onBack, onUpdateBrand 
               </motion.div>
             ))}
           </div>
-        </motion.div>
+        </motion.div> */}
 
         {/* Action Buttons */}
         <motion.div 

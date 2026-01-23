@@ -21,6 +21,8 @@ import { TopMoversSection } from './components/TopMoversSection';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { ReportGenerationModal } from './components/ReportGenerationModal';
 import { EmailReportModal } from './components/EmailReportModal';
+import { ReportCoverPage } from './components/ReportCoverPage';
+import { ReportTableOfContents } from './components/ReportTableOfContents';
 import { IconMail } from '@tabler/icons-react';
 import '../../styles/executive-reporting.css';
 
@@ -42,6 +44,15 @@ export const ExecutiveReportingPage = () => {
     const [generating, setGenerating] = useState(false);
     const [isGenerationModalOpen, setIsGenerationModalOpen] = useState(false);
     const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+    const [isEmailV2ModalOpen, setIsEmailV2ModalOpen] = useState(false);
+    const [isPrintMode, setIsPrintMode] = useState(false);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('printMode') === 'true') {
+            setIsPrintMode(true);
+        }
+    }, []);
 
     // Fetch latest report on mount
     useEffect(() => {
@@ -124,6 +135,24 @@ export const ExecutiveReportingPage = () => {
         }
     };
 
+    const handleEmailReportV2 = async (email: string) => {
+        if (!report || !selectedBrandId) return;
+
+        try {
+            const response = await apiClient.post<{ success: boolean }>(
+                `/brands/${selectedBrandId}/executive-reports/${report.id}/email-v2`,
+                { email }
+            );
+
+            if (!response.success) {
+                throw new Error('Failed to email V2 report');
+            }
+        } catch (err: any) {
+            console.error('Error emailing V2 report:', err);
+            throw new Error(err.message || 'Failed to email V2 report');
+        }
+    };
+
     const exportPDF = async () => {
         if (!report) return;
 
@@ -162,9 +191,44 @@ export const ExecutiveReportingPage = () => {
         }
     };
 
+    const exportPDFV2 = async () => {
+        if (!report) return;
+
+        try {
+            const token = apiClient.getAccessToken();
+            const response = await fetch(
+                `${apiClient.baseUrl}/brands/${selectedBrandId}/executive-reports/${report.id}/export/pdf-v2`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error('Failed to export V2 PDF');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `executive-report-v2-${report.id}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            console.error('Error exporting V2 PDF:', err);
+            setError(err instanceof Error ? err.message : 'Failed to export V2 PDF');
+        }
+    };
+
     if (loading) {
         return (
-            <Layout>
+            <Layout hideSidebar={isPrintMode} hideHeader={isPrintMode}>
                 <div className="executive-report-container flex items-center justify-center min-h-screen">
                     <div className="flex flex-col items-center gap-4">
                         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--accent-primary)] to-[#0096b0] flex items-center justify-center shadow-lg">
@@ -178,9 +242,21 @@ export const ExecutiveReportingPage = () => {
     }
 
     return (
-        <Layout>
+        <Layout hideSidebar={isPrintMode} hideHeader={isPrintMode}>
+            {isPrintMode && selectedBrand && report && (
+                <>
+                    <ReportCoverPage 
+                        brandName={selectedBrand.name} 
+                        brandLogo={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                        brandDomain={selectedBrand.homepage_url || undefined}
+                        reportPeriod={`${new Date(report.report_period_start).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} – ${new Date(report.report_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
+                    />
+                    <ReportTableOfContents />
+                </>
+            )}
             <div className="executive-report-container">
                 {/* Header Section */}
+                {!isPrintMode && (
                 <div className="executive-header">
                     <div className="executive-header-content">
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -227,6 +303,14 @@ export const ExecutiveReportingPage = () => {
                                             <IconDownload className="w-4 h-4" />
                                             Export PDF
                                         </button>
+                                        <button onClick={() => setIsEmailV2ModalOpen(true)} className="executive-btn-secondary" title="Send Visual Mirror Email">
+                                            <IconMail className="w-4 h-4" />
+                                            Email Report (V2)
+                                        </button>
+                                        <button onClick={exportPDFV2} className="executive-btn-secondary" title="Download Visual Mirror PDF">
+                                            <IconDownload className="w-4 h-4" />
+                                            Export PDF (V2)
+                                        </button>
                                     </>
                                 )}
                             </div>
@@ -239,6 +323,7 @@ export const ExecutiveReportingPage = () => {
                         )}
                     </div>
                 </div>
+                )}
 
                 {/* Report Content */}
                 < div className="max-w-7xl mx-auto p-6" >
@@ -280,20 +365,34 @@ export const ExecutiveReportingPage = () => {
                                 </div>
 
                                 {/* Sections */}
-                                < div className="space-y-6" >
-                                    {
-                                        report.executive_summary && (
+                                <div className="space-y-6">
+                                    {report.executive_summary && (
+                                        <div id="executive-summary" className="scroll-mt-8">
                                             <ExecutiveSummarySection summary={report.executive_summary} />
-                                        )
-                                    }
-                                    < BrandPerformanceSection data={report.data_snapshot.brand_performance} />
-                                    <LLMPerformanceSection data={report.data_snapshot.llm_performance} />
-                                    <CompetitiveLandscapeSection data={report.data_snapshot.competitive_landscape} />
-                                    <DomainReadinessSection data={report.data_snapshot.domain_readiness} />
-                                    <ActionsImpactSection data={report.data_snapshot.actions_impact} />
-                                    <OpportunitiesSection data={report.data_snapshot.opportunities} />
-                                    <TopMoversSection data={report.data_snapshot.top_movers} />
-                                </div >
+                                        </div>
+                                    )}
+                                    <div id="brand-performance" className="scroll-mt-8">
+                                        <BrandPerformanceSection data={report.data_snapshot.brand_performance} />
+                                    </div>
+                                    <div id="llm-performance" className="scroll-mt-8">
+                                        <LLMPerformanceSection data={report.data_snapshot.llm_performance} />
+                                    </div>
+                                    <div id="competitive-landscape" className="scroll-mt-8">
+                                        <CompetitiveLandscapeSection data={report.data_snapshot.competitive_landscape} />
+                                    </div>
+                                    <div id="domain-readiness" className="scroll-mt-8">
+                                        <DomainReadinessSection data={report.data_snapshot.domain_readiness} />
+                                    </div>
+                                    <div id="actions-impact" className="scroll-mt-8">
+                                        <ActionsImpactSection data={report.data_snapshot.actions_impact} />
+                                    </div>
+                                    <div id="opportunities" className="scroll-mt-8">
+                                        <OpportunitiesSection data={report.data_snapshot.opportunities} />
+                                    </div>
+                                    <div id="top-movers" className="scroll-mt-8">
+                                        <TopMoversSection data={report.data_snapshot.top_movers} />
+                                    </div>
+                                </div>
                             </div >
                         ) : (
                             <div className="executive-empty-state">
@@ -327,6 +426,14 @@ export const ExecutiveReportingPage = () => {
                 onClose={() => setIsEmailModalOpen(false)}
                 brandName={selectedBrand?.name || 'Brand'}
                 onSend={handleEmailReport}
+            />
+
+            {/* Email V2 Modal */}
+            <EmailReportModal
+                isOpen={isEmailV2ModalOpen}
+                onClose={() => setIsEmailV2ModalOpen(false)}
+                brandName={selectedBrand?.name || 'Brand'}
+                onSend={handleEmailReportV2}
             />
         </Layout >
     );

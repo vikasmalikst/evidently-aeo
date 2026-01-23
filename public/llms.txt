@@ -1,0 +1,32 @@
+# EvidentlyAEO: The World's First Answer Engine Optimization Platform
+
+## Overview
+EvidentlyAEO is a comprehensive Answer Engine Optimization (AEO) platform designed for marketing leaders. It empowers brands to measure, optimize, and dominate AI-driven search results across major LLM engines like ChatGPT, Gemini, Perplexity, Claude, and Bing Copilot.
+
+## Core Capabilities
+
+### 1. Measure & Benchmark
+- **AI Visibility Tracking**: Monitor brand mentions across 6+ AI models.
+- **Share of Answer (SOA)**: Calculate your market share in AI responses compared to competitors.
+- **Sentiment Analysis**: Track how AI portrays your brand (Positive/Neutral/Negative).
+- **Competitive Intelligence**: Side-by-side performance comparison with up to 10 competitors.
+
+### 2. Analyze & Diagnose
+- **Topic Performance**: Identify which topics and queries drive visibility.
+- **Citation Intelligence**: Discover which sources AI engines trust and cite.
+- **Gap Analysis**: Pinpoint where competitors are winning and why.
+
+### 3. Optimize & Execute
+- **Smart Recommendations**: Prioritized, actionable steps to improve visibility and sentiment.
+- **Content Strategy**: Data-driven playbooks for creating AEO-friendly content.
+- **Verification**: Track the impact of optimization efforts on real-world AI answers.
+
+## Key Value Proposition
+- **Recover Lost Traffic**: Capture users who get answers directly from AI without clicking links.
+- **Build Brand Trust**: Ensure AI models answer questions about your brand accurately and positively.
+- **Prove ROI**: Connect AEO efforts to measurable outcomes like Share of Answer and Visibility Score.
+
+## Getting Started
+- **Website**: https://evidentlyaeo.com
+- **Free Trial**: Track 20 prompts across all major models.
+- **Contact**: sales.support@evidentlyaeo.com

@@ -104,6 +104,16 @@ export function FAQSection() {
             </p>
           </MotionDiv>
 
+          {/* Semantic DL for AEO Parsers (visually hidden) */}
+          <dl className="sr-only">
+            {faqs.map((faq, index) => (
+              <div key={`dl-${index}`}>
+                <dt>{faq.question}</dt>
+                <dd>{faq.answer}</dd>
+              </div>
+            ))}
+          </dl>
+
           <MotionDiv {...defaultAnimationOptions} variants={fadeInUp}>
             <Accordion type="single" collapsible className="space-y-3">
               {faqs.map((faq, index) => (

@@ -21,7 +21,7 @@ export class ExecutiveSummaryService {
     /**
      * Generate executive summary from report data
      */
-    async generateExecutiveSummary(reportData: ReportDataSnapshot): Promise<string> {
+    async generateExecutiveSummary(reportData: ReportDataSnapshot, userFeedback?: string): Promise<string> {
         console.log('📝 [EXEC-SUMMARY] Generating executive summary');
 
         // Step 1: Detect rule-based triggers
@@ -43,6 +43,7 @@ export class ExecutiveSummaryService {
                 sessions_change: reportData.traffic_attribution.deltas.sessions.percentage,
                 conversions_change: reportData.traffic_attribution.deltas.conversions.percentage,
             } : undefined,
+            user_feedback: userFeedback,
         };
 
         // Step 3: Generate summary using LLM
@@ -204,7 +205,9 @@ export class ExecutiveSummaryService {
                     messages: [
                         {
                             role: 'system',
-                            content: 'You are an executive reporting assistant. Generate concise, data-grounded bullet points for C-level executives.',
+                            content: `You are a senior executive reporting assistant. Your goal is to generate high-impact, data-grounded bullet points for C-level executives. 
+                            
+${input.user_feedback ? 'IMPORTANT: This is a REGENERATION request. You MUST prioritize the user\'s specific feedback and instructions provided below while maintaining the integrity of the data.' : 'Generate a concise summary of the brand\'s AEO performance based on the provided metrics.'}`,
                         },
                         {
                             role: 'user',
@@ -253,7 +256,7 @@ export class ExecutiveSummaryService {
             .map(c => `${c.name}: SOA ${c.current.share_of_answer.toFixed(1)}% (${c.deltas.share_of_answer.absolute > 0 ? '+' : ''}${c.deltas.share_of_answer.absolute.toFixed(1)}%)`)
             .join(', ');
 
-        return `You are generating an executive-level summary for AEO performance.
+        const basePrompt = `You are generating an executive-level summary for AEO performance.
 
 Input data:
 - Current period metrics:
@@ -277,7 +280,27 @@ ${summaryFactsText || '(No significant events detected)'}
 - Competitive landscape:
 ${competitiveThreatsText || 'No competitor data available'}
 
-${input.traffic_impact ? `- Traffic impact:\n  - Sessions: ${input.traffic_impact.sessions_change > 0 ? '+' : ''}${input.traffic_impact.sessions_change.toFixed(1)}%\n  - Conversions: ${input.traffic_impact.conversions_change > 0 ? '+' : ''}${input.traffic_impact.conversions_change.toFixed(1)}%` : ''}
+${input.traffic_impact ? `- Traffic impact:\n  - Sessions: ${input.traffic_impact.sessions_change > 0 ? '+' : ''}${input.traffic_impact.sessions_change.toFixed(1)}%\n  - Conversions: ${input.traffic_impact.conversions_change > 0 ? '+' : ''}${input.traffic_impact.conversions_change.toFixed(1)}%` : ''}`;
+
+        if (input.user_feedback) {
+            return `${basePrompt}
+
+CRITICAL: REGENERATION TASK
+The user has provided the following feedback on the current summary:
+"${input.user_feedback}"
+
+INSTRUCTIONS FOR REGENERATION:
+1. You MUST directly address and incorporate the user's feedback above. This is your HIGHEST priority.
+2. If the feedback specifies a tone (e.g., "aggressive", "professional", "concise"), you MUST adopt that tone.
+3. If the feedback asks to focus on a specific metric or event, you MUST make that the primary focus.
+4. Maintain the 3-5 bullet point format.
+5. Each bullet must still be data-grounded and under 25 words.
+6. Do NOT mention "the user feedback", "per your request", or "I have updated" in the bullets; just provide the updated summary content directly.
+
+Format as plain bullet points (start each with "-").`;
+        }
+
+        return `${basePrompt}
 
 Generate 3-5 bullet points for senior leadership:
 - Each bullet must be under 25 words

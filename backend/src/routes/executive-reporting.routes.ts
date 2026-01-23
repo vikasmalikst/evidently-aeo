@@ -203,6 +203,56 @@ router.post('/brands/:brandId/executive-reports', async (req: Request, res: Resp
 });
 
 /**
+ * PATCH /api/brands/:brandId/executive-reports/:reportId
+ * Update a report (e.g., manual summary edit)
+ */
+router.patch('/brands/:brandId/executive-reports/:reportId', async (req: Request, res: Response) => {
+    try {
+        const { reportId } = req.params;
+        const updates = req.body;
+
+        const report = await reportOrchestrationService.updateReport(reportId, updates);
+
+        res.json({
+            success: true,
+            data: report,
+        });
+    } catch (error) {
+        console.error('Error updating report:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update report',
+            message: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
+ * POST /api/brands/:brandId/executive-reports/:reportId/regenerate-summary
+ * Regenerate executive summary with optional user feedback
+ */
+router.post('/brands/:brandId/executive-reports/:reportId/regenerate-summary', async (req: Request, res: Response) => {
+    try {
+        const { reportId } = req.params;
+        const { user_feedback } = req.body;
+
+        const report = await reportOrchestrationService.regenerateSummary(reportId, user_feedback);
+
+        res.json({
+            success: true,
+            data: report,
+        });
+    } catch (error) {
+        console.error('Error regenerating summary:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to regenerate summary',
+            message: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
  * DELETE /api/brands/:brandId/executive-reports/:reportId
  * Delete a report
  */
@@ -565,7 +615,7 @@ router.post('/brands/:brandId/executive-reports/:reportId/email-v2', async (req:
         }
 
         console.log(`📧 [API] Sending V2 Email for report ${reportId} to ${email}`);
-        
+
         // 1. Get brand details for the email subject/body
         const { data: brand, error: brandError } = await supabase
             .from('brands')

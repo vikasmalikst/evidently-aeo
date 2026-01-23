@@ -339,4 +339,5 @@ export interface ExecutiveSummaryInput {
         sessions_change: number;
         conversions_change: number;
     };
+    user_feedback?: string;
 }

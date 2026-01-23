@@ -23,6 +23,7 @@ import { ReportGenerationModal } from './components/ReportGenerationModal';
 import { EmailReportModal } from './components/EmailReportModal';
 import { ReportCoverPage } from './components/ReportCoverPage';
 import { ReportTableOfContents } from './components/ReportTableOfContents';
+import { FeedbackSideModal } from './components/FeedbackSideModal';
 import { IconMail } from '@tabler/icons-react';
 import '../../styles/executive-reporting.css';
 
@@ -43,9 +44,10 @@ export const ExecutiveReportingPage = () => {
     const [error, setError] = useState<string | null>(null);
     const [generating, setGenerating] = useState(false);
     const [isGenerationModalOpen, setIsGenerationModalOpen] = useState(false);
-    const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
     const [isEmailV2ModalOpen, setIsEmailV2ModalOpen] = useState(false);
     const [isPrintMode, setIsPrintMode] = useState(false);
+    const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+    const [exportingStatus, setExportingStatus] = useState<'idle' | string>('idle');
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -117,21 +119,39 @@ export const ExecutiveReportingPage = () => {
         }
     };
 
-    const handleEmailReport = async (email: string) => {
+    const handleUpdateSummary = async (newSummary: string) => {
         if (!report || !selectedBrandId) return;
 
         try {
-            const response = await apiClient.post<{ success: boolean }>(
-                `/brands/${selectedBrandId}/executive-reports/${report.id}/email`,
-                { email }
+            const response = await apiClient.patch<{ success: boolean; data: ExecutiveReport }>(
+                `/brands/${selectedBrandId}/executive-reports/${report.id}`,
+                { executive_summary: newSummary }
             );
 
-            if (!response.success) {
-                throw new Error('Failed to email report');
+            if (response.success && response.data) {
+                setReport(response.data);
             }
-        } catch (err: any) {
-            console.error('Error emailing report:', err);
-            throw new Error(err.message || 'Failed to email report');
+        } catch (err) {
+            console.error('Error updating summary:', err);
+            throw err;
+        }
+    };
+
+    const handleRegenerateSummary = async (feedback: string) => {
+        if (!report || !selectedBrandId) return;
+
+        try {
+            const response = await apiClient.post<{ success: boolean; data: ExecutiveReport }>(
+                `/brands/${selectedBrandId}/executive-reports/${report.id}/regenerate-summary`,
+                { user_feedback: feedback }
+            );
+
+            if (response.success && response.data) {
+                setReport(response.data);
+            }
+        } catch (err) {
+            console.error('Error regenerating summary:', err);
+            throw err;
         }
     };
 
@@ -145,37 +165,57 @@ export const ExecutiveReportingPage = () => {
             );
 
             if (!response.success) {
-                throw new Error('Failed to email V2 report');
+                throw new Error('Failed to email report');
             }
         } catch (err: any) {
-            console.error('Error emailing V2 report:', err);
-            throw new Error(err.message || 'Failed to email V2 report');
+            console.error('Error emailing report:', err);
+            throw new Error(err.message || 'Failed to email report');
         }
     };
 
-    const exportPDF = async () => {
+    const exportPDFV2 = async () => {
         if (!report) return;
 
         try {
+            setExportingStatus('Initializing browser...');
             const token = apiClient.getAccessToken();
-            const response = await fetch(
-                `${apiClient.baseUrl}/brands/${selectedBrandId}/executive-reports/${report.id}/export/pdf`,
+            
+            // Start the request
+            const responsePromise = fetch(
+                `${apiClient.baseUrl}/brands/${selectedBrandId}/executive-reports/${report.id}/export/pdf-v2`,
                 {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`,
                     },
-                    body: JSON.stringify({
-                        include_annotations: false,
-                    }),
                 }
             );
+
+            // Simulate progress while waiting for the response
+            const progressSteps = [
+                'Navigating to report...',
+                'Rendering charts...',
+                'Generating high-fidelity PDF...',
+                'Finalizing report layout...'
+            ];
+
+            let stepIndex = 0;
+            const interval = setInterval(() => {
+                if (stepIndex < progressSteps.length) {
+                    setExportingStatus(progressSteps[stepIndex]);
+                    stepIndex++;
+                }
+            }, 5000); // Change status every 5 seconds
+
+            const response = await responsePromise;
+            clearInterval(interval);
 
             if (!response.ok) {
                 throw new Error('Failed to export PDF');
             }
 
+            setExportingStatus('Downloading...');
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -188,41 +228,8 @@ export const ExecutiveReportingPage = () => {
         } catch (err) {
             console.error('Error exporting PDF:', err);
             setError(err instanceof Error ? err.message : 'Failed to export PDF');
-        }
-    };
-
-    const exportPDFV2 = async () => {
-        if (!report) return;
-
-        try {
-            const token = apiClient.getAccessToken();
-            const response = await fetch(
-                `${apiClient.baseUrl}/brands/${selectedBrandId}/executive-reports/${report.id}/export/pdf-v2`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`,
-                    },
-                }
-            );
-
-            if (!response.ok) {
-                throw new Error('Failed to export V2 PDF');
-            }
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `executive-report-v2-${report.id}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        } catch (err) {
-            console.error('Error exporting V2 PDF:', err);
-            setError(err instanceof Error ? err.message : 'Failed to export V2 PDF');
+        } finally {
+            setExportingStatus('idle');
         }
     };
 
@@ -245,8 +252,8 @@ export const ExecutiveReportingPage = () => {
         <Layout hideSidebar={isPrintMode} hideHeader={isPrintMode}>
             {isPrintMode && selectedBrand && report && (
                 <>
-                    <ReportCoverPage 
-                        brandName={selectedBrand.name} 
+                    <ReportCoverPage
+                        brandName={selectedBrand.name}
                         brandLogo={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
                         brandDomain={selectedBrand.homepage_url || undefined}
                         reportPeriod={`${new Date(report.report_period_start).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} – ${new Date(report.report_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
@@ -257,72 +264,75 @@ export const ExecutiveReportingPage = () => {
             <div className="executive-report-container">
                 {/* Header Section */}
                 {!isPrintMode && (
-                <div className="executive-header">
-                    <div className="executive-header-content">
-                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                            {/* Title Group */}
-                            <div className="executive-title-group">
-                                {selectedBrand && (
-                                    <SafeLogo
-                                        src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
-                                        domain={selectedBrand.homepage_url || undefined}
-                                        alt={selectedBrand.name}
-                                        size={56}
-                                        className="executive-brand-logo"
-                                    />
-                                )}
-                                <div>
-                                    <h1 className="executive-title">Executive Reporting</h1>
-                                    <p className="executive-subtitle">
-                                        Comprehensive AEO performance insights for leadership
-                                    </p>
+                    <div className="executive-header">
+                        <div className="executive-header-content">
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                {/* Title Group */}
+                                <div className="executive-title-group">
+                                    {selectedBrand && (
+                                        <SafeLogo
+                                            src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                                            domain={selectedBrand.homepage_url || undefined}
+                                            alt={selectedBrand.name}
+                                            size={56}
+                                            className="executive-brand-logo"
+                                        />
+                                    )}
+                                    <div>
+                                        <h1 className="executive-title">Executive Reporting</h1>
+                                        <p className="executive-subtitle">
+                                            Comprehensive AEO performance insights for leadership
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Controls */}
+                                <div className="executive-controls">
+                                    <button
+                                        onClick={() => setIsGenerationModalOpen(true)}
+                                        // disabled={generating} // Let modal handle strict state or concurrent check if needed
+                                        className="executive-btn-primary"
+                                    >
+                                        <IconFileText className="w-4 h-4" />
+                                        Generate Report
+                                    </button>
+
+                                    {report && (
+                                        <>
+                                            <button onClick={() => setIsEmailV2ModalOpen(true)} className="executive-btn-secondary" title="Send Email Report">
+                                                <IconMail className="w-4 h-4" />
+                                                Email Report
+                                            </button>
+                                            <button 
+                                                onClick={exportPDFV2} 
+                                                className="executive-btn-secondary" 
+                                                title="Download PDF Report"
+                                                disabled={exportingStatus !== 'idle'}
+                                            >
+                                                {exportingStatus === 'idle' ? (
+                                                    <>
+                                                        <IconDownload className="w-4 h-4" />
+                                                        Export PDF
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <IconLoader className="w-4 h-4 animate-spin" />
+                                                        {exportingStatus}
+                                                    </>
+                                                )}
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Controls */}
-                            <div className="executive-controls">
-                                <button
-                                    onClick={() => setIsGenerationModalOpen(true)}
-                                    // disabled={generating} // Let modal handle strict state or concurrent check if needed
-                                    className="executive-btn-primary"
-                                >
-                                    <IconFileText className="w-4 h-4" />
-                                    Generate Report
-                                </button>
-
-                                {report && (
-                                    <>
-                                        <button
-                                            onClick={() => setIsEmailModalOpen(true)}
-                                            className="executive-btn-secondary"
-                                        >
-                                            <IconMail className="w-4 h-4" />
-                                            Email Report
-                                        </button>
-                                        <button onClick={exportPDF} className="executive-btn-secondary">
-                                            <IconDownload className="w-4 h-4" />
-                                            Export PDF
-                                        </button>
-                                        <button onClick={() => setIsEmailV2ModalOpen(true)} className="executive-btn-secondary" title="Send Visual Mirror Email">
-                                            <IconMail className="w-4 h-4" />
-                                            Email Report (V2)
-                                        </button>
-                                        <button onClick={exportPDFV2} className="executive-btn-secondary" title="Download Visual Mirror PDF">
-                                            <IconDownload className="w-4 h-4" />
-                                            Export PDF (V2)
-                                        </button>
-                                    </>
-                                )}
-                            </div>
+                            {error && (
+                                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium">
+                                    {error}
+                                </div>
+                            )}
                         </div>
-
-                        {error && (
-                            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium">
-                                {error}
-                            </div>
-                        )}
                     </div>
-                </div>
                 )}
 
                 {/* Report Content */}
@@ -368,7 +378,11 @@ export const ExecutiveReportingPage = () => {
                                 <div className="space-y-6">
                                     {report.executive_summary && (
                                         <div id="executive-summary" className="scroll-mt-8">
-                                            <ExecutiveSummarySection summary={report.executive_summary} />
+                                            <ExecutiveSummarySection
+                                                summary={report.executive_summary}
+                                                onUpdate={handleUpdateSummary}
+                                                onOpenFeedback={() => setIsFeedbackModalOpen(true)}
+                                            />
                                         </div>
                                     )}
                                     <div id="brand-performance" className="scroll-mt-8">
@@ -420,20 +434,21 @@ export const ExecutiveReportingPage = () => {
                 onGenerate={generateReport}
             />
 
-            {/* Email Modal */}
-            <EmailReportModal
-                isOpen={isEmailModalOpen}
-                onClose={() => setIsEmailModalOpen(false)}
-                brandName={selectedBrand?.name || 'Brand'}
-                onSend={handleEmailReport}
-            />
-
             {/* Email V2 Modal */}
             <EmailReportModal
                 isOpen={isEmailV2ModalOpen}
                 onClose={() => setIsEmailV2ModalOpen(false)}
                 brandName={selectedBrand?.name || 'Brand'}
                 onSend={handleEmailReportV2}
+            />
+
+            {/* Feedback Side Modal */}
+            <FeedbackSideModal
+                isOpen={isFeedbackModalOpen}
+                onClose={() => setIsFeedbackModalOpen(false)}
+                currentSummary={report?.executive_summary || ''}
+                onRegenerate={handleRegenerateSummary}
+                brandId={selectedBrandId || undefined}
             />
         </Layout >
     );

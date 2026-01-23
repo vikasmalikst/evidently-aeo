@@ -206,29 +206,7 @@ export const Onboarding = () => {
         )}
       </div>
 
-      {currentStep === 'competitors' && (
-        <div className="mt-8 pt-8 border-t border-gray-200 flex justify-end">
-          <div className="relative">
-            <button
-              className="px-8 py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
-              onClick={() => {
-                const selected = allCompetitors.filter((c) =>
-                  selectedCompetitorDomains.has(getCompetitorKey(c))
-                );
-                handleCompetitorsContinue(selected.length > 0 ? selected : allCompetitors);
-              }}
-              disabled={!canProceed()}
-            >
-              Next
-            </button>
-            {!canProceed() && (
-              <div className="absolute bottom-full right-0 mb-2 bg-gray-900 text-white px-3 py-2 rounded text-sm whitespace-nowrap">
-                Keep at least 3 competitors
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+
     </OnboardingLayout>
   );
 };

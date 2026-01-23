@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, X, Users, Building2, Sparkles } from 'lucide-react';
+import { Plus, X, Users, Building2, Sparkles, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { OnboardingBrand, OnboardingCompetitor } from '../../types/onboarding';
 import { SafeLogo } from './common/SafeLogo';
@@ -371,11 +371,20 @@ export const CompetitorGrid = ({
 
         {/* Continue Button */}
         <motion.div 
-          className="mt-8 pt-6 border-t border-gray-100 flex justify-end"
+          className="mt-8 pt-6 border-t border-gray-100 flex justify-between items-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
         >
+          <motion.button
+            onClick={onBack}
+            whileHover={{ x: -4 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex items-center gap-2 px-6 py-3 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors"
+          >
+            <ChevronLeft size={20} />
+            <span>Back</span>
+          </motion.button>
           <motion.button
             onClick={handleContinue}
             disabled={competitors.length < 3}

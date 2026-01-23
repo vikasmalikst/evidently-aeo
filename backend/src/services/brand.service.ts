@@ -3496,7 +3496,7 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
 
     try {
       // Step 1: Insert topics into brand_topics table
-      const topicRecords = topicsAndQueries.topics.map((item) => {
+      const topicRecords = topicsAndQueries.topics.map((item: any) => {
         // Map intent archetype to existing category system
         const category = topicsQueryGenerationService.mapIntentToCategory(item.intentArchetype);
 
@@ -3504,11 +3504,11 @@ CRITICAL: Return ONLY valid JSON. Do NOT include any text, comments, explanation
           brand_id: brandId,
           topic_name: item.topic,
           category: category,
-          description: item.description,
+          description: item.description || null, // Optional now
           // Store intent archetype in metadata if needed
           metadata: {
             intentArchetype: item.intentArchetype,
-            priority: item.priority,
+            priority: item.priority || 3, // Default priority
             primaryDomain: topicsAndQueries.primaryDomain,
           },
         };

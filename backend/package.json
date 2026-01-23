@@ -25,6 +25,7 @@
     "cron:query-execution:cleanup": "ts-node --transpile-only src/cron/queryExecutionCleanup.cron.ts",
     "cron:collector-results:timeout": "ts-node --transpile-only src/cron/collectorResultsTimeout.cron.ts",
     "script:backfill-scoring-status": "ts-node --transpile-only src/scripts/backfill-scoring-status.ts",
+    "inspect:topics": "ts-node --transpile-only src/scripts/inspect-topic-generation.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config jest.e2e.config.js",

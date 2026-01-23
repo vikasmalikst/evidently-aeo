@@ -24,6 +24,7 @@ export interface UserProfile {
   customer_id: string | null;
   access_level?: string | null; // Customer access level: 'user' or 'admin'
   preferences?: Record<string, any> | null;
+  settings?: Record<string, any> | null; // Customer settings including entitlements
   last_login_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -35,6 +36,7 @@ export interface Customer {
   name: string;
   email: string;
   access_level?: string | null; // Customer access level: 'user' or 'admin'
+  settings?: Record<string, any> | null; // Customer settings including entitlements
   created_at: string;
   updated_at: string;
 }

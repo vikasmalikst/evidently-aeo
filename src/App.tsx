@@ -37,6 +37,7 @@ import { ManageReports } from './pages/ManageReports';
 import { MeasurePage } from './pages/Measure';
 import { DiscoverPage, ActionPlanPage, ExecutePage, ImpactPage } from './pages/Improve';
 
+
 function DefaultRedirect() {
   if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
     return <Navigate to="/measure" replace />;

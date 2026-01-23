@@ -89,6 +89,19 @@ const adminNavItems: NavItem[] = [
   },
 ];
 
+// Map specific paths or labels to feature entitlement keys
+const getFeatureForPath = (path: string): string | null => {
+  if (path.includes('/analyze/topics')) return 'analyze_topics';
+  if (path.includes('/analyze/keywords')) return 'analyze_keywords';
+  if (path.includes('/analyze/citation-sources')) return 'analyze_citation_sources';
+  if (path.includes('/analyze/queries')) return 'analyze_queries';
+  if (path.includes('/analyze/domain-readiness')) return 'analyze_domain_readiness';
+  if (path.includes('/improve/')) return 'recommendations';
+  if (path.includes('/executive-reporting')) return 'executive_reporting';
+  if (path.includes('/measure')) return 'measure';
+  return null;
+};
+
 export const NewSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -111,6 +124,16 @@ export const NewSidebar = () => {
   const isSectionActive = (item: NavItem) => {
     if (item.path) return isPathActive(item.path);
     return isChildActive(item.children);
+  };
+  
+  // Helper to check if a feature is enabled
+  const isFeatureEnabled = (path?: string) => {
+    if (!path) return true;
+    const feature = getFeatureForPath(path);
+    if (!feature) return true;
+    
+    // Default to true if entitlements are missing to avoid blocking by default
+    return user?.settings?.entitlements?.features?.[feature] ?? true;
   };
 
   // Auto-expand sections when their children are active
@@ -182,6 +205,13 @@ export const NewSidebar = () => {
     const hasChildren = item.children && item.children.length > 0;
     const isExpanded_ = expandedSections.has(item.id);
     const active = isSectionActive(item);
+    
+    // For parent items, we check if ALL logic is blocked or if it's just a section container
+    // If it's a section like "Analyze", we usually let it expand, but we might check individual children
+    
+    // Check main path if exists
+    const enabled = isFeatureEnabled(item.path);
+    const isLocked = !enabled;
 
     if (hasChildren) {
       return (
@@ -231,25 +261,45 @@ export const NewSidebar = () => {
             {item.children?.map((child) => {
               const ChildIcon = child.icon;
               const childActive = isPathActive(child.path);
+              const childEnabled = isFeatureEnabled(child.path);
+              const isChildLocked = !childEnabled;
 
-              return (
-                <li key={child.path}>
-                  <Link
-                    to={child.path}
-                    className={`flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg transition-all duration-200 ${childActive
-                      ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-medium'
-                      : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
-                      }`}
-                  >
+              const content = (
+                 <>
                     {ChildIcon && (
                       <ChildIcon
                         size={16}
-                        className={`flex-shrink-0 ${childActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-caption)]'
-                          }`}
+                        className={`flex-shrink-0 ${childActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-caption)]'} ${isChildLocked ? 'opacity-50' : ''}`}
                       />
                     )}
-                    <span className="text-sm whitespace-nowrap">{child.label}</span>
-                  </Link>
+                    <span className={`text-sm whitespace-nowrap ${isChildLocked ? 'text-[var(--text-caption)]' : ''}`}>
+                      {child.label}
+                    </span>
+                    {isChildLocked && (
+                      <span className="ml-auto text-[10px] font-bold tracking-wide text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1.5 py-0.5 rounded shadow-sm flex-shrink-0">
+                         PRO
+                      </span>
+                    )}
+                 </>
+              );
+
+              return (
+                <li key={child.path} title={isChildLocked ? "Contact sales to unlock" : ""}>
+                   {isChildLocked ? (
+                      <div className="flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg cursor-not-allowed opacity-80 hover:bg-gray-50 transition-colors">
+                        {content}
+                      </div>
+                   ) : (
+                      <Link
+                        to={child.path}
+                        className={`flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg transition-all duration-200 ${childActive
+                          ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-medium'
+                          : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
+                          }`}
+                      >
+                       {content}
+                      </Link>
+                   )}
                 </li>
               );
             })}
@@ -258,31 +308,48 @@ export const NewSidebar = () => {
       );
     }
 
-    // Simple nav item without children
-    return (
-      <li key={item.id}>
-        <Link
-          to={item.path!}
-          className="flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)]"
-        >
-          <div
-            className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
-              ? 'bg-[var(--accent-primary)] text-white'
-              : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
-              }`}
-          >
-            <Icon size={20} className="transition-colors duration-300" />
-          </div>
+    // Simple nav item without children (e.g. Measure)
+    const content = (
+         <>
+            <div
+              className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
+                ? 'bg-[var(--accent-primary)] text-white'
+                : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
+                } ${isLocked ? 'opacity-50' : ''}`}
+            >
+              <Icon size={20} className="transition-colors duration-300" />
+            </div>
 
-          <span
-            className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
-              ? 'opacity-100 translate-x-0'
-              : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-              }`}
-          >
-            {item.label}
-          </span>
-        </Link>
+            <span
+              className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
+                ? 'opacity-100 translate-x-0'
+                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+                } ${isLocked ? 'text-[var(--text-caption)]' : ''}`}
+            >
+              {item.label}
+            </span>
+             {isLocked && (
+                <span className={`text-[10px] font-bold tracking-wide text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1.5 py-0.5 rounded shadow-sm flex-shrink-0 transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'opacity-0'}`}>
+                   PRO
+                </span>
+             )}
+         </>
+    );
+
+    return (
+      <li key={item.id} title={isLocked ? "Contact sales to unlock" : ""}>
+        {isLocked ? (
+            <div className="flex items-center gap-3 px-3 py-3 rounded-lg cursor-not-allowed group opacity-80 hover:bg-gray-50 transition-colors">
+               {content}
+            </div>
+        ) : (
+            <Link
+              to={item.path!}
+              className="flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)]"
+            >
+              {content}
+            </Link>
+        )}
       </li>
     );
   };

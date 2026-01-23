@@ -27,19 +27,22 @@ export function HeroFeature2() {
             <div className="relative group">
               {/* Gradient border glow */}
               <div className="absolute -inset-2 bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 rounded-2xl blur-lg opacity-20 group-hover:opacity-35 transition-opacity duration-500"></div>
-              
+
               {/* Main container */}
               <div className="relative rounded-2xl overflow-hidden border-2 border-cyan-500/30 shadow-[0_20px_60px_-15px_rgba(6,182,212,0.3)] bg-white hover:shadow-[0_25px_80px_-15px_rgba(6,182,212,0.4)] transition-all duration-500 hover:scale-[1.02]">
                 {/* Gradient overlay */}
                 <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-10 pointer-events-none"></div>
-                
+
                 {/* Image without scaling to prevent cropping */}
                 <img
                   src="/recommendationsNew.jpeg"
                   alt="EvidentlyAEO AI-specific optimization recommendations showing actionable insights and content guidance"
-                className="w-full h-auto"
-              />
-                
+                  className="w-full h-auto"
+                  width="800"
+                  height="450"
+                  loading="lazy"
+                />
+
                 {/* Top corner accent */}
                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-cyan-500/15 to-transparent rounded-bl-full"></div>
               </div>
@@ -54,22 +57,25 @@ export function HeroFeature2() {
             <div className="relative group">
               {/* Gradient border glow */}
               <div className="absolute -inset-2 bg-gradient-to-r from-blue-400 via-cyan-500 to-blue-400 rounded-2xl blur-lg opacity-20 group-hover:opacity-35 transition-opacity duration-500"></div>
-              
+
               {/* Main container */}
               <div className="relative rounded-2xl overflow-hidden border-2 border-blue-500/30 shadow-[0_20px_60px_-15px_rgba(37,99,235,0.3)] bg-white hover:shadow-[0_25px_80px_-15px_rgba(37,99,235,0.4)] transition-all duration-500 hover:scale-[1.02]">
                 {/* Gradient overlay */}
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-10 pointer-events-none"></div>
-                
+
                 {/* Image without scaling to prevent cropping */}
                 <img
                   src="/RecommendationsNew2.jpeg"
                   alt="EvidentlyAEO detailed recommendations panel with specific optimization strategies and impact metrics"
                   className="w-full h-auto"
+                  width="800"
+                  height="450"
+                  loading="lazy"
                 />
-                
+
                 {/* Bottom corner accent */}
                 <div className="absolute bottom-0 left-0 w-20 h-20 bg-gradient-to-tr from-blue-500/15 to-transparent rounded-tr-full"></div>
-          </div>
+              </div>
 
               {/* Floating badge */}
               <div className="absolute -bottom-3 -left-3 bg-gradient-to-r from-blue-500 to-cyan-600 text-white px-3 py-1.5 rounded-full shadow-lg text-xs font-semibold z-20">

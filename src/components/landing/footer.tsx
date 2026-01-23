@@ -12,6 +12,9 @@ export function Footer() {
                 src="/evidentlyaeo-logo.png"
                 alt="EvidentlyAEO Logo"
                 className="h-8 w-8 object-contain"
+                width="32"
+                height="32"
+                loading="lazy"
               />
               <span className="font-bold">EvidentlyAEO</span>
             </div>

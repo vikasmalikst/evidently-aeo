@@ -20,6 +20,8 @@ export default function LandingPage() {
         "name": "EvidentlyAEO",
         "applicationCategory": "MarketingApplication",
         "operatingSystem": "Web",
+        "datePublished": "2026-01-23",
+        "dateModified": new Date().toISOString().split('T')[0],
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -35,7 +37,9 @@ export default function LandingPage() {
         "logo": "https://evidentlyaeo.com/assets/logo.png",
         "sameAs": [
           "https://twitter.com/evidentlyaeo",
-          "https://linkedin.com/company/evidentlyaeo"
+          "https://linkedin.com/company/evidentlyaeo",
+          "https://github.com/evidentlyaeo",
+          "https://www.crunchbase.com/organization/evidentlyaeo"
         ]
       }
     ]

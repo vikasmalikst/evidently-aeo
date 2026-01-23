@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from "react"
 import { motion, useInView } from "framer-motion"
 import { cn } from "@/lib-landing/utils"
-import { 
-  BarChart3, 
-  Zap, 
-  Target, 
+import {
+  BarChart3,
+  Zap,
+  Target,
   CheckCircle2,
   LayoutDashboard,
   LucideIcon
@@ -69,51 +69,54 @@ const features: Feature[] = [
 
 export function FeaturesStickyScroll() {
   const [activeCard, setActiveCard] = useState(0)
-  
+
   return (
     <div id="platform" className="bg-background relative w-full pt-20 pb-40">
       <div className="container mx-auto px-4 lg:px-6">
         <div className="flex flex-col lg:flex-row gap-10 lg:gap-24 relative">
-          
+
           {/* Left Side: Scrollable Text (NARROWER) */}
           <div className="w-full lg:w-5/12 flex flex-col pt-[10vh]">
-             {features.map((feature, index) => (
-                <FeatureTextBlock 
-                  key={index} 
-                  feature={feature} 
-                  index={index}
-                  setActiveCard={setActiveCard}
-                />
-             ))}
+            {features.map((feature, index) => (
+              <FeatureTextBlock
+                key={index}
+                feature={feature}
+                index={index}
+                setActiveCard={setActiveCard}
+              />
+            ))}
           </div>
 
           {/* Right Side: Sticky Image Area (WIDER) */}
           <div className="hidden lg:block w-full lg:w-7/12 relative">
-             <div className="sticky top-[20vh] h-[500px] w-full rounded-3xl overflow-hidden shadow-2xl border border-border bg-background">
-                {features.map((feature, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0 }}
-                    animate={{ 
-                      opacity: activeCard === index ? 1 : 0,
-                      scale: activeCard === index ? 1 : 1.05, // Subtle zoom out when fading out
-                      filter: activeCard === index ? "blur(0px)" : "blur(4px)" // Blur effect
-                    }}
-                    transition={{ duration: 0.7, ease: "easeInOut" }}
-                    className="absolute inset-0 w-full h-full"
-                  >
-                     {/* Image without colored overlay */}
-                     <img 
-                        src={feature.image} 
-                        alt={feature.title}
-                        className="w-full h-full object-contain object-left-top"
-                     />
-                     
-                     {/* Subtle gradient at bottom for depth */}
-                     <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent" />
-                  </motion.div>
-                ))}
-             </div>
+            <div className="sticky top-[20vh] h-[500px] w-full rounded-3xl overflow-hidden shadow-2xl border border-border bg-background">
+              {features.map((feature, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0 }}
+                  animate={{
+                    opacity: activeCard === index ? 1 : 0,
+                    scale: activeCard === index ? 1 : 1.05, // Subtle zoom out when fading out
+                    filter: activeCard === index ? "blur(0px)" : "blur(4px)" // Blur effect
+                  }}
+                  transition={{ duration: 0.7, ease: "easeInOut" }}
+                  className="absolute inset-0 w-full h-full"
+                >
+                  {/* Image without colored overlay */}
+                  <img
+                    src={feature.image}
+                    alt={feature.title}
+                    className="w-full h-full object-contain object-left-top"
+                    width="800"
+                    height="500"
+                    loading="lazy"
+                  />
+
+                  {/* Subtle gradient at bottom for depth */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent" />
+                </motion.div>
+              ))}
+            </div>
           </div>
 
         </div>
@@ -142,24 +145,24 @@ function FeatureTextBlock({ feature, index, setActiveCard }: FeatureTextBlockPro
   const Icon = feature.icon
 
   return (
-    <div 
+    <div
       ref={ref}
-      className="flex flex-col justify-center min-h-[80vh] py-20" 
+      className="flex flex-col justify-center min-h-[80vh] py-20"
     >
       <div className="flex flex-col gap-6 max-w-xl">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-primary/10 text-primary">
-             <Icon className="w-6 h-6 text-black dark:text-white" />
+            <Icon className="w-6 h-6 text-black dark:text-white" />
           </div>
           <span className="text-sm font-bold tracking-widest text-muted-foreground uppercase">
             {feature.title}
           </span>
         </div>
-        
+
         <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-foreground">
           {feature.heading}
         </h2>
-        
+
         <p className="text-xl text-muted-foreground leading-relaxed">
           {feature.description}
         </p>

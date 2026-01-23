@@ -5,6 +5,7 @@ import { promptsAnalyticsService } from '../services/prompts-analytics.service';
 import { keywordsAnalyticsService } from '../services/keywords-analytics.service';
 import { sourceAttributionService } from '../services/source-attribution.service';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireFeatureEntitlement } from '../middleware/entitlements.middleware';
 import { responseCacheMiddleware } from '../middleware/response-cache.middleware';
 import { BrandOnboardingRequest, ApiResponse, DatabaseError } from '../types/auth';
 import { supabaseAdmin } from '../config/database';

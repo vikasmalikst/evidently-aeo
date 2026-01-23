@@ -114,6 +114,7 @@ export class AuthService {
         provider: 'email',
         customer_id: customer.id,
         access_level: customer.access_level || 'user', // Include access_level from customers table
+        settings: customer.settings, // Include customer settings (entitlements)
         created_at: customer.created_at,
         updated_at: customer.updated_at
       };
@@ -203,7 +204,8 @@ export class AuthService {
         avatar_url: null,
         provider: 'google',
         customer_id: customer.id,
-        access_level: customer.access_level || 'user' // Include access_level from customers table
+        access_level: customer.access_level || 'user', // Include access_level from customers table
+        settings: customer.settings // Include settings
       };
 
       return {

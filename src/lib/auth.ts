@@ -18,6 +18,7 @@ interface BackendAuthSuccess {
     customer_id?: string | null;
     role?: string | null;
     access_level?: string | null; // Customer access level from backend
+    settings?: Record<string, any> | null; // Customer settings including entitlements
   };
   session: {
     access_token: string;
@@ -40,6 +41,7 @@ export interface AuthUser {
   customerId: string | null;
   role?: string | null;
   accessLevel?: 'user' | 'admin' | null; // Customer access level for admin portal access
+  settings?: Record<string, any> | null; // Customer settings including entitlements
 }
 
 export interface AuthResponse {
@@ -76,7 +78,8 @@ const mapUser = (payload: BackendAuthSuccess): AuthUser => {
     fullName: name,
     customerId: payload.profile.customer_id ?? payload.user.customer_id ?? null,
     role: payload.profile.role ?? payload.user.role ?? null,
-    accessLevel: accessLevel as 'user' | 'admin' | null
+    accessLevel: accessLevel as 'user' | 'admin' | null,
+    settings: payload.profile.settings ?? null
   };
 };
 

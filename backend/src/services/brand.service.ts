@@ -12,6 +12,7 @@ import { topicsQueryGenerationService, TopicsAndQueriesResponse } from './topics
 import { dataCollectionService, QueryExecutionRequest } from './data-collection/data-collection.service';
 import { competitorVersioningService } from './competitor-management';
 import { OptimizedMetricsHelper } from './query-helpers/optimized-metrics.helper';
+import { customerEntitlementsService } from './customer-entitlements.service';
 
 type NormalizedCompetitor = {
   name: string;
@@ -215,15 +216,44 @@ export class BrandService {
       // Validate input
       this.validateBrandData(brandData);
 
-      // Check if customer exists
+      // Check if customer exists and fetch entitlements
       const { data: customer, error: customerError } = await supabaseAdmin
         .from('customers')
-        .select('id')
+        .select('*')
         .eq('id', customerId)
         .single();
 
       if (customerError || !customer) {
         throw new ValidationError('Customer not found');
+      }
+
+      // Check brand limits
+      const { count: brandCount, error: countError } = await supabaseAdmin
+        .from('brands')
+        .select('id', { count: 'exact', head: true })
+        .eq('customer_id', customerId);
+
+      if (countError) {
+        throw new DatabaseError(`Failed to check brand limits: ${countError.message}`);
+      }
+
+      const { value: maxBrands } = customerEntitlementsService.getEntitlementValue(
+        customer,
+        'max_brands',
+        5 // Default to 5 if not set
+      );
+
+      // Only enforce limit if creating a NEW brand (not updating existing)
+      // Check if brand already exists by name/url first to see if this is an update or create
+      const { data: existingBrandCheck } = await supabaseAdmin
+        .from('brands')
+        .select('id')
+        .eq('customer_id', customerId)
+        .or(`name.eq.${brandData.brand_name},homepage_url.eq.${brandData.website_url}`)
+        .maybeSingle();
+
+      if (!existingBrandCheck && (brandCount || 0) >= maxBrands) {
+        throw new ValidationError(`Brand limit reached. Your plan allows ${maxBrands} brands.`);
       }
 
       // Check if brand already exists for this customer

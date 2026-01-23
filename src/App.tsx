@@ -22,6 +22,7 @@ import MoversAndShakers from './pages/MoversAndShakers';
 import { ScheduledJobs } from './pages/admin/ScheduledJobs';
 import { DataCollectionStatus } from './pages/admin/DataCollectionStatus';
 import { CustomerEntitlements } from './pages/admin/CustomerEntitlements';
+import { CollectionStats } from './pages/admin/CollectionStats';
 import { DomainReadinessPage } from './pages/DomainReadiness/DomainReadinessPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
@@ -36,6 +37,7 @@ import { ManageReports } from './pages/ManageReports';
 // New pages for restructured navigation
 import { MeasurePage } from './pages/Measure';
 import { DiscoverPage, ActionPlanPage, ExecutePage, ImpactPage } from './pages/Improve';
+
 
 function DefaultRedirect() {
   if (featureFlags.skipSetupCheck || featureFlags.skipOnboardingCheck) {
@@ -394,6 +396,7 @@ function App() {
           <Route path="/admin/scheduled-jobs" element={<ScheduledJobs />} />
           <Route path="/admin/scheduled-tasks" element={<ScheduledJobs />} />
           <Route path="/admin/data-collection-status" element={<DataCollectionStatus />} />
+          <Route path="/admin/collection-stats" element={<CollectionStats />} />
           <Route path="/admin/entitlements" element={<CustomerEntitlements />} />
         </Route>
         <Route

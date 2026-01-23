@@ -12,6 +12,7 @@ import { consolidatedScoringService } from '../services/scoring/consolidated-sco
 import { backfillRawAnswerFromSnapshots } from '../scripts/backfill-raw-answer-from-snapshots';
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
+import { collectionStatsService } from '../services/collection-stats.service';
 
 loadEnvironment();
 
@@ -798,6 +799,35 @@ router.post('/customers/:customerId/entitlements', async (req: Request, res: Res
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create customer entitlements'
+    });
+  }
+});
+
+// =====================================================
+// Collection Stats Routes
+// =====================================================
+
+/**
+ * GET /api/admin/collection-stats
+ * Get collection and scoring statistics
+ */
+router.get('/collection-stats', async (req: Request, res: Response) => {
+  try {
+    const { customer_id, brand_id } = req.query;
+    const filterCustomerId = typeof customer_id === 'string' ? customer_id : undefined;
+    const filterBrandId = typeof brand_id === 'string' ? brand_id : undefined;
+
+    const stats = await collectionStatsService.getCollectionStats(filterCustomerId, filterBrandId);
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error fetching collection stats:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch collection stats'
     });
   }
 });

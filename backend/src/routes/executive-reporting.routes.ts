@@ -20,6 +20,8 @@ import type {
 } from '../services/executive-reporting/types';
 import { supabase } from '../config/supabase';
 import { reportSettingsService } from '../services/report-settings.service';
+import { authenticateToken } from '../middleware/auth.middleware';
+import { requireFeatureEntitlement } from '../middleware/entitlements.middleware';
 
 const router = Router();
 
@@ -27,7 +29,7 @@ const router = Router();
  * GET /api/brands/:brandId/executive-reports
  * List all reports for a brand
  */
-router.get('/brands/:brandId/executive-reports', async (req: Request, res: Response) => {
+router.get('/brands/:brandId/executive-reports', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
         const limit = parseInt(req.query.limit as string) || 20;
@@ -51,7 +53,7 @@ router.get('/brands/:brandId/executive-reports', async (req: Request, res: Respo
  * GET /api/brands/:brandId/executive-reports/latest
  * Get the most recent report for a brand
  */
-router.get('/brands/:brandId/executive-reports/latest', async (req: Request, res: Response) => {
+router.get('/brands/:brandId/executive-reports/latest', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
 
@@ -81,7 +83,7 @@ router.get('/brands/:brandId/executive-reports/latest', async (req: Request, res
  * GET /api/brands/:brandId/executive-reports/:reportId
  * Get a specific report
  */
-router.get('/brands/:brandId/executive-reports/:reportId', async (req: Request, res: Response) => {
+router.get('/brands/:brandId/executive-reports/:reportId', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { reportId } = req.params;
 
@@ -111,7 +113,7 @@ router.get('/brands/:brandId/executive-reports/:reportId', async (req: Request, 
  * POST /api/brands/:brandId/executive-reports
  * Generate a new report
  */
-router.post('/brands/:brandId/executive-reports', async (req: Request, res: Response) => {
+router.post('/brands/:brandId/executive-reports', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
         let { period_days, end_date } = req.body;
@@ -256,7 +258,7 @@ router.post('/brands/:brandId/executive-reports/:reportId/regenerate-summary', a
  * DELETE /api/brands/:brandId/executive-reports/:reportId
  * Delete a report
  */
-router.delete('/brands/:brandId/executive-reports/:reportId', async (req: Request, res: Response) => {
+router.delete('/brands/:brandId/executive-reports/:reportId', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { reportId } = req.params;
 
@@ -288,7 +290,7 @@ router.delete('/brands/:brandId/executive-reports/:reportId', async (req: Reques
  * GET /api/brands/:brandId/executive-reports/schedules
  * Get all schedules for a brand
  */
-router.get('/brands/:brandId/executive-reports-schedules', async (req: Request, res: Response) => {
+router.get('/brands/:brandId/executive-reports-schedules', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
 
@@ -311,7 +313,7 @@ router.get('/brands/:brandId/executive-reports-schedules', async (req: Request, 
  * POST /api/brands/:brandId/executive-reports/schedules
  * Create a new schedule
  */
-router.post('/brands/:brandId/executive-reports-schedules', async (req: Request, res: Response) => {
+router.post('/brands/:brandId/executive-reports-schedules', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
         const { frequency, reporting_period_days, recipients } = req.body;
@@ -343,7 +345,7 @@ router.post('/brands/:brandId/executive-reports-schedules', async (req: Request,
  * PUT /api/brands/:brandId/executive-reports/schedules/:scheduleId
  * Update a schedule
  */
-router.put('/brands/:brandId/executive-reports-schedules/:scheduleId', async (req: Request, res: Response) => {
+router.put('/brands/:brandId/executive-reports-schedules/:scheduleId', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { scheduleId } = req.params;
         const updates = req.body;
@@ -367,7 +369,7 @@ router.put('/brands/:brandId/executive-reports-schedules/:scheduleId', async (re
  * DELETE /api/brands/:brandId/executive-reports/schedules/:scheduleId
  * Delete a schedule
  */
-router.delete('/brands/:brandId/executive-reports-schedules/:scheduleId', async (req: Request, res: Response) => {
+router.delete('/brands/:brandId/executive-reports-schedules/:scheduleId', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { scheduleId } = req.params;
 
@@ -493,7 +495,7 @@ router.delete('/brands/:brandId/executive-reports/:reportId/comments/:commentId'
  * POST /api/brands/:brandId/executive-reports/:reportId/export/pdf
  * Export report as PDF
  */
-router.post('/brands/:brandId/executive-reports/:reportId/export/pdf', async (req: Request, res: Response) => {
+router.post('/brands/:brandId/executive-reports/:reportId/export/pdf', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { reportId } = req.params;
         const { include_annotations = false } = req.body;
@@ -516,7 +518,7 @@ router.post('/brands/:brandId/executive-reports/:reportId/export/pdf', async (re
  * POST /api/brands/:brandId/executive-reports/:reportId/email
  * Email report to a specific address
  */
-router.post('/brands/:brandId/executive-reports/:reportId/email', async (req: Request, res: Response) => {
+router.post('/brands/:brandId/executive-reports/:reportId/email', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { reportId, brandId } = req.params;
         const { email } = req.body;

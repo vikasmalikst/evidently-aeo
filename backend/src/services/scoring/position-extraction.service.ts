@@ -1228,35 +1228,41 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       ? brandProductsData.brand_synonyms.filter((s: string) => s && typeof s === 'string')
       : [];
 
-    // Trust KB synonyms (skip strict filtering for DB content)
-    // "Strict filtering" caused issues for multi-word brands where a single word (e.g. "Jira" in "Atlassian Jira")
-    // is a valid synonym but was filtered out because it's part of the brand name.
+    // Combine all sources:
+    // 1. KB Synonyms: TRUSTED (Skip filtering)
+    // 2. KB Products: TRUSTED (Skip filtering)
+    // 3. Cache Products: UNTRUSTED (Apply strict filtering)
+    // 4. LLM Products: UNTRUSTED (Apply strict filtering)
+
+    // Trust KB synonyms
     const brandSynonyms = brandSynonymsRaw;
 
-    // Get products from KB
+    // Trust KB products
     const kbProducts = Array.isArray(brandProductsData?.brand_products)
       ? brandProductsData.brand_products.filter((p: string) => p && typeof p === 'string')
       : [];
 
-    // Get products from cache (LLM-extracted)
+    // Get products from cache (LLM-extracted) - UNTRUSTED
     const cacheProducts = Array.isArray(consolidatedCacheData?.products?.brand)
       ? consolidatedCacheData.products.brand.filter((p: string) => p && typeof p === 'string')
       : [];
 
-    // Get products from LLM extraction (if not using consolidated analysis)
+    // Get products from LLM extraction - UNTRUSTED
     const llmProducts = Array.isArray(llmExtractedProducts)
       ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
       : [];
 
-    // Filter only the non-trusted sources
+    // Filter ONLY the non-trusted sources (LLM/Cache)
+    // This allows "Jira" (if in KB) to be a valid match for "Atlassian Jira"
+    // BUT prevents "New" (from LLM) from matching "New Balance"
     const filteredCacheProducts = this.filterPartialMatches(cacheProducts, brandName);
     const filteredLlmProducts = this.filterPartialMatches(llmProducts, brandName);
 
-    // Combine all products (Trust KB products)
+    // Combine all products
     const allProducts = Array.from(new Set([
-      ...kbProducts,
-      ...filteredCacheProducts,
-      ...filteredLlmProducts
+      ...kbProducts,            // Trusted
+      ...filteredCacheProducts, // Filtered
+      ...filteredLlmProducts    // Filtered
     ]));
 
     return {
@@ -1304,25 +1310,25 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       ? competitorData.products.filter((p: string) => p && typeof p === 'string')
       : [];
 
-    // Get products from cache (LLM-extracted)
+    // Get products from cache (LLM-extracted) - UNTRUSTED
     const cacheProducts = Array.isArray(consolidatedCacheData?.products?.competitors?.[competitorName])
       ? consolidatedCacheData.products.competitors[competitorName].filter((p: string) => p && typeof p === 'string')
       : [];
 
-    // Get products from LLM extraction (if not using consolidated analysis)
+    // Get products from LLM extraction - UNTRUSTED
     const llmProducts = Array.isArray(llmExtractedProducts)
       ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
       : [];
 
-    // Filter only the non-trusted sources
+    // Filter ONLY the non-trusted sources (LLM/Cache)
     const filteredCacheProducts = this.filterPartialMatches(cacheProducts, competitorName);
     const filteredLlmProducts = this.filterPartialMatches(llmProducts, competitorName);
 
     // Combine all products (Trust KB products)
     const allProducts = Array.from(new Set([
-      ...kbProducts,
-      ...filteredCacheProducts,
-      ...filteredLlmProducts
+      ...kbProducts,            // Trusted
+      ...filteredCacheProducts, // Filtered
+      ...filteredLlmProducts    // Filtered
     ]));
 
     return {

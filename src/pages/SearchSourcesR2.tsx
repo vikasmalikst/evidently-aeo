@@ -587,7 +587,7 @@ export const SearchSourcesR2 = () => {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Citations Sources</h1>
-              <p style={{ margin: 0, color: '#475569' }}>Benchmark your Brand's performance across different channels and sources used by LLMs.</p>
+              <p style={{ margin: 0, color: '#475569' }}>Analyze your brand's performance across various citation sources used by LLMs to answer users' queries.</p>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

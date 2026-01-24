@@ -25,27 +25,45 @@ const contentMap: Record<KpiType, EducationalContent> = {
         sections: [
             {
                 title: 'Definition',
-                content: 'A composite metric that measures how prominent your brand is across AI responses. It considers both the frequency of your brand\'s appearance and its ranking position in the answers.',
+                content: (
+                    <div>
+                        <p className="mb-2">A comprehensive measure of brand prominence calculated by analyzing three key factors:</p>
+                        <ul className="space-y-1 pl-1">
+                            <li className="flex gap-2 text-sm text-gray-700">
+                                <span className="font-bold text-gray-900">•</span>
+                                <span>The frequency of brand mentions</span>
+                            </li>
+                            <li className="flex gap-2 text-sm text-gray-700">
+                                <span className="font-bold text-gray-900">•</span>
+                                <span>Their specific positioning within the answer</span>
+                            </li>
+                            <li className="flex gap-2 text-sm text-gray-700">
+                                <span className="font-bold text-gray-900">•</span>
+                                <span>Their relative weight against the total answer length</span>
+                            </li>
+                        </ul>
+                    </div>
+                ),
                 icon: BookOpen,
                 colorClass: 'text-blue-500',
                 bgClass: 'bg-blue-50/50 border-blue-100/50'
             },
             {
                 title: 'Why it Matters?',
-                content: 'Higher visibility means your brand is more likely to be seen by users asking relevant questions, driving brand awareness and potential traffic.',
+                content: 'Higher values equate to higher prominence, indicating greater brand authority and favorability. This commanding presence is a primary driver of organic traffic.',
                 icon: Target,
                 colorClass: 'text-emerald-500'
             },
             {
                 title: 'What\'s a Good Value?',
-                content: 'Values above 50 are considered strong. A score of 100 means you are dominant in every answer.',
+                content: 'There is no universal minimum threshold; a higher score is always better and should be benchmarked relative to competitors/adjacent industries.',
                 icon: BarChart2,
                 colorClass: 'text-purple-500',
                 bgClass: 'bg-gray-50 border-gray-100'
             },
             {
                 title: 'How to Use This KPI?',
-                content: 'Monitor this trend to see if your optimization efforts are working. A drop indicates competitors might be gaining ground or model behaviors have changed.',
+                content: 'Evaluate this score alongside other metrics like Brand Presence, Sentiment, and Share of Answers for a holistic view of your performance.',
                 icon: Lightbulb,
                 colorClass: 'text-amber-500',
                 bgClass: 'bg-amber-50/30 border-amber-100/50'
@@ -58,14 +76,14 @@ const contentMap: Record<KpiType, EducationalContent> = {
         sections: [
             {
                 title: 'Definition',
-                content: 'The percentage of times your brand appears in the answers generated for your tracked keywords, relative to the total number of answers where any brand (yours or competitors) appears.',
+                content: 'The percentage of time your brand appears in answers compared to your competitors.',
                 icon: BookOpen,
                 colorClass: 'text-blue-500',
                 bgClass: 'bg-blue-50/50 border-blue-100/50'
             },
             {
                 title: 'Why it Matters?',
-                content: 'It directly compares your footprint against your competition. It answers "Are we winning the digital shelf?".',
+                content: 'It answers the question "Are we winning LLM answers against our competitors?"',
                 icon: Target,
                 colorClass: 'text-emerald-500'
             },
@@ -222,8 +240,8 @@ const contentMap: Record<KpiType, EducationalContent> = {
         typeLabel: 'Strategic Guide',
         sections: [
             {
-                title: 'Diversity is Strength',
-                content: 'This bar shows the mix of sources citing your brand. A healthy brand footprint is diverse. Relying too heavily on one type creates vulnerability.',
+                title: 'Citation Sources-Categories',
+                content: 'Mix of cittion sources used by LLMs. Indicates the diversity of sourcesused by LLMs',
                 icon: PieChart,
                 colorClass: 'text-blue-500',
                 bgClass: 'bg-blue-50/50 border-blue-100/50'
@@ -256,7 +274,22 @@ const contentMap: Record<KpiType, EducationalContent> = {
             },
             {
                 title: 'Strategic Warning Signs',
-                content: '• Too much Corporate (>70%): You are "talking to yourself". You need more third-party validation.\n• Too much UGC (>50%): Your narrative is controlled by the crowd. Monitor sentiment closely.\n• Low Editorial: You lack authoritative "news" coverage.',
+                content: (
+                    <ul className="space-y-1 pl-1">
+                        <li className="flex gap-2 text-sm text-gray-700">
+                            <span className="font-bold text-gray-900">•</span>
+                            <span>Too much Corporate (&gt;70%): You are "talking to yourself". You need more third-party, authoritative validation.</span>
+                        </li>
+                        <li className="flex gap-2 text-sm text-gray-700">
+                            <span className="font-bold text-gray-900">•</span>
+                            <span>Too much UGC (&gt;50%): Your narrative is controlled by the crowd. Monitor sentiment closely.</span>
+                        </li>
+                        <li className="flex gap-2 text-sm text-gray-700">
+                            <span className="font-bold text-gray-900">•</span>
+                            <span>Low Editorial: You lack authoritative "news" coverage.</span>
+                        </li>
+                    </ul>
+                ),
                 icon: Target,
                 colorClass: 'text-emerald-500'
             },
@@ -278,7 +311,7 @@ const contentMap: Record<KpiType, EducationalContent> = {
                 content: (
                     <div className="space-y-2">
                         <p className="text-sm"><span className="font-bold text-gray-900">Definition:</span> Sources with <span className="font-semibold text-emerald-600">High Visibility</span> and <span className="font-semibold text-emerald-600">Positive Sentiment</span>.</p>
-                        <p className="text-sm"><span className="font-bold text-gray-900">Why it Matters:</span> These are your best performing channels. They are already driving valuable traffic and positive brand perception.</p>
+                        <p className="text-sm"><span className="font-bold text-gray-900">Why it Matters:</span> These are your best performing channels. They are already driving valuable mentions and positive brand perception.</p>
                         <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mt-1">Action: Maintain & Double Down</p>
                     </div>
                 ),
@@ -297,7 +330,7 @@ const contentMap: Record<KpiType, EducationalContent> = {
                 content: (
                     <div className="space-y-2">
                         <p className="text-sm"><span className="font-bold text-gray-900">Definition:</span> Sources with <span className="font-semibold text-emerald-600">High Visibility</span> but <span className="font-semibold text-rose-500">Negative/Neutral Sentiment</span>.</p>
-                        <p className="text-sm"><span className="font-bold text-gray-900">Why it Matters:</span> These sources are widely seen but are damaging your brand reputation or failing to convert users (low trust).</p>
+                        <p className="text-sm"><span className="font-bold text-gray-900">Why it Matters:</span> These sources are widely seen but are damaging your brand reputation or causing trust deficit.</p>
                         <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mt-1">Action: Address Criticism & Improve Content</p>
                     </div>
                 ),

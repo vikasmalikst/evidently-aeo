@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
-import { IconBrandOpenai } from '@tabler/icons-react';
+import { IconBrandOpenai, IconInfoCircle } from '@tabler/icons-react'; // Added IconInfoCircle
 import { Check, Cpu, Sparkles } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore'; // Added useAuthStore import
 import claudeLogoSrc from '../../assets/Claude-AI-icon.svg';
 import copilotLogoSrc from '../../assets/Microsoft-Copilot-icon.svg';
 import geminiLogoSrc from '../../assets/Google-Gemini-Icon.svg';
@@ -85,10 +86,22 @@ const AI_MODELS: AIModel[] = [
 const MAX_SELECTIONS = 7;
 
 export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelectionProps) => {
+  const { user } = useAuthStore();
+  const enabledCollectors = user?.settings?.entitlements?.enabled_collectors;
+
+  const isEntitled = (modelId: string) => {
+    // If no specific collectors list is defined, assume all allowed (or handle as restricted default)
+    // If list exists, check strict inclusion
+    if (!enabledCollectors || enabledCollectors.length === 0) return true;
+    return enabledCollectors.includes(modelId);
+  };
+  
   const canSelectMore = selectedModels.length < MAX_SELECTIONS;
 
   const handleCardClick = (modelId: string, available: boolean) => {
     if (!available) return;
+    if (!isEntitled(modelId)) return; // Check entitlement
+    
     const isSelected = selectedModels.includes(modelId);
     if (!isSelected && !canSelectMore) return;
     onModelToggle(modelId);
@@ -133,7 +146,8 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
         >
           {AI_MODELS.map((model, index) => {
             const isSelected = selectedModels.includes(model.id);
-            const isDisabled = !model.available || (!isSelected && !canSelectMore);
+            const entitled = isEntitled(model.id);
+            const isDisabled = !model.available || (!isSelected && !canSelectMore) || !entitled;
 
             return (
               <motion.button
@@ -151,8 +165,16 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
                     : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-md'}
                   ${isDisabled && !isSelected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                   ${!model.available ? 'opacity-60' : ''}
+                  ${!entitled ? 'bg-gray-50 opacity-60' : ''}
                 `}
               >
+                {!entitled && (
+                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                      <div className="bg-gray-900/90 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-all transform scale-95 group-hover:scale-100 translate-y-2 group-hover:translate-y-0 border border-white/10 backdrop-blur-sm">
+                        Not included in plan
+                      </div>
+                   </div>
+                )}
                 {/* Checkmark */}
                 {isSelected && (
                   <motion.div

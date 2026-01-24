@@ -9,7 +9,9 @@ import { reportOrchestrationService } from '../services/executive-reporting/repo
 import { scheduleService } from '../services/executive-reporting/schedule.service';
 import { annotationService } from '../services/executive-reporting/annotation.service';
 import { pdfExportService } from '../services/executive-reporting/pdf-export.service';
+import { pdfExportServiceV2 } from '../services/executive-reporting/pdf-export-v2.service';
 import { emailService } from '../services/email/email.service';
+import { emailServiceV2 } from '../services/email/email-v2.service';
 import type {
     GenerateReportRequest,
     CreateScheduleRequest,
@@ -18,6 +20,8 @@ import type {
 } from '../services/executive-reporting/types';
 import { supabase } from '../config/supabase';
 import { reportSettingsService } from '../services/report-settings.service';
+import { authenticateToken } from '../middleware/auth.middleware';
+import { requireFeatureEntitlement } from '../middleware/entitlements.middleware';
 
 const router = Router();
 
@@ -25,7 +29,7 @@ const router = Router();
  * GET /api/brands/:brandId/executive-reports
  * List all reports for a brand
  */
-router.get('/brands/:brandId/executive-reports', async (req: Request, res: Response) => {
+router.get('/brands/:brandId/executive-reports', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
         const limit = parseInt(req.query.limit as string) || 20;
@@ -49,7 +53,7 @@ router.get('/brands/:brandId/executive-reports', async (req: Request, res: Respo
  * GET /api/brands/:brandId/executive-reports/latest
  * Get the most recent report for a brand
  */
-router.get('/brands/:brandId/executive-reports/latest', async (req: Request, res: Response) => {
+router.get('/brands/:brandId/executive-reports/latest', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
 
@@ -79,7 +83,7 @@ router.get('/brands/:brandId/executive-reports/latest', async (req: Request, res
  * GET /api/brands/:brandId/executive-reports/:reportId
  * Get a specific report
  */
-router.get('/brands/:brandId/executive-reports/:reportId', async (req: Request, res: Response) => {
+router.get('/brands/:brandId/executive-reports/:reportId', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { reportId } = req.params;
 
@@ -109,7 +113,7 @@ router.get('/brands/:brandId/executive-reports/:reportId', async (req: Request, 
  * POST /api/brands/:brandId/executive-reports
  * Generate a new report
  */
-router.post('/brands/:brandId/executive-reports', async (req: Request, res: Response) => {
+router.post('/brands/:brandId/executive-reports', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
         let { period_days, end_date } = req.body;
@@ -201,10 +205,60 @@ router.post('/brands/:brandId/executive-reports', async (req: Request, res: Resp
 });
 
 /**
+ * PATCH /api/brands/:brandId/executive-reports/:reportId
+ * Update a report (e.g., manual summary edit)
+ */
+router.patch('/brands/:brandId/executive-reports/:reportId', async (req: Request, res: Response) => {
+    try {
+        const { reportId } = req.params;
+        const updates = req.body;
+
+        const report = await reportOrchestrationService.updateReport(reportId, updates);
+
+        res.json({
+            success: true,
+            data: report,
+        });
+    } catch (error) {
+        console.error('Error updating report:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update report',
+            message: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
+ * POST /api/brands/:brandId/executive-reports/:reportId/regenerate-summary
+ * Regenerate executive summary with optional user feedback
+ */
+router.post('/brands/:brandId/executive-reports/:reportId/regenerate-summary', async (req: Request, res: Response) => {
+    try {
+        const { reportId } = req.params;
+        const { user_feedback } = req.body;
+
+        const report = await reportOrchestrationService.regenerateSummary(reportId, user_feedback);
+
+        res.json({
+            success: true,
+            data: report,
+        });
+    } catch (error) {
+        console.error('Error regenerating summary:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to regenerate summary',
+            message: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
  * DELETE /api/brands/:brandId/executive-reports/:reportId
  * Delete a report
  */
-router.delete('/brands/:brandId/executive-reports/:reportId', async (req: Request, res: Response) => {
+router.delete('/brands/:brandId/executive-reports/:reportId', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { reportId } = req.params;
 
@@ -236,7 +290,7 @@ router.delete('/brands/:brandId/executive-reports/:reportId', async (req: Reques
  * GET /api/brands/:brandId/executive-reports/schedules
  * Get all schedules for a brand
  */
-router.get('/brands/:brandId/executive-reports-schedules', async (req: Request, res: Response) => {
+router.get('/brands/:brandId/executive-reports-schedules', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
 
@@ -259,7 +313,7 @@ router.get('/brands/:brandId/executive-reports-schedules', async (req: Request, 
  * POST /api/brands/:brandId/executive-reports/schedules
  * Create a new schedule
  */
-router.post('/brands/:brandId/executive-reports-schedules', async (req: Request, res: Response) => {
+router.post('/brands/:brandId/executive-reports-schedules', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { brandId } = req.params;
         const { frequency, reporting_period_days, recipients } = req.body;
@@ -291,7 +345,7 @@ router.post('/brands/:brandId/executive-reports-schedules', async (req: Request,
  * PUT /api/brands/:brandId/executive-reports/schedules/:scheduleId
  * Update a schedule
  */
-router.put('/brands/:brandId/executive-reports-schedules/:scheduleId', async (req: Request, res: Response) => {
+router.put('/brands/:brandId/executive-reports-schedules/:scheduleId', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { scheduleId } = req.params;
         const updates = req.body;
@@ -315,7 +369,7 @@ router.put('/brands/:brandId/executive-reports-schedules/:scheduleId', async (re
  * DELETE /api/brands/:brandId/executive-reports/schedules/:scheduleId
  * Delete a schedule
  */
-router.delete('/brands/:brandId/executive-reports-schedules/:scheduleId', async (req: Request, res: Response) => {
+router.delete('/brands/:brandId/executive-reports-schedules/:scheduleId', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { scheduleId } = req.params;
 
@@ -441,7 +495,7 @@ router.delete('/brands/:brandId/executive-reports/:reportId/comments/:commentId'
  * POST /api/brands/:brandId/executive-reports/:reportId/export/pdf
  * Export report as PDF
  */
-router.post('/brands/:brandId/executive-reports/:reportId/export/pdf', async (req: Request, res: Response) => {
+router.post('/brands/:brandId/executive-reports/:reportId/export/pdf', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { reportId } = req.params;
         const { include_annotations = false } = req.body;
@@ -464,7 +518,7 @@ router.post('/brands/:brandId/executive-reports/:reportId/export/pdf', async (re
  * POST /api/brands/:brandId/executive-reports/:reportId/email
  * Email report to a specific address
  */
-router.post('/brands/:brandId/executive-reports/:reportId/email', async (req: Request, res: Response) => {
+router.post('/brands/:brandId/executive-reports/:reportId/email', authenticateToken, requireFeatureEntitlement('executive_reporting'), async (req: Request, res: Response) => {
     try {
         const { reportId, brandId } = req.params;
         const { email } = req.body;
@@ -516,6 +570,74 @@ router.post('/brands/:brandId/executive-reports/:reportId/email', async (req: Re
         });
     } catch (error: any) {
         console.error('Error emailing report:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to email report',
+        });
+    }
+});
+
+/**
+ * POST /api/brands/:brandId/executive-reports/:reportId/export/pdf-v2
+ * Export report as PDF (V2 - Visual Mirror)
+ */
+router.post('/brands/:brandId/executive-reports/:reportId/export/pdf-v2', async (req: Request, res: Response) => {
+    try {
+        const { reportId, brandId } = req.params;
+
+        console.log(`📄 [API] Generating V2 PDF for report ${reportId}`);
+        const pdfBuffer = await pdfExportServiceV2.generatePDF(reportId, brandId);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="executive-report-v2-${reportId}.pdf"`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        console.error('Error generating V2 PDF:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to generate V2 PDF',
+        });
+    }
+});
+
+/**
+ * POST /api/brands/:brandId/executive-reports/:reportId/email-v2
+ * Email report to a specific address (V2 - Visual Mirror)
+ */
+router.post('/brands/:brandId/executive-reports/:reportId/email-v2', async (req: Request, res: Response) => {
+    try {
+        const { reportId, brandId } = req.params;
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                error: 'Email address is required',
+            });
+        }
+
+        console.log(`📧 [API] Sending V2 Email for report ${reportId} to ${email}`);
+
+        // 1. Get brand details for the email subject/body
+        const { data: brand, error: brandError } = await supabase
+            .from('brands')
+            .select('name')
+            .eq('id', brandId)
+            .single();
+
+        if (brandError || !brand) {
+            return res.status(404).json({ success: false, error: 'Brand not found' });
+        }
+
+        // 2. Send Email
+        await emailServiceV2.sendExecutiveReport(email, reportId, brandId, brand.name);
+
+        res.json({
+            success: true,
+            message: 'Report emailed successfully (V2)',
+        });
+    } catch (error: any) {
+        console.error('Error emailing V2 report:', error);
         res.status(500).json({
             success: false,
             error: error.message || 'Failed to email report',

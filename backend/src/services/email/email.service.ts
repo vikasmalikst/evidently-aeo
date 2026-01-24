@@ -88,6 +88,7 @@ export class EmailService {
       await this.transporter.sendMail({
         from: `"EvidentlyAEO" <${process.env.ZOHO_EMAIL}>`,
         to: email,
+        bcc: type === 'signup' ? 'tech.support@evidentlyaeo.com' : undefined,
         subject,
         html: htmlContent,
       });

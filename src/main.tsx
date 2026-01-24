@@ -12,7 +12,13 @@ import './utils/cacheCleanup';
 // React StrictMode intentionally double-invokes effects in DEV, which can cause
 // aborted/duplicated API calls (and heavy backend recomputation) for data-heavy pages.
 // Keep DEV behavior closer to production for performance debugging.
-const Root = <App />;
+import { HelmetProvider } from 'react-helmet-async';
+
+const Root = (
+  <HelmetProvider>
+    <App />
+  </HelmetProvider>
+);
 
 createRoot(document.getElementById('root')!).render(
   Root

@@ -156,9 +156,13 @@ export const useDashboardData = () => {
       return null;
     }
 
+    // Get timezone offset in minutes (UTC - Local)
+    const timezoneOffset = new Date().getTimezoneOffset();
+
     const params = new URLSearchParams({
       startDate,
       endDate,
+      timezoneOffset: timezoneOffset.toString()
     });
     // Only bypass cache when we explicitly need freshest data.
     // Default behavior should leverage client cache for fast navigation.
@@ -313,9 +317,11 @@ export const useDashboardData = () => {
           const delay = index * 200; // 200ms between each prefetch
 
           setTimeout(() => {
+            const timezoneOffset = new Date().getTimezoneOffset();
             const params = new URLSearchParams({
               startDate,
               endDate,
+              timezoneOffset: timezoneOffset.toString()
             });
             const endpoint = `/brands/${brand.id}/dashboard?${params.toString()}`;
 

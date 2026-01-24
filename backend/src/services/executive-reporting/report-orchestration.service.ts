@@ -69,6 +69,49 @@ export class ReportOrchestrationService {
     }
 
     /**
+     * Update an existing report
+     */
+    async updateReport(reportId: string, updates: Partial<ExecutiveReport>): Promise<ExecutiveReport> {
+        console.log(`📊 [REPORT-ORCH] Updating report ${reportId}`);
+
+        const { data, error } = await supabase
+            .from('executive_reports')
+            .update({
+                ...updates,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', reportId)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('❌ [REPORT-ORCH] Error updating report:', error);
+            throw new Error(`Failed to update report: ${error.message}`);
+        }
+
+        return data as ExecutiveReport;
+    }
+
+    /**
+     * Regenerate executive summary with optional user feedback
+     */
+    async regenerateSummary(reportId: string, userFeedback?: string): Promise<ExecutiveReport> {
+        console.log(`📊 [REPORT-ORCH] Regenerating summary for report ${reportId}`);
+
+        // 1. Get existing report data
+        const report = await this.getReport(reportId);
+        if (!report) {
+            throw new Error('Report not found');
+        }
+
+        // 2. Regenerate summary with feedback
+        const newSummary = await executiveSummaryService.generateExecutiveSummary(report.data_snapshot, userFeedback);
+
+        // 3. Update report with new summary
+        return this.updateReport(reportId, { executive_summary: newSummary });
+    }
+
+    /**
      * Get an existing report by ID
      */
     async getReport(reportId: string): Promise<ExecutiveReport | null> {

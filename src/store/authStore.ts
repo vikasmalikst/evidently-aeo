@@ -60,6 +60,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user: devUser, isAuthenticated: true });
       return;
     }
+    // Clear admin impersonation/selection on logout to prevent stale context on next login
+    try {
+      localStorage.removeItem('admin-selection-storage');
+    } catch { /* ignore storage errors */ }
     set({ user: null, isAuthenticated: false });
   },
 }));

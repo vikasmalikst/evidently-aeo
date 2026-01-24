@@ -275,7 +275,16 @@ export const MeasurePage = () => {
 
     const startISO = new Date(startDate).toISOString();
     const endISO = new Date(endDate + 'T23:59:59').toISOString();
-    const params = new URLSearchParams({ startDate: startISO, endDate: endISO });
+
+    // Get timezone offset in minutes (UTC - Local)
+    // For EST (UTC-5), this will be 300 minutes
+    const timezoneOffset = new Date().getTimezoneOffset();
+
+    const params = new URLSearchParams({
+      startDate: startISO,
+      endDate: endISO,
+      timezoneOffset: timezoneOffset.toString()
+    });
     // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
     if (llmFilters.length > 0) {
       // We need to pass the label (e.g. "GPT-4") not the normalized ID (e.g. "gpt-4")
@@ -453,17 +462,25 @@ export const MeasurePage = () => {
   const llmOptions = allLlmOptions;
   const chartDateLabels = processedData.chartDateLabels || chartLabels;
 
-  // Model selection logic - ensure ALL models (including brand) are selected by default
+  const prevModelIdsRef = useRef<string[]>([]);
+
   useEffect(() => {
     const availableModels = currentModels;
+    const currentIds = availableModels.map(m => m.id);
+    const prevIds = prevModelIdsRef.current;
+    const newIds = currentIds.filter(id => !prevIds.includes(id));
+    
+    prevModelIdsRef.current = currentIds;
+
     setSelectedModels((previous) => {
-      // If no previous selection, or all previous selections are invalid, select ALL models
       const stillValid = previous.filter((id) => availableModels.some((model) => model.id === id));
-      if (stillValid.length === 0) {
-        // Select ALL models by default (including brand)
-        return availableModels.map((model) => model.id);
+      const combined = [...new Set([...stillValid, ...newIds])];
+
+      if (combined.length === 0 && availableModels.length > 0) {
+         return availableModels.map(m => m.id);
       }
-      return stillValid;
+
+      return combined;
     });
   }, [currentModels]);
 

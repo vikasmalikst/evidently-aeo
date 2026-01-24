@@ -17,6 +17,7 @@ export const EmailReportModal: React.FC<EmailReportModalProps> = ({
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const [statusMessage, setStatusMessage] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -24,17 +25,38 @@ export const EmailReportModal: React.FC<EmailReportModalProps> = ({
 
         setLoading(true);
         setStatus('idle');
+        setStatusMessage('Preparing report data...');
+
+        const progressSteps = [
+            'Generating high-fidelity PDF attachment...',
+            'Connecting to Zoho secure mail server...',
+            'Finalizing and sending email...'
+        ];
+
+        let stepIndex = 0;
+        const interval = setInterval(() => {
+            if (stepIndex < progressSteps.length) {
+                setStatusMessage(progressSteps[stepIndex]);
+                stepIndex++;
+            }
+        }, 6000);
+
         try {
             await onSend(email);
+            clearInterval(interval);
             setStatus('success');
+            setStatusMessage('Email sent successfully!');
             setTimeout(() => {
                 onClose();
                 setStatus('idle');
                 setEmail('');
+                setStatusMessage('');
             }, 2000);
         } catch (error) {
+            clearInterval(interval);
             console.error(error);
             setStatus('error');
+            setStatusMessage('');
         } finally {
             setLoading(false);
         }
@@ -90,13 +112,13 @@ export const EmailReportModal: React.FC<EmailReportModalProps> = ({
                             disabled={!email || loading || status === 'success'}
                             className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${status === 'success'
                                     ? 'bg-green-500 hover:bg-green-600 text-white'
-                                    : 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-dark)] text-white shadow-lg shadow-blue-500/20'
+                                    : 'bg-[#00bcdc] hover:bg-[#0096b0] text-white shadow-lg shadow-blue-500/20'
                                 } disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
                             {loading ? (
                                 <>
                                     <IconLoader className="w-5 h-5 animate-spin" />
-                                    Sending...
+                                    {statusMessage || 'Sending...'}
                                 </>
                             ) : status === 'success' ? (
                                 <>

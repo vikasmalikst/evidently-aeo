@@ -320,7 +320,15 @@ export class VisibilityService {
           sentiment: null,
           brandPresencePercentage: 0,
           topTopics: [],
-          collectors: []
+          collectors: [],
+          timeSeries: competitorTimeSeriesData?.get(competitorName) ? {
+            dates: competitorTimeSeriesData.get(competitorName)!.dates,
+            visibility: competitorTimeSeriesData.get(competitorName)!.visibility,
+            share: competitorTimeSeriesData.get(competitorName)!.share,
+            sentiment: competitorTimeSeriesData.get(competitorName)!.sentiment,
+            brandPresencePercentage: competitorTimeSeriesData.get(competitorName)!.brandPresencePercentage,
+            isRealData: competitorTimeSeriesData.get(competitorName)!.isRealData
+          } : undefined
         })
       }
     })

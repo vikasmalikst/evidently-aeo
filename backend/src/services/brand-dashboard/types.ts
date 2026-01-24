@@ -87,6 +87,7 @@ export interface LlmVisibilitySlice {
     share: number[] // Daily share of search
     sentiment: number[] | null[] // Daily sentiment scores
     brandPresence: number[] // Daily brand presence percentages
+    isRealData: boolean[] // true if data from DB, false if interpolated
   }
 }
 
@@ -136,6 +137,7 @@ export interface CompetitorVisibility {
     share: number[] // Daily share of search
     sentiment: number[] | null[] // Daily sentiment scores
     brandPresencePercentage: number[] // Daily brand presence percentages
+    isRealData: boolean[] // true if data from DB, false if interpolated
   }
 }
 

@@ -15,6 +15,8 @@ declare global {
         role?: string | null;
         full_name?: string | null;
         access_level?: string | null; // Customer access level
+        isImpersonating?: boolean; // True when admin is impersonating another customer
+        originalCustomerId?: string | null; // Admin's original customer_id when impersonating
       };
     }
   }
@@ -46,7 +48,12 @@ export const authenticateToken = async (
   }
 
   try {
-    const token = extractTokenFromHeader(req.headers.authorization);
+    let token = extractTokenFromHeader(req.headers.authorization);
+
+    // Fallback: Check query param (needed for SSE/EventSource which cannot set headers)
+    if (!token && req.query.token && typeof req.query.token === 'string') {
+      token = req.query.token;
+    }
 
     if (!token) {
       res.status(401).json({
@@ -79,6 +86,18 @@ export const authenticateToken = async (
       full_name: user.full_name,
       access_level: user.access_level || 'user' // Include access_level from customer
     };
+
+    // Handle admin impersonation
+    // Note: Admin privileges are stored in access_level within the customers table
+    const impersonateCustomerId = req.headers['x-impersonate-customer'] as string | undefined;
+    const isAdmin = req.user.access_level === 'admin' || req.user.role === 'admin';
+
+    if (impersonateCustomerId && isAdmin) {
+      console.log(`[Auth] Admin ${req.user.email} impersonating customer ${impersonateCustomerId}`);
+      req.user.originalCustomerId = req.user.customer_id;
+      req.user.customer_id = impersonateCustomerId;
+      req.user.isImpersonating = true;
+    }
 
     next();
   } catch (error) {
@@ -124,6 +143,16 @@ export const optionalAuth = async (
           full_name: user.full_name,
           access_level: user.access_level || 'user' // Include access_level
         };
+
+        // Handle admin impersonation (same as authenticateToken)
+        const impersonateCustomerId = req.headers['x-impersonate-customer'] as string | undefined;
+        const isAdmin = req.user.access_level === 'admin' || req.user.role === 'admin';
+
+        if (impersonateCustomerId && isAdmin) {
+          req.user.originalCustomerId = req.user.customer_id;
+          req.user.customer_id = impersonateCustomerId;
+          req.user.isImpersonating = true;
+        }
       }
     }
 
@@ -137,6 +166,7 @@ export const optionalAuth = async (
 /**
  * Customer validation middleware
  * Ensures user belongs to the specified customer
+ * Admins can access any customer, and impersonation is handled by auth middleware
  */
 export const validateCustomer = (customerIdParam: string = 'customerId') => {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -155,6 +185,13 @@ export const validateCustomer = (customerIdParam: string = 'customerId') => {
         success: false,
         error: 'Customer ID required'
       });
+      return;
+    }
+
+    // Admins can access any customer (impersonation is already handled in auth middleware)
+    const isAdmin = req.user.role === 'admin' || req.user.access_level === 'admin';
+    if (isAdmin) {
+      next();
       return;
     }
 

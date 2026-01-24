@@ -1,0 +1,1 @@
+remove references of all orphaned tables from the code 

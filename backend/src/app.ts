@@ -57,7 +57,7 @@ app.use(cors({
   },
   credentials: config.cors.credentials,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-timezone-offset'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-timezone-offset', 'X-Impersonate-Customer', 'x-impersonate-customer'],
   exposedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
   preflightContinue: false,

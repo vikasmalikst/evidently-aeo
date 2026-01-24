@@ -72,19 +72,22 @@ export function HeroFeature1() {
           >
             {/* Decorative gradient border */}
             <div className="absolute -inset-2 bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 rounded-3xl blur-xl opacity-25 group-hover:opacity-40 transition-opacity"></div>
-            
+
             {/* Main image container */}
             <div className="relative rounded-2xl overflow-hidden border-2 border-cyan-500/30 shadow-[0_25px_70px_-15px_rgba(6,182,212,0.25)] bg-white hover:shadow-[0_30px_90px_-15px_rgba(6,182,212,0.35)] transition-all duration-500 hover:scale-[1.03] group">
               {/* Animated gradient overlay */}
               <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-10 pointer-events-none"></div>
-              
+
               {/* Image without scaling to prevent cropping */}
               <img
                 src="/competitiveNew.jpeg"
                 alt="EvidentlyAEO Competitive Comparison Dashboard showing side-by-side brand performance metrics including Visibility Score, Share of Answers, Brand Presence, and Sentiment Score"
                 className="w-full h-auto"
+                width="800"
+                height="450"
+                loading="lazy"
               />
-              
+
               {/* Corner decorations */}
               <div className="absolute top-0 left-0 w-24 h-24 bg-gradient-to-br from-cyan-500/10 to-transparent rounded-br-full"></div>
               <div className="absolute bottom-0 right-0 w-24 h-24 bg-gradient-to-tl from-blue-500/10 to-transparent rounded-tl-full"></div>

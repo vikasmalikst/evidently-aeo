@@ -4,7 +4,7 @@ import { apiClient } from '../../lib/apiClient';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { generateRecommendationsV3 } from '../../api/recommendationsV3Api';
 import { useAuthStore } from '../../store/authStore';
-import { AdminCustomerBrandSelector } from '../../components/admin/AdminCustomerBrandSelector';
+import { useAdminStore } from '../../store/adminStore';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -250,9 +250,7 @@ export const ScheduledJobs = () => {
   const [backfillForce, setBackfillForce] = useState(false);
   const [backfillPreserveDates, setBackfillPreserveDates] = useState(true);
 
-  // Admin customer/brand selection (for admin users only)
-  const [adminSelectedCustomerId, setAdminSelectedCustomerId] = useState<string | null>(null);
-  const [adminSelectedBrandId, setAdminSelectedBrandId] = useState<string | null>(null);
+  const { selectedCustomerId: adminSelectedCustomerId, selectedBrandId: adminSelectedBrandId } = useAdminStore();
 
   // Get customer_id from auth store or fetch from brand
   const authUser = useAuthStore((state) => state.user);
@@ -520,7 +518,7 @@ export const ScheduledJobs = () => {
     try {
       const response = await apiClient.post<ApiResponse<unknown>>('/admin/scheduled-jobs', {
         ...jobData,
-        customer_id: customerId,
+        customer_id: effectiveCustomerId,
         brand_id: selectedBrandId || brands[0]?.id,
       });
       if (response.success) {
@@ -575,10 +573,10 @@ export const ScheduledJobs = () => {
     let currentDiagnostic = diagnostic;
 
     // If diagnostic is not loaded or for a different brand, try to load it now
-    if ((!currentDiagnostic || selectedBrandId !== brandId) && brandId && customerId) {
+    if ((!currentDiagnostic || selectedBrandId !== brandId) && brandId && effectiveCustomerId) {
       try {
         const response = await apiClient.get<ApiResponse<QueriesDiagnosticPayload>>(
-          `/admin/brands/${brandId}/queries-diagnostic?customer_id=${customerId}`
+          `/admin/brands/${brandId}/queries-diagnostic?customer_id=${effectiveCustomerId}`
         );
         if (response.success && response.data) {
           currentDiagnostic = response.data;
@@ -638,7 +636,7 @@ export const ScheduledJobs = () => {
       const response = await apiClient.post<ApiResponse<{ queriesExecuted: number }>>(
         `/admin/brands/${brandId}/collect-data-now`,
         {
-          customer_id: customerId,
+          customer_id: effectiveCustomerId,
         }
       );
       if (response.success && response.data) {
@@ -657,7 +655,7 @@ export const ScheduledJobs = () => {
       alert('Please select a brand first');
       return;
     }
-    if (!customerId) {
+    if (!effectiveCustomerId) {
       alert('Customer ID not available. Please select a brand.');
       return;
     }
@@ -670,7 +668,7 @@ export const ScheduledJobs = () => {
     try {
       setScoring(true);
       const response = await apiClient.get<ApiResponse<ScoringDiagnosticPayload>>(
-        `/admin/brands/${brandId}/scoring-diagnostic?customer_id=${customerId}`
+        `/admin/brands/${brandId}/scoring-diagnostic?customer_id=${effectiveCustomerId}`
       );
       if (response.success && response.data) {
         scoringDiag = response.data;
@@ -707,7 +705,7 @@ export const ScheduledJobs = () => {
     try {
       setScoring(true);
       const response = await apiClient.post<ApiResponse<unknown>>(`/admin/brands/${brandId}/score-now`, {
-        customer_id: customerId,
+        customer_id: effectiveCustomerId,
       });
       if (response.success) {
         alert(`Scoring started in background! ${response.message || 'Check job run history for progress.'}`);
@@ -837,7 +835,7 @@ export const ScheduledJobs = () => {
 
     let finished = false;
 
-    const url = `${apiClient.baseUrl}/admin/scheduled-jobs/backfill-raw-answer-from-snapshots/stream`;
+    const url = `${apiClient.baseUrl}/admin/scheduled-jobs/backfill-raw-answer-from-snapshots/stream?token=${apiClient.getAccessToken()}`;
     const es = new EventSource(url);
     backfillEventSourceRef.current = es;
 
@@ -917,37 +915,12 @@ export const ScheduledJobs = () => {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold">Scheduled Jobs</h1>
-        <div className="flex space-x-3">
-          <button
-            onClick={() => navigate('/admin/entitlements')}
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-          >
-            Entitlements
-          </button>
-          <button
-            onClick={() => navigate('/admin/data-collection-status')}
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-          >
-            Data Collection Status
-          </button>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Create Scheduled Job
-          </button>
-        </div>
       </div>
 
       {/* Admin Customer & Brand Selector */}
-      <AdminCustomerBrandSelector
-        selectedCustomerId={adminSelectedCustomerId}
-        selectedBrandId={adminSelectedBrandId}
-        onCustomerChange={setAdminSelectedCustomerId}
-        onBrandChange={setAdminSelectedBrandId}
-      />
+      {/* Admin Customer & Brand Selector removed - now in AdminLayout */}
 
       {/* Quick Actions */}
       {selectedBrandId && (

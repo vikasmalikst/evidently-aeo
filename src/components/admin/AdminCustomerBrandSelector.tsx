@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../../lib/apiClient';
+import { SafeLogo } from '../Onboarding/common/SafeLogo';
 
 interface Customer {
     id: string;
@@ -15,6 +16,12 @@ interface Brand {
     slug: string;
     customer_id: string;
     status?: string;
+    homepage_url?: string | null;
+    metadata?: {
+        logo?: string;
+        brand_logo?: string;
+        [key: string]: any;
+    };
 }
 
 interface AdminCustomerBrandSelectorProps {
@@ -34,6 +41,7 @@ export const AdminCustomerBrandSelector = ({
     const [brands, setBrands] = useState<Brand[]>([]);
     const [loadingCustomers, setLoadingCustomers] = useState(true);
     const [loadingBrands, setLoadingBrands] = useState(false);
+    const [fetchError, setFetchError] = useState<string | null>(null);
 
     // Load all customers on mount
     useEffect(() => {
@@ -64,11 +72,13 @@ export const AdminCustomerBrandSelector = ({
         const fetchBrands = async () => {
             if (!selectedCustomerId) {
                 setBrands([]);
+                setFetchError(null);
                 return;
             }
 
             try {
                 setLoadingBrands(true);
+                setFetchError(null);
                 const response = await apiClient.get<{ success: boolean; data: Brand[] }>(
                     `/admin/customers/${selectedCustomerId}/brands`
                 );
@@ -78,9 +88,10 @@ export const AdminCustomerBrandSelector = ({
                 } else {
                     setBrands([]);
                 }
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Failed to load brands for customer:', error);
                 setBrands([]);
+                setFetchError(error.message || 'Failed to fetch');
             } finally {
                 setLoadingBrands(false);
             }
@@ -88,6 +99,8 @@ export const AdminCustomerBrandSelector = ({
 
         fetchBrands();
     }, [selectedCustomerId]);
+
+
 
     const handleCustomerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const customerId = e.target.value || null;
@@ -143,9 +156,11 @@ export const AdminCustomerBrandSelector = ({
                         <option value="">
                             {!selectedCustomerId
                                 ? 'Select a customer first...'
-                                : brands.length === 0 && !loadingBrands
-                                    ? 'No brands found'
-                                    : 'Select a brand...'}
+                                : fetchError
+                                    ? `Error: ${fetchError}`
+                                    : brands.length === 0 && !loadingBrands
+                                        ? 'No brands found'
+                                        : 'Select a brand...'}
                         </option>
                         {brands.map((brand) => (
                             <option key={brand.id} value={brand.id}>
@@ -153,6 +168,22 @@ export const AdminCustomerBrandSelector = ({
                             </option>
                         ))}
                     </select>
+
+                    {/* Brand Logo Preview */}
+                    {selectedBrandId && brands.find(b => b.id === selectedBrandId) && (
+                        <div className="mt-2 flex items-center gap-2">
+                            <SafeLogo
+                                src={brands.find(b => b.id === selectedBrandId)?.metadata?.logo || brands.find(b => b.id === selectedBrandId)?.metadata?.brand_logo}
+                                domain={brands.find(b => b.id === selectedBrandId)?.homepage_url || undefined}
+                                alt={brands.find(b => b.id === selectedBrandId)?.name || ''}
+                                size={32}
+                                className="w-8 h-8 rounded object-contain bg-white border border-gray-200"
+                            />
+                            <span className="text-xs text-gray-600">
+                                {brands.find(b => b.id === selectedBrandId)?.name}
+                            </span>
+                        </div>
+                    )}
                     {loadingBrands && (
                         <p className="text-xs text-gray-500 mt-1">Loading brands...</p>
                     )}

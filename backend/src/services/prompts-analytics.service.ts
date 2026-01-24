@@ -364,12 +364,12 @@ export class PromptsAnalyticsService {
       .not('raw_answer', 'is', null)
 
     const availableCollectors = new Set<string>()
-    ;(allCollectorRows ?? []).forEach((row) => {
-      const collectorType = normalizeCollectorType(row.collector_type)
-      if (collectorType) {
-        availableCollectors.add(collectorType)
-      }
-    })
+      ; (allCollectorRows ?? []).forEach((row) => {
+        const collectorType = normalizeCollectorType(row.collector_type)
+        if (collectorType) {
+          availableCollectors.add(collectorType)
+        }
+      })
 
     const queryIds = Array.from(
       new Set(
@@ -433,7 +433,7 @@ export class PromptsAnalyticsService {
         throw new DatabaseError(`Failed to load query metadata: ${queryError.message}`)
       }
 
-      ;(queryRows ?? []).forEach((row) => {
+      ; (queryRows ?? []).forEach((row) => {
         if (row?.id) {
           queryMetadataMap.set(row.id, {
             query_text: typeof row.query_text === 'string' ? row.query_text : null,
@@ -469,9 +469,9 @@ export class PromptsAnalyticsService {
     // Filter rows to only include those with queries in the current version
     const filteredRows = currentVersionQueryIds
       ? rows.filter(row => {
-          const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
-          return queryId && currentVersionQueryIds.has(queryId)
-        })
+        const queryId = typeof row.query_id === 'string' && row.query_id.trim().length > 0 ? row.query_id : null
+        return queryId && currentVersionQueryIds.has(queryId)
+      })
       : rows
 
     for (const row of filteredRows) {
@@ -597,7 +597,7 @@ export class PromptsAnalyticsService {
     const allCollectorResultIds = Array.from(
       new Set(
         Array.from(promptAggregates.values())
-          .flatMap((agg) => 
+          .flatMap((agg) =>
             // Get collectorResultId from the aggregate (latest) AND from all responses
             [
               agg.collectorResultId,
@@ -606,7 +606,7 @@ export class PromptsAnalyticsService {
           )
       )
     )
-    
+
     console.log(`[PromptsAnalytics] Collecting metrics for ${allCollectorResultIds.length} unique collector_result_ids`);
 
     const keywordMap = new Map<string, Set<string>>()
@@ -679,7 +679,7 @@ export class PromptsAnalyticsService {
                 keywordMap.set(collectorKey, new Set<string>())
               }
               keywordMap.get(collectorKey)!.add(keyword)
-              
+
               // Count keywords per collector
               const currentCount = keywordCountsByCollector.get(collectorResultId) || 0
               keywordCountsByCollector.set(collectorResultId, currentCount + 1)
@@ -746,30 +746,30 @@ export class PromptsAnalyticsService {
 
     // Fetch visibility scores and sentiment scores
     const visibilityMap = new Map<string, number[]>() // key: query_id or collector:<id> -> visibility values
-    const mentionCountsByCollector = new Map<number, { 
-      brand: number; 
-      product: number; 
-      competitor: number; 
+    const mentionCountsByCollector = new Map<number, {
+      brand: number;
+      product: number;
+      competitor: number;
       keywords: number;
       brandPositions?: number[];
       competitorPositions?: number[];
     }>()
     const mentionCountsByQuery = new Map<string, { brand: number; product: number; competitor: number; keywords: number }>()
     // Note: keywordCountsByCollector is declared earlier (before keyword processing section)
-    
+
     // Feature flag: default ON. Set USE_OPTIMIZED_PROMPTS_ANALYTICS=false to force legacy behavior.
     const USE_OPTIMIZED_PROMPTS_ANALYTICS = process.env.USE_OPTIMIZED_PROMPTS_ANALYTICS !== 'false';
     const optimizedMetricsHelper = new OptimizedMetricsHelper(supabaseAdmin);
-    
+
     if (USE_OPTIMIZED_PROMPTS_ANALYTICS) {
       console.log('   ⚡ [Prompts Analytics] Using optimized query (metric_facts + brand_metrics + brand_sentiment)');
     } else {
       console.log('   📋 [Prompts Analytics] Using legacy query (extracted_positions)');
     }
-    
+
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
       let visibilityRows: any[] = [];
-      
+
       if (USE_OPTIMIZED_PROMPTS_ANALYTICS) {
         // NEW: Use optimized schema
         const result = await optimizedMetricsHelper.fetchPromptsAnalytics({
@@ -780,7 +780,7 @@ export class PromptsAnalyticsService {
           queryIds: allQueryIds.length > 0 ? allQueryIds : undefined,
           collectorResultIds: allCollectorResultIds.length > 0 ? allCollectorResultIds : undefined,
         });
-        
+
         if (result.error) {
           console.warn(`Failed to load visibility scores from new schema: ${result.error}`);
         } else {
@@ -789,7 +789,7 @@ export class PromptsAnalyticsService {
           if (result.data && result.data.length > 0) {
             const collectorIds = new Set(result.data.map((r: any) => r.collector_result_id).filter((id: any) => id !== null));
             console.log(`[PromptsAnalytics] Unique collector_result_ids in result: ${collectorIds.size}`);
-            
+
             // Log first 5 rows with their counts
             result.data.slice(0, 5).forEach((row: any, idx: number) => {
               console.log(`[PromptsAnalytics] Row ${idx + 1}:`, {
@@ -802,7 +802,7 @@ export class PromptsAnalyticsService {
               });
             });
           }
-          
+
           // Transform to match legacy format
           visibilityRows = result.data.map(row => ({
             query_id: row.query_id,
@@ -821,7 +821,7 @@ export class PromptsAnalyticsService {
             brand_positions: row.brand_positions ?? [],
             competitor_positions: row.competitor_positions ?? [],
           }));
-          
+
           // Add competitor rows (one per competitor)
           result.data.forEach(row => {
             if (row.competitor_names && row.competitor_names.length > 0) {
@@ -876,15 +876,15 @@ export class PromptsAnalyticsService {
           visibilityRows = legacyRows ?? []
         }
       }
-      
+
       // Process rows (same logic for both optimized and legacy)
       if (visibilityRows.length > 0) {
         // Filter by collector_type if needed (applies to BOTH optimized and legacy paths)
         const filteredRows = collectorFilterActive
           ? visibilityRows.filter((row: any) => {
-              const rowCollectorType = normalizeCollectorType(row.collector_type)
-              return rowCollectorType && collectorFilter.includes(rowCollectorType)
-            })
+            const rowCollectorType = normalizeCollectorType(row.collector_type)
+            return rowCollectorType && collectorFilter.includes(rowCollectorType)
+          })
           : visibilityRows
 
         filteredRows.forEach((row: any) => {
@@ -943,7 +943,7 @@ export class PromptsAnalyticsService {
               brandPositions: Array.isArray(row.brand_positions) ? row.brand_positions : [],
               competitorPositions: Array.isArray(row.competitor_positions) ? row.competitor_positions : []
             });
-            
+
             // Debug log for ALL counts (including 0) to identify missing data
             console.log(`[PromptsAnalytics] Set counts for collector ${collectorResultId} (${row?.collector_type || 'unknown'}):`, {
               brand: brandMentions,
@@ -1091,10 +1091,10 @@ export class PromptsAnalyticsService {
       const found: string[] = []
       const brandNameTrimmed = brandName.trim()
       if (brandNameTrimmed.length === 0) return []
-      
+
       // Escape special regex characters in brand name
       const escapedBrandName = brandNameTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      
+
       // Check if brand name appears in text (case-insensitive word boundary match)
       // This ensures we match whole words, not substrings
       try {
@@ -1110,7 +1110,7 @@ export class PromptsAnalyticsService {
           found.push(brandNameTrimmed)
         }
       }
-      
+
       return found
     }
 
@@ -1120,21 +1120,21 @@ export class PromptsAnalyticsService {
       const byCollector =
         aggregate.collectorResultId !== null ? visibilityMap.get(`collector:${aggregate.collectorResultId}`) ?? [] : []
       const visibilityValues = [...byQuery, ...byCollector]
-      
+
       // If visibility score exists, brand was mentioned (highlights already added from extracted_positions)
       // Otherwise, try to extract brand from response text as fallback
       const hasBrandHighlights = aggregate.highlights.brand.size > 0
       let finalBrandHighlights = Array.from(aggregate.highlights.brand)
-      
+
       // If no brand highlights yet (no visibility score found), try to extract from response text
       if (!hasBrandHighlights && aggregate.response && brandRow.name) {
         const extractedBrands = extractBrandFromText(aggregate.response, brandRow.name)
         extractedBrands.forEach((brand) => aggregate.highlights.brand.add(brand))
         finalBrandHighlights = Array.from(aggregate.highlights.brand)
       }
-      
+
       const hasFinalBrandHighlights = finalBrandHighlights.length > 0
-      
+
       // CRITICAL: Visibility scores in database mean brand WAS mentioned during scoring
       // If we have visibility scores but no highlights, something is wrong - trust the visibility score
       if (visibilityValues.length > 0 && !hasFinalBrandHighlights && brandRow.name) {
@@ -1142,15 +1142,15 @@ export class PromptsAnalyticsService {
         aggregate.highlights.brand.add(brandRow.name.trim())
         finalBrandHighlights = [brandRow.name.trim()]
       }
-      
+
       // Sort responses by lastUpdated (newest first)
       const sortedResponses = aggregate.responses
         .slice()
         .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
-      
+
       // Debug logging to verify responses are being collected
       if (sortedResponses.length > 1) {
-        console.log(`[PromptsAnalytics] Query ${aggregate.queryId || aggregate.id} has ${sortedResponses.length} responses:`, 
+        console.log(`[PromptsAnalytics] Query ${aggregate.queryId || aggregate.id} has ${sortedResponses.length} responses:`,
           sortedResponses.map(r => r.collectorType).join(', '))
       }
 
@@ -1181,12 +1181,12 @@ export class PromptsAnalyticsService {
             brandPositions: [],
             competitorPositions: []
           }
-          
+
           // Debug: Log when counts are missing (0) to identify data issues
           if (collectorId !== null && !counts) {
             console.warn(`[PromptsAnalytics] ⚠️ No counts found for collector ${collectorId} (${response.collectorType}). This collector_result_id was not in the metrics query results.`);
           }
-          
+
           return {
             ...response,
             // Show counts even if they're 0 (0 is a valid count).
@@ -1207,7 +1207,7 @@ export class PromptsAnalyticsService {
           if (!hasFinalBrandHighlights) {
             return null
           }
-          
+
           // Prefer brand-only sentiment if available; otherwise use all rows
           const byQueryBrand = aggregate.queryId ? sentimentMap.get(`${aggregate.queryId}:brand`) ?? [] : []
           const byQueryAll = aggregate.queryId ? sentimentMap.get(`${aggregate.queryId}:all`) ?? [] : []
@@ -1230,16 +1230,16 @@ export class PromptsAnalyticsService {
           // Visibility scores in extracted_positions are the source of truth
           // If a visibility score exists in the database, it means brand WAS mentioned during scoring
           // We've already ensured brand highlights exist when visibility scores exist (see above)
-          
+
           // If no visibility values from extracted_positions, return null
           if (visibilityValues.length === 0) {
             return null
           }
-          
+
           // Calculate average visibility (0-1 scale), rounded to 2 decimals, then convert to 0-100 scale
           const avg = visibilityValues.reduce((sum, v) => sum + v, 0) / visibilityValues.length
           const visibilityScore = roundToPrecision(avg * 100, 1)
-          
+
           // Return the calculated visibility score
           // Brand highlights should already exist (added when we found visibility scores)
           return visibilityScore
@@ -1308,6 +1308,25 @@ export class PromptsAnalyticsService {
         }
       })
       .sort((a, b) => b.volumeCount - a.volumeCount || a.name.localeCompare(b.name))
+
+    // DEBUG: Log final payload for a specific query to verify structure
+    const debugQueryId = "71e1aee0-5df9-44e1-82fe-197bca5fee3d";
+    const debugTopic = topics.find(t => t.prompts.some(p => p.queryId === debugQueryId));
+    if (debugTopic) {
+      const debugPrompt = debugTopic.prompts.find(p => p.queryId === debugQueryId);
+      if (debugPrompt) {
+        console.log(`[PromptsAnalytics] 📦 Final payload for query ${debugQueryId}:`, JSON.stringify({
+          id: debugPrompt.id,
+          responseCount: debugPrompt.responses.length,
+          responses: debugPrompt.responses.map(r => ({
+            type: r.collectorType,
+            brandMentions: r.brandMentions,
+            productMentions: r.productMentions,
+            metrics_source: r.collectorResultId
+          }))
+        }, null, 2));
+      }
+    }
 
     return {
       brandId: brandRow.id,

@@ -127,8 +127,8 @@ export async function buildDashboardPayload(
 
       const metricFactIds = metricFacts.map(mf => mf.id)
 
-      // Larger chunk reduces round trips; queries are still limited by Supabase response sizes.
-      const chunkSize = 500
+      // Smaller chunks to avoid 502 Bad Gateway on large datasets with many competitors
+      const chunkSize = 100
       const brandMetricsRows: any[] = []
       const competitorMetricsRows: any[] = []
       const brandSentimentRows: any[] = []
@@ -171,9 +171,13 @@ export async function buildDashboardPayload(
               .from('competitor_metrics')
               .select(
                 `
-              *,
-              brand_competitors!inner(competitor_name),
-              metric_fact:metric_facts!inner(id, collector_result_id, query_id)
+              metric_fact_id,
+              competitor_id,
+              visibility_index,
+              share_of_answers,
+              competitor_positions,
+              competitor_mentions,
+              brand_competitors!inner(competitor_name)
             `
               )
               .in('metric_fact_id', chunk)
@@ -470,28 +474,51 @@ export async function buildDashboardPayload(
   }
 
   // Generate all dates in the range for time-series
-  // IMPORTANT: Parse YYYY-MM-DD strings as calendar dates and use UTC methods to avoid timezone shifts
-  // This ensures date ranges are generated correctly regardless of server timezone
+  // IMPORTANT: Apply timezone offset to convert UTC bounds to local dates
+  // This ensures the date range matches the user's local timezone
   const generateDateRange = (start: string, end: string): string[] => {
     const dates: string[] = []
 
-    // Parse date strings (YYYY-MM-DD) as calendar dates in UTC
-    const [startYear, startMonth, startDay] = start.split('-').map(Number)
-    const [endYear, endMonth, endDay] = end.split('-').map(Number)
+    // Apply timezone offset to convert UTC bounds to local dates
+    const offsetMinutes = options.timezoneOffset || 0
 
-    const startDate = new Date(Date.UTC(startYear, startMonth - 1, startDay))
-    const endDate = new Date(Date.UTC(endYear, endMonth - 1, endDay))
-    const current = new Date(startDate)
+    console.log(`[TimeSeries] 🕐 Timezone offset: ${offsetMinutes} minutes`)
+    console.log(`[TimeSeries] 📅 UTC bounds: ${start} to ${end}`)
+
+    // Parse ISO timestamps and apply timezone offset
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+
+    // Shift by timezone offset to get local dates
+    // offsetMinutes is (UTC - Local), so we subtract to get local time
+    const localStart = new Date(startDate.getTime() - (offsetMinutes * 60 * 1000))
+    const localEnd = new Date(endDate.getTime() - (offsetMinutes * 60 * 1000))
+
+    // Extract YYYY-MM-DD in local timezone
+    const startDateStr = localStart.toISOString().split('T')[0]
+    const endDateStr = localEnd.toISOString().split('T')[0]
+
+    console.log(`[TimeSeries] 📅 Local dates: ${startDateStr} to ${endDateStr}`)
+
+    // Generate range using UTC methods (to avoid further timezone shifts)
+    const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number)
+    const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number)
+
+    const current = new Date(Date.UTC(startYear, startMonth - 1, startDay))
+    const endUTC = new Date(Date.UTC(endYear, endMonth - 1, endDay))
 
     // Generate dates using UTC methods to avoid timezone shifts
-    while (current <= endDate) {
+    while (current <= endUTC) {
       dates.push(current.toISOString().split('T')[0])
       current.setUTCDate(current.getUTCDate() + 1)
     }
+
+    console.log(`[TimeSeries] 📊 Generated ${dates.length} dates: ${dates[0]} to ${dates[dates.length - 1]}`)
+
     return dates
   }
 
-  const allDates = generateDateRange(startIsoBound.split('T')[0], endIsoBound.split('T')[0])
+  const allDates = generateDateRange(startIsoBound, endIsoBound)
 
   const trendPercentage = 0
   const knownCompetitors =
@@ -2345,6 +2372,19 @@ export async function buildDashboardPayload(
   const dateMismatchesByCollector = new Map<string, number>()
   const successfulMatchesByCollector = new Map<string, number>()
 
+  // DEBUG: Count competitor rows by date
+  const competitorRowsByDate = new Map<string, number>()
+  positionRows.forEach(row => {
+    if (row.competitor_name && row.competitor_name.trim().length > 0) {
+      const timestamp = (row.created_at && row.created_at.trim() !== '') ? row.created_at : row.processed_at
+      const date = extractDate(timestamp)
+      if (date) {
+        competitorRowsByDate.set(date, (competitorRowsByDate.get(date) || 0) + 1)
+      }
+    }
+  })
+  console.log(`[TimeSeries] DEBUG: Competitor rows by date:`, Array.from(competitorRowsByDate.entries()).sort())
+
   positionRows.forEach(row => {
     // Prefer created_at for time series grouping, fallback to processed_at if created_at is missing
     const timestamp = (row.created_at && row.created_at.trim() !== '') ? row.created_at : row.processed_at
@@ -2459,14 +2499,14 @@ export async function buildDashboardPayload(
               dayData.collectorResultsWithCompetitorPresence.add(row.collector_result_id)
             }
           }
+        } else {
+          console.warn(`[TimeSeries] ⚠️ Competitor "${competitorName}" row for date ${date} NOT FOUND in dailyData map!`)
         }
       } else {
-        // Collector type in row doesn't match any initialized collector
-        skippedRowsCount++
-        if (processedBrandRowsCount === 0) {
-          console.warn(`[TimeSeries] Brand row with collector_type='${collectorType}' not found in timeSeriesByCollector map. Available keys: ${Array.from(timeSeriesByCollector.keys()).join(', ')}`)
-        }
+        console.warn(`[TimeSeries] ⚠️ Competitor "${competitorName}" NOT FOUND in timeSeriesByCompetitor map!`)
       }
+    } else if (competitorName) {
+      console.warn(`[TimeSeries] ⚠️ Skipping competitor row: "${competitorName}" not in known competitors list or map is empty`)
     }
 
     // Also track brand rows' collector results for total count per day
@@ -2793,8 +2833,8 @@ export async function buildDashboardPayload(
       sentiment: number | null
     }>>()
 
-    const requestedRangeDays = allDates.length
-    if (requestedRangeDays >= 14 || competitorNames.length === 0) {
+    // Skip lookback if no competitors (optimization)
+    if (competitorNames.length === 0) {
       return lookbackMap
     }
 
@@ -2984,6 +3024,19 @@ export async function buildDashboardPayload(
   }>()
 
   timeSeriesByCompetitor.forEach((dailyData, competitorName) => {
+    // DEBUG: Log how many dates have actual data vs empty arrays
+    let datesWithVisibility = 0
+    let datesWithShare = 0
+    let datesWithSentiment = 0
+
+    dailyData.forEach((dayData, date) => {
+      if (dayData.visibilityValues.length > 0) datesWithVisibility++
+      if (dayData.shareValues.length > 0) datesWithShare++
+      if (dayData.sentimentValues.length > 0) datesWithSentiment++
+    })
+
+    console.log(`[TimeSeries] DEBUG Competitor "${competitorName}": ${datesWithVisibility} dates with visibility, ${datesWithShare} dates with share, ${datesWithSentiment} dates with sentiment`)
+
     const dates: string[] = []
     const visibility: number[] = []
     const share: number[] = []
@@ -3013,8 +3066,10 @@ export async function buildDashboardPayload(
       const allCollectorResultsForDate = allCollectorResultsByDate.get(date)
       const totalCollectorResults = allCollectorResultsForDate?.size ?? 0
 
+      // Always push the date to maintain complete time series
+      dates.push(date)
+
       if (dayData) {
-        dates.push(date)
         const hasVisibility = dayData.visibilityValues.length > 0
         const hasShare = dayData.shareValues.length > 0
         const hasSentiment = dayData.sentimentValues.length > 0
@@ -3055,12 +3110,27 @@ export async function buildDashboardPayload(
           lastSentiment = normalizedSentiment
         }
         lastBrandPresencePercentage = competitorBrandPresencePercentage
+      } else {
+        // No data for this date - use carry-forward values
+        visibility.push(lastVisibility)
+        share.push(lastShare)
+        sentiment.push(lastSentiment)
+        brandPresencePercentage.push(lastBrandPresencePercentage)
+        isRealData.push(false) // Mark as interpolated data
       }
     })
 
     // Only include timeSeries if there's actual data (not all empty arrays)
     if (dates.length > 0) {
+      const realDataCount = isRealData.filter(r => r).length
+      const interpolatedCount = isRealData.filter(r => !r).length
+      const hasAnyData = visibility.some(v => v > 0) || share.some(s => s > 0)
+
+      console.log(`[TimeSeries] Competitor "${competitorName}": ${dates.length} dates total, ${realDataCount} with real data, ${interpolatedCount} interpolated, hasData=${hasAnyData}`)
+
       competitorTimeSeriesData.set(competitorName, { dates, visibility, share, sentiment, brandPresencePercentage, isRealData })
+    } else {
+      console.warn(`[TimeSeries] Competitor "${competitorName}" has NO dates in time-series`)
     }
   })
 
@@ -3269,9 +3339,8 @@ export async function buildDashboardPayload(
             if (ts.sentiment[idx] !== null && ts.sentiment[idx] !== undefined) {
               sentimentValues.push(ts.sentiment[idx] as number)
             }
-            // Aggregate brand presence logic:
+            // Aggregate brand presence: average percentages across collectors
             if (ts.brandPresence[idx] !== undefined) {
-              // Revert to simple average of percentages
               brandPresenceValues.push(ts.brandPresence[idx])
             }
             if (ts.isRealData && ts.isRealData[idx]) {

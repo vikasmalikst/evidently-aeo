@@ -6,6 +6,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../../utils/env-utils';
 import cronParser, { ParserOptions } from 'cron-parser';
+import { customerEntitlementsService } from '../customer-entitlements.service';
 
 loadEnvironment();
 
@@ -64,6 +65,39 @@ export class JobSchedulerService {
       });
     } catch (error) {
       throw new Error(`Invalid cron expression: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // Validate frequency against entitlements
+    try {
+      const customerEntitlements = await customerEntitlementsService.getCustomerEntitlements(input.customer_id);
+      const allowedFrequency = customerEntitlements?.settings?.entitlements?.run_frequency || 'daily';
+
+      if (allowedFrequency !== 'custom') {
+        const interval = cronParser.parseExpression(input.cron_expression, { tz: input.timezone || 'UTC' });
+        const next1 = interval.next().toDate();
+        const next2 = interval.next().toDate();
+        const diffHours = (next2.getTime() - next1.getTime()) / (1000 * 60 * 60);
+
+        const minHoursMap: Record<string, number> = {
+          'daily': 23, // Tolerate slightly less than 24h
+          'weekly': 24 * 6.5, // Tolerate slightly less than 7d
+          'bi-weekly': 24 * 13.5,
+          'monthly': 24 * 27
+        };
+
+        const minRequiredHours = minHoursMap[allowedFrequency] || 0;
+
+        if (diffHours < minRequiredHours) {
+          throw new Error(`Plan restriction: Frequency '${allowedFrequency}' requires at least ${Math.round(minRequiredHours)} hours between runs. Proposed cron has ${Math.round(diffHours)} hours.`);
+        }
+      }
+    } catch (err) {
+      // If validation fails (e.g. database error), log but strictly fallback to allowing or blocking?
+      // Blocking is safer for enforcement.
+      if (err instanceof Error && err.message.startsWith('Plan restriction')) {
+        throw err;
+      }
+      console.warn('Frequency validation succeeded or skipped due to error:', err);
     }
 
     // Calculate next run time
@@ -138,10 +172,10 @@ export class JobSchedulerService {
       if (existingJob) {
         const cronExpr = input.cron_expression || existingJob.cron_expression;
         const tz = input.timezone || existingJob.timezone || 'UTC';
-        const referenceDate = existingJob.next_run_at 
-          ? new Date(existingJob.next_run_at) 
+        const referenceDate = existingJob.next_run_at
+          ? new Date(existingJob.next_run_at)
           : new Date();
-        
+
         updateData.next_run_at = this.computeNextRun(cronExpr, tz, referenceDate);
       }
     }

@@ -1319,20 +1319,77 @@ export class OptimizedMetricsHelper {
     const { brandId, customerId, startDate, endDate, queryIds, collectorResultIds } = options;
 
     try {
-      // FIXED: Query from collector_results first, then LEFT JOIN to metric_facts
-      // This ensures ALL collector_results are returned, even if they don't have metric_facts yet
-      // Previously querying from metric_facts with INNER JOIN excluded unscored collector_results
+      // FIXED: Implement batching for collectorResultIds to avoid hitting Supabase row limits (1000 rows)
+      // When fetchPromptsAnalytics is called with many IDs (e.g. 5000+), the single query was truncating results.
 
-      // Build base query on collector_results
-      let collectorQuery = this.supabase
-        .from('collector_results')
-        .select(`
-          id,
-          query_id,
-          collector_type,
-          created_at,
-          metric_facts(
+      let allCollectorData: any[] = [];
+      const BATCH_SIZE = 200; // Safe batch size
+
+      if (collectorResultIds && collectorResultIds.length > 0) {
+        // Path 1: Query by specific IDs with batching
+        const chunks = [];
+        for (let i = 0; i < collectorResultIds.length; i += BATCH_SIZE) {
+          chunks.push(collectorResultIds.slice(i, i + BATCH_SIZE));
+        }
+
+        console.log(`[OptimizedMetrics] ⚡ Fetching prompts analytics for ${collectorResultIds.length} IDs in ${chunks.length} batches`);
+
+        // Execute batches in parallel
+        const batchResults = await Promise.all(chunks.map(async (chunk, index) => {
+          const { data, error } = await this.supabase
+            .from('collector_results')
+            .select(`
+              id,
+              query_id,
+              collector_type,
+              created_at,
+              metric_facts(
+                query_id,
+                processed_at,
+                brand_metrics(
+                  visibility_index,
+                  total_brand_mentions,
+                  total_brand_product_mentions,
+                  brand_positions
+                ),
+                brand_sentiment(
+                  sentiment_score
+                ),
+                competitor_metrics(
+                  competitor_id,
+                  competitor_mentions,
+                  total_competitor_product_mentions,
+                  competitor_positions,
+                  brand_competitors(
+                    competitor_name
+                  )
+                )
+              )
+            `)
+            .in('id', chunk);
+
+          if (error) {
+            console.error(`[OptimizedMetrics] ❌ Batch ${index + 1}/${chunks.length} failed:`, error);
+            throw error;
+          }
+          return data || [];
+        }));
+
+        // Flatten results
+        allCollectorData = batchResults.flat();
+
+      } else {
+        // Path 2: Query by date range - START FROM metric_facts (using processed_at)
+        // CRITICAL FIX: collector_results.created_at != metric_facts.processed_at
+        // Scoring happens later, so we must filter by processed_at to get accurate results
+        console.log(`[OptimizedMetrics] ⚡ Querying metric_facts by processed_at date range`);
+
+        let metricQuery = this.supabase
+          .from('metric_facts')
+          .select(`
+            collector_result_id,
             query_id,
+            collector_type,
             processed_at,
             brand_metrics(
               visibility_index,
@@ -1352,48 +1409,50 @@ export class OptimizedMetricsHelper {
                 competitor_name
               )
             )
-          )
-        `)
-        .eq('brand_id', brandId);
+          `)
+          .eq('brand_id', brandId);
 
-      if (customerId) {
-        collectorQuery = collectorQuery.eq('customer_id', customerId);
-      }
+        if (customerId) {
+          metricQuery = metricQuery.eq('customer_id', customerId);
+        }
 
-      // IMPORTANT: When collectorResultIds are provided, don't apply date filters
-      // The IDs are already filtered by the calling code, and date filters might exclude valid results
-      // Only apply date filters when querying by queryIds or when no specific IDs are provided
-      if (collectorResultIds && collectorResultIds.length > 0) {
-        // When specific IDs are provided, use them directly (no date filter)
-        collectorQuery = collectorQuery.in('id', collectorResultIds);
-      } else {
-        // Only apply date filters when NOT filtering by specific collector_result_ids
         if (startDate) {
-          collectorQuery = collectorQuery.gte('created_at', startDate);
+          metricQuery = metricQuery.gte('processed_at', startDate);
         }
         if (endDate) {
-          collectorQuery = collectorQuery.lte('created_at', endDate);
+          metricQuery = metricQuery.lte('processed_at', endDate);
         }
-        if (queryIds && queryIds.length > 0) {
-          collectorQuery = collectorQuery.in('query_id', queryIds);
+
+        metricQuery = metricQuery.limit(10000);
+
+        const { data: metricData, error: metricError } = await metricQuery;
+
+        if (metricError) {
+          console.error(`[OptimizedMetrics] Metric_facts query error:`, metricError);
+          return {
+            success: false,
+            data: [],
+            duration_ms: Date.now() - startTime,
+            error: metricError.message,
+          };
         }
+
+        // Transform metric_facts data to match collector_results structure
+        // We have collector_result_id, query_id, collector_type from metric_facts
+        allCollectorData = (metricData || []).map((mf: any) => ({
+          id: mf.collector_result_id,
+          query_id: mf.query_id,
+          collector_type: mf.collector_type,
+          created_at: mf.processed_at, // Use processed_at as created_at for consistency
+          metric_facts: mf // Already has brand_metrics, brand_sentiment, competitor_metrics
+        }));
       }
 
-      const { data: collectorData, error: collectorError } = await collectorQuery;
-
-      if (collectorError) {
-        console.error(`[OptimizedMetrics] Collector query error:`, collectorError);
-        return {
-          success: false,
-          data: [],
-          duration_ms: Date.now() - startTime,
-          error: collectorError.message,
-        };
-      }
+      const collectorData = allCollectorData;
 
       // Debug: Log raw Supabase response structure for first few rows
       if (collectorData && collectorData.length > 0) {
-        console.log(`[OptimizedMetrics] 🔍 Raw Supabase response (first 2 rows):`,
+        console.log(`[OptimizedMetrics] 🔍 Fetched Total ${collectorData.length} records. Raw sample (first 2):`,
           JSON.stringify(collectorData.slice(0, 2).map((cr: any) => ({
             id: cr.id,
             collector_type: cr.collector_type,

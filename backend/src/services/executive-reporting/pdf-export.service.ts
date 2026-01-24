@@ -70,11 +70,25 @@ export class PdfExportService {
       const pdf = await page.pdf({
         format: 'A4',
         printBackground: true,
+        displayHeaderFooter: true,
+        headerTemplate: `
+          <div style="width: 100%; font-size: 9px; color: #94a3b8; padding: 0 40px; display: flex; justify-content: space-between;">
+            <span></span>
+            <span style="font-weight: 500;">Executive AEO Performance Report</span>
+            <span></span>
+          </div>
+        `,
+        footerTemplate: `
+          <div style="width: 100%; font-size: 9px; color: #64748b; padding: 0 40px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #94a3b8;">Confidential</span>
+            <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+          </div>
+        `,
         margin: {
-          top: '20mm',
-          right: '15mm',
-          bottom: '20mm',
-          left: '15mm',
+          top: '25mm',
+          right: '18mm',
+          bottom: '22mm',
+          left: '18mm',
         },
       });
 
@@ -106,45 +120,51 @@ export class PdfExportService {
         <div class="page cover-page">
           <h1>Executive AEO Performance Report</h1>
           <p class="subtitle">Reporting Period: ${report.report_period_start} to ${report.report_period_end}</p>
-          <p class="generated">Generated: ${new Date(report.generated_at).toLocaleDateString()}</p>
+          <p class="generated">Generated: ${new Date(report.generated_at).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })}</p>
         </div>
 
-        <!-- Executive Summary -->
+        <!-- Executive Summary + Brand Performance (Combined) -->
         <div class="page">
-          <h2>Executive Summary</h2>
-          <div class="summary-box">
-            ${this.formatSummary(executive_summary)}
+          <div class="section">
+            <h2>Executive Summary</h2>
+            <div class="summary-box">
+              ${this.formatSummary(executive_summary)}
+            </div>
           </div>
-        </div>
-
-        <!-- Brand Performance Overview -->
-        <div class="page">
-          <h2>Brand Performance Overview</h2>
           
-          <div class="metrics-grid">
-            ${this.renderMetricCard('Visibility Score', brandPerf.current.visibility, brandPerf.deltas.visibility)}
-            ${this.renderMetricCard('Share of Answer', brandPerf.current.share_of_answer, brandPerf.deltas.share_of_answer, '%')}
-            ${this.renderMetricCard('Brand Presence', brandPerf.current.appearance_rate, brandPerf.deltas.appearance_rate, '%')}
-            ${this.renderMetricCard('Sentiment Score', brandPerf.current.sentiment, brandPerf.deltas.sentiment)}
-          </div>
+          <div class="section">
+            <h2>Brand Performance Overview</h2>
+            
+            <div class="metrics-grid">
+              ${this.renderMetricCard('Visibility Score', brandPerf.current.visibility, brandPerf.deltas.visibility)}
+              ${this.renderMetricCard('Share of Answer', brandPerf.current.share_of_answer, brandPerf.deltas.share_of_answer, '%')}
+              ${this.renderMetricCard('Brand Presence', brandPerf.current.appearance_rate, brandPerf.deltas.appearance_rate, '%')}
+              ${this.renderMetricCard('Sentiment Score', brandPerf.current.sentiment, brandPerf.deltas.sentiment)}
+            </div>
 
-          <h3>Period-over-Period Comparison</h3>
-          <table class="comparison-table">
-            <thead>
-              <tr>
-                <th>Metric</th>
-                <th>Current</th>
-                <th>Previous</th>
-                <th>Change</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${this.renderComparisonRow('Visibility', brandPerf.current.visibility, brandPerf.previous.visibility, brandPerf.deltas.visibility)}
-              ${this.renderComparisonRow('Share of Answer', brandPerf.current.share_of_answer, brandPerf.previous.share_of_answer, brandPerf.deltas.share_of_answer, '%')}
-              ${this.renderComparisonRow('Brand Presence', brandPerf.current.appearance_rate, brandPerf.previous.appearance_rate, brandPerf.deltas.appearance_rate, '%')}
-              ${this.renderComparisonRow('Sentiment', brandPerf.current.sentiment, brandPerf.previous.sentiment, brandPerf.deltas.sentiment)}
-            </tbody>
-          </table>
+            <h3>Period-over-Period Comparison</h3>
+            <table class="comparison-table">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Current</th>
+                  <th>Previous</th>
+                  <th>Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${this.renderComparisonRow('Visibility', brandPerf.current.visibility, brandPerf.previous.visibility, brandPerf.deltas.visibility)}
+                ${this.renderComparisonRow('Share of Answer', brandPerf.current.share_of_answer, brandPerf.previous.share_of_answer, brandPerf.deltas.share_of_answer, '%')}
+                ${this.renderComparisonRow('Brand Presence', brandPerf.current.appearance_rate, brandPerf.previous.appearance_rate, brandPerf.deltas.appearance_rate, '%')}
+                ${this.renderComparisonRow('Sentiment', brandPerf.current.sentiment, brandPerf.previous.sentiment, brandPerf.deltas.sentiment)}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- LLM Performance -->
@@ -178,6 +198,10 @@ export class PdfExportService {
    */
   private getStyles(): string {
     return `
+      /* ========================================
+         PROFESSIONAL PDF REPORT STYLES
+         ======================================== */
+      
       * {
         margin: 0;
         padding: 0;
@@ -185,105 +209,195 @@ export class PdfExportService {
       }
 
       body {
-        font-family: 'Arial', sans-serif;
-        color: #333;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        color: #1e293b;
         line-height: 1.6;
+        font-size: 11px;
+        background: #fff;
       }
 
+      /* ========================================
+         PAGE LAYOUT - Smart Page Breaks
+         ======================================== */
+      
       .page {
-        page-break-after: always;
-        padding: 20px;
+        padding: 0 0 24px 0;
+        page-break-after: auto;
+        page-break-inside: avoid;
       }
 
+      .section {
+        margin-bottom: 28px;
+        page-break-inside: avoid;
+      }
+
+      /* Force page break only before major sections */
+      .page-break-before {
+        page-break-before: always;
+      }
+
+      /* ========================================
+         COVER PAGE
+         ======================================== */
+      
       .cover-page {
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        min-height: 100vh;
+        min-height: 85vh;
         text-align: center;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border-radius: 0;
+        padding: 60px 40px;
+        page-break-after: always;
+      }
+
+      .cover-page::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 8px;
+        background: linear-gradient(90deg, #1e40af 0%, #3b82f6 50%, #0ea5e9 100%);
       }
 
       .cover-page h1 {
-        font-size: 36px;
-        margin-bottom: 20px;
-        color: #1e40af;
+        font-size: 38px;
+        font-weight: 700;
+        margin-bottom: 16px;
+        color: #1e3a5f;
+        letter-spacing: -0.5px;
+        line-height: 1.2;
       }
 
-      .subtitle {
-        font-size: 18px;
+      .cover-page .subtitle {
+        font-size: 16px;
+        color: #475569;
+        margin-bottom: 8px;
+        font-weight: 500;
+      }
+
+      .cover-page .generated {
+        font-size: 13px;
         color: #64748b;
-        margin-bottom: 10px;
+        margin-top: 24px;
+        padding-top: 24px;
+        border-top: 1px solid #cbd5e1;
       }
 
-      .generated {
-        font-size: 14px;
-        color: #94a3b8;
-      }
-
+      /* ========================================
+         SECTION HEADERS
+         ======================================== */
+      
       h2 {
-        font-size: 24px;
+        font-size: 20px;
+        font-weight: 700;
         margin-bottom: 20px;
-        color: #1e40af;
-        border-bottom: 2px solid #e2e8f0;
-        padding-bottom: 10px;
+        color: #1e3a5f;
+        padding-bottom: 12px;
+        border-bottom: 3px solid #3b82f6;
+        letter-spacing: -0.3px;
       }
 
       h3 {
-        font-size: 18px;
-        margin-top: 30px;
-        margin-bottom: 15px;
+        font-size: 15px;
+        font-weight: 600;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        color: #334155;
+      }
+
+      h4 {
+        font-size: 13px;
+        font-weight: 600;
+        margin-top: 16px;
+        margin-bottom: 8px;
         color: #475569;
       }
 
+      /* ========================================
+         EXECUTIVE SUMMARY
+         ======================================== */
+      
       .summary-box {
-        background: #f8fafc;
-        border-left: 4px solid #1e40af;
-        padding: 20px;
-        margin-bottom: 20px;
+        background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+        border-left: 5px solid #0284c7;
+        padding: 20px 24px;
+        margin-bottom: 24px;
+        border-radius: 0 8px 8px 0;
         line-height: 1.8;
       }
 
       .summary-box p {
-        margin-bottom: 10px;
+        margin-bottom: 12px;
+        color: #334155;
+        font-size: 12px;
       }
 
+      .summary-box p:last-child {
+        margin-bottom: 0;
+      }
+
+      /* ========================================
+         METRICS GRID & CARDS
+         ======================================== */
+      
       .metrics-grid {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 20px;
-        margin-bottom: 30px;
+        gap: 16px;
+        margin-bottom: 24px;
       }
 
       .metric-card {
         background: #fff;
         border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 20px;
+        border-radius: 10px;
+        padding: 18px 20px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .metric-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #3b82f6, #0ea5e9);
       }
 
       .metric-label {
-        font-size: 12px;
+        font-size: 10px;
         color: #64748b;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 5px;
+        letter-spacing: 0.8px;
+        font-weight: 600;
+        margin-bottom: 6px;
       }
 
       .metric-value {
-        font-size: 32px;
-        font-weight: bold;
-        color: #1e293b;
-        margin-bottom: 10px;
+        font-size: 28px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 8px;
+        letter-spacing: -0.5px;
       }
 
       .metric-change {
-        font-size: 14px;
+        font-size: 12px;
         font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
       }
 
       .metric-change.positive {
-        color: #16a34a;
+        color: #059669;
       }
 
       .metric-change.negative {
@@ -294,68 +408,213 @@ export class PdfExportService {
         color: #64748b;
       }
 
+      /* ========================================
+         TABLES - Modern Professional Style
+         ======================================== */
+      
       .comparison-table {
         width: 100%;
-        border-collapse: collapse;
-        margin-top: 15px;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin-top: 16px;
+        font-size: 11px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
       }
 
       .comparison-table th,
       .comparison-table td {
-        padding: 12px;
+        padding: 12px 14px;
         text-align: left;
-        border-bottom: 1px solid #e2e8f0;
       }
 
       .comparison-table th {
-        background: #f8fafc;
+        background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
         font-weight: 600;
-        color: #475569;
+        color: #fff;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
 
-      .comparison-table tr:hover {
+      .comparison-table tbody tr {
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .comparison-table tbody tr:nth-child(even) {
         background: #f8fafc;
       }
 
-      @media print {
-        .page-break {
-          page-break-before: always;
-        }
+      .comparison-table tbody tr:nth-child(odd) {
+        background: #fff;
       }
 
+      .comparison-table tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      .comparison-table td {
+        color: #334155;
+        font-weight: 500;
+      }
+
+      /* ========================================
+         OPPORTUNITY TABLES
+         ======================================== */
+      
       .opportunity-section {
-        margin-bottom: 40px;
+        margin-bottom: 24px;
+        page-break-inside: avoid;
       }
 
       .opportunity-table {
         width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 20px;
-        font-size: 11px;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin-bottom: 16px;
+        font-size: 10px;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
       }
 
-      .opportunity-table th, .opportunity-table td {
-        border: 1px solid #e2e8f0;
-        padding: 8px;
+      .opportunity-table th, 
+      .opportunity-table td {
+        padding: 10px 12px;
         text-align: left;
       }
 
       .opportunity-table th {
         background: #f1f5f9;
-        font-weight: bold;
-      }
-
-      .priority-badge {
-        padding: 2px 6px;
-        border-radius: 4px;
-        text-transform: uppercase;
+        font-weight: 600;
+        color: #334155;
         font-size: 9px;
-        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        border-bottom: 2px solid #e2e8f0;
       }
 
-      .priority-high { background: #fee2e2; color: #b91c1c; }
-      .priority-medium { background: #fef3c7; color: #b45309; }
-      .priority-low { background: #dcfce7; color: #15803d; }
+      .opportunity-table tbody tr:nth-child(even) {
+        background: #fafafa;
+      }
+
+      .opportunity-table tbody tr:nth-child(odd) {
+        background: #fff;
+      }
+
+      /* ========================================
+         PRIORITY BADGES
+         ======================================== */
+      
+      .priority-badge {
+        padding: 3px 8px;
+        border-radius: 12px;
+        text-transform: uppercase;
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        display: inline-block;
+      }
+
+      .priority-high { 
+        background: linear-gradient(135deg, #fee2e2, #fecaca); 
+        color: #b91c1c; 
+      }
+      
+      .priority-medium { 
+        background: linear-gradient(135deg, #fef3c7, #fde68a); 
+        color: #b45309; 
+      }
+      
+      .priority-low { 
+        background: linear-gradient(135deg, #dcfce7, #bbf7d0); 
+        color: #15803d; 
+      }
+
+      /* ========================================
+         LISTS
+         ======================================== */
+      
+      ul {
+        margin: 12px 0;
+        padding-left: 20px;
+      }
+
+      li {
+        margin-bottom: 8px;
+        color: #334155;
+        font-size: 11px;
+        line-height: 1.6;
+      }
+
+      li strong {
+        color: #1e293b;
+      }
+
+      /* ========================================
+         ANNOTATIONS SECTION
+         ======================================== */
+      
+      .annotation-item {
+        margin-bottom: 16px;
+        padding: 14px 16px;
+        background: #f8fafc;
+        border-left: 4px solid #64748b;
+        border-radius: 0 6px 6px 0;
+      }
+
+      .annotation-item strong {
+        color: #1e293b;
+        font-size: 11px;
+      }
+
+      .annotation-item p {
+        margin: 8px 0;
+        color: #475569;
+        font-size: 11px;
+      }
+
+      .annotation-item small {
+        color: #94a3b8;
+        font-size: 10px;
+      }
+
+      /* ========================================
+         PRINT MEDIA QUERIES
+         ======================================== */
+      
+      @media print {
+        body {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        .page {
+          page-break-inside: avoid;
+        }
+
+        .comparison-table,
+        .opportunity-table,
+        .metrics-grid {
+          page-break-inside: avoid;
+        }
+
+        .metric-card {
+          break-inside: avoid;
+        }
+      }
+
+      /* ========================================
+         HELPER CLASSES
+         ======================================== */
+      
+      .text-positive { color: #059669; }
+      .text-negative { color: #dc2626; }
+      .text-muted { color: #64748b; }
+      .font-bold { font-weight: 700; }
+      .mb-0 { margin-bottom: 0; }
+      .mt-4 { margin-top: 16px; }
     `;
   }
 
@@ -437,7 +696,7 @@ export class PdfExportService {
       .join('');
 
     return `
-      <div class="page">
+      <div class="section">
         <h2>LLM-Specific Performance</h2>
         <table class="comparison-table">
           <thead>
@@ -465,7 +724,7 @@ export class PdfExportService {
     }
 
     return `
-      <div class="page">
+      <div class="section">
         <h2>Competitive Landscape</h2>
         <table class="comparison-table">
           <thead>
@@ -501,9 +760,11 @@ export class PdfExportService {
    */
   private renderDomainReadiness(domainReadiness: any): string {
     return `
-      <div class="page">
+      <div class="section">
         <h2>Domain Readiness</h2>
-        ${this.renderMetricCard('Overall Readiness Score', domainReadiness.overall_score, domainReadiness.score_delta)}
+        <div class="metrics-grid" style="grid-template-columns: 1fr;">
+          ${this.renderMetricCard('Overall Readiness Score', domainReadiness.overall_score, domainReadiness.score_delta)}
+        </div>
         
         ${domainReadiness.key_deficiencies && domainReadiness.key_deficiencies.length > 0
         ? `
@@ -516,8 +777,8 @@ export class PdfExportService {
             `
         : ''
       }
-</div>
-  `;
+      </div>
+    `;
   }
 
   /**
@@ -528,7 +789,7 @@ export class PdfExportService {
 
     const recs = actionsImpact.recommendations;
     return `
-      <div class="page">
+      <div class="section">
         <h2>Actions & Impact</h2>
         <div class="metrics-grid">
           ${this.renderMetricCard('Recommendations Provided', recs.provided || 0, { absolute: 0, percentage: 0 })}
@@ -595,9 +856,9 @@ export class PdfExportService {
     ];
 
     return `
-      <div class="page">
+      <div class="section">
         <h2>Strategic Growth Opportunities</h2>
-        <p style="margin-bottom: 20px; color: #64748b; font-size: 13px;">AI-powered recommendations mapped across the implementation lifecycle.</p>
+        <p style="margin-bottom: 16px; color: #64748b; font-size: 11px;">AI-powered recommendations mapped across the implementation lifecycle.</p>
         
         ${renderTable('Discover Opportunities', opportunities.discover, standardCols)}
         ${renderTable('To-Do List (Approved)', opportunities.todo, standardCols)}
@@ -623,12 +884,14 @@ export class PdfExportService {
     };
 
     return `
-      <div class="page">
+      <div class="section">
         <h2>Top Movers</h2>
-        ${renderMoversList(topMovers.queries?.gains, 'Top Query Gains')}
-        ${renderMoversList(topMovers.queries?.losses, 'Top Query Losses')}
-        ${renderMoversList(topMovers.topics?.gains, 'Top Topic Gains')}
-        ${renderMoversList(topMovers.sources?.gains, 'Top Source Gains')}
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+          <div>${renderMoversList(topMovers.queries?.gains, 'Top Query Gains')}</div>
+          <div>${renderMoversList(topMovers.queries?.losses, 'Top Query Losses')}</div>
+          <div>${renderMoversList(topMovers.topics?.gains, 'Top Topic Gains')}</div>
+          <div>${renderMoversList(topMovers.sources?.gains, 'Top Source Gains')}</div>
+        </div>
       </div>
     `;
   }
@@ -640,17 +903,17 @@ export class PdfExportService {
     const annotationItems = annotations
       .map(
         annotation => `
-        <div style="margin-bottom: 15px; padding: 10px; background: #f8fafc; border-left: 3px solid #64748b;">
+        <div class="annotation-item">
           <strong>Section: ${annotation.section_id}</strong><br>
           <p>${annotation.comment}</p>
-          <small style="color: #64748b;">By: ${annotation.author_id} | ${new Date(annotation.created_at).toLocaleDateString()}</small>
+          <small>By: ${annotation.author_id} | ${new Date(annotation.created_at).toLocaleDateString()}</small>
         </div>
       `
       )
       .join('');
 
     return `
-      <div class="page">
+      <div class="section">
         <h2>Annotations & Discussion</h2>
         ${annotationItems}
       </div>

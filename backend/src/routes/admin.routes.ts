@@ -12,6 +12,7 @@ import { consolidatedScoringService } from '../services/scoring/consolidated-sco
 import { backfillRawAnswerFromSnapshots } from '../scripts/backfill-raw-answer-from-snapshots';
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
+import { collectionStatsService } from '../services/collection-stats.service';
 
 loadEnvironment();
 
@@ -23,60 +24,8 @@ const router = Router();
 let isBackfillRawAnswerRunning = false;
 
 // Apply authentication and admin access to all routes
-// TEMPORARY: Skip authentication for testing
-// router.use(authenticateToken);
-// router.use(requireAdminAccess);
-
-// TEMPORARY: Mock admin middleware for testing
-router.use((req, res, next) => {
-  // Check if we have a real user from authentication
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    const token = req.headers.authorization.split(' ')[1];
-
-    // If it's a mock token, extract the user ID
-    if (token.startsWith('mock-jwt-token-for-')) {
-      const userId = token.replace('mock-jwt-token-for-', '');
-
-      // Get real user data from database
-      authService.getUserProfile(userId).then(user => {
-        if (user) {
-          req.user = {
-            id: user.id,
-            email: user.email,
-            customer_id: user.customer_id,
-            role: user.role,
-            full_name: user.full_name
-          };
-        } else {
-          // Fallback to mock data
-          req.user = {
-            id: 'temp-admin-user',
-            email: 'admin@anvayalabs.com',
-            customer_id: 'temp-customer-id'
-          };
-        }
-        next();
-      }).catch(() => {
-        // Fallback to mock data on error
-        req.user = {
-          id: 'temp-admin-user',
-          email: 'admin@anvayalabs.com',
-          customer_id: 'temp-customer-id'
-        };
-        next();
-      });
-      return;
-    }
-  }
-
-  // Fallback to mock data
-  req.user = {
-    id: 'temp-admin-user',
-    email: 'admin@anvayalabs.com',
-    customer_id: 'temp-customer-id'
-  };
-  next();
-});
+router.use(authenticateToken);
+router.use(requireAdminAccess);
 
 /**
  * POST /api/admin/brands/:brandId/refresh-products
@@ -854,6 +803,35 @@ router.post('/customers/:customerId/entitlements', async (req: Request, res: Res
   }
 });
 
+// =====================================================
+// Collection Stats Routes
+// =====================================================
+
+/**
+ * GET /api/admin/collection-stats
+ * Get collection and scoring statistics
+ */
+router.get('/collection-stats', async (req: Request, res: Response) => {
+  try {
+    const { customer_id, brand_id } = req.query;
+    const filterCustomerId = typeof customer_id === 'string' ? customer_id : undefined;
+    const filterBrandId = typeof brand_id === 'string' ? brand_id : undefined;
+
+    const stats = await collectionStatsService.getCollectionStats(filterCustomerId, filterBrandId);
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error fetching collection stats:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch collection stats'
+    });
+  }
+});
+
 /**
  * GET /api/admin/customers/:customerId/brands
  * Get all brands for a specific customer
@@ -869,12 +847,17 @@ router.get('/customers/:customerId/brands', async (req: Request, res: Response) 
       });
     }
 
-    // Fetch brands for the customer
+    // Fetch brands for the customer - include metadata and homepage_url for logos
+    console.log(`[Admin] Fetching brands for customer: ${customerId}`);
     const { data: brands, error } = await supabase
       .from('brands')
-      .select('id, name, slug, customer_id, status')
+      .select('id, name, slug, customer_id, status, metadata, homepage_url')
       .eq('customer_id', customerId)
       .order('name', { ascending: true });
+
+    if (brands) {
+      console.log(`[Admin] Found ${brands.length} brands for customer ${customerId}`);
+    }
 
     if (error) {
       console.error('Error fetching brands for customer:', error);
@@ -1725,6 +1708,7 @@ router.post('/brands/:brandId/collect-data-now', async (req: Request, res: Respo
             console.log(`[Admin] Brand ${brandId} has an explicit empty collectors selection`);
           } else {
             console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+            collectorsToUse = mapAIModelsToCollectors([]);
           }
         }
       } catch (error) {
@@ -1973,6 +1957,7 @@ router.post('/brands/:brandId/collect-and-score-now', async (req: Request, res: 
                 console.log(`[Admin] Brand ${brandId} has an explicit empty collectors selection`);
               } else {
                 console.log(`[Admin] Brand has no ai_models selected, using default collectors`);
+                collectorsToUse = mapAIModelsToCollectors([]);
               }
             }
           } catch (error) {

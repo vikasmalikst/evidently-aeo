@@ -79,6 +79,22 @@ class ApiClient {
     return API_BASE_URL;
   }
 
+  /**
+   * Get the customer ID being impersonated by admin (from adminStore persistence)
+   */
+  private getImpersonatingCustomerId(): string | null {
+    try {
+      const stored = localStorage.getItem('admin-selection-storage');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed?.state?.selectedCustomerId || null;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return null;
+  }
+
   getAccessToken(): string | null {
     return localStorage.getItem(ACCESS_TOKEN_KEY) || localStorage.getItem('auth.accessToken');
   }
@@ -146,6 +162,12 @@ class ApiClient {
         throw error;
       }
       headers.set('Authorization', `Bearer ${accessToken}`);
+
+      // Add impersonation header if admin is impersonating a customer
+      const impersonateCustomerId = this.getImpersonatingCustomerId();
+      if (impersonateCustomerId) {
+        headers.set('X-Impersonate-Customer', impersonateCustomerId);
+      }
     }
 
     // Log slow requests (>5 seconds) for debugging

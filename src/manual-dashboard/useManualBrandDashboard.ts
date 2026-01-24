@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cachedRequest } from '../lib/apiCache'
+import { useAuthStore } from '../store/authStore'
 
 interface ApiResponse<T> {
   success: boolean
@@ -47,8 +48,19 @@ export const useManualBrandDashboard = (
     filter
   } = options
 
+  const user = useAuthStore((state) => state.user)
+
   const [brands, setBrands] = useState<ManualBrandSummary[]>([])
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(() => {
+    // Check URL params first (for PDF/Email generation support)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const brandIdParam = params.get('brandId')
+      if (brandIdParam) {
+        return brandIdParam
+      }
+    }
+
     if (!persistSelection) {
       return null
     }
@@ -61,6 +73,57 @@ export const useManualBrandDashboard = (
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState<number>(0)
+
+  // Track impersonation customer ID to trigger re-fetch when it changes
+  const [impersonationCustomerId, setImpersonationCustomerId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('admin-impersonation:customer-id')
+    } catch {
+      return null
+    }
+  })
+
+  // Listen for storage changes and custom events to detect impersonation updates
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const currentImpersonation = localStorage.getItem('admin-impersonation:customer-id')
+      const currentBrand = localStorage.getItem('manual-dashboard:selected-brand')
+
+      if (currentImpersonation !== impersonationCustomerId) {
+        setImpersonationCustomerId(currentImpersonation)
+      }
+
+      // Also update selected brand from localStorage
+      if (currentBrand && currentBrand !== selectedBrandId) {
+        setSelectedBrandId(currentBrand)
+      }
+    }
+
+    // Listen for custom event from AdminLayout for immediate sync
+    const handleAdminChange = () => {
+      const currentImpersonation = localStorage.getItem('admin-impersonation:customer-id')
+      const currentBrand = localStorage.getItem('manual-dashboard:selected-brand')
+
+      // Force update both impersonation and brand selection
+      setImpersonationCustomerId(currentImpersonation)
+      if (currentBrand) {
+        setSelectedBrandId(currentBrand)
+      }
+      // Trigger a reload to refetch brands for the new context
+      setReloadToken((prev) => prev + 1)
+    }
+
+    // Check periodically for localStorage changes (since storage event doesn't fire for same-tab changes)
+    const interval = setInterval(handleStorageChange, 500)
+    window.addEventListener('storage', handleStorageChange)
+    window.addEventListener('admin-impersonation-change', handleAdminChange)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('admin-impersonation-change', handleAdminChange)
+    }
+  }, [impersonationCustomerId, selectedBrandId])
 
   const reload = useCallback(() => {
     setReloadToken((prev) => prev + 1)
@@ -88,8 +151,19 @@ export const useManualBrandDashboard = (
       setError(null)
 
       try {
+        const isAdmin = user?.role === 'AL_ADMIN' || user?.accessLevel === 'admin'
+
+        // Determine endpoint based on impersonation
+        let endpoint = '/brands'
+        if (isAdmin && impersonationCustomerId) {
+          endpoint = `/admin/customers/${impersonationCustomerId}/brands`
+        }
+
         // Force refresh if this is a reload (token > 0), otherwise use cache strategy
-        const endpoint = reloadToken > 0 ? '/brands?skipCache=true' : '/brands'
+        if (reloadToken > 0) {
+          endpoint += (endpoint.includes('?') ? '&' : '?') + 'skipCache=true'
+        }
+
         const response = await cachedRequest<ApiResponse<ManualBrandSummary[]>>(endpoint, {}, { requiresAuth: true })
 
         if (!response.success || !response.data) {
@@ -168,7 +242,7 @@ export const useManualBrandDashboard = (
     return () => {
       cancelled = true
     }
-  }, [filter, persistSelection, reloadToken, storageKey])
+  }, [filter, persistSelection, reloadToken, storageKey, user, impersonationCustomerId])
 
   const selectedBrand = useMemo(
     () => brands.find((brand) => brand.id === selectedBrandId) ?? null,

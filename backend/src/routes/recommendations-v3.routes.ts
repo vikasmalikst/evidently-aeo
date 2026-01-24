@@ -11,6 +11,7 @@
 
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireFeatureEntitlement } from '../middleware/entitlements.middleware';
 import { recommendationV3Service } from '../services/recommendations/recommendation-v3.service';
 import { dashboardService } from '../services/brand-dashboard/dashboard.service';
 import { recommendationContentService } from '../services/recommendations/recommendation-content.service';
@@ -79,7 +80,7 @@ function getSourceKpiValue(params: {
  *       brandName: string
  *     }
  */
-router.post('/generate', authenticateToken, async (req, res) => {
+router.post('/generate', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
 
@@ -179,7 +180,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
  *       brandName: string
  *     }
  */
-router.get('/:generationId', authenticateToken, async (req, res) => {
+router.get('/:generationId', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
 
@@ -314,7 +315,7 @@ router.get('/:generationId', authenticateToken, async (req, res) => {
  * Step 3: Content generated (is_content_generated = true, is_completed = false)
  * Step 4: Completed and approved (is_completed = true, review_status = 'approved')
  */
-router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => {
+router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
 
@@ -496,7 +497,7 @@ router.get('/:generationId/steps/:step', authenticateToken, async (req, res) => 
  *   - recommendationIds (optional): Array of recommendation IDs to approve.
  *                                    If not provided, approves the single recommendation from URL.
  */
-router.patch('/:recommendationId/approve', authenticateToken, async (req, res) => {
+router.patch('/:recommendationId/approve', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
 
@@ -607,7 +608,7 @@ router.patch('/:recommendationId/approve', authenticateToken, async (req, res) =
  * Request body:
  *   - status: 'pending_review' | 'approved' | 'rejected'
  */
-router.patch('/:recommendationId/status', authenticateToken, async (req, res) => {
+router.patch('/:recommendationId/status', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
 
@@ -711,7 +712,7 @@ router.patch('/:recommendationId/status', authenticateToken, async (req, res) =>
  * Generate content for all approved recommendations in a generation (Step 2 → Step 3).
  * Uses OpenRouter as primary provider (via recommendationContentService).
  */
-router.post('/generate-content-bulk', authenticateToken, async (req, res) => {
+router.post('/generate-content-bulk', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
   try {
     const customerId = req.user?.customer_id;
 

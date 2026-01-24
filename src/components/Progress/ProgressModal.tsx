@@ -323,7 +323,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
         ) : (
           <div className="flex items-center gap-2 text-gray-500">
             <TrendingUp size={16} />
-            <span>{isReadyForDashboard ? 'Scoring Complete' : 'In progress'}</span>
+            <span>{isComplete ? 'Complete' : isReadyForDashboard ? 'Scoring Complete' : 'In progress'}</span>
           </div>
         )}
 
@@ -332,8 +332,10 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           <span>
             {showCountdown
               ? `Min. time: ${formatTime(Math.floor(timeRemaining))}`
+              : isComplete
+              ? 'Onboarding Complete!'
               : isReadyForDashboard
-              ? (isRedirecting ? 'Redirecting…' : 'Scoring Complete!')
+              ? (isRedirecting ? 'Redirecting…' : 'Scoring Complete')
               : 'Processing…'}
           </span>
         </div>
@@ -370,7 +372,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
 
       {/* Completion Message */}
       <AnimatePresence>
-        {isReadyForDashboard && (
+        {isComplete && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}

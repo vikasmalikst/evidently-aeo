@@ -1538,9 +1538,11 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     return terms.filter(t => {
       if (!t || typeof t !== 'string') return false;
 
-      const termLower = t.toLowerCase();
+      const termLower = t.toLowerCase().trim();
 
       // If term is single-word and is present inside the multi-word parent name
+      // Example: "New" inside "New Balance" -> Filter out
+      // Example: "Jira" inside "Atlassian Jira" -> Filter out (Wait, this applies to LLM products only, not KB synonyms)
       if (!termLower.includes(' ') && nameWords.includes(termLower)) {
         return false;
       }

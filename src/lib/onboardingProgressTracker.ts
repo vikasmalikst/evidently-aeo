@@ -51,6 +51,7 @@ export type OnboardingProgressSnapshot = {
   lastError: string | null;
   consecutiveFailures: number;
   isComplete: boolean;
+  isReadyForDashboard: boolean;
 };
 
 type Subscriber = (snapshot: OnboardingProgressSnapshot) => void;
@@ -110,7 +111,28 @@ const computeIsComplete = (progress: OnboardingProgressData | null): boolean => 
     return false;
   }
 
+  if (!scoring) return false;
+  return Boolean(scoring.positions && scoring.sentiments && scoring.citations);
+};
+
+const computeIsReadyForDashboard = (progress: OnboardingProgressData | null): boolean => {
+  if (!progress) return false;
+
+  const collectionStatus = progress.stages?.collection?.status;
+  const scoringStatus = progress.stages?.scoring?.status;
+
+  // If using stages data
+  if (collectionStatus && scoringStatus) {
+    // Collection and scoring must be completed
+    if (collectionStatus === 'completed' && scoringStatus === 'completed') {
+      return true;
+    }
+    return false;
+  }
+
   // Fallback to legacy scoring flags check
+  // If scoring flags are set, it implies collection and scoring are done
+  const scoring = progress.scoring;
   if (!scoring) return false;
   return Boolean(scoring.positions && scoring.sentiments && scoring.citations);
 };
@@ -152,6 +174,7 @@ const pollOnce = async (tracker: Tracker) => {
       lastError: null,
       consecutiveFailures: 0,
       isComplete: computeIsComplete(resp.data),
+      isReadyForDashboard: computeIsReadyForDashboard(resp.data),
     };
   } catch (err) {
     // Abort errors are expected when switching brands or overlapping polls.
@@ -168,6 +191,7 @@ const pollOnce = async (tracker: Tracker) => {
         lastError: msg,
         consecutiveFailures: tracker.snapshot.consecutiveFailures + 1,
         isComplete: computeIsComplete(tracker.snapshot.data),
+        isReadyForDashboard: computeIsReadyForDashboard(tracker.snapshot.data),
       };
     }
   } finally {
@@ -219,6 +243,7 @@ export const onboardingProgressTracker = {
           lastError: null,
           consecutiveFailures: 0,
           isComplete: false,
+          isReadyForDashboard: false,
         },
         subscribers: new Set(),
         intervalId: null,
@@ -249,6 +274,7 @@ export const onboardingProgressTracker = {
         lastError: null,
         consecutiveFailures: 0,
         isComplete: false,
+        isReadyForDashboard: false,
       }
     );
   },

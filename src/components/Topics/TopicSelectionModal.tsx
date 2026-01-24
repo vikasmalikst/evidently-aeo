@@ -18,6 +18,8 @@ interface TopicSelectionModalProps {
   onBack: () => void;
   onClose: () => void;
   mode?: 'modal' | 'fullscreen';
+  initialData?: any;
+  onDataUpdate?: (data: any) => void;
 }
 
 const MAX_TOPICS = 10;
@@ -30,6 +32,8 @@ export const TopicSelectionModal = ({
   onBack,
   onClose,
   mode = 'modal',
+  initialData,
+  onDataUpdate,
 }: TopicSelectionModalProps) => {
   const [availableTopics, setAvailableTopics] = useState<{
     trending: Topic[];
@@ -61,6 +65,14 @@ export const TopicSelectionModal = ({
   }, [brandName, industry]);
 
   const fetchTopicsFromAPI = async () => {
+    // Use initial data if available to avoid re-fetching
+    if (initialData && Object.keys(initialData.trending || {}).length > 0) {
+      console.log('📦 Using cached topics data');
+      setAvailableTopics(initialData);
+      setIsLoadingTopics(false);
+      return;
+    }
+
     setIsLoadingTopics(true);
     setTopicsError(null);
     try {
@@ -101,6 +113,9 @@ export const TopicSelectionModal = ({
         };
         
         setAvailableTopics(topicsData);
+        if (onDataUpdate) {
+          onDataUpdate(topicsData);
+        }
         setTopicsError(null);
         console.log('✅ Loaded topics:', {
           trending: topicsData.trending.length,

@@ -38,6 +38,11 @@ export const Setup = () => {
   const [selectedPrompts, setSelectedPrompts] = useState<PromptWithTopic[]>([]);
   const [reviewData, setReviewData] = useState<ReviewRow[]>([]);
   const [competitors, setCompetitors] = useState<OnboardingCompetitor[]>([]);
+
+  // State for data persistence
+  const [availableTopicsData, setAvailableTopicsData] = useState<any>(null); // Using any to match TopicSelectionModal types
+  const [generatedPromptsData, setGeneratedPromptsData] = useState<Record<string, string[]>>({});
+
   
   const brandData = localStorage.getItem('onboarding_brand');
   const brand = brandData ? JSON.parse(brandData) : {};
@@ -284,6 +289,8 @@ export const Setup = () => {
         brandName={brand.companyName || brand.name}
         industry={brand.industry}
         mode="fullscreen"
+        initialData={availableTopicsData}
+        onDataUpdate={setAvailableTopicsData}
         onNext={(topics) => {
           setSelectedTopics(topics);
           handleNext();
@@ -326,6 +333,13 @@ export const Setup = () => {
             selectedTopics={selectedTopics}
             selectedPrompts={selectedPrompts}
             onPromptsChange={setSelectedPrompts}
+            cachedPrompts={generatedPromptsData}
+            onPromptsFetched={(newPrompts) => {
+              setGeneratedPromptsData(prev => ({
+                ...prev,
+                ...newPrompts
+              }));
+            }}
           />
         );
       case 'review':

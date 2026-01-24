@@ -27,7 +27,7 @@ const formatTime = (seconds: number): string => {
 
 export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, onClose }: ProgressModalProps) => {
   const defaultDateRange = useRef(getDefaultDateRange());
-  const { progress, lastUpdatedAt, lastError, consecutiveFailures, isComplete } = useOnboardingProgress(brandId);
+  const { progress, lastUpdatedAt, lastError, consecutiveFailures, isComplete, isReadyForDashboard } = useOnboardingProgress(brandId);
 
   const [elapsedTime, setElapsedTime] = useState(0);
   const [minTimePassed, setMinTimePassed] = useState(mode === 'modal');
@@ -96,7 +96,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
 
   useEffect(() => {
     if (mode !== 'fullpage') return;
-    if (!minTimePassed || !isComplete) return;
+    if (!minTimePassed || !isReadyForDashboard) return;
     if (redirectScheduledRef.current) return;
     if (!onNavigateDashboard) return;
 
@@ -113,7 +113,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
         redirectTimerRef.current = null;
       }
     };
-  }, [mode, minTimePassed, isComplete, onNavigateDashboard]);
+  }, [mode, minTimePassed, isReadyForDashboard, onNavigateDashboard]);
 
   const currentStage = useMemo<'collecting' | 'scoring' | 'recommendations' | 'finalizing'>(() => {
     if (progress?.stages?.collection?.status === 'completed') {
@@ -323,7 +323,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
         ) : (
           <div className="flex items-center gap-2 text-gray-500">
             <TrendingUp size={16} />
-            <span>{isComplete ? 'Complete' : 'In progress'}</span>
+            <span>{isReadyForDashboard ? 'Scoring Complete' : 'In progress'}</span>
           </div>
         )}
 
@@ -332,8 +332,8 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
           <span>
             {showCountdown
               ? `Min. time: ${formatTime(Math.floor(timeRemaining))}`
-              : isComplete
-              ? (isRedirecting ? 'Redirecting…' : 'Complete!')
+              : isReadyForDashboard
+              ? (isRedirecting ? 'Redirecting…' : 'Scoring Complete!')
               : 'Processing…'}
           </span>
         </div>
@@ -370,7 +370,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
 
       {/* Completion Message */}
       <AnimatePresence>
-        {isComplete && (
+        {isReadyForDashboard && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -384,7 +384,7 @@ export const ProgressModal = ({ brandId, brandName, mode, onNavigateDashboard, o
         )}
       </AnimatePresence>
 
-      {!isComplete && !dashboardData && (
+      {!isReadyForDashboard && !dashboardData && (
         <p className="mt-6 text-center text-sm text-gray-500">
           This may take a few minutes. We're collecting data from multiple AI sources…
         </p>

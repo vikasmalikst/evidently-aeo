@@ -12,7 +12,7 @@ export class EmailServiceV2 {
       port: 465,
       secure: true,
       auth: {
-        user: process.env.ZOHO_EMAIL,
+        user: process.env.ZOHO_EMAIL || process.env.ZOHO_EMAIL,
         pass: process.env.ZOHO_PASSWORD,
       },
     });
@@ -80,7 +80,7 @@ export class EmailServiceV2 {
 
       // 4. Send Email
       await this.transporter.sendMail({
-        from: `"EvidentlyAEO Reporting" <${process.env.ZOHO_EMAIL}>`,
+        from: `"EvidentlyAEO Reporting" <${process.env.ZOHO_MAIL || process.env.ZOHO_EMAIL}>`,
         to,
         subject: `Executive Report: ${brandName} (${period})`,
         html: htmlContent,

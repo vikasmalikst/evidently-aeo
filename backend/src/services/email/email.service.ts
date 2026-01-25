@@ -19,7 +19,7 @@ export class EmailService {
       port: 465,
       secure: true, // use SSL
       auth: {
-        user: process.env.ZOHO_EMAIL,
+        user: process.env.ZOHO_MAIL || process.env.ZOHO_EMAIL,
         pass: process.env.ZOHO_PASSWORD,
       },
     });
@@ -51,7 +51,7 @@ export class EmailService {
     });
 
     const mailOptions = {
-      from: `"EvidentlyAEO Demo Bot" <${process.env.ZOHO_EMAIL}>`,
+      from: `"EvidentlyAEO Demo Bot" <${process.env.ZOHO_MAIL || process.env.ZOHO_EMAIL}>`,
       to: ['sales.support@evidentlyAEO.com', 'vikas.malik@evidentlyaeo.com'],
       subject: `New Demo Request: ${data.company} (${data.name})`,
       html: html,
@@ -86,7 +86,7 @@ export class EmailService {
 
     try {
       await this.transporter.sendMail({
-        from: `"EvidentlyAEO" <${process.env.ZOHO_EMAIL}>`,
+        from: `"EvidentlyAEO" <${process.env.ZOHO_MAIL || process.env.ZOHO_EMAIL}>`,
         to: email,
         bcc: type === 'signup' ? 'tech.support@evidentlyaeo.com' : undefined,
         subject,
@@ -111,7 +111,7 @@ export class EmailService {
 
     try {
       const mailOptions = {
-        from: `"EvidentlyAEO Reporting" <${process.env.ZOHO_EMAIL}>`,
+        from: `"EvidentlyAEO Reporting" <${process.env.ZOHO_MAIL || process.env.ZOHO_EMAIL}>`,
         to: email,
         subject,
         html: htmlReport, // Use the full HTML report as email body

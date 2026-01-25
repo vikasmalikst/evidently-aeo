@@ -24,6 +24,7 @@ import { EmailReportModal } from './components/EmailReportModal';
 import { ReportCoverPage } from './components/ReportCoverPage';
 import { ReportTableOfContents } from './components/ReportTableOfContents';
 import { FeedbackSideModal } from './components/FeedbackSideModal';
+import { ExportSuccessModal } from './components/ExportSuccessModal';
 import { IconMail } from '@tabler/icons-react';
 import '../../styles/executive-reporting.css';
 
@@ -47,6 +48,7 @@ export const ExecutiveReportingPage = () => {
     const [isEmailV2ModalOpen, setIsEmailV2ModalOpen] = useState(false);
     const [isPrintMode, setIsPrintMode] = useState(false);
     const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+    const [isExportSuccessModalOpen, setIsExportSuccessModalOpen] = useState(false);
     const [exportingStatus, setExportingStatus] = useState<'idle' | string>('idle');
 
     useEffect(() => {
@@ -179,7 +181,7 @@ export const ExecutiveReportingPage = () => {
         try {
             setExportingStatus('Initializing browser...');
             const token = apiClient.getAccessToken();
-            
+
             // Start the request
             const responsePromise = fetch(
                 `${apiClient.baseUrl}/brands/${selectedBrandId}/executive-reports/${report.id}/export/pdf-v2`,
@@ -220,11 +222,21 @@ export const ExecutiveReportingPage = () => {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `executive-report-${report.id}.pdf`;
+
+            // Format: {brand_name}{dd_mm_YYYY_hh_MM}
+            const now = new Date();
+            const dateStr = `${String(now.getDate()).padStart(2, '0')}_${String(now.getMonth() + 1).padStart(2, '0')}_${now.getFullYear()}_${String(now.getHours()).padStart(2, '0')}_${String(now.getMinutes()).padStart(2, '0')}`;
+            const cleanBrandName = selectedBrand?.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'report';
+            const fileName = `${cleanBrandName}_${dateStr}.pdf`;
+
+            a.download = fileName;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
+
+            // Show success modal
+            setIsExportSuccessModalOpen(true);
         } catch (err) {
             console.error('Error exporting PDF:', err);
             setError(err instanceof Error ? err.message : 'Failed to export PDF');
@@ -247,6 +259,12 @@ export const ExecutiveReportingPage = () => {
             </Layout>
         );
     }
+
+    // Prepare filename for success modal preview (re-calculate or store in state - re-calc is cheap enough here for display)
+    const now = new Date();
+    const dateStr = `${String(now.getDate()).padStart(2, '0')}_${String(now.getMonth() + 1).padStart(2, '0')}_${now.getFullYear()}_${String(now.getHours()).padStart(2, '0')}_${String(now.getMinutes()).padStart(2, '0')}`;
+    const cleanBrandName = selectedBrand?.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'report';
+    const displayFileName = `${cleanBrandName}_${dateStr}.pdf`;
 
     return (
         <Layout hideSidebar={isPrintMode} hideHeader={isPrintMode}>
@@ -303,9 +321,9 @@ export const ExecutiveReportingPage = () => {
                                                 <IconMail className="w-4 h-4" />
                                                 Email Report
                                             </button>
-                                            <button 
-                                                onClick={exportPDFV2} 
-                                                className="executive-btn-secondary" 
+                                            <button
+                                                onClick={exportPDFV2}
+                                                className="executive-btn-secondary"
                                                 title="Download PDF Report"
                                                 disabled={exportingStatus !== 'idle'}
                                             >
@@ -440,6 +458,7 @@ export const ExecutiveReportingPage = () => {
                 onClose={() => setIsEmailV2ModalOpen(false)}
                 brandName={selectedBrand?.name || 'Brand'}
                 onSend={handleEmailReportV2}
+                themeColor={selectedBrand?.metadata?.brand_color || undefined}
             />
 
             {/* Feedback Side Modal */}
@@ -449,6 +468,14 @@ export const ExecutiveReportingPage = () => {
                 currentSummary={report?.executive_summary || ''}
                 onRegenerate={handleRegenerateSummary}
                 brandId={selectedBrandId || undefined}
+            />
+
+            {/* Export Success Modal */}
+            <ExportSuccessModal
+                isOpen={isExportSuccessModalOpen}
+                onClose={() => setIsExportSuccessModalOpen(false)}
+                fileName={displayFileName}
+                themeColor={selectedBrand?.metadata?.brand_color || undefined}
             />
         </Layout >
     );

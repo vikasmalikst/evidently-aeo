@@ -702,13 +702,14 @@ export class PositionExtractionService {
       competitorProductPositions[name] = productPositionArray;
     }
 
-    // 🆕 Calculate mentions - positions.brand.all includes name + synonyms + products
-    const totalBrandMentions = positions.brand.all.length; // Counts all brand mentions (name + synonyms + products)
-    const totalCompetitorMentions = Object.values(competitorPositionMap)
-      .reduce((sum, posArray) => sum + posArray.length, 0);
-    const totalBrandProductMentions = positions.brandProducts.length; // Product-only mentions
-    const totalCompetitorProductMentions = Object.values(competitorProductPositions)
-      .reduce((sum, posArray) => sum + posArray.length, 0);
+    // 🆕 Calculate mentions using matchCount (not positions.length) to handle multi-word matches correctly
+    // "New Balance" matched 3 times = matchCount 3, but positions might be [15,16,27,28,80,81] (6 entries)
+    const totalBrandMentions = positions.brand.matchCount; // Use matchCount, not positions.length
+    const totalCompetitorMentions = Object.values(positions.competitorMatchCounts)
+      .reduce((sum, count) => sum + count, 0);
+    const totalBrandProductMentions = positions.brandProducts.matchCount; // Use matchCount
+    const totalCompetitorProductMentions = Object.values(positions.competitorProductMatchCounts)
+      .reduce((sum, count) => sum + count, 0);
 
     // 🆕 Debug logging for data sources used
     console.log(`   📊 Position calculation summary for collector_result ${result.id}:`);
@@ -752,9 +753,10 @@ export class PositionExtractionService {
 
     const competitorRows: PositionInsertRow[] = competitorNames.map((competitorName) => {
       const competitorPositionArray = competitorPositionMap[competitorName] ?? [];
-      const competitorMentions = competitorPositionArray.length;
+      // Use matchCounts for accurate mention counting (not positions.length which is inflated for multi-word matches)
+      const competitorMentions = positions.competitorMatchCounts[competitorName] ?? 0;
       const competitorProductPositionArray = competitorProductPositions[competitorName] ?? [];
-      const competitorProductMentions = competitorProductPositionArray.length;
+      const competitorProductMentions = positions.competitorProductMatchCounts[competitorName] ?? 0;
       const competitorVisibility = this.calculateVisibilityIndex(
         competitorMentions,
         competitorPositionArray,
@@ -915,10 +917,12 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     competitors: Array<{ competitor_name: string; competitorSynonyms: string[]; productNames: string[] }>,
     rawAnswer: string
   ): {
-    brand: { first: number | null; all: number[] };
-    brandProducts: number[];
+    brand: { first: number | null; all: number[]; matchCount: number };
+    brandProducts: { positions: number[]; matchCount: number };
     competitors: { [competitor: string]: number[] };
     competitorProducts: { [competitor: string]: number[] };
+    competitorMatchCounts: { [competitor: string]: number };
+    competitorProductMatchCounts: { [competitor: string]: number };
     wordCount: number;
   } {
     const { tokens, normalizedTokens } = this.tokenizeWords(rawAnswer);
@@ -1050,23 +1054,37 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     const brandPositionsSet = new Set<number>();
     const brandProductPositionsSet = new Set<number>();
 
+    // Track actual match counts (not expanded positions)
+    let brandMatchCount = 0;
+    let brandProductMatchCount = 0;
+    const competitorMatchCounts: Record<string, number> = {};
+    const competitorProductMatchCounts: Record<string, number> = {};
+
     const competitorPositions: Record<string, number[]> = {};
     const competitorProductPositions: Record<string, number[]> = {};
 
-    // Initialize competitor arrays
+    // Initialize competitor arrays and counts
     competitors.forEach(c => {
       competitorPositions[c.competitor_name] = [];
       competitorProductPositions[c.competitor_name] = [];
+      competitorMatchCounts[c.competitor_name] = 0;
+      competitorProductMatchCounts[c.competitor_name] = 0;
     });
 
     for (const match of acceptedMatches) {
-      // Use START position for metrics
-      const position = match.start;
+      // Store ALL positions for multi-word matches (e.g., "New Balance" stores [15, 16])
+      // This ensures the UI can highlight the complete phrase, not just the first word
+      const positions: number[] = [];
+      for (let i = match.start; i <= match.end; i++) {
+        positions.push(i);
+      }
 
       if (match.candidate.ownerType === 'brand') {
-        brandPositionsSet.add(position);
+        positions.forEach(pos => brandPositionsSet.add(pos));
+        brandMatchCount++; // Count the actual match
         if (match.candidate.isProduct) {
-          brandProductPositionsSet.add(position);
+          positions.forEach(pos => brandProductPositionsSet.add(pos));
+          brandProductMatchCount++; // Count the actual match
         }
       } else {
         // Competitor
@@ -1074,11 +1092,15 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
         // Ensure buckets exist (might be new if name casing diff, but we use ownerName from input)
         if (!competitorPositions[name]) competitorPositions[name] = [];
         if (!competitorProductPositions[name]) competitorProductPositions[name] = [];
+        if (!competitorMatchCounts[name]) competitorMatchCounts[name] = 0;
+        if (!competitorProductMatchCounts[name]) competitorProductMatchCounts[name] = 0;
 
-        competitorPositions[name].push(position);
+        positions.forEach(pos => competitorPositions[name].push(pos));
+        competitorMatchCounts[name]++; // Count the actual match
 
         if (match.candidate.isProduct) {
-          competitorProductPositions[name].push(position);
+          positions.forEach(pos => competitorProductPositions[name].push(pos));
+          competitorProductMatchCounts[name]++; // Count the actual match
         }
       }
     }
@@ -1097,10 +1119,12 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
     }
 
     return {
-      brand: { first: brandFirst, all: brandPositions },
-      brandProducts: brandProductPositions,
+      brand: { first: brandFirst, all: brandPositions, matchCount: brandMatchCount },
+      brandProducts: { positions: brandProductPositions, matchCount: brandProductMatchCount },
       competitors: competitorPositions,
       competitorProducts: competitorProductPositions,
+      competitorMatchCounts,
+      competitorProductMatchCounts,
       wordCount: tokens.length,
     };
   }
@@ -1242,33 +1266,30 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       ? brandProductsData.brand_products.filter((p: string) => p && typeof p === 'string')
       : [];
 
+
     // Get products from cache (LLM-extracted) - UNTRUSTED
-    const cacheProducts = Array.isArray(consolidatedCacheData?.products?.brand)
-      ? consolidatedCacheData.products.brand.filter((p: string) => p && typeof p === 'string')
-      : [];
+    // DISABLED: User requirement - only use brand_products table
+    // const cacheProducts = Array.isArray(consolidatedCacheData?.products?.brand)
+    //   ? consolidatedCacheData.products.brand.filter((p: string) => p && typeof p === 'string')
+    //   : [];
 
     // Get products from LLM extraction - UNTRUSTED
-    const llmProducts = Array.isArray(llmExtractedProducts)
-      ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
-      : [];
+    // DISABLED: User requirement - only use brand_products table
+    // const llmProducts = Array.isArray(llmExtractedProducts)
+    //   ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
+    //   : [];
 
-    // Filter ONLY the non-trusted sources (LLM/Cache)
-    // This allows "Jira" (if in KB) to be a valid match for "Atlassian Jira"
-    // BUT prevents "New" (from LLM) from matching "New Balance"
-    const filteredCacheProducts = this.filterPartialMatches(cacheProducts, brandName);
-    const filteredLlmProducts = this.filterPartialMatches(llmProducts, brandName);
+    // STRICT KB-ONLY MODE: No filtering needed since we only use KB products
+    // const filteredCacheProducts = this.filterPartialMatches(cacheProducts, brandName);
+    // const filteredLlmProducts = this.filterPartialMatches(llmProducts, brandName);
 
-    // Combine all products
-    const allProducts = Array.from(new Set([
-      ...kbProducts,            // Trusted
-      ...filteredCacheProducts, // Filtered
-      ...filteredLlmProducts    // Filtered
-    ]));
+    // Use ONLY KB products (no cache, no LLM)
+    const allProducts = kbProducts;
 
     return {
       brandName,
       brandSynonyms,
-      brandProducts: allProducts
+      brandProducts: allProducts  // KB products only
     };
   }
 
@@ -1310,31 +1331,30 @@ Output: A JSON array of up to 12 valid product names. If none exist, return [].
       ? competitorData.products.filter((p: string) => p && typeof p === 'string')
       : [];
 
+
     // Get products from cache (LLM-extracted) - UNTRUSTED
-    const cacheProducts = Array.isArray(consolidatedCacheData?.products?.competitors?.[competitorName])
-      ? consolidatedCacheData.products.competitors[competitorName].filter((p: string) => p && typeof p === 'string')
-      : [];
+    // DISABLED: User requirement - only use brand_products table
+    // const cacheProducts = Array.isArray(consolidatedCacheData?.products?.competitors?.[competitorName])
+    //   ? consolidatedCacheData.products.competitors[competitorName].filter((p: string) => p && typeof p === 'string')
+    //   : [];
 
     // Get products from LLM extraction - UNTRUSTED
-    const llmProducts = Array.isArray(llmExtractedProducts)
-      ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
-      : [];
+    // DISABLED: User requirement - only use brand_products table
+    // const llmProducts = Array.isArray(llmExtractedProducts)
+    //   ? llmExtractedProducts.filter((p: string) => p && typeof p === 'string')
+    //   : [];
 
-    // Filter ONLY the non-trusted sources (LLM/Cache)
-    const filteredCacheProducts = this.filterPartialMatches(cacheProducts, competitorName);
-    const filteredLlmProducts = this.filterPartialMatches(llmProducts, competitorName);
+    // STRICT KB-ONLY MODE: No filtering needed since we only use KB products
+    // const filteredCacheProducts = this.filterPartialMatches(cacheProducts, competitorName);
+    // const filteredLlmProducts = this.filterPartialMatches(llmProducts, competitorName);
 
-    // Combine all products (Trust KB products)
-    const allProducts = Array.from(new Set([
-      ...kbProducts,            // Trusted
-      ...filteredCacheProducts, // Filtered
-      ...filteredLlmProducts    // Filtered
-    ]));
+    // Use ONLY KB products (no cache, no LLM)
+    const allProducts = kbProducts;
 
     return {
       competitorName,
       competitorSynonyms: kbSynonyms,
-      competitorProducts: allProducts
+      competitorProducts: allProducts  // KB products only
     };
   }
 

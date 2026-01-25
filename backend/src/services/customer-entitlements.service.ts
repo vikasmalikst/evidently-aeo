@@ -255,8 +255,13 @@ export class CustomerEntitlementsService {
         'Google Gemini', 'Bing', 'DeepSeek', 'Baidu', 'Grok', 'Gemini'
       ];
 
+      // Create lowercase map for case-insensitive comparison
+      const validCollectorsLower = validCollectors.map(c => c.toLowerCase());
+
       for (const collector of entitlements.enabled_collectors) {
-        if (!validCollectors.includes(collector)) {
+        // Case-insensitive check with trimming
+        const normalizedCollector = collector.trim().toLowerCase();
+        if (!validCollectorsLower.includes(normalizedCollector)) {
           errors.push(`Invalid collector: ${collector}. Valid options: ${validCollectors.join(', ')}`);
         }
       }

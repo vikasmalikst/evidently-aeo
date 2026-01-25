@@ -208,7 +208,6 @@ export class ReportOrchestrationService {
                 comparison_period_end: comparisonEnd.toISOString().split('T')[0],
                 data_snapshot: dataSnapshot,
                 executive_summary: executiveSummary,
-                generated_by: userId === 'system' ? null : userId,
             })
             .select()
             .single();

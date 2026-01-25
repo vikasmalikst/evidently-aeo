@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { SettingsLayout } from '../components/Settings/SettingsLayout';
 import { useManualBrandDashboard } from '../manual-dashboard/useManualBrandDashboard';
@@ -163,7 +163,19 @@ export const ManageReports = () => {
             });
 
             if (response.success && response.data) {
-                setSettings(response.data);
+                const data = response.data;
+                setSettings(data);
+
+                // Update local state to match saved data to clear dirty flags
+                setFrequency(data.frequency);
+                setEmails(data.distribution_emails || []);
+                setIsActive(data.is_active);
+                if (data.day_of_week) setSelectedDayOfWeek(data.day_of_week);
+                if (data.day_of_month) setSelectedDayOfMonth(data.day_of_month);
+                if (data.month_in_quarter) setSelectedMonthInQuarter(data.month_in_quarter);
+                if (data.custom_interval) setCustomInterval(data.custom_interval);
+                if (data.start_date) setStartDate(data.start_date.split('T')[0]);
+
                 setSuccessMessage('Report settings saved successfully!');
                 setTimeout(() => setSuccessMessage(null), 3000);
             } else {
@@ -204,6 +216,37 @@ export const ManageReports = () => {
             setIsSaving(false);
         }
     };
+
+    // Check for unsaved changes
+    const hasUnsavedChanges = useMemo(() => {
+        if (!settings) return true; // Always show save for new settings
+
+        // Check if basic fields match
+        if (frequency !== settings.frequency) return true;
+        if (isActive !== settings.is_active) return true;
+
+        // Check emails (compare sorted arrays)
+        const currentEmails = [...emails].sort();
+        const savedEmails = [...(settings.distribution_emails || [])].sort();
+        if (JSON.stringify(currentEmails) !== JSON.stringify(savedEmails)) return true;
+
+        // Check frequency-specific fields
+        switch (frequency) {
+            case 'weekly':
+            case 'bi-weekly':
+                return selectedDayOfWeek !== (settings.day_of_week || 'Monday');
+            case 'monthly':
+                return selectedDayOfMonth !== (settings.day_of_month || 1);
+            case 'quarterly':
+                return selectedMonthInQuarter !== (settings.month_in_quarter || 1) ||
+                    selectedDayOfMonth !== (settings.day_of_month || 1);
+            case 'custom':
+                return customInterval !== (settings.custom_interval || 7) ||
+                    startDate !== (settings.start_date?.split('T')[0]);
+            default:
+                return false;
+        }
+    }, [settings, frequency, isActive, emails, selectedDayOfWeek, selectedDayOfMonth, selectedMonthInQuarter, customInterval, startDate]);
 
     if (!selectedBrandId) {
         return (
@@ -495,23 +538,26 @@ export const ManageReports = () => {
 
                                         {/* Action Buttons */}
                                         <div className="flex items-center gap-3 pt-4 border-t border-[var(--border-default)]">
-                                            <button
-                                                onClick={handleSave}
-                                                disabled={isSaving || emails.length === 0}
-                                                className="px-6 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg hover:opacity-90 transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                {isSaving ? (
-                                                    <>
-                                                        <IconLoader2 size={18} className="animate-spin" />
-                                                        Saving...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <IconFileDownload size={18} />
-                                                        {settings ? 'Update Settings' : 'Save Settings'}
-                                                    </>
-                                                )}
-                                            </button>
+                                            {/* Show save buttons if we have unsaved changes or it's a new config (no settings yet) */}
+                                            {(hasUnsavedChanges || !settings) && (
+                                                <button
+                                                    onClick={handleSave}
+                                                    disabled={isSaving || emails.length === 0}
+                                                    className="px-6 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg hover:opacity-90 transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {isSaving ? (
+                                                        <>
+                                                            <IconLoader2 size={18} className="animate-spin" />
+                                                            Saving...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <IconFileDownload size={18} />
+                                                            {settings ? 'Update Settings' : 'Save Settings'}
+                                                        </>
+                                                    )}
+                                                </button>
+                                            )}
 
                                             {settings && (
                                                 <button

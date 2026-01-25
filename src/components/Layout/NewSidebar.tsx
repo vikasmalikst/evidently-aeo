@@ -112,6 +112,7 @@ export const NewSidebar = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -145,6 +146,11 @@ export const NewSidebar = () => {
         setExpandedSections(prev => new Set(prev).add(item.id));
       }
     });
+    adminNavItems.forEach(item => {
+      if (item.children && isChildActive(item.children)) {
+        setExpandedSections(prev => new Set(prev).add(item.id));
+      }
+    });
   }, [location.pathname]);
 
   useEffect(() => {
@@ -169,6 +175,7 @@ export const NewSidebar = () => {
 
   const handleMouseLeave = () => {
     setIsExpanded(false);
+    setHoveredItem(null);
   };
 
   const handleLogout = async () => {
@@ -202,14 +209,12 @@ export const NewSidebar = () => {
     return email ? email[0].toUpperCase() : '?';
   };
 
-  const renderNavItem = (item: NavItem) => {
+  const renderNavItem = (item: NavItem, index: number) => {
     const Icon = item.icon;
     const hasChildren = item.children && item.children.length > 0;
     const isExpanded_ = expandedSections.has(item.id);
     const active = isSectionActive(item);
-    
-    // For parent items, we check if ALL logic is blocked or if it's just a section container
-    // If it's a section like "Analyze", we usually let it expand, but we might check individual children
+    const isHovered = hoveredItem === item.id;
     
     // Check main path if exists
     const enabled = isFeatureEnabled(item.path);
@@ -217,87 +222,155 @@ export const NewSidebar = () => {
 
     if (hasChildren) {
       return (
-        <li key={item.id}>
+        <li 
+          key={item.id}
+          className="relative"
+          style={{ animationDelay: `${index * 30}ms` }}
+        >
           {/* Parent item with expand/collapse */}
           <button
             onClick={() => toggleSection(item.id)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)] ${active ? 'bg-[var(--bg-secondary)]' : ''
-              }`}
+            onMouseEnter={() => setHoveredItem(item.id)}
+            onMouseLeave={() => setHoveredItem(null)}
+            className={`
+              sidebar-item w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl
+              transition-all duration-200 ease-out relative overflow-hidden group
+              ${active ? 'sidebar-item-active' : ''}
+              ${isHovered && !active ? 'sidebar-item-hover' : ''}
+            `}
           >
+            {/* Animated background glow on hover */}
+            <div className={`
+              absolute inset-0 rounded-xl opacity-0 transition-opacity duration-300
+              bg-gradient-to-r from-[var(--accent-primary)]/5 to-[var(--accent-primary)]/10
+              ${isHovered ? 'opacity-100' : ''}
+            `} />
+            
+            {/* Icon container with enhanced styling */}
             <div
-              className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
-                ? 'bg-[var(--accent-primary)] text-white'
-                : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
-                }`}
+              className={`
+                sidebar-icon flex-shrink-0 relative z-10 rounded-xl p-2
+                transition-all duration-300 ease-out
+                ${active
+                  ? 'bg-gradient-to-br from-[var(--accent-primary)] to-[#3da58a] text-white shadow-lg shadow-[var(--accent-primary)]/25'
+                  : 'text-[var(--text-headings)] group-hover:bg-[var(--bg-secondary)] group-hover:text-[var(--accent-primary)]'
+                }
+              `}
             >
-              <Icon size={20} className="transition-colors duration-300" />
+              <Icon size={18} className="transition-transform duration-300 group-hover:scale-110" />
             </div>
 
+            {/* Label with smooth slide animation */}
             <span
-              className={`flex-1 text-left whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
-                ? 'opacity-100 translate-x-0'
-                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-                }`}
+              className={`
+                flex-1 text-left whitespace-nowrap font-medium text-[13px] relative z-10
+                transition-all duration-300 ease-out
+                ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-headings)]'}
+                ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
+              `}
             >
               {item.label}
             </span>
 
-            {/* Chevron for expand/collapse */}
+            {/* Chevron with rotation animation */}
             <span
-              className={`flex-shrink-0 transition-all duration-300 ease-in-out ${isExpanded ? 'opacity-100' : 'opacity-0 w-0'
-                }`}
+              className={`
+                flex-shrink-0 transition-all duration-300 ease-out relative z-10
+                ${isExpanded ? 'opacity-100' : 'opacity-0 w-0'}
+              `}
             >
-              {isExpanded_ ? (
-                <IconChevronDown size={16} className="text-[var(--text-caption)]" />
-              ) : (
-                <IconChevronRight size={16} className="text-[var(--text-caption)]" />
-              )}
+              <IconChevronDown 
+                size={14} 
+                className={`
+                  text-[var(--text-caption)] transition-transform duration-300 ease-out
+                  ${isExpanded_ ? 'rotate-0' : '-rotate-90'}
+                `} 
+              />
             </span>
           </button>
 
-          {/* Child items */}
+          {/* Child items with staggered animation */}
           <ul
-            className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded_ && isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
-              }`}
+            className={`
+              overflow-hidden transition-all duration-400 ease-out mt-1
+              ${isExpanded_ && isExpanded ? 'opacity-100' : 'opacity-0 max-h-0'}
+            `}
+            style={{
+              maxHeight: isExpanded_ && isExpanded ? `${(item.children?.length || 0) * 44}px` : '0px',
+            }}
           >
-            {item.children?.map((child) => {
+            {item.children?.map((child, childIndex) => {
               const ChildIcon = child.icon;
               const childActive = isPathActive(child.path);
               const childEnabled = isFeatureEnabled(child.path);
               const isChildLocked = !childEnabled;
 
               const content = (
-                 <>
-                    {ChildIcon && (
-                      <ChildIcon
-                        size={16}
-                        className={`flex-shrink-0 ${childActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-caption)]'} ${isChildLocked ? 'opacity-50' : ''}`}
-                      />
-                    )}
-                    <span className={`text-sm whitespace-nowrap truncate flex-1 min-w-0 ${isChildLocked ? 'text-[var(--text-caption)]' : ''}`}>
-                      {child.label}
+                <>
+                  {/* Connecting line indicator */}
+                  <div className={`
+                    absolute left-[22px] top-0 bottom-0 w-px
+                    ${childActive ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}
+                    transition-colors duration-200
+                  `} />
+                  
+                  {/* Active dot indicator */}
+                  <div className={`
+                    absolute left-[19px] top-1/2 -translate-y-1/2 w-[7px] h-[7px] rounded-full
+                    transition-all duration-300
+                    ${childActive 
+                      ? 'bg-[var(--accent-primary)] scale-100 shadow-lg shadow-[var(--accent-primary)]/40' 
+                      : 'bg-[var(--border-default)] scale-75 group-hover:scale-100 group-hover:bg-[var(--text-caption)]'
+                    }
+                  `} />
+                  
+                  {ChildIcon && (
+                    <ChildIcon
+                      size={14}
+                      className={`
+                        flex-shrink-0 transition-all duration-200 ml-8
+                        ${childActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-caption)] group-hover:text-[var(--text-body)]'}
+                        ${isChildLocked ? 'opacity-40' : ''}
+                      `}
+                    />
+                  )}
+                  <span className={`
+                    text-[13px] whitespace-nowrap truncate flex-1 min-w-0 transition-colors duration-200
+                    ${childActive ? 'font-medium text-[var(--accent-primary)]' : ''}
+                    ${isChildLocked ? 'text-[var(--text-caption)]' : 'group-hover:text-[var(--text-headings)]'}
+                  `}>
+                    {child.label}
+                  </span>
+                  {isChildLocked && (
+                    <span className="ml-auto text-[9px] font-bold tracking-wider text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1.5 py-0.5 rounded-md shadow-sm flex-shrink-0 uppercase">
+                       Pro
                     </span>
-                    {isChildLocked && (
-                      <span className="ml-2 text-[10px] font-bold tracking-wide text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1.5 py-0.5 rounded shadow-sm flex-shrink-0">
-                         PRO
-                      </span>
-                    )}
-                 </>
+                  )}
+                </>
               );
 
               return (
-                <li key={child.path} title={isChildLocked ? "Contact sales to unlock" : ""}>
+                <li 
+                  key={child.path} 
+                  title={isChildLocked ? "Contact sales to unlock" : ""}
+                  className="relative"
+                  style={{ animationDelay: `${childIndex * 40}ms` }}
+                >
                    {isChildLocked ? (
-                      <div className="flex items-center gap-3 pl-10 pr-3 py-2 rounded-lg cursor-not-allowed opacity-80 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-2.5 pl-4 pr-3 py-2 rounded-lg cursor-not-allowed opacity-70 relative group">
                         {content}
                       </div>
                    ) : (
                       <Link
                         to={child.path}
-                        className={`flex items-center gap-3 pl-10 pr-3 py-2 rounded-lg transition-all duration-200 ${childActive
-                          ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-medium'
-                          : 'text-[var(--text-body)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-headings)]'
-                          }`}
+                        className={`
+                          flex items-center gap-2.5 pl-4 pr-3 py-2 rounded-lg relative group
+                          transition-all duration-200 ease-out
+                          ${childActive
+                            ? 'bg-[var(--accent-primary)]/8'
+                            : 'hover:bg-[var(--bg-secondary)]'
+                          }
+                        `}
                       >
                        {content}
                       </Link>
@@ -312,42 +385,78 @@ export const NewSidebar = () => {
 
     // Simple nav item without children (e.g. Measure)
     const content = (
-         <>
-            <div
-              className={`flex-shrink-0 relative z-10 transition-all duration-300 rounded-lg p-1.5 ${active
-                ? 'bg-[var(--accent-primary)] text-white'
-                : 'text-[var(--text-headings)] group-hover:bg-[var(--border-default)]'
-                } ${isLocked ? 'opacity-50' : ''}`}
-            >
-              <Icon size={20} className="transition-colors duration-300" />
-            </div>
+       <>
+          {/* Animated background glow */}
+          <div className={`
+            absolute inset-0 rounded-xl opacity-0 transition-opacity duration-300
+            bg-gradient-to-r from-[var(--accent-primary)]/5 to-[var(--accent-primary)]/10
+            ${isHovered && !active ? 'opacity-100' : ''}
+          `} />
+          
+          <div
+            className={`
+              sidebar-icon flex-shrink-0 relative z-10 rounded-xl p-2
+              transition-all duration-300 ease-out
+              ${active
+                ? 'bg-gradient-to-br from-[var(--accent-primary)] to-[#3da58a] text-white shadow-lg shadow-[var(--accent-primary)]/25'
+                : 'text-[var(--text-headings)] group-hover:bg-[var(--bg-secondary)] group-hover:text-[var(--accent-primary)]'
+              }
+              ${isLocked ? 'opacity-40' : ''}
+            `}
+          >
+            <Icon size={18} className="transition-transform duration-300 group-hover:scale-110" />
+          </div>
 
-            <span
-              className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out text-[var(--text-headings)] ${isExpanded
-                ? 'opacity-100 translate-x-0'
-                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-                } ${isLocked ? 'text-[var(--text-caption)]' : ''}`}
-            >
-              {item.label}
-            </span>
-             {isLocked && (
-                <span className={`text-[10px] font-bold tracking-wide text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1.5 py-0.5 rounded shadow-sm flex-shrink-0 transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'opacity-0'}`}>
-                   PRO
-                </span>
-             )}
-         </>
+          <span
+            className={`
+              whitespace-nowrap font-medium text-[13px] relative z-10
+              transition-all duration-300 ease-out
+              ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-headings)]'}
+              ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
+              ${isLocked ? 'text-[var(--text-caption)]' : ''}
+            `}
+          >
+            {item.label}
+          </span>
+           {isLocked && (
+              <span className={`
+                text-[9px] font-bold tracking-wider text-white 
+                bg-gradient-to-r from-violet-500 to-fuchsia-500 
+                px-1.5 py-0.5 rounded-md shadow-sm flex-shrink-0 uppercase
+                transition-opacity duration-300 relative z-10
+                ${isExpanded ? 'opacity-100' : 'opacity-0'}
+              `}>
+                 Pro
+              </span>
+           )}
+       </>
     );
 
     return (
-      <li key={item.id} title={isLocked ? "Contact sales to unlock" : ""}>
+      <li 
+        key={item.id} 
+        title={isLocked ? "Contact sales to unlock" : ""}
+        className="relative"
+        style={{ animationDelay: `${index * 30}ms` }}
+      >
         {isLocked ? (
-            <div className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-not-allowed group opacity-80 hover:bg-gray-50 transition-colors">
+            <div 
+              className="sidebar-item flex items-center gap-3 px-2.5 py-2.5 rounded-xl cursor-not-allowed group opacity-70 relative"
+              onMouseEnter={() => setHoveredItem(item.id)}
+              onMouseLeave={() => setHoveredItem(null)}
+            >
                {content}
             </div>
         ) : (
             <Link
               to={item.path!}
-              className="flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-300 ease-in-out relative overflow-hidden group hover:bg-[var(--bg-secondary)]"
+              className={`
+                sidebar-item flex items-center gap-3 px-2.5 py-2.5 rounded-xl
+                transition-all duration-200 ease-out relative overflow-hidden group
+                ${active ? 'sidebar-item-active' : ''}
+              `}
+              onMouseEnter={() => setHoveredItem(item.id)}
+              onMouseLeave={() => setHoveredItem(null)}
             >
               {content}
             </Link>
@@ -357,84 +466,230 @@ export const NewSidebar = () => {
   };
 
   return (
-    <div
-      ref={sidebarRef}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      className="fixed left-0 top-16 h-[calc(100vh-4rem)] bg-white border-r border-[var(--border-default)] flex flex-col shadow-sm z-50 transition-all duration-300 ease-in-out"
-      style={{ width: isExpanded ? '300px' : '72px' }}
-    >
-      <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden no-scrollbar">
-        <style>{`
-          .no-scrollbar::-webkit-scrollbar {
-            display: none;
+    <>
+      {/* Enhanced CSS styles */}
+      <style>{`
+        /* Hide scrollbar */
+        .sidebar-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .sidebar-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        
+        /* Smooth sidebar expansion with spring-like effect */
+        .sidebar-container {
+          transition: width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        /* Nav item base styles */
+        .sidebar-item {
+          position: relative;
+          backdrop-filter: blur(8px);
+        }
+        
+        /* Active item glow effect */
+        .sidebar-item-active::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 3px;
+          height: 60%;
+          background: linear-gradient(180deg, var(--accent-primary), #3da58a);
+          border-radius: 0 4px 4px 0;
+          box-shadow: 0 0 12px var(--accent-primary);
+        }
+        
+        /* Icon pulse animation on active */
+        .sidebar-item-active .sidebar-icon {
+          animation: iconPulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes iconPulse {
+          0%, 100% { box-shadow: 0 4px 15px rgba(77, 182, 172, 0.25); }
+          50% { box-shadow: 0 4px 20px rgba(77, 182, 172, 0.4); }
+        }
+        
+        /* Hover lift effect */
+        .sidebar-item:hover:not(.sidebar-item-active) {
+          transform: translateX(4px);
+        }
+        
+        /* User avatar gradient animation */
+        .user-avatar {
+          background: linear-gradient(135deg, var(--accent-primary), #3da58a, var(--accent-primary));
+          background-size: 200% 200%;
+          animation: gradientShift 4s ease infinite;
+        }
+        
+        @keyframes gradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        
+        /* Dropdown menu animation */
+        .dropdown-menu {
+          animation: dropdownSlide 0.2s ease-out;
+          transform-origin: bottom left;
+        }
+        
+        @keyframes dropdownSlide {
+          from {
+            opacity: 0;
+            transform: translateY(8px) scale(0.95);
           }
-          .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
           }
-        `}</style>
-        <ul className="space-y-0.5 px-3">
-          {navItems.map(renderNavItem)}
-          {(user?.role === 'AL_ADMIN' || user?.accessLevel === 'admin') && adminNavItems.map(renderNavItem)}
-        </ul>
-      </nav>
+        }
+        
+        /* Staggered fade-in for nav items */
+        .nav-item-enter {
+          animation: navItemEnter 0.3s ease-out forwards;
+        }
+        
+        @keyframes navItemEnter {
+          from {
+            opacity: 0;
+            transform: translateX(-8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+      `}</style>
 
-      <div className="border-t border-[var(--border-default)] p-3 space-y-1">
-        <Link
-          to="/settings"
-          className={`flex items-center gap-3 px-3 py-2 rounded-lg w-full transition-all duration-300 ease-in-out ${isPathActive('/settings') || location.pathname.startsWith('/settings')
-            ? 'bg-[var(--bg-secondary)] text-[var(--accent-primary)]'
-            : 'text-[var(--text-headings)] hover:bg-[var(--bg-secondary)]'
-            }`}
-        >
-          <div className="flex-shrink-0 relative z-10">
-            <IconSettings size={24} className="transition-colors duration-300" />
-          </div>
-          <span
-            className={`whitespace-nowrap font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${isExpanded
-              ? 'opacity-100 translate-x-0'
-              : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-              }`}
-          >
-            Settings
-          </span>
-        </Link>
+      <div
+        ref={sidebarRef}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        className="sidebar-container fixed left-0 top-16 h-[calc(100vh-4rem)] bg-white/95 backdrop-blur-xl border-r border-[var(--border-default)]/50 flex flex-col shadow-xl shadow-black/5 z-50"
+        style={{ width: isExpanded ? '260px' : '68px' }}
+      >
+        {/* Main navigation */}
+        <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden sidebar-scrollbar">
+          <ul className="space-y-1 px-2.5">
+            {navItems.map((item, index) => renderNavItem(item, index))}
+            {(user?.role === 'AL_ADMIN' || user?.accessLevel === 'admin') && (
+              <>
+                {/* Admin section divider */}
+                <li className={`
+                  py-3 transition-opacity duration-300
+                  ${isExpanded ? 'opacity-100' : 'opacity-0'}
+                `}>
+                  <div className="flex items-center gap-2 px-2">
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-caption)]">
+                      Admin
+                    </span>
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
+                  </div>
+                </li>
+                {adminNavItems.map((item, index) => renderNavItem(item, navItems.length + index))}
+              </>
+            )}
+          </ul>
+        </nav>
 
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out text-[var(--text-body)] hover:bg-[var(--bg-secondary)] min-w-0 overflow-hidden"
+        {/* Footer section with user info */}
+        <div className="border-t border-[var(--border-default)]/50 p-2.5 space-y-1 bg-gradient-to-t from-[var(--bg-secondary)]/30 to-transparent">
+          {/* Settings link */}
+          <Link
+            to="/settings"
+            className={`
+              sidebar-item flex items-center gap-3 px-2.5 py-2.5 rounded-xl w-full
+              transition-all duration-200 ease-out relative overflow-hidden group
+              ${isPathActive('/settings') || location.pathname.startsWith('/settings')
+                ? 'sidebar-item-active bg-[var(--accent-primary)]/8'
+                : 'hover:bg-[var(--bg-secondary)]'
+              }
+            `}
           >
-            <div className="flex-shrink-0 relative z-10">
-              <div className="w-6 h-6 rounded-full bg-[var(--accent-primary)] text-white flex items-center justify-center text-xs font-semibold">
-                {getInitials(user?.fullName || null, user?.email || '')}
-              </div>
+            <div className={`
+              flex-shrink-0 relative z-10 rounded-xl p-2 transition-all duration-300
+              ${isPathActive('/settings') || location.pathname.startsWith('/settings')
+                ? 'bg-gradient-to-br from-[var(--accent-primary)] to-[#3da58a] text-white shadow-lg shadow-[var(--accent-primary)]/25'
+                : 'text-[var(--text-headings)] group-hover:text-[var(--accent-primary)]'
+              }
+            `}>
+              <IconSettings size={18} className="transition-transform duration-300 group-hover:rotate-90" />
             </div>
             <span
-              className={`font-medium text-sm relative z-10 transition-all duration-300 ease-in-out ${isExpanded
-                ? 'opacity-100 translate-x-0 flex-1 min-w-0 truncate block'
-                : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-                }`}
-              title={user?.email || ''}
+              className={`
+                whitespace-nowrap font-medium text-[13px] relative z-10
+                transition-all duration-300 ease-out
+                ${isPathActive('/settings') ? 'text-[var(--accent-primary)]' : 'text-[var(--text-headings)]'}
+                ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 pointer-events-none'}
+              `}
             >
-              {user?.email}
+              Settings
             </span>
-          </button>
+          </Link>
 
-          {showUserMenu && (
-            <div className="absolute bottom-full left-0 mb-2 w-48 bg-white border border-[var(--border-default)] rounded-lg shadow-lg overflow-hidden z-50">
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2 px-4 py-3 text-sm text-[var(--text-body)] hover:bg-[var(--bg-secondary)] transition-colors"
-              >
-                <IconLogout size={18} />
-                <span>Sign Out</span>
-              </button>
-            </div>
-          )}
+          {/* User profile button */}
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className={`
+                flex items-center gap-3 px-2.5 py-2.5 rounded-xl w-full
+                transition-all duration-200 ease-out relative group
+                hover:bg-[var(--bg-secondary)]
+                ${showUserMenu ? 'bg-[var(--bg-secondary)]' : ''}
+              `}
+            >
+              {/* Avatar with gradient animation */}
+              <div className="user-avatar flex-shrink-0 w-8 h-8 rounded-xl text-white flex items-center justify-center text-xs font-bold shadow-md">
+                {getInitials(user?.fullName || null, user?.email || '')}
+              </div>
+              
+              {/* Email with truncation */}
+              <div className={`
+                flex-1 min-w-0 text-left transition-all duration-300 ease-out
+                ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
+              `}>
+                <p className="text-[13px] font-medium text-[var(--text-headings)] truncate">
+                  {user?.fullName || 'User'}
+                </p>
+                <p className="text-[11px] text-[var(--text-caption)] truncate">
+                  {user?.email}
+                </p>
+              </div>
+              
+              {/* Chevron indicator */}
+              <IconChevronDown 
+                size={14} 
+                className={`
+                  flex-shrink-0 text-[var(--text-caption)]
+                  transition-all duration-300 ease-out
+                  ${isExpanded ? 'opacity-100' : 'opacity-0 w-0'}
+                  ${showUserMenu ? 'rotate-180' : ''}
+                `}
+              />
+            </button>
+
+            {/* Dropdown menu */}
+            {showUserMenu && (
+              <div className="dropdown-menu absolute bottom-full left-2 right-2 mb-2 bg-white/95 backdrop-blur-xl border border-[var(--border-default)]/50 rounded-xl shadow-2xl shadow-black/10 overflow-hidden z-50">
+                <div className="p-1">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-600 hover:bg-red-50 transition-colors group"
+                  >
+                    <IconLogout size={16} className="transition-transform duration-200 group-hover:-translate-x-0.5" />
+                    <span className="font-medium">Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };

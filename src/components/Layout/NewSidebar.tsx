@@ -53,8 +53,8 @@ const navItems: NavItem[] = [
       { label: 'Topics', path: '/analyze/topics', icon: IconCategory },
       { label: 'Queries', path: '/analyze/queries', icon: IconMessageQuestion },
       { label: 'Queries & Answers', path: '/analyze/queries-answers', icon: IconMessages },
-      { label: 'Keywords', path: '/analyze/keywords', icon: IconKey },
-      { label: 'Sentiment Graph', path: '/analyze/keywords-graph', icon: IconKey },
+      // { label: 'Keywords', path: '/analyze/keywords', icon: IconKey },
+      // { label: 'Sentiment Graph', path: '/analyze/keywords-graph', icon: IconKey },
       { label: 'Domain Readiness', path: '/analyze/domain-readiness', icon: IconShieldCheck },
     ],
   },
@@ -128,13 +128,13 @@ export const NewSidebar = () => {
     if (item.path) return isPathActive(item.path);
     return isChildActive(item.children);
   };
-  
+
   // Helper to check if a feature is enabled
   const isFeatureEnabled = (path?: string) => {
     if (!path) return true;
     const feature = getFeatureForPath(path);
     if (!feature) return true;
-    
+
     // Default to true if entitlements are missing to avoid blocking by default
     return user?.settings?.entitlements?.features?.[feature] ?? true;
   };
@@ -215,14 +215,14 @@ export const NewSidebar = () => {
     const isExpanded_ = expandedSections.has(item.id);
     const active = isSectionActive(item);
     const isHovered = hoveredItem === item.id;
-    
+
     // Check main path if exists
     const enabled = isFeatureEnabled(item.path);
     const isLocked = !enabled;
 
     if (hasChildren) {
       return (
-        <li 
+        <li
           key={item.id}
           className="relative"
           style={{ animationDelay: `${index * 30}ms` }}
@@ -245,7 +245,7 @@ export const NewSidebar = () => {
               bg-gradient-to-r from-[var(--accent-primary)]/5 to-[var(--accent-primary)]/10
               ${isHovered ? 'opacity-100' : ''}
             `} />
-            
+
             {/* Icon container with enhanced styling */}
             <div
               className={`
@@ -279,12 +279,12 @@ export const NewSidebar = () => {
                 ${isExpanded ? 'opacity-100' : 'opacity-0 w-0'}
               `}
             >
-              <IconChevronDown 
-                size={14} 
+              <IconChevronDown
+                size={14}
                 className={`
                   text-[var(--text-caption)] transition-transform duration-300 ease-out
                   ${isExpanded_ ? 'rotate-0' : '-rotate-90'}
-                `} 
+                `}
               />
             </span>
           </button>
@@ -313,17 +313,17 @@ export const NewSidebar = () => {
                     ${childActive ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}
                     transition-colors duration-200
                   `} />
-                  
+
                   {/* Active dot indicator */}
                   <div className={`
                     absolute left-[19px] top-1/2 -translate-y-1/2 w-[7px] h-[7px] rounded-full
                     transition-all duration-300
-                    ${childActive 
-                      ? 'bg-[var(--accent-primary)] scale-100 shadow-lg shadow-[var(--accent-primary)]/40' 
+                    ${childActive
+                      ? 'bg-[var(--accent-primary)] scale-100 shadow-lg shadow-[var(--accent-primary)]/40'
                       : 'bg-[var(--border-default)] scale-75 group-hover:scale-100 group-hover:bg-[var(--text-caption)]'
                     }
                   `} />
-                  
+
                   {ChildIcon && (
                     <ChildIcon
                       size={14}
@@ -343,38 +343,38 @@ export const NewSidebar = () => {
                   </span>
                   {isChildLocked && (
                     <span className="ml-auto text-[9px] font-bold tracking-wider text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1.5 py-0.5 rounded-md shadow-sm flex-shrink-0 uppercase">
-                       Pro
+                      Pro
                     </span>
                   )}
                 </>
               );
 
               return (
-                <li 
-                  key={child.path} 
+                <li
+                  key={child.path}
                   title={isChildLocked ? "Contact sales to unlock" : ""}
                   className="relative"
                   style={{ animationDelay: `${childIndex * 40}ms` }}
                 >
-                   {isChildLocked ? (
-                      <div className="flex items-center gap-2.5 pl-4 pr-3 py-2 rounded-lg cursor-not-allowed opacity-70 relative group">
-                        {content}
-                      </div>
-                   ) : (
-                      <Link
-                        to={child.path}
-                        className={`
+                  {isChildLocked ? (
+                    <div className="flex items-center gap-2.5 pl-4 pr-3 py-2 rounded-lg cursor-not-allowed opacity-70 relative group">
+                      {content}
+                    </div>
+                  ) : (
+                    <Link
+                      to={child.path}
+                      className={`
                           flex items-center gap-2.5 pl-4 pr-3 py-2 rounded-lg relative group
                           transition-all duration-200 ease-out
                           ${childActive
-                            ? 'bg-[var(--accent-primary)]/8'
-                            : 'hover:bg-[var(--bg-secondary)]'
-                          }
+                          ? 'bg-[var(--accent-primary)]/8'
+                          : 'hover:bg-[var(--bg-secondary)]'
+                        }
                         `}
-                      >
-                       {content}
-                      </Link>
-                   )}
+                    >
+                      {content}
+                    </Link>
+                  )}
                 </li>
               );
             })}
@@ -385,81 +385,81 @@ export const NewSidebar = () => {
 
     // Simple nav item without children (e.g. Measure)
     const content = (
-       <>
-          {/* Animated background glow */}
-          <div className={`
+      <>
+        {/* Animated background glow */}
+        <div className={`
             absolute inset-0 rounded-xl opacity-0 transition-opacity duration-300
             bg-gradient-to-r from-[var(--accent-primary)]/5 to-[var(--accent-primary)]/10
             ${isHovered && !active ? 'opacity-100' : ''}
           `} />
-          
-          <div
-            className={`
+
+        <div
+          className={`
               sidebar-icon flex-shrink-0 relative z-10 rounded-xl p-2
               transition-all duration-300 ease-out
               ${active
-                ? 'bg-gradient-to-br from-[var(--accent-primary)] to-[#3da58a] text-white shadow-lg shadow-[var(--accent-primary)]/25'
-                : 'text-[var(--text-headings)] group-hover:bg-[var(--bg-secondary)] group-hover:text-[var(--accent-primary)]'
-              }
+              ? 'bg-gradient-to-br from-[var(--accent-primary)] to-[#3da58a] text-white shadow-lg shadow-[var(--accent-primary)]/25'
+              : 'text-[var(--text-headings)] group-hover:bg-[var(--bg-secondary)] group-hover:text-[var(--accent-primary)]'
+            }
               ${isLocked ? 'opacity-40' : ''}
             `}
-          >
-            <Icon size={18} className="transition-transform duration-300 group-hover:scale-110" />
-          </div>
+        >
+          <Icon size={18} className="transition-transform duration-300 group-hover:scale-110" />
+        </div>
 
-          <span
-            className={`
+        <span
+          className={`
               whitespace-nowrap font-medium text-[13px] relative z-10
               transition-all duration-300 ease-out
               ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-headings)]'}
               ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
               ${isLocked ? 'text-[var(--text-caption)]' : ''}
             `}
-          >
-            {item.label}
-          </span>
-           {isLocked && (
-              <span className={`
+        >
+          {item.label}
+        </span>
+        {isLocked && (
+          <span className={`
                 text-[9px] font-bold tracking-wider text-white 
                 bg-gradient-to-r from-violet-500 to-fuchsia-500 
                 px-1.5 py-0.5 rounded-md shadow-sm flex-shrink-0 uppercase
                 transition-opacity duration-300 relative z-10
                 ${isExpanded ? 'opacity-100' : 'opacity-0'}
               `}>
-                 Pro
-              </span>
-           )}
-       </>
+            Pro
+          </span>
+        )}
+      </>
     );
 
     return (
-      <li 
-        key={item.id} 
+      <li
+        key={item.id}
         title={isLocked ? "Contact sales to unlock" : ""}
         className="relative"
         style={{ animationDelay: `${index * 30}ms` }}
       >
         {isLocked ? (
-            <div 
-              className="sidebar-item flex items-center gap-3 px-2.5 py-2.5 rounded-xl cursor-not-allowed group opacity-70 relative"
-              onMouseEnter={() => setHoveredItem(item.id)}
-              onMouseLeave={() => setHoveredItem(null)}
-            >
-               {content}
-            </div>
+          <div
+            className="sidebar-item flex items-center gap-3 px-2.5 py-2.5 rounded-xl cursor-not-allowed group opacity-70 relative"
+            onMouseEnter={() => setHoveredItem(item.id)}
+            onMouseLeave={() => setHoveredItem(null)}
+          >
+            {content}
+          </div>
         ) : (
-            <Link
-              to={item.path!}
-              className={`
+          <Link
+            to={item.path!}
+            className={`
                 sidebar-item flex items-center gap-3 px-2.5 py-2.5 rounded-xl
                 transition-all duration-200 ease-out relative overflow-hidden group
                 ${active ? 'sidebar-item-active' : ''}
               `}
-              onMouseEnter={() => setHoveredItem(item.id)}
-              onMouseLeave={() => setHoveredItem(null)}
-            >
-              {content}
-            </Link>
+            onMouseEnter={() => setHoveredItem(item.id)}
+            onMouseLeave={() => setHoveredItem(null)}
+          >
+            {content}
+          </Link>
         )}
       </li>
     );
@@ -607,7 +607,7 @@ export const NewSidebar = () => {
               <div className="user-avatar flex-shrink-0 w-7 h-7 rounded-lg text-white flex items-center justify-center text-[11px] font-semibold shadow-sm">
                 {getInitials(user?.fullName || null, user?.email || '')}
               </div>
-              
+
               {/* Email with truncation */}
               <div className={`
                 flex-1 min-w-0 text-left transition-all duration-300 ease-out
@@ -620,10 +620,10 @@ export const NewSidebar = () => {
                   {user?.email}
                 </p>
               </div>
-              
+
               {/* Chevron indicator */}
-              <IconChevronDown 
-                size={14} 
+              <IconChevronDown
+                size={14}
                 className={`
                   flex-shrink-0 text-[var(--text-caption)]
                   transition-all duration-300 ease-out

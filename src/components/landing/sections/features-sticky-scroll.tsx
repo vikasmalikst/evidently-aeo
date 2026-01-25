@@ -106,7 +106,7 @@ export function FeaturesStickyScroll() {
                   <img
                     src={feature.image}
                     alt={feature.title}
-                    className="w-full h-full object-contain object-left-top"
+                    className="w-full h-full object-cover object-left-top"
                     width="800"
                     height="500"
                     loading="lazy"

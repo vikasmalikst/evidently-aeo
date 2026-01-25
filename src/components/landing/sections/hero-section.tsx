@@ -33,6 +33,9 @@ export function HeroSection() {
 
   return (
     <section className="relative pt-32 pb-40 lg:pt-48 lg:pb-48 overflow-hidden flex flex-col items-center justify-center min-h-[90vh]">
+      {/* Top Gradient Strip - Vryse inspired */}
+      <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-cyan-100/60 via-cyan-50/40 to-transparent dark:from-cyan-950/30 dark:via-cyan-900/20 dark:to-transparent pointer-events-none z-0" />
+      
       <HeroBackground />
 
       {/* Ambient Glow Effects */}

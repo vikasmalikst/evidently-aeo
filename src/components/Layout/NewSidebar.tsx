@@ -465,6 +465,19 @@ export const NewSidebar = () => {
     );
   };
 
+  // Combine all nav items in order
+  const allNavItems = [
+    ...navItems,
+    ...(user?.role === 'AL_ADMIN' || user?.accessLevel === 'admin' ? adminNavItems : []),
+    // Add Settings as a regular nav item
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: IconSettings,
+      path: '/settings',
+    },
+  ];
+
   return (
     <>
       {/* Enhanced CSS styles */}
@@ -518,17 +531,15 @@ export const NewSidebar = () => {
           transform: translateX(4px);
         }
         
-        /* User avatar gradient animation */
+        /* User avatar subtle styling */
         .user-avatar {
-          background: linear-gradient(135deg, var(--accent-primary), #3da58a, var(--accent-primary));
-          background-size: 200% 200%;
-          animation: gradientShift 4s ease infinite;
+          background: linear-gradient(135deg, #64748b, #475569);
+          transition: all 0.3s ease;
         }
         
-        @keyframes gradientShift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
+        .user-avatar:hover {
+          background: linear-gradient(135deg, #475569, #334155);
+          transform: scale(1.05);
         }
         
         /* Dropdown menu animation */
@@ -575,76 +586,25 @@ export const NewSidebar = () => {
         {/* Main navigation */}
         <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden sidebar-scrollbar">
           <ul className="space-y-1 px-2.5">
-            {navItems.map((item, index) => renderNavItem(item, index))}
-            {(user?.role === 'AL_ADMIN' || user?.accessLevel === 'admin') && (
-              <>
-                {/* Admin section divider */}
-                <li className={`
-                  py-3 transition-opacity duration-300
-                  ${isExpanded ? 'opacity-100' : 'opacity-0'}
-                `}>
-                  <div className="flex items-center gap-2 px-2">
-                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-caption)]">
-                      Admin
-                    </span>
-                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
-                  </div>
-                </li>
-                {adminNavItems.map((item, index) => renderNavItem(item, navItems.length + index))}
-              </>
-            )}
+            {allNavItems.map((item, index) => renderNavItem(item, index))}
           </ul>
         </nav>
 
-        {/* Footer section with user info */}
-        <div className="border-t border-[var(--border-default)]/50 p-2.5 space-y-1 bg-gradient-to-t from-[var(--bg-secondary)]/30 to-transparent">
-          {/* Settings link */}
-          <Link
-            to="/settings"
-            className={`
-              sidebar-item flex items-center gap-3 px-2.5 py-2.5 rounded-xl w-full
-              transition-all duration-200 ease-out relative overflow-hidden group
-              ${isPathActive('/settings') || location.pathname.startsWith('/settings')
-                ? 'sidebar-item-active bg-[var(--accent-primary)]/8'
-                : 'hover:bg-[var(--bg-secondary)]'
-              }
-            `}
-          >
-            <div className={`
-              flex-shrink-0 relative z-10 rounded-xl p-2 transition-all duration-300
-              ${isPathActive('/settings') || location.pathname.startsWith('/settings')
-                ? 'bg-gradient-to-br from-[var(--accent-primary)] to-[#3da58a] text-white shadow-lg shadow-[var(--accent-primary)]/25'
-                : 'text-[var(--text-headings)] group-hover:text-[var(--accent-primary)]'
-              }
-            `}>
-              <IconSettings size={18} className="transition-transform duration-300 group-hover:rotate-90" />
-            </div>
-            <span
-              className={`
-                whitespace-nowrap font-medium text-[13px] relative z-10
-                transition-all duration-300 ease-out
-                ${isPathActive('/settings') ? 'text-[var(--accent-primary)]' : 'text-[var(--text-headings)]'}
-                ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 pointer-events-none'}
-              `}
-            >
-              Settings
-            </span>
-          </Link>
-
+        {/* Footer section with user info only */}
+        <div className="border-t border-[var(--border-default)]/50 p-2.5 bg-gradient-to-t from-[var(--bg-secondary)]/30 to-transparent">
           {/* User profile button */}
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
               className={`
-                flex items-center gap-3 px-2.5 py-2.5 rounded-xl w-full
+                flex items-center gap-2.5 px-2 py-2 rounded-xl w-full
                 transition-all duration-200 ease-out relative group
                 hover:bg-[var(--bg-secondary)]
                 ${showUserMenu ? 'bg-[var(--bg-secondary)]' : ''}
               `}
             >
-              {/* Avatar with gradient animation */}
-              <div className="user-avatar flex-shrink-0 w-8 h-8 rounded-xl text-white flex items-center justify-center text-xs font-bold shadow-md">
+              {/* Avatar with subtle gray gradient */}
+              <div className="user-avatar flex-shrink-0 w-7 h-7 rounded-lg text-white flex items-center justify-center text-[11px] font-semibold shadow-sm">
                 {getInitials(user?.fullName || null, user?.email || '')}
               </div>
               
@@ -653,10 +613,10 @@ export const NewSidebar = () => {
                 flex-1 min-w-0 text-left transition-all duration-300 ease-out
                 ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 w-0 pointer-events-none'}
               `}>
-                <p className="text-[13px] font-medium text-[var(--text-headings)] truncate">
+                <p className="text-[12px] font-medium text-[var(--text-headings)] truncate">
                   {user?.fullName || 'User'}
                 </p>
-                <p className="text-[11px] text-[var(--text-caption)] truncate">
+                <p className="text-[10px] text-[var(--text-caption)] truncate">
                   {user?.email}
                 </p>
               </div>

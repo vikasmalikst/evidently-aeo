@@ -1115,11 +1115,10 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
     }
 
     // Fetch counts and statuses in parallel
-    // IMPORTANT: Count unique query_ids, not total collector_results
+    // IMPORTANT: Fetch ALL collector results to accurately determine if queries are complete
     const [
       { count: totalQueries, error: totalError },
-      { data: collectedResults, error: collectedError },
-      { data: scoredResults, error: scoredError },
+      { data: allCollectorResults, error: collectorResultsError },
       { data: readinessAudits, error: readinessError },
       { data: recommendations, error: recommendationsError }
     ] = await Promise.all([
@@ -1128,19 +1127,12 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         .select('id', { count: 'exact', head: true })
         .eq('brand_id', brandId)
         .eq('customer_id', customerId),
+      // Fetch ALL collector results to check for pending/processing items
       supabaseAdmin
         .from('collector_results')
-        .select('query_id')
+        .select('query_id, status, scoring_status')
         .eq('brand_id', brandId)
         .eq('customer_id', customerId)
-        .eq('status', 'completed')
-        .not('query_id', 'is', null),
-      supabaseAdmin
-        .from('collector_results')
-        .select('query_id')
-        .eq('brand_id', brandId)
-        .eq('customer_id', customerId)
-        .eq('scoring_status', 'completed')
         .not('query_id', 'is', null),
       // Check for most recent domain readiness audit
       supabaseAdmin
@@ -1158,43 +1150,57 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         .limit(1)
     ]);
 
-    if (totalError || collectedError || scoredError || readinessError || recommendationsError) {
+    if (totalError || collectorResultsError || readinessError || recommendationsError) {
       console.error('Error fetching onboarding progress counts:', {
         totalError,
-        collectedError,
-        scoredError,
-        readinessError, // Log new errors
+        collectorResultsError,
+        readinessError,
         recommendationsError,
         brandId,
         customerId,
       });
       res.status(500).json({
         success: false,
-        error: 'Failed to fetch progress details', // Generic message
+        error: 'Failed to fetch progress details',
       });
       return;
     }
 
     // Handle null/undefined data arrays
-    const collectedData = collectedResults || [];
-    const scoredData = scoredResults || [];
-
+    const results = allCollectorResults || [];
     const total = totalQueries || 0;
 
-    // Count unique query_ids (not total collector_results)
-    const uniqueCollectedQueryIds = new Set(
-      collectedData
-        .map((r: any) => r.query_id)
-        .filter((id: any) => id != null)
-    );
-    const collected = uniqueCollectedQueryIds.size;
+    // Aggregate results by query_id to find truly complete queries
+    // A query is "collected" only if it has results AND none are pending/processing/running
+    // A query is "scored" only if collected AND all completed results are scored
+    const queryStates = new Map<string, { hasPending: boolean; hasUnscored: boolean; hasResults: boolean }>();
 
-    const uniqueScoredQueryIds = new Set(
-      scoredData
-        .map((r: any) => r.query_id)
-        .filter((id: any) => id != null)
-    );
-    const scored = uniqueScoredQueryIds.size;
+    results.forEach((r: any) => {
+      const queryId = r.query_id;
+      if (!queryId) return;
+
+      const isPending = ['pending', 'running', 'processing', 'failed_retry'].includes(r.status);
+      const isCompleted = r.status === 'completed';
+      const isUnscored = isCompleted && r.scoring_status !== 'completed';
+
+      const current = queryStates.get(queryId) || { hasPending: false, hasUnscored: false, hasResults: false };
+      current.hasResults = true;
+      if (isPending) current.hasPending = true;
+      if (isUnscored) current.hasUnscored = true;
+      queryStates.set(queryId, current);
+    });
+
+    // Count queries where ALL collectors have finished (no pending)
+    let collected = 0;
+    let scored = 0;
+    queryStates.forEach((state) => {
+      if (state.hasResults && !state.hasPending) {
+        collected++;
+        if (!state.hasUnscored) {
+          scored++;
+        }
+      }
+    });
 
     // Determine Stage Statuses
     let collectionStatus: 'pending' | 'active' | 'completed' = 'pending';

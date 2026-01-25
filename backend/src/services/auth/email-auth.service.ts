@@ -166,7 +166,9 @@ export class EmailAuthService {
         role: null,
         avatar_url: null,
         provider: 'email',
-        customer_id: newCustomer.id
+        customer_id: newCustomer.id,
+        access_level: newCustomer.access_level || 'user', // Include access_level for admin menu visibility
+        settings: newCustomer.settings // Include settings with entitlements
       };
 
       return {
@@ -368,7 +370,9 @@ export class EmailAuthService {
         role: null,
         avatar_url: null,
         provider: 'email',
-        customer_id: customer.id
+        customer_id: customer.id,
+        access_level: customer.access_level || 'user', // Include access_level for admin menu visibility
+        settings: customer.settings // Include settings with entitlements
       };
 
       return {

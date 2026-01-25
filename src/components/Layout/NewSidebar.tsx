@@ -404,7 +404,7 @@ export const NewSidebar = () => {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-3 px-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out text-[var(--text-body)] hover:bg-[var(--bg-secondary)] min-w-0 overflow-hidden"
+            className="flex items-center gap-3 py-3 rounded-lg w-full transition-all duration-300 ease-in-out text-[var(--text-body)] hover:bg-[var(--bg-secondary)] min-w-0 overflow-hidden"
           >
             <div className="flex-shrink-0 relative z-10">
               <div className="w-6 h-6 rounded-full bg-[var(--accent-primary)] text-white flex items-center justify-center text-xs font-semibold">

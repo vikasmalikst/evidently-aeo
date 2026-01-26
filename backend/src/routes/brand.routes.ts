@@ -1224,7 +1224,9 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
 
     // Note: totalWithResults is count of queries that have at least one result row
     const collected = totalWithResults - pendingQueryIds.size;
-    const scored = collected - unscoredQueryIds.size;
+    // Filter out unscored queries that are also pending (because they are already excluded from 'collected')
+    const relevantUnscoredCount = [...unscoredQueryIds].filter(id => !pendingQueryIds.has(id)).length;
+    const scored = collected - relevantUnscoredCount;
 
     // Determine Stage Statuses
     let collectionStatus: 'pending' | 'active' | 'completed' = 'pending';

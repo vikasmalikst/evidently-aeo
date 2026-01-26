@@ -122,9 +122,10 @@ export function Navigation() {
                 <Button 
                 size="sm" 
                 onClick={() => setShowDemoModal(true)}
-                className="bg-cyan-500 text-white hover:bg-cyan-600 font-bold rounded-full px-5 py-1.5 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 transition-all hover:-translate-y-0.5 h-9 text-sm"
+                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-full px-6 py-2 shadow-[0_2px_15px_-3px_rgba(6,182,212,0.4)] hover:shadow-[0_8px_25px_-5px_rgba(6,182,212,0.6)] transition-all hover:-translate-y-0.5 h-10 text-sm border-t border-white/20 relative overflow-hidden group"
                 >
-                Get a Demo
+                <div className="absolute inset-0 bg-white/20 group-hover:bg-transparent transition-colors" />
+                <span className="relative z-10">Get a Demo</span>
                 </Button>
             </div>
 

@@ -920,7 +920,13 @@ export class SourceAttributionService {
         .gte('created_at', startIso)
         .lte('created_at', endIso)
 
-      const totalResponsesCount = totalResponses || 1 // Avoid division by zero
+      // Fix for Mention % > 100%:
+      // Ensure denominator (totalResponses) encompasses all collector results referenced by citations in this period.
+      // Sometimes timestamps differ slightly, causing a citation to be included but its parent result to be excluded from the strict date range count.
+      const uniqueCitationCollectorIdsCount = collectorResultIds.length
+      const totalResponsesCount = Math.max(totalResponses || 0, uniqueCitationCollectorIdsCount) || 1
+
+      console.log(`[SourceAttribution] Total responses adjusted: DB=${totalResponses || 0}, Citations=${uniqueCitationCollectorIdsCount}, Final=${totalResponsesCount}`);
       stepTimings['total_responses'] = Date.now() - totalResponsesStartTime;
 
       // Step 12: Convert aggregates to source data

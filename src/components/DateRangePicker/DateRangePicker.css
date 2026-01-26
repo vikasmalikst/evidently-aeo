@@ -1,35 +1,97 @@
-/* Custom styles for react-day-picker to match design system */
+/* 
+ * Custom styles for DateRangePicker.
+ * Overriding react-day-picker default styles to match the application's Cyan theme.
+ */
+
+:root {
+    --rdp-cell-size: 36px;
+    --rdp-accent-color: #00bcdc;
+    --rdp-background-color: rgba(0, 188, 220, 0.1);
+}
+
 .rdp {
-  --rdp-cell-size: 36px;
-  --rdp-accent-color: #00bcdc;
-  --rdp-background-color: rgba(0, 188, 220, 0.1);
-  --rdp-outline: 2px solid #00bcdc;
-  --rdp-outline-selected: 2px solid #00bcdc;
-  font-size: 13px;
+    --rdp-accent-color: #00bcdc;
+    /* Cyan */
+    margin: 0;
 }
 
-.rdp-day {
-  font-size: 13px;
-  width: 36px;
-  height: 36px;
-}
-
-.rdp-day_selected,
-.rdp-day_range_start,
-.rdp-day_range_end {
-  background-color: #00bcdc !important;
-  color: white !important;
+.rdp-day_selected:not([disabled]),
+.rdp-day_selected:focus:not([disabled]),
+.rdp-day_selected:active:not([disabled]),
+.rdp-day_selected:hover:not([disabled]) {
+    background-color: #00bcdc;
+    color: white;
+    font-weight: bold;
 }
 
 .rdp-day_range_middle {
-  background-color: rgba(0, 188, 220, 0.1);
+    background-color: rgba(0, 188, 220, 0.1) !important;
+    color: inherit !important;
+}
+
+/* Ensure start and end of range are solid cyan */
+.rdp-day_range_start,
+.rdp-day_range_end {
+    background-color: #00bcdc !important;
+    color: white !important;
+    border-radius: 100% !important;
+    /* Make dots round as per typical design */
 }
 
 .rdp-day_today {
-  border: 1px solid #00bcdc;
+    font-weight: bold;
+    border: 1px solid #00bcdc;
 }
 
-.rdp-day:hover:not(.rdp-day_disabled):not(.rdp-day_selected) {
-  background-color: rgba(0, 188, 220, 0.1);
+.rdp-button:hover:not([disabled]):not(.rdp-day_selected) {
+    background-color: rgba(0, 188, 220, 0.1);
+    color: #00bcdc;
 }
 
+/* Fix for day size to ensure round selection */
+.rdp-day {
+    width: 36px;
+    height: 36px;
+    font-size: 13px;
+}
+
+/* Slider Container Styling */
+.custom-rdp-slider-container {
+    border-top: 1px solid #f1f5f9;
+    background-color: #f8fafc;
+}
+
+/* Apply/Cancel Button Styling */
+.rdp-footer-btn {
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.rdp-apply-btn {
+    background-color: #00bcdc;
+    color: white;
+    border: none;
+    box-shadow: 0 4px 6px -1px rgba(0, 188, 220, 0.2), 0 2px 4px -1px rgba(0, 188, 220, 0.1);
+}
+
+.rdp-apply-btn:hover {
+    background-color: #00a5c4;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 15px -3px rgba(0, 188, 220, 0.3);
+}
+
+.rdp-apply-btn:active {
+    transform: translateY(0);
+}
+
+.rdp-cancel-btn {
+    background: transparent;
+    color: #64748b;
+    border: none;
+}
+
+.rdp-cancel-btn:hover {
+    color: #1e293b;
+    background-color: #f1f5f9;
+}

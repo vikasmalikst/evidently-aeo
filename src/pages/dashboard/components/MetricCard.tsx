@@ -123,6 +123,19 @@ export const MetricCard = ({
 
       <div className="flex items-end gap-2 mb-2">
         <div className="text-3xl font-extrabold text-slate-900 leading-none tracking-tight">{value}</div>
+        {(() => {
+          const numValue = typeof value === 'number' ? value : parseFloat(value.toString());
+          if (!isNaN(numValue) && metricType) {
+             const { background } = getVisualStyles(numValue, metricType);
+             return (
+               <div 
+                 className="w-3 h-3 rounded-full mb-1.5 shadow-sm" 
+                 style={{ background }}
+               />
+             );
+          }
+          return null;
+        })()}
         {trend.direction !== 'stable' && (
           <div
             className={`flex items-center gap-0.5 text-[12px] font-bold pb-1 px-1.5 py-0.5 rounded-full ${
@@ -167,8 +180,6 @@ export const MetricCard = ({
                 width = maxComparisonValue > 0 ? (item.value / maxComparisonValue) * 100 : 0;
               }
 
-              const { background: dotBackground } = getVisualStyles(item.value, metricType);
-              
               return (
                 <div key={item.label} className="flex flex-col gap-1.5 w-full group/item">
                   <div className="flex items-center justify-between text-[13px]">
@@ -180,16 +191,9 @@ export const MetricCard = ({
                         {item.label}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                       {/* Heatmap Dot */}
-                      <div 
-                        className="w-2 h-2 rounded-full shadow-sm"
-                        style={{ background: dotBackground }}
-                      />
-                      <span className={`font-bold tabular-nums ${item.isBrand ? 'text-slate-900' : 'text-slate-700'}`}>
-                        {item.value.toFixed(1).replace(/\.0$/, '')}{comparisonSuffix}
-                      </span>
-                    </div>
+                    <span className={`font-bold tabular-nums ${item.isBrand ? 'text-slate-900' : 'text-slate-700'}`}>
+                      {item.value.toFixed(1).replace(/\.0$/, '')}{comparisonSuffix}
+                    </span>
                   </div>
                   
                   {/* Heatmap Bar Container */}

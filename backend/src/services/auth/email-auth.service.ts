@@ -4,6 +4,7 @@ import { User, UserProfile, Customer, AuthResponse, DatabaseError, AuthError } f
 import { v4 as uuidv4 } from 'uuid';
 import { otpService } from './otp.service';
 import { emailService } from '../email/email.service';
+import { customerEntitlementsService } from '../customer-entitlements.service';
 
 export interface EmailAuthRequest {
   email: string;
@@ -123,6 +124,17 @@ export class EmailAuthService {
         throw new DatabaseError(`Failed to create customer: ${customerError?.message || 'Unknown error'}`);
       }
 
+      // Assign default entitlements to the new customer
+      console.log('Assigning default entitlements to new customer:', customerId);
+      try {
+        await customerEntitlementsService.createCustomerEntitlements(customerId);
+        console.log('✅ Default entitlements assigned successfully');
+      } catch (entitlementError) {
+        console.error('⚠️ Warning: Failed to assign default entitlements:', entitlementError);
+        // Don't fail registration if entitlements assignment fails
+        // The user can still log in and entitlements will be backfilled on next login
+      }
+
       // Generate tokens using customer ID (using customer as main hierarchy)
       const accessToken = generateToken({
         sub: newCustomer.id,
@@ -154,7 +166,9 @@ export class EmailAuthService {
         role: null,
         avatar_url: null,
         provider: 'email',
-        customer_id: newCustomer.id
+        customer_id: newCustomer.id,
+        access_level: newCustomer.access_level || 'user', // Include access_level for admin menu visibility
+        settings: newCustomer.settings // Include settings with entitlements
       };
 
       return {
@@ -302,6 +316,29 @@ export class EmailAuthService {
         throw new DatabaseError(`Customer not found: ${customerError?.message || 'Unknown error'}`);
       }
 
+      // Check if customer has entitlements, if not, assign default ones (backfill for existing users)
+      if (!customer.settings?.entitlements) {
+        console.log('Customer missing entitlements, assigning defaults:', customer.id);
+        try {
+          await customerEntitlementsService.createCustomerEntitlements(customer.id);
+          console.log('✅ Default entitlements backfilled successfully');
+
+          // Refresh customer data to include newly assigned entitlements
+          const { data: refreshedCustomer } = await supabaseAdmin
+            .from('customers')
+            .select('*')
+            .eq('id', customer.id)
+            .single();
+
+          if (refreshedCustomer) {
+            Object.assign(customer, refreshedCustomer);
+          }
+        } catch (entitlementError) {
+          console.error('⚠️ Warning: Failed to backfill entitlements:', entitlementError);
+          // Continue with login even if entitlements backfill fails
+        }
+      }
+
       // Generate tokens using customer ID
       const accessToken = generateToken({
         sub: customer.id,
@@ -333,7 +370,9 @@ export class EmailAuthService {
         role: null,
         avatar_url: null,
         provider: 'email',
-        customer_id: customer.id
+        customer_id: customer.id,
+        access_level: customer.access_level || 'user', // Include access_level for admin menu visibility
+        settings: customer.settings // Include settings with entitlements
       };
 
       return {

@@ -41,7 +41,7 @@ export async function buildDashboardPayload(
   brand: BrandRow,
   customerId: string,
   range: NormalizedDashboardRange,
-  options: { collectors?: string[]; timezoneOffset?: number } = {}
+  options: { collectors?: string[]; timezoneOffset?: number; skipCitations?: boolean } = {}
 ): Promise<BrandDashboardPayload> {
   const requestStart = Date.now()
   let lastMark = requestStart
@@ -127,26 +127,47 @@ export async function buildDashboardPayload(
 
       const metricFactIds = metricFacts.map(mf => mf.id)
 
-      // Smaller chunks to avoid 502 Bad Gateway on large datasets with many competitors
-      const chunkSize = 100
+      // Reduced chunk size to avoid 502 errors with large competitor_metrics joins
+      // Competitor_metrics can have multiple rows per metric_fact_id, causing large result sets
+      const chunkSize = 200
       const brandMetricsRows: any[] = []
       const competitorMetricsRows: any[] = []
       const brandSentimentRows: any[] = []
       const competitorSentimentRows: any[] = []
 
       const fetchChunkWithRetry = async <T>(
-        run: () => PromiseLike<{ data: T[] | null; error: any }>
+        run: () => PromiseLike<{ data: T[] | null; error: any }>,
+        chunkInfo?: string
       ): Promise<{ data: T[]; error: unknown | null }> => {
-        const maxAttempts = 3
+        const maxAttempts = 5 // Increased from 3 to 5
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
           const result = await run()
           if (!result.error) {
             return { data: result.data ?? [], error: null }
           }
-          if (!isRetryable(result.error) || attempt === maxAttempts) {
+          
+          // Check if error is retryable (502, 503, 504, timeout, etc.)
+          const isRetryableError = isRetryable(result.error) || 
+            (result.error && typeof result.error === 'object' && 'message' in result.error &&
+             (String(result.error.message).includes('502') ||
+              String(result.error.message).includes('503') ||
+              String(result.error.message).includes('504') ||
+              String(result.error.message).includes('timeout') ||
+              String(result.error.message).includes('Bad Gateway')))
+          
+          if (!isRetryableError || attempt === maxAttempts) {
+            if (chunkInfo && attempt === maxAttempts) {
+              console.error(`[Dashboard] Failed to fetch chunk after ${maxAttempts} attempts: ${chunkInfo}`, result.error)
+            }
+            // Don't return empty data on final failure - this causes data loss
+            // Instead, return the error so caller can handle it
             return { data: [], error: result.error }
           }
-          await sleep(250 * Math.pow(2, attempt - 1))
+          
+          // Exponential backoff with jitter
+          const baseDelay = 250 * Math.pow(2, attempt - 1)
+          const jitter = Math.random() * 100
+          await sleep(baseDelay + jitter)
         }
         return { data: [], error: null }
       }
@@ -158,19 +179,24 @@ export async function buildDashboardPayload(
       }
 
       // Helper to fetch all 4 tables for a single chunk
-      const fetchChunkData = async (chunk: string[]) => {
+      const fetchChunkData = async (chunk: string[], chunkIndex: number, totalChunks: number) => {
+        const chunkInfo = `chunk ${chunkIndex + 1}/${totalChunks} (${chunk.length} metric_facts)`
         const [
           brandMetricsResult,
           competitorMetricsResult,
           brandSentimentResult,
           competitorSentimentResult,
         ] = await Promise.all([
-          fetchChunkWithRetry(() => supabaseAdmin.from('brand_metrics').select('*').in('metric_fact_id', chunk)),
-          fetchChunkWithRetry(() =>
-            supabaseAdmin
-              .from('competitor_metrics')
-              .select(
-                `
+          fetchChunkWithRetry(
+            () => supabaseAdmin.from('brand_metrics').select('*').in('metric_fact_id', chunk),
+            `brand_metrics ${chunkInfo}`
+          ),
+          fetchChunkWithRetry(
+            () =>
+              supabaseAdmin
+                .from('competitor_metrics')
+                .select(
+                  `
               metric_fact_id,
               competitor_id,
               visibility_index,
@@ -179,34 +205,42 @@ export async function buildDashboardPayload(
               competitor_mentions,
               brand_competitors!inner(competitor_name)
             `
-              )
-              .in('metric_fact_id', chunk)
+                )
+                .in('metric_fact_id', chunk),
+            `competitor_metrics ${chunkInfo}`
           ),
-          fetchChunkWithRetry(() => supabaseAdmin.from('brand_sentiment').select('*').in('metric_fact_id', chunk)),
-          fetchChunkWithRetry(() =>
-            supabaseAdmin
-              .from('competitor_sentiment')
-              .select(
-                `
+          fetchChunkWithRetry(
+            () => supabaseAdmin.from('brand_sentiment').select('*').in('metric_fact_id', chunk),
+            `brand_sentiment ${chunkInfo}`
+          ),
+          fetchChunkWithRetry(
+            () =>
+              supabaseAdmin
+                .from('competitor_sentiment')
+                .select(
+                  `
               *,
               brand_competitors!inner(competitor_name)
             `
-              )
-              .in('metric_fact_id', chunk)
+                )
+                .in('metric_fact_id', chunk),
+            `competitor_sentiment ${chunkInfo}`
           ),
         ])
 
         if (brandMetricsResult.error) {
-          console.error('[Dashboard] Error fetching brand_metrics:', brandMetricsResult.error)
+          console.error(`[Dashboard] Error fetching brand_metrics ${chunkInfo}:`, brandMetricsResult.error)
         }
         if (competitorMetricsResult.error) {
-          console.error('[Dashboard] Error fetching competitor_metrics:', competitorMetricsResult.error)
+          console.error(`[Dashboard] Error fetching competitor_metrics ${chunkInfo}:`, competitorMetricsResult.error)
+          // This is critical - competitor data loss affects UI
+          console.warn(`[Dashboard] ⚠️ Missing competitor data for ${chunk.length} metric_facts in ${chunkInfo}`)
         }
         if (brandSentimentResult.error) {
-          console.error('[Dashboard] Error fetching brand_sentiment:', brandSentimentResult.error)
+          console.error(`[Dashboard] Error fetching brand_sentiment ${chunkInfo}:`, brandSentimentResult.error)
         }
         if (competitorSentimentResult.error) {
-          console.error('[Dashboard] Error fetching competitor_sentiment:', competitorSentimentResult.error)
+          console.error(`[Dashboard] Error fetching competitor_sentiment ${chunkInfo}:`, competitorSentimentResult.error)
         }
 
         return {
@@ -217,8 +251,23 @@ export async function buildDashboardPayload(
         }
       }
 
-      // Execute ALL chunks in parallel (no sequential waiting between chunks)
-      const chunkResults = await Promise.all(chunks.map(fetchChunkData))
+      // Execute chunks with limited concurrency to avoid overwhelming the database
+      // Process 3 chunks at a time instead of all at once
+      const concurrency = 3
+      const chunkResults: Array<{
+        brandMetrics: any[]
+        competitorMetrics: any[]
+        brandSentiment: any[]
+        competitorSentiment: any[]
+      }> = []
+      
+      for (let i = 0; i < chunks.length; i += concurrency) {
+        const batch = chunks.slice(i, i + concurrency)
+        const batchResults = await Promise.all(
+          batch.map((chunk, batchIndex) => fetchChunkData(chunk, i + batchIndex, chunks.length))
+        )
+        chunkResults.push(...batchResults)
+      }
 
       // Merge results from all chunks
       for (const result of chunkResults) {
@@ -337,41 +386,90 @@ export async function buildDashboardPayload(
     }
   }
 
+  // Helper function to extract date from timestamp (defined early for use in positionsPromise)
+  const extractDateForCoverage = (timestamp: string | null): string | null => {
+    if (!timestamp) return null
+    try {
+      const date = new Date(timestamp)
+      if (isNaN(date.getTime())) return null
+      const offsetMs = (options.timezoneOffset || 0) * 60 * 1000
+      const localDate = new Date(date.getTime() - offsetMs)
+      const year = localDate.getUTCFullYear()
+      const month = String(localDate.getUTCMonth() + 1).padStart(2, '0')
+      const day = String(localDate.getUTCDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    } catch {
+      return null
+    }
+  }
+
+  // Calculate expected date range length (for coverage check)
+  const calculateExpectedDays = (start: string, end: string): number => {
+    try {
+      const startDate = new Date(start)
+      const endDate = new Date(end)
+      const diffMs = endDate.getTime() - startDate.getTime()
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1 // +1 for inclusive range
+      return Math.max(1, diffDays) // At least 1 day
+    } catch {
+      return 1
+    }
+  }
+
+  const expectedDays = calculateExpectedDays(startIsoBound, endIsoBound)
+
   const positionsPromise = (async () => {
-    // Try created_at first (preferred)
+    // Always use created_at for date queries (standardized approach)
     const primary = await fetchPositions(true, true)
+    
+    // Check if primary query returned data that spans the full date range
+    // If customer_id was changed, old data might have old customer_id, causing sparse results
     if (!primary.error && (primary.data?.length ?? 0) > 0) {
-      return primary
+      // Extract dates from returned data to check coverage
+      const returnedDates = new Set<string>()
+      primary.data.forEach((row: any) => {
+        if (row.created_at) {
+          const date = extractDateForCoverage(row.created_at)
+          if (date) returnedDates.add(date)
+        }
+      })
+      
+      // Check if we have data for at least 50% of the requested date range
+      // If not, likely customer_id mismatch - use fallback
+      const dateCoverage = returnedDates.size / expectedDays
+      const hasGoodCoverage = dateCoverage >= 0.5
+      
+      if (hasGoodCoverage) {
+        return primary
+      } else {
+        console.warn(
+          `[Dashboard] Primary query returned sparse data (${returnedDates.size}/${expectedDays} dates, ${(dateCoverage * 100).toFixed(1)}% coverage). ` +
+          `Likely customer_id mismatch. Using fallback (brand only) for brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+        )
+      }
     }
 
-    // If nothing came back (likely missing customer_id on rows), retry scoped only by brand with created_at
+    // If nothing came back OR sparse data (likely missing/mismatched customer_id on rows), retry scoped only by brand
     const fallbackBrandOnly = await fetchPositions(false, true)
     if (!fallbackBrandOnly.error && (fallbackBrandOnly.data?.length ?? 0) > 0) {
+      const fallbackDates = new Set<string>()
+      fallbackBrandOnly.data.forEach((row: any) => {
+        if (row.created_at) {
+          const date = extractDateForCoverage(row.created_at)
+          if (date) fallbackDates.add(date)
+        }
+      })
+      const fallbackCoverage = fallbackDates.size / expectedDays
+      
       console.warn(
-        `[Dashboard] Fallback used for extracted_positions (brand only, created_at) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
+        `[Dashboard] Fallback used for extracted_positions (brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}. ` +
+        `Fallback coverage: ${fallbackDates.size}/${expectedDays} dates (${(fallbackCoverage * 100).toFixed(1)}%)`
       )
       return fallbackBrandOnly
     }
 
-    // If still nothing with created_at, try processed_at as fallback (for performance/compatibility)
-    const processedPrimary = await fetchPositions(true, false)
-    if (!processedPrimary.error && (processedPrimary.data?.length ?? 0) > 0) {
-      console.warn(
-        `[Dashboard] Fallback used for extracted_positions (processed_at, customer scoped) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
-      )
-      return processedPrimary
-    }
-
-    const processedFallback = await fetchPositions(false, false)
-    if (!processedFallback.error && (processedFallback.data?.length ?? 0) > 0) {
-      console.warn(
-        `[Dashboard] Fallback used for extracted_positions (processed_at, brand only) brand_id=${brand.id}, customer_id=${customerId ?? 'none'}`
-      )
-      return processedFallback
-    }
-
-    // Prefer to return primary error if exists
-    return primary.error ? primary : processedFallback
+    // Return primary error if exists, otherwise fallback result
+    return primary.error ? primary : fallbackBrandOnly
   })()
 
   const queryCountPromise = (async () => {
@@ -453,63 +551,70 @@ export async function buildDashboardPayload(
       )
 
   // Helper function to extract date from timestamp (YYYY-MM-DD format)
-  // Adjusted for user's local timezone to ensure correct day bucketing
+  // Works for ALL timezones (EST, PST, IST, JST, etc.)
+  // timezoneOffset is (UTC - Local) in minutes per JavaScript convention
+  // For EST (UTC-5): offset = +300, For IST (UTC+5:30): offset = -330
   const extractDate = (timestamp: string | null): string | null => {
     if (!timestamp) return null
     try {
       const date = new Date(timestamp)
       if (isNaN(date.getTime())) return null
 
-      // Apply timezone offset to get local date
-      // timezoneOffset is in minutes (UTC - Local). e.g. EST (UTC-5) is 300.
-      // We subtract the offset to shift the UTC time to Local time
-      // Example: 01:00 UTC (Jan 11) - 300 min (5h) = 20:00 UTC (Jan 10) -> represents 20:00 EST
-      const offsetMinutes = options.timezoneOffset || 0
-      const localTime = new Date(date.getTime() - (offsetMinutes * 60 * 1000))
+      // Apply timezone offset to shift UTC time to local time
+      // Formula: localTime = utcTime - (offsetMinutes * 60 * 1000)
+      const offsetMs = (options.timezoneOffset || 0) * 60 * 1000
+      const localTime = new Date(date.getTime() - offsetMs)
 
-      return localTime.toISOString().split('T')[0] // Returns YYYY-MM-DD
+      // Extract date components using UTC methods (since we've already shifted to local)
+      const year = localTime.getUTCFullYear()
+      const month = String(localTime.getUTCMonth() + 1).padStart(2, '0')
+      const day = String(localTime.getUTCDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
     } catch {
       return null
     }
   }
 
   // Generate all dates in the range for time-series
-  // IMPORTANT: Apply timezone offset to convert UTC bounds to local dates
-  // This ensures the date range matches the user's local timezone
+  // NOTE: The bounds (start/end) are in UTC but shifted to represent local day boundaries
+  // We must shift them back before extracting the date components for display
   const generateDateRange = (start: string, end: string): string[] => {
     const dates: string[] = []
+    const offsetMs = (options.timezoneOffset || 0) * 60 * 1000
 
-    // Apply timezone offset to convert UTC bounds to local dates
-    const offsetMinutes = options.timezoneOffset || 0
-
-    console.log(`[TimeSeries] 🕐 Timezone offset: ${offsetMinutes} minutes`)
+    console.log(`[TimeSeries] 🕐 Timezone offset: ${options.timezoneOffset || 0} minutes`)
     console.log(`[TimeSeries] 📅 UTC bounds: ${start} to ${end}`)
 
-    // Parse ISO timestamps and apply timezone offset
+    // Parse ISO timestamps
     const startDate = new Date(start)
     const endDate = new Date(end)
 
-    // Shift by timezone offset to get local dates
-    // offsetMinutes is (UTC - Local), so we subtract to get local time
-    const localStart = new Date(startDate.getTime() - (offsetMinutes * 60 * 1000))
-    const localEnd = new Date(endDate.getTime() - (offsetMinutes * 60 * 1000))
+    // Shift back to local time before extracting components
+    const localStart = new Date(startDate.getTime() - offsetMs)
+    const localEnd = new Date(endDate.getTime() - offsetMs)
 
-    // Extract YYYY-MM-DD in local timezone
-    const startDateStr = localStart.toISOString().split('T')[0]
-    const endDateStr = localEnd.toISOString().split('T')[0]
+    // Extract date components
+    const startYear = localStart.getUTCFullYear()
+    const startMonth = localStart.getUTCMonth()
+    const startDay = localStart.getUTCDate()
+    const endYear = localEnd.getUTCFullYear()
+    const endMonth = localEnd.getUTCMonth()
+    const endDay = localEnd.getUTCDate()
 
-    console.log(`[TimeSeries] 📅 Local dates: ${startDateStr} to ${endDateStr}`)
+    const startDateStr = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`
+    const endDateStr = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
 
-    // Generate range using UTC methods (to avoid further timezone shifts)
-    const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number)
-    const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number)
+    console.log(`[TimeSeries] 📅 Date range: ${startDateStr} to ${endDateStr}`)
 
-    const current = new Date(Date.UTC(startYear, startMonth - 1, startDay))
-    const endUTC = new Date(Date.UTC(endYear, endMonth - 1, endDay))
+    // Generate range using UTC methods
+    const current = new Date(Date.UTC(startYear, startMonth, startDay))
+    const endUTC = new Date(Date.UTC(endYear, endMonth, endDay))
 
-    // Generate dates using UTC methods to avoid timezone shifts
     while (current <= endUTC) {
-      dates.push(current.toISOString().split('T')[0])
+      const y = current.getUTCFullYear()
+      const m = String(current.getUTCMonth() + 1).padStart(2, '0')
+      const d = String(current.getUTCDate()).padStart(2, '0')
+      dates.push(`${y}-${m}-${d}`)
       current.setUTCDate(current.getUTCDate() + 1)
     }
 
@@ -1279,6 +1384,10 @@ export async function buildDashboardPayload(
 
   // Fetch citation sources for Source Type Distribution
   const { data: citationsData } = await (async () => {
+    if (options.skipCitations) {
+      console.log('[Dashboard] ⚡ Skipping citations query as requested')
+      return { data: [] }
+    }
     const start = Date.now()
     const result = await supabaseAdmin
       .from('citations')
@@ -2376,7 +2485,8 @@ export async function buildDashboardPayload(
   const competitorRowsByDate = new Map<string, number>()
   positionRows.forEach(row => {
     if (row.competitor_name && row.competitor_name.trim().length > 0) {
-      const timestamp = (row.created_at && row.created_at.trim() !== '') ? row.created_at : row.processed_at
+      // Use created_at only (standardized approach)
+      const timestamp = row.created_at
       const date = extractDate(timestamp)
       if (date) {
         competitorRowsByDate.set(date, (competitorRowsByDate.get(date) || 0) + 1)
@@ -2386,8 +2496,8 @@ export async function buildDashboardPayload(
   console.log(`[TimeSeries] DEBUG: Competitor rows by date:`, Array.from(competitorRowsByDate.entries()).sort())
 
   positionRows.forEach(row => {
-    // Prefer created_at for time series grouping, fallback to processed_at if created_at is missing
-    const timestamp = (row.created_at && row.created_at.trim() !== '') ? row.created_at : row.processed_at
+    // Use created_at only for time series grouping (standardized approach)
+    const timestamp = row.created_at
     const date = extractDate(timestamp)
     if (!date || !allDates.includes(date)) {
       skippedRowsCount++
@@ -2576,13 +2686,12 @@ export async function buildDashboardPayload(
 
       // Query metric_facts with brand_metrics and brand_sentiment for lookback period
       // Get the most recent date's aggregated values for each collector
-      // Prefer created_at, but use processed_at for lookback (may have better index coverage)
+      // Use created_at for consistency with main queries
       const { data: lookbackMetricFacts, error: lookbackError } = await supabaseAdmin
         .from('metric_facts')
         .select(`
           id,
           collector_type,
-          processed_at,
           created_at,
           collector_result_id,
           brand_metrics!inner(
@@ -2595,9 +2704,9 @@ export async function buildDashboardPayload(
           )
         `)
         .eq('brand_id', brandId)
-        .gte('processed_at', lookbackStartIso)
-        .lt('processed_at', lookbackEndIso)
-        .order('processed_at', { ascending: false })
+        .gte('created_at', lookbackStartIso)
+        .lt('created_at', lookbackEndIso)
+        .order('created_at', { ascending: false })
 
       if (lookbackError) {
         console.warn(`[TimeSeries] Lookback query error: ${lookbackError.message}`)
@@ -2622,8 +2731,8 @@ export async function buildDashboardPayload(
         const collectorType = mf.collector_type
         if (!collectorType || !collectorTypes.includes(collectorType)) return
 
-        // Use processed_at for lookback (matches query filter)
-        const timestamp = mf.processed_at
+        // Use created_at for lookback (matches query filter)
+        const timestamp = mf.created_at
         const date = extractDate(timestamp)
         if (!date) return
 
@@ -2758,8 +2867,12 @@ export async function buildDashboardPayload(
 
     allDates.forEach(date => {
       const dayData = dailyData.get(date)
+      
+      // Always push the date to maintain complete time series
+      // This ensures all collectors have the same date array length as allDates
+      dates.push(date)
+
       if (dayData) {
-        dates.push(date)
         const hasVisibility = dayData.visibilityValues.length > 0
         const hasShare = dayData.shareValues.length > 0
         const hasSentiment = dayData.sentimentValues.length > 0
@@ -2800,15 +2913,33 @@ export async function buildDashboardPayload(
           lastSentiment = normalizedSentiment
         }
         lastBrandPresence = brandPresencePercentage
+      } else {
+        // No data for this date - use carry-forward values
+        // This ensures complete time series even when data collection had gaps
+        visibility.push(lastVisibility)
+        share.push(lastShare)
+        sentiment.push(lastSentiment)
+        brandPresence.push(lastBrandPresence)
+        isRealData.push(false) // Mark as interpolated data
       }
     })
+
+    // Validate that all arrays have the same length (should match allDates.length)
+    const expectedLength = allDates.length
+    if (dates.length !== expectedLength || visibility.length !== expectedLength || 
+        share.length !== expectedLength || sentiment.length !== expectedLength || 
+        brandPresence.length !== expectedLength || isRealData.length !== expectedLength) {
+      console.error(`[TimeSeries] ⚠️ Collector ${collectorType} array length mismatch! Expected ${expectedLength}, got dates=${dates.length}, visibility=${visibility.length}, share=${share.length}, sentiment=${sentiment.length}, brandPresence=${brandPresence.length}, isRealData=${isRealData.length}`)
+    }
 
     // Only include timeSeries if there's actual data (not all empty arrays)
     // This prevents frontend from falling back to flat lines when historical data exists
     if (dates.length > 0) {
       const hasData = visibility.some(v => v > 0) || share.some(s => s > 0)
+      const realDataCount = isRealData.filter(r => r).length
+      const interpolatedCount = isRealData.filter(r => !r).length
       // Show FULL arrays for collectors to diagnose zero values
-      console.log(`[TimeSeries] Collector ${collectorType}: ${dates.length} dates, hasData=${hasData}, visibility=[${visibility.join(', ')}], share=[${share.join(', ')}]`)
+      console.log(`[TimeSeries] Collector ${collectorType}: ${dates.length} dates (expected ${expectedLength}), ${realDataCount} with real data, ${interpolatedCount} interpolated, hasData=${hasData}`)
       timeSeriesData.set(collectorType, { dates, visibility, share, sentiment, brandPresence, isRealData })
     } else {
       console.warn(`[TimeSeries] Collector ${collectorType} has NO dates in time-series (position rows might be missing)`)
@@ -2864,13 +2995,13 @@ export async function buildDashboardPayload(
       const competitorIdToName = new Map(competitors.map(c => [c.id, c.competitor_name]))
 
       // Query metric_facts with competitor_metrics and competitor_sentiment
-      // Use processed_at for lookback (may have better index coverage)
+      // Use created_at for consistency with main queries
       const { data: lookbackMetricFacts, error: lookbackError } = await supabaseAdmin
         .from('metric_facts')
         .select(`
           id,
           collector_type,
-          processed_at,
+          created_at,
           competitor_metrics!inner(
             competitor_id,
             visibility_index,
@@ -2883,9 +3014,9 @@ export async function buildDashboardPayload(
         `)
         .eq('brand_id', brandId)
         .in('competitor_metrics.competitor_id', competitorIds)
-        .gte('processed_at', lookbackStartIso)
-        .lt('processed_at', lookbackEndIso)
-        .order('processed_at', { ascending: false })
+        .gte('created_at', lookbackStartIso)
+        .lt('created_at', lookbackEndIso)
+        .order('created_at', { ascending: false })
 
       if (lookbackError || !lookbackMetricFacts || lookbackMetricFacts.length === 0) {
         return lookbackMap
@@ -2902,8 +3033,8 @@ export async function buildDashboardPayload(
         const collectorType = mf.collector_type
         if (!collectorType) return
 
-        // Use processed_at for lookback (matches query filter)
-        const timestamp = mf.processed_at
+        // Use created_at for lookback (matches query filter)
+        const timestamp = mf.created_at
         const date = extractDate(timestamp)
         if (!date) return
 
@@ -3357,9 +3488,20 @@ export async function buildDashboardPayload(
         aggregatedIsRealData.push(hasRealData)
       })
 
+      // Validate that all arrays have the same length (should match allDates.length)
+      const expectedBrandLength = allDates.length
+      if (aggregatedVisibility.length !== expectedBrandLength || aggregatedShare.length !== expectedBrandLength ||
+          aggregatedSentiment.length !== expectedBrandLength || aggregatedBrandPresence.length !== expectedBrandLength ||
+          aggregatedIsRealData.length !== expectedBrandLength) {
+        console.error(`[TimeSeries] ⚠️ Brand summary array length mismatch! Expected ${expectedBrandLength}, got visibility=${aggregatedVisibility.length}, share=${aggregatedShare.length}, sentiment=${aggregatedSentiment.length}, brandPresence=${aggregatedBrandPresence.length}, isRealData=${aggregatedIsRealData.length}`)
+      }
+
       // Only include if there's meaningful data
       const hasData = aggregatedVisibility.some(v => v > 0) || aggregatedShare.some(s => s > 0)
       if (hasData) {
+        const realDataCount = aggregatedIsRealData.filter(r => r).length
+        const interpolatedCount = aggregatedIsRealData.filter(r => !r).length
+        console.log(`[TimeSeries] Brand summary: ${expectedBrandLength} dates, ${realDataCount} with real data, ${interpolatedCount} interpolated, hasData=${hasData}`)
         brandTimeSeries = {
           dates: allDates,
           visibility: aggregatedVisibility,

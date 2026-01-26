@@ -33,6 +33,9 @@ export function HeroSection() {
 
   return (
     <section className="relative pt-32 pb-40 lg:pt-48 lg:pb-48 overflow-hidden flex flex-col items-center justify-center min-h-[90vh]">
+      {/* Top Gradient Strip - Vryse inspired */}
+      <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-cyan-100/60 via-cyan-50/40 to-transparent dark:from-cyan-950/30 dark:via-cyan-900/20 dark:to-transparent pointer-events-none z-0" />
+      
       <HeroBackground />
 
       {/* Ambient Glow Effects */}
@@ -90,16 +93,20 @@ export function HeroSection() {
              to="/auth" >
             <Button
               size="lg"
-              className="rounded-full px-10 py-7 text-lg bg-cyan-500 text-white hover:bg-cyan-600 transition-all hover:scale-105 shadow-[0_0_40px_-10px_rgba(6,182,212,0.5)] border border-cyan-400/20"
+              className="rounded-full px-8 py-6 text-base font-bold bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white transition-all hover:scale-105 shadow-[0_0_40px_-10px_rgba(6,182,212,0.6)] hover:shadow-[0_0_60px_-10px_rgba(6,182,212,0.8)] border-t border-white/30 relative overflow-hidden group"
             >
-              Start Free Trial
-              <ArrowRight className="ml-2 w-5 h-5" />
+              <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-white/20 group-hover:bg-transparent transition-colors" />
+              <span className="relative z-10 flex items-center gap-2">
+                Start Free Trial
+                <ArrowRight className="w-4 h-4" />
+              </span>
             </Button>
             </Link>
             <Button
               size="lg"
               variant="outline"
-              className="rounded-full px-10 py-7 text-lg border-2 hover:bg-muted/50 transition-all hover:scale-105 bg-background/50 backdrop-blur-sm"
+              className="rounded-full px-8 py-6 text-base font-medium border-2 hover:bg-muted/50 transition-all hover:scale-105 bg-background/50 backdrop-blur-sm"
               onClick={() => setIsDemoModalOpen(true)}
             >
               Book a Demo

@@ -21,6 +21,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
           fullName: 'Dev User',
           customerId: 'dev-customer-123',
           role: 'admin',
+          accessLevel: 'admin' as const, // Dev user has admin access
         };
         setUser(devUser);
       }

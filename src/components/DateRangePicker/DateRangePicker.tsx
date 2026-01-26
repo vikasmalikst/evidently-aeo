@@ -5,6 +5,7 @@ import { Popover } from '@mui/material';
 import 'react-day-picker/dist/style.css';
 import './DateRangePicker.css';
 import { formatDateDisplay } from '../../utils/dateFormatting';
+import { DateRangeSlider } from './DateRangeSlider';
 
 interface DateRangePickerProps {
   startDate: string;
@@ -53,6 +54,13 @@ export const calculatePreviousPeriod = (startDate: string, endDate: string): { s
   }
 };
 
+const formatToYYYYMMDD = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const DateRangePicker = ({
   startDate,
   endDate,
@@ -60,107 +68,91 @@ export const DateRangePicker = ({
   onEndDateChange,
   showComparisonInfo = true,
   className = '',
-  variant = 'popover' // Default to popover for better UX
+  variant = 'popover'
 }: DateRangePickerProps) => {
   const previousPeriod = useMemo(() => {
     if (!startDate || !endDate) return null;
     return calculatePreviousPeriod(startDate, endDate);
   }, [startDate, endDate]);
 
-  // Popover state for variant='popover'
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const open = Boolean(anchorEl);
 
-  // Convert string dates to Date objects for react-day-picker
-  // Parse dates in local timezone to preserve calendar dates
+  // Use local state precisely to track selection progress
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
-    const start = startDate ? new Date(startDate + 'T00:00:00') : undefined;
-    const end = endDate ? new Date(endDate + 'T00:00:00') : undefined;
-    return start && end ? { from: start, to: end } : start ? { from: start } : undefined;
+    const from = startDate ? new Date(startDate + 'T00:00:00') : undefined;
+    const to = endDate ? new Date(endDate + 'T00:00:00') : undefined;
+    return { from, to };
   });
 
-  // Sync dateRange when props change
+  // Keep internal state in sync with external props for reactivity (e.g. URL changes)
   useEffect(() => {
-    const start = startDate ? new Date(startDate + 'T00:00:00') : undefined;
-    const end = endDate ? new Date(endDate + 'T00:00:00') : undefined;
-    setDateRange(start && end ? { from: start, to: end } : start ? { from: start } : undefined);
+    const from = startDate ? new Date(startDate + 'T00:00:00') : undefined;
+    const to = endDate ? new Date(endDate + 'T00:00:00') : undefined;
+    
+    // Only update if actually different to avoid clobbering partial selections
+    const currentFrom = dateRange?.from?.getTime();
+    const currentTo = dateRange?.to?.getTime();
+    const nextFrom = from?.getTime();
+    const nextTo = to?.getTime();
+
+    if (currentFrom !== nextFrom || currentTo !== nextTo) {
+      setDateRange({ from, to });
+    }
   }, [startDate, endDate]);
 
-  // Handle date range change from react-day-picker
   const handleDateRangeChange = (range: DateRange | undefined) => {
+    // Just update local state
     setDateRange(range);
-
-    // Convert Date objects back to YYYY-MM-DD strings
-    if (range?.from) {
-      const year = range.from.getFullYear();
-      const month = String(range.from.getMonth() + 1).padStart(2, '0');
-      const day = String(range.from.getDate()).padStart(2, '0');
-      const startDateStr = `${year}-${month}-${day}`;
-      onStartDateChange(startDateStr);
-    }
-
-    if (range?.to) {
-      const year = range.to.getFullYear();
-      const month = String(range.to.getMonth() + 1).padStart(2, '0');
-      const day = String(range.to.getDate()).padStart(2, '0');
-      const endDateStr = `${year}-${month}-${day}`;
-      onEndDateChange(endDateStr);
-    }
-
-    // Close popover when both dates are selected (for popover variant)
-    if (variant === 'popover' && range?.from && range?.to) {
-      setAnchorEl(null);
-    }
   };
 
-  // Get max date (today) for disabling future dates
+  const handleApply = () => {
+    if (dateRange?.from) {
+      const startStr = formatToYYYYMMDD(dateRange.from);
+      if (startStr !== startDate) {
+        onStartDateChange(startStr);
+      }
+    }
+
+    if (dateRange?.to) {
+      const endStr = formatToYYYYMMDD(dateRange.to);
+      if (endStr !== endDate) {
+        onEndDateChange(endStr);
+      }
+    } else {
+      // If no end date, we should probably clear it or handle it
+      onEndDateChange('');
+    }
+
+    setAnchorEl(null);
+  };
+
+  const handleCancel = () => {
+    // Revert local state to props
+    const from = startDate ? new Date(startDate + 'T00:00:00') : undefined;
+    const to = endDate ? new Date(endDate + 'T00:00:00') : undefined;
+    setDateRange({ from, to });
+    setAnchorEl(null);
+  };
+
   const maxDate = new Date();
   maxDate.setHours(23, 59, 59, 999);
 
-  // Format date range for display button
   const dateRangeDisplay = useMemo(() => {
-    if (!startDate || !endDate) return 'Select date range';
+    if (!startDate) return 'Select date';
     const start = formatDateDisplay(startDate);
-    const end = formatDateDisplay(endDate);
+    const end = endDate ? formatDateDisplay(endDate) : 'Select end date';
     return start === end ? start : `${start} - ${end}`;
   }, [startDate, endDate]);
 
-  // Calendar component with styling
   const calendarComponent = (
     <DayPicker
       mode="range"
       selected={dateRange}
       onSelect={handleDateRangeChange}
       disabled={{ after: maxDate }}
-      className="rdp"
-      styles={{
-        root: {
-          fontSize: '13px',
-        },
-        day: {
-          fontSize: '13px',
-          width: '36px',
-          height: '36px',
-        },
-        day_selected: {
-          backgroundColor: '#00bcdc',
-          color: 'white',
-        },
-        day_range_start: {
-          backgroundColor: '#00bcdc',
-          color: 'white',
-        },
-        day_range_end: {
-          backgroundColor: '#00bcdc',
-          color: 'white',
-        },
-        day_range_middle: {
-          backgroundColor: 'rgba(0, 188, 220, 0.1)',
-        },
-        day_today: {
-          border: '1px solid #00bcdc',
-        },
-      }}
+      className="rdp custom-rdp"
+      showOutsideDays
     />
   );
 
@@ -181,7 +173,7 @@ export const DateRangePicker = ({
           <Popover
             open={open}
             anchorEl={anchorEl}
-            onClose={() => setAnchorEl(null)}
+            onClose={handleCancel}
             anchorOrigin={{
               vertical: 'bottom',
               horizontal: 'left',
@@ -192,14 +184,46 @@ export const DateRangePicker = ({
             }}
             PaperProps={{
               sx: {
-                borderRadius: '8px',
-                boxShadow: '0 8px 18px rgba(15,23,42,0.1)',
+                borderRadius: '12px',
+                boxShadow: '0 12px 32px rgba(15,23,42,0.15)',
                 border: '1px solid #e8e9ed',
-                padding: '8px',
+                padding: '0',
+                overflow: 'hidden'
               }
             }}
           >
-            {calendarComponent}
+            <div className="flex flex-col bg-white w-full min-w-[320px]">
+              <div className="p-3 border-b border-slate-50">
+                {calendarComponent}
+              </div>
+              <div className="px-4 py-3 custom-rdp-slider-container border-t border-slate-100">
+                <DateRangeSlider 
+                   startDate={dateRange?.from ? formatToYYYYMMDD(dateRange.from) : startDate} 
+                   endDate={dateRange?.to ? formatToYYYYMMDD(dateRange.to) : endDate} 
+                   onRangeChange={(start: string, end: string) => {
+                     setDateRange({
+                       from: new Date(start + 'T00:00:00'),
+                       to: new Date(end + 'T00:00:00')
+                     });
+                   }}
+                   maxDays={90}
+                />
+              </div>
+              <div className="p-3 flex items-center justify-end gap-2 bg-white border-t border-slate-100">
+                <button
+                  onClick={handleCancel}
+                  className="rdp-footer-btn rdp-cancel-btn px-3 py-1.5 text-[12px] font-semibold rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleApply}
+                  className="rdp-footer-btn rdp-apply-btn px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all"
+                >
+                  Apply Selection
+                </button>
+              </div>
+            </div>
           </Popover>
         </div>
 
@@ -219,15 +243,26 @@ export const DateRangePicker = ({
   // Inline variant - shows calendar directly inline
   return (
     <div className={`flex ${showComparisonInfo ? 'flex-col' : 'flex-row'} gap-2 ${className}`}>
-      <div className="flex items-center gap-3">
-        <label className="text-[13px] text-[#64748b] font-medium">Date Range:</label>
-        <div style={{
-          border: '1px solid #e8e9ed',
-          borderRadius: '8px',
-          padding: '8px',
-          backgroundColor: 'white'
-        }}>
-          {calendarComponent}
+      <div className="flex items-start gap-3">
+        <label className="text-[13px] text-[#64748b] font-medium mt-2">Date Range:</label>
+        <div className="flex flex-col bg-white border border-[#e8e9ed] rounded-lg">
+          <div className="p-2">
+            {calendarComponent}
+          </div>
+          <div className="p-3 flex items-center justify-end gap-2 bg-slate-50 border-t border-slate-100 rounded-b-lg">
+            <button
+              onClick={handleCancel}
+              className="rdp-footer-btn rdp-cancel-btn px-3 py-1.5 text-[12px] font-semibold rounded-lg transition-colors"
+            >
+              Reset
+            </button>
+            <button
+              onClick={handleApply}
+              className="rdp-footer-btn rdp-apply-btn px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all"
+            >
+              Apply Selection
+            </button>
+          </div>
         </div>
       </div>
 

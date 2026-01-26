@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { Header } from './Header';
 import { NewSidebar } from './NewSidebar';
 
@@ -12,9 +13,14 @@ export const Layout = ({ children, hideSidebar = false, hideHeader = false }: La
     <div className="min-h-screen bg-[var(--bg-secondary)]">
       {!hideHeader && <Header />}
       {!hideSidebar && <NewSidebar />}
-      <main className={`${!hideHeader ? 'pt-16' : ''} ${!hideSidebar ? 'pl-[72px]' : ''} transition-all duration-300`}>
+      <motion.main 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className={`${!hideHeader ? 'pt-16' : ''} ${!hideSidebar ? 'pl-[72px]' : ''} transition-all duration-300`}
+      >
         {children}
-      </main>
+      </motion.main>
     </div>
   );
 };

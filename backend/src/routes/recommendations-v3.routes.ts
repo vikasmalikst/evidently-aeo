@@ -19,6 +19,7 @@ import { supabaseAdmin } from '../config/database';
 import { brandService } from '../services/brand.service';
 import { brandDashboardService } from '../services/brand-dashboard';
 import { regenerateContentService } from '../services/recommendations/regenerate-content.service';
+import { graphRecommendationService } from '../services/recommendations/graph-recommendation.service';
 
 const router = express.Router();
 
@@ -1688,6 +1689,325 @@ router.post('/:id/regenerate', authenticateToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to regenerate content. Please try again later.'
+    });
+  }
+});
+
+/**
+ * GET /api/recommendations-v3/analyze/keyword-mapping
+ * 
+ * Returns flattened graph data for the "Keyword Quadrants" screen.
+ * - X-Axis: Sentiment Score
+ * - Y-Axis: Brand Strength
+ * - Quadrants: Stronghold, Risk, etc.
+ */
+router.get('/analyze/keyword-mapping', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    let { brandId } = req.query;
+
+    if (!customerId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    // Default to first brand if not provided
+    if (!brandId) {
+      const brands = await brandService.getBrandsByCustomer(customerId);
+      if (brands && brands.length > 0) brandId = brands[0].id;
+    }
+
+    if (!brandId) {
+      return res.status(400).json({ success: false, error: 'Brand ID required' });
+    }
+
+    console.log(`[Analyze API] Fetching keywords with real sentiment for brand ${brandId}...`);
+
+    // 1. Fetch collector_results for this brand (last 100)
+    const { data: results } = await supabaseAdmin
+      .from('collector_results')
+      .select('id')
+      .eq('brand_id', brandId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (!results || results.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const resultIds = results.map(r => r.id);
+
+    // 2. Fetch keywords from consolidated_analysis_cache + sentiment from metric_facts -> brand_sentiment
+    const { data: cacheData, error: cacheError } = await supabaseAdmin
+      .from('consolidated_analysis_cache')
+      .select('collector_result_id, keywords')
+      .in('collector_result_id', resultIds);
+
+    if (cacheError) {
+      console.error('[Analyze API] Error fetching cache:', cacheError);
+      return res.status(500).json({ success: false, error: 'Failed to fetch analysis cache' });
+    }
+
+    // 3. Fetch metric_facts with brand_sentiment for the same collector_result_ids
+    const { data: metricData, error: metricError } = await supabaseAdmin
+      .from('metric_facts')
+      .select(`
+        collector_result_id,
+        brand_sentiment(
+          sentiment_score,
+          sentiment_label
+        )
+      `)
+      .in('collector_result_id', resultIds);
+
+    if (metricError) {
+      console.error('[Analyze API] Error fetching metrics:', metricError);
+      return res.status(500).json({ success: false, error: 'Failed to fetch metric facts' });
+    }
+
+    // 4. Build a map of collector_result_id -> sentiment
+    const sentimentMap = new Map<number, { score: number; label: string }>();
+    for (const mf of metricData || []) {
+      const bs = Array.isArray(mf.brand_sentiment)
+        ? mf.brand_sentiment[0]
+        : mf.brand_sentiment;
+      if (bs) {
+        sentimentMap.set(mf.collector_result_id, {
+          score: bs.sentiment_score || 50,
+          label: bs.sentiment_label || 'NEUTRAL'
+        });
+      }
+    }
+
+    // 5. Aggregate keywords with their sentiment AND track collector_result_ids per keyword
+    // Each keyword may appear in multiple responses - average the sentiment
+    const keywordAggregates = new Map<string, { totalScore: number; count: number; labels: string[]; collectorResultIds: number[] }>();
+
+    for (const row of cacheData || []) {
+      const sentiment = sentimentMap.get(row.collector_result_id);
+      const keywords = row.keywords || [];
+
+      for (const kw of keywords) {
+        const keywordText = typeof kw === 'string' ? kw : kw.keyword;
+        if (!keywordText) continue;
+
+        const existing = keywordAggregates.get(keywordText) || { totalScore: 0, count: 0, labels: [], collectorResultIds: [] };
+        existing.totalScore += sentiment?.score || 50;
+        existing.count += 1;
+        if (sentiment?.label) existing.labels.push(sentiment.label);
+        existing.collectorResultIds.push(row.collector_result_id);
+        keywordAggregates.set(keywordText, existing);
+      }
+    }
+
+    // 6. Fetch citations for these collector_result_ids
+    const { data: citationsData } = await supabaseAdmin
+      .from('citations')
+      .select('collector_result_id, domain, category')
+      .in('collector_result_id', resultIds);
+
+    // Build a map of collector_result_id -> citations
+    const citationsByResult = new Map<number, { domains: string[]; categories: string[] }>();
+    for (const c of citationsData || []) {
+      const existing = citationsByResult.get(c.collector_result_id) || { domains: [], categories: [] };
+      if (c.domain) existing.domains.push(c.domain);
+      if (c.category) existing.categories.push(c.category);
+      citationsByResult.set(c.collector_result_id, existing);
+    }
+
+    // 7. Build final response with citations
+    const data = Array.from(keywordAggregates.entries()).map(([keyword, agg]) => {
+      const avgScore = Math.round(agg.totalScore / agg.count);
+      // Determine dominant label
+      const labelCounts: Record<string, number> = {};
+      for (const l of agg.labels) {
+        labelCounts[l] = (labelCounts[l] || 0) + 1;
+      }
+      const dominantLabel = Object.entries(labelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'NEUTRAL';
+
+      // Aggregate citations for this keyword
+      const citationDomains = new Set<string>();
+      const citationCategories: Record<string, number> = {};
+      for (const crId of agg.collectorResultIds) {
+        const cites = citationsByResult.get(crId);
+        if (cites) {
+          for (const d of cites.domains) citationDomains.add(d);
+          for (const cat of cites.categories) {
+            citationCategories[cat] = (citationCategories[cat] || 0) + 1;
+          }
+        }
+      }
+
+      return {
+        keyword,
+        sentiment: avgScore,
+        sentimentLabel: dominantLabel,
+        mentions: agg.count,
+        citationDomains: Array.from(citationDomains).slice(0, 5), // Top 5 domains
+        citationCategories: Object.entries(citationCategories)
+          .sort((a, b) => b[1] - a[1])
+          .map(([cat, count]) => ({ category: cat, count }))
+      };
+    });
+
+    // Sort by mentions descending
+    data.sort((a, b) => b.mentions - a.mentions);
+
+    console.log(`[Analyze API] Generated ${data.length} keywords with real sentiment.`);
+
+    return res.json({
+      success: true,
+      data
+    });
+
+  } catch (error) {
+    console.error('❌ [Analyze Keywords] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch keyword mapping'
+    });
+  }
+});
+
+/**
+ * GRAPH-BASED KEYWORD SENTIMENT (Sentiment Landscape 2)
+ * Uses the actual PageRank-based Graph algorithm from Recommendation Engine
+ * Returns TOP keywords by centrality (importance in the graph)
+ */
+router.get('/analyze/keyword-mapping-graph', authenticateToken, async (req, res) => {
+  try {
+    const { brandId, limit = '20', source } = req.query;
+    if (!brandId) {
+      return res.status(400).json({ success: false, error: 'brandId required' });
+    }
+
+    console.log(`[Analyze Graph API] Building graph for brand ${brandId} (Source: ${source || 'All'})...`);
+
+    // 1. Get brand info
+    const { data: brand } = await supabaseAdmin
+      .from('brands')
+      .select('name')
+      .eq('id', brandId)
+      .single();
+
+    if (!brand) {
+      return res.status(404).json({ success: false, error: 'Brand not found' });
+    }
+
+    // 2. Get competitors for this brand
+    const { data: competitors } = await supabaseAdmin
+      .from('competitors')
+      .select('name')
+      .eq('brand_id', brandId);
+
+    const competitorNames = competitors?.map(c => c.name) || [];
+
+    // 3. Fetch consolidated_analysis_cache using efficient JOIN
+    let query = supabaseAdmin
+      .from('consolidated_analysis_cache')
+      .select(`
+        collector_result_id, 
+        keywords, 
+        sentiment, 
+        products, 
+        quotes,
+        collector_results!inner(brand_id, source)
+      `)
+      .eq('collector_results.brand_id', brandId);
+
+    // Filter by source if provided
+    if (source && String(source).trim() !== '') {
+      query = query.ilike('collector_results.source', `%${String(source).trim()}%`);
+    }
+
+    const { data: cacheData, error: cacheError } = await query;
+
+    if (cacheError) {
+      console.error('❌ [Analyze Graph API] Cache Query Error:', cacheError);
+      return res.status(500).json({ success: false, error: 'Database error fetching graph data' });
+    }
+
+    // Fetch ALL distinct sources for the filter dropdown
+    // We do this separately to ensure the dropdown has all options even when filtered
+    const { data: allSources } = await supabaseAdmin
+      .from('collector_results')
+      .select('source')
+      .eq('brand_id', brandId)
+      .not('source', 'is', null);
+
+    const distinctSources = Array.from(new Set(allSources?.map(s => s.source).filter(Boolean) || [])).sort();
+
+    if (!cacheData || cacheData.length === 0) {
+      console.log('⚠️ [Analyze Graph API] No cache data found for brand');
+      return res.json({ success: true, data: [], sources: distinctSources });
+    }
+
+    // 4. Transform cache data for graph building
+    const graphResults = cacheData.map(row => ({
+      id: row.collector_result_id,
+      analysis: {
+        keywords: row.keywords || [],
+        sentiment: row.sentiment || {},
+        products: row.products || {},
+        quotes: row.quotes || [],
+        citations: {} // Add empty citations object to satisfy type
+      } as any,
+      competitorNames
+    }));
+
+    // 5. Build Graph
+    // ... (rest of code)
+
+    // 6. Return Data + Sources
+    // (Need to update the response block below)
+
+    // 5. Build the graph using PageRank algorithm
+    graphRecommendationService.buildGraph(brand.name, graphResults);
+    graphRecommendationService.runAlgorithms(); // Run PageRank + Louvain
+
+    // 6. Get keyword quadrant data (uses PageRank centrality)
+    const quadrantData = graphRecommendationService.getKeywordQuadrantData();
+
+    // 7. Limit to top N keywords by strength (centrality)
+    const topLimit = parseInt(limit as string) || 20;
+    const topKeywords = quadrantData.slice(0, topLimit);
+
+    // 8. Transform to match frontend expected format
+    const data = topKeywords.map(kw => {
+      // Convert -100..100 sentiment to 0..100
+      const sentimentNormalized = Math.round((kw.sentiment + 100) / 2);
+
+      let sentimentLabel = 'NEUTRAL';
+      if (kw.sentiment > 20) sentimentLabel = 'POSITIVE';
+      else if (kw.sentiment < -20) sentimentLabel = 'NEGATIVE';
+
+      return {
+        keyword: kw.topic,
+        sentiment: sentimentNormalized, // 0-100 scale
+        sentimentLabel,
+        strength: kw.strength, // PageRank-based centrality (0-100)
+        narrative: kw.narrative,
+        // For compatibility with existing UI
+        mentions: kw.strength, // Use strength as a proxy
+        positiveVotes: kw.sentiment > 0 ? Math.abs(kw.sentiment) : 0,
+        negativeVotes: kw.sentiment < 0 ? Math.abs(kw.sentiment) : 0,
+        neutralVotes: kw.sentiment === 0 ? 50 : 0
+      };
+    });
+
+    console.log(`[Analyze Graph API] Generated ${data.length} TOP keywords using PageRank.`);
+
+    return res.json({
+      success: true,
+      data,
+      sources: distinctSources
+    });
+    // No code here
+
+  } catch (error) {
+    console.error('❌ [Analyze Graph Keywords] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch graph-based keyword mapping'
     });
   }
 });

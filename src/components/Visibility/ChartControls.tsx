@@ -22,6 +22,9 @@ interface ChartControlsProps {
   onBrandChange?: (brandId: string) => void;
   metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
   onMetricTypeChange?: (value: 'visibility' | 'share' | 'sentiment' | 'brandPresence') => void;
+  hideDateRange?: boolean;
+  compareMode?: boolean;
+  showComparison?: boolean;
 }
 
 export const ChartControls = ({
@@ -38,8 +41,10 @@ export const ChartControls = ({
   onBrandChange,
   metricType = 'visibility',
   onMetricTypeChange,
-  hideDateRange = false
-}: ChartControlsProps & { hideDateRange?: boolean }) => {
+  hideDateRange = false,
+  compareMode = false,
+  showComparison = false
+}: ChartControlsProps) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 

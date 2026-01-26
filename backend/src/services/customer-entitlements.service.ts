@@ -163,15 +163,34 @@ export class CustomerEntitlementsService {
     entitlements?: Partial<CustomerEntitlement>
   ): Promise<CustomerWithEntitlements> {
     try {
-      // Default entitlements
+      // Default entitlements (free tier)
       const defaultEntitlements: CustomerEntitlement = {
-        max_brands: 5,
-        max_queries: 1000,
-        run_frequency: 'daily',
-        enabled_collectors: ['chatgpt', 'perplexity'],
-        enabled_countries: ['US'],
-        collector_run_frequencies: {},
+        tier: 'free',
         seats: 1,
+        features: {
+          measure: true,
+          analyze_topics: true,
+          analyze_answers: true,
+          analyze_queries: true,
+          recommendations: true,
+          analyze_keywords: true,
+          executive_reporting: true,
+          analyze_citation_sources: true,
+          analyze_domain_readiness: true
+        },
+        schedule: {
+          time: '09:00',
+          end_date: '2026-12-31',
+          start_date: '2026-01-01',
+          day_of_week: 1,
+          day_of_month: 1
+        },
+        max_brands: 2,
+        max_queries: 25,
+        run_frequency: 'daily',
+        enabled_countries: ['US'],
+        enabled_collectors: ['Google AI Mode', 'Perplexity', 'Gemini', 'Grok', 'ChatGPT'],
+        collector_run_frequencies: {},
         ...entitlements
       };
 
@@ -236,8 +255,13 @@ export class CustomerEntitlementsService {
         'Google Gemini', 'Bing', 'DeepSeek', 'Baidu', 'Grok', 'Gemini'
       ];
 
+      // Create lowercase map for case-insensitive comparison
+      const validCollectorsLower = validCollectors.map(c => c.toLowerCase());
+
       for (const collector of entitlements.enabled_collectors) {
-        if (!validCollectors.includes(collector)) {
+        // Case-insensitive check with trimming
+        const normalizedCollector = collector.trim().toLowerCase();
+        if (!validCollectorsLower.includes(normalizedCollector)) {
           errors.push(`Invalid collector: ${collector}. Valid options: ${validCollectors.join(', ')}`);
         }
       }
@@ -260,13 +284,32 @@ export class CustomerEntitlementsService {
    */
   getDefaultEntitlements(): CustomerEntitlement {
     return {
-      max_brands: 5,
-      max_queries: 1000,
+      tier: 'free',
+      seats: 1,
+      features: {
+        measure: true,
+        analyze_topics: true,
+        analyze_answers: true,
+        analyze_queries: true,
+        recommendations: true,
+        analyze_keywords: true,
+        executive_reporting: true,
+        analyze_citation_sources: true,
+        analyze_domain_readiness: true
+      },
+      schedule: {
+        time: '09:00',
+        end_date: '2026-12-31',
+        start_date: '2026-01-01',
+        day_of_week: 1,
+        day_of_month: 1
+      },
+      max_brands: 2,
+      max_queries: 25,
       run_frequency: 'daily',
-      enabled_collectors: ['chatgpt', 'perplexity'],
       enabled_countries: ['US'],
-      collector_run_frequencies: {},
-      seats: 1
+      enabled_collectors: ['Google AI Mode', 'Perplexity', 'Gemini', 'Grok', 'ChatGPT'],
+      collector_run_frequencies: {}
     };
   }
 }

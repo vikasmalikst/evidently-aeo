@@ -105,6 +105,16 @@ export interface BrandContextV3 {
   topKeywords?: Array<{ keyword: string; count: number }>;
   strategicNarrative?: string;
   keyQuotes?: string[];
+
+  // Phase 7: Graph Insights
+  graphInsights?: {
+    opportunityGaps: Array<{
+      topic: string;
+      score: number;
+      context: string;
+      evidence: string[];
+    }>;
+  };
 }
 
 /**

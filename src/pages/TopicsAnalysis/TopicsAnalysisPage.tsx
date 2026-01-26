@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { getLLMIcon } from '../../components/Visibility/LLMIcons';
 import { KpiToggle } from '../../components/Visibility/KpiToggle';
 import { Layout } from '../../components/Layout/Layout';
@@ -342,7 +343,7 @@ export const TopicsAnalysisPage = ({
     : undefined;
 
   const lastSentFilters = useRef<string>('');
-  const debounceTimerRef = useRef<number | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const primaryModel = selectedModels[0] ?? '';
   const selectedModel = primaryModel; // backward compatibility for downstream props
 
@@ -485,7 +486,49 @@ export const TopicsAnalysisPage = ({
 
   return (
     <Layout>
-      <div style={{ padding: '24px', backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
+      <AnimatePresence>
+        {isRefreshing && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 z-[3000] pointer-events-none"
+          >
+            <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-full border border-cyan-100 shadow-xl flex items-center gap-3">
+               <div className="w-2 h-2 rounded-full bg-[#00bcdc] animate-pulse" />
+               <span className="text-xs font-bold text-[#1a1d29] tracking-tight">Refreshing Intelligence...</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* High-end Top Loading Bar */}
+      <AnimatePresence>
+        {isRefreshing && (
+          <motion.div
+            initial={{ scaleX: 0, opacity: 0 }}
+            animate={{ scaleX: 1, opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed top-0 left-0 right-0 h-1 z-[3000] bg-[#00bcdc] origin-left"
+          >
+            <motion.div
+              animate={{ x: ['-100%', '100%'] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div 
+        style={{ 
+          padding: '24px', 
+          backgroundColor: '#f9f9fb', 
+          minHeight: '100vh',
+          transition: 'opacity 0.3s ease-in-out',
+          opacity: isRefreshing ? 0.7 : 1
+        }}
+      >
         {/* Page Header */}
         <div
           style={{

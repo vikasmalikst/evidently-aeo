@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Layout } from '../components/Layout/Layout';
-import { Scatter } from 'react-chartjs-2';
+import { Scatter, Bubble } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   LinearScale,
@@ -67,6 +67,13 @@ interface KeywordData {
     competitorMentions: number;
     trendingMentions: number;
   };
+}
+
+interface SentimentKeywordData {
+    topic: string;
+    sentiment: number;
+    strength: number;
+    narrative: string;
 }
 
 // API payload shape from backend
@@ -323,12 +330,128 @@ const DetailPanel = ({ keyword, onClose }: DetailPanelProps) => (
   </div>
 );
 
+interface SentimentKeywordData {
+    keyword: string;
+    sentiment: number;
+    sentimentLabel: string;
+    mentions: number;
+    citationDomains?: string[];
+    citationCategories?: { category: string; count: number }[];
+}
+
+const SentimentDetailPanel = ({ keyword, onClose }: { keyword: SentimentKeywordData; onClose: () => void }) => (
+  <div
+    style={{
+      position: 'fixed',
+      right: 0,
+      top: 0,
+      height: '100vh',
+      width: '420px',
+      backgroundColor: COLORS.bgPrimary,
+      borderLeft: `1px solid ${COLORS.gridLines}`,
+      boxShadow: '-4px 0 12px rgba(0,0,0,0.1)',
+      zIndex: 1000,
+      overflowY: 'auto',
+    }}
+  >
+    <div style={{ padding: '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '24px' }}>
+        <h3 style={{ fontSize: '20px', fontWeight: '600', color: COLORS.textHeadings, margin: 0 }}>
+          {keyword.keyword}
+        </h3>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: COLORS.textBody,
+            padding: '4px',
+          }}
+        >
+          <IconX size={20} />
+        </button>
+      </div>
+
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Sentiment Label</div>
+        <div
+          style={{
+            display: 'inline-block',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            backgroundColor: keyword.sentimentLabel === 'POSITIVE' ? '#dcfce7' : keyword.sentimentLabel === 'NEGATIVE' ? '#fee2e2' : '#fef9c3',
+            color: keyword.sentimentLabel === 'POSITIVE' ? '#16a34a' : keyword.sentimentLabel === 'NEGATIVE' ? '#dc2626' : '#ca8a04',
+            fontSize: '13px',
+            fontWeight: '600',
+          }}
+        >
+          {keyword.sentimentLabel}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
+        <div style={{ backgroundColor: COLORS.bgSecondary, borderRadius: '8px', padding: '16px' }}>
+          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Sentiment Score</div>
+          <div style={{ fontSize: '24px', fontWeight: '700', color: keyword.sentiment >= 50 ? COLORS.brand : COLORS.competitor }}>
+            {keyword.sentiment}
+          </div>
+        </div>
+        <div style={{ backgroundColor: COLORS.bgSecondary, borderRadius: '8px', padding: '16px' }}>
+          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Mentions</div>
+          <div style={{ fontSize: '24px', fontWeight: '700', color: COLORS.textHeadings }}>
+            {keyword.mentions}
+          </div>
+        </div>
+      </div>
+
+      {/* Citation Information */}
+      {(keyword.citationDomains?.length || keyword.citationCategories?.length) ? (
+        <div style={{ marginBottom: '24px' }}>
+          <h4 style={{ fontSize: '14px', fontWeight: '600', color: COLORS.textHeadings, marginBottom: '12px' }}>
+            Citation Sources
+          </h4>
+          {keyword.citationCategories && keyword.citationCategories.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+              {keyword.citationCategories.map(({ category, count }) => (
+                <span key={category} style={{
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  backgroundColor: '#f1f5f9',
+                  fontSize: '12px',
+                  color: '#475569'
+                }}>
+                  {category} ({count})
+                </span>
+              ))}
+            </div>
+          )}
+          {keyword.citationDomains && keyword.citationDomains.length > 0 && (
+            <div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>Top Domains</div>
+              <div style={{ fontSize: '12px', color: COLORS.textBody }}>
+                {keyword.citationDomains.join(', ')}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+       <p style={{ fontSize: '13px', color: '#64748b' }}>
+          Sentiment score is derived from the overall brand sentiment in responses where this keyword appeared. Higher score = more positive.
+      </p>
+    </div>
+  </div>
+);
+
 export const Keywords = () => {
   const authLoading = useAuthStore((state) => state.isLoading);
   const { selectedBrandId, selectedBrand, brands, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
   const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<'market' | 'sentiment'>('market');
   const [keywordData, setKeywordData] = useState<KeywordData[]>([]);
-  const [selectedKeyword, setSelectedKeyword] = useState<KeywordData | null>(null);
+  const [sentimentData, setSentimentData] = useState<SentimentKeywordData[]>([]);
+  const [selectedKeyword, setSelectedKeyword] = useState<KeywordData | SentimentKeywordData | null>(null);
   const [showMovement, setShowMovement] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedLlms, setSelectedLlms] = useState<string[]>([]);
@@ -336,6 +459,10 @@ export const Keywords = () => {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const chartRef = useRef<any>(null);
+  // Domain filter for sentiment view
+  const [domainFilter, setDomainFilter] = useState<string>('all');
+  const [domainSearch, setDomainSearch] = useState<string>('');
+  const [showDomainDropdown, setShowDomainDropdown] = useState(false);
 
   // Fetch real keyword analytics
   useEffect(() => {
@@ -395,8 +522,29 @@ export const Keywords = () => {
         setLoading(false);
       }
     };
-    fetchKeywords();
-  }, [authLoading, brandsLoading, selectedBrandId, selectedLlms]);
+    
+    if (viewMode === 'market') {
+        fetchKeywords();
+    } else {
+        const fetchSentiment = async () => {
+            if (authLoading || brandsLoading || !selectedBrandId) return;
+            setLoading(true);
+            try {
+                const response = await apiClient.request<ApiResponse<SentimentKeywordData[]>>(`/recommendations-v3/analyze/keyword-mapping?brandId=${selectedBrandId}`);
+                if (response.success && response.data) {
+                    setSentimentData(response.data);
+                } else {
+                    setSentimentData([]);
+                }
+            } catch (e) {
+                console.error('Failed to load sentiment mapping', e);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchSentiment();
+    }
+  }, [authLoading, brandsLoading, selectedBrandId, selectedLlms, viewMode]);
 
   const filteredData = useMemo(() => {
     return keywordData.filter((kw) => {
@@ -446,6 +594,30 @@ export const Keywords = () => {
     );
   };
 
+  // Compute all unique domains from sentiment data
+  const allDomains = useMemo(() => {
+    const domains = new Set<string>();
+    sentimentData.forEach(kw => {
+      kw.citationDomains?.forEach(d => domains.add(d));
+    });
+    return Array.from(domains).sort();
+  }, [sentimentData]);
+
+  // Filter domains for search
+  const filteredDomains = useMemo(() => {
+    if (!domainSearch) return allDomains;
+    const search = domainSearch.toLowerCase();
+    return allDomains.filter(d => d.toLowerCase().includes(search));
+  }, [allDomains, domainSearch]);
+
+  // Filter sentiment data by selected domain
+  const filteredSentimentData = useMemo(() => {
+    if (domainFilter === 'all') return sentimentData;
+    return sentimentData.filter(kw => 
+      kw.citationDomains?.includes(domainFilter)
+    );
+  }, [sentimentData, domainFilter]);
+
   // Handle chart resize on window resize (e.g., when dev tools open/close)
   useChartResize(chartRef, !loading && filteredData.length > 0);
 
@@ -482,6 +654,24 @@ export const Keywords = () => {
     }).flat(),
   };
 
+  const sentimentChartData = {
+    datasets: sentimentData.map((kw) => ({
+        label: kw.keyword,
+        data: [{
+            x: kw.sentiment,
+            y: kw.mentions,
+            // Bubble size: base 8, up to 20 based on mentions
+            r: Math.min(7, 8 + kw.mentions * 2)
+        }],
+        // Color based on sentiment label
+        backgroundColor: kw.sentimentLabel === 'POSITIVE' ? COLORS.brand : kw.sentimentLabel === 'NEGATIVE' ? COLORS.competitor : COLORS.contested,
+        borderColor: '#fff',
+        borderWidth: 1
+    }))
+  };
+
+
+
   const options: any = {
     responsive: true,
     maintainAspectRatio: false,
@@ -502,19 +692,30 @@ export const Keywords = () => {
             return datasetLabel.replace(' (previous)', '');
           },
           label: (context: any) => {
-            const kw = filteredData.find(k => k.keyword === context.dataset.label || k.keyword === context.dataset.label.replace(' (previous)', ''));
-            if (!kw) return '';
-            return [
-              `Ownership: ${kw.ownership}%`,
-              `Positions (volume): ${kw.searchVolume.toLocaleString()}`,
-              `Responses: ${kw.mentions.toLocaleString()}`,
-            ];
+            if (viewMode === 'market') {
+              const kw = filteredData.find(k => k.keyword === context.dataset.label || k.keyword === context.dataset.label.replace(' (previous)', ''));
+              if (!kw) return '';
+              return [
+                `Ownership: ${kw.ownership}%`,
+                `Positions (volume): ${kw.searchVolume.toLocaleString()}`,
+                `Responses: ${kw.mentions.toLocaleString()}`,
+              ];
+            } else {
+              // Sentiment View
+              const kw = sentimentData.find(s => s.keyword === context.dataset.label);
+              if (!kw) return '';
+              return [
+                `Sentiment: ${kw.sentimentLabel}`,
+                `Score: ${kw.sentiment}`,
+                `Mentions: ${kw.mentions}`,
+              ];
+            }
           },
         },
       },
     },
     scales: {
-      x: {
+      x: viewMode === 'market' ? {
         title: {
           display: true,
           text: 'Positions (Volume)',
@@ -529,8 +730,18 @@ export const Keywords = () => {
         min: 0,
         // dynamic max from data
         max: Math.max(10, Math.ceil((filteredData.reduce((m, k) => Math.max(m, k.searchVolume), 0) || 10) * 1.1)),
+      } : {
+        title: {
+          display: true,
+          text: 'Sentiment Score (0-100)',
+          font: { size: 13, weight: '600' },
+          color: COLORS.textBody,
+        },
+        grid: { color: COLORS.gridLines },
+        min: 0,
+        max: 100,
       },
-      y: {
+      y: viewMode === 'market' ? {
         title: {
           display: true,
           text: 'Brand Ownership %',
@@ -544,15 +755,31 @@ export const Keywords = () => {
         },
         min: 0,
         max: 100,
+      } : {
+        title: {
+            display: true,
+            text: 'Mentions',
+            font: { size: 13, weight: '600' },
+            color: COLORS.textBody,
+        },
+        grid: { color: COLORS.gridLines },
+        min: 0
       },
     },
     onClick: (_event: any, elements: any[]) => {
       if (elements.length > 0) {
         const datasetIndex = elements[0].datasetIndex;
-        const dataset = chartData.datasets[datasetIndex];
-        const keywordLabel = dataset.label.replace(' (previous)', '');
-        const keyword = filteredData.find(k => k.keyword === keywordLabel);
-        if (keyword) setSelectedKeyword(keyword);
+        if (viewMode === 'market') {
+          const dataset = chartData.datasets[datasetIndex];
+          const keywordLabel = dataset.label.replace(' (previous)', '');
+          const keyword = filteredData.find(k => k.keyword === keywordLabel);
+          if (keyword) setSelectedKeyword(keyword);
+        } else {
+          const dataset = sentimentChartData.datasets[datasetIndex];
+          const keywordLabel = dataset.label;
+          const kw = sentimentData.find(s => s.keyword === keywordLabel);
+          if (kw) setSelectedKeyword(kw);
+        }
       }
     },
   };
@@ -565,34 +792,48 @@ export const Keywords = () => {
       const xScale = chart.scales.x;
       const yScale = chart.scales.y;
 
-      const xMid = xScale.getPixelForValue(10000);
-      const yMid = yScale.getPixelForValue(50);
+      if (viewMode === 'market') {
+          // Logic for market view (midpoint dynamic or 50)
+          const xMid = xScale.getPixelForValue(10000); // Or calculate dynamic mid
+          const yMid = yScale.getPixelForValue(50);
+          
+          ctx.beginPath();
+          ctx.moveTo(xMid, chartArea.top);
+          ctx.lineTo(xMid, chartArea.bottom);
+          ctx.stroke();
 
-      ctx.save();
-      ctx.strokeStyle = COLORS.gridLines;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([8, 4]);
+          ctx.beginPath();
+          ctx.moveTo(chartArea.left, yMid);
+          ctx.lineTo(chartArea.right, yMid);
+          ctx.stroke();
+          
+           ctx.fillText('Golden Keywords', (xMid + chartArea.right) / 2, chartArea.top + 20);
+           ctx.fillText('Niche Dominance', (chartArea.left + xMid) / 2, chartArea.top + 20);
+           ctx.fillText('Opportunity Zone', (xMid + chartArea.right) / 2, chartArea.bottom - 10);
+           ctx.fillText('Low Priority', (chartArea.left + xMid) / 2, chartArea.bottom - 10);
+      } else {
+          // Sentiment View: Cross at 0, 0? Or 0 Sentiment?
+          // X Axis is Sentiment (-100 to 100). Mid is 0.
+          // Y Axis is Strength. Mid is ??? Let's say 50% of max.
+          const xMid = xScale.getPixelForValue(0);
+          const yMax = yScale.max || 100;
+          const yMid = yScale.getPixelForValue(yMax / 2);
 
-      ctx.beginPath();
-      ctx.moveTo(xMid, chartArea.top);
-      ctx.lineTo(xMid, chartArea.bottom);
-      ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(xMid, chartArea.top);
+          ctx.lineTo(xMid, chartArea.bottom);
+          ctx.stroke();
 
-      ctx.beginPath();
-      ctx.moveTo(chartArea.left, yMid);
-      ctx.lineTo(chartArea.right, yMid);
-      ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(chartArea.left, yMid);
+          ctx.lineTo(chartArea.right, yMid);
+          ctx.stroke();
 
-      ctx.restore();
-
-      ctx.font = '600 12px Inter, system-ui, sans-serif';
-      ctx.fillStyle = '#64748b';
-      ctx.textAlign = 'center';
-
-      ctx.fillText('Golden Keywords', (xMid + chartArea.right) / 2, chartArea.top + 20);
-      ctx.fillText('Niche Dominance', (chartArea.left + xMid) / 2, chartArea.top + 20);
-      ctx.fillText('Opportunity Zone', (xMid + chartArea.right) / 2, chartArea.bottom - 10);
-      ctx.fillText('Low Priority', (chartArea.left + xMid) / 2, chartArea.bottom - 10);
+           ctx.fillText('Brand Strongholds', (xMid + chartArea.right) / 2, chartArea.top + 20);
+           ctx.fillText('Critical Risks', (chartArea.left + xMid) / 2, chartArea.top + 20);
+           ctx.fillText('Potential Growth', (xMid + chartArea.right) / 2, chartArea.bottom - 10);
+           ctx.fillText('Nuisance / Ignored', (chartArea.left + xMid) / 2, chartArea.bottom - 10);
+      }
     },
   };
 
@@ -616,12 +857,43 @@ export const Keywords = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
                 <IconTarget size={28} color={COLORS.accentPrimary} />
                 <h1 style={{ fontSize: '28px', fontWeight: '600', color: COLORS.textHeadings, margin: 0 }}>
-                  Keyword Strategic Matrix
+                  {viewMode === 'market' ? 'Keyword Strategic Matrix' : 'Sentiment Landscape'}
                 </h1>
               </div>
               <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                Analyze keyword positioning across search volume and brand ownership to identify strategic opportunities
+                {viewMode === 'market' ? 'Analyze keyword positioning across search volume and brand ownership' : 'Map keywords by Sentiment and Importance to identify Risks and Strongholds'}
               </p>
+              
+              <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
+                  <button 
+                    onClick={() => setViewMode('market')}
+                    style={{
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        backgroundColor: viewMode === 'market' ? COLORS.accentPrimary : '#fff',
+                        color: viewMode === 'market' ? '#fff' : COLORS.textBody,
+                        border: '1px solid #e2e8f0',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                    }}
+                  >
+                    Market Position
+                  </button>
+                    <button 
+                    onClick={() => setViewMode('sentiment')}
+                    style={{
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        backgroundColor: viewMode === 'sentiment' ? COLORS.accentPrimary : '#fff',
+                        color: viewMode === 'sentiment' ? '#fff' : COLORS.textBody,
+                        border: '1px solid #e2e8f0',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                    }}
+                  >
+                    Sentiment Landscape
+                  </button>
+              </div>
             </div>
           </div>
         </div>
@@ -708,12 +980,40 @@ export const Keywords = () => {
               <div className="flex items-center justify-center h-full text-sm text-[var(--text-caption)]">
                 Loading keywords…
               </div>
+            ) : viewMode === 'market' ? (
+              <Scatter 
+                data={chartData} 
+                options={options} 
+                ref={chartRef} 
+              />
             ) : (
-              <Scatter data={chartData} options={options} ref={chartRef} />
+              <Bubble 
+                data={sentimentChartData} 
+                options={options} 
+                ref={chartRef} 
+              />
             )}
           </div>
+          {/* Color Legend for Sentiment View */}
+          {viewMode === 'sentiment' && !loading && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '16px', fontSize: '13px', color: COLORS.textBody }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: COLORS.brand, display: 'inline-block' }}></span>
+                Positive Sentiment
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: COLORS.contested, display: 'inline-block' }}></span>
+                Neutral
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: COLORS.competitor, display: 'inline-block' }}></span>
+                Negative Sentiment
+              </span>
+            </div>
+          )}
         </div>
 
+        {viewMode === 'market' && (
         <div
           style={{
             backgroundColor: COLORS.bgPrimary,
@@ -854,10 +1154,177 @@ export const Keywords = () => {
               </tbody>
             </table>
           </div>
-        </div>
+          </div>
+        )}
 
-        {selectedKeyword && (
-          <DetailPanel keyword={selectedKeyword} onClose={() => setSelectedKeyword(null)} />
+        {/* Sentiment Table */}
+        {viewMode === 'sentiment' && (
+             <div
+            style={{
+                backgroundColor: COLORS.bgPrimary,
+                border: `1px solid ${COLORS.gridLines}`,
+                borderRadius: '12px',
+                padding: '24px',
+                overflowX: 'auto'
+            }}
+            >
+             <h2 style={{ fontSize: '18px', fontWeight: '600', color: COLORS.textHeadings, marginBottom: '16px' }}>
+                Keyword Sentiment Analysis
+            </h2>
+            
+            {/* Domain Filter Dropdown */}
+            <div style={{ marginBottom: '16px', position: 'relative', maxWidth: '300px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px', display: 'block' }}>
+                Filter by Source/Domain
+              </label>
+              <div 
+                onClick={() => setShowDomainDropdown(!showDomainDropdown)}
+                style={{
+                  padding: '10px 12px',
+                  border: `1px solid ${COLORS.gridLines}`,
+                  borderRadius: '8px',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '14px',
+                  color: COLORS.textBody
+                }}
+              >
+                <span>{domainFilter === 'all' ? 'All Sources' : domainFilter}</span>
+                <span style={{ fontSize: '10px', color: '#94a3b8' }}>{showDomainDropdown ? '▲' : '▼'}</span>
+              </div>
+              
+              {showDomainDropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  backgroundColor: '#fff',
+                  border: `1px solid ${COLORS.gridLines}`,
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  zIndex: 100,
+                  maxHeight: '300px',
+                  overflow: 'hidden'
+                }}>
+                  {/* Search Input */}
+                  <div style={{ padding: '8px', borderBottom: `1px solid ${COLORS.gridLines}` }}>
+                    <input
+                      type="text"
+                      placeholder="Search domains..."
+                      value={domainSearch}
+                      onChange={(e) => setDomainSearch(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        border: `1px solid ${COLORS.gridLines}`,
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                  
+                  {/* Options List */}
+                  <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                    <div
+                      onClick={() => { setDomainFilter('all'); setShowDomainDropdown(false); setDomainSearch(''); }}
+                      style={{
+                        padding: '10px 12px',
+                        cursor: 'pointer',
+                        backgroundColor: domainFilter === 'all' ? '#f0f9ff' : 'transparent',
+                        fontSize: '13px',
+                        color: COLORS.textBody,
+                        borderBottom: `1px solid ${COLORS.gridLines}`
+                      }}
+                    >
+                      All Sources ({sentimentData.length} keywords)
+                    </div>
+                    {filteredDomains.map(domain => {
+                      const count = sentimentData.filter(kw => kw.citationDomains?.includes(domain)).length;
+                      return (
+                        <div
+                          key={domain}
+                          onClick={() => { setDomainFilter(domain); setShowDomainDropdown(false); setDomainSearch(''); }}
+                          style={{
+                            padding: '10px 12px',
+                            cursor: 'pointer',
+                            backgroundColor: domainFilter === domain ? '#f0f9ff' : 'transparent',
+                            fontSize: '13px',
+                            color: COLORS.textBody,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = domainFilter === domain ? '#f0f9ff' : 'transparent'}
+                        >
+                          <span>{domain}</span>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>{count}</span>
+                        </div>
+                      );
+                    })}
+                    {filteredDomains.length === 0 && (
+                      <div style={{ padding: '12px', fontSize: '13px', color: '#94a3b8', textAlign: 'center' }}>
+                        No domains found
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                <tr style={{ borderBottom: `2px solid ${COLORS.gridLines}` }}>
+                    <th style={{ textAlign: 'left', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Keyword</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Sentiment</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Score</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Mentions</th>
+                </tr>
+                </thead>
+                <tbody>
+                {filteredSentimentData.map((kw, idx) => (
+                    <tr
+                    key={kw.keyword}
+                    onClick={() => setSelectedKeyword(kw)}
+                    style={{
+                        backgroundColor: idx % 2 === 0 ? COLORS.bgPrimary : COLORS.bgSecondary,
+                        cursor: 'pointer',
+                    }}
+                    >
+                    <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, fontWeight: '500' }}>{kw.keyword}</td>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '4px 10px',
+                        borderRadius: '999px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        backgroundColor: kw.sentimentLabel === 'POSITIVE' ? '#dcfce7' : kw.sentimentLabel === 'NEGATIVE' ? '#fee2e2' : '#fef9c3',
+                        color: kw.sentimentLabel === 'POSITIVE' ? '#16a34a' : kw.sentimentLabel === 'NEGATIVE' ? '#dc2626' : '#ca8a04',
+                      }}>
+                        {kw.sentimentLabel}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px', fontSize: '13px', color: kw.sentiment >= 50 ? COLORS.brand : COLORS.competitor, textAlign: 'center', fontWeight: '600' }}>{kw.sentiment}</td>
+                    <td style={{ padding: '12px', fontSize: '13px', color: COLORS.textBody, textAlign: 'right' }}>{kw.mentions}</td>
+                    </tr>
+                ))}
+                </tbody>
+            </table>
+            </div>
+        )}
+
+
+        {selectedKeyword && viewMode === 'market' && 'ownership' in selectedKeyword && (
+          <DetailPanel keyword={selectedKeyword as KeywordData} onClose={() => setSelectedKeyword(null)} />
+        )}
+        {selectedKeyword && viewMode === 'sentiment' && 'sentimentLabel' in selectedKeyword && (
+            <SentimentDetailPanel keyword={selectedKeyword as SentimentKeywordData} onClose={() => setSelectedKeyword(null)} />
         )}
       </div>
     </Layout>

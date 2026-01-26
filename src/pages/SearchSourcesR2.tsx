@@ -11,6 +11,7 @@ import { ValueScoreTable, type ValueScoreSource } from '../components/SourcesR2/
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrendsChart';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
+import { getDefaultDateRange } from './dashboard/utils';
 import { fetchRecommendations, type Recommendation } from '../api/recommendationsApi';
 
 import { KeyTakeaways } from '../components/SourcesR2/KeyTakeaways';
@@ -196,16 +197,9 @@ export const SearchSourcesR2 = () => {
   const urlEndDate = searchParams.get('endDate');
   const highlightSource = searchParams.get('highlightSource');
 
-  const [startDate, setStartDate] = useState<string>(() => {
-    if (urlStartDate) return urlStartDate;
-    const end = new Date();
-    end.setUTCHours(23, 59, 59, 999);
-    const start = new Date(end);
-    start.setUTCDate(start.getUTCDate() - 6);
-    start.setUTCHours(0, 0, 0, 0);
-    return start.toISOString().split('T')[0];
-  });
-  const [endDate, setEndDate] = useState<string>(() => urlEndDate || new Date().toISOString().split('T')[0]);
+  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange();
+  const [startDate, setStartDate] = useState<string>(urlStartDate || defaultStart);
+  const [endDate, setEndDate] = useState<string>(urlEndDate || defaultEnd);
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);

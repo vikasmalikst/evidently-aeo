@@ -95,6 +95,7 @@ export const CustomerEntitlements = () => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
 
     // Load customers on mount
     useEffect(() => {
@@ -170,8 +171,10 @@ export const CustomerEntitlements = () => {
             );
 
             if (response.success) {
-                setMessage({ type: 'success', text: 'Entitlements saved successfully!' });
-                setTimeout(() => setMessage(null), 3000);
+                // Show the success modal
+                setShowSuccessModal(true);
+                // Auto-hide after 3 seconds
+                setTimeout(() => setShowSuccessModal(false), 3000);
             } else {
                 setMessage({ type: 'error', text: response.error || 'Failed to save entitlements' });
             }
@@ -226,17 +229,117 @@ export const CustomerEntitlements = () => {
 
             {/* Customer Selection removed - now in AdminLayout */}
 
-            {/* Message Display */}
-            {message && (
+            {/* Error Message Display */}
+            {message && message.type === 'error' && (
                 <div
-                    className={`mb-6 p-4 rounded-lg ${message.type === 'success'
-                        ? 'bg-green-50 text-green-800 border border-green-200'
-                        : 'bg-red-50 text-red-800 border border-red-200'
-                        }`}
+                    className="mb-6 p-4 rounded-lg bg-red-50 text-red-800 border border-red-200"
                 >
                     {message.text}
                 </div>
             )}
+
+            {/* Success Modal */}
+            {showSuccessModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center"
+                    onClick={() => setShowSuccessModal(false)}
+                >
+                    {/* Backdrop with blur */}
+                    <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+                    
+                    {/* Modal */}
+                    <div 
+                        className="relative bg-white rounded-2xl shadow-2xl p-8 max-w-sm mx-4 animate-[scaleIn_0.3s_ease-out]"
+                        style={{
+                            animation: 'scaleIn 0.3s ease-out, float 2s ease-in-out infinite'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Success Icon with animation */}
+                        <div className="flex justify-center mb-6">
+                            <div className="relative">
+                                {/* Outer glow ring */}
+                                <div className="absolute inset-0 bg-green-400/30 rounded-full animate-ping" style={{ animationDuration: '1.5s' }} />
+                                {/* Icon circle */}
+                                <div className="relative w-20 h-20 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-lg">
+                                    <svg 
+                                        className="w-10 h-10 text-white" 
+                                        fill="none" 
+                                        stroke="currentColor" 
+                                        viewBox="0 0 24 24"
+                                        style={{ animation: 'checkDraw 0.5s ease-out 0.2s both' }}
+                                    >
+                                        <path 
+                                            strokeLinecap="round" 
+                                            strokeLinejoin="round" 
+                                            strokeWidth={3} 
+                                            d="M5 13l4 4L19 7" 
+                                        />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Text content */}
+                        <div className="text-center">
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                Changes Saved!
+                            </h3>
+                            <p className="text-gray-600 mb-4">
+                                Customer entitlements have been updated successfully.
+                            </p>
+                            
+                            {/* Subtle divider */}
+                            <div className="w-16 h-1 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full mx-auto mb-4" />
+                            
+                            {/* Close button */}
+                            <button
+                                onClick={() => setShowSuccessModal(false)}
+                                className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-medium shadow-md hover:shadow-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200"
+                            >
+                                Got it!
+                            </button>
+                        </div>
+                        
+                        {/* Decorative sparkles */}
+                        <div className="absolute -top-2 -right-2 text-2xl animate-bounce" style={{ animationDelay: '0.1s' }}>✨</div>
+                        <div className="absolute -top-1 -left-3 text-xl animate-bounce" style={{ animationDelay: '0.3s' }}>🎉</div>
+                        <div className="absolute -bottom-2 -right-3 text-xl animate-bounce" style={{ animationDelay: '0.5s' }}>🌟</div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add keyframe animations */}
+            <style>{`
+                @keyframes scaleIn {
+                    from {
+                        opacity: 0;
+                        transform: scale(0.8);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                }
+                @keyframes float {
+                    0%, 100% {
+                        transform: translateY(0px);
+                    }
+                    50% {
+                        transform: translateY(-5px);
+                    }
+                }
+                @keyframes checkDraw {
+                    from {
+                        stroke-dasharray: 100;
+                        stroke-dashoffset: 100;
+                    }
+                    to {
+                        stroke-dasharray: 100;
+                        stroke-dashoffset: 0;
+                    }
+                }
+            `}</style>
 
             {/* Entitlements Form */}
             {selectedCustomerId && (

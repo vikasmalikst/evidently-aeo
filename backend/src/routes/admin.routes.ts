@@ -749,6 +749,11 @@ router.put('/customers/:customerId/entitlements', async (req: Request, res: Resp
     // Validate entitlements
     const validationErrors = customerEntitlementsService.validateEntitlements(entitlements);
     if (validationErrors.length > 0) {
+      console.error('Entitlement validation failed:', {
+        customerId,
+        errors: validationErrors,
+        receivedData: entitlements
+      });
       return res.status(400).json({
         success: false,
         error: 'Validation failed',

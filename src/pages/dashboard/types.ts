@@ -65,12 +65,14 @@ export interface CompetitorVisibilityEntry {
     sentiment: (number | null)[];
     brandPresencePercentage?: number[];
     brandPresence?: number[];
+    isRealData?: boolean[];
   };
 }
 
 export interface BrandSummary {
   visibility: number;
   share: number;
+  sentiment?: number | null;
   brandPresencePercentage: number;
   topTopics?: Array<{
     topic: string;
@@ -78,6 +80,14 @@ export interface BrandSummary {
     share: number;
     visibility: number;
   }>;
+  timeSeries?: {
+    dates: string[];
+    visibility: number[];
+    share: number[];
+    sentiment: (number | null)[];
+    brandPresencePercentage?: number[];
+    isRealData?: boolean[];
+  };
 }
 
 export interface DashboardPayload {
@@ -129,6 +139,14 @@ export interface DashboardPayload {
       visibility: number;
       mentions: number;
     }>;
+    timeSeries?: {
+      dates: string[];
+      visibility: number[];
+      share: number[];
+      sentiment: (number | null)[];
+      brandPresence?: number[];
+      isRealData?: boolean[];
+    };
   }>;
   actionItems?: ActionItem[];
   collectorSummaries?: CollectorSummary[];
@@ -195,6 +213,9 @@ export interface MetricCardProps {
   comparisons?: Array<{ label: string; value: number; isBrand?: boolean }>;
   comparisonSuffix?: string;
   onHelpClick?: () => void;
+  metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
+  headerAction?: React.ReactNode;
+  actionPosition?: 'inside' | 'outside-top';
 }
 
 export interface ActionCardProps {

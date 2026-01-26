@@ -7,6 +7,7 @@ import { SearchSourcesR2 } from './pages/SearchSourcesR2';
 import { Topics } from './pages/Topics';
 import { Prompts } from './pages/Prompts';
 import { Keywords } from './pages/Keywords';
+import { SentimentLandscape2 } from './pages/SentimentLandscape2';
 import { RecommendationsV3 } from './pages/RecommendationsV3';
 import { Setup } from './pages/Setup';
 import { Onboarding } from './pages/Onboarding';
@@ -25,6 +26,7 @@ import { CustomerEntitlements } from './pages/admin/CustomerEntitlements';
 import { CollectionStats } from './pages/admin/CollectionStats';
 import { DomainReadinessPage } from './pages/DomainReadiness/DomainReadinessPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { EntitlementRoute } from './components/EntitlementRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { AdminLayout } from './components/admin/AdminLayout';
 import { featureFlags } from './config/featureFlags';
@@ -123,9 +125,9 @@ function App() {
         <Route
           path="/measure"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="measure" fallbackPath="/settings/manage-brands">
               <MeasurePage />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         {/* Redirect old /dashboard to /measure */}
@@ -153,49 +155,57 @@ function App() {
         <Route
           path="/analyze/citation-sources"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="analyze_citation_sources">
               <SearchSourcesR2 />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         <Route
           path="/analyze/topics"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="analyze_topics">
               <Topics />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         <Route
           path="/analyze/queries"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="analyze_queries">
               <QueriesAnalysisPage />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         <Route
           path="/analyze/queries-answers"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="analyze_answers">
               <Prompts />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         <Route
           path="/analyze/keywords"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="analyze_keywords">
               <Keywords />
-            </ProtectedRoute>
+            </EntitlementRoute>
+          }
+        />
+        <Route
+          path="/analyze/keywords-graph"
+          element={
+            <EntitlementRoute requiredFeature="analyze_keywords">
+              <SentimentLandscape2 />
+            </EntitlementRoute>
           }
         />
         <Route
           path="/analyze/domain-readiness"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="analyze_domain_readiness">
               <DomainReadinessPage />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         {/* Redirects from old Analyze routes */}
@@ -262,33 +272,33 @@ function App() {
         <Route
           path="/improve/discover"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="recommendations">
               <DiscoverPage />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         <Route
           path="/improve/action-plan"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="recommendations">
               <ActionPlanPage />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         <Route
           path="/improve/execute"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="recommendations">
               <ExecutePage />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         <Route
           path="/improve/impact"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="recommendations">
               <ImpactPage />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
         {/* Redirects from old Recommendations routes */}
@@ -315,9 +325,9 @@ function App() {
         <Route
           path="/executive-reporting"
           element={
-            <ProtectedRoute>
+            <EntitlementRoute requiredFeature="executive_reporting">
               <ExecutiveReportingPage />
-            </ProtectedRoute>
+            </EntitlementRoute>
           }
         />
 

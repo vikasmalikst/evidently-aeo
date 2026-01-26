@@ -16,22 +16,30 @@ interface PromptConfigurationProps {
   selectedTopics: Topic[];
   selectedPrompts: PromptWithTopic[];
   onPromptsChange: (prompts: PromptWithTopic[]) => void;
+  cachedPrompts?: Record<string, string[]>;
+  onPromptsFetched?: (newPrompts: Record<string, string[]>) => void;
 }
 
 function isCustomPrompt(prompt: string, customPrompts: Record<string, string[]>): boolean {
   return Object.values(customPrompts).some(prompts => prompts.includes(prompt));
 }
 
-export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPromptsChange }: PromptConfigurationProps) => {
+export const PromptConfiguration = ({ 
+  selectedTopics, 
+  selectedPrompts, 
+  onPromptsChange,
+  cachedPrompts = {},
+  onPromptsFetched
+}: PromptConfigurationProps) => {
   const { user } = useAuthStore();
-  const maxQueries = user?.settings?.entitlements?.max_queries ?? 5; // Default to 5 if not set
+  const maxQueries = user?.settings?.entitlements?.max_queries ?? 25; // Default to 1000 to match backend default
 
   const [customPrompt, setCustomPrompt] = useState('');
   const [selectedTopicForCustom, setSelectedTopicForCustom] = useState('');
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set([selectedTopics[0]?.id]));
   const [customPromptsByTopic, setCustomPromptsByTopic] = useState<Record<string, string[]>>({});
-  const [promptsByTopic, setPromptsByTopic] = useState<Record<string, string[]>>({});
+  const [promptsByTopic, setPromptsByTopic] = useState<Record<string, string[]>>(cachedPrompts);
   const [loadingTopics, setLoadingTopics] = useState<Set<string>>(new Set());
   const topicRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -41,7 +49,7 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
 
   const prefetchTopicPrompts = useCallback(async (topicIds: string[]) => {
     const topicsToFetch = topicIds.filter(
-      (topicId) => !promptsByTopic[topicId] && !loadingTopics.has(topicId)
+      (topicId) => !promptsByTopic[topicId] && !cachedPrompts[topicId] && !loadingTopics.has(topicId)
     );
 
     if (topicsToFetch.length === 0) {
@@ -99,6 +107,17 @@ export const PromptConfiguration = ({ selectedTopics, selectedPrompts, onPrompts
           console.log(
             `✅ Prefetched prompts for ${response.data.length} topics`
           );
+
+          if (onPromptsFetched) {
+            const newPrompts: Record<string, string[]> = {};
+            response.data.forEach(({ topic, prompts }) => {
+              const topicMatch = topicsPayload.find((t) => t.name === topic);
+              if (topicMatch) {
+                newPrompts[topicMatch.id] = prompts || [];
+              }
+            });
+            onPromptsFetched(newPrompts);
+          }
         } else {
           console.warn(
             '⚠️ No prompts returned for topics:',

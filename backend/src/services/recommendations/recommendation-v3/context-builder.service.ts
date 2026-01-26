@@ -8,6 +8,7 @@
 import { supabaseAdmin } from '../../../config/database';
 import { OptimizedMetricsHelper } from '../../query-helpers/optimized-metrics.helper';
 import { sourceAttributionService } from '../../source-attribution.service';
+import { graphRecommendationService } from '../graph-recommendation.service';
 import type { BrandContextV3 } from './types';
 
 export class ContextBuilderService {
@@ -89,6 +90,14 @@ export class ContextBuilderService {
         currentEndDate
       );
 
+      // Phase 7: Get Graph Insights (Opportunity Gaps)
+      const graphInsights = await this.getGraphInsights(
+        brandId,
+        brand.name,
+        currentStartDate,
+        competitors.map(c => c.name)
+      );
+
       return {
         brandId,
         brandName: brand.name,
@@ -100,7 +109,9 @@ export class ContextBuilderService {
         competitors,
         sourceMetrics,
         // Phase 1: Context Enrichment - Qualitative Context
-        ...(await this.getQualitativeContext(brandId, customerId, currentStartDate))
+        ...(await this.getQualitativeContext(brandId, customerId, currentStartDate)),
+        // Phase 7: Graph Insights
+        graphInsights
       };
 
     } catch (error) {
@@ -528,6 +539,99 @@ export class ContextBuilderService {
 
     // Pick last 5 (most recent) - logic is simple for now
     return quotes.slice(0, 5);
+  }
+
+  /**
+   * Phase 7: Fetch Data & Run Graph Algorithms
+   */
+  private async getGraphInsights(
+    brandId: string,
+    brandName: string,
+    startDate: string,
+    competitorNames: string[]
+  ): Promise<BrandContextV3['graphInsights']> {
+    try {
+      // 1. Fetch Raw Data (Consolidated Analysis + Metadata)
+      // Limit to 2000 for performance (Graphology can handle 4k, but start safe)
+      const { data, error } = await supabaseAdmin
+        .from('consolidated_analysis_cache')
+        .select(`
+            collector_result_id,
+            products,
+            sentiment,
+            keywords,
+            quotes,
+            collector_results!inner(brand_id, created_at)
+          `)
+        .eq('collector_results.brand_id', brandId)
+        .gte('collector_results.created_at', startDate)
+        .order('created_at', { ascending: false, foreignTable: 'collector_results' })
+        .limit(2000);
+
+      if (error || !data || data.length === 0) {
+        console.warn('⚠️ [ContextBuilder] No data for Graph Analysis:', error?.message);
+        return undefined;
+      }
+
+      console.log(`🧠 [ContextBuilder] Running Graph Analysis on ${data.length} records...`);
+
+      // 2. Build Graph
+      const graphInput = data.map(row => ({
+        id: row.collector_result_id,
+        analysis: {
+          products: row.products,
+          sentiment: row.sentiment,
+          keywords: row.keywords,
+          quotes: row.quotes,
+          citations: {} // Not used in graph
+        },
+        competitorNames: competitorNames
+      }));
+
+      graphRecommendationService.buildGraph(brandName, graphInput);
+
+      // 3. Run Algorithms
+      graphRecommendationService.runAlgorithms();
+
+      // 4. Extract Insights
+      // For each competitor, find opportunity gaps
+      const allGaps: any[] = [];
+      const allBattlegrounds: any[] = [];
+      const allStrongholds: any[] = [];
+
+      for (const comp of competitorNames) {
+        // 1. Weaknesses
+        const gaps = graphRecommendationService.getOpportunityGaps(comp);
+        allGaps.push(...gaps);
+
+        // 2. Battlegrounds (High Contention)
+        const battles = graphRecommendationService.getBattlegrounds(brandName, comp);
+        allBattlegrounds.push(...battles);
+
+        // 3. Competitor Strongholds (Envy)
+        const strengths = graphRecommendationService.getCompetitorStrongholds(comp);
+        allStrongholds.push(...strengths);
+      }
+
+      // Sort globally by score
+      const topGaps = allGaps.sort((a, b) => b.score - a.score).slice(0, 5);
+      const topBattlegrounds = allBattlegrounds.sort((a, b) => b.score - a.score).slice(0, 3);
+      const topStrongholds = allStrongholds.sort((a, b) => b.score - a.score).slice(0, 3);
+
+      if (topGaps.length > 0 || topBattlegrounds.length > 0) {
+        console.log(`🚀 [ContextBuilder] Graph Insights: ${topGaps.length} Gaps, ${topBattlegrounds.length} Battles, ${topStrongholds.length} Strongholds`);
+      }
+
+      return {
+        opportunityGaps: topGaps,
+        battlegrounds: topBattlegrounds,
+        competitorStrongholds: topStrongholds
+      } as any;
+
+    } catch (err) {
+      console.error('❌ [ContextBuilder] Graph Analysis Failed:', err);
+      return undefined;
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 "use client"
 
-import { MotionDiv, fadeInUp, staggerContainer, defaultAnimationOptions } from "@/lib-landing/animations"
-import { ArrowRight, TrendingUp, Target, RefreshCw } from "lucide-react"
+import { MotionDiv, fadeInUp, defaultAnimationOptions } from "@/lib-landing/animations"
+import { TrendingUp, Target, RefreshCw } from "lucide-react"
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 
@@ -41,11 +41,22 @@ function DifferentiatorCardGrid({
       {differentiators.map((differentiator, index) => {
         const Icon = differentiator.icon
         return (
-          <div
+          <motion.div
             key={index}
             className="relative group block p-2 h-full w-full"
             onMouseEnter={() => setHoveredIndex(index)}
             onMouseLeave={() => setHoveredIndex(null)}
+            // DVD-style floating animation - each card has unique path
+            animate={{
+              y: [0, -15, 0, 10, 0],
+              x: [0, index === 1 ? 0 : (index === 0 ? -8 : 8), 0, index === 1 ? 0 : (index === 0 ? 5 : -5), 0],
+              rotate: [0, index === 1 ? 0 : (index === 0 ? -1 : 1), 0, index === 1 ? 0 : (index === 0 ? 0.5 : -0.5), 0],
+            }}
+            transition={{
+              duration: 6 + index, // Slightly different timing for desync
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
           >
             <AnimatePresence>
               {hoveredIndex === index && (
@@ -78,7 +89,7 @@ function DifferentiatorCardGrid({
                 </p>
               </div>
             </div>
-          </div>
+          </motion.div>
         )
       })}
     </div>
@@ -101,8 +112,11 @@ export function WhyDifferent() {
           {...defaultAnimationOptions}
           variants={fadeInUp}
         >
+          <span className="inline-block px-4 py-1.5 rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 text-sm font-semibold tracking-wide uppercase">
+            Why We're Different
+          </span>
           <h2 className="text-3xl lg:text-4xl xl:text-5xl font-bold text-foreground">
-            Why EvidentlyAEO Is Different
+            Not Just Another Dashboard
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Most AEO tools stop at visibility reports. We're the only full-loop Answer Engine Optimization system that goes from measurement to measurable business outcomes.

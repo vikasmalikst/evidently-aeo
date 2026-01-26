@@ -461,6 +461,10 @@ router.get(
       const skipCache =
         typeof skipCacheQuery === 'string' &&
         ['true', '1', 'yes'].includes(skipCacheQuery.toLowerCase());
+      const skipCitationsQuery = Array.isArray(req.query.skipCitations) ? req.query.skipCitations[0] : req.query.skipCitations;
+      const skipCitations =
+        typeof skipCitationsQuery === 'string' &&
+        ['true', '1', 'yes'].includes(skipCitationsQuery.toLowerCase());
 
       // Extract timezone offset from header (minutes difference between UTC and local)
       // e.g. 300 for EST (UTC-5)
@@ -496,16 +500,24 @@ router.get(
             throw new Error('Both startDate and endDate are required');
           }
 
-          startDate.setUTCHours(0, 0, 0, 0);
-          endDate.setUTCHours(23, 59, 59, 999);
+          // Offset is (UTC - Local) in minutes
+          // To convert local midnight to UTC: UTC = Local + Offset
+          const offsetMs = timezoneOffset * 60 * 1000;
 
-          if (startDate.getTime() > endDate.getTime()) {
+          // Set to local midnight (currently UTC midnight) and then shift to actual UTC
+          startDate.setUTCHours(0, 0, 0, 0);
+          const startDateUtc = new Date(startDate.getTime() + offsetMs);
+
+          endDate.setUTCHours(23, 59, 59, 999);
+          const endDateUtc = new Date(endDate.getTime() + offsetMs);
+
+          if (startDateUtc.getTime() > endDateUtc.getTime()) {
             throw new Error('startDate must be before or equal to endDate');
           }
 
           dateRange = {
-            start: startDate.toISOString(),
-            end: endDate.toISOString()
+            start: startDateUtc.toISOString(),
+            end: endDateUtc.toISOString()
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Invalid date range';
@@ -523,7 +535,8 @@ router.get(
       const dashboard = await brandDashboardService.getBrandDashboard(brandId, customerId, dateRange, {
         skipCache,
         collectors,
-        timezoneOffset
+        timezoneOffset,
+        skipCitations
       });
 
       res.json({
@@ -1115,32 +1128,34 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
     }
 
     // Fetch counts and statuses in parallel
-    // IMPORTANT: Count unique query_ids, not total collector_results
+    // IMPORTANT: Fetch ALL collector results to accurately determine if queries are complete
     const [
       { count: totalQueries, error: totalError },
-      { data: collectedResults, error: collectedError },
-      { data: scoredResults, error: scoredError },
+      { data: incompleteResults, error: collectorResultsError },
+      { data: resultCountData, error: resultCountError },
       { data: readinessAudits, error: readinessError },
       { data: recommendations, error: recommendationsError }
     ] = await Promise.all([
+      // Fetch total queries
       supabaseAdmin
         .from('generated_queries')
         .select('id', { count: 'exact', head: true })
         .eq('brand_id', brandId)
         .eq('customer_id', customerId),
+      // Fetch only INCOMPLETE or UNSCORED collector results
+      supabaseAdmin
+        .from('collector_results')
+        .select('query_id, status, scoring_status')
+        .eq('brand_id', brandId)
+        .eq('customer_id', customerId)
+        .not('query_id', 'is', null)
+        .or('status.neq.completed,scoring_status.neq.completed'),
+      // Fetch count of unique queries that have at least one result
       supabaseAdmin
         .from('collector_results')
         .select('query_id')
         .eq('brand_id', brandId)
         .eq('customer_id', customerId)
-        .eq('status', 'completed')
-        .not('query_id', 'is', null),
-      supabaseAdmin
-        .from('collector_results')
-        .select('query_id')
-        .eq('brand_id', brandId)
-        .eq('customer_id', customerId)
-        .eq('scoring_status', 'completed')
         .not('query_id', 'is', null),
       // Check for most recent domain readiness audit
       supabaseAdmin
@@ -1158,43 +1173,60 @@ router.get('/:brandId/onboarding-progress', authenticateToken, async (req: Reque
         .limit(1)
     ]);
 
-    if (totalError || collectedError || scoredError || readinessError || recommendationsError) {
+    if (totalError || collectorResultsError || resultCountError || readinessError || recommendationsError) {
       console.error('Error fetching onboarding progress counts:', {
         totalError,
-        collectedError,
-        scoredError,
-        readinessError, // Log new errors
+        collectorResultsError,
+        resultCountError,
+        readinessError,
         recommendationsError,
         brandId,
         customerId,
       });
       res.status(500).json({
         success: false,
-        error: 'Failed to fetch progress details', // Generic message
+        error: 'Failed to fetch progress details',
       });
       return;
     }
 
-    // Handle null/undefined data arrays
-    const collectedData = collectedResults || [];
-    const scoredData = scoredResults || [];
-
+    const totalWithResults = new Set((resultCountData || []).map(r => r.query_id)).size;
+    const results = incompleteResults || [];
     const total = totalQueries || 0;
 
-    // Count unique query_ids (not total collector_results)
-    const uniqueCollectedQueryIds = new Set(
-      collectedData
-        .map((r: any) => r.query_id)
-        .filter((id: any) => id != null)
-    );
-    const collected = uniqueCollectedQueryIds.size;
+    // Aggregate results by query_id to find truly complete queries
+    // A query is "collected" only if it has results AND none are pending/processing/running
+    // A query is "scored" only if collected AND all completed results are scored
+    const queryStates = new Map<string, { hasPending: boolean; hasUnscored: boolean; hasResults: boolean }>();
 
-    const uniqueScoredQueryIds = new Set(
-      scoredData
-        .map((r: any) => r.query_id)
-        .filter((id: any) => id != null)
-    );
-    const scored = uniqueScoredQueryIds.size;
+    results.forEach((r: any) => {
+      const queryId = r.query_id;
+      if (!queryId) return;
+
+      const isPending = ['pending', 'running', 'processing', 'failed_retry'].includes(r.status);
+      const isCompleted = r.status === 'completed';
+      const isUnscored = isCompleted && r.scoring_status !== 'completed';
+
+      const current = queryStates.get(queryId) || { hasPending: false, hasUnscored: false, hasResults: false };
+      current.hasResults = true;
+      if (isPending) current.hasPending = true;
+      if (isUnscored) current.hasUnscored = true;
+      queryStates.set(queryId, current);
+    });
+
+    // A query is complete if it has results AND is not in the incompleteResults set
+    const incompleteQueryIds = new Set(results.map(r => r.query_id));
+    const unscoredQueryIds = new Set(results.filter(r => r.status === 'completed' && r.scoring_status !== 'completed').map(r => r.query_id));
+    const pendingQueryIds = new Set(results.filter(r => ['pending', 'running', 'processing', 'failed_retry'].includes(r.status)).map(r => r.query_id));
+
+    // collected = queries with results where NONE are pending
+    // scored = queries with results where NONE are pending and NONE are unscored
+
+    // Note: totalWithResults is count of queries that have at least one result row
+    const collected = totalWithResults - pendingQueryIds.size;
+    // Filter out unscored queries that are also pending (because they are already excluded from 'collected')
+    const relevantUnscoredCount = [...unscoredQueryIds].filter(id => !pendingQueryIds.has(id)).length;
+    const scored = collected - relevantUnscoredCount;
 
     // Determine Stage Statuses
     let collectionStatus: 'pending' | 'active' | 'completed' = 'pending';

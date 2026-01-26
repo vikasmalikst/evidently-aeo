@@ -38,28 +38,26 @@ export const AnalyzePrefetcher = ({ brandId }: AnalyzePrefetcherProps) => {
         endDate: topicsEnd.toISOString(),
       });
       const topicsEndpoint = `/brands/${brandId}/topics?${topicParams.toString()}`;
-      
+
       // --- 2. Queries Analysis (Target: /analyze/queries) ---
-      // Logic: Last 30 Days (Local YYYY-MM-DD -> ISO)
+      // Logic: Last 7 Days (Optimized from 30d to prevent timeouts)
       const promptsEnd = new Date();
       const promptsStart = new Date(promptsEnd);
-      promptsStart.setDate(promptsStart.getDate() - 29);
-      
+      promptsStart.setDate(promptsStart.getDate() - 7);
+
       const formatDate = (date: Date) => {
-          const y = date.getFullYear();
-          const m = String(date.getMonth() + 1).padStart(2, '0');
-          const d = String(date.getDate()).padStart(2, '0');
-          return `${y}-${m}-${d}`;
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
       };
-      
-      // QueriesAnalysisPage uses ISO strings constructed from local dates treated as UTC midnight? 
-      // Actually it does: new Date(startDate + 'T00:00:00Z').toISOString()
+
       const promptQueryStart = new Date(formatDate(promptsStart) + 'T00:00:00Z').toISOString();
       const promptQueryEnd = new Date(formatDate(promptsEnd) + 'T23:59:59.999Z').toISOString();
 
       const promptsQueryEndpoint = `/brands/${brandId}/prompts?${new URLSearchParams({
-          startDate: promptQueryStart,
-          endDate: promptQueryEnd
+        startDate: promptQueryStart,
+        endDate: promptQueryEnd
       }).toString()}`;
 
       // --- 3. Prompts / Queries & Answers (Target: /analyze/queries-answers) ---
@@ -73,8 +71,8 @@ export const AnalyzePrefetcher = ({ brandId }: AnalyzePrefetcherProps) => {
       const prompt7EndISO = new Date(formatDate(prompts7End) + 'T23:59:59.999Z').toISOString();
 
       const prompts7Endpoint = `/brands/${brandId}/prompts?${new URLSearchParams({
-          startDate: prompt7StartISO,
-          endDate: prompt7EndISO
+        startDate: prompt7StartISO,
+        endDate: prompt7EndISO
       }).toString()}`;
 
       // --- 4. Citation Sources (Target: /analyze/citation-sources) ---
@@ -91,30 +89,30 @@ export const AnalyzePrefetcher = ({ brandId }: AnalyzePrefetcherProps) => {
       const sourcesEndDateStr = new Date().toISOString().split('T')[0];
 
       const sourcesEndpoint = `/brands/${brandId}/sources?${new URLSearchParams({
-          startDate: sourcesStartDateStr,
-          endDate: sourcesEndDateStr
+        startDate: sourcesStartDateStr,
+        endDate: sourcesEndDateStr
       }).toString()}`;
 
       // Execute prefetches
       // Chaining promises to avoid network congestion
       prefetch(topicsEndpoint)
         .then(() => {
-            console.log('[AnalyzePrefetcher] ✅ Topics prefetched');
-            return prefetch(promptsQueryEndpoint);
+          console.log('[AnalyzePrefetcher] ✅ Topics prefetched');
+          return prefetch(promptsQueryEndpoint);
         })
         .then(() => {
-            console.log('[AnalyzePrefetcher] ✅ Queries Analysis (30d) prefetched');
-            return prefetch(prompts7Endpoint);
+          console.log('[AnalyzePrefetcher] ✅ Queries Analysis (30d) prefetched');
+          return prefetch(prompts7Endpoint);
         })
         .then(() => {
-            console.log('[AnalyzePrefetcher] ✅ Queries & Answers (7d) prefetched');
-            return prefetch(sourcesEndpoint);
+          console.log('[AnalyzePrefetcher] ✅ Queries & Answers (7d) prefetched');
+          return prefetch(sourcesEndpoint);
         })
         .then(() => {
-            console.log('[AnalyzePrefetcher] ✅ Citation Sources (7d) prefetched');
+          console.log('[AnalyzePrefetcher] ✅ Citation Sources (7d) prefetched');
         })
         .catch(err => {
-            console.warn('[AnalyzePrefetcher] Prefetch failed', err);
+          console.warn('[AnalyzePrefetcher] Prefetch failed', err);
         });
 
     }, { timeout: 5000 });

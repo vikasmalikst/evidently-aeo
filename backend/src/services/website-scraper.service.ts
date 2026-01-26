@@ -189,14 +189,14 @@ function extractBrandNameFromDomain(url: string): string | null {
  */
 function extractBrandNameFromTitle(title: string): string | null {
   if (!title) return null;
-  
+
   // Try patterns like "Product | Brand" or "Product - Brand"
   const patterns = [
     /\|\s*([^|]+)$/,  // "Product | Brand"
     /–\s*([^–]+)$/,   // "Product – Brand"
     /-\s*([^-]+)$/,   // "Product - Brand"
   ];
-  
+
   for (const pattern of patterns) {
     const match = title.match(pattern);
     if (match && match[1]) {
@@ -206,7 +206,7 @@ function extractBrandNameFromTitle(title: string): string | null {
       }
     }
   }
-  
+
   return null;
 }
 
@@ -238,7 +238,7 @@ function buildKeywords(params: {
 
       const normalized = cleanText(phrase);
       const lower = normalized.toLowerCase();
-      
+
       // Check if it's a brand keyword
       let isBrand = false;
       if (brandNeedle.length > 0) {
@@ -286,16 +286,57 @@ class WebsiteScraperService {
     const resolvedUrl = ensureHttps(input);
     const displayDomain = stripProtocol(resolvedUrl);
 
-    const response = await axios.get(resolvedUrl, {
-      timeout: timeoutMs,
-      maxRedirects: 5,
-      headers: {
-        'User-Agent': 'EvidentlyAEO-TopicScraper/1.0',
-        Accept: 'text/html,application/xhtml+xml',
-      },
-    });
+    // Launch puppeteer to handle WAFs (like Akamai) and dynamic content
+    let browser;
+    let html = '';
 
-    const html = typeof response.data === 'string' ? response.data : String(response.data || '');
+    try {
+      // Lazy load puppeteer to avoid require overhead if not used
+      const puppeteer = await import('puppeteer');
+
+      browser = await puppeteer.default.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          '--window-size=1920x1080'
+        ]
+      });
+
+      const page = await browser.newPage();
+
+      // Set a realistic user agent
+      await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+      // Set extra headers
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9',
+      });
+
+      // Navigate with timeout
+      await page.goto(resolvedUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: timeoutMs
+      });
+
+      // Get page content
+      html = await page.content();
+
+    } catch (error) {
+      // Fallback or rethrow? 
+      // For now, if puppeteer fails (e.g. timeout), generic error
+      if (error instanceof Error) {
+        throw new Error(`Scraping failed: ${error.message}`);
+      }
+      throw error;
+    } finally {
+      if (browser) {
+        await browser.close().catch(() => { });
+      }
+    }
     const $ = cheerio.load(html);
 
     const title = cleanText($('title').first().text());
@@ -334,7 +375,7 @@ class WebsiteScraperService {
       '.menu a',
       '.header-menu a',
     ];
-    
+
     const navItemsSet = new Set<string>();
     for (const selector of navSelectors) {
       $(selector).each((_, el) => {
@@ -344,7 +385,7 @@ class WebsiteScraperService {
         }
       });
     }
-    
+
     const navItems = uniqCaseInsensitive(Array.from(navItemsSet))
       .filter((t) => !NAV_STOPWORDS.has(t.toLowerCase()));
 
@@ -364,12 +405,12 @@ class WebsiteScraperService {
         .map((el) => cleanText($(el).text()))
         .filter((t) => {
           const lower = t.toLowerCase();
-          return t.length > 5 && 
-                 t.length <= 80 && 
-                 !lower.includes('cookie') && 
-                 !lower.includes('privacy') &&
-                 !lower.includes('terms') &&
-                 !lower.startsWith('©');
+          return t.length > 5 &&
+            t.length <= 80 &&
+            !lower.includes('cookie') &&
+            !lower.includes('privacy') &&
+            !lower.includes('terms') &&
+            !lower.startsWith('©');
         })
         .slice(0, 20) // Limit to avoid too many generic items
     );
@@ -396,7 +437,7 @@ class WebsiteScraperService {
     // Build websiteContent as a compact keyword-only list (not long context)
     // This keeps the prompt small while providing signal
     const topKeywords = [...industryKeywords.slice(0, 12), ...brandKeywords.slice(0, 5)];
-    const websiteContent = topKeywords.length > 0 
+    const websiteContent = topKeywords.length > 0
       ? `Website keywords: ${topKeywords.join(', ')}`
       : '';
 

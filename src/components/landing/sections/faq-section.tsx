@@ -1,151 +1,198 @@
 "use client"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/landing/ui/accordion"
-import { MotionDiv, fadeInUp, defaultAnimationOptions } from "@/lib-landing/animations"
+
+import { useState } from "react"
+import { motion, AnimatePresence } from "framer-motion"
+import { Plus, Minus, MessageCircle, ArrowRight, Search } from "lucide-react"
+import { Button } from "@/components/landing/ui/button"
+import { cn } from "@/lib-landing/utils"
+
+const categories = ["General", "Product", "Comparison", "Support"] as const
+type Category = typeof categories[number]
 
 const faqs = [
+  // General
   {
-    category: "Product & Platform",
-    question: "What's the difference between AEO (Answer Engine Optimization) and traditional SEO?",
-    answer:
-      "SEO optimizes for click-through rates in search engine results pages (SERPs). AEO optimizes for citations and mentions in AI-generated answers (zero-click results). With Google AI Overviews, ChatGPT, Perplexity, and Gemini now providing direct answers, being cited in those answers is more valuable than ranking #1 in organic search. AI visibility is your new competitive advantage.",
+    category: "General",
+    question: "What is Answer Engine Optimization (AEO)?",
+    answer: "AEO is the process of optimizing your brand's content to be cited as the definitive answer by AI models like ChatGPT, Gemini, and Perplexity. Unlike SEO which targets blue links, AEO targets the direct answer.",
   },
   {
-    category: "Product & Platform",
-    question: "Which AI platforms do you track?",
-    answer:
-      "We monitor Google AI Overviews (SGE), ChatGPT, Perplexity, Google Gemini, and Claude (Anthropic). We're continuously adding emerging platforms like OpenAI's new reasoning models and other AI systems as they gain market share.",
+    category: "General",
+    question: "How is AEO different from SEO?",
+    answer: "SEO focuses on ranking links on a search page. AEO focuses on training the AI to understand your entity, ensuring your brand is the generated answer. EvidentlyAEO helps you measure and improve this 'Share of Answer'.",
   },
+  
+  // Product
   {
-    category: "Product & Platform",
-    question: "How often is your data updated? Is it real-time?",
-    answer:
-      "Data is collected in real-time, with hourly aggregation to our database. Dashboards update every hour, 24/7. We run 100s of queries daily across all platforms to ensure statistical significance—not just spot checks.",
-  },
-  {
-    category: "Competitive Intelligence",
-    question: "Can I track competitors and see how they're positioned?",
-    answer:
-      "Yes. Every dashboard includes competitive benchmarking. See your Share of Answer vs. top 5 competitors, understand their positioning, and identify gaps in their coverage.",
-  },
-  {
-    category: "Competitive Intelligence",
-    question: "How do you calculate Share of Answer?",
-    answer:
-      "Share of Answer measures what percentage of AI mentions in your category belong to your brand vs. competitors. We analyze thousands of queries daily across all tracked platforms to ensure statistical significance. For example, if your brand appears in 60% of AI answers for your category and your top competitor appears in 30%, your Share of Answer is 60%.",
-  },
-  {
-    category: "Implementation & Onboarding",
-    question: "How long does setup take?",
-    answer:
-      "Setup takes less than 5 minutes. Add your brand name, industry, and up to 5 competitors. We'll start tracking immediately and you'll see your first results within 24 hours. No technical resources or coding required.",
-  },
-  {
-    category: "Implementation & Onboarding",
-    question: "Do I need technical resources to use EvidentlyAEO?",
-    answer:
-      "No. EvidentlyAEO is designed for marketing teams. No coding, no technical setup. Our recommendations are actionable—you can implement them with your existing content team. Everything is accessible through our web dashboard.",
-  },
-  {
-    category: "Pricing & Plans",
-    question: "What's included in the free trial?",
-    answer:
-      "The 14-day free trial includes full access to all features: real-time visibility tracking, competitive benchmarking, AI-specific recommendations, and ROI reporting. No credit card required. You can cancel anytime during the trial.",
-  },
-  {
-    category: "Pricing & Plans",
-    question: "Can I change plans later?",
-    answer:
-      "Yes, you can upgrade, downgrade, or cancel anytime. Changes take effect immediately. No long-term contracts or hidden fees. If you upgrade mid-month, we'll prorate the difference. If you downgrade, the new plan starts at your next billing cycle.",
-  },
-  {
-    category: "Data & Security",
+    category: "Product",
     question: "How do you ensure data accuracy?",
-    answer:
-      "We query AI models directly using real user queries—no simulations or estimates. Every data point reflects an actual AI response. We run 100s of queries daily per brand to ensure statistical significance. Our methodology is transparent: we show you exactly which queries we run and when.",
+    answer: "We don't simulate. We query the actual AI models (Live API & Real-time scraping where permitted) to get 100% authentic ground-truth data on how your brand is perceived.",
   },
   {
-    category: "Product & Platform",
-    question: "What makes EvidentlyAEO different from other AEO tools?",
-    answer:
-      "Most AEO tools stop at visibility reports. EvidentlyAEO is the only full-loop Answer Engine Optimization system that goes from measurement to measurable business outcomes. We bake in workflows (Discover Opportunities → To-Do List → Review and Refine → Track Outcomes) to ensure changes actually ship. We also offer optional professional services and tie success to AEO outcomes—visibility lift, share-of-answers gains, sentiment improvement—not seat-based or login-based pricing.",
+    category: "Product",
+    question: "Can I track competitors?",
+    answer: "Yes. You can benchmark your visibility, sentiment, and share of answers directly against key competitors to see exactly where you're winning or losing ground.",
+  },
+
+  // Comparison
+  {
+    category: "Comparison",
+    question: "Why not just use ChatGPT manually?",
+    answer: "Manual checks are sporadic and biased by your history. We run thousands of neutral queries at scale, track trends over time, and provide aggregated analytics that are impossible to gather manually.",
   },
   {
-    category: "Implementation & Onboarding",
-    question: "Do you offer professional services or implementation support?",
-    answer:
-      "Yes. EvidentlyAEO offers an optional services layer including strategy facilitation, narrative design, program management, content generation, and implementation support. Success is tied to AEO outcomes—visibility lift, share-of-answers gains, sentiment improvement—not seat licenses. This Outcome-as-a-Service approach ensures you get results, not just access to a dashboard.",
+    category: "Comparison",
+    question: "Do you support international markets?",
+    answer: "Yes, we support tracking across multiple regions and languages to ensure your global AI visibility is optimized.",
+  },
+
+  // Support
+  {
+    category: "Support",
+    question: "Do I need technical resources?",
+    answer: "No. evidentlyAEO is a no-code platform. You just plug in your brand and competitors, and we start tracking. Implementation takes less than 5 minutes.",
   },
   {
-    category: "Product & Platform",
-    question: "How do you define success? Is it just dashboard usage?",
-    answer:
-      "Success is defined by AEO outcomes—visibility lift, share-of-answers gains, sentiment improvement. We're not a dashboard company focused on logins or seat counts. Our dashboards serve decisions, workflows, and accountability. Our goal is to help you own answers for 3-5 strategic themes in 6-12 months, with success measured by measurable business outcomes, not tool usage.",
+    category: "Support",
+    question: "Do you offer professional services?",
+    answer: "Yes, our Enterprise plans include white-glove onboarding and AEO strategy consulting from our team of experts.",
   },
 ]
 
 export function FAQSection() {
+  const [activeCategory, setActiveCategory] = useState<Category>("General")
+  const [openIndex, setOpenIndex] = useState<number | null>(0)
+
+  // Filter FAQs based on active category
+  // If "General", we might want to show top q's or just General ones. Let's filter strict.
+  // Actually, let's map "General" to the first few if unspecified, but the data has "General" tag.
+  const filteredFaqs = faqs.filter(f => f.category === activeCategory)
+
   return (
-    <section id="faq" className="relative py-16 lg:py-20 bg-gradient-to-b from-background via-white to-slate-50/30 overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute inset-0 -z-10">
-        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-cyan-500/6 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-blue-500/6 rounded-full blur-3xl"></div>
-      </div>
+    <section className="relative py-24 lg:py-32 bg-background overflow-hidden" id="faq">
       <div className="container mx-auto px-4 lg:px-6 relative z-10">
-        <div className="max-w-3xl mx-auto">
-          <MotionDiv
-            className="text-center mb-12 space-y-4"
-            {...defaultAnimationOptions}
-            variants={fadeInUp}
-          >
-            <h2 className="text-3xl lg:text-4xl font-bold text-foreground">Frequently Asked Questions</h2>
-            <p className="text-lg text-muted-foreground">
-              Everything you need to know about Answer Engine Optimization with EvidentlyAEO
-            </p>
-          </MotionDiv>
+        <div className="flex flex-col lg:flex-row gap-16 lg:gap-24">
+          
+          {/* Left: Heading & Categories */}
+          <div className="w-full lg:w-1/3 space-y-8">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="space-y-4"
+            >
+              <h2 className="text-3xl lg:text-4xl font-bold text-foreground">
+                Common Questions
+              </h2>
+              <p className="text-lg text-muted-foreground">
+                Everything you need to know about the platform and AEO.
+              </p>
+            </motion.div>
 
-          {/* Semantic DL for AEO Parsers (visually hidden) */}
-          <dl className="sr-only">
-            {faqs.map((faq, index) => (
-              <div key={`dl-${index}`}>
-                <dt>{faq.question}</dt>
-                <dd>{faq.answer}</dd>
-              </div>
-            ))}
-          </dl>
-
-          <MotionDiv {...defaultAnimationOptions} variants={fadeInUp}>
-            <Accordion type="single" collapsible className="space-y-3">
-              {faqs.map((faq, index) => (
-                <AccordionItem
-                  key={index}
-                  value={`item-${index}`}
-                  className="border border-border rounded-lg px-6 data-[state=open]:bg-white data-[state=open]:shadow-md transition-all hover:border-cyan-500/50"
+            {/* Category Tabs */}
+            <div className="flex flex-col gap-2">
+              {categories.map((cat, idx) => (
+                <button
+                  key={cat}
+                  onClick={() => {
+                    setActiveCategory(cat)
+                    setOpenIndex(null) // Reset open accordions on switch
+                  }}
+                  className={cn(
+                    "text-left px-5 py-3 rounded-xl transition-all duration-200 font-medium text-sm flex items-center justify-between group",
+                    activeCategory === cat
+                      ? "bg-slate-100 dark:bg-slate-800 text-foreground"
+                      : "text-muted-foreground hover:bg-slate-50 dark:hover:bg-slate-900"
+                  )}
                 >
-                  <AccordionTrigger className="text-base font-semibold text-foreground hover:text-cyan-600 py-4 text-left">
-                    {faq.question}
-                  </AccordionTrigger>
-                  <AccordionContent className="text-sm text-muted-foreground leading-relaxed pb-4">
-                    {faq.answer}
-                  </AccordionContent>
-                </AccordionItem>
+                  {cat}
+                  {activeCategory === cat && (
+                    <motion.div
+                      layoutId="activeTabIndicator"
+                      className="w-1.5 h-1.5 rounded-full bg-cyan-500"
+                    />
+                  )}
+                </button>
               ))}
-            </Accordion>
-          </MotionDiv>
+            </div>
 
-          <MotionDiv
-            className="mt-12 text-center"
-            {...defaultAnimationOptions}
-            variants={fadeInUp}
-            transition={{ delay: 0.2 }}
-          >
-            <p className="text-sm text-muted-foreground">
-              Still have questions?{" "}
-              <a href="#" className="text-cyan-600 hover:underline font-medium">
-                Contact our team →
-              </a>
-            </p>
-          </MotionDiv>
+            {/* Support Box */}
+            <div className="p-6 rounded-2xl bg-cyan-50 dark:bg-slate-900 border border-cyan-100 dark:border-slate-800">
+              <div className="w-10 h-10 rounded-full bg-cyan-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                <MessageCircle className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+              </div>
+              <h4 className="font-bold text-foreground mb-1">Still have questions?</h4>
+              <p className="text-sm text-muted-foreground mb-4">
+                Can't find the answer you're looking for? Please chat with our friendly team.
+              </p>
+              <Button size="sm" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white gap-2">
+                Get in touch <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Right: Accordion */}
+          <div className="w-full lg:w-2/3">
+            <motion.div
+              key={activeCategory} // Reset animation on category change
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-4"
+            >
+              {filteredFaqs.map((faq, index) => {
+                const isOpen = openIndex === index
+                return (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className={cn(
+                      "group rounded-2xl border transition-all duration-300 overflow-hidden",
+                      isOpen
+                        ? "bg-white dark:bg-slate-900 border-cyan-500/30 ring-4 ring-cyan-500/5 shadow-lg"
+                        : "bg-white/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-cyan-500/30 hover:bg-white dark:hover:bg-slate-900"
+                    )}
+                  >
+                    <button
+                      onClick={() => setOpenIndex(isOpen ? null : index)}
+                      className="w-full text-left px-6 py-5 flex items-start sm:items-center justify-between gap-4"
+                    >
+                      <span className={cn(
+                        "text-base lg:text-lg font-semibold transition-colors",
+                        isOpen ? "text-cyan-700 dark:text-cyan-400" : "text-foreground"
+                      )}>
+                        {faq.question}
+                      </span>
+                      <div className={cn(
+                        "shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300",
+                        isOpen ? "bg-cyan-500 text-white rotate-180" : "bg-slate-100 dark:bg-slate-800 text-muted-foreground group-hover:bg-cyan-50 dark:group-hover:bg-slate-700"
+                      )}>
+                        {isOpen ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                      </div>
+                    </button>
+                    <AnimatePresence>
+                      {isOpen && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3, ease: "easeInOut" }}
+                        >
+                          <div className="px-6 pb-6 pt-0">
+                            <p className="text-muted-foreground leading-relaxed">
+                              {faq.answer}
+                            </p>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                )
+              })}
+            </motion.div>
+          </div>
         </div>
       </div>
     </section>

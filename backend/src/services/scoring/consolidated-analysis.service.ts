@@ -419,40 +419,7 @@ export class ConsolidatedAnalysisService {
 
     return `You are an AI assistant analyzing a brand intelligence query response. Perform the following tasks:
 
-## TASK 1: Product Extraction
-
-### Brand Products
-Extract official products sold by the brand "${brandName}".
-
-**Brand Context:**
-${brandMetadataStr}
-${brandKBStr}
-
-**Rules:**
-1. Include only official products (SKUs, models, variants) that consumers can buy
-2. Exclude generics, ingredients, categories, descriptive phrases
-3. Exclude competitors and their products
-4. Exclude side effects, conditions, benefits, use-cases, features
-5. Use both the answer text and your knowledge, but never invent products
-6. Use the Brand Knowledge Base above to help identify brand variations and products
-7. Maximum 12 products
-
-### Competitor Products
-Extract official products for each competitor mentioned in the answer.
-
-**Competitors:** ${options.competitorNames.join(', ')}
-
-**Competitor Context:**
-${competitorMetadataStr}
-
-**Rules:**
-1. Same rules as brand products (official products only)
-2. Extract products for each competitor separately
-3. Use the Competitor Context above to help identify competitor variations and products
-4. Maximum 8 products per competitor
-5. Only include products mentioned in the answer text or your knowledge
-
-## TASK 2: Citation Categorization
+## TASK 1: Citation Categorization
 
 Categorize each citation URL into one of these categories:
 - **Editorial**: News sites, blogs, media outlets (e.g., techcrunch.com, forbes.com)
@@ -465,7 +432,7 @@ Categorize each citation URL into one of these categories:
 **Citations to categorize:**
 ${citationsList}
 
-## TASK 3: Sentiment Analysis
+## TASK 2: Sentiment Analysis
 
 ### Brand Sentiment
 Analyze the overall sentiment toward "${brandName}" in the answer.
@@ -483,7 +450,7 @@ Analyze the sentiment toward each competitor separately.
    - 66-100: Positive sentiment (good)
 3. For competitors, analyze sentiment specifically about each competitor
 
-## TASK 4: Keyword Detection
+## TASK 3: Keyword Detection
 
 Extract the most important keywords and key phrases from the answer text.
 These keywords should be:
@@ -499,7 +466,7 @@ For each keyword, provide:
 - A relevance score (0.0 to 1.0)
 - Brief reasoning (1 sentence)
 
-## TASK 5: Qualitative Insights
+## TASK 4: Qualitative Insights
 
 1. **Key Quotes:** Extract 1-3 direct quotes or excerpts from the text that best capture the sentiment (positive or negative). Only pick the most impactful ones.
 2. **Narrative Summary:** Write 1-2 sentences explaining WHY the brand or competitors are winning/losing. (e.g., "Competitor X is preferred for simple pricing, while Brand Y is trusted for enterprise features but criticized for complexity.")
@@ -514,13 +481,6 @@ ${truncatedAnswer}
 Respond with ONLY valid JSON in this exact structure:
 
 {
-  "products": {
-    "brand": ["Product1", "Product2", ...],
-    "competitors": {
-      "Competitor1": ["Product1", "Product2", ...],
-      "Competitor2": ["Product1", "Product2", ...]
-    }
-  },
   "citations": {
     "https://example.com/page1": {
       "category": "Editorial|Corporate|Reference|UGC|Social|Institutional",

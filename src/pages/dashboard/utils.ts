@@ -1,3 +1,5 @@
+import { getDefaultDateRange as getCentralizedDefaultDateRange } from '../../utils/dateUtils';
+
 export const formatDateForInput = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -6,12 +8,10 @@ export const formatDateForInput = (date: Date): string => {
 };
 
 export const getDefaultDateRange = () => {
-  const end = new Date();
-  const start = new Date(end);
-  start.setDate(start.getDate() - 6);
+  const { startDate, endDate } = getCentralizedDefaultDateRange();
   return {
-    start: formatDateForInput(start),
-    end: formatDateForInput(end)
+    start: startDate,
+    end: endDate
   };
 };
 

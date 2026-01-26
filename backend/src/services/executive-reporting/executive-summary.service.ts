@@ -263,7 +263,6 @@ Input data:
   - Visibility: ${input.current_metrics.visibility.toFixed(1)}%
   - Share of Answer: ${input.current_metrics.share_of_answer.toFixed(1)}%
   - Sentiment: ${input.current_metrics.sentiment.toFixed(2)}
-  - Avg Position: ${input.current_metrics.average_position.toFixed(1)}
 
 - Changes vs previous period:
   - Visibility: ${input.deltas.visibility.percentage > 0 ? '+' : ''}${input.deltas.visibility.percentage.toFixed(1)}%

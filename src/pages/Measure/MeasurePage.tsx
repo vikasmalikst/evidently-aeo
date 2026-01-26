@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useDashboardStore } from '../../store/dashboardStore';
 import { Layout } from '../../components/Layout/Layout';
 import { HelpButton } from '../../components/common/HelpButton';
@@ -28,9 +28,11 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Info as InfoIcon
+  Info as InfoIcon,
+  ChevronRight
 } from 'lucide-react';
 import { useDashboardData } from '../dashboard/hooks/useDashboardData';
+import { Link } from 'react-router-dom';
 import { useOnboardingOrchestrator } from '../../hooks/useOnboardingOrchestrator';
 import { formatMetricValue, computeTrend, formatNumber } from '../dashboard/utils';
 import { MetricCard } from '../dashboard/components/MetricCard';
@@ -762,7 +764,8 @@ export const MeasurePage = () => {
           comparisonSuffix: comparisonSuffix.visibility,
           description: 'How prominent is your brand in LLM answers.(based on number of appearances and positions)',
           isActive: selectedKpi === 'visibility',
-          onHelpClick: () => handleHelpClick('visibility')
+          onHelpClick: () => handleHelpClick('visibility'),
+          metricType: 'visibility' as const
         },
         {
           key: 'share',
@@ -777,7 +780,8 @@ export const MeasurePage = () => {
           comparisonSuffix: comparisonSuffix.share,
           description: '% of time you brand appeaars compared to your defined competitors. ',
           isActive: selectedKpi === 'share',
-          onHelpClick: () => handleHelpClick('share')
+          onHelpClick: () => handleHelpClick('share'),
+          metricType: 'share' as const
         },
         {
           key: 'sentiment',
@@ -792,7 +796,8 @@ export const MeasurePage = () => {
           comparisonSuffix: comparisonSuffix.sentiment,
           description: 'Tone of the answers cited by LLMs from Brand\'s perspective (scaled 1-100)',
           isActive: selectedKpi === 'sentiment',
-          onHelpClick: () => handleHelpClick('sentiment')
+          onHelpClick: () => handleHelpClick('sentiment'),
+          metricType: 'sentiment' as const
         },
         {
           key: 'brandPresence',
@@ -807,7 +812,23 @@ export const MeasurePage = () => {
           comparisonSuffix: comparisonSuffix.brandPresence,
           description: '% of Answers that mention your brand\'s name in the answers.',
           isActive: selectedKpi === 'brandPresence',
-          onHelpClick: () => handleHelpClick('brandPresence')
+          onHelpClick: () => handleHelpClick('brandPresence'),
+          metricType: 'brandPresence' as const,
+          headerAction: (
+            <div onClick={(e) => e.stopPropagation()}>
+              <Link to="/analyze/citation-sources">
+                <motion.button
+                  whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(124, 58, 237, 0.5)" }}
+                  whileTap={{ scale: 0.95 }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[11px] font-bold rounded-lg shadow-md hover:shadow-lg transition-all duration-300 group"
+                >
+                  <span>See analysis</span>
+                  <ChevronRight size={12} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
+                </motion.button>
+              </Link>
+            </div>
+          ),
+          actionPosition: 'outside-top' as const
         }
       ];
     },
@@ -1069,17 +1090,28 @@ export const MeasurePage = () => {
               showComparison={false} // Explicit boolean
             />
 
-            <div className="border-t border-[#e7ecff] p-6 bg-[#f9f9fb]/50">
-              <VisibilityChart
-                data={chartData}
-                chartType={chartType}
-                selectedModels={selectedModels}
-                loading={combinedLoading}
-                activeTab="competitive"
-                models={currentModels}
-                metricType={metricType}
-                completedRecommendations={dashboardData?.completedRecommendations}
-              />
+            <div className="border-t border-[#e7ecff] p-6 bg-[#f9f9fb]/50 overflow-hidden">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={metricType}
+                  initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -20, scale: 0.98 }}
+                  transition={{ duration: 0.5, ease: "easeInOut" }}
+                  className="w-full h-full"
+                >
+                  <VisibilityChart
+                    data={chartData}
+                    chartType={chartType}
+                    selectedModels={selectedModels}
+                    loading={!!combinedLoading}
+                    activeTab="competitive"
+                    models={currentModels}
+                    metricType={metricType}
+                    completedRecommendations={dashboardData?.completedRecommendations}
+                  />
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
 
@@ -1103,7 +1135,7 @@ export const MeasurePage = () => {
                 models={currentModels}
                 selectedModels={selectedModels}
                 onModelToggle={handleModelToggle}
-                loading={combinedLoading}
+                loading={!!combinedLoading}
               />
             )}
           </div>

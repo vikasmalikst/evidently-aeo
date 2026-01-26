@@ -27,11 +27,16 @@ interface EntitlementRouteProps {
  * @param requiredFeature - The feature key to check in user's entitlements
  * @param fallbackPath - Where to redirect if access denied (default: /measure)
  */
-export const EntitlementRoute = ({ 
+// The actual access check component
+const AccessCheck = ({ 
   children, 
-  requiredFeature,
-  fallbackPath = '/measure'
-}: EntitlementRouteProps) => {
+  requiredFeature, 
+  fallbackPath 
+}: { 
+  children: React.ReactNode; 
+  requiredFeature: FeatureKey; 
+  fallbackPath: string;
+}) => {
   const user = useAuthStore((state) => state.user);
   const location = useLocation();
 
@@ -50,39 +55,50 @@ export const EntitlementRoute = ({
     return features[requiredFeature] !== false;
   };
 
-  // The actual access check happens inside ProtectedRoute's children
-  // We need this to be inside ProtectedRoute so user is loaded first
-  const AccessCheck = () => {
-    const hasAccess = isFeatureEnabled();
+  const hasAccess = isFeatureEnabled();
 
-    if (!hasAccess) {
-      console.warn(
-        `[EntitlementRoute] Access denied to "${requiredFeature}" for user:`,
-        user?.email,
-        '| Redirecting to:',
-        fallbackPath
-      );
+  if (!hasAccess) {
+    console.warn(
+      `[EntitlementRoute] Access denied to "${requiredFeature}" for user:`,
+      user?.email,
+      '| Redirecting to:',
+      fallbackPath
+    );
 
-      // Redirect to fallback with state to show upgrade message
-      return (
-        <Navigate 
-          to={fallbackPath} 
-          replace 
-          state={{ 
-            accessDenied: true,
-            deniedFeature: requiredFeature,
-            attemptedPath: location.pathname
-          }} 
-        />
-      );
-    }
+    // Redirect to fallback with state to show upgrade message
+    return (
+      <Navigate 
+        to={fallbackPath} 
+        replace 
+        state={{ 
+          accessDenied: true,
+          deniedFeature: requiredFeature,
+          attemptedPath: location.pathname
+        }} 
+      />
+    );
+  }
 
-    return <>{children}</>;
-  };
+  return <>{children}</>;
+};
 
+/**
+ * Route component that checks if user has access to a specific feature based on entitlements.
+ * Wraps ProtectedRoute to first ensure authentication, then checks feature access.
+ * 
+ * @param requiredFeature - The feature key to check in user's entitlements
+ * @param fallbackPath - Where to redirect if access denied (default: /measure)
+ */
+export const EntitlementRoute = ({ 
+  children, 
+  requiredFeature,
+  fallbackPath = '/measure'
+}: EntitlementRouteProps) => {
   return (
     <ProtectedRoute>
-      <AccessCheck />
+      <AccessCheck requiredFeature={requiredFeature} fallbackPath={fallbackPath}>
+        {children}
+      </AccessCheck>
     </ProtectedRoute>
   );
 };

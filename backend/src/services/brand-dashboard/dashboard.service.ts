@@ -67,10 +67,10 @@ export class DashboardService {
     brandKey: string,
     customerId: string,
     dateRange?: DashboardDateRange,
-    options: { skipCache?: boolean; collectors?: string[]; timezoneOffset?: number } = {}
+    options: { skipCache?: boolean; collectors?: string[]; timezoneOffset?: number; skipCitations?: boolean } = {}
   ): Promise<BrandDashboardPayload> {
     try {
-      const { skipCache = false, collectors, timezoneOffset = 0 } = options
+      const { skipCache = false, collectors, timezoneOffset = 0, skipCitations = false } = options
       const hasCollectorFilter = Array.isArray(collectors) && collectors.length > 0
       const effectiveSkipCache = skipCache || hasCollectorFilter
       const brand = await this.resolveBrand(brandKey, customerId)
@@ -222,7 +222,7 @@ export class DashboardService {
       }
 
       // Cache miss: Build fresh payload
-      const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange, collectors, timezoneOffset)
+      const payload = await this.buildDashboardPayload(brand, customerId, normalizedRange, collectors, timezoneOffset, skipCitations)
 
       // Ensure required fields exist with proper defaults
       if (!payload.llmVisibility) {
@@ -300,9 +300,10 @@ export class DashboardService {
     customerId: string,
     range: NormalizedDashboardRange,
     collectors?: string[],
-    timezoneOffset: number = 0
+    timezoneOffset: number = 0,
+    skipCitations: boolean = false
   ): Promise<BrandDashboardPayload> {
-    return buildDashboardPayload(brand, customerId, range, { collectors, timezoneOffset })
+    return buildDashboardPayload(brand, customerId, range, { collectors, timezoneOffset, skipCitations })
   }
 }
 

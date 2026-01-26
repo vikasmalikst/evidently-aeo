@@ -8,7 +8,8 @@ export const formatDateForInput = (date: Date): string => {
 export const getDefaultDateRange = () => {
   const end = new Date();
   const start = new Date(end);
-  start.setDate(start.getDate() - 6);
+  // 8 days inclusive: if today is Jan 25, start is Jan 18
+  start.setDate(start.getDate() - 7);
   return {
     start: formatDateForInput(start),
     end: formatDateForInput(end)

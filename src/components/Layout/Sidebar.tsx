@@ -13,7 +13,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { icon: IconLayoutDashboard, label: 'Performance Overview', path: '/dashboard' },
+  { icon: IconLayoutDashboard, label: 'Performance Overview', path: '/measure' },
   { icon: IconEye, label: 'Metrics Analysis', path: '/search-visibility' },
   { icon: IconTargetArrow, label: 'Citations Sources', path: '/search-sources' },
   { icon: IconFolderSearch, label: 'Topics', path: '/topics' },
@@ -51,8 +51,8 @@ export const Sidebar = () => {
     const toDateOnly = (d: Date) => d.toISOString().split('T')[0];
 
     switch (path) {
-      case '/dashboard':
-        start.setDate(start.getDate() - 29);
+      case '/measure':
+        start.setDate(start.getDate() - 7);
         return `/brands/${selectedBrandId}/dashboard?startDate=${toDateOnly(start)}&endDate=${toDateOnly(end)}`;
       case '/search-visibility':
         start.setDate(start.getDate() - 6);

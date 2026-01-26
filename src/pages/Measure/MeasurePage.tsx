@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useDashboardStore } from '../../store/dashboardStore';
 import { Layout } from '../../components/Layout/Layout';
 import { HelpButton } from '../../components/common/HelpButton';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
@@ -187,10 +188,9 @@ const parseMetricType = (value: string | null): MetricType | null => {
 // Get default date range (last 7 days)
 const getDefaultDateRange = () => {
   const end = new Date();
-  end.setHours(23, 59, 59, 999);
   const start = new Date(end);
-  start.setDate(start.getDate() - 6);
-  start.setHours(0, 0, 0, 0);
+  // 8 days inclusive: if today is Jan 25, start is Jan 18
+  start.setDate(start.getDate() - 7);
 
   const formatDate = (d: Date) => {
     const year = d.getFullYear();
@@ -214,7 +214,8 @@ export const MeasurePage = () => {
   // Chart state
   const [chartType, setChartType] = useState('line');
   const [region, setRegion] = useState('us');
-  const [llmFilters, setLlmFilters] = useState<string[]>([]);
+  // Replaced local state with global store
+  const { llmFilters, setLlmFilters } = useDashboardStore();
   const [allLlmOptions, setAllLlmOptions] = useState<Array<{ value: string; label: string; color?: string }>>([]);
   const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -257,87 +258,143 @@ export const MeasurePage = () => {
     isDataCollectionInProgress,
   } = useDashboardData();
 
+  // Replaced local setLlmFilters logic with global store updates
+  // Since setLlmFilters is now from store, we don't need the callback form `prev => ...` logic
+  // inside the handlers if we just pass the new array.
+  // But wait, the handlers below use (prev => ...).
+  // Zustand set functions usually don't take a callback based on *current* state unless we wrap it.
+  // We should likely update the handlers to calculate the new array.
+
   const authLoading = useAuthStore((state) => state.isLoading);
 
   // Orchestrate automated onboarding steps
   useOnboardingOrchestrator(selectedBrandId);
 
-  // Build visibility API endpoint
-  // Build visibility API endpoint
-  const visibilityEndpoint = useMemo(() => {
-    // Use global startDate/endDate from useDashboardData
-    if (!selectedBrandId || !startDate || !endDate) return null;
-
-    // Ensure date format is YYYY-MM-DD for API
-    // The date picker usually returns YYYY-MM-DD strings directly?
-    // Let's ensure proper ISO formatting if needed, but existing code used strings.
-    // startDate/endDate from useDashboardData are strings.
-
-    const startISO = new Date(startDate).toISOString();
-    const endISO = new Date(endDate + 'T23:59:59').toISOString();
-
-    // Get timezone offset in minutes (UTC - Local)
-    // For EST (UTC-5), this will be 300 minutes
-    const timezoneOffset = new Date().getTimezoneOffset();
-
-    const params = new URLSearchParams({
-      startDate: startISO,
-      endDate: endISO,
-      timezoneOffset: timezoneOffset.toString()
-    });
-    // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
-    if (llmFilters.length > 0) {
-      // We need to pass the label (e.g. "GPT-4") not the normalized ID (e.g. "gpt-4")
-      // Map selected IDs back to labels
-      const selectedLabels = llmFilters
-        .map(id => allLlmOptions.find(opt => opt.value === id)?.label)
-        .filter(Boolean); // remove undefined
-
-      if (selectedLabels.length > 0) {
-        params.append('collectors', selectedLabels.join(','));
-      }
-    }
-
-    return `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
-  }, [selectedBrandId, startDate, endDate, reloadToken, llmFilters, allLlmOptions]);
-
-  // Fetch visibility data
-  const { data: visibilityResponse, loading: visibilityLoading, error: visibilityError, refetch: refetchVisibility } = useCachedData<ApiResponse<DashboardPayload>>(
-    visibilityEndpoint,
-    {},
-    { requiresAuth: true },
-    { enabled: !!visibilityEndpoint }
-  );
-
-  // Process visibility data into chart models
+  // Process dashboard data into chart models
   const processedData = useMemo(() => {
-    if (!visibilityResponse?.data) {
+    if (!dashboardData) {
       return { brandModels: [], competitorModels: [], llmOptions: [] };
     }
 
-    const data = visibilityResponse.data;
+    const data = dashboardData;
     const llmSlices = data.llmVisibility ?? [];
     const competitors = data.competitorVisibility ?? [];
     const brandSum = data.brandSummary;
 
-    // Build chart date labels from first LLM slice with timeSeries
-    let chartDateLabels = chartLabels;
-    const firstSliceWithDates = llmSlices.find(s => s.timeSeries?.dates?.length);
-    if (firstSliceWithDates?.timeSeries?.dates) {
-      chartDateLabels = firstSliceWithDates.timeSeries.dates.map(d => formatDateLabel(d));
+    // Build unified date range from all sources to ensure alignment
+    // Collect all date arrays from LLM slices, brand summary, and competitors
+    const allDateArrays: string[][] = [];
+    
+    llmSlices.forEach(slice => {
+      if (slice.timeSeries?.dates?.length) {
+        allDateArrays.push(slice.timeSeries.dates);
+      }
+    });
+    
+    if (brandSum?.timeSeries?.dates?.length) {
+      allDateArrays.push(brandSum.timeSeries.dates);
     }
+    
+    competitors.forEach(comp => {
+      if (comp.timeSeries?.dates?.length) {
+        allDateArrays.push(comp.timeSeries.dates);
+      }
+    });
+
+    // Find the longest date array (should be the complete range)
+    // All arrays should have the same length after the backend fix, but we'll use the longest as the master
+    let masterDates: string[] = [];
+    let maxLength = 0;
+    
+    allDateArrays.forEach(dateArray => {
+      if (dateArray.length > maxLength) {
+        maxLength = dateArray.length;
+        masterDates = dateArray;
+      }
+    });
+
+    // Validate that all date arrays have the same length
+    if (allDateArrays.length > 1) {
+      const lengths = allDateArrays.map(arr => arr.length);
+      const uniqueLengths = new Set(lengths);
+      if (uniqueLengths.size > 1) {
+        console.warn('[MeasurePage] ⚠️ Date array length mismatch detected:', {
+          llmSlices: llmSlices.map(s => s.timeSeries?.dates?.length ?? 0),
+          brandSummary: brandSum?.timeSeries?.dates?.length ?? 0,
+          competitors: competitors.map(c => c.timeSeries?.dates?.length ?? 0),
+          lengths: Array.from(uniqueLengths)
+        });
+      }
+    }
+
+    // Build chart date labels from master dates (or first LLM slice as fallback)
+    let chartDateLabels = chartLabels;
+    if (masterDates.length > 0) {
+      chartDateLabels = masterDates.map(d => formatDateLabel(d));
+    } else {
+      const firstSliceWithDates = llmSlices.find(s => s.timeSeries?.dates?.length);
+      if (firstSliceWithDates?.timeSeries?.dates) {
+        chartDateLabels = firstSliceWithDates.timeSeries.dates.map(d => formatDateLabel(d));
+      }
+    }
+
+    // Helper function to align data array with master dates
+    // If dates don't match, align by date string matching
+    const alignDataArray = (
+      sourceDates: string[] | undefined,
+      sourceData: number[] | (number | null)[] | undefined,
+      masterDates: string[],
+      fallbackValue: number | (number | null) = 0
+    ): number[] | (number | null)[] => {
+      if (!sourceDates || !sourceData || sourceDates.length === 0) {
+        return Array(masterDates.length).fill(fallbackValue);
+      }
+      
+      // If lengths match and first/last dates match, assume alignment is correct
+      if (sourceDates.length === masterDates.length && 
+          sourceDates[0] === masterDates[0] && 
+          sourceDates[sourceDates.length - 1] === masterDates[masterDates.length - 1]) {
+        return sourceData;
+      }
+      
+      // Otherwise, align by matching dates
+      const aligned: (number | null)[] = [];
+      masterDates.forEach(masterDate => {
+        const sourceIndex = sourceDates.indexOf(masterDate);
+        if (sourceIndex !== -1 && sourceIndex < sourceData.length) {
+          aligned.push(sourceData[sourceIndex] as number | null);
+        } else {
+          aligned.push(fallbackValue as number | null);
+        }
+      });
+      return aligned;
+    };
 
     // Build brand models from LLM visibility
     const brandModelData: ModelData[] = llmSlices.map((slice) => {
       const topTopicLabel = slice.topTopics?.[0]?.topic ?? slice.topTopic ?? '—';
-      const visData = slice.timeSeries?.visibility ?? buildTimeseries(slice.visibility ?? 0);
-      const shareData = slice.timeSeries?.share ?? buildTimeseries((slice.shareOfSearch ?? slice.share ?? 0) * 100);
-      const sentData = slice.timeSeries?.sentiment ?? buildTimeseries(slice.sentiment ?? 0);
-      const brandPresenceData = slice.timeSeries?.brandPresence ?? buildTimeseries(
-        slice.totalCollectorResults && slice.totalCollectorResults > 0
-          ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
-          : 0
-      );
+      
+      // Align data arrays with master dates to ensure proper chart rendering
+      const sliceDates = slice.timeSeries?.dates;
+      const visData = masterDates.length > 0 && sliceDates
+        ? alignDataArray(sliceDates, slice.timeSeries?.visibility, masterDates, slice.visibility ?? 0)
+        : (slice.timeSeries?.visibility ?? buildTimeseries(slice.visibility ?? 0));
+      const shareData = masterDates.length > 0 && sliceDates
+        ? alignDataArray(sliceDates, slice.timeSeries?.share, masterDates, (slice.shareOfSearch ?? slice.share ?? 0) * 100)
+        : (slice.timeSeries?.share ?? buildTimeseries((slice.shareOfSearch ?? slice.share ?? 0) * 100));
+      const sentData = masterDates.length > 0 && sliceDates
+        ? alignDataArray(sliceDates, slice.timeSeries?.sentiment, masterDates, slice.sentiment ?? 0)
+        : (slice.timeSeries?.sentiment ?? buildTimeseries(slice.sentiment ?? 0));
+      const brandPresenceData = masterDates.length > 0 && sliceDates
+        ? alignDataArray(sliceDates, slice.timeSeries?.brandPresence, masterDates, 
+            slice.totalCollectorResults && slice.totalCollectorResults > 0
+              ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
+              : 0)
+        : (slice.timeSeries?.brandPresence ?? buildTimeseries(
+            slice.totalCollectorResults && slice.totalCollectorResults > 0
+              ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
+              : 0
+          ));
       const isRealData = slice.timeSeries?.isRealData;
 
       return {
@@ -370,10 +427,17 @@ export const MeasurePage = () => {
       const brandName = selectedBrand?.name || 'Your Brand';
       const topTopic = brandSum.topTopics?.[0]?.topic ?? '—';
 
-      // Use timeSeries if available, otherwise fall back to static values
-      const brandVisData = brandSum.timeSeries?.visibility ?? buildTimeseries(brandSum.visibility);
-      const brandShareData = brandSum.timeSeries?.share ?? buildTimeseries(brandSum.share * 100);
-      const brandSentData = brandSum.timeSeries?.sentiment ?? buildTimeseries(brandSum.sentiment ?? 0);
+      // Align brand summary data arrays with master dates
+      const brandDates = brandSum.timeSeries?.dates;
+      const brandVisData = masterDates.length > 0 && brandDates
+        ? alignDataArray(brandDates, brandSum.timeSeries?.visibility, masterDates, brandSum.visibility)
+        : (brandSum.timeSeries?.visibility ?? buildTimeseries(brandSum.visibility));
+      const brandShareData = masterDates.length > 0 && brandDates
+        ? alignDataArray(brandDates, brandSum.timeSeries?.share, masterDates, brandSum.share * 100)
+        : (brandSum.timeSeries?.share ?? buildTimeseries(brandSum.share * 100));
+      const brandSentData = masterDates.length > 0 && brandDates
+        ? alignDataArray(brandDates, brandSum.timeSeries?.sentiment, masterDates, brandSum.sentiment ?? 0)
+        : (brandSum.timeSeries?.sentiment ?? buildTimeseries(brandSum.sentiment ?? 0));
       const brandIsRealData = brandSum.timeSeries?.isRealData;
 
       competitorModelData.push({
@@ -400,10 +464,21 @@ export const MeasurePage = () => {
     }
     competitors.forEach((comp) => {
       const topTopic = comp.topTopics?.[0]?.topic ?? '—';
-      const visData = comp.timeSeries?.visibility ?? buildTimeseries(comp.visibility);
-      const shareData = comp.timeSeries?.share ?? buildTimeseries(comp.share * 100);
-      const sentData = comp.timeSeries?.sentiment ?? buildTimeseries(comp.sentiment ?? 0);
-      const brandPresenceData = comp.timeSeries?.brandPresencePercentage ?? buildTimeseries(comp.brandPresencePercentage ?? 0);
+      
+      // Align competitor data arrays with master dates
+      const compDates = comp.timeSeries?.dates;
+      const visData = masterDates.length > 0 && compDates
+        ? alignDataArray(compDates, comp.timeSeries?.visibility, masterDates, comp.visibility)
+        : (comp.timeSeries?.visibility ?? buildTimeseries(comp.visibility));
+      const shareData = masterDates.length > 0 && compDates
+        ? alignDataArray(compDates, comp.timeSeries?.share, masterDates, comp.share * 100)
+        : (comp.timeSeries?.share ?? buildTimeseries(comp.share * 100));
+      const sentData = masterDates.length > 0 && compDates
+        ? alignDataArray(compDates, comp.timeSeries?.sentiment, masterDates, comp.sentiment ?? 0)
+        : (comp.timeSeries?.sentiment ?? buildTimeseries(comp.sentiment ?? 0));
+      const brandPresenceData = masterDates.length > 0 && compDates
+        ? alignDataArray(compDates, comp.timeSeries?.brandPresencePercentage, masterDates, comp.brandPresencePercentage ?? 0)
+        : (comp.timeSeries?.brandPresencePercentage ?? buildTimeseries(comp.brandPresencePercentage ?? 0));
       const isRealData = comp.timeSeries?.isRealData;
 
       competitorModelData.push({
@@ -436,7 +511,7 @@ export const MeasurePage = () => {
     ];
 
     return { brandModels: brandModelData, competitorModels: competitorModelData, llmOptions, chartDateLabels };
-  }, [visibilityResponse, selectedBrand]);
+  }, [dashboardData, selectedBrand]);
 
   // Update state when processed data changes
   useEffect(() => {
@@ -469,7 +544,7 @@ export const MeasurePage = () => {
     const currentIds = availableModels.map(m => m.id);
     const prevIds = prevModelIdsRef.current;
     const newIds = currentIds.filter(id => !prevIds.includes(id));
-    
+
     prevModelIdsRef.current = currentIds;
 
     setSelectedModels((previous) => {
@@ -477,7 +552,7 @@ export const MeasurePage = () => {
       const combined = [...new Set([...stillValid, ...newIds])];
 
       if (combined.length === 0 && availableModels.length > 0) {
-         return availableModels.map(m => m.id);
+        return availableModels.map(m => m.id);
       }
 
       return combined;
@@ -490,10 +565,10 @@ export const MeasurePage = () => {
     if (currentModels.length > 0 && selectedModels.length > 0) {
       const hasValidSelection = selectedModels.some(id => currentModels.some(m => m.id === id));
       if (hasValidSelection) setIsSelectionInitialized(true);
-    } else if (visibilityResponse && !visibilityLoading && currentModels.length === 0) {
+    } else if (dashboardData && !shouldShowLoading && currentModels.length === 0) {
       setIsSelectionInitialized(true);
     }
-  }, [selectedModels, currentModels, visibilityResponse, visibilityLoading]);
+  }, [selectedModels, currentModels, dashboardData, shouldShowLoading]);
 
   const handleModelToggle = useCallback((modelId: string) => {
     setSelectedModels((prev) =>
@@ -515,27 +590,52 @@ export const MeasurePage = () => {
   };
 
   // Chart data
-  const chartData = useMemo(() => ({
-    labels: chartDateLabels,
-    datasets: currentModels.map((model) => ({
-      id: model.id,
-      label: model.name,
-      data: metricType === 'visibility'
-        ? model.data
-        : metricType === 'share'
-          ? (model.shareData ?? model.data)
-          : metricType === 'brandPresence'
-            ? (model.brandPresenceData ?? buildTimeseries(model.brandPresencePercentage ?? 0))
-            : (model.sentimentData ?? model.data).map((v) => v ?? 0),
-      isRealData: model.isRealData
-    }))
-  }), [currentModels, metricType, chartDateLabels]);
+  const chartData = useMemo(() => {
+    const expectedLength = chartDateLabels.length;
+    
+    return {
+      labels: chartDateLabels,
+      datasets: currentModels.map((model) => {
+        // Get the appropriate data array based on metric type
+        let dataArray: (number | null)[] = [];
+        if (metricType === 'visibility') {
+          dataArray = model.data;
+        } else if (metricType === 'share') {
+          dataArray = model.shareData ?? model.data;
+        } else if (metricType === 'brandPresence') {
+          dataArray = model.brandPresenceData ?? buildTimeseries(model.brandPresencePercentage ?? 0);
+        } else {
+          dataArray = (model.sentimentData ?? model.data).map((v) => v ?? 0);
+        }
+        
+        // Validate array length matches date labels
+        if (dataArray.length !== expectedLength) {
+          console.warn(`[MeasurePage] ⚠️ Data array length mismatch for ${model.name}: expected ${expectedLength}, got ${dataArray.length}. Padding or truncating.`);
+          // Pad with last value or truncate to match
+          if (dataArray.length < expectedLength) {
+            const lastValue = dataArray.length > 0 ? dataArray[dataArray.length - 1] : 0;
+            dataArray = [...dataArray, ...Array(expectedLength - dataArray.length).fill(lastValue)];
+          } else {
+            dataArray = dataArray.slice(0, expectedLength);
+          }
+        }
+        
+        return {
+          id: model.id,
+          label: model.name,
+          data: dataArray,
+          isRealData: model.isRealData
+        };
+      })
+    };
+  }, [currentModels, metricType, chartDateLabels]);
 
-  // Dashboard KPI metrics - Derived from Filtered Data (visibilityResponse)
+  // Helper to find specific score metrics
   const findScore = (label: string, data: typeof dashboardData): DashboardScoreMetric | undefined =>
     data?.scores?.find((metric) => metric.label.toLowerCase() === label.toLowerCase());
 
-  const filteredBrandSummary = visibilityResponse?.data?.brandSummary;
+  // Dashboard KPI metrics - Derived from Filtered Data (dashboardData)
+  const filteredBrandSummary = dashboardData?.brandSummary;
 
   const visibilityMetricValue = filteredBrandSummary?.visibility ?? findScore('Visibility Index', dashboardData)?.value;
   // Share from brandSummary is already a 0-1 float, so multiply by 100 for display
@@ -547,13 +647,13 @@ export const MeasurePage = () => {
 
   // Re-map sentiment from slices if needed
   const calculatedSentiment = useMemo(() => {
-    if (!visibilityResponse?.data?.llmVisibility?.length) return undefined;
-    const slices = visibilityResponse.data.llmVisibility;
+    if (!dashboardData?.llmVisibility?.length) return undefined;
+    const slices = dashboardData.llmVisibility;
     const valid = slices.filter(s => s.sentiment != null);
     if (!valid.length) return undefined;
     const sum = valid.reduce((acc, s) => acc + (s.sentiment || 0), 0);
     return sum / valid.length;
-  }, [visibilityResponse]);
+  }, [dashboardData]);
 
   const sentimentMetricValueFinal = calculatedSentiment ?? findScore('Sentiment Score', dashboardData)?.value;
 
@@ -726,13 +826,12 @@ export const MeasurePage = () => {
   );
 
   const handleRetry = useCallback(() => {
-    setReloadToken((prev) => prev + 1);
-    refetchVisibility();
-  }, [refetchVisibility]);
+    handleRetryFetch();
+  }, [handleRetryFetch]);
 
   // Loading states
-  const combinedLoading = authLoading || visibilityLoading;
-  const dataLoading = combinedLoading && (!visibilityResponse || !visibilityResponse.data);
+  const combinedLoading = authLoading || shouldShowLoading;
+  const dataLoading = combinedLoading && !dashboardData;
   const selectionInitializing = !isSelectionInitialized && currentModels.length > 0;
 
   if (isDataCollectionInProgress && !dashboardData) {
@@ -861,13 +960,12 @@ export const MeasurePage = () => {
                           <button
                             key={opt.value}
                             type="button"
-                            onClick={() =>
-                              setLlmFilters((prev) =>
-                                prev.includes(opt.value)
-                                  ? prev.filter((v) => v !== opt.value)
-                                  : [...prev, opt.value]
-                              )
-                            }
+                            onClick={() => {
+                              const newFilters = llmFilters.includes(opt.value)
+                                ? llmFilters.filter((v) => v !== opt.value)
+                                : [...llmFilters, opt.value];
+                              setLlmFilters(newFilters);
+                            }}
                             onMouseEnter={() => setHoveredLlmIndex(index)}
                             onMouseLeave={() => setHoveredLlmIndex(null)}
                             className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10"
@@ -904,7 +1002,7 @@ export const MeasurePage = () => {
 
         {/* 4 KPI Cards */}
         <div className="grid grid-cols-4 gap-5 mb-6">
-          {visibilityLoading ? (
+          {shouldShowLoading ? (
             // Show skeleton cards when loading
             Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="bg-white rounded-xl p-5 border border-[#e4e7ec] shadow-sm animate-pulse">
@@ -967,6 +1065,8 @@ export const MeasurePage = () => {
               brands={brands}
               selectedBrandId={selectedBrandId}
               onBrandChange={selectBrand}
+              compareMode={false} // Explicit boolean
+              showComparison={false} // Explicit boolean
             />
 
             <div className="border-t border-[#e7ecff] p-6 bg-[#f9f9fb]/50">

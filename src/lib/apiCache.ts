@@ -103,8 +103,9 @@ const CACHE_STRATEGIES: Record<string, CacheStrategy> = {
  * Includes customer_id for customer-specific endpoints to prevent cross-customer data leakage
  */
 function generateCacheKey(endpoint: string, params?: Record<string, any>): string {
-  const baseKey = endpoint.split('?')[0]; // Remove query string from endpoint
-  
+  const [path, queryString] = endpoint.split('?');
+  const baseKey = path;
+
   // Customer-specific endpoints that need customer_id in cache key
   const customerSpecificEndpoints = [
     '/brands',
@@ -115,11 +116,11 @@ function generateCacheKey(endpoint: string, params?: Record<string, any>): strin
     '/keywords',
     '/visibility'
   ];
-  
-  const isCustomerSpecific = customerSpecificEndpoints.some(pattern => 
+
+  const isCustomerSpecific = customerSpecificEndpoints.some(pattern =>
     baseKey === pattern || baseKey.startsWith(pattern + '/')
   );
-  
+
   // Get customer_id from auth service for customer-specific endpoints
   let customerId: string | null = null;
   if (isCustomerSpecific) {
@@ -130,27 +131,41 @@ function generateCacheKey(endpoint: string, params?: Record<string, any>): strin
       console.warn('[apiCache] Failed to get customer_id for cache key:', error);
     }
   }
-  
-  // Build cache key with customer_id if applicable
-  const keyParts: string[] = [baseKey];
-  
-  if (customerId) {
-    keyParts.push(`customer=${customerId}`);
-  }
-  
-  // Normalize params for consistent keys (skip when no params)
+
+  // Combine query string params from endpoint and the params object
+  const searchParams = new URLSearchParams(queryString || '');
   if (params) {
-    const sortedKeys = Object.keys(params).sort();
-    if (sortedKeys.length > 0) {
-      const normalizedParams = sortedKeys
-        .map(key => `${key}=${String(params[key])}`)
-        .join('&');
-      keyParts.push(normalizedParams);
-    }
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        searchParams.set(key, String(value));
+      }
+    });
   }
-  
-  return keyParts.length > 1 ? keyParts.join('?') : baseKey;
+
+  // Add customer_id if this is a customer-specific endpoint
+  if (customerId) {
+    searchParams.set('customer_id', customerId);
+  }
+
+  // Sort parameters for consistent cache keys
+  const allParams: Record<string, string> = {};
+  searchParams.forEach((value, key) => {
+    allParams[key] = value;
+  });
+
+  const sortedKeys = Object.keys(allParams).sort();
+  if (sortedKeys.length === 0) {
+    return baseKey;
+  }
+
+  const normalizedParams = sortedKeys
+    .map(key => `${key}=${allParams[key]}`)
+    .join('&');
+
+  return `${baseKey}?${normalizedParams}`;
 }
+
+
 
 /**
  * Get cache strategy for an endpoint
@@ -173,7 +188,7 @@ function getCacheStrategy(endpoint: string): CacheStrategy {
   if (endpoint.includes('/prompts')) return CACHE_STRATEGIES['/prompts'];
   if (endpoint.includes('/competitors')) return CACHE_STRATEGIES['/competitors'];
   if (endpoint.includes('/recommendations')) return CACHE_STRATEGIES['/recommendations'];
-  
+
   return CACHE_STRATEGIES.default;
 }
 
@@ -187,7 +202,7 @@ export async function cachedRequest<T>(
 ): Promise<T> {
   const apiCacheStart = performance.now();
   cacheDebugLog(`[apiCache] cachedRequest called for: ${endpoint} at`, apiCacheStart);
-  
+
   // Extract params from endpoint or options
   const url = new URL(endpoint.startsWith('http') ? endpoint : `http://dummy${endpoint}`);
   const params: Record<string, string> = {};
@@ -201,12 +216,12 @@ export async function cachedRequest<T>(
   if (skipCache) {
     cacheDebugLog('[apiCache] skipCache=true - bypassing cache for', endpoint);
     const response = await apiClient.request<T>(endpoint, options, config);
-    
+
     // Update cache with the fresh data even though we skipped reading from it
     const cacheKey = generateCacheKey(endpoint, params);
     const strategy = getCacheStrategy(endpoint);
     cacheManager.set(cacheKey, response, strategy);
-    
+
     return response;
   }
 
@@ -228,7 +243,7 @@ export async function cachedRequest<T>(
   const isStale = cacheManager.isStale(cacheKey);
   const isExpired = cacheManager.isExpired(cacheKey);
   const cacheCheckTime = performance.now() - cacheCheckStart;
-  
+
   cacheDebugLog(`[apiCache] Cache check completed at`, performance.now(), `- Check time: ${cacheCheckTime.toFixed(2)}ms - Has data: ${!!cachedData}, Fresh: ${isFresh}, Stale: ${isStale}, Expired: ${isExpired}`);
 
   // If we have fresh data, return it immediately
@@ -240,23 +255,23 @@ export async function cachedRequest<T>(
   // If we have stale data, return it but fetch fresh in background
   if (isStale && cachedData) {
     cacheDebugLog(`[apiCache] ✅✅ RETURNING STALE CACHE (will refresh in background) at`, performance.now(), `- Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
-    
+
     // Check if signal is already aborted - if so, just return stale data
     const signal = (options as any)?.signal;
     if (signal && signal.aborted) {
       return cachedData;
     }
-    
+
     // Fetch fresh data in background (don't await)
     // Don't pass signal to background refresh - it should complete independently
     const backgroundOptions = { ...options };
     delete (backgroundOptions as any).signal; // Remove signal from background request
-    
+
     const bgRefreshStart = performance.now();
     cacheDebugLog(`[apiCache] Starting background refresh at`, bgRefreshStart);
     const freshRequest = apiClient.request<T>(endpoint, backgroundOptions, config);
     cacheManager.registerPendingRequest(cacheKey, freshRequest);
-    
+
     freshRequest
       .then(data => {
         const bgRefreshTime = performance.now() - bgRefreshStart;
@@ -273,15 +288,15 @@ export async function cachedRequest<T>(
         console.warn(`[apiCache] ❌ Background refresh failed at`, performance.now(), `- Duration: ${bgRefreshTime.toFixed(2)}ms - Error:`, error);
         // Keep stale data on error
       });
-    
+
     return cachedData;
   }
 
   // If expired or no cache, fetch fresh data
   cacheDebugLog(`[apiCache] ❌ No cache or expired, fetching fresh data at`, performance.now(), `- Time since start: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
-  
+
   const signal = (options as any)?.signal;
-  
+
   // Check if signal is already aborted before making request
   if (signal && signal.aborted) {
     cacheDebugLog(`[apiCache] Signal already aborted, returning cached data if available`);
@@ -292,17 +307,17 @@ export async function cachedRequest<T>(
     // Otherwise, throw a proper error
     throw new DOMException('The operation was aborted.', 'AbortError');
   }
-  
+
   const apiRequestStart = performance.now();
   cacheDebugLog(`[apiCache] Making API request at`, apiRequestStart);
   const request = apiClient.request<T>(endpoint, options, config);
   const registeredRequest = cacheManager.registerPendingRequest(cacheKey, request);
-  
+
   try {
     const data = await registeredRequest;
     const apiRequestTime = performance.now() - apiRequestStart;
     cacheDebugLog(`[apiCache] ✅ API request completed at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms - Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms`);
-    
+
     // Check if request was aborted after completion
     if (signal && signal.aborted) {
       // Still cache the data for future use, but return stale if available
@@ -312,7 +327,7 @@ export async function cachedRequest<T>(
       }
       return data;
     }
-    
+
     const cacheSetStart = performance.now();
     cacheManager.set(cacheKey, data, strategy);
     const cacheSetTime = performance.now() - cacheSetStart;
@@ -337,10 +352,10 @@ export async function cachedRequest<T>(
       // Return empty/default data instead of throwing to prevent unhandled promise rejections
       return {} as T;
     }
-    
+
     // Only log non-abort errors as errors
     console.error(`[apiCache] ❌ API request failed at`, performance.now(), `- Request duration: ${apiRequestTime.toFixed(2)}ms - Total time: ${(performance.now() - apiCacheStart).toFixed(2)}ms - Error:`, error);
-    
+
     // On error, try to return stale data if available
     if (cachedData && !isExpired) {
       console.warn('[apiCache] Request failed, using stale cache:', error);

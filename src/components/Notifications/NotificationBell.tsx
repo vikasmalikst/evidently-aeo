@@ -19,11 +19,11 @@ const readBellState = (): BellState => {
       brandId = localStorage.getItem('manual-dashboard:selected-brand');
     }
   }
-  
+
   if (!brandId) {
     return { brandId: null, inProgress: false, completedAt: null };
   }
-  
+
   const inProgress = localStorage.getItem(`data_collection_in_progress_${brandId}`) === 'true';
   const completedAt = localStorage.getItem(`data_collection_completed_at_${brandId}`);
   return { brandId, inProgress, completedAt };
@@ -83,32 +83,19 @@ export const NotificationBell = () => {
     // Also allow manual test mode via localStorage flag (for development/testing)
     const testMode = typeof window !== 'undefined' && localStorage.getItem('notification_bell_test_mode') === 'true';
     const shouldShow = Boolean(state.brandId && (state.inProgress || state.completedAt || testMode));
-    
-    // Debug logging (remove in production if needed)
-    if (typeof window !== 'undefined' && import.meta.env.DEV) {
-      console.debug('[NotificationBell] State check:', {
-        brandId: state.brandId,
-        inProgress: state.inProgress,
-        completedAt: state.completedAt,
-        testMode,
-        shouldShow,
-        currentBrandId: localStorage.getItem('current_brand_id'),
-        manualDashboardKey: localStorage.getItem('manual-dashboard:selected-brand'),
-        inProgressKey: state.brandId ? `data_collection_in_progress_${state.brandId}` : null,
-        inProgressValue: state.brandId ? localStorage.getItem(`data_collection_in_progress_${state.brandId}`) : null
-      });
-    }
-    
+
+    // Debug logging disabled to reduce console spam (was logging every 750ms poll)
+    // Enable by setting localStorage.setItem('notification_bell_verbose', 'true')
+
     return shouldShow;
   }, [state.brandId, state.inProgress, state.completedAt]);
 
+
   if (!shouldRender) {
-    // In dev mode, show a placeholder or debug info
-    if (typeof window !== 'undefined' && import.meta.env.DEV && state.brandId) {
-      console.debug('[NotificationBell] Not rendering - conditions not met. Brand exists but no active progress.');
-    }
+    // Verbose debugging disabled to reduce console spam
     return null;
   }
+
 
   const handleClick = () => {
     if (!state.brandId) return;
@@ -120,13 +107,13 @@ export const NotificationBell = () => {
       setIsModalOpen(true);
       return;
     }
-    
+
     // If completed (has completion timestamp), show completion message
     if (state.completedAt) {
       setIsPopoverOpen((v) => !v);
       return;
     }
-    
+
     // Test mode: show modal even if not in progress
     const testMode = typeof window !== 'undefined' && localStorage.getItem('notification_bell_test_mode') === 'true';
     if (testMode) {

@@ -3,6 +3,7 @@ import { Layout } from '../../components/Layout/Layout';
 import { getLLMIcon } from '../../components/Visibility/LLMIcons';
 import { SafeLogo } from '../../components/Onboarding/common/SafeLogo';
 import { DateRangePicker } from '../../components/DateRangePicker/DateRangePicker';
+import { getDefaultDateRange } from '../dashboard/utils';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { useCachedData } from '../../hooks/useCachedData';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
@@ -25,25 +26,9 @@ export const QueriesAnalysisPage = () => {
     const { selectedBrand, selectedBrandId } = useManualBrandDashboard();
 
     // Date Range State
-    const [startDate, setStartDate] = useState<string>(() => {
-        const end = new Date();
-        const start = new Date(end);
-        start.setDate(start.getDate() - 6);
-        const formatDate = (date: Date) => {
-            const y = date.getFullYear();
-            const m = String(date.getMonth() + 1).padStart(2, '0');
-            const d = String(date.getDate()).padStart(2, '0');
-            return `${y}-${m}-${d}`;
-        };
-        return formatDate(start);
-    });
-    const [endDate, setEndDate] = useState<string>(() => {
-        const d = new Date();
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-    });
+    const { start: defaultStart, end: defaultEnd } = getDefaultDateRange();
+    const [startDate, setStartDate] = useState<string>(defaultStart);
+    const [endDate, setEndDate] = useState<string>(defaultEnd);
 
     // LLM Filters
     const [selectedModels, setSelectedModels] = useState<string[]>([]);

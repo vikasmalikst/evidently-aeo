@@ -187,25 +187,8 @@ const parseMetricType = (value: string | null): MetricType | null => {
   return null;
 };
 
-// Get default date range (last 7 days)
-const getDefaultDateRange = () => {
-  const end = new Date();
-  const start = new Date(end);
-  // 8 days inclusive: if today is Jan 25, start is Jan 18
-  start.setDate(start.getDate() - 7);
-
-  const formatDate = (d: Date) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  return {
-    start: formatDate(start),
-    end: formatDate(end)
-  };
-};
+// Use centralized getDefaultDateRange from dashboard/utils
+import { getDefaultDateRange as getDashboardDefaultDateRange } from '../dashboard/utils';
 
 export const MeasurePage = () => {
   const pageLoadStart = useRef(performance.now());
@@ -587,7 +570,9 @@ export const MeasurePage = () => {
   }, [searchParams]);
 
   const handleKpiSelect = (kpi: MetricType) => {
-    setSearchParams({ kpi });
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('kpi', kpi);
+    setSearchParams(newParams);
     setMetricType(kpi);
   };
 
@@ -1041,7 +1026,13 @@ export const MeasurePage = () => {
               <div
                 key={key}
                 className={`cursor-pointer transition-all duration-200 ${isActive ? 'ring-2 ring-[var(--accent-primary)] ring-offset-2 rounded-lg' : ''}`}
-                onClick={() => handleKpiSelect(key as MetricType)}
+                onClick={(e) => {
+                  // Only trigger if we're not clicking a button/link inside the card
+                  if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a')) {
+                    return;
+                  }
+                  handleKpiSelect(key as MetricType);
+                }}
               >
                 <MetricCard {...cardProps} />
               </div>

@@ -149,26 +149,7 @@ const buildTimeseries = (value: number) => Array(chartLabels.length).fill(Math.m
 
 import { formatDateLabel } from '../utils/dateFormatting';
 
-// Get default date range (last 7 days)
-const getDefaultDateRange = () => {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const start = new Date(end);
-  start.setDate(start.getDate() - 6); // Last 7 days including today
-  start.setHours(0, 0, 0, 0);
-
-  const formatDate = (d: Date) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  return {
-    start: formatDate(start),
-    end: formatDate(end)
-  };
-};
+import { getDefaultDateRange } from './dashboard/utils';
 
 export const SearchVisibility = () => {
   const pageLoadStart = useRef(performance.now());
@@ -238,7 +219,7 @@ export const SearchVisibility = () => {
     }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('kpi', metricType);
-    setSearchParams(nextParams, { replace: true });
+    setSearchParams(nextParams);
   }, [kpiParam, metricType, searchParams, setSearchParams]);
 
   // Auto-correct selected brand if it's invalid

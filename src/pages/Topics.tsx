@@ -241,25 +241,7 @@ interface TopicsFilters {
   competitors?: string[]; // Array of competitor names (lowercase)
 }
 
-const getDefaultDateRange = () => {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const start = new Date(end);
-  start.setDate(start.getDate() - 6);
-  start.setHours(0, 0, 0, 0);
-
-  const formatDate = (d: Date) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  return {
-    start: formatDate(start),
-    end: formatDate(end),
-  };
-};
+import { getDefaultDateRange } from './dashboard/utils';
 
 export const Topics = () => {
   const { selectedBrandId, isLoading: brandsLoading } = useManualBrandDashboard();

@@ -93,31 +93,51 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
     // If no specific collectors list is defined, assume all allowed (or handle as restricted default)
     // If list exists, check strict inclusion
     if (!enabledCollectors || enabledCollectors.length === 0) return true;
-    return enabledCollectors.includes(modelId);
+
+    // Normalize modelId for comparison
+    const normalizedId = modelId.toLowerCase();
+
+    // Map frontend IDs to possible backend names (lowercase for comparison)
+    const idToBackendMap: Record<string, string[]> = {
+      'chatgpt': ['chatgpt'],
+      'claude': ['claude'],
+      'gemini': ['gemini', 'google gemini'],
+      'perplexity': ['perplexity'],
+      'google_aio': ['google ai mode', 'google aio'],
+      'grok': ['grok'],
+      'bing_copilot': ['bing', 'bing copilot', 'microsoft copilot'],
+    };
+
+    const possibleMatches = idToBackendMap[normalizedId] || [normalizedId];
+
+    // Check if any of the possible matches exist in enabledCollectors (case-insensitive)
+    return (enabledCollectors as string[]).some((collector: string) =>
+      possibleMatches.includes(collector.toLowerCase().trim())
+    );
   };
-  
+
   const canSelectMore = selectedModels.length < MAX_SELECTIONS;
 
   const handleCardClick = (modelId: string, available: boolean) => {
     if (!available) return;
     if (!isEntitled(modelId)) return; // Check entitlement
-    
+
     const isSelected = selectedModels.includes(modelId);
     if (!isSelected && !canSelectMore) return;
     onModelToggle(modelId);
   };
 
   return (
-    <motion.div 
+    <motion.div
       className="w-full"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       {/* Premium Card Container */}
       <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-8 md:p-10">
-        
+
         {/* Header */}
-        <motion.div 
+        <motion.div
           className="text-center mb-10"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -138,7 +158,7 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
         </motion.div>
 
         {/* Model Grid */}
-        <motion.div 
+        <motion.div
           className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -160,8 +180,8 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
                 onClick={() => handleCardClick(model.id, model.available)}
                 disabled={isDisabled}
                 className={`relative group p-6 rounded-2xl border-2 transition-all duration-300 text-center
-                  ${isSelected 
-                    ? 'bg-gradient-to-br from-cyan-50 to-blue-50 border-cyan-400 shadow-lg shadow-cyan-100' 
+                  ${isSelected
+                    ? 'bg-gradient-to-br from-cyan-50 to-blue-50 border-cyan-400 shadow-lg shadow-cyan-100'
                     : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-md'}
                   ${isDisabled && !isSelected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                   ${!model.available ? 'opacity-60' : ''}
@@ -169,11 +189,11 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
                 `}
               >
                 {!entitled && (
-                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                      <div className="bg-gray-900/90 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-all transform scale-95 group-hover:scale-100 translate-y-2 group-hover:translate-y-0 border border-white/10 backdrop-blur-sm">
-                        Not included in plan
-                      </div>
-                   </div>
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                    <div className="bg-gray-900/90 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-all transform scale-95 group-hover:scale-100 translate-y-2 group-hover:translate-y-0 border border-white/10 backdrop-blur-sm">
+                      Not included in plan
+                    </div>
+                  </div>
                 )}
                 {/* Checkmark */}
                 {isSelected && (
@@ -187,16 +207,14 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
                 )}
 
                 {/* Logo */}
-                <div className={`w-14 h-14 mx-auto mb-3 flex items-center justify-center rounded-xl transition-all duration-300 ${
-                  isSelected ? 'bg-white shadow-md' : 'bg-gray-50'
-                }`}>
+                <div className={`w-14 h-14 mx-auto mb-3 flex items-center justify-center rounded-xl transition-all duration-300 ${isSelected ? 'bg-white shadow-md' : 'bg-gray-50'
+                  }`}>
                   {model.logo}
                 </div>
 
                 {/* Name */}
-                <h3 className={`font-semibold text-sm mb-1 transition-colors ${
-                  isSelected ? 'text-cyan-700' : 'text-gray-900'
-                }`}>
+                <h3 className={`font-semibold text-sm mb-1 transition-colors ${isSelected ? 'text-cyan-700' : 'text-gray-900'
+                  }`}>
                   {model.name}
                 </h3>
 
@@ -215,7 +233,7 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
         </motion.div>
 
         {/* Selection Counter */}
-        <motion.div 
+        <motion.div
           className="mt-8 flex items-center justify-center gap-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -230,7 +248,7 @@ export const AIModelSelection = ({ selectedModels, onModelToggle }: AIModelSelec
         </motion.div>
 
         {/* Progress Bar */}
-        <motion.div 
+        <motion.div
           className="mt-4 max-w-xs mx-auto"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

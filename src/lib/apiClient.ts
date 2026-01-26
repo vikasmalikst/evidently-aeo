@@ -178,8 +178,10 @@ class ApiClient {
       }
     };
 
-    // Add timeout to prevent hanging requests (30 seconds default)
-    const timeoutMs = config.timeout || 30000;
+    // Add timeout to prevent hanging requests (60 seconds default)
+    // For dashboard requests, we allow more time (90 seconds)
+    const isDashboard = endpoint.includes('/dashboard');
+    const timeoutMs = config.timeout || (isDashboard ? 90000 : 60000);
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => {
       timeoutController.abort();

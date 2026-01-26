@@ -68,7 +68,7 @@ export const normalizeSentimentValue = (value: number): number => {
   if (!Number.isFinite(value)) {
     return 0
   }
-  
+
   // Detect format: if value is between -1 and 1 (inclusive), it's old format
   // Otherwise, assume it's new format (0-100)
   if (value >= -1 && value <= 1) {
@@ -94,16 +94,16 @@ export const normalizeSentimentValues = (values: number[]): number => {
   if (!values.length) {
     return 0
   }
-  
+
   // Normalize each value individually (handles mixed formats)
   const normalizedValues = values
     .filter(v => v !== null && v !== undefined && Number.isFinite(v))
     .map(normalizeSentimentValue)
-  
+
   if (!normalizedValues.length) {
     return 0
   }
-  
+
   return average(normalizedValues)
 }
 
@@ -132,7 +132,7 @@ export const toPercentage = (value: number): number => {
 }
 
 export const DAY_MS = 24 * 60 * 60 * 1000
-export const DEFAULT_RANGE_DAYS = 30
+export const DEFAULT_RANGE_DAYS = 7 // Default to 8 days inclusive (today - 7)
 
 export const normalizeDateRange = (dateRange?: { start: string; end: string }): {
   startDate: Date
@@ -161,8 +161,12 @@ export const normalizeDateRange = (dateRange?: { start: string; end: string }): 
     end = temp
   }
 
-  start.setUTCHours(0, 0, 0, 0)
-  end.setUTCHours(23, 59, 59, 999)
+  if (!dateRange?.start) {
+    start.setUTCHours(0, 0, 0, 0)
+  }
+  if (!dateRange?.end) {
+    end.setUTCHours(23, 59, 59, 999)
+  }
 
   return {
     startDate: start,

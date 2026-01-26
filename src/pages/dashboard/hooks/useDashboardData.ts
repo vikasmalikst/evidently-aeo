@@ -17,7 +17,7 @@ export const useDashboardData = () => {
   const pageMountTime = useRef(performance.now());
   const authLoading = useAuthStore((state) => state.isLoading);
   // Replaced local state with global store
-  const { startDate, endDate, setStartDate, setEndDate } = useDashboardStore();
+  const { startDate, endDate, setStartDate, setEndDate, llmFilters } = useDashboardStore();
   const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
@@ -162,8 +162,50 @@ export const useDashboardData = () => {
     const params = new URLSearchParams({
       startDate,
       endDate,
-      timezoneOffset: timezoneOffset.toString()
+      timezoneOffset: timezoneOffset.toString(),
+      skipCitations: 'true'
     });
+
+    // Add collectors filter if specific LLMs are selected
+    if (llmFilters && llmFilters.length > 0 && !llmFilters.includes('all')) {
+      // Map normalized IDs back to labels is tricky here without the options list.
+      // However, the backend likely expects what we pass. 
+      // In MeasurePage we were mapping back to labels.
+      // Let's assume the store holds the values we want to send, or we need to pass the mapping capability.
+      // Actually, looking at MeasurePage, it holds "normalized" IDs (e.g. 'gpt-4') but sends labels (e.g. 'GPT-4').
+      // We might need to store the actual values in the store or handle mapping there.
+      // For now, let's pass what's in the store. If they are normalized IDs, the backend might need to handle them or we need to map them.
+      // WAIT - MeasurePage was doing: s.provider (label) -> normalizeId (value). 
+      // And passing labels to backend.
+      // If we move state to store, the store should probably hold the values (IDs) and we map them here?
+      // OR we just assume the store holds what we want to send?
+      // Let's assume the store holds the IDs (values).
+      // If the backend needs labels, we have a problem: we don't have the labels here.
+      // The labels come from the data itself (llmVisibility).
+      // We can get the labels from dashboardData if available?
+
+      // Better approach: Let's assume we store the "Keys" in the store.
+      // And we rely on the backend to accept keys OR we fix the store to hold what needs to be sent.
+      // BUT, checking MeasurePage again:
+      // const llmOptions = ... map(s => ({ value: normalizeId(s.provider), label: s.provider ...
+      // setLlmFilters stores values.
+      // params.append('collectors', selectedLabels.join(','));
+      // So we DO need to map back to labels.
+
+      // We can find the labels from the current dashboardData if it exists!
+      // If dashboardData is null (first load), we can't filter yet anyway? 
+      // Or we can just send the ID and hope backend handles it? 
+      // Let's try to map from dashboardData if available.
+
+      // If we don't have data yet, we can't map. But if we don't have data, we arguably don't have filters set yet either (default empty).
+      // If we are reloading with filters set...
+
+      // Workaround: Send the IDs. Backend *should* ideally handle normalized IDs.
+      // If not, we might need to cache the options in the store too.
+      // Let's try sending the IDs joined by comma.
+      params.append('collectors', llmFilters.join(','));
+    }
+
     // Only bypass cache when we explicitly need freshest data.
     // Default behavior should leverage client cache for fast navigation.
     if (isDataCollectionInProgress || reloadKey > 0) {
@@ -175,7 +217,7 @@ export const useDashboardData = () => {
     const endpoint = `/brands/${selectedBrandId}/dashboard?${params.toString()}`;
     console.debug(`[useDashboardData] Endpoint created: ${endpoint}`);
     return endpoint;
-  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress, brandsLoading, brands]);
+  }, [selectedBrandId, startDate, endDate, reloadKey, isDataCollectionInProgress, brandsLoading, brands, llmFilters]);
 
   const dataFetchStart = useRef(performance.now());
   const {
@@ -273,7 +315,17 @@ export const useDashboardData = () => {
   const locationState = location.state as { fromOnboarding?: boolean } | null;
   const fromOnboarding = locationState?.fromOnboarding || false;
   // Show loading when: auth loading, brand selection pending, brand switching, or fetching new data
-  const shouldShowLoading = (authLoading || brandSelectionPending || isBrandSwitching || (dashboardLoading && !dashboardData && !fromOnboarding));
+  // Fix: Show loading if dashboardLoading is true, UNLESS we have data and we are just refetching in background (stale-while-revalidate).
+  // But for date changes, we WANT to show loading.
+  // We can distinguish by comparing the current dashboardData date range with the requested startDate/endDate.
+  const isDateChange = dashboardData && (dashboardData.dateRange.start !== startDate || dashboardData.dateRange.end !== endDate);
+
+  const shouldShowLoading = (
+    authLoading ||
+    brandSelectionPending ||
+    isBrandSwitching ||
+    (dashboardLoading && (!dashboardData || isDateChange))
+  );
 
 
   useEffect(() => {
@@ -321,7 +373,8 @@ export const useDashboardData = () => {
             const params = new URLSearchParams({
               startDate,
               endDate,
-              timezoneOffset: timezoneOffset.toString()
+              timezoneOffset: timezoneOffset.toString(),
+              skipCitations: 'true'
             });
             const endpoint = `/brands/${brand.id}/dashboard?${params.toString()}`;
 

@@ -600,7 +600,12 @@ router.get(
         customerId,
         startDate,
         endDate,
-        collectors
+        collectors,
+        competitors: typeof req.query.competitors === 'string'
+          ? req.query.competitors.split(',').map(c => c.trim()).filter(Boolean)
+          : Array.isArray(req.query.competitors)
+            ? req.query.competitors.map(c => String(c).trim()).filter(Boolean)
+            : undefined
       });
 
       res.json({

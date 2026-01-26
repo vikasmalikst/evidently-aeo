@@ -9,6 +9,10 @@ import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { PromptAnalyticsPayload, PromptEntry } from '../types/prompts';
+import { getActiveCompetitors, ManagedCompetitor } from '../api/competitorManagementApi';
+import { KpiToggle } from '../components/Visibility/KpiToggle';
+import { KpiType } from '../components/EducationalDrawer/EducationalContentDrawer';
+import { EducationalContentDrawer } from '../components/EducationalDrawer/EducationalContentDrawer';
 
 // Performance logging
 const perfLog = (label: string, startTime: number) => {
@@ -50,6 +54,11 @@ export const Prompts = () => {
   const defaultDateRange = getDefaultDateRange();
   const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
   const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
+  const [allCompetitors, setAllCompetitors] = useState<ManagedCompetitor[]>([]);
+  const [selectedCompetitors, setSelectedCompetitors] = useState<Set<string>>(new Set());
+  const [metricType, setMetricType] = useState<'visibility' | 'sentiment' | 'mentions' | 'position' | 'share'>('visibility');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerKpiType, setDrawerKpiType] = useState<KpiType>('visibility');
   const { brands, selectedBrandId, selectedBrand, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
 
   const handlePromptSelect = (prompt: PromptEntry) => {
@@ -68,6 +77,10 @@ export const Prompts = () => {
       endDate: endDate ? new Date(endDate + 'T23:59:59.999').toISOString() : ''
     });
 
+    if (selectedCompetitors.size > 0) {
+      params.set('competitors', Array.from(selectedCompetitors).join(','));
+    }
+
     // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
     if (selectedLLMs.length > 0) {
       // Explicitly selected models: pass them as comma-separated list
@@ -82,7 +95,7 @@ export const Prompts = () => {
     const endpoint = `/brands/${selectedBrandId}/prompts?${params.toString()}`;
     perfLog('Prompts: Endpoint computation', endpointStart);
     return endpoint;
-  }, [selectedBrandId, startDate, endDate, brandsLoading, selectedLLMs]);
+  }, [selectedBrandId, startDate, endDate, brandsLoading, selectedLLMs, selectedCompetitors]);
 
   // Use cached data hook
   const fetchStart = useRef(performance.now());
@@ -105,6 +118,23 @@ export const Prompts = () => {
     }
   }, [response, loading]);
 
+  // Fetch competitors when brand changes
+  useEffect(() => {
+    if (selectedBrandId) {
+      getActiveCompetitors(selectedBrandId)
+        .then(data => {
+          setAllCompetitors(data.competitors || []);
+        })
+        .catch(err => {
+          console.error('Failed to fetch competitors:', err);
+        });
+    } else {
+      setAllCompetitors([]);
+    }
+    // Clear selected competitors when brand changes
+    setSelectedCompetitors(new Set());
+  }, [selectedBrandId]);
+
   // Extract available collectors from response
   const llmOptions = useMemo(() => {
     if (!response?.success || !response.data) {
@@ -112,6 +142,48 @@ export const Prompts = () => {
     }
     return response.data.collectors ?? [];
   }, [response]);
+
+  // Helper functions for PromptsList
+  const getMetricLabel = (type: typeof metricType) => {
+    switch (type) {
+      case 'visibility': return 'Visibility';
+      case 'sentiment': return 'Sentiment';
+      case 'mentions': return 'Mentions';
+      case 'position': return 'Avg Position';
+      case 'share': return 'Share of Answers';
+      default: return type;
+    }
+  };
+
+  const formatMetricValue = (value: number, type: typeof metricType) => {
+    if (value === null || isNaN(value)) return 'N/A';
+    switch (type) {
+      case 'visibility': return `${value.toFixed(1)}%`;
+      case 'sentiment': return value.toFixed(2);
+      case 'mentions': return Math.round(value).toString();
+      case 'position': return value.toFixed(1);
+      case 'share': return `${value.toFixed(1)}%`;
+      default: return value.toString();
+    }
+  };
+
+  const getMetricValue = (item: PromptEntry, type: typeof metricType) => {
+    switch (type) {
+      case 'visibility': return item.visibilityScore;
+      case 'sentiment': return item.sentimentScore;
+      case 'mentions': return item.mentions;
+      case 'position': return item.averagePosition;
+      case 'share': return item.soaScore;
+      default: return null;
+    }
+  };
+
+  const getCompetitorMetricValue = (competitorSoaMap: Record<string, number>, type: typeof metricType, competitorId: string) => {
+    switch (type) {
+      case 'share': return competitorSoaMap[competitorId];
+      default: return null; // Other metrics are not directly available per competitor in this context
+    }
+  };
 
   // Process response data with performance logging
   const topics = useMemo(() => {
@@ -176,6 +248,11 @@ export const Prompts = () => {
     setSelectedLLMs(llms);
   };
 
+  const handleHelpClick = (key: string) => {
+    setDrawerKpiType(key as KpiType);
+    setDrawerOpen(true);
+  };
+
   if (loading && (!response || !response.data)) {
     return (
       <Layout>
@@ -215,6 +292,15 @@ export const Prompts = () => {
           </button>
         </div>
 
+        <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
+          <KpiToggle
+            metricType={metricType as any}
+            onChange={(value) => setMetricType(value as any)}
+            allowedMetricTypes={['visibility', 'share', 'sentiment', 'mentions', 'position']}
+            onHelpClick={handleHelpClick}
+          />
+        </div>
+
         <PromptFilters
           llmOptions={llmOptions}
           selectedLLMs={selectedLLMs}
@@ -223,6 +309,9 @@ export const Prompts = () => {
           endDate={endDate}
           onStartDateChange={setStartDate}
           onEndDateChange={setEndDate}
+          competitors={allCompetitors}
+          selectedCompetitors={selectedCompetitors}
+          onSelectedCompetitorsChange={setSelectedCompetitors}
         />
 
         {error && (
@@ -239,6 +328,12 @@ export const Prompts = () => {
               onPromptSelect={handlePromptSelect}
               loading={loading}
               selectedLLMs={selectedLLMs}
+              competitors={allCompetitors}
+              selectedCompetitors={selectedCompetitors}
+              metricType={metricType}
+              brandLogo={selectedBrand?.metadata?.logo || selectedBrand?.metadata?.brand_logo}
+              brandName={selectedBrand?.name}
+              brandDomain={selectedBrand?.homepage_url || undefined}
             />
           </div>
 
@@ -247,6 +342,11 @@ export const Prompts = () => {
           </div>
         </div>
       </div>
+      <EducationalContentDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        kpiType={drawerKpiType}
+      />
     </Layout>
   );
 };

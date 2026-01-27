@@ -589,7 +589,8 @@ export class PromptsAnalyticsService {
             competitorMentions: null,
             keywordCount: null,
             mentions: 0,
-            averagePosition: null
+            averagePosition: null,
+            soaScore: null
           })
         }
       }
@@ -1458,6 +1459,8 @@ export class PromptsAnalyticsService {
           competitorSentimentMap: {},
           competitorMentionsMap: {},
           competitorPositionMap: {},
+          competitorSoaMap: {},
+          soaScore: null,
           prompts: []
         })
       }

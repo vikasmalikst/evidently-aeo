@@ -1,7 +1,7 @@
-import { PieChart, TrendingUp, Heart, Eye } from 'lucide-react';
+import { PieChart, TrendingUp, Heart, Eye, Hash, ListOrdered } from 'lucide-react';
 import { HelpButton } from '../common/HelpButton';
 
-type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence';
+type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence' | 'mentions' | 'position';
 
 interface KpiToggleProps {
   metricType: MetricType;
@@ -39,6 +39,18 @@ const KPI_OPTIONS: Array<{
       label: 'Sentiment Score',
       description: 'How positively your brand and competitors are discussed',
       Icon: Heart
+    },
+    {
+      id: 'mentions',
+      label: 'Mentions',
+      description: 'Total number of times your brand is mentioned',
+      Icon: Hash
+    },
+    {
+      id: 'position',
+      label: 'Average Position',
+      description: 'The average ranking position where your brand appears',
+      Icon: ListOrdered
     }
   ];
 

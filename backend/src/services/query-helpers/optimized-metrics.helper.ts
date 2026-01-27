@@ -1311,6 +1311,10 @@ export class OptimizedMetricsHelper {
       competitor_count: number;
       competitor_product_count: number;
       competitor_positions: number[];
+      competitor_visibility_map: Record<string, number>;
+      competitor_sentiment_map: Record<string, number>;
+      competitor_mentions_map: Record<string, number>;
+      competitor_positions_map: Record<string, number[]>;
     }>;
     duration_ms: number;
     error?: string;
@@ -1350,7 +1354,8 @@ export class OptimizedMetricsHelper {
                   visibility_index,
                   total_brand_mentions,
                   total_brand_product_mentions,
-                  brand_positions
+                  brand_positions,
+                  share_of_answers
                 ),
                 brand_sentiment(
                   sentiment_score
@@ -1360,9 +1365,15 @@ export class OptimizedMetricsHelper {
                   competitor_mentions,
                   total_competitor_product_mentions,
                   competitor_positions,
+                  visibility_index,
+                  share_of_answers,
                   brand_competitors(
                     competitor_name
                   )
+                ),
+                competitor_sentiment(
+                  competitor_id,
+                  sentiment_score
                 )
               )
             `)
@@ -1395,7 +1406,8 @@ export class OptimizedMetricsHelper {
               visibility_index,
               total_brand_mentions,
               total_brand_product_mentions,
-              brand_positions
+              brand_positions,
+              share_of_answers
             ),
             brand_sentiment(
               sentiment_score
@@ -1405,9 +1417,15 @@ export class OptimizedMetricsHelper {
               competitor_mentions,
               total_competitor_product_mentions,
               competitor_positions,
+              visibility_index,
+              share_of_answers,
               brand_competitors(
                 competitor_name
               )
+            ),
+            competitor_sentiment(
+              competitor_id,
+              sentiment_score
             )
           `)
           .eq('brand_id', brandId);
@@ -1496,17 +1514,58 @@ export class OptimizedMetricsHelper {
           ? (Array.isArray(mf.competitor_metrics) ? mf.competitor_metrics : [mf.competitor_metrics])
           : [];
 
-        // Extract competitor names and SUM competitor mentions and product mentions
+        // Extract competitor names and build MAPS for metrics
         const competitorNames: string[] = [];
         let totalCompetitorMentions = 0;
         let totalCompetitorProductMentions = 0;
         let allCompetitorPositions: number[] = [];
+        const competitorVisibilityMap: Record<string, number> = {};
+        const competitorSentimentMap: Record<string, number> = {};
+        const competitorMentionsMap: Record<string, number> = {};
+        const competitorPositionsMap: Record<string, number[]> = {};
+        const competitorSoaMap: Record<string, number> = {};
+
+        // Process sentiments first to have them available for metrics mapping
+        const sentiments = mf?.competitor_sentiment
+          ? (Array.isArray(mf.competitor_sentiment) ? mf.competitor_sentiment : [mf.competitor_sentiment])
+          : [];
 
         cms.forEach((cm: any) => {
           if (cm) {
             const bc = Array.isArray(cm.brand_competitors) ? cm.brand_competitors[0] : cm.brand_competitors;
-            if (bc?.competitor_name) {
-              competitorNames.push(bc.competitor_name);
+            const competitorName = bc?.competitor_name;
+            if (competitorName) {
+              competitorNames.push(competitorName);
+              const compKey = competitorName.toLowerCase().trim();
+
+              // Map visibility and SOA (Visibility Score in Prompts is usually Visibility Index * 100)
+              if (cm.visibility_index !== null && cm.visibility_index !== undefined) {
+                competitorVisibilityMap[compKey] = Number(cm.visibility_index) * 100;
+              } else if (cm.share_of_answers !== null && cm.share_of_answers !== undefined) {
+                // Fallback to SOA if visibility index is missing
+                competitorVisibilityMap[compKey] = (Number(cm.share_of_answers) / 100) * 100; // Keep as 0-100
+              }
+
+              // Map raw SOA
+              if (cm.share_of_answers !== null && cm.share_of_answers !== undefined) {
+                competitorSoaMap[compKey] = Number(cm.share_of_answers);
+              }
+
+              // Find matching sentiment
+              const sentiment = sentiments.find((s: any) => s.competitor_id === cm.competitor_id);
+              if (sentiment && sentiment.sentiment_score !== null && sentiment.sentiment_score !== undefined) {
+                competitorSentimentMap[compKey] = Number(sentiment.sentiment_score);
+              }
+
+              // Map mentions
+              if (cm.competitor_mentions !== null && cm.competitor_mentions !== undefined) {
+                competitorMentionsMap[compKey] = Number(cm.competitor_mentions);
+              }
+
+              // Map positions
+              if (cm.competitor_positions && Array.isArray(cm.competitor_positions)) {
+                competitorPositionsMap[compKey] = cm.competitor_positions;
+              }
             }
             // SUM competitor mentions
             if (cm.competitor_mentions !== null && cm.competitor_mentions !== undefined) {
@@ -1539,6 +1598,7 @@ export class OptimizedMetricsHelper {
           collector_type: cr.collector_type,
           // IMPORTANT: use nullish coalescing to preserve 0 values (0 mentions is valid)
           visibility_index: bm?.visibility_index ?? null,
+          share_of_answers: bm?.share_of_answers ?? null,
           sentiment_score: bs?.sentiment_score ?? null,
           total_brand_mentions: bm?.total_brand_mentions ?? null,
           total_brand_product_mentions: bm?.total_brand_product_mentions ?? null,
@@ -1547,6 +1607,11 @@ export class OptimizedMetricsHelper {
           competitor_count: totalCompetitorMentions,
           competitor_product_count: totalCompetitorProductMentions,
           competitor_positions: allCompetitorPositions,
+          competitor_visibility_map: competitorVisibilityMap,
+          competitor_sentiment_map: competitorSentimentMap,
+          competitor_mentions_map: competitorMentionsMap,
+          competitor_positions_map: competitorPositionsMap,
+          competitor_soa_map: competitorSoaMap,
         };
 
         // Debug: Log transformation for rows with missing data

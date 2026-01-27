@@ -1,6 +1,8 @@
 import React, { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ManagedCompetitor } from '../../api/competitorManagementApi';
 import { PromptEntry, PromptTopic } from '../../types/prompts';
+import { SafeLogo } from '../Onboarding/common/SafeLogo';
 
 interface PromptsListProps {
   topics: PromptTopic[];
@@ -8,6 +10,12 @@ interface PromptsListProps {
   onPromptSelect: (prompt: PromptEntry) => void;
   loading: boolean;
   selectedLLMs: string[];
+  competitors: ManagedCompetitor[];
+  selectedCompetitors: Set<string>;
+  metricType: 'visibility' | 'sentiment' | 'mentions' | 'position' | 'share';
+  brandLogo?: string;
+  brandName?: string;
+  brandDomain?: string;
 }
 
 class PromptsListErrorBoundary extends React.Component<
@@ -42,7 +50,13 @@ export const PromptsList = memo(({
   selectedPromptId,
   onPromptSelect,
   loading,
-  selectedLLMs
+  selectedLLMs,
+  competitors,
+  selectedCompetitors,
+  metricType,
+  brandLogo,
+  brandName,
+  brandDomain
 }: PromptsListProps) => {
   const [expandedTopics, setExpandedTopics] = useState<string[]>([]);
   const [visiblePromptCounts, setVisiblePromptCounts] = useState<Record<string, number>>({});
@@ -163,37 +177,83 @@ export const PromptsList = memo(({
     };
   }, []);
 
+  const activeCompetitors = useMemo(() => {
+    return competitors.filter(c => selectedCompetitors.has(c.name.toLowerCase()));
+  }, [competitors, selectedCompetitors]);
+
+  const getMetricLabel = (type: string) => {
+    switch (type) {
+      case 'visibility': return 'Visibility Score';
+      case 'sentiment': return 'Sentiment';
+      case 'mentions': return 'Mentions';
+      case 'position': return 'Avg Position';
+      case 'share': return 'Share of Answers';
+      default: return type;
+    }
+  };
+
+  const formatMetricValue = (value: number | null | undefined, type: string) => {
+    if (value === null || value === undefined) return '—';
+    switch (type) {
+      case 'visibility': return value.toFixed(1);
+      case 'sentiment':
+      case 'mentions': return Math.round(value).toString();
+      case 'position': return value.toFixed(1);
+      case 'share': return `${value.toFixed(1)}%`;
+      default: return value.toString();
+    }
+  };
+
+  const getBrandValue = (item: PromptTopic | PromptEntry, type: string) => {
+    switch (type) {
+      case 'visibility': return item.visibilityScore;
+      case 'sentiment': return item.sentimentScore;
+      case 'mentions': return item.mentions;
+      case 'position': return item.averagePosition;
+      case 'share': return item.soaScore;
+      default: return null;
+    }
+  };
+
+  const getCompetitorValue = (item: PromptTopic | PromptEntry, compKey: string, type: string) => {
+    switch (type) {
+      case 'visibility': return item.competitorVisibilityMap?.[compKey];
+      case 'sentiment': return item.competitorSentimentMap?.[compKey];
+      case 'mentions': return item.competitorMentionsMap?.[compKey];
+      case 'position': return item.competitorPositionMap?.[compKey];
+      case 'share': return item.competitorSoaMap?.[compKey];
+      default: return null;
+    }
+  };
+
+  const metricLabel = getMetricLabel(metricType);
+
   return (
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm overflow-hidden h-full">
-      <div className="px-4 py-3 border-b border-[var(--border-default)] relative">
+      <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between relative bg-white h-[45px]">
         <h3 className="text-sm font-semibold text-[var(--text-headings)]">
           Prompts
         </h3>
+
+        <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-default)] whitespace-nowrap">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-primary)]">
+            {metricLabel}
+          </span>
+        </div>
+
         {loading && hasPrompts && (
-          <Loader2 
-            size={18} 
-            className="absolute top-3 right-[calc(0.5rem+64px)] animate-spin text-[#00bcdc]" 
+          <Loader2
+            size={18}
+            className="animate-spin text-[#00bcdc]"
             aria-label="Loading metrics"
             style={{ filter: 'brightness(1.2)' }}
           />
         )}
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-[var(--bg-secondary)] border-b border-[var(--border-default)]">
-            <tr>
-              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-4 py-2">Prompt</th>
-              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-28">Visibility Score</th>
-              <th className="text-center text-xs font-semibold text-[var(--text-caption)] px-2 py-2 w-32">Sentiment</th>
-            </tr>
-          </thead>
-        </table>
-      </div>
-
       <div
         ref={scrollContainerRef}
-        className="overflow-y-auto"
+        className="overflow-auto scrollbar-thin scrollbar-thumb-gray-200"
         style={{ maxHeight: 'calc(100vh - 450px)' }}
         onScroll={handleScroll}
       >
@@ -210,7 +270,36 @@ export const PromptsList = memo(({
         )}
 
         <PromptsListErrorBoundary>
-          <table className="w-full">
+          <table className="w-full table-fixed min-w-[600px] border-separate border-spacing-0">
+            <thead className="sticky top-0 z-30 bg-[var(--bg-secondary)] shadow-[0_1px_0_0_rgba(0,0,0,0.1)]">
+              <tr>
+                <th className="sticky left-0 z-40 bg-[var(--bg-secondary)] text-left text-xs font-semibold text-[var(--text-caption)] px-4 py-2 w-[300px] shadow-[1px_0_0_0_#e4e7ec]">Prompt</th>
+                <th className="sticky left-[300px] z-40 bg-[var(--bg-secondary)] text-center px-2 py-2 w-28 shadow-[1px_0_0_0_#e4e7ec]">
+                  <div className="flex justify-center" title={brandName || 'Brand'}>
+                    <SafeLogo
+                      src={brandLogo}
+                      domain={brandDomain}
+                      alt={brandName || 'Brand'}
+                      size={24}
+                      className="w-6 h-6 rounded shadow-sm object-contain bg-white p-0.5 border border-gray-100"
+                    />
+                  </div>
+                </th>
+                {activeCompetitors.map(comp => (
+                  <th key={comp.id} className="text-center px-2 py-2 w-28 border-l border-[var(--border-default)] bg-[var(--bg-secondary)]">
+                    <div className="flex justify-center" title={comp.name}>
+                      <SafeLogo
+                        src={comp.logo}
+                        domain={comp.url || comp.domain}
+                        alt={comp.name}
+                        size={24}
+                        className="w-6 h-6 rounded shadow-sm object-contain bg-white p-0.5 border border-gray-100"
+                      />
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
             <tbody>
               {topicsWithPrompts.map((topic) => {
                 const isExpanded = expandedTopics.includes(topic.id);
@@ -221,7 +310,7 @@ export const PromptsList = memo(({
                 return (
                   <Fragment key={topic.id}>
                     <tr className="border-b border-[var(--border-default)] bg-blue-50">
-                      <td className="px-4 py-2">
+                      <td className="sticky left-0 z-20 bg-blue-50 px-4 py-2 w-[300px]">
                         <button
                           onClick={() => toggleTopic(topic.id)}
                           className="w-full flex items-center gap-2 hover:bg-blue-100 transition-colors text-left"
@@ -231,7 +320,7 @@ export const PromptsList = memo(({
                           ) : (
                             <ChevronRight size={16} className="text-[var(--text-caption)]" />
                           )}
-                          <span className="text-sm font-semibold text-[var(--text-headings)]">
+                          <span className="text-sm font-semibold text-[var(--text-headings)] truncate">
                             {topic.name}
                           </span>
                           <span className="text-xs text-[var(--text-caption)]">
@@ -239,16 +328,22 @@ export const PromptsList = memo(({
                           </span>
                         </button>
                       </td>
-                      <td className="px-2 py-2 w-24 text-center">
+                      <td className="sticky left-[300px] z-20 bg-blue-50 px-2 py-2 w-28 text-center shadow-[1px_0_0_0_#93c5fd]">
                         <span className="text-sm font-semibold font-data text-[var(--text-body)]">
-                          {topic.visibilityScore !== null ? `${topic.visibilityScore.toFixed(1)}` : '—'}
+                          {formatMetricValue(getBrandValue(topic, metricType), metricType)}
                         </span>
                       </td>
-                      <td className="px-2 py-2 w-32 text-center">
-                        <span className="text-sm font-medium text-[var(--text-caption)]">
-                          {topic.sentimentScore !== null ? `${Math.round(topic.sentimentScore)}` : '—'}
-                        </span>
-                      </td>
+                      {activeCompetitors.map(comp => {
+                        const compKey = comp.name.toLowerCase().trim();
+                        const score = getCompetitorValue(topic, compKey, metricType);
+                        return (
+                          <td key={comp.id} className="px-2 py-2 w-28 text-center border-l border-blue-100 bg-blue-50">
+                            <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                              {formatMetricValue(score, metricType)}
+                            </span>
+                          </td>
+                        );
+                      })}
                     </tr>
 
                     {promptsToRender.map((prompt) => {
@@ -262,13 +357,13 @@ export const PromptsList = memo(({
                         <tr
                           key={prompt.id}
                           onClick={() => handlePromptClick(prompt)}
-                          className={`cursor-pointer border-b border-[var(--border-default)] transition-all ${
-                            isSelected
-                              ? 'bg-[var(--accent-light)]'
-                              : 'hover:bg-[var(--bg-secondary)]'
-                          }`}
+                          className={`cursor-pointer border-b border-[var(--border-default)] transition-all ${isSelected
+                            ? 'bg-[var(--accent-light)]'
+                            : 'hover:bg-[var(--bg-secondary)]'
+                            }`}
                         >
-                          <td className="px-4 py-3">
+                          <td className={`sticky left-0 z-20 px-4 py-3 w-[300px] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'
+                            }`}>
                             <p className="text-sm text-[var(--text-body)] font-data leading-snug">
                               {prompt.question}
                             </p>
@@ -285,23 +380,29 @@ export const PromptsList = memo(({
                               </div>
                             )}
                           </td>
-                          <td className="px-2 py-3 w-24 text-center">
+                          <td className={`sticky left-[300px] z-20 px-2 py-3 w-28 text-center shadow-[1px_0_0_0_#e4e7ec] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'}`}>
                             <span className="text-sm font-semibold font-data text-[var(--text-body)]">
-                              {prompt.visibilityScore !== null ? `${prompt.visibilityScore.toFixed(1)}` : '—'}
+                              {formatMetricValue(getBrandValue(prompt, metricType), metricType)}
                             </span>
                           </td>
-                          <td className="px-2 py-3 w-32 text-center">
-                            <span className="text-sm font-medium text-[var(--text-caption)]">
-                              {prompt.sentimentScore !== null ? `${Math.round(prompt.sentimentScore)}` : '—'}
-                            </span>
-                          </td>
+                          {activeCompetitors.map(comp => {
+                            const compKey = comp.name.toLowerCase().trim();
+                            const score = getCompetitorValue(prompt, compKey, metricType);
+                            return (
+                              <td key={comp.id} className={`px-2 py-3 w-28 text-center border-l border-[var(--border-default)] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'}`}>
+                                <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                                  {formatMetricValue(score, metricType)}
+                                </span>
+                              </td>
+                            );
+                          })}
                         </tr>
                       );
                     })}
 
                     {canLoadMore && (
                       <tr key={`${topic.id}:load-more`} className="border-b border-[var(--border-default)]">
-                        <td colSpan={3} className="px-4 py-3 text-center">
+                        <td colSpan={3 + activeCompetitors.length} className="px-4 py-3 text-center bg-white">
                           <button
                             onClick={() => handleLoadMoreForTopic(topic.id, topic.prompts.length)}
                             className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[var(--border-default)] text-xs font-semibold text-[var(--text-caption)] hover:bg-[var(--bg-secondary)] transition-colors"

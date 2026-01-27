@@ -2029,9 +2029,28 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                   return (
                                     <div className="space-y-4">
                                       {/* Header with overall title */}
-                                      <div className="bg-gradient-to-r from-[#00bcdc] to-[#06c686] rounded-lg p-4 text-white">
-                                        <h3 className="text-[18px] font-bold">{contentTitle}</h3>
-                                        <p className="text-[12px] opacity-80 mt-1">v4.0 · Sectioned Content · {sections.length} sections</p>
+                                      {/* Header with overall title */}
+                                      <div className={`rounded-lg p-4 text-white ${
+                                        v4Content.optimizationMode === 'Technical_Guide' 
+                                          ? 'bg-gradient-to-r from-[#6366f1] to-[#8b5cf6]' // Indigo/Purple for Technical
+                                          : v4Content.optimizationMode === 'FSA_Strategic'
+                                            ? 'bg-gradient-to-r from-[#0ea5e9] to-[#06b6d4]' // Sky/Cyan for FSA
+                                            : 'bg-gradient-to-r from-[#00bcdc] to-[#06c686]' // Default Teal
+                                      }`}>
+                                        <div className="flex justify-between items-start mb-1">
+                                          <h3 className="text-[18px] font-bold">{contentTitle}</h3>
+                                          {v4Content.optimizationMode === 'FSA_Strategic' && (
+                                            <span className="bg-white/20 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider backdrop-blur-sm border border-white/30">
+                                              ✨ FSA Optimized
+                                            </span>
+                                          )}
+                                          {v4Content.optimizationMode === 'Technical_Guide' && (
+                                            <span className="bg-white/20 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider backdrop-blur-sm border border-white/30">
+                                              🔧 Technical Guide
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-[12px] opacity-80">v4.0 · Sectioned Content · {sections.length} sections</p>
                                       </div>
 
                                       {/* Section Cards */}

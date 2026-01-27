@@ -292,6 +292,160 @@ class RecommendationContentService {
     return data as any;
   }
 
+  private getFSAStrategicInstructions(brand: any, rec: any, sourceTypeV3: string): string {
+    const currentYear = new Date().getFullYear();
+
+    return `You are EvidentlyAEO, an expert AI content generator specializing in "Generative Engine Optimization" (GEO).
+
+CORE PHILOSOPHY:
+You follow the FSA Framework (Freshness, Structure, Authority).
+- FRESHNESS: Inject temporal markers (e.g., "Updated for ${currentYear}", "The ${currentYear} guide to...").
+- STRUCTURE: The "Tired Machine" protocol. AI engines scan, they don't read.
+- AUTHORITY: Explicitly state the entity's expertise (e.g., "As a platform specializing in ${brand?.industry || 'this field'}...").
+
+INSTRUCTIONS:
+1. HEADER STRATEGY: Generate H2 headers strictly as QUESTIONS or DIRECT INTENT (e.g., "How does X work?", "What is the best X for Y?") instead of fluffy titles.
+2. DIRECT ANSWER: The first sentence under any header must be the DIRECT ANSWER. No prefatory text ("Let's dive in...").
+3. CHUNKING: No paragraph > 3 sentences. Use bullets for lists.
+4. ENTITY BOND: Mention "${brand?.name || 'Brand'}" in proximity to key terms to strengthen the entity-topic bond.
+
+CONTENT GOAL:
+Generate specialized, machine-readable content for ${rec.citation_source} (${sourceTypeV3}).
+
+=== OUTPUT: STRUCTURED SECTIONS (v4.0) ===
+
+Generate content as an array of 5-7 distinct sections. Each section should be:
+- Self-contained and valuable on its own
+- AEO-optimized with clear headings
+- 100-200 words per section
+
+REQUIRED SECTIONS:
+1. "executive_summary" - TL;DR with key takeaways (2-3 bullet points) - Direct answers only.
+2. "context" - The "Direct Answer" to the core problem. Contextualize for ${currentYear}.
+3. "strategies" - Key approaches/steps (numbered list).
+4. "case_study" - Real example/data (use [FILL_IN:] for specifics).
+5. "faq" - 2-3 H3 Questions + Direct Answers. optimizing for Featured Snippets.
+6. "cta" - Clear call to action.
+
+=== TONE: AUTHORITATIVE, DIRECT, CONCISE ===
+Remove metaphors and fluff. Write like a data source.
+
+=== JSON SCHEMA v4.0 ===
+{
+  "version": "4.0",
+  "optimizationMode": "FSA_Strategic",
+  "recommendationId": "${rec.id}",
+  "brandName": "${brand?.name || 'Brand'}",
+  "targetSource": { "domain": "${rec.citation_source || ''}", "sourceType": "${sourceTypeV3}" },
+  "contentTitle": "<compelling overall title - Question or Direct Statement>",
+  "sections": [
+    {
+      "id": "executive_summary",
+      "title": "Executive Summary",
+      "content": "<2-3 bullet points summarizing key takeaways>",
+      "sectionType": "summary"
+    },
+    {
+      "id": "context",
+      "title": "<Direct Question / Problem Statement>",
+      "content": "<Direct answer + context>",
+      "sectionType": "context"
+    },
+    {
+      "id": "strategies",
+      "title": "Key Strategies for ${currentYear}",
+      "content": "<numbered list of actionable strategies>",
+      "sectionType": "strategies"
+    },
+    {
+      "id": "case_study",
+      "title": "Case Study: [FILL_IN: Company Name]",
+      "content": "<real-world example with metrics using [FILL_IN:] for specifics>",
+      "sectionType": "case_study"
+    },
+    {
+      "id": "faq",
+      "title": "Frequently Asked Questions",
+      "content": "<2-3 Q&A pairs formatted as H3 Question: ... Answer: ...>",
+      "sectionType": "faq"
+    },
+    {
+      "id": "next_steps",
+      "title": "Next Steps",
+      "content": "<actionable next steps>",
+      "sectionType": "cta"
+    }
+  ],
+  "callToAction": "<final CTA>",
+  "requiredInputs": ["<[FILL_IN: X] items across all sections>"]
+}
+
+RULES:
+- Each section.content = REAL TEXT, not descriptions
+- Use [FILL_IN: specific thing] for data you don't know
+- Escape newlines as \\\\n in JSON strings
+- No competitor mentions unless for direct comparison
+`;
+  }
+
+  private getTechnicalInstructions(brand: any, rec: any, sourceTypeV3: string): string {
+    return `You are a Technical AEO Specialist.
+
+TASK:
+Generate a precise, technical implementation guide for: "${rec.action}".
+This is a technical fix (e.g. valid JSON-LD, robots.txt, file verification), NOT a blog post.
+
+OUTPUT FORMAT:
+- "executive_summary": What is the fix and why it is critical for AEO.
+- "technical_steps": Exact step-by-step instructions.
+- "code_example": The exact code/config to use (e.g., JSON-LD, text file content).
+- "validation": How to verify the fix works (e.g. "Use Google Rich Results Test").
+
+STRICT JSON OUTPUT (v4.0 Schema):
+{
+  "version": "4.0",
+  "optimizationMode": "Technical_Guide",
+  "recommendationId": "${rec.id}",
+  "brandName": "${brand?.name || 'Brand'}",
+  "targetSource": { "domain": "${rec.citation_source || ''}", "sourceType": "${sourceTypeV3}" },
+  "contentTitle": "${rec.action} - Implementation Guide",
+  "sections": [
+    {
+      "id": "executive_summary",
+      "title": "Overview",
+      "content": "<What this is and why it matters>",
+      "sectionType": "summary"
+    },
+    {
+      "id": "technical_steps",
+      "title": "Implementation Steps",
+      "content": "<Step 1... Step 2... Step 3...>",
+      "sectionType": "strategies"
+    },
+    {
+      "id": "code_example",
+      "title": "Code / Configuration",
+      "content": "<The exact code block or file content>",
+      "sectionType": "custom"
+    },
+    {
+      "id": "validation",
+      "title": "Verification",
+      "content": "<How to test this>",
+      "sectionType": "custom"
+    }
+  ],
+  "callToAction": "Mark as complete once verified.",
+  "requiredInputs": ["<[FILL_IN: X] items>"]
+}
+
+RULES:
+- Be extremely precise. No fluff.
+- Provide actual code/config examples where appropriate.
+- Escape newlines as \\\\n in JSON strings.
+`;
+  }
+
   async generateContent(
     recommendationId: string,
     customerId: string,
@@ -519,150 +673,22 @@ CONSTRAINTS:
 
     const sourceGuidance = getSourceContentGuidance(sourceTypeV3);
 
-    // v4.0 Prompt: Generate structured sections for interactive refinement
-    const contentInstructionsV4 = `You are a senior content strategist. Generate AEO-optimized content as STRUCTURED SECTIONS.
+    // Determine category
+    const category = isColdStartGuide ? 'cold_start' : (rec.source === 'domain_audit' ? 'technical' : 'strategic');
 
-RETURN ONLY VALID JSON. No markdown, no explanations.
+    // Get instructions based on category
+    let contentInstructions = '';
 
-BRAND: ${brand?.name || 'Brand'} (${brand?.industry || 'Unknown industry'})
-TARGET: ${rec.citation_source || 'Unknown'} (${sourceTypeV3})
-ACTION: ${rec.action}
-KPI: ${rec.kpi}
-
-=== OUTPUT: STRUCTURED SECTIONS ===
-
-Generate content as an array of 5-7 distinct sections. Each section should be:
-- Self-contained and valuable on its own
-- AEO-optimized with clear headings that match search queries
-- 100-200 words per section
-
-REQUIRED SECTIONS:
-1. "executive_summary" - TL;DR with key takeaways (2-3 bullet points)
-2. "context" - Why this matters / The problem being solved
-3. "strategies" - Key approaches or steps (numbered list)
-4. "case_study" - Real example with metrics (use [FILL_IN:] for specifics)
-5. "faq" - 2-3 FAQ-style Q&As that AI models love to cite
-6. "cta" - Clear call to action
-
-=== TONE: ${sourceTypeV3.toUpperCase()} ===
-${sourceTypeV3 === 'reddit' ? `Conversational, first-person, genuine questions` :
-        sourceTypeV3 === 'linkedin' ? `Professional, data-driven, thought leadership` :
-          sourceTypeV3 === 'youtube' ? `Spoken dialogue with [VISUAL:] cues` :
-            `Professional, clear, actionable`}
-
-=== CRITICAL: REAL CONTENT ===
-Write ACTUAL sentences. NOT "this section should cover..." but the REAL text.
-
-=== JSON SCHEMA v4.0 ===
-{
-  "version": "4.0",
-  "recommendationId": "${rec.id}",
-  "brandName": "${brand?.name || 'Brand'}",
-  "targetSource": { "domain": "${rec.citation_source || ''}", "sourceType": "${sourceTypeV3}" },
-  "contentTitle": "<compelling overall title>",
-  "sections": [
-    {
-      "id": "executive_summary",
-      "title": "Executive Summary",
-      "content": "<2-3 bullet points summarizing key takeaways>",
-      "sectionType": "summary"
-    },
-    {
-      "id": "context",
-      "title": "<Why X Matters / The Problem>",
-      "content": "<2-3 paragraphs explaining the context>",
-      "sectionType": "context"
-    },
-    {
-      "id": "strategies",
-      "title": "Key Strategies",
-      "content": "<numbered list of 3-5 actionable strategies>",
-      "sectionType": "strategies"
-    },
-    {
-      "id": "case_study",
-      "title": "Case Study: [FILL_IN: Company Name]",
-      "content": "<real-world example with metrics using [FILL_IN:] for specifics>",
-      "sectionType": "case_study"
-    },
-    {
-      "id": "faq",
-      "title": "Frequently Asked Questions",
-      "content": "<2-3 Q&A pairs formatted as Q: ... A: ...>",
-      "sectionType": "faq"
-    },
-    {
-      "id": "next_steps",
-      "title": "Next Steps",
-      "content": "<actionable next steps for the reader>",
-      "sectionType": "cta"
+    if (category === 'cold_start') {
+      contentInstructions = guideInstructions; // keep existing guideInstructions definition
+    } else if (category === 'technical') {
+      contentInstructions = this.getTechnicalInstructions(brand, rec, sourceTypeV3);
+    } else {
+      // Strategic (FSA) - default for ai_generated / other
+      contentInstructions = this.getFSAStrategicInstructions(brand, rec, sourceTypeV3);
     }
-  ],
-  "callToAction": "<final CTA with link placeholder>",
-  "requiredInputs": ["<[FILL_IN: X] items across all sections>"]
-}
 
-RULES:
-- Each section.content = REAL TEXT, not descriptions
-- Use [FILL_IN: specific thing] for data you don't know
-- Escape newlines as \\\\n in JSON strings
-- No competitor mentions
-`;
-
-    // Decide which prompt to use: v4.0 sectioned (default) or guide_v1 (cold start)
-    const useV4 = !isColdStartGuide; // Use v4 for normal content generation
-    const contentInstructions = useV4 ? contentInstructionsV4 : `You are a senior marketing consultant and AEO strategist.
-
-CRITICAL: You MUST return ONLY valid JSON. Do NOT include markdown code blocks, do NOT include any text before or after the JSON, do NOT include explanations. Return ONLY the raw JSON object starting with { and ending with }.
-
-SOURCE TYPE: ${sourceTypeDesc}
-
-GOAL:
-- Generate ONE section: Publishable Content (ready to publish/post). Do NOT generate any email or outreach copy.
-- For YouTube: Generate video script with scenes and timing.
-- For article sites: Generate full article with H1/H2/FAQ structure.
-
-OUTPUT RULES (to ensure valid JSON):
-- You MUST escape newlines in any string values using \\\\n (no literal newlines inside JSON strings).
-- Do NOT use placeholders like [Client], [Company], or <insert>. If a detail is missing, omit it and add it to requiredInputs.
-- Do NOT invent customer names, certifications, study results, or performance claims. If missing, put in requiredInputs.
-- CRITICAL: Do NOT introduce any new brand/company/community names besides the brandName and the citation source domain. Use "a customer" if needed.
-
-STRICT FORMAT v2.0 (must match exactly):
-{
-  "version": "2.0",
-  "recommendationId": "${rec.id}",
-  "brandName": "${brand?.name || 'Brand'}",
-  "targetSource": {
-    "domain": "${rec.citation_source || ''}",
-    "sourceType": "${detectedSourceType}",
-    "mode": "post_on_source",
-    "rationale": "<1-2 sentences explaining why this content format will help achieve the KPI on this source>"
-  },
-  "publishableContent": {
-    "type": "${contentTypeValue}",
-    "title": "<compelling title for the content>",
-    "content": "<FULL, READY-TO-PUBLISH DRAFT HERE (escape newlines as \\\\n)>",
-    "metadata": {
-      ${metadataTemplate}
-    }
-  },
-  "keyPoints": ["<bullet 1>", "<bullet 2>", "<bullet 3>"],
-  "requiredInputs": ["<facts/links the marketer must verify or add>"],
-  "complianceNotes": ["<brand-safe constraints>"]
-}
-
-CONSTRAINTS:
-- Do NOT invent clinical studies, certifications, or regulatory claims. Put them under requiredInputs if needed.
-- Do NOT promise outcomes; speak in probabilities.
-- Do NOT mention internal tool/provider names.
-- **CRITICAL**: Do NOT mention any competitor names in the generated content (any field). Focus solely on the brand's own value proposition, features, and benefits.
-- Keep content aligned to the recommendation, KPI, focus area, and citation source.
-${contentConstraints ? `- ${contentConstraints}` : ''}
-${contentStyleGuide}
-`;
-
-    const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${isColdStartGuide ? guideInstructions : contentInstructions}`;
+    const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${contentInstructions}`;
 
     // Log the prompt being sent
     console.log('\n📤 [RecommendationContentService] ========== PROMPT ==========');

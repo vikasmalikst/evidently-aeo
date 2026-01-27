@@ -45,7 +45,7 @@ import type { DashboardScoreMetric } from '../dashboard/types';
 import { ChartControls } from '../../components/Visibility/ChartControls';
 import { VisibilityChart } from '../../components/Visibility/VisibilityChart';
 import { VisibilityTable } from '../../components/Visibility/VisibilityTable';
-import { KpiToggle } from '../../components/Visibility/KpiToggle';
+import { KpiToggle, MetricType } from '../../components/Visibility/KpiToggle';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { useAuthStore } from '../../store/authStore';
 import { getLLMIcon } from '../../components/Visibility/LLMIcons';
@@ -54,7 +54,7 @@ import { formatDateLabel } from '../../utils/dateFormatting';
 import { AnalyzePrefetcher } from './AnalyzePrefetcher';
 import { EducationalContentDrawer, KpiType as DrawerKpiType } from '../../components/EducationalDrawer/EducationalContentDrawer';
 
-type MetricType = 'visibility' | 'share' | 'brandPresence' | 'sentiment';
+
 
 interface LlmTopic {
   topic: string;
@@ -1051,7 +1051,7 @@ export const MeasurePage = () => {
               <div className="flex flex-col gap-6">
                 {/* KPI Toggle */}
                 <div className="flex items-start justify-between gap-4">
-                  <KpiToggle metricType={metricType} onChange={handleKpiSelect} />
+                  <KpiToggle metricType={metricType} onChange={handleKpiSelect} allowedMetricTypes={['visibility', 'share', 'brandPresence', 'sentiment']} />
                   <HelpButton
                     onClick={() => handleHelpClick('trend-analysis')}
                     label="How to read this chart"

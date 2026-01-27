@@ -1,7 +1,7 @@
 import { PieChart, TrendingUp, Heart, Eye, Hash, ListOrdered } from 'lucide-react';
 import { HelpButton } from '../common/HelpButton';
 
-type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence' | 'mentions' | 'position';
+export type MetricType = 'visibility' | 'share' | 'sentiment' | 'brandPresence' | 'mentions' | 'position';
 
 interface KpiToggleProps {
   metricType: MetricType;

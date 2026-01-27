@@ -144,8 +144,8 @@ export const Prompts = () => {
     switch (type) {
       case 'visibility': return `${value.toFixed(1)}%`;
       case 'sentiment': return value.toFixed(2);
-      case 'mentions': return Math.round(value).toString();
-      case 'position': return value.toFixed(1);
+      case 'mentions':
+      case 'position': return Math.round(value).toString();
       case 'share': return `${value.toFixed(1)}%`;
       default: return value.toString();
     }

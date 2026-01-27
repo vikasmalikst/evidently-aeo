@@ -10,25 +10,25 @@ interface StepIndicatorProps {
 const steps = [
   {
     number: 1,
-    label: 'Discover Opportunities',
+    label: 'Opportunities',
     description: 'Review findings',
     icon: IconFileSearch
   },
   {
     number: 2,
-    label: 'To-Do List',
+    label: 'Content Generation',
     description: 'Approve & generate',
     icon: IconWand
   },
   {
     number: 3,
-    label: 'Review and Refine',
+    label: 'Refine',
     description: 'Review content',
     icon: IconEyeglass
   },
   {
     number: 4,
-    label: 'Track Outcomes',
+    label: 'Outcome Tracker',
     description: 'Track ROI',
     icon: IconTargetArrow
   }
@@ -70,8 +70,8 @@ export const StepIndicator = ({ currentStep, onStepClick, attentionSteps }: Step
                 `}
               >
                 {/* Status Icon */}
-                <motion.div 
-                  animate={{ 
+                <motion.div
+                  animate={{
                     scale: active ? 1.1 : 1,
                     backgroundColor: active ? '#00bcdc' : complete ? '#ffffff' : '#ffffff',
                     borderColor: active ? '#00bcdc' : complete ? '#06c686' : '#e2e8f0',

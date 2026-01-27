@@ -2,29 +2,29 @@ import { useState } from 'react';
 import { Info } from 'lucide-react';
 
 interface InfoTooltipProps {
-  description: string;
+  description: React.ReactNode;
+  children?: React.ReactNode;
 }
 
-export const InfoTooltip = ({ description }: InfoTooltipProps) => {
+export const InfoTooltip = ({ description, children }: InfoTooltipProps) => {
   const [showTooltip, setShowTooltip] = useState(false);
 
   return (
     <div className="relative inline-flex items-center">
-      <button
-        type="button"
-        className="flex items-center justify-center w-4 h-4 rounded-full text-[#64748b] hover:text-[#1a1d29] transition-colors focus:outline-none"
+      <div
+        className="flex items-center justify-center cursor-help"
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         onFocus={() => setShowTooltip(true)}
         onBlur={() => setShowTooltip(false)}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
         aria-label="More information"
       >
-        <Info size={14} />
-      </button>
+        {children || (
+          <div className="w-4 h-4 flex items-center justify-center text-[#64748b] hover:text-[#1a1d29] transition-colors">
+            <Info size={14} />
+          </div>
+        )}
+      </div>
       {showTooltip && (
         <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-[#1a1d29] text-white text-[12px] rounded-lg shadow-lg z-[100] pointer-events-none">
           <div className="whitespace-normal leading-relaxed">{description}</div>

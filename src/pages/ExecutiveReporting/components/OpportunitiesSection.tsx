@@ -1,7 +1,7 @@
 /**
  * Opportunities Section Component for Executive Report
  * Displays recommendations across the 4-step workflow:
- * 1. Discover 2. To-Do 3. Review & Refine 4. Track Outcomes
+ * 1. Opportunities 2. Content Generation 3. Refine 4. Outcome Tracker
  */
 
 import { IconSparkles, IconPlayerPlay, IconEdit, IconTarget, IconChevronRight } from '@tabler/icons-react';
@@ -163,7 +163,7 @@ export const OpportunitiesSection = ({ data }: OpportunitiesSectionProps) => {
 
             <div className="mt-8">
                 <RecommendationTable
-                    title="Discover Opportunities"
+                    title="Opportunities"
                     items={data.discover}
                     columns={standardColumns}
                     icon={IconSparkles}
@@ -171,7 +171,7 @@ export const OpportunitiesSection = ({ data }: OpportunitiesSectionProps) => {
                 />
 
                 <RecommendationTable
-                    title="To-Do List (Approved)"
+                    title="Content Generation"
                     items={data.todo}
                     columns={standardColumns}
                     icon={IconPlayerPlay}
@@ -179,7 +179,7 @@ export const OpportunitiesSection = ({ data }: OpportunitiesSectionProps) => {
                 />
 
                 <RecommendationTable
-                    title="Review & Refine"
+                    title="Refine"
                     items={data.refine}
                     columns={standardColumns}
                     icon={IconEdit}
@@ -187,7 +187,7 @@ export const OpportunitiesSection = ({ data }: OpportunitiesSectionProps) => {
                 />
 
                 <RecommendationTable
-                    title="Track Outcomes (Completed)"
+                    title="Outcome Tracker"
                     items={data.track}
                     columns={trackColumns}
                     icon={IconTarget}

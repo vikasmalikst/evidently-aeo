@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { ManagedCompetitor } from '../../api/competitorManagementApi';
 import { PromptEntry, PromptTopic } from '../../types/prompts';
 import { SafeLogo } from '../Onboarding/common/SafeLogo';
+import { getLLMIcon } from '../Visibility/LLMIcons';
 
 interface PromptsListProps {
   topics: PromptTopic[];
@@ -197,8 +198,8 @@ export const PromptsList = memo(({
     switch (type) {
       case 'visibility': return value.toFixed(1);
       case 'sentiment':
-      case 'mentions': return Math.round(value).toString();
-      case 'position': return value.toFixed(1);
+      case 'mentions':
+      case 'position': return Math.round(value).toString();
       case 'share': return `${value.toFixed(1)}%`;
       default: return value.toString();
     }
@@ -230,25 +231,48 @@ export const PromptsList = memo(({
 
   return (
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm overflow-hidden h-full">
-      <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between relative bg-white h-[45px]">
-        <h3 className="text-sm font-semibold text-[var(--text-headings)]">
-          Prompts
-        </h3>
-
-        <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-default)] whitespace-nowrap">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-primary)]">
-            {metricLabel}
-          </span>
+      <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center bg-white h-[45px]">
+        {/* Fixed part matching Prompt column */}
+        <div className="w-[300px] shrink-0">
+          <h3 className="text-sm font-semibold text-[var(--text-headings)]">
+            Prompts
+          </h3>
         </div>
 
-        {loading && hasPrompts && (
-          <Loader2
-            size={18}
-            className="animate-spin text-[#00bcdc]"
-            aria-label="Loading metrics"
-            style={{ filter: 'brightness(1.2)' }}
-          />
-        )}
+        {/* Dynamic center part - centering the badge in the remaining space (data columns) */}
+        <div className="flex-1 flex justify-center">
+          <div className="px-3 py-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] whitespace-nowrap flex items-center gap-2 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-primary)]">
+              {metricLabel} across
+            </span>
+            <div className="flex -space-x-1">
+              {(selectedLLMs.length > 0 ? selectedLLMs : topics[0]?.prompts[0]?.collectorTypes || []).map((llm, idx) => (
+                <div
+                  key={llm}
+                  className="w-5 h-5 rounded-full bg-white border border-gray-100 flex items-center justify-center overflow-hidden shadow-sm"
+                  style={{ zIndex: 10 - idx }}
+                  title={llm}
+                >
+                  <div className="scale-[0.6]">
+                    {getLLMIcon(llm)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Loader part */}
+        <div className="w-8 flex justify-end">
+          {loading && hasPrompts && (
+            <Loader2
+              size={18}
+              className="animate-spin text-[#00bcdc]"
+              aria-label="Loading metrics"
+              style={{ filter: 'brightness(1.2)' }}
+            />
+          )}
+        </div>
       </div>
 
       <div
@@ -329,7 +353,7 @@ export const PromptsList = memo(({
                         </button>
                       </td>
                       <td className="sticky left-[300px] z-20 bg-blue-50 px-2 py-2 w-28 text-center shadow-[1px_0_0_0_#93c5fd]">
-                        <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                        <span className="text-sm font-bold font-data text-[var(--text-body)]">
                           {formatMetricValue(getBrandValue(topic, metricType), metricType)}
                         </span>
                       </td>
@@ -338,7 +362,7 @@ export const PromptsList = memo(({
                         const score = getCompetitorValue(topic, compKey, metricType);
                         return (
                           <td key={comp.id} className="px-2 py-2 w-28 text-center border-l border-blue-100 bg-blue-50">
-                            <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                            <span className="text-sm font-bold font-data text-[var(--text-body)]">
                               {formatMetricValue(score, metricType)}
                             </span>
                           </td>
@@ -367,21 +391,9 @@ export const PromptsList = memo(({
                             <p className="text-sm text-[var(--text-body)] font-data leading-snug">
                               {prompt.question}
                             </p>
-                            {collectorsToShow.length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {collectorsToShow.map((collector) => (
-                                  <span
-                                    key={collector}
-                                    className="inline-flex items-center px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[10px] font-semibold text-[var(--text-caption)]"
-                                  >
-                                    {collector}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
                           </td>
                           <td className={`sticky left-[300px] z-20 px-2 py-3 w-28 text-center shadow-[1px_0_0_0_#e4e7ec] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'}`}>
-                            <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                            <span className="text-sm font-normal font-data text-[var(--text-body)]">
                               {formatMetricValue(getBrandValue(prompt, metricType), metricType)}
                             </span>
                           </td>
@@ -390,7 +402,7 @@ export const PromptsList = memo(({
                             const score = getCompetitorValue(prompt, compKey, metricType);
                             return (
                               <td key={comp.id} className={`px-2 py-3 w-28 text-center border-l border-[var(--border-default)] ${isSelected ? 'bg-[#f0f9ff]' : 'bg-white group-hover:bg-[#f9fafb]'}`}>
-                                <span className="text-sm font-semibold font-data text-[var(--text-body)]">
+                                <span className="text-sm font-normal font-data text-[var(--text-body)]">
                                   {formatMetricValue(score, metricType)}
                                 </span>
                               </td>
@@ -402,7 +414,7 @@ export const PromptsList = memo(({
 
                     {canLoadMore && (
                       <tr key={`${topic.id}:load-more`} className="border-b border-[var(--border-default)]">
-                        <td colSpan={3 + activeCompetitors.length} className="px-4 py-3 text-center bg-white">
+                        <td colSpan={2 + activeCompetitors.length} className="px-4 py-3 text-center bg-white">
                           <button
                             onClick={() => handleLoadMoreForTopic(topic.id, topic.prompts.length)}
                             className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[var(--border-default)] text-xs font-semibold text-[var(--text-caption)] hover:bg-[var(--bg-secondary)] transition-colors"
@@ -419,6 +431,6 @@ export const PromptsList = memo(({
           </table>
         </PromptsListErrorBoundary>
       </div>
-    </div>
+    </div >
   );
 });

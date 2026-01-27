@@ -19,7 +19,8 @@ export const MetricCard = ({
   metricType,
   onHelpClick,
   headerAction,
-  actionPosition = 'inside'
+  actionPosition = 'inside',
+  hideComparisonHeader
 }: MetricCardProps) => {
   const hasComparisons = comparisons.length > 0;
   const maxComparisonValue = hasComparisons
@@ -30,7 +31,7 @@ export const MetricCard = ({
   const getVisualStyles = (value: number, type?: 'visibility' | 'share' | 'sentiment' | 'brandPresence') => {
     // Default fallback
     if (!type) return {
-      background: `linear-gradient(90deg, ${color}20 0%, ${color} 100%)`, 
+      background: `linear-gradient(90deg, ${color}20 0%, ${color} 100%)`,
       shadow: 'none'
     };
 
@@ -79,19 +80,18 @@ export const MetricCard = ({
   };
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:z-20 p-5 flex flex-col relative group/card h-full"> 
+    <div className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:z-20 p-5 flex flex-col relative group/card h-full">
       {/* Subtle top gradient accent */}
-      <div 
-        className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-current to-transparent opacity-20 rounded-t-xl" 
+      <div
+        className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-current to-transparent opacity-20 rounded-t-xl"
         style={{ color }}
       />
-      
+
       {headerAction && (
-        <div className={`absolute z-20 ${
-          actionPosition === 'outside-top' 
-            ? '-top-9 right-0' 
-            : 'top-3 right-3'
-        }`}>
+        <div className={`absolute z-20 ${actionPosition === 'outside-top'
+          ? '-top-9 right-0'
+          : 'top-3 right-3'
+          }`}>
           {headerAction}
         </div>
       )}
@@ -107,7 +107,7 @@ export const MetricCard = ({
           size={18}
         />
       )}
-      
+
       <div className="flex items-center gap-3 mb-4">
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover/card:scale-105 duration-300 shadow-sm"
@@ -126,21 +126,54 @@ export const MetricCard = ({
         {(() => {
           const numValue = typeof value === 'number' ? value : parseFloat(value.toString());
           if (!isNaN(numValue) && metricType) {
-             const { background } = getVisualStyles(numValue, metricType);
-             return (
-               <div 
-                 className="w-3 h-3 rounded-full mb-1.5 shadow-sm" 
-                 style={{ background }}
-               />
-             );
+            const { background } = getVisualStyles(numValue, metricType);
+
+            // Define ranges for the tooltip
+            const ranges = {
+              visibility: { red: "0-16", yellow: "17-34", green: "35+" },
+              sentiment: { red: "0-55", yellow: "56-65", green: "66+" },
+              share: { red: "0-33", yellow: "34-66", green: "67+" },
+              brandPresence: { red: "0-33", yellow: "34-66", green: "67+" }
+            };
+            const range = ranges[metricType];
+
+            const tooltipContent = (
+              <div className="space-y-2.5">
+                <div className="text-[11px] text-slate-300 font-medium leading-tight">
+                  Based on your industry and competitive landscape -
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-2 h-2 rounded-full bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.4)]" />
+                    <span className="text-white font-medium">{range.red}</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-2 h-2 rounded-full bg-[#fbbf24] shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
+                    <span className="text-white font-medium">{range.yellow}</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-2 h-2 rounded-full bg-[#22c55e] shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
+                    <span className="text-white font-medium">{range.green}</span>
+                  </div>
+                </div>
+              </div>
+            );
+
+            return (
+              <InfoTooltip description={tooltipContent}>
+                <div
+                  className="w-3 h-3 rounded-full mb-1.5 shadow-sm"
+                  style={{ background }}
+                />
+              </InfoTooltip>
+            );
           }
           return null;
         })()}
         {trend.direction !== 'stable' && (
           <div
-            className={`flex items-center gap-0.5 text-[12px] font-bold pb-1 px-1.5 py-0.5 rounded-full ${
-              trend.direction === 'up' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-            }`}
+            className={`flex items-center gap-0.5 text-[12px] font-bold pb-1 px-1.5 py-0.5 rounded-full ${trend.direction === 'up' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+              }`}
           >
             {trend.direction === 'up' ? (
               <ChevronUp size={12} strokeWidth={3} />
@@ -151,22 +184,24 @@ export const MetricCard = ({
           </div>
         )}
       </div>
-      
+
       {subtitle && <div className="text-[13px] text-slate-500 font-medium">{subtitle}</div>}
 
       {hasComparisons && (
         <div className="mt-auto pt-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Top Performers
-            </div>
-            {metricType && (
-              <div className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-500">
-                 {metricType === 'visibility' ? 'Score' : metricType === 'sentiment' ? '1-100' : '%'}
+          {!hideComparisonHeader && (
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Top Performers
               </div>
-            )}
-          </div>
-          
+              {metricType && (
+                <div className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-500">
+                  {metricType === 'visibility' ? 'Score' : metricType === 'sentiment' ? '1-100' : '%'}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-3">
             {comparisons.map((item, index) => {
               // Calculate width: specific metric types use absolute 0-100 scale
@@ -184,9 +219,11 @@ export const MetricCard = ({
                 <div key={item.label} className="flex flex-col gap-1.5 w-full group/item">
                   <div className="flex items-center justify-between text-[13px]">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-50 text-[10px] font-bold text-slate-400 group-hover/item:bg-slate-100 group-hover/item:text-slate-600 transition-colors">
-                        {index + 1}
-                      </span>
+                      {!hideComparisonHeader && (
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-50 text-[10px] font-bold text-slate-400 group-hover/item:bg-slate-100 group-hover/item:text-slate-600 transition-colors">
+                          {index + 1}
+                        </span>
+                      )}
                       <span className={`truncate font-medium transition-colors ${item.isBrand ? 'text-slate-900' : 'text-slate-600 group-hover/item:text-slate-800'}`}>
                         {item.label}
                       </span>
@@ -195,7 +232,7 @@ export const MetricCard = ({
                       {item.value.toFixed(1).replace(/\.0$/, '')}{comparisonSuffix}
                     </span>
                   </div>
-                  
+
                   {/* Heatmap Bar Container */}
                   <div className="relative h-2.5 w-full bg-slate-100/80 rounded-full overflow-hidden shadow-inner">
                     {/* Animated Bar */}

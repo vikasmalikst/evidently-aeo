@@ -216,6 +216,7 @@ export interface MetricCardProps {
   metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
   headerAction?: React.ReactNode;
   actionPosition?: 'inside' | 'outside-top';
+  hideComparisonHeader?: boolean;
 }
 
 export interface ActionCardProps {

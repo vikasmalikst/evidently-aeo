@@ -29,8 +29,10 @@ import {
   ChevronDown,
   ChevronUp,
   Info as InfoIcon,
-  ChevronRight
+  ChevronRight,
+  Sparkles
 } from 'lucide-react';
+import { getLatestGenerationV3 } from '../../api/recommendationsV3Api';
 import { useDashboardData } from '../dashboard/hooks/useDashboardData';
 import { Link } from 'react-router-dom';
 import { useOnboardingOrchestrator } from '../../hooks/useOnboardingOrchestrator';
@@ -210,6 +212,8 @@ export const MeasurePage = () => {
   const [competitorModels, setCompetitorModels] = useState<ModelData[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
   const kpiSectionRef = useRef<HTMLDivElement | null>(null);
+  const [opportunitiesCount, setOpportunitiesCount] = useState<number>(0);
+
 
   // Educational Drawer State
   const [isHelpDrawerOpen, setIsHelpDrawerOpen] = useState(false);
@@ -242,6 +246,28 @@ export const MeasurePage = () => {
     handleRetryFetch,
     isDataCollectionInProgress,
   } = useDashboardData();
+
+  useEffect(() => {
+    if (!selectedBrandId) return;
+
+    const fetchOpportunities = async () => {
+      try {
+        const response = await getLatestGenerationV3(selectedBrandId);
+        if (response.success && response.data?.recommendations) {
+          // Count only recommendations that are not completed (Step 1-3)
+          const pendingCount = response.data.recommendations.filter(r => !r.isCompleted).length;
+          setOpportunitiesCount(pendingCount);
+        } else {
+          setOpportunitiesCount(0);
+        }
+      } catch (err) {
+        console.error('Error fetching opportunities count:', err);
+        setOpportunitiesCount(0);
+      }
+    };
+
+    fetchOpportunities();
+  }, [selectedBrandId]);
 
   // Replaced local setLlmFilters logic with global store updates
   // Since setLlmFilters is now from store, we don't need the callback form `prev => ...` logic
@@ -719,20 +745,9 @@ export const MeasurePage = () => {
           })
           .filter(Boolean) as Array<{ label: string; value: number; isBrand: boolean }>;
 
-        const combined = [
-          ...(brandValue !== null && Number.isFinite(brandValue)
-            ? [{ label: brandLabel, value: brandValue as number, isBrand: true }]
-            : []),
-          ...competitorValues
-        ];
-
-        const ranked = combined.sort((a, b) => b.value - a.value).slice(0, 3);
-
-        if (brandValue !== null && Number.isFinite(brandValue) && !ranked.some((item) => item.isBrand)) {
-          return [...ranked, { label: brandLabel, value: brandValue as number, isBrand: true }].slice(0, 4);
-        }
-
-        return ranked;
+        return brandValue !== null && Number.isFinite(brandValue)
+          ? [{ label: brandLabel, value: brandValue as number, isBrand: true }]
+          : [];
       };
 
       return [
@@ -750,7 +765,8 @@ export const MeasurePage = () => {
           description: 'How prominent is your brand in LLM answers.(based on number of appearances and positions)',
           isActive: selectedKpi === 'visibility',
           onHelpClick: () => handleHelpClick('visibility'),
-          metricType: 'visibility' as const
+          metricType: 'visibility' as const,
+          hideComparisonHeader: true
         },
         {
           key: 'share',
@@ -766,7 +782,8 @@ export const MeasurePage = () => {
           description: '% of time you brand appeaars compared to your defined competitors. ',
           isActive: selectedKpi === 'share',
           onHelpClick: () => handleHelpClick('share'),
-          metricType: 'share' as const
+          metricType: 'share' as const,
+          hideComparisonHeader: true
         },
         {
           key: 'sentiment',
@@ -782,7 +799,8 @@ export const MeasurePage = () => {
           description: 'Tone of the answers cited by LLMs from Brand\'s perspective (scaled 1-100)',
           isActive: selectedKpi === 'sentiment',
           onHelpClick: () => handleHelpClick('sentiment'),
-          metricType: 'sentiment' as const
+          metricType: 'sentiment' as const,
+          hideComparisonHeader: true
         },
         {
           key: 'brandPresence',
@@ -799,6 +817,7 @@ export const MeasurePage = () => {
           isActive: selectedKpi === 'brandPresence',
           onHelpClick: () => handleHelpClick('brandPresence'),
           metricType: 'brandPresence' as const,
+          hideComparisonHeader: true
         }
       ];
     },
@@ -991,9 +1010,9 @@ export const MeasurePage = () => {
               {/* "See analysis" Button next to filters */}
               <Link to="/analyze/citation-sources">
                 <motion.button
-                  whileHover={{ scale: 1.02, boxShadow: "0 4px 12px rgba(6, 182, 212, 0.2)" }}
+                  whileHover={{ scale: 1.02, boxShadow: "0 4px 12px rgba(0, 188, 220, 0.2)" }}
                   whileTap={{ scale: 0.98 }}
-                  className="flex items-center gap-1.5 px-4 h-9 bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-[12px] font-bold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 group"
+                  className="flex items-center gap-1.5 px-4 h-9 bg-[#00bcdc] text-white text-[12px] font-bold rounded-xl shadow-sm hover:shadow-md hover:bg-[#0096b0] transition-all duration-300 group"
                 >
                   <span>See Analysis</span>
                   <ChevronRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
@@ -1036,6 +1055,55 @@ export const MeasurePage = () => {
             ))
           )}
         </div>
+
+        {/* Opportunities Highlight Card */}
+        {opportunitiesCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Link to="/improve/discover" className="block">
+              <div className="bg-white border border-[#e4e7ec] rounded-2xl p-4 flex items-center justify-between shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] hover:border-[#00bcdc]/30 transition-all duration-300 group">
+                <div className="flex items-center gap-5">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#00bcdc] to-[#0096b0] flex items-center justify-center text-white shadow-lg shadow-[#00bcdc]/20 group-hover:scale-105 transition-transform duration-300">
+                    <Sparkles size={24} strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <h3 className="text-[16px] font-bold text-[#1a1d29] flex items-center gap-2">
+                      We've identified <span className="text-[#00bcdc] px-1.5 py-0.5 bg-[#00bcdc]/5 rounded-lg">{opportunitiesCount} Opportunities</span> to elevate LLM performance
+                    </h3>
+                    <p className="text-[13px] text-[#64748b] mt-0.5">Strategically improve {selectedBrand?.name ?? 'your brand'}'s visibility, sentiment, and share across AI answer engines.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 pr-2">
+                  <div className="flex flex-col items-end mr-3">
+                    <span className="text-[14px] font-bold text-[#00bcdc]">Start Optimizing</span>
+                    <span className="text-[11px] text-[#94a3b8] font-medium uppercase tracking-wider">Refine & Improve</span>
+                  </div>
+                  <motion.div
+                    animate={{
+                      scale: [1, 1.1, 1],
+                      boxShadow: [
+                        "0 0 0 0px rgba(0, 188, 220, 0)",
+                        "0 0 0 6px rgba(0, 188, 220, 0.1)",
+                        "0 0 0 0px rgba(0, 188, 220, 0)"
+                      ]
+                    }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 2,
+                      ease: "easeInOut"
+                    }}
+                    className="w-8 h-8 rounded-full bg-[#00bcdc]/10 flex items-center justify-center text-[#00bcdc] group-hover:bg-[#00bcdc] group-hover:text-white transition-all duration-300"
+                  >
+                    <ChevronRight size={20} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
+                  </motion.div>
+                </div>
+              </div>
+            </Link>
+          </motion.div>
+        )}
 
         {/* Search Visibility Content */}
         <div className="flex flex-col gap-4">
@@ -1136,6 +1204,6 @@ export const MeasurePage = () => {
         onClose={() => setIsHelpDrawerOpen(false)}
         kpiType={helpKpi}
       />
-    </Layout>
+    </Layout >
   );
 };

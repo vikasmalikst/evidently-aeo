@@ -12,7 +12,7 @@
  */
 
 import { useState } from 'react';
-import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronUp, IconTrash } from '@tabler/icons-react';
 import { RecommendationV3 } from '../../api/recommendationsV3Api';
 
 interface RecommendationsTableV3Props {
@@ -27,7 +27,8 @@ interface RecommendationsTableV3Props {
   actionType?: string; // Customize the action identifier sent to onAction (default: "generate-content")
   generatedLabel?: string; // Customize the generated badge label (default: "Generated")
   showStatusDropdown?: boolean;
-  onStatusChange?: (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected') => void;
+  onStatusChange?: (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected' | 'removed') => void;
+  onStopTracking?: (recommendationId: string) => void;
   generatingContentIds?: Set<string>; // Track which recommendations are currently generating content
 }
 
@@ -103,6 +104,7 @@ export const RecommendationsTableV3 = ({
   generatedLabel = 'Generated',
   showStatusDropdown = false,
   onStatusChange,
+  onStopTracking,
   generatingContentIds = new Set()
 }: RecommendationsTableV3Props) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -246,7 +248,7 @@ export const RecommendationsTableV3 = ({
                             <select
                               value={rec.reviewStatus || 'pending_review'}
                               onChange={(e) => {
-                                const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected';
+                                const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected' | 'removed';
                                 if (rec.id && onStatusChange) {
                                   onStatusChange(rec.id, newStatus);
                                 }
@@ -270,6 +272,7 @@ export const RecommendationsTableV3 = ({
                               <option value="pending_review">Pending Review</option>
                               <option value="approved">Approved</option>
                               <option value="rejected">Rejected</option>
+                              <option value="removed">Stop Tracking</option>
                             </select>
                             {/* Status indicator dot */}
                             <div
@@ -286,6 +289,7 @@ export const RecommendationsTableV3 = ({
                       )}
                       {showActions && (
                         <td className="px-4 py-4">
+                          <div className="flex items-center gap-2">
                           {onAction && (() => {
                             const isGenerating = generatingContentIds.has(rec.id || '');
                             const isGenerated = rec.isContentGenerated;
@@ -325,6 +329,19 @@ export const RecommendationsTableV3 = ({
                               </button>
                             );
                           })()}
+                          {onStopTracking && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (rec.id) onStopTracking(rec.id);
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                              title="Stop Tracking"
+                            >
+                              <IconTrash size={16} />
+                            </button>
+                          )}
+                          </div>
                         </td>
                       )}
                     </tr>

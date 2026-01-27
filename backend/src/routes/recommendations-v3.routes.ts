@@ -371,7 +371,7 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
       query = query.eq('is_approved', true).eq('is_content_generated', false);
     } else if (stepNum === 3) {
       // Step 3: Content generated but not completed
-      query = query.eq('is_content_generated', true).eq('is_completed', false);
+      query = query.eq('is_content_generated', true).eq('is_completed', false).eq('is_approved', true);
     } else if (stepNum === 4) {
       // Step 4: Completed and approved (exclude rejected/pending recommendations from results)
       query = query.eq('is_completed', true).eq('review_status', 'approved');

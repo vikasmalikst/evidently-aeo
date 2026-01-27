@@ -31,6 +31,7 @@ import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus } from '@tabler/icons-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface RecommendationsV3Props {
   initialStep?: number;
@@ -1379,7 +1380,12 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
         {/* Step Content */}
         {!generationId ? (
-          <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-12 text-center">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4 }}
+            className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-12 text-center"
+          >
             <IconSparkles size={48} className="mx-auto mb-4 text-[#00bcdc] opacity-80" />
             <h3 className="text-[20px] font-semibold text-[#1a1d29] mb-2">
               No recommendations found
@@ -1387,12 +1393,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
             <p className="text-[13px] text-[#64748b] max-w-md mx-auto">
               Recommendations are generated automatically. Please check back later.
             </p>
-          </div>
+          </motion.div>
         ) : (
-          <>
+          <AnimatePresence mode="wait">
             {/* Step 1: Discover Opportunities */}
             {currentStep === 1 && (
-              <div>
+              <motion.div
+                key="step1"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+              >
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
                     <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 1: Discover Opportunities</h2>
@@ -1409,12 +1421,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   showStatusDropdown={true}
                   onStatusChange={handleStatusChange}
                 />
-              </div>
+              </motion.div>
             )}
 
             {/* Step 2: To-Do List */}
             {currentStep === 2 && (
-              <div>
+              <motion.div
+                key="step2"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+              >
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
                     <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: To-Do List</h2>
@@ -1460,12 +1478,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     }}
                   />
                 )}
-              </div>
+              </motion.div>
             )}
 
             {/* Step 3: Review and Refine */}
             {currentStep === 3 && (
-              <div>
+              <motion.div
+                key="step3"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+              >
                 <div className="mb-6">
                   <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 3: Review and Refine</h2>
                   <p className="text-[13px] text-[#64748b] mt-1">
@@ -1497,14 +1521,23 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 )}
                 {isColdStart ? (
                   <div className="space-y-6">
-                    {recommendations.map((rec) => {
-                      const guideRaw = rec.id ? guideMap.get(rec.id) : null;
-                      const guideObj = extractGuideObject(guideRaw);
-                      const isGuide = Boolean(guideObj && typeof guideObj === 'object' && guideObj.version === 'guide_v1');
+                    <AnimatePresence>
+                      {recommendations.map((rec) => {
+                        const guideRaw = rec.id ? guideMap.get(rec.id) : null;
+                        const guideObj = extractGuideObject(guideRaw);
+                        const isGuide = Boolean(guideObj && typeof guideObj === 'object' && guideObj.version === 'guide_v1');
 
-                      return (
-                        <div key={rec.id} className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden">
-                          {/* Header */}
+                        return (
+                          <motion.div
+                            key={rec.id}
+                            layout
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, height: 0, marginBottom: 0, scale: 0.95 }}
+                            transition={{ duration: 0.3, layout: { duration: 0.3 } }}
+                            className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden"
+                          >
+                            {/* Header */}
                           <div
                             className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors"
                             onClick={() => setExpandedRecId(expandedRecId === rec.id ? null : (rec.id || null))}
@@ -1709,17 +1742,34 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                               )}
                             </div>
                           )}
-                        </div>
-                      );
-                    })}
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {recommendations.map((rec) => {
-                      const content = rec.id ? contentMap.get(rec.id) : null;
-                      return (
-                        <div key={rec.id} className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden relative">
-                          {/* Header Section */}
+                    <AnimatePresence>
+                      {recommendations.map((rec) => {
+                        const content = rec.id ? contentMap.get(rec.id) : null;
+                        return (
+                          <motion.div
+                            key={rec.id}
+                            layout
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ 
+                              opacity: 0, 
+                              x: 100, // Slide right ("dumped")
+                              y: 20,  // Drop down slightly
+                              scale: 0.9, 
+                              rotate: 5, // Tilted drop
+                              transition: { duration: 0.4, ease: "backIn" } 
+                            }}
+                            transition={{ duration: 0.3, layout: { duration: 0.3 } }}
+                            className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden relative"
+                          >
+                            {/* Header Section */}
                           <div
                             className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors"
                             onClick={() => setExpandedRecId(expandedRecId === rec.id ? null : (rec.id || null))}
@@ -2635,17 +2685,24 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                               )}
                             </div>
                           )}
-                        </div>
-                      );
-                    })}
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
                   </div>
                 )}
-              </div>
+              </motion.div>
             )}
 
             {/* Step 4: Track Outcomes */}
             {currentStep === 4 && (
-              <div>
+              <motion.div
+                key="step4"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+              >
                 <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-6">Step 4: Track Outcomes</h2>
 
                 {/* KPI cards removed as requested for more compact table view */}
@@ -2682,7 +2739,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                             </td>
                           </tr>
                         ) : (
-                          recommendations.map((rec) => {
+                          <AnimatePresence>
+                            {recommendations.map((rec) => {
                             // Parse benchmarked values from recommendation snapshot - robust handling for 0/null
                             const benchmarkedVisibility = (rec.visibilityScore !== null && rec.visibilityScore !== undefined && rec.visibilityScore !== "") ? parseFloat(String(rec.visibilityScore)) : null;
                             const benchmarkedSOA = (rec.soa !== null && rec.soa !== undefined && rec.soa !== "") ? parseFloat(String(rec.soa)) : null;
@@ -2724,7 +2782,21 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                             const formattedCompletionDate = formatCompletionDate(rec.completedAt);
 
                             return (
-                              <tr key={rec.id} className="hover:bg-[#f9f9fb] transition-colors group">
+                              <motion.tr
+                                key={rec.id}
+                                layout
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ 
+                                  opacity: 0, 
+                                  x: 100, // Slide right ("dumped")
+                                  y: 20,  // Drop down slightly
+                                  scale: 0.9, 
+                                  rotate: 5, // Tilted drop
+                                  transition: { duration: 0.4, ease: "backIn" } 
+                                }}
+                                className="bg-white hover:bg-[#f8fafc] transition-colors group"
+                              >
                                 {/* Recommendation Action */}
                                 <td className="px-6 py-4">
                                   <div className="text-[14px] font-medium text-[#1a1d29] leading-snug">
@@ -2861,17 +2933,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     </button>
                                   )}
                                 </td>
-                              </tr>
+                              </motion.tr>
                             );
-                          })
-                        )}
-                      </tbody>
-                    </table>
+                          })}
+                            </AnimatePresence>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              </div>
+              </motion.div>
             )}
-          </>
+          </AnimatePresence>
         )}
       </div>
       {/* Feedback Modal for Regeneration */}

@@ -1,4 +1,5 @@
 import { IconCheck, IconFileSearch, IconWand, IconEyeglass, IconTargetArrow, IconChevronRight } from '@tabler/icons-react';
+import { motion } from 'framer-motion';
 
 interface StepIndicatorProps {
   currentStep: number;
@@ -49,36 +50,44 @@ export const StepIndicator = ({ currentStep, onStepClick, attentionSteps }: Step
 
           return (
             <div key={step.number} className="flex-1 flex items-center relative group">
+              {/* Animated Background for Active Step */}
+              {active && (
+                <motion.div
+                  layoutId="active-step-bg"
+                  className="absolute inset-0 bg-white rounded-lg shadow-md border border-[#00bcdc]/20 ring-1 ring-[#00bcdc]/10"
+                  initial={false}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                />
+              )}
+
               <button
                 onClick={() => isStepClickable(step.number) && onStepClick?.(step.number)}
                 disabled={!isStepClickable(step.number)}
                 className={`
-                  relative flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-all text-left
-                  ${active
-                    ? 'bg-white shadow-md border border-[#00bcdc]/20 ring-1 ring-[#00bcdc]/10'
-                    : complete
-                      ? 'bg-white border border-[#e2e8f0]/50 hover:bg-[#f0fdf4]'
-                      : 'hover:bg-white/60 border border-transparent'
-                  }
+                  relative z-10 flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left
+                  ${!active && complete ? 'hover:bg-[#f0fdf4]' : ''}
+                  ${!active && !complete ? 'hover:bg-white/60' : ''}
                 `}
               >
                 {/* Status Icon */}
-                <div className={`
-                  flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-colors
-                  ${active
-                    ? 'bg-[#00bcdc] text-white'
-                    : complete
-                      ? 'bg-white border border-[#06c686] text-[#06c686]'
-                      : 'bg-white border border-[#e2e8f0] text-[#94a3b8]'
-                  }
-                `}>
+                <motion.div 
+                  animate={{ 
+                    scale: active ? 1.1 : 1,
+                    backgroundColor: active ? '#00bcdc' : complete ? '#ffffff' : '#ffffff',
+                    borderColor: active ? '#00bcdc' : complete ? '#06c686' : '#e2e8f0',
+                    color: active ? '#ffffff' : complete ? '#06c686' : '#94a3b8'
+                  }}
+                  className={`
+                    flex items-center justify-center w-8 h-8 rounded-lg shrink-0 border transition-colors duration-200
+                  `}
+                >
                   <Icon size={18} />
 
                   {/* Attention Pulse */}
                   {attention && (
                     <span className="absolute -top-1 -right-1 w-3 h-3 bg-[#06c686] rounded-full border-2 border-white animate-pulse" />
                   )}
-                </div>
+                </motion.div>
 
                 {/* Labels */}
                 <div className="flex flex-col min-w-0">

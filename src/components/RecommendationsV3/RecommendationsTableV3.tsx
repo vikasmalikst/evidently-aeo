@@ -14,6 +14,7 @@
 import { useState } from 'react';
 import { IconChevronDown, IconChevronUp, IconTrash } from '@tabler/icons-react';
 import { RecommendationV3 } from '../../api/recommendationsV3Api';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface RecommendationsTableV3Props {
   recommendations: RecommendationV3[];
@@ -178,15 +179,27 @@ export const RecommendationsTableV3 = ({
                 </td>
               </tr>
             ) : (
-              recommendations.map((rec, index) => {
+              <AnimatePresence initial={false} mode="popLayout">
+              {recommendations.map((rec, index) => {
                 const recId = rec.id || `rec-${index}`;
                 const isExpanded = expandedRows.has(recId);
                 const hasDetails = rec.reason || rec.explanation || rec.expectedBoost || rec.impactScore || rec.kpi || (rec.howToFix && rec.howToFix.length > 0);
                 
                 return (
                   <>
-                    <tr
+                    <motion.tr
                       key={recId}
+                      layout
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ 
+                        opacity: 0, 
+                        x: 100, // Slide right ("dumped")
+                        y: 20,  // Drop down slightly
+                        scale: 0.9, 
+                        rotate: 5, // Tilted drop
+                        transition: { duration: 0.4, ease: "backIn" } 
+                      }}
                       className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#f9fafb]'} hover:bg-[#f1f5f9] transition-colors`}
                     >
                       {showCheckboxes && (
@@ -344,7 +357,8 @@ export const RecommendationsTableV3 = ({
                           </div>
                         </td>
                       )}
-                    </tr>
+
+                    </motion.tr>
                     {isExpanded && hasDetails && (
                       <tr key={`${recId}-details`} className="bg-[#f8fafc]">
                         <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 8 : 7) : (showActions ? 7 : 6)) : (showStatusDropdown ? (showActions ? 7 : 6) : (showActions ? 6 : 5))} className="px-4 py-4">
@@ -488,7 +502,8 @@ export const RecommendationsTableV3 = ({
                     )}
                   </>
                 );
-              })
+              })}
+              </AnimatePresence>
             )}
           </tbody>
         </table>

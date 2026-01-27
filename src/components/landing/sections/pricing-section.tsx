@@ -166,8 +166,8 @@ export function PricingSection() {
                         {plan.features.map((feature, idx) => {
                           const isHeader = feature.includes("Everything in")
                           return (
-                            <motion.li 
-                              key={idx} 
+                            <motion.li
+                              key={idx}
                               className={cn("flex items-start gap-3", isHeader && "mt-4")}
                               initial={{ opacity: 0, x: -10 }}
                               whileInView={{ opacity: 1, x: 0 }}
@@ -194,7 +194,7 @@ export function PricingSection() {
                       </ul>
                     </div>
 
-                    <Link to="/auth" className="w-full">
+                    <Link to="/auth?mode=register" className="w-full">
                       <Button
                         className={cn(
                           "w-full h-12 rounded-full text-sm font-bold transition-all shadow-sm group/btn overflow-hidden relative",
@@ -220,7 +220,7 @@ export function PricingSection() {
           })}
         </div>
 
-        <motion.div 
+        <motion.div
           className="mt-16 text-center"
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}

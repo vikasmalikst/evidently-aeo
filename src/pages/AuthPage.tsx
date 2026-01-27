@@ -26,7 +26,9 @@ interface BrandsResponse {
 type AuthView = 'login' | 'register' | 'reset';
 
 export const AuthPage = () => {
-  const [view, setView] = useState<AuthView>('login');
+  const location = window.location;
+  const initialMode = new URLSearchParams(location.search).get('mode') as AuthView;
+  const [view, setView] = useState<AuthView>(initialMode === 'register' ? 'register' : 'login');
   const navigate = useNavigate();
 
   const sellingPoints = [

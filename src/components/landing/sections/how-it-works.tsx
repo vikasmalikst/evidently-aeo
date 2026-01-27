@@ -9,38 +9,20 @@ const fullLoopSteps = [
   {
     number: "01",
     title: "Measure",
-    description: "Visibility, share of answer, sentiment across all answer engines",
-    details: "Track your brand's visibility across ChatGPT, Perplexity, Gemini, and Google AI Overviews. Monitor share of answers and sentiment with new leading indicators like citation depth.",
+    description: "Benchmark LLM related KPIs using our sophisticated trackers.",
+    details: "Track your brand's visibility across ChatGPT, Perplexity, Gemini, and Google AI Overviews. Monitor share of answers and sentiment with leading indicators like citation depth and attribution.",
   },
   {
     number: "02",
     title: "Analyze",
-    description: "Diagnose where brand is invisible, misrepresented, or underperforming",
-    details: "Identify performance gaps by topic, intent, product, audience, and channel. Understand exactly where competitors are winning and why.",
+    description: "Deep insights powered by proprietary algorithms.",
+    details: "Identify performance gaps by topic, intent, and channel. Our sophisticated algorithms analyze the collected data to understand exactly where competitors are winning and why.",
   },
   {
     number: "03",
-    title: "Act",
-    description: "Get prioritized recommendations—content, entities, publishers, authority gaps",
-    details: "Receive AI-specific optimization advice with prioritized plays. Know exactly what to change and why, not generic SEO tips.",
-  },
-  {
-    number: "04",
-    title: "Execute",
-    description: "Use structured playbooks and AI-assisted content generation",
-    details: "Workflows for marketing, content, PR, and product teams tailored to answer engines. AI-assisted creation of answer-ready assets (Q&A, structured data, FAQs, expert POVs).",
-  },
-  {
-    number: "05",
-    title: "Prove",
-    description: "Re-measure visibility, answer share, sentiment, and downstream metrics",
-    details: "Connect visibility gains to qualified leads, pipeline impact, and revenue. Export reports to show leadership the progress and ROI of your AEO efforts.",
-  },
-  {
-    number: "06",
-    title: "Refine",
-    description: "Close the loop with continuous optimization",
-    details: "Use measurement data to refine strategies. Adapt benchmarks and priorities as campaigns, launches, and market players change. Continuous improvement cycle.",
+    title: "Optimize",
+    description: "Continuous performance optimization for your brand.",
+    details: "Turn insights into action with prioritized recommendations. Use our closed-loop system to continuously optimize your brand's presence and dominate answer engine results.",
   },
 ]
 
@@ -109,7 +91,7 @@ export function HowItWorks() {
           variants={fadeInUp}
         >
           <h2 className="text-3xl lg:text-4xl xl:text-5xl font-bold text-foreground">
-            The Full Loop: From Measurement to Measurable Outcomes
+            The 3 Pillars of AEO Success
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Most AEO tools stop at visibility reports. EvidentlyAEO is the only full-loop Answer Engine Optimization system that goes from measurement to measurable business outcomes.

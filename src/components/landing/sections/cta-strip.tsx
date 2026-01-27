@@ -13,7 +13,7 @@ export function CTAStrip() {
     <section className="relative py-16 lg:py-24 overflow-hidden">
       {/* Animated Gradient Background */}
       <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 animate-gradient-x" />
-      
+
       {/* Mesh/Wave Overlay */}
       <div className="absolute inset-0 opacity-30">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,rgba(255,255,255,0.2)_0%,transparent_50%)]" />
@@ -22,17 +22,17 @@ export function CTAStrip() {
       </div>
 
       {/* Floating Shapes */}
-      <motion.div 
+      <motion.div
         className="absolute top-10 left-[10%] w-20 h-20 bg-white/10 rounded-full blur-xl"
         animate={{ y: [0, -20, 0], scale: [1, 1.1, 1] }}
         transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
       />
-      <motion.div 
+      <motion.div
         className="absolute bottom-10 right-[15%] w-32 h-32 bg-white/10 rounded-full blur-xl"
         animate={{ y: [0, 20, 0], scale: [1, 0.9, 1] }}
         transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
       />
-      <motion.div 
+      <motion.div
         className="absolute top-1/2 right-[5%] w-16 h-16 bg-cyan-300/20 rounded-full blur-lg"
         animate={{ x: [0, 15, 0], y: [0, -10, 0] }}
         transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
@@ -47,7 +47,7 @@ export function CTAStrip() {
           transition={{ duration: 0.6 }}
         >
           {/* Badge */}
-          <motion.div 
+          <motion.div
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20"
             initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
@@ -72,7 +72,7 @@ export function CTAStrip() {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-            <Link to="/auth">
+            <Link to="/auth?mode=register">
               <Button
                 size="lg"
                 className="group relative bg-white text-cyan-600 hover:bg-cyan-50 transition-all shadow-2xl shadow-black/20 gap-2 px-8 py-6 text-lg font-bold rounded-full overflow-hidden"

@@ -14,8 +14,8 @@ interface PromptFiltersProps {
   onStartDateChange: (date: string) => void;
   onEndDateChange: (date: string) => void;
   competitors: ManagedCompetitor[];
-  selectedCompetitors: Set<string>;
-  onSelectedCompetitorsChange: (competitors: Set<string>) => void;
+  selectedCompetitors: string[];
+  onSelectedCompetitorsChange: (competitors: string[]) => void;
 }
 
 export const PromptFilters = ({
@@ -121,20 +121,18 @@ export const PromptFilters = ({
             competitors={competitors}
             selectedCompetitors={selectedCompetitors}
             onCompetitorToggle={(name) => {
-              const newSet = new Set(selectedCompetitors);
               const key = name.toLowerCase();
-              if (newSet.has(key)) {
-                newSet.delete(key);
+              if (selectedCompetitors.includes(key)) {
+                onSelectedCompetitorsChange(selectedCompetitors.filter(c => c !== key));
               } else {
-                newSet.add(key);
+                onSelectedCompetitorsChange([...selectedCompetitors, key]);
               }
-              onSelectedCompetitorsChange(newSet);
             }}
             onSelectAll={() => {
-              onSelectedCompetitorsChange(new Set(competitors.map(c => c.name.toLowerCase())));
+              onSelectedCompetitorsChange(competitors.map(c => c.name.toLowerCase()));
             }}
             onDeselectAll={() => {
-              onSelectedCompetitorsChange(new Set());
+              onSelectedCompetitorsChange([]);
             }}
           />
         </div>

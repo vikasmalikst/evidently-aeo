@@ -39,7 +39,7 @@ export const Prompts = () => {
   const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
   const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
   const [allCompetitors, setAllCompetitors] = useState<ManagedCompetitor[]>([]);
-  const [selectedCompetitors, setSelectedCompetitors] = useState<Set<string>>(new Set());
+  const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>([]);
   const [metricType, setMetricType] = useState<'visibility' | 'sentiment' | 'mentions' | 'position' | 'share'>('visibility');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerKpiType, setDrawerKpiType] = useState<KpiType>('visibility');
@@ -61,8 +61,8 @@ export const Prompts = () => {
       endDate: endDate ? new Date(endDate + 'T23:59:59.999').toISOString() : ''
     });
 
-    if (selectedCompetitors.size > 0) {
-      params.set('competitors', Array.from(selectedCompetitors).join(','));
+    if (selectedCompetitors.length > 0) {
+      params.set('competitors', selectedCompetitors.join(','));
     }
 
     // Filter by collector on backend so visibility/sentiment reflect the selected LLMs
@@ -116,8 +116,12 @@ export const Prompts = () => {
       setAllCompetitors([]);
     }
     // Clear selected competitors when brand changes
-    setSelectedCompetitors(new Set());
+    setSelectedCompetitors([]);
   }, [selectedBrandId]);
+
+  const handleReorderCompetitors = (newOrder: string[]) => {
+    setSelectedCompetitors(newOrder);
+  };
 
   // Extract available collectors from response
   const llmOptions = useMemo(() => {
@@ -314,6 +318,7 @@ export const Prompts = () => {
               selectedLLMs={selectedLLMs}
               competitors={allCompetitors}
               selectedCompetitors={selectedCompetitors}
+              onReorderCompetitors={handleReorderCompetitors}
               metricType={metricType}
               brandLogo={selectedBrand?.metadata?.logo || selectedBrand?.metadata?.brand_logo}
               brandName={selectedBrand?.name}

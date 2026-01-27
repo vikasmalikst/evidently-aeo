@@ -3,7 +3,7 @@ import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 
 interface CompetitorFilterProps {
   competitors: ManagedCompetitor[];
-  selectedCompetitors: Set<string>; // Set of competitor names (lowercase)
+  selectedCompetitors: string[]; // Array of competitor names (lowercase)
   onCompetitorToggle: (competitorName: string) => void;
   onSelectAll: () => void;
   onDeselectAll: () => void;
@@ -18,10 +18,10 @@ export const CompetitorFilter = ({
   onDeselectAll,
   isLoading = false,
 }: CompetitorFilterProps) => {
-  // Check if all competitors are selected (same logic as LLM filter - when all are selected, "All" button is active)
+  // Check if all competitors are selected
   const allSelected = competitors.length > 0 &&
-    selectedCompetitors.size === competitors.length &&
-    competitors.every(c => selectedCompetitors.has(c.name.toLowerCase()));
+    selectedCompetitors.length === competitors.length &&
+    competitors.every(c => selectedCompetitors.includes(c.name.toLowerCase()));
 
   // Show component even when loading (to avoid layout shift)
   // Only hide if not loading and no competitors
@@ -55,7 +55,7 @@ export const CompetitorFilter = ({
 
       {/* Individual competitor toggle buttons - show even when loading */}
       {competitors.length > 0 ? competitors.map((competitor) => {
-        const isSelected = selectedCompetitors.has(competitor.name.toLowerCase());
+        const isSelected = selectedCompetitors.includes(competitor.name.toLowerCase());
 
         return (
           <button

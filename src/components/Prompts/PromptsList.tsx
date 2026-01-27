@@ -12,7 +12,8 @@ interface PromptsListProps {
   loading: boolean;
   selectedLLMs: string[];
   competitors: ManagedCompetitor[];
-  selectedCompetitors: Set<string>;
+  selectedCompetitors: string[];
+  onReorderCompetitors?: (newOrder: string[]) => void;
   metricType: 'visibility' | 'sentiment' | 'mentions' | 'position' | 'share';
   brandLogo?: string;
   brandName?: string;
@@ -54,6 +55,7 @@ export const PromptsList = memo(({
   selectedLLMs,
   competitors,
   selectedCompetitors,
+  onReorderCompetitors,
   metricType,
   brandLogo,
   brandName,
@@ -179,8 +181,26 @@ export const PromptsList = memo(({
   }, []);
 
   const activeCompetitors = useMemo(() => {
-    return competitors.filter(c => selectedCompetitors.has(c.name.toLowerCase()));
+    const selectedNames = new Set(selectedCompetitors);
+    const filtered = competitors.filter(c => selectedNames.has(c.name.toLowerCase()));
+
+    // Sort based on order in selectedCompetitors array
+    return [...filtered].sort((a, b) => {
+      const indexA = selectedCompetitors.indexOf(a.name.toLowerCase());
+      const indexB = selectedCompetitors.indexOf(b.name.toLowerCase());
+      return indexA - indexB;
+    });
   }, [competitors, selectedCompetitors]);
+
+  const handleMoveCompetitor = useCallback((index: number, direction: 'left' | 'right') => {
+    if (!onReorderCompetitors) return;
+    const newOrder = [...selectedCompetitors];
+    const targetIndex = direction === 'left' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newOrder.length) return;
+
+    [newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[index]];
+    onReorderCompetitors(newOrder);
+  }, [selectedCompetitors, onReorderCompetitors]);
 
   const getMetricLabel = (type: string) => {
     switch (type) {
@@ -309,15 +329,31 @@ export const PromptsList = memo(({
                     />
                   </div>
                 </th>
-                {activeCompetitors.map(comp => (
-                  <th key={comp.id} className="text-center px-2 py-2 w-28 border-l border-[var(--border-default)] bg-[var(--bg-secondary)]">
-                    <div className="flex justify-center" title={comp.name}>
+                {activeCompetitors.map((comp, index) => (
+                  <th key={comp.id} className="text-center px-2 py-2 w-28 border-l border-[var(--border-default)] bg-[var(--bg-secondary)] group/col relative">
+                    <div className="flex flex-col items-center gap-1" title={comp.name}>
+                      <div className="flex items-center justify-between w-full opacity-0 group-hover/col:opacity-100 transition-opacity absolute top-0 left-0 px-2 py-0.5 pointer-events-none">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleMoveCompetitor(index, 'left'); }}
+                          className={`p-0.5 rounded-md hover:bg-gray-200 pointer-events-auto transition-colors ${index === 0 ? 'invisible' : ''}`}
+                          title="Move Left"
+                        >
+                          <ChevronRight size={14} className="rotate-180" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleMoveCompetitor(index, 'right'); }}
+                          className={`p-0.5 rounded-md hover:bg-gray-200 pointer-events-auto transition-colors ${index === activeCompetitors.length - 1 ? 'invisible' : ''}`}
+                          title="Move Right"
+                        >
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
                       <SafeLogo
                         src={comp.logo}
                         domain={comp.url || comp.domain}
                         alt={comp.name}
                         size={24}
-                        className="w-6 h-6 rounded shadow-sm object-contain bg-white p-0.5 border border-gray-100"
+                        className="w-6 h-6 rounded shadow-sm object-contain bg-white p-0.5 border border-gray-100 mt-2"
                       />
                     </div>
                   </th>
@@ -372,10 +408,6 @@ export const PromptsList = memo(({
 
                     {promptsToRender.map((prompt) => {
                       const isSelected = selectedPromptId === prompt.id;
-                      const collectorsToShow =
-                        selectedLLMSet.size > 0
-                          ? prompt.collectorTypes.filter((collector) => selectedLLMSet.has(collector))
-                          : prompt.collectorTypes;
 
                       return (
                         <tr

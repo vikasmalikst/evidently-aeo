@@ -8,6 +8,7 @@ interface PromptAnalyticsOptions {
   startDate?: string
   endDate?: string
   collectors?: string[]
+  competitors?: string[]
   limit?: number
 }
 
@@ -36,6 +37,9 @@ interface CollectorResponse {
   keywordCount: number | null
   brandPositions?: number[]
   competitorPositions?: number[]
+  mentions: number
+  averagePosition: number | null
+  soaScore: number | null
 }
 
 interface PromptEntryPayload {
@@ -53,6 +57,14 @@ interface PromptEntryPayload {
   volumeCount: number
   sentimentScore: number | null
   visibilityScore: number | null
+  mentions: number
+  averagePosition: number | null
+  soaScore: number | null
+  competitorVisibilityMap: Record<string, number>
+  competitorSentimentMap: Record<string, number>
+  competitorMentionsMap: Record<string, number>
+  competitorPositionMap: Record<string, number | null>
+  competitorSoaMap: Record<string, number>
   highlights: PromptHighlights
 }
 
@@ -63,6 +75,14 @@ interface PromptTopicPayload {
   volumeCount: number
   visibilityScore: number | null
   sentimentScore: number | null
+  mentions: number
+  averagePosition: number | null
+  soaScore: number | null
+  competitorVisibilityMap: Record<string, number>
+  competitorSentimentMap: Record<string, number>
+  competitorMentionsMap: Record<string, number>
+  competitorPositionMap: Record<string, number | null>
+  competitorSoaMap: Record<string, number>
   prompts: PromptEntryPayload[]
 }
 
@@ -567,7 +587,9 @@ export class PromptsAnalyticsService {
             brandMentions: null,
             productMentions: null,
             competitorMentions: null,
-            keywordCount: null
+            keywordCount: null,
+            mentions: 0,
+            averagePosition: null
           })
         }
       }
@@ -753,6 +775,12 @@ export class PromptsAnalyticsService {
       keywords: number;
       brandPositions?: number[];
       competitorPositions?: number[];
+      competitorVisibilityMap?: Record<string, number>;
+      competitorSentimentMap?: Record<string, number>;
+      competitorMentionsMap?: Record<string, number>;
+      competitorPositionMap?: Record<string, number[]>;
+      competitorSoaMap?: Record<string, number>;
+      soaScore: number | null;
     }>()
     const mentionCountsByQuery = new Map<string, { brand: number; product: number; competitor: number; keywords: number }>()
     // Note: keywordCountsByCollector is declared earlier (before keyword processing section)
@@ -768,7 +796,28 @@ export class PromptsAnalyticsService {
     }
 
     if (allQueryIds.length > 0 || allCollectorResultIds.length > 0) {
-      let visibilityRows: any[] = [];
+      let visibilityRows: Array<{
+        query_id: string | null;
+        collector_result_id: number | null;
+        collector_type: string | null;
+        visibility_index: number | null;
+        competitor_name: string | null;
+        sentiment_score: number | null;
+        total_brand_mentions: number | null;
+        total_brand_product_mentions: number | null;
+        competitor_mentions: number | null;
+        competitor_product_mentions?: number | null;
+        competitor_names?: string[];
+        brand_positions?: number[];
+        competitor_positions?: number[];
+        competitor_visibility_map?: Record<string, number>;
+        competitor_sentiment_map?: Record<string, number>;
+        competitor_mentions_map?: Record<string, number>;
+        competitor_positions_map?: Record<string, number[]>;
+        competitor_soa_map?: Record<string, number>;
+        competitor_count?: number;
+        share_of_answers?: number | null;
+      }> = [];
 
       if (USE_OPTIMIZED_PROMPTS_ANALYTICS) {
         // NEW: Use optimized schema
@@ -795,10 +844,10 @@ export class PromptsAnalyticsService {
               console.log(`[PromptsAnalytics] Row ${idx + 1}:`, {
                 collector_result_id: row.collector_result_id,
                 collector_type: row.collector_type,
-                total_brand_mentions: row.total_brand_mentions,
                 total_brand_product_mentions: row.total_brand_product_mentions,
                 competitor_count: row.competitor_count,
-                competitor_product_count: row.competitor_product_count
+                competitor_product_count: row.competitor_product_count,
+                share_of_answers: row.share_of_answers
               });
             });
           }
@@ -812,14 +861,18 @@ export class PromptsAnalyticsService {
             competitor_name: null, // Brand rows don't have competitor_name
             sentiment_score: row.sentiment_score,
             total_brand_mentions: row.total_brand_mentions,
-            total_brand_product_mentions: row.total_brand_product_mentions ?? 0, // Now available from brand_metrics
-            competitor_mentions: row.competitor_count, // This is now SUM of all competitor_mentions from competitor_metrics
-            competitor_product_mentions: row.competitor_product_count ?? 0, // SUM of all competitor product mentions
-            // Add competitor rows separately
+            total_brand_product_mentions: row.total_brand_product_mentions ?? 0,
+            competitor_mentions: row.competitor_count,
+            competitor_product_mentions: row.competitor_product_count ?? 0,
             competitor_names: row.competitor_names,
-            // Pass through positions
             brand_positions: row.brand_positions ?? [],
             competitor_positions: row.competitor_positions ?? [],
+            competitor_visibility_map: row.competitor_visibility_map ?? {},
+            competitor_sentiment_map: row.competitor_sentiment_map ?? {},
+            competitor_mentions_map: row.competitor_mentions_map ?? {},
+            competitor_positions_map: row.competitor_positions_map ?? {},
+            competitor_soa_map: (row as any).competitor_soa_map ?? {},
+            share_of_answers: (row as any).share_of_answers ?? null,
           }));
 
           // Add competitor rows (one per competitor)
@@ -873,7 +926,11 @@ export class PromptsAnalyticsService {
         if (visibilityError) {
           console.warn(`Failed to load visibility scores: ${visibilityError.message}`)
         } else {
-          visibilityRows = legacyRows ?? []
+          visibilityRows = (legacyRows ?? []).map(row => ({
+            ...row,
+            competitor_visibility_map: {},
+            competitor_sentiment_map: {}
+          }))
         }
       }
 
@@ -941,7 +998,13 @@ export class PromptsAnalyticsService {
               competitor: competitorMentions, // This is competitor_count from brand row (SUM of all competitor mentions)
               keywords: keywordCountsByCollector.get(collectorResultId) || 0,
               brandPositions: Array.isArray(row.brand_positions) ? row.brand_positions : [],
-              competitorPositions: Array.isArray(row.competitor_positions) ? row.competitor_positions : []
+              competitorPositions: Array.isArray(row.competitor_positions) ? row.competitor_positions : [],
+              competitorVisibilityMap: row.competitor_visibility_map || {},
+              competitorSentimentMap: row.competitor_sentiment_map || {},
+              competitorMentionsMap: row.competitor_mentions_map || {},
+              competitorPositionMap: row.competitor_positions_map || {},
+              competitorSoaMap: row.competitor_soa_map || {},
+              soaScore: row.share_of_answers ?? null,
             });
 
             // Debug log for ALL counts (including 0) to identify missing data
@@ -1179,7 +1242,14 @@ export class PromptsAnalyticsService {
             competitor: 0,
             keywords: keywordCount,
             brandPositions: [],
-            competitorPositions: []
+            competitorPositions: [],
+            competitorVisibilityMap: {},
+            competitorSentimentMap: {},
+            competitorMentionsMap: {},
+            competitorPositionMap: {},
+            competitorSoaMap: {},
+            mentions: 0,
+            soaScore: null
           }
 
           // Debug: Log when counts are missing (0) to identify data issues
@@ -1195,7 +1265,17 @@ export class PromptsAnalyticsService {
             competitorMentions: effectiveCounts.competitor,
             keywordCount,
             brandPositions: effectiveCounts.brandPositions ?? [],
-            competitorPositions: effectiveCounts.competitorPositions ?? []
+            competitorPositions: effectiveCounts.competitorPositions ?? [],
+            competitorVisibilityMap: effectiveCounts.competitorVisibilityMap ?? {},
+            competitorSentimentMap: effectiveCounts.competitorSentimentMap ?? {},
+            competitorMentionsMap: effectiveCounts.competitorMentionsMap ?? {},
+            competitorPositionMap: effectiveCounts.competitorPositionMap ?? {},
+            competitorSoaMap: effectiveCounts.competitorSoaMap ?? {},
+            mentions: effectiveCounts.brand,
+            averagePosition: effectiveCounts.brandPositions && effectiveCounts.brandPositions.length > 0
+              ? effectiveCounts.brandPositions.reduce((s, p) => s + p, 0) / effectiveCounts.brandPositions.length
+              : null,
+            soaScore: effectiveCounts.soaScore
           }
         }),
         volumeCount: aggregate.count,
@@ -1249,7 +1329,114 @@ export class PromptsAnalyticsService {
           products: Array.from(aggregate.highlights.products),
           keywords: Array.from(aggregate.highlights.keywords),
           competitors: Array.from(aggregate.highlights.competitors)
-        }
+        },
+        competitorVisibilityMap: (() => {
+          const map: Record<string, number[]> = {};
+          aggregate.responses.forEach(r => {
+            const counts = r.collectorResultId !== null ? mentionCountsByCollector.get(r.collectorResultId) : undefined;
+            if (counts?.competitorVisibilityMap) {
+              Object.entries(counts.competitorVisibilityMap).forEach(([comp, score]) => {
+                if (!map[comp]) map[comp] = [];
+                map[comp].push(score);
+              });
+            }
+          });
+          const result: Record<string, number> = {};
+          Object.entries(map).forEach(([comp, scores]) => {
+            result[comp] = roundToPrecision(scores.reduce((a, b) => a + b, 0) / scores.length, 1);
+          });
+          return result;
+        })(),
+        competitorSentimentMap: (() => {
+          const map: Record<string, number[]> = {};
+          aggregate.responses.forEach(r => {
+            const counts = r.collectorResultId !== null ? mentionCountsByCollector.get(r.collectorResultId) : undefined;
+            if (counts?.competitorSentimentMap) {
+              Object.entries(counts.competitorSentimentMap).forEach(([comp, sentiment]) => {
+                if (!map[comp]) map[comp] = [];
+                map[comp].push(sentiment);
+              });
+            }
+          });
+          const result: Record<string, number> = {};
+          Object.entries(map).forEach(([comp, values]) => {
+            result[comp] = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+          });
+          return result;
+        })(),
+        competitorMentionsMap: (() => {
+          const result: Record<string, number> = {};
+          aggregate.responses.forEach(r => {
+            const counts = r.collectorResultId !== null ? mentionCountsByCollector.get(r.collectorResultId) : undefined;
+            if (counts?.competitorMentionsMap) {
+              Object.entries(counts.competitorMentionsMap).forEach(([comp, mentions]) => {
+                const key = comp.toLowerCase().trim();
+                result[key] = (result[key] || 0) + mentions;
+              });
+            }
+          });
+          return result;
+        })(),
+        competitorPositionMap: (() => {
+          const map: Record<string, number[]> = {};
+          aggregate.responses.forEach(r => {
+            const counts = r.collectorResultId !== null ? mentionCountsByCollector.get(r.collectorResultId) : undefined;
+            if (counts?.competitorPositionMap) {
+              Object.entries(counts.competitorPositionMap).forEach(([comp, positions]) => {
+                const key = comp.toLowerCase().trim();
+                if (!map[key]) map[key] = [];
+                map[key].push(...positions);
+              });
+            }
+          });
+          const result: Record<string, number | null> = {};
+          Object.entries(map).forEach(([comp, values]) => {
+            result[comp] = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : null;
+          });
+          return result;
+        })(),
+        mentions: (() => {
+          let total = 0;
+          aggregate.responses.forEach(r => {
+            const counts = r.collectorResultId !== null ? mentionCountsByCollector.get(r.collectorResultId) : undefined;
+            if (counts?.brand) total += counts.brand;
+          });
+          return total;
+        })(),
+        averagePosition: (() => {
+          const allPositions: number[] = [];
+          aggregate.responses.forEach(r => {
+            const counts = r.collectorResultId !== null ? mentionCountsByCollector.get(r.collectorResultId) : undefined;
+            if (counts?.brandPositions) allPositions.push(...counts.brandPositions);
+          });
+          return allPositions.length > 0 ? allPositions.reduce((s, p) => s + p, 0) / allPositions.length : null;
+        })(),
+        soaScore: (() => {
+          const scores: number[] = [];
+          aggregate.responses.forEach(r => {
+            const counts = r.collectorResultId !== null ? mentionCountsByCollector.get(r.collectorResultId) : undefined;
+            if (counts?.soaScore !== null && counts?.soaScore !== undefined) scores.push(counts.soaScore);
+          });
+          return scores.length > 0 ? scores.reduce((s, v) => s + v, 0) / scores.length : null;
+        })(),
+        competitorSoaMap: (() => {
+          const map: Record<string, number[]> = {};
+          aggregate.responses.forEach(r => {
+            const counts = r.collectorResultId !== null ? mentionCountsByCollector.get(r.collectorResultId) : undefined;
+            if (counts?.competitorSoaMap) {
+              Object.entries(counts.competitorSoaMap).forEach(([comp, soa]) => {
+                const key = comp.toLowerCase().trim();
+                if (!map[key]) map[key] = [];
+                map[key].push(soa);
+              });
+            }
+          });
+          const result: Record<string, number> = {};
+          Object.entries(map).forEach(([comp, values]) => {
+            result[comp] = values.reduce((s, v) => s + v, 0) / values.length;
+          });
+          return result;
+        })(),
       }
     })
 
@@ -1265,6 +1452,12 @@ export class PromptsAnalyticsService {
           volumeCount: 0,
           visibilityScore: null,
           sentimentScore: null,
+          mentions: 0,
+          averagePosition: null,
+          competitorVisibilityMap: {},
+          competitorSentimentMap: {},
+          competitorMentionsMap: {},
+          competitorPositionMap: {},
           prompts: []
         })
       }
@@ -1302,6 +1495,93 @@ export class PromptsAnalyticsService {
           ...topic,
           visibilityScore: avgVisibility,
           sentimentScore: avgSentiment,
+          competitorVisibilityMap: (() => {
+            const map: Record<string, number[]> = {};
+            topic.prompts.forEach(p => {
+              Object.entries(p.competitorVisibilityMap).forEach(([comp, score]) => {
+                if (!map[comp]) map[comp] = [];
+                map[comp].push(score);
+              });
+            });
+            const result: Record<string, number> = {};
+            Object.entries(map).forEach(([comp, scores]) => {
+              const key = comp.toLowerCase().trim();
+              result[key] = roundToPrecision(scores.reduce((a, b) => a + b, 0) / scores.length, 1);
+            });
+            return result;
+          })(),
+          competitorSentimentMap: (() => {
+            const map: Record<string, number[]> = {};
+            topic.prompts.forEach(p => {
+              Object.entries(p.competitorSentimentMap).forEach(([comp, score]) => {
+                if (!map[comp]) map[comp] = [];
+                map[comp].push(score);
+              });
+            });
+            const result: Record<string, number> = {};
+            Object.entries(map).forEach(([comp, scores]) => {
+              const key = comp.toLowerCase().trim();
+              result[key] = roundToPrecision(scores.reduce((a, b) => a + b, 0) / scores.length, 4);
+            });
+            return result;
+          })(),
+          competitorMentionsMap: (() => {
+            const result: Record<string, number> = {};
+            topic.prompts.forEach(p => {
+              Object.entries(p.competitorMentionsMap).forEach(([comp, count]) => {
+                const key = comp.toLowerCase().trim();
+                result[key] = (result[key] || 0) + count;
+              });
+            });
+            return result;
+          })(),
+          competitorPositionMap: (() => {
+            const map: Record<string, number[]> = {};
+            topic.prompts.forEach(p => {
+              Object.entries(p.competitorPositionMap).forEach(([comp, pos]) => {
+                if (pos !== null) {
+                  const key = comp.toLowerCase().trim();
+                  if (!map[key]) map[key] = [];
+                  map[key].push(pos);
+                }
+              });
+            });
+            const result: Record<string, number | null> = {};
+            Object.entries(map).forEach(([comp, positions]) => {
+              const key = comp.toLowerCase().trim();
+              result[key] = positions.length > 0 ? roundToPrecision(positions.reduce((a, b) => a + b, 0) / positions.length, 1) : null;
+            });
+            return result;
+          })(),
+          mentions: topic.prompts.reduce((sum, p) => sum + p.mentions, 0),
+          averagePosition: (() => {
+            const positions = topic.prompts
+              .map(p => p.averagePosition)
+              .filter((v): v is number => v !== null);
+            return positions.length > 0 ? roundToPrecision(positions.reduce((a, b) => a + b, 0) / positions.length, 1) : null;
+          })(),
+          soaScore: (() => {
+            const scores = topic.prompts
+              .map(p => p.soaScore)
+              .filter((v): v is number => v !== null);
+            return scores.length > 0 ? roundToPrecision(scores.reduce((a, b) => a + b, 0) / scores.length, 1) : null;
+          })(),
+          competitorSoaMap: (() => {
+            const map: Record<string, number[]> = {};
+            topic.prompts.forEach(p => {
+              Object.entries(p.competitorSoaMap).forEach(([comp, soa]) => {
+                const key = comp.toLowerCase().trim();
+                if (!map[key]) map[key] = [];
+                map[key].push(soa);
+              });
+            });
+            const result: Record<string, number> = {};
+            Object.entries(map).forEach(([comp, values]) => {
+              const key = comp.toLowerCase().trim();
+              result[key] = roundToPrecision(values.reduce((s, v) => s + v, 0) / values.length, 1);
+            });
+            return result;
+          })(),
           prompts: topic.prompts
             .slice()
             .sort((a, b) => b.volumeCount - a.volumeCount || a.question.localeCompare(b.question))

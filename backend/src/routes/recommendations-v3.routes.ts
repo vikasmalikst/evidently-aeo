@@ -361,17 +361,22 @@ router.get('/:generationId/steps/:step', authenticateToken, requireFeatureEntitl
     if (stepNum === 1) {
       // Step 1: All non-completed recommendations - exclude completed ones
       query = query.eq('is_completed', false);
-      // Filter by review_status if provided in query params (for specific filtering)
+
+      // Filter by review_status if provided
       const reviewStatus = req.query.reviewStatus as string | undefined;
       if (reviewStatus && ['pending_review', 'approved', 'rejected'].includes(reviewStatus)) {
         query = query.eq('review_status', reviewStatus);
+      } else {
+        // Default: Exclude 'rejected' (and 'removed') items from the main view
+        // The user requested that rejected items should disappear from the UI
+        query = query.neq('review_status', 'rejected');
       }
     } else if (stepNum === 2) {
       // Step 2: Approved but content not generated
       query = query.eq('is_approved', true).eq('is_content_generated', false);
     } else if (stepNum === 3) {
       // Step 3: Content generated but not completed
-      query = query.eq('is_content_generated', true).eq('is_completed', false);
+      query = query.eq('is_content_generated', true).eq('is_completed', false).eq('is_approved', true);
     } else if (stepNum === 4) {
       // Step 4: Completed and approved (exclude rejected/pending recommendations from results)
       query = query.eq('is_completed', true).eq('review_status', 'approved');

@@ -16,6 +16,9 @@ export interface CollectorResponse {
   keywordCount: number | null
   brandPositions?: number[]
   competitorPositions?: number[]
+  mentions: number
+  averagePosition: number | null
+  soaScore?: number | null
 }
 
 export interface PromptEntry {
@@ -33,6 +36,14 @@ export interface PromptEntry {
   volumeCount: number
   sentimentScore: number | null
   visibilityScore: number | null
+  mentions: number
+  averagePosition: number | null
+  soaScore?: number | null
+  competitorVisibilityMap: Record<string, number>
+  competitorSentimentMap: Record<string, number>
+  competitorMentionsMap: Record<string, number>
+  competitorPositionMap: Record<string, number | null>
+  competitorSoaMap?: Record<string, number>
   highlights: PromptHighlights
 }
 
@@ -43,6 +54,14 @@ export interface PromptTopic {
   volumeCount: number
   visibilityScore: number | null
   sentimentScore: number | null
+  mentions: number
+  averagePosition: number | null
+  soaScore?: number | null
+  competitorVisibilityMap: Record<string, number>
+  competitorSentimentMap: Record<string, number>
+  competitorMentionsMap: Record<string, number>
+  competitorPositionMap: Record<string, number | null>
+  competitorSoaMap?: Record<string, number>
   prompts: PromptEntry[]
 }
 

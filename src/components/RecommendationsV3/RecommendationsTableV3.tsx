@@ -12,8 +12,9 @@
  */
 
 import { useState } from 'react';
-import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronUp, IconTrash } from '@tabler/icons-react';
 import { RecommendationV3 } from '../../api/recommendationsV3Api';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface RecommendationsTableV3Props {
   recommendations: RecommendationV3[];
@@ -27,7 +28,8 @@ interface RecommendationsTableV3Props {
   actionType?: string; // Customize the action identifier sent to onAction (default: "generate-content")
   generatedLabel?: string; // Customize the generated badge label (default: "Generated")
   showStatusDropdown?: boolean;
-  onStatusChange?: (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected') => void;
+  onStatusChange?: (recommendationId: string, status: 'pending_review' | 'approved' | 'rejected' | 'removed') => void;
+  onStopTracking?: (recommendationId: string) => void;
   generatingContentIds?: Set<string>; // Track which recommendations are currently generating content
 }
 
@@ -103,6 +105,7 @@ export const RecommendationsTableV3 = ({
   generatedLabel = 'Generated',
   showStatusDropdown = false,
   onStatusChange,
+  onStopTracking,
   generatingContentIds = new Set()
 }: RecommendationsTableV3Props) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -176,15 +179,27 @@ export const RecommendationsTableV3 = ({
                 </td>
               </tr>
             ) : (
-              recommendations.map((rec, index) => {
+              <AnimatePresence initial={false} mode="popLayout">
+              {recommendations.map((rec, index) => {
                 const recId = rec.id || `rec-${index}`;
                 const isExpanded = expandedRows.has(recId);
                 const hasDetails = rec.reason || rec.explanation || rec.expectedBoost || rec.impactScore || rec.kpi || (rec.howToFix && rec.howToFix.length > 0);
                 
                 return (
                   <>
-                    <tr
+                    <motion.tr
                       key={recId}
+                      layout
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ 
+                        opacity: 0, 
+                        x: 100, // Slide right ("dumped")
+                        y: 20,  // Drop down slightly
+                        scale: 0.9, 
+                        rotate: 5, // Tilted drop
+                        transition: { duration: 0.4, ease: "backIn" } 
+                      }}
                       className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#f9fafb]'} hover:bg-[#f1f5f9] transition-colors`}
                     >
                       {showCheckboxes && (
@@ -246,7 +261,7 @@ export const RecommendationsTableV3 = ({
                             <select
                               value={rec.reviewStatus || 'pending_review'}
                               onChange={(e) => {
-                                const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected';
+                                const newStatus = e.target.value as 'pending_review' | 'approved' | 'rejected' | 'removed';
                                 if (rec.id && onStatusChange) {
                                   onStatusChange(rec.id, newStatus);
                                 }
@@ -270,6 +285,7 @@ export const RecommendationsTableV3 = ({
                               <option value="pending_review">Pending Review</option>
                               <option value="approved">Approved</option>
                               <option value="rejected">Rejected</option>
+                              <option value="removed">Stop Tracking</option>
                             </select>
                             {/* Status indicator dot */}
                             <div
@@ -286,6 +302,7 @@ export const RecommendationsTableV3 = ({
                       )}
                       {showActions && (
                         <td className="px-4 py-4">
+                          <div className="flex items-center gap-2">
                           {onAction && (() => {
                             const isGenerating = generatingContentIds.has(rec.id || '');
                             const isGenerated = rec.isContentGenerated;
@@ -325,9 +342,23 @@ export const RecommendationsTableV3 = ({
                               </button>
                             );
                           })()}
+                          {onStopTracking && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (rec.id) onStopTracking(rec.id);
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                              title="Stop Tracking"
+                            >
+                              <IconTrash size={16} />
+                            </button>
+                          )}
+                          </div>
                         </td>
                       )}
-                    </tr>
+
+                    </motion.tr>
                     {isExpanded && hasDetails && (
                       <tr key={`${recId}-details`} className="bg-[#f8fafc]">
                         <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 8 : 7) : (showActions ? 7 : 6)) : (showStatusDropdown ? (showActions ? 7 : 6) : (showActions ? 6 : 5))} className="px-4 py-4">
@@ -471,7 +502,8 @@ export const RecommendationsTableV3 = ({
                     )}
                   </>
                 );
-              })
+              })}
+              </AnimatePresence>
             )}
           </tbody>
         </table>

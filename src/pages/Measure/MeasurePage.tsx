@@ -269,17 +269,17 @@ export const MeasurePage = () => {
     // Build unified date range from all sources to ensure alignment
     // Collect all date arrays from LLM slices, brand summary, and competitors
     const allDateArrays: string[][] = [];
-    
+
     llmSlices.forEach(slice => {
       if (slice.timeSeries?.dates?.length) {
         allDateArrays.push(slice.timeSeries.dates);
       }
     });
-    
+
     if (brandSum?.timeSeries?.dates?.length) {
       allDateArrays.push(brandSum.timeSeries.dates);
     }
-    
+
     competitors.forEach(comp => {
       if (comp.timeSeries?.dates?.length) {
         allDateArrays.push(comp.timeSeries.dates);
@@ -290,7 +290,7 @@ export const MeasurePage = () => {
     // All arrays should have the same length after the backend fix, but we'll use the longest as the master
     let masterDates: string[] = [];
     let maxLength = 0;
-    
+
     allDateArrays.forEach(dateArray => {
       if (dateArray.length > maxLength) {
         maxLength = dateArray.length;
@@ -334,14 +334,14 @@ export const MeasurePage = () => {
       if (!sourceDates || !sourceData || sourceDates.length === 0) {
         return Array(masterDates.length).fill(fallbackValue);
       }
-      
+
       // If lengths match and first/last dates match, assume alignment is correct
-      if (sourceDates.length === masterDates.length && 
-          sourceDates[0] === masterDates[0] && 
-          sourceDates[sourceDates.length - 1] === masterDates[masterDates.length - 1]) {
+      if (sourceDates.length === masterDates.length &&
+        sourceDates[0] === masterDates[0] &&
+        sourceDates[sourceDates.length - 1] === masterDates[masterDates.length - 1]) {
         return sourceData;
       }
-      
+
       // Otherwise, align by matching dates
       const aligned: (number | null)[] = [];
       masterDates.forEach(masterDate => {
@@ -358,7 +358,7 @@ export const MeasurePage = () => {
     // Build brand models from LLM visibility
     const brandModelData: ModelData[] = llmSlices.map((slice) => {
       const topTopicLabel = slice.topTopics?.[0]?.topic ?? slice.topTopic ?? '—';
-      
+
       // Align data arrays with master dates to ensure proper chart rendering
       const sliceDates = slice.timeSeries?.dates;
       const visData = masterDates.length > 0 && sliceDates
@@ -371,15 +371,15 @@ export const MeasurePage = () => {
         ? alignDataArray(sliceDates, slice.timeSeries?.sentiment, masterDates, slice.sentiment ?? 0)
         : (slice.timeSeries?.sentiment ?? buildTimeseries(slice.sentiment ?? 0));
       const brandPresenceData = masterDates.length > 0 && sliceDates
-        ? alignDataArray(sliceDates, slice.timeSeries?.brandPresence, masterDates, 
-            slice.totalCollectorResults && slice.totalCollectorResults > 0
-              ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
-              : 0)
+        ? alignDataArray(sliceDates, slice.timeSeries?.brandPresence, masterDates,
+          slice.totalCollectorResults && slice.totalCollectorResults > 0
+            ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
+            : 0)
         : (slice.timeSeries?.brandPresence ?? buildTimeseries(
-            slice.totalCollectorResults && slice.totalCollectorResults > 0
-              ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
-              : 0
-          ));
+          slice.totalCollectorResults && slice.totalCollectorResults > 0
+            ? Math.min(100, Math.round(((slice.brandPresenceCount ?? 0) / slice.totalCollectorResults) * 100))
+            : 0
+        ));
       const isRealData = slice.timeSeries?.isRealData;
 
       return {
@@ -449,7 +449,7 @@ export const MeasurePage = () => {
     }
     competitors.forEach((comp) => {
       const topTopic = comp.topTopics?.[0]?.topic ?? '—';
-      
+
       // Align competitor data arrays with master dates
       const compDates = comp.timeSeries?.dates;
       const visData = masterDates.length > 0 && compDates
@@ -579,7 +579,7 @@ export const MeasurePage = () => {
   // Chart data
   const chartData = useMemo(() => {
     const expectedLength = chartDateLabels.length;
-    
+
     return {
       labels: chartDateLabels,
       datasets: currentModels.map((model) => {
@@ -594,7 +594,7 @@ export const MeasurePage = () => {
         } else {
           dataArray = (model.sentimentData ?? model.data).map((v) => v ?? 0);
         }
-        
+
         // Validate array length matches date labels
         if (dataArray.length !== expectedLength) {
           console.warn(`[MeasurePage] ⚠️ Data array length mismatch for ${model.name}: expected ${expectedLength}, got ${dataArray.length}. Padding or truncating.`);
@@ -606,7 +606,7 @@ export const MeasurePage = () => {
             dataArray = dataArray.slice(0, expectedLength);
           }
         }
-        
+
         return {
           id: model.id,
           label: model.name,
@@ -799,21 +799,6 @@ export const MeasurePage = () => {
           isActive: selectedKpi === 'brandPresence',
           onHelpClick: () => handleHelpClick('brandPresence'),
           metricType: 'brandPresence' as const,
-          headerAction: (
-            <div onClick={(e) => e.stopPropagation()}>
-              <Link to="/analyze/citation-sources">
-                <motion.button
-                  whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(124, 58, 237, 0.5)" }}
-                  whileTap={{ scale: 0.95 }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[11px] font-bold rounded-lg shadow-md hover:shadow-lg transition-all duration-300 group"
-                >
-                  <span>See analysis</span>
-                  <ChevronRight size={12} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
-                </motion.button>
-              </Link>
-            </div>
-          ),
-          actionPosition: 'outside-top' as const
         }
       ];
     },
@@ -1002,6 +987,18 @@ export const MeasurePage = () => {
                   </div>
                 </div>
               )}
+
+              {/* "See analysis" Button next to filters */}
+              <Link to="/analyze/citation-sources">
+                <motion.button
+                  whileHover={{ scale: 1.02, boxShadow: "0 4px 12px rgba(6, 182, 212, 0.2)" }}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex items-center gap-1.5 px-4 h-9 bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-[12px] font-bold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 group"
+                >
+                  <span>See Analysis</span>
+                  <ChevronRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
+                </motion.button>
+              </Link>
             </div>
           </div>
         </div>

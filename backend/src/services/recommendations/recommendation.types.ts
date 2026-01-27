@@ -57,6 +57,9 @@ export interface RecommendationV3 {
 
     // Strategic classification (filled by ranking service)
     strategicRole?: 'Battleground' | 'Stronghold' | 'Opportunity' | 'Standard';
+
+    // Content Generation Category (FSA Framework)
+    category?: 'strategic' | 'technical' | 'cold_start';
 }
 
 /**

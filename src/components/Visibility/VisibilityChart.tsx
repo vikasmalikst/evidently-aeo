@@ -15,6 +15,7 @@ import {
 import { useChartResize } from '../../hooks/useChartResize';
 import { Activity } from 'lucide-react';
 import { formatDateLabel } from '../../utils/dateFormatting';
+import { MetricType } from './KpiToggle';
 
 ChartJS.register(
   CategoryScale,
@@ -131,7 +132,7 @@ interface VisibilityChartProps {
   loading?: boolean;
   activeTab: string;
   models?: Model[];
-  metricType?: 'visibility' | 'share' | 'sentiment' | 'brandPresence';
+  metricType?: MetricType;
   completedRecommendations?: Array<{
     id: string;
     action: string;

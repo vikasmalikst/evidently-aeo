@@ -159,3 +159,105 @@ export type CerebrasChatResponse = {
         };
     }>;
 };
+
+// ============================================================================
+// CONTENT STRATEGY TYPES (FSA Framework v2026.2)
+// ============================================================================
+
+/**
+ * Supported Section Types for GeneratedContentJsonV4
+ * Maps to the "Container + Payload" model in the implementation plan.
+ */
+export type ContentSectionType =
+    | 'summary'              // Executive summary / TL;DR
+    | 'context'              // Problem statement / Background
+    | 'strategies'           // Key approaches / numbered lists
+    | 'case_study'           // Real-world example
+    | 'faq'                  // Q&A pairs for featured snippets
+    | 'cta'                  // Call to action
+    | 'custom'               // Generic fallback
+    // New Strategic Asset Types
+    | 'comparison_table'     // Structured markdown table (for "vs" queries)
+    | 'interactive_tool_spec'// Blueprint for calculators/widgets (Logic + JSON-LD)
+    | 'whitepaper_metadata'  // Report metadata (summary, chapters, download link)
+    | 'structured_list'      // Timestamped lists (webinar recaps, checklists)
+    | 'code_block'           // Technical code/config snippets
+    | 'schema_markup';       // JSON-LD schema for SEO
+
+/**
+ * Determines the *type of content asset* being generated (the "Payload").
+ * This is detected from `recommendation.action`.
+ */
+export type ContentAssetType =
+    | 'article'              // Standard blog/article (default)
+    | 'video_script'         // YouTube script with scenes
+    | 'interactive_tool'     // Calculator/widget blueprint
+    | 'comparison_table'     // Side-by-side comparison
+    | 'whitepaper'           // Executive report / downloadable guide
+    | 'webinar_recap'        // Event summary with Q&A
+    | 'case_study'           // Customer success story template
+    | 'linkedin_post'        // Short-form professional post
+    | 'reddit_post'          // Community-style conversational post
+    | 'other';
+
+/**
+ * Represents a single structured section within generated content (v4+).
+ */
+export interface ContentSection {
+    id: string;              // e.g., "executive_summary", "comparison_table_1"
+    title: string;           // e.g., "Executive Summary"
+    content: string;         // The actual section text or structured data
+    sectionType: ContentSectionType;
+}
+
+/**
+ * Interactive Tool Blueprint output structure.
+ * This is a SPEC for developers, not executable code.
+ */
+export interface InteractiveToolBlueprint {
+    toolName: string;               // e.g., "ROI Calculator"
+    toolDescription: string;        // What the tool does
+    inputs: Array<{
+        name: string;               // e.g., "monthlySpend"
+        label: string;              // e.g., "Monthly Ad Spend"
+        type: 'number' | 'text' | 'select';
+        defaultValue?: string | number;
+        options?: string[];         // For 'select' type
+    }>;
+    formula: string;                // Calculation logic description (not code)
+    outputs: Array<{
+        name: string;               // e.g., "annualSavings"
+        label: string;              // e.g., "Estimated Annual Savings"
+        format: 'currency' | 'percentage' | 'number';
+    }>;
+    seoSchema: object;              // JSON-LD SoftwareApplication schema
+    introductionText: string;       // Copy written for the page hosting the tool
+}
+
+/**
+ * Comparison Table output structure.
+ */
+export interface ComparisonTableData {
+    title: string;                  // e.g., "Slack vs Microsoft Teams: Feature Comparison"
+    columnHeaders: string[];        // e.g., ["Feature", "Slack", "Microsoft Teams"]
+    rows: Array<{
+        feature: string;            // e.g., "Free Tier Limit"
+        values: string[];           // e.g., ["90 days history", "Unlimited"]
+    }>;
+    analysisNotes: string;          // Brief summary/recommendation below the table
+}
+
+/**
+ * Whitepaper / Report metadata output structure.
+ */
+export interface WhitepaperMetadata {
+    title: string;
+    subtitle?: string;
+    executiveSummary: string;       // 2-3 paragraph summary
+    chapters: Array<{
+        title: string;
+        summary: string;
+    }>;
+    targetAudience: string;
+    estimatedReadTime: string;
+}

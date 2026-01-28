@@ -109,7 +109,7 @@ export async function fetchRecommendationContentLatest(recommendationId: string)
       success: boolean;
       data?: { content: RecommendationGeneratedContent } | null;
       error?: string;
-    }>(`/recommendations/${recommendationId}/content`, { method: 'GET' }, { requiresAuth: true });
+    }>(`/recommendations-v3/${recommendationId}/content`, { method: 'GET' }, { requiresAuth: true });
     return response;
   } catch (error) {
     return {

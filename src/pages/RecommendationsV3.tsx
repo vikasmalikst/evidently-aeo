@@ -8,7 +8,7 @@
  * Step 4: Outcome Tracker - View KPI improvements (before/after)
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
@@ -30,7 +30,10 @@ import { apiClient } from '../lib/apiClient';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
-import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus } from '@tabler/icons-react';
+import { ContentSectionRenderer, SectionTypeBadge } from '../components/RecommendationsV3/components/ContentSectionRenderer';
+import { SEOScoreCard, ExportModal } from '../components/RecommendationsV3/components/SEOScoreCard';
+import { AEOScoreBadge } from '../components/RecommendationsV3/components/ContentAnalysisTools';
+import { IconSparkles, IconAlertCircle, IconChevronDown, IconChevronUp, IconTrash, IconTarget, IconTrendingUp, IconActivity, IconCheck, IconArrowLeft, IconPencil, IconDeviceFloppy, IconX, IconMessageCircle, IconPlus, IconMinus, IconDownload, IconRobot } from '@tabler/icons-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface RecommendationsV3Props {
@@ -1767,11 +1770,11 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                               transition: { duration: 0.4, ease: "backIn" }
                             }}
                             transition={{ duration: 0.3, layout: { duration: 0.3 } }}
-                            className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm overflow-hidden relative"
+                            className="bg-white border border-[#e8e9ed] rounded-xl shadow-sm relative z-0"
                           >
                             {/* Header Section */}
                             <div
-                              className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors"
+                              className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e8e9ed] px-6 py-4 cursor-pointer hover:bg-[#f1f5f9] transition-colors rounded-t-xl"
                               onClick={() => setExpandedRecId(expandedRecId === rec.id ? null : (rec.id || null))}
                             >
                               <div className="flex items-start justify-between">
@@ -1793,6 +1796,16 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                 </div>
                                 {!rec.isCompleted && (
                                   <div className="flex items-center gap-2 ml-4">
+                                    {/* AEO Score Badge */}
+                                    {content && (
+                                      <div className="mr-2">
+                                        <AEOScoreBadge 
+                                          content={typeof content === 'string' ? content : (content?.content || '')} 
+                                          brandName={selectedBrand?.name}
+                                        />
+                                      </div>
+                                    )}
+
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -1826,7 +1839,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                             {/* Content Section - Accordion */}
                             {expandedRecId === rec.id && (
-                              <div className="p-6">
+                              <div className="p-6 rounded-b-xl overflow-hidden">
                                 {content ? (() => {
                                   // Parse content - it might be a string (JSON), object with .content property, or already parsed
                                   let parsedContent: any = null;
@@ -2049,9 +2062,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                     {idx + 1}
                                                   </span>
                                                   <h4 className="text-[14px] font-semibold text-[#1a1d29]">{section.title}</h4>
-                                                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#e2e8f0] text-[#64748b] capitalize">
-                                                    {section.sectionType}
-                                                  </span>
+                                                  <SectionTypeBadge sectionType={section.sectionType} />
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                   <button
@@ -2116,18 +2127,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
 
                                               {/* Section Content */}
                                               <div className="p-4">
-                                                {isEditingSection ? (
-                                                  <textarea
-                                                    className="w-full min-h-[150px] p-3 bg-[#f8fafc] border border-[#00bcdc] rounded-lg text-[13px] text-[#1a1d29] focus:outline-none focus:ring-2 focus:ring-[#00bcdc]"
-                                                    value={editedContent}
-                                                    onChange={(e) => updateSectionEdit(section.id, e.target.value)}
-                                                  />
-                                                ) : (
-                                                  <div
-                                                    className="text-[13px] text-[#1a1d29] leading-relaxed whitespace-pre-wrap"
-                                                    dangerouslySetInnerHTML={{ __html: highlightFillIns(editedContent) }}
-                                                  />
-                                                )}
+                                                <ContentSectionRenderer
+                                                  section={{
+                                                    id: section.id,
+                                                    title: section.title,
+                                                    content: section.content,
+                                                    sectionType: section.sectionType,
+                                                  }}
+                                                  isEditing={isEditingSection}
+                                                  editedContent={editedContent}
+                                                  onContentChange={(content) => updateSectionEdit(section.id, content)}
+                                                  highlightFillIns={highlightFillIns}
+                                                />
                                               </div>
                                             </div>
                                           );
@@ -2141,7 +2152,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                           </div>
                                         )}
 
-                                        {/* Required Inputs */}
+                                        {/* Required Inputs
                                         {requiredInputs.length > 0 && (
                                           <div className="bg-[#fef3c7] border border-[#fcd34d] rounded-lg p-4">
                                             <p className="text-[12px] font-semibold text-[#92400e] mb-2">⚠️ Fill in before publishing:</p>
@@ -2151,7 +2162,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                               ))}
                                             </ul>
                                           </div>
-                                        )}
+                                        )} */}
 
                                         {/* Global References */}
                                         <div className="bg-[#f1f5f9] border border-[#cbd5e1] rounded-lg p-4">
@@ -2166,6 +2177,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                             onChange={(e) => updateReferences(e.target.value)}
                                           />
                                         </div>
+
+
+
+
 
                                         {/* Refine Button */}
                                         <div className="flex items-center gap-3">

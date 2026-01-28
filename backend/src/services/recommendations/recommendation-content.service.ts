@@ -9,6 +9,13 @@ import { supabaseAdmin } from '../../config/database';
 import { getCerebrasKey, getCerebrasModel } from '../../utils/api-key-resolver';
 import { openRouterCollectorService } from '../data-collection/openrouter-collector.service';
 import { shouldUseOllama, callOllamaAPI } from '../scoring/ollama-client.service';
+import {
+  contentPromptFactory,
+  detectContentAsset,
+  detectPlatform,
+  ContentPromptContext,
+} from './content-prompt-factory';
+import { BrandContextV3, RecommendationV3, ContentAssetType } from './recommendation.types';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
 export type RecommendationContentProvider = 'cerebras' | 'openrouter' | 'ollama';
@@ -519,6 +526,15 @@ CONSTRAINTS:
 
     const sourceGuidance = getSourceContentGuidance(sourceTypeV3);
 
+    // === NEW: Detect Asset Type from action for FSA-based prompts ===
+    const assetDetection = detectContentAsset(rec.action || '');
+    const platformDetection = detectPlatform(rec.citation_source || '', brand?.name);
+    const useFactoryPrompt = assetDetection.confidence === 'high' &&
+      ['interactive_tool', 'comparison_table', 'whitepaper', 'webinar_recap', 'case_study'].includes(assetDetection.asset);
+
+    console.log(`📊 [RecommendationContentService] Asset Detection: ${assetDetection.asset} (${assetDetection.confidence}), Platform: ${platformDetection}, UseFactory: ${useFactoryPrompt}`);
+
+
     // v4.0 Prompt: Generate structured sections for interactive refinement
     const contentInstructionsV4 = `You are a senior content strategist. Generate AEO-optimized content as STRUCTURED SECTIONS.
 
@@ -662,7 +678,41 @@ ${contentConstraints ? `- ${contentConstraints}` : ''}
 ${contentStyleGuide}
 `;
 
-    const prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${isColdStartGuide ? guideInstructions : contentInstructions}`;
+    // === PROMPT SELECTION: Factory (for FSA strategic assets) or Legacy ===
+    let prompt: string;
+    if (useFactoryPrompt && !isColdStartGuide) {
+      // Use the new ContentPromptFactory for strategic asset types
+      const recV3: RecommendationV3 = {
+        id: rec.id,
+        action: rec.action || '',
+        citationSource: rec.citation_source || '',
+        focusArea: (rec.focus_area as 'visibility' | 'soa' | 'sentiment') || 'visibility',
+        priority: (rec.priority as 'High' | 'Medium' | 'Low') || 'Medium',
+        effort: (rec.effort as 'Low' | 'Medium' | 'High') || 'Medium',
+        kpi: rec.kpi,
+        reason: rec.reason,
+        explanation: rec.explanation,
+        contentFocus: rec.content_focus,
+        timeline: rec.timeline,
+      };
+      const brandContextV3: BrandContextV3 = {
+        brandId: brand?.id || rec.brand_id,
+        brandName: brand?.name || 'Brand',
+        industry: brand?.industry || 'Unknown',
+        brandDomain: brand?.name?.toLowerCase().replace(/\s/g, '') || undefined,
+      };
+      const factoryContext: ContentPromptContext = {
+        recommendation: recV3,
+        brandContext: brandContextV3,
+        assetType: assetDetection.asset,
+        platform: platformDetection,
+      };
+      prompt = contentPromptFactory.getContentPrompt(factoryContext);
+      console.log('✨ [RecommendationContentService] Using FSA ContentPromptFactory for strategic asset.');
+    } else {
+      // Fallback to legacy prompt construction
+      prompt = `${projectContext}\nRecommendation ID: ${rec.id}\n\n${recommendationContext}\n\n${isColdStartGuide ? guideInstructions : contentInstructions}`;
+    }
 
     // Log the prompt being sent
     console.log('\n📤 [RecommendationContentService] ========== PROMPT ==========');
@@ -720,7 +770,7 @@ ${contentStyleGuide}
         const or = await openRouterCollectorService.executeQuery({
           collectorType: 'content',
           prompt,
-          maxTokens: isColdStartGuide ? 2600 : 4000, // v4.0 needs 4000 for 6 sections
+          maxTokens: isColdStartGuide ? 2600 : 8000, // v4.0 needs 4000 for 6 sections
           temperature: isColdStartGuide ? 0.4 : 0.6,
           topP: 0.9,
           enableWebSearch: false
@@ -1180,10 +1230,22 @@ ${contentStyleGuide}
 
     // Check version
     const version = parsed.version;
-    if (version !== '1.0' && version !== '2.0' && version !== '3.0' && version !== '4.0' && version !== 'guide_v1') return false;
+    if (version !== '1.0' && version !== '2.0' && version !== '3.0' && version !== '4.0' && version !== 'guide_v1') {
+      console.warn(`[VALIDATION FAIL] Invalid version: ${version}`);
+      return false;
+    }
 
-    // Common required fields
-    if (!parsed.recommendationId || !parsed.brandName) return false;
+    // Common required fields - FSA assets (with assetType) don't require recommendationId in the response
+    const isFsaAsset = !!parsed.assetType;
+    if (!isFsaAsset && !parsed.recommendationId) {
+      console.warn('[VALIDATION FAIL] Missing recommendationId (non-FSA)');
+      return false;
+    }
+    if (!parsed.brandName) {
+      console.warn('[VALIDATION FAIL] Missing brandName');
+      return false;
+    }
+
     // Content formats require targetSource; guides and v4.0 refinement don't require domain
     if (version !== 'guide_v1' && version !== '4.0') {
       if (!parsed.targetSource?.domain) return false;
@@ -1203,10 +1265,35 @@ ${contentStyleGuide}
       const hasContent = parsed.publishableContent?.content && parsed.publishableContent?.type;
       return !!hasContent;
     } else if (version === '4.0') {
-      // v4.0 requires sections array with at least 2 sections
-      const hasSections = Array.isArray(parsed.sections) && parsed.sections.length >= 2;
-      const hasTitle = !!parsed.contentTitle;
-      return !!(hasSections && hasTitle);
+      // v4.0 supports both standard sectioned content AND FSA strategic assets
+      const hasSections = Array.isArray(parsed.sections) && parsed.sections.length >= 1;
+      const hasStandardTitle = !!parsed.contentTitle;
+      const hasAssetType = !!parsed.assetType; // FSA marker
+
+      if (hasAssetType) {
+        // FSA-Specific Validation
+        if (parsed.assetType === 'whitepaper') {
+          if (!parsed.whitepaperMetadata) console.warn('[VALIDATION FAIL] Missing whitepaperMetadata');
+          return !!parsed.whitepaperMetadata;
+        }
+        if (parsed.assetType === 'interactive_tool') {
+          if (!parsed.toolBlueprint) console.warn('[VALIDATION FAIL] Missing toolBlueprint');
+          return !!parsed.toolBlueprint;
+        }
+        if (parsed.assetType === 'comparison_table') {
+          if (!parsed.comparisonTable) console.warn('[VALIDATION FAIL] Missing comparisonTable');
+          return !!parsed.comparisonTable;
+        }
+        // Webinar/CaseStudy should have sections
+        if (parsed.assetType === 'webinar_recap' && !hasSections) console.warn('[VALIDATION FAIL] Webinar missing sections');
+        if (parsed.assetType === 'case_study' && !hasSections) console.warn('[VALIDATION FAIL] Case Study missing sections');
+        return hasSections;
+      }
+
+      // Standard v4.0 requires sections and title
+      if (!hasSections) console.warn('[VALIDATION FAIL] v4.0 missing sections');
+      if (!hasStandardTitle) console.warn('[VALIDATION FAIL] v4.0 missing contentTitle');
+      return !!(hasSections && hasStandardTitle);
     } else if (version === 'guide_v1') {
       // Guide v1: require at least an implementation plan or success criteria to be useful
       const hasPlan = Array.isArray(parsed.implementationPlan) && parsed.implementationPlan.length > 0;
@@ -1220,10 +1307,28 @@ ${contentStyleGuide}
   private normalizeGeneratedContent(parsed: Partial<GeneratedContentJsonV1 | GeneratedContentJsonV2 | GeneratedContentJsonV3 | GeneratedContentJsonV4 | GeneratedGuideJsonV1>): GeneratedAnyJson {
     const version = parsed.version || '1.0';
 
-    // Handle v4.0 (sectioned content for interactive refinement)
+    // Handle v4.0 (sectioned content for interactive refinement AND FSA strategic assets)
     if (version === '4.0') {
-      const p4 = parsed as Partial<GeneratedContentJsonV4>;
-      return {
+      const p4 = parsed as any; // Use any to access potential FSA fields
+
+      // Extract title from asset-specific field if contentTitle is missing
+      let extractedTitle = p4.contentTitle || '';
+      if (!extractedTitle && p4.assetType) {
+        if (p4.assetType === 'comparison_table' && p4.comparisonTable?.title) {
+          extractedTitle = p4.comparisonTable.title;
+        } else if (p4.assetType === 'interactive_tool' && p4.toolBlueprint?.toolName) {
+          extractedTitle = p4.toolBlueprint.toolName;
+        } else if (p4.assetType === 'whitepaper' && p4.whitepaperMetadata?.title) {
+          extractedTitle = p4.whitepaperMetadata.title;
+        } else if (p4.assetType === 'webinar_recap' && p4.webinarRecap?.title) {
+          extractedTitle = p4.webinarRecap.title;
+        } else if (p4.assetType === 'case_study' && p4.caseStudyMeta?.title) {
+          extractedTitle = p4.caseStudyMeta.title;
+        }
+      }
+
+      // Build base normalized structure
+      const normalized: any = {
         version: '4.0',
         recommendationId: String(p4.recommendationId || ''),
         brandName: String(p4.brandName || ''),
@@ -1231,8 +1336,8 @@ ${contentStyleGuide}
           domain: String(p4.targetSource?.domain || ''),
           sourceType: (p4.targetSource?.sourceType as any) || 'other'
         },
-        contentTitle: String(p4.contentTitle || ''),
-        sections: Array.isArray(p4.sections) ? p4.sections.map(s => ({
+        contentTitle: String(extractedTitle),
+        sections: Array.isArray(p4.sections) ? p4.sections.map((s: any) => ({
           id: String(s.id || ''),
           title: String(s.title || ''),
           content: String(s.content || ''),
@@ -1241,6 +1346,18 @@ ${contentStyleGuide}
         callToAction: String(p4.callToAction || ''),
         requiredInputs: Array.isArray(p4.requiredInputs) ? p4.requiredInputs : []
       };
+
+      // Preserve FSA asset-specific data for UI rendering (fixing key mismatches)
+      if (p4.assetType) {
+        normalized.assetType = p4.assetType;
+        if (p4.comparisonTable) normalized.comparisonTable = p4.comparisonTable;
+        if (p4.toolBlueprint) normalized.interactiveTool = p4.toolBlueprint; // Map toolBlueprint -> interactiveTool
+        if (p4.whitepaperMetadata) normalized.whitepaperMeta = p4.whitepaperMetadata; // Map whitepaperMetadata -> whitepaperMeta
+        if (p4.webinarRecap) normalized.webinarRecap = p4.webinarRecap;
+        if (p4.caseStudyMeta) normalized.caseStudyMeta = p4.caseStudyMeta;
+      }
+
+      return normalized;
     }
 
     // Handle v3.0 (simplified: publishable content only)
@@ -1473,6 +1590,26 @@ RULES:
       console.error('[REFINE] Error refining content:', error);
       return null;
     }
+  }
+  /**
+   * Get content for a recommendation
+   */
+  async getContent(recommendationId: string, customerId: string): Promise<RecommendationContentRecord | null> {
+    const { data, error } = await supabaseAdmin
+      .from('recommendation_generated_contents')
+      .select('*')
+      .eq('recommendation_id', recommendationId)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching recommendation content:', error);
+      return null;
+    }
+
+    return data as any;
   }
 }
 

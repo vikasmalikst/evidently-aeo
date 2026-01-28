@@ -224,9 +224,6 @@ export const Prompts = () => {
 
   const error = fetchError?.message || (response && !response.success ? (response.error || response.message || 'Failed to load prompts.') : null);
 
-  const handleManagePrompts = () => {
-    navigate('/settings/manage-prompts');
-  };
 
   // Log page render completion
   useEffect(() => {
@@ -275,12 +272,6 @@ export const Prompts = () => {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleManagePrompts}
-            className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
-          >
-            Manage Prompts
-          </button>
         </div>
 
         <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">

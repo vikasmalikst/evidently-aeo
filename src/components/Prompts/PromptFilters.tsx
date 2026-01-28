@@ -55,61 +55,10 @@ export const PromptFilters = ({
 
   return (
     <div ref={dropdownRef} className="flex flex-col gap-4 mb-6">
-      <div className="flex items-center justify-between gap-3">
-        {/* LLM icon filters - multi-select */}
-        <div className="flex-1 flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => onLLMChange([])}
-            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${selectedLLMs.length === 0
-              ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
-              : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
-              }`}
-            title="All Models"
-          >
-            All
-          </button>
-          {llmOptions.map((llm) => {
-            const isActive = selectedLLMs.includes(llm);
-            return (
-              <button
-                key={llm}
-                type="button"
-                onClick={() => {
-                  if (isActive) {
-                    // Remove from selection
-                    onLLMChange(selectedLLMs.filter(m => m !== llm));
-                  } else {
-                    // Add to selection
-                    onLLMChange([...selectedLLMs, llm]);
-                  }
-                }}
-                className={`flex items-center justify-center w-10 h-10 rounded-full border transition-all ${isActive
-                  ? 'bg-[#e6f7f0] border-[#12b76a] shadow-sm'
-                  : 'bg-white border-[#e4e7ec] hover:border-[#cfd4e3]'
-                  }`}
-                title={llm}
-                aria-label={`Filter by ${llm}`}
-              >
-                <span className="inline-flex items-center justify-center w-6 h-6">
-                  {getLLMIcon(llm)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right: Date Range Picker */}
-        <div className="min-w-[200px] flex justify-end">
-          <DateRangePicker
-            startDate={startDate}
-            endDate={endDate}
-            onStartDateChange={onStartDateChange}
-            onEndDateChange={onEndDateChange}
-            showComparisonInfo={false}
-          />
-        </div>
-      </div>
+      {/* 
+        LLM Filters and DateRangePicker moved to Header.
+        This component now primarily handles Competitor Filtering.
+      */}
 
       {/* Competitor Filter Row */}
       {competitors.length > 0 && (

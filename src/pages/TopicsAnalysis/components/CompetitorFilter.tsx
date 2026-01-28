@@ -1,4 +1,4 @@
-import { BrandIcon } from '../../../components/Visibility/BrandIcon';
+import { SafeLogo } from '../../../components/Onboarding/common/SafeLogo';
 import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 
 interface CompetitorFilterProps {
@@ -77,8 +77,14 @@ export const CompetitorFilter = ({
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             aria-label={`Filter by ${competitor.name}`}
           >
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
-              <BrandIcon brandName={competitor.name} size={24} />
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white overflow-hidden">
+              <SafeLogo
+                src={competitor.logo}
+                domain={competitor.domain || competitor.url}
+                alt={competitor.name}
+                size={24}
+                className="w-full h-full object-contain"
+              />
             </span>
 
             {/* Custom Tooltip */}

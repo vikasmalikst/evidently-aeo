@@ -801,9 +801,12 @@ router.get(
       const customerId = req.user!.customer_id;
       const startQuery = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
       const endQuery = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+      const collectorsQuery = typeof req.query.collectors === 'string' ? req.query.collectors : undefined;
+      const collectors = collectorsQuery ? collectorsQuery.split(',').map(s => s.trim()).filter(Boolean) : undefined;
 
       console.log(`[SourceAttribution API] 📊 Params: brandId=${brandId}, customerId=${customerId}`);
       console.log(`[SourceAttribution API] 📅 Date Range: startDate=${startQuery || 'default'}, endDate=${endQuery || 'default'}`);
+      if (collectors) console.log(`[SourceAttribution API] 🤖 Collectors: ${collectors.join(', ')}`);
 
       let dateRange: { start: string; end: string } | undefined;
 
@@ -863,7 +866,9 @@ router.get(
       const sourceData = await sourceAttributionService.getSourceAttribution(
         brandId,
         customerId,
-        dateRange
+        dateRange,
+        undefined, // comparisonRange
+        collectors
       );
 
       const serviceEndTime = Date.now();
@@ -931,13 +936,17 @@ router.get(
       const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
       const dateRange = startDate && endDate ? { start: startDate, end: endDate } : undefined;
 
+      const collectorsQuery = typeof req.query.collectors === 'string' ? req.query.collectors : undefined;
+      const collectors = collectorsQuery ? collectorsQuery.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+
       const trends = await sourceAttributionService.getImpactScoreTrends(
         brandId,
         customerId,
         days,
         selectedSources.length ? selectedSources : undefined,
         safeMetric as any,
-        dateRange
+        dateRange,
+        collectors
       );
 
       res.json({ success: true, data: trends });

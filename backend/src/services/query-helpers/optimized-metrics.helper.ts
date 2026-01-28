@@ -713,6 +713,7 @@ export class OptimizedMetricsHelper {
     brandId: string;
     startDate?: string;
     endDate?: string;
+    collectors?: string[];
   }): Promise<{
     success: boolean;
     data: Array<{
@@ -790,6 +791,11 @@ export class OptimizedMetricsHelper {
         }
         if (endDate) {
           query = query.lte('processed_at', endDate);
+        }
+
+        // Add collector type filter if provided
+        if (options.collectors && options.collectors.length > 0) {
+          query = query.in('collector_type', options.collectors);
         }
 
         const { data: batchData, error: batchError } = await query;

@@ -71,15 +71,50 @@ const getSourceType = (category: string | null, domain: string | null): 'brand' 
   return sourceTypeMapping[normalizedCategory] || 'editorial'
 }
 
+// Maps frontend slugs to DB collector_type values
+function resolveCollectorTypes(slugs?: string[]): string[] | undefined {
+  if (!slugs || slugs.length === 0) return undefined;
+
+  const mapping: Record<string, string[]> = {
+    'chatgpt': ['ChatGPT'],
+    'perplexity': ['Perplexity'],
+    'claude': ['Claude'],
+    'google_aio': ['Google AIO', 'Google SGE'],
+    'copilot': ['Bing Copilot', 'Copilot'],
+    'meta': ['Meta AI', 'Llama'],
+    'gemini': ['Gemini'],
+    'grok': ['Grok']
+  };
+
+  const resolved = new Set<string>();
+  slugs.forEach(s => {
+    const key = s.toLowerCase().trim();
+    if (mapping[key]) {
+      mapping[key].forEach(v => resolved.add(v));
+    } else {
+      // Fallback: add original and Title Case version
+      resolved.add(s);
+      // Simple title case (capitalise first letter) just in case
+      resolved.add(s.charAt(0).toUpperCase() + s.slice(1));
+    }
+  });
+
+  return Array.from(resolved);
+}
+
 export class SourceAttributionService {
   async getSourceAttribution(
     brandId: string,
     customerId: string,
     dateRange?: { start: string; end: string },
-    comparisonRange?: { start: string; end: string }
+    comparisonRange?: { start: string; end: string },
+    collectors?: string[]
   ): Promise<SourceAttributionResponse> {
     const serviceStartTime = Date.now();
     const stepTimings: Record<string, number> = {};
+
+    // Resolve frontend slugs to DB collector types
+    const resolvedCollectors = resolveCollectorTypes(collectors);
 
     try {
       // Step 1: Resolve brand
@@ -104,14 +139,19 @@ export class SourceAttributionService {
       const startIso = normalizedRange.startIso
       const endIso = normalizedRange.endIso
 
-      // Step 2: Try Supabase cache first
+      // Step 2: Try Supabase cache first (skip if collectors filter is active)
+      const hasCollectorsFilter = collectors && collectors.length > 0;
+      let cached: any = null;
+
       const cacheStartTime = Date.now();
-      const cached = await sourceAttributionCacheService.getCachedSourceAttribution(
-        brandId,
-        customerId,
-        startIso,
-        endIso
-      )
+      if (!hasCollectorsFilter) {
+        cached = await sourceAttributionCacheService.getCachedSourceAttribution(
+          brandId,
+          customerId,
+          startIso,
+          endIso
+        )
+      }
       stepTimings['cache_lookup'] = Date.now() - cacheStartTime;
 
       if (cached) {
@@ -299,6 +339,7 @@ export class SourceAttributionService {
             brandId,
             startDate: startIso,
             endDate: endIso,
+            collectors: resolvedCollectors
           });
 
           if (result.error) {
@@ -484,6 +525,12 @@ export class SourceAttributionService {
       }
       stepTimings['calculations'] = Date.now() - calculationsStartTime;
 
+      // Create set of valid collector IDs if collectors filter is active
+      // Only citations associated with these collector results will be processed
+      const validCollectorIds = (resolvedCollectors && resolvedCollectors.length > 0)
+        ? new Set(extractedPositions.map(p => p.collector_result_id).filter((id): id is number => typeof id === 'number'))
+        : null
+
       // Step 9: Aggregate sources by domain
       const aggregationStartTime = Date.now();
       const sourceAggregates = new Map<
@@ -510,6 +557,11 @@ export class SourceAttributionService {
       >()
 
       for (const citation of citationsData) {
+        // If filters are active, skip citations that don't match the selected collectors
+        if (validCollectorIds && citation.collector_result_id && !validCollectorIds.has(citation.collector_result_id)) {
+          continue
+        }
+
         // Use domain from citations table (it's already there)
         const domain = citation.domain || (citation.url ? (() => {
           try {
@@ -1561,7 +1613,8 @@ export class SourceAttributionService {
     days: number = 7,
     selectedSources?: string[],
     metric: 'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations' = 'impactScore',
-    dateRange?: { start: string; end: string }
+    dateRange?: { start: string; end: string },
+    collectors?: string[]
   ): Promise<{
     dates: string[]
     sources: Array<{
@@ -1570,6 +1623,9 @@ export class SourceAttributionService {
     }>
   }> {
     try {
+      // Resolve frontend slugs to DB collector types
+      const resolvedCollectors = resolveCollectorTypes(collectors);
+
       const selectedSet =
         selectedSources && selectedSources.length
           ? new Set(selectedSources.map((s) => s.toLowerCase().trim()).filter((s) => s.length > 0))
@@ -1642,6 +1698,7 @@ export class SourceAttributionService {
           brandId,
           startDate: startIso,
           endDate: endIso,
+          collectors: resolvedCollectors
         });
 
         if (!result.error && result.data) {
@@ -1770,6 +1827,10 @@ export class SourceAttributionService {
         uniqueCollectorResults: Set<number>
       }>()
 
+      const validCollectorIds = (resolvedCollectors && resolvedCollectors.length > 0)
+        ? new Set(positionsData.map(p => p.collector_result_id).filter((id): id is number => typeof id === 'number'))
+        : null
+
       // First pass: Calculate daily aggregates and find max values
       for (const date of dates) {
         for (const [domain, dateMap] of citationsByDomainAndDate.entries()) {
@@ -1782,6 +1843,10 @@ export class SourceAttributionService {
           const dayCollectorResults = new Set<number>()
 
           for (const citation of dayCitations) {
+            if (validCollectorIds && citation.collector_result_id && !validCollectorIds.has(citation.collector_result_id)) {
+              continue
+            }
+
             totalCitations += citation.usage_count || 1
             if (citation.collector_result_id) {
               dayCollectorResults.add(citation.collector_result_id)
@@ -1846,6 +1911,10 @@ export class SourceAttributionService {
           const visibilityValues: number[] = []
 
           for (const citation of dayCitations) {
+            if (validCollectorIds && citation.collector_result_id && !validCollectorIds.has(citation.collector_result_id)) {
+              continue
+            }
+
             if (citation.collector_result_id) {
               const key = `${citation.collector_result_id}_${date}`
               const positions = positionsByCollectorAndDate.get(key) || []

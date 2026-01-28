@@ -1,11 +1,14 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Layout } from '../components/Layout/Layout';
 import { SafeLogo } from '../components/Onboarding/common/SafeLogo';
 import { HelpButton } from '../components/common/HelpButton';
 import { useCachedData } from '../hooks/useCachedData';
 import { useManualBrandDashboard } from '../manual-dashboard';
 import { useAuthStore } from '../store/authStore';
+import { useDashboardStore } from '../store/dashboardStore';
+import { getLLMIcon } from '../components/Visibility/LLMIcons';
 import type { EnhancedSource } from '../components/SourcesR2/EnhancedQuadrantMatrix';
 import { ValueScoreTable, type ValueScoreSource } from '../components/SourcesR2/ValueScoreTable';
 import { SummaryCards } from '../components/SourcesR2/SummaryCards';
@@ -185,10 +188,20 @@ const computeEnhancedSources = (sourceData: SourceData[]): EnhancedSource[] => {
   });
 };
 
+const hardcodedLlmOptions = [
+  { value: 'chatgpt', label: 'ChatGPT' },
+  { value: 'perplexity', label: 'Perplexity' },
+  { value: 'claude', label: 'Claude' },
+  { value: 'google_aio', label: 'Google AIO' },
+  { value: 'copilot', label: 'Copilot' },
+  { value: 'gemini', label: 'Gemini' },
+];
+
 export const SearchSourcesR2 = () => {
   const [searchParams] = useSearchParams();
   const authLoading = useAuthStore((state) => state.isLoading);
   const { selectedBrandId, selectedBrand, isLoading: brandsLoading } = useManualBrandDashboard();
+  const { llmFilters, setLlmFilters } = useDashboardStore();
 
   // Read date range from URL params if available
   const urlStartDate = searchParams.get('startDate');
@@ -205,6 +218,7 @@ export const SearchSourcesR2 = () => {
   const [hasInitializedTrendSelection, setHasInitializedTrendSelection] = useState(false);
   const [isHelpDrawerOpen, setIsHelpDrawerOpen] = useState(false);
   const [helpKpi, setHelpKpi] = useState<KpiType | null>(null);
+  const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null);
 
   const handleHelpClick = (kpi: KpiType) => {
     setHelpKpi(kpi);
@@ -231,8 +245,13 @@ export const SearchSourcesR2 = () => {
       startDate,
       endDate
     });
+
+    if (llmFilters && llmFilters.length > 0) {
+      params.append('collectors', llmFilters.join(','));
+    }
+
     return `/brands/${selectedBrandId}/sources?${params.toString()}`;
-  }, [selectedBrandId, startDate, endDate]);
+  }, [selectedBrandId, startDate, endDate, llmFilters]);
 
   const { data: response, loading, error } = useCachedData<ApiResponse<SourceAttributionResponse>>(
     sourcesEndpoint,
@@ -410,8 +429,13 @@ export const SearchSourcesR2 = () => {
     if (selectedTrendSources.length > 0) {
       params.set('sources', selectedTrendSources.slice(0, 10).join(','));
     }
+
+    if (llmFilters && llmFilters.length > 0) {
+      params.append('collectors', llmFilters.join(','));
+    }
+
     return `/brands/${selectedBrandId}/sources/impact-score-trends?${params.toString()}`;
-  }, [selectedBrandId, selectedTrendSources, trendMetric, startDate, endDate]);
+  }, [selectedBrandId, selectedTrendSources, trendMetric, startDate, endDate, llmFilters]);
 
   const {
     data: trendsResponse,
@@ -538,7 +562,7 @@ export const SearchSourcesR2 = () => {
               <p style={{ margin: 0, color: '#475569' }}>Analyze your brand's performance across various citation sources used by LLMs to answer users' queries.</p>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
             <DateRangePicker
               startDate={startDate}
               endDate={endDate}
@@ -547,6 +571,69 @@ export const SearchSourcesR2 = () => {
               showComparisonInfo={false}
               className="flex-shrink-0"
             />
+
+            {/* LLM Filters */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">LLMs</span>
+                <div className="relative flex items-center bg-[#f1f5f9] rounded-xl p-1 gap-0.5">
+                  {/* "All" Button */}
+                  <button
+                    type="button"
+                    onClick={() => setLlmFilters([])}
+                    onMouseEnter={() => setHoveredLlmIndex(-1)}
+                    onMouseLeave={() => setHoveredLlmIndex(null)}
+                    className="relative px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors z-10 cursor-pointer border-0"
+                  >
+                    {hoveredLlmIndex === -1 && (
+                      <motion.span
+                        className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                        layoutId="llm-filter-hover"
+                        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                      />
+                    )}
+                    <span className={`relative z-10 ${llmFilters.length === 0 ? 'text-[#1a1d29] font-bold' : 'text-[#64748b]'}`}>
+                      All
+                    </span>
+                  </button>
+
+                  {/* Individual LLM Buttons */}
+                  {hardcodedLlmOptions.map((opt, index) => {
+                    const isActive = llmFilters.includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          const newFilters = llmFilters.includes(opt.value)
+                            ? llmFilters.filter((v) => v !== opt.value)
+                            : [...llmFilters, opt.value];
+                          setLlmFilters(newFilters);
+                        }}
+                        onMouseEnter={() => setHoveredLlmIndex(index)}
+                        onMouseLeave={() => setHoveredLlmIndex(null)}
+                        className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10 cursor-pointer border-0"
+                        title={opt.label}
+                      >
+                        {hoveredLlmIndex === index && (
+                          <motion.span
+                            className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                            layoutId="llm-filter-hover"
+                            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                          />
+                        )}
+                        <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                          {getLLMIcon(opt.label)}
+                        </span>
+                        {isActive && (
+                          <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#06b6d4] rounded-full" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

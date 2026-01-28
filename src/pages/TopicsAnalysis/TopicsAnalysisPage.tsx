@@ -181,6 +181,7 @@ export const TopicsAnalysisPage = ({
 
   // LLM filters - multi-select chip UI replaces dropdown
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null);
   const [persistedModels, setPersistedModels] = useState<string[]>([]);
 
   // Use available models from backend (from collector_results.collector_type)
@@ -495,8 +496,8 @@ export const TopicsAnalysisPage = ({
             className="fixed top-24 left-1/2 -translate-x-1/2 z-[3000] pointer-events-none"
           >
             <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-full border border-cyan-100 shadow-xl flex items-center gap-3">
-               <div className="w-2 h-2 rounded-full bg-[#00bcdc] animate-pulse" />
-               <span className="text-xs font-bold text-[#1a1d29] tracking-tight">Refreshing Intelligence...</span>
+              <div className="w-2 h-2 rounded-full bg-[#00bcdc] animate-pulse" />
+              <span className="text-xs font-bold text-[#1a1d29] tracking-tight">Refreshing Intelligence...</span>
             </div>
           </motion.div>
         )}
@@ -520,10 +521,10 @@ export const TopicsAnalysisPage = ({
         )}
       </AnimatePresence>
 
-      <div 
-        style={{ 
-          padding: '24px', 
-          backgroundColor: '#f9f9fb', 
+      <div
+        style={{
+          padding: '24px',
+          backgroundColor: '#f9f9fb',
           minHeight: '100vh',
           transition: 'opacity 0.3s ease-in-out',
           opacity: isRefreshing ? 0.7 : 1
@@ -561,7 +562,7 @@ export const TopicsAnalysisPage = ({
                 </p>
               </div>
             </div>
-            <div style={{ flexShrink: 0, alignSelf: 'flex-end', marginBottom: '-24px', paddingBottom: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '12px', flexShrink: 0, alignSelf: 'flex-end', marginBottom: '-24px', paddingBottom: '24px' }}>
               <DateRangePicker
                 key={`${startDate}-${endDate}`}
                 startDate={startDate}
@@ -571,6 +572,68 @@ export const TopicsAnalysisPage = ({
                 showComparisonInfo={false}
                 className="flex-shrink-0"
               />
+
+              {/* LLM Selector/Filter Icons */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">LLMs</span>
+                  <div className="relative flex items-center bg-[#f1f5f9] rounded-xl p-1 gap-0.5">
+                    {/* "All" Button */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedModels([])}
+                      onMouseEnter={() => setHoveredLlmIndex(-1)}
+                      onMouseLeave={() => setHoveredLlmIndex(null)}
+                      className="relative px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors z-10 cursor-pointer border-0"
+                    >
+                      {hoveredLlmIndex === -1 && (
+                        <motion.span
+                          className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                          layoutId="llm-filter-hover"
+                          transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                        />
+                      )}
+                      <span className={`relative z-10 ${selectedModels.length === 0 ? 'text-[#1a1d29] font-bold' : 'text-[#64748b]'}`}>
+                        All
+                      </span>
+                    </button>
+
+                    {/* Individual LLM Buttons */}
+                    {availableModels.map((model, index) => {
+                      const isActive = selectedModels.includes(model);
+                      return (
+                        <button
+                          key={model}
+                          type="button"
+                          onClick={() =>
+                            setSelectedModels((prev) =>
+                              prev.includes(model) ? prev.filter((m) => m !== model) : [...prev, model]
+                            )
+                          }
+                          onMouseEnter={() => setHoveredLlmIndex(index)}
+                          onMouseLeave={() => setHoveredLlmIndex(null)}
+                          className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10 cursor-pointer border-0"
+                          title={model}
+                        >
+                          {hoveredLlmIndex === index && (
+                            <motion.span
+                              className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                              layoutId="llm-filter-hover"
+                              transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                            />
+                          )}
+                          <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                            {getLLMIcon(model)}
+                          </span>
+                          {isActive && (
+                            <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#06b6d4] rounded-full" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -578,51 +641,13 @@ export const TopicsAnalysisPage = ({
 
         <KeyTakeaways data={data} metricType={metricType} />
 
-        <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
+        <div className="mb-4">
           <KpiToggle
             metricType={metricType}
             onChange={(value) => setMetricType(value as TopicsMetricType)}
             allowedMetricTypes={['share', 'visibility', 'sentiment']}
             onHelpClick={handleHelpClick}
           />
-
-          {/* LLM Selector/Filter Icons - aligned to the right */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedModels([])}
-              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${selectedModels.length === 0
-                ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
-                : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
-                }`}
-            >
-              All
-            </button>
-            {availableModels.map((model) => {
-              const isActive = selectedModels.includes(model);
-              return (
-                <button
-                  key={model}
-                  type="button"
-                  onClick={() =>
-                    setSelectedModels((prev) =>
-                      prev.includes(model) ? prev.filter((m) => m !== model) : [...prev, model]
-                    )
-                  }
-                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${isActive
-                    ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
-                    : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-                    }`}
-                  title={model}
-                  aria-label={`Filter by ${model}`}
-                >
-                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
-                    {getLLMIcon(model)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         {/* Section 1: Compact Metrics Pods */}
@@ -703,7 +728,7 @@ export const TopicsAnalysisPage = ({
         onClose={() => setDrawerOpen(false)}
         kpiType={drawerKpiType}
       />
-    </Layout>
+    </Layout >
   );
 };
 

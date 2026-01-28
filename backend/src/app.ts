@@ -20,7 +20,7 @@ import citationCategorizationRoutes from './routes/citation-categorization.route
 import onboardingRoutes from './routes/onboarding.routes';
 import promptManagementRoutes from './routes/prompt-management.routes';
 import adminRoutes from './routes/admin.routes';
-import recommendationsRoutes from './routes/recommendations.routes';
+
 import recommendationsV3Routes from './routes/recommendations-v3.routes';
 import moversShakersRoutes from './routes/movers-shakers.routes';
 import domainReadinessRoutes from './services/domain-readiness/routes';
@@ -124,7 +124,7 @@ app.use('/api/keywords', keywordGenerationRoutes);
 app.use('/api/citations', citationCategorizationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', promptManagementRoutes);
-app.use('/api/recommendations', recommendationsRoutes);
+
 app.use('/api/recommendations-v3', recommendationsV3Routes);
 app.use('/api/movers-shakers', moversShakersRoutes);
 app.use('/api', domainReadinessRoutes);
@@ -149,7 +149,7 @@ app.get('/', (_req, res) => {
       keywords: '/api/keywords',
       citations: '/api/citations',
       admin: '/api/admin',
-      recommendations: '/api/recommendations',
+
       // TEMPORARY: User management routes commented out
       // users: '/api/users'
     }

@@ -12,8 +12,6 @@ import { SummaryCards } from '../components/SourcesR2/SummaryCards';
 import { ImpactScoreTrendsChart } from '../components/SourcesR2/ImpactScoreTrendsChart';
 import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
 import { getDefaultDateRange } from './dashboard/utils';
-import { fetchRecommendations, type Recommendation } from '../api/recommendationsApi';
-
 import { KeyTakeaways } from '../components/SourcesR2/KeyTakeaways';
 import { generateKeyTakeaways, type KeyTakeaway } from '../utils/SourcesTakeawayGenerator';
 import { SourceTypeDistribution } from '../components/SourcesR2/SourceTypeDistribution';
@@ -201,8 +199,6 @@ export const SearchSourcesR2 = () => {
   const [startDate, setStartDate] = useState<string>(urlStartDate || defaultStart);
   const [endDate, setEndDate] = useState<string>(urlEndDate || defaultEnd);
   const [activeQuadrant, setActiveQuadrant] = useState<EnhancedSource['quadrant'] | null>(null);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [selectedTrendSources, setSelectedTrendSources] = useState<string[]>([]);
   const [trendMetric, setTrendMetric] = useState<'impactScore' | 'mentionRate' | 'soa' | 'sentiment' | 'citations'>('impactScore');
   const [sourceSearchQuery, setSourceSearchQuery] = useState<string>(() => highlightSource || '');
@@ -510,53 +506,11 @@ export const SearchSourcesR2 = () => {
     }
   }, [trendMetric]);
 
-  // Load recommendations when brand changes
-  useEffect(() => {
-    const loadRecommendations = async () => {
-      if (!selectedBrandId) {
-        setRecommendations([]);
-        return;
-      }
 
-      setRecommendationsLoading(true);
-      try {
-        const response = await fetchRecommendations({ brandId: selectedBrandId });
-        if (response.success && response.data?.recommendations) {
-          setRecommendations(response.data.recommendations);
-        } else {
-          setRecommendations([]);
-        }
-      } catch (err) {
-        console.error('Error loading recommendations:', err);
-        setRecommendations([]);
-      } finally {
-        setRecommendationsLoading(false);
-      }
-    };
 
-    loadRecommendations();
-  }, [selectedBrandId]);
 
-  // Map quadrant to citation category
-  const getCategoryFromQuadrant = (quadrant: string | null): Recommendation['citationCategory'] | null => {
-    if (!quadrant) return null;
-    const mapping: Record<string, Recommendation['citationCategory']> = {
-      priority: 'Priority Partnerships',
-      reputation: 'Reputation Management',
-      growth: 'Growth Opportunities',
-      monitor: 'Monitor'
-    };
-    return mapping[quadrant] || null;
-  };
 
-  // Filter recommendations by selected category
-  const filteredRecommendations = useMemo(() => {
-    const selectedCategory = getCategoryFromQuadrant(activeQuadrant);
 
-    if (!selectedCategory) return [];
-
-    return recommendations.filter(rec => rec.citationCategory === selectedCategory);
-  }, [recommendations, activeQuadrant]);
 
   const isLoading = authLoading || brandsLoading || loading;
   const errorMessage = error
@@ -780,96 +734,7 @@ export const SearchSourcesR2 = () => {
             </div>
 
             {/* Recommended Actions Section */}
-            {activeQuadrant && (
-              <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, boxShadow: '0 10px 25px rgba(15,23,42,0.05)' }}>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Recommended Actions</h3>
-                <p style={{ margin: '0 0 16px 0', fontSize: 12, color: '#64748b' }}>
-                  Actions tailored for {activeQuadrant === 'priority' ? 'Priority Partnerships' :
-                    activeQuadrant === 'reputation' ? 'Reputation Management' :
-                      activeQuadrant === 'growth' ? 'Growth Opportunities' : 'Monitor'}
-                </p>
 
-                {recommendationsLoading ? (
-                  <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>Loading recommendations...</div>
-                ) : filteredRecommendations.length === 0 ? (
-                  <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-                    No specific recommendations for this category. Generate recommendations on the Recommendations page to see tailored actions.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {filteredRecommendations.slice(0, 5).map((rec, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          border: '1px solid #e5e7eb',
-                          borderRadius: 8,
-                          padding: 12,
-                          background: '#f9fafb',
-                          transition: 'border-color 160ms ease, box-shadow 160ms ease'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = '#0ea5e9';
-                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(14,165,233,0.15)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = '#e5e7eb';
-                          e.currentTarget.style.boxShadow = 'none';
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                          <div style={{
-                            minWidth: 24,
-                            height: 24,
-                            borderRadius: '50%',
-                            background: '#0ea5e9',
-                            color: '#fff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            flexShrink: 0
-                          }}>
-                            {idx + 1}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ marginBottom: 6 }}>
-                              <span style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                background: rec.citationCategory === 'Priority Partnerships' ? '#06c686' :
-                                  rec.citationCategory === 'Reputation Management' ? '#ef4444' :
-                                    rec.citationCategory === 'Growth Opportunities' ? '#0ea5e9' : '#94a3b8',
-                                color: '#fff',
-                                marginRight: 8
-                              }}>
-                                {rec.citationCategory === 'Priority Partnerships' ? 'Priority' :
-                                  rec.citationCategory === 'Reputation Management' ? 'Reputation' :
-                                    rec.citationCategory === 'Growth Opportunities' ? 'Growth' : 'Monitor'}
-                              </span>
-                            </div>
-                            <h4 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, color: '#0f172a', lineHeight: 1.4 }}>
-                              {rec.action}
-                            </h4>
-                            <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
-                              {rec.reason}
-                            </p>
-                            <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11, color: '#64748b' }}>
-                              <span>Effort: <strong>{rec.effort}</strong></span>
-                              <span>Timeline: <strong>{rec.timeline}</strong></span>
-                              <span>Expected: <strong style={{ color: '#06c686' }}>{rec.expectedBoost}</strong></span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </>
         )}
       </div>

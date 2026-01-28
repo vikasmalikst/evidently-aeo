@@ -1,14 +1,24 @@
 import { useMemo, useRef, useState } from 'react';
-import { PromptEntry } from '../../types/prompts';
+import { PromptEntry, CollectorResponse } from '../../types/prompts';
 import { PositionHighlighter } from './PositionHighlighter';
 import { getLLMIcon } from '../Visibility/LLMIcons';
+import { Pin, PinOff, X } from 'lucide-react';
 
 interface ResponseViewerProps {
   prompt: PromptEntry | null;
   selectedLLMs: string[];
+  isPinned?: boolean;
+  onPinToggle?: () => void;
+  onClose?: () => void;
 }
 
-export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) => {
+export const ResponseViewer = ({
+  prompt,
+  selectedLLMs,
+  isPinned = false,
+  onPinToggle,
+  onClose
+}: ResponseViewerProps) => {
   const [highlightBrand, setHighlightBrand] = useState(true);
   const [highlightCompetitors, setHighlightCompetitors] = useState(true);
   const [selectionText, setSelectionText] = useState('');
@@ -34,15 +44,15 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
   // Get all responses, filtered by selectedLLM if specified
   const filteredResponses = useMemo(() => {
     if (!prompt) return [];
-    
+
     // Debug logging
     if (prompt.responses && prompt.responses.length > 0) {
-      console.log(`[ResponseViewer] Prompt "${prompt.question}" has ${prompt.responses.length} responses:`, 
+      console.log(`[ResponseViewer] Prompt "${prompt.question}" has ${prompt.responses.length} responses:`,
         prompt.responses.map(r => r.collectorType).join(', '))
     } else if (prompt.response) {
       console.log(`[ResponseViewer] Prompt "${prompt.question}" has single response (fallback mode)`)
     }
-    
+
     // If responses array exists, use it; otherwise fall back to single response
     if (prompt.responses && prompt.responses.length > 0) {
       // If no LLMs selected (All Models), show all responses
@@ -52,10 +62,10 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
       // Otherwise filter by selected collectors
       return prompt.responses.filter(r => selectedLLMs.includes(r.collectorType));
     }
-    
+
     // Fallback: if no responses array but we have a single response, create a response object
     if (prompt.response && prompt.latestCollectorType && prompt.collectorResultId) {
-      const singleResponse = {
+      const singleResponse: CollectorResponse = {
         collectorResultId: prompt.collectorResultId,
         collectorType: prompt.latestCollectorType,
         response: prompt.response,
@@ -65,15 +75,17 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
         productMentions: null,
         keywordCount: null,
         brandPositions: [],
-        competitorPositions: []
+        competitorPositions: [],
+        mentions: prompt.mentions || 0,
+        averagePosition: prompt.averagePosition || null
       };
-      
+
       // Apply filter if needed (empty array means show all)
       if (selectedLLMs.length === 0 || selectedLLMs.includes(singleResponse.collectorType)) {
         return [singleResponse];
       }
     }
-    
+
     return [];
   }, [prompt, selectedLLMs]);
 
@@ -126,28 +138,56 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
     <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm h-full flex flex-col">
       <div className="px-4 py-3 border-b border-[var(--border-default)]">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-[var(--text-headings)]">
-            Responses {filteredResponses.length > 0 && `(${filteredResponses.length})`}
-          </h3>
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={highlightBrand}
-                onChange={() => setHighlightBrand(!highlightBrand)}
-                className="w-3 h-3 rounded border-2 border-[#498CF9] text-[#498CF9] focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-medium text-[#498CF9]">Brand</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={highlightCompetitors}
-                onChange={() => setHighlightCompetitors(!highlightCompetitors)}
-                className="w-3 h-3 rounded border-2 border-[#F59E0B] text-[#F59E0B] focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-medium text-[#F59E0B]">Competitors</span>
-            </label>
+            <h3 className="text-sm font-semibold text-[var(--text-headings)]">
+              Responses {filteredResponses.length > 0 && `(${filteredResponses.length})`}
+            </h3>
+            {isPinned && (
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent-primary)] text-[10px] font-bold uppercase tracking-wider">
+                Pinned
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 border-r border-[var(--border-default)] pr-3 mr-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={highlightBrand}
+                  onChange={() => setHighlightBrand(!highlightBrand)}
+                  className="w-3 h-3 rounded border-2 border-[#498CF9] text-[#498CF9] focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-xs font-medium text-[#498CF9]">Brand</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={highlightCompetitors}
+                  onChange={() => setHighlightCompetitors(!highlightCompetitors)}
+                  className="w-3 h-3 rounded border-2 border-[#F59E0B] text-[#F59E0B] focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-xs font-medium text-[#F59E0B]">Competitors</span>
+              </label>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onPinToggle}
+                className={`p-1.5 rounded-md transition-colors ${isPinned
+                  ? 'bg-[var(--accent-light)] text-[var(--accent-primary)] hover:bg-[var(--accent-hover)] hover:text-white'
+                  : 'text-[var(--text-caption)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-body)]'
+                  }`}
+                title={isPinned ? "Unpin window" : "Pin window"}
+              >
+                {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
+              </button>
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-md text-[var(--text-caption)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-body)] transition-colors"
+                title="Close window"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
         </div>
         {/* Query text display in header - sticky while scrolling */}
@@ -182,7 +222,7 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
           </p>
         ) : (
           <div className="space-y-6">
-            {filteredResponses.map((responseItem, index) => {
+            {filteredResponses.map((responseItem: CollectorResponse, index: number) => {
               const responseDate = new Date(responseItem.lastUpdated);
               const formattedDate = !Number.isNaN(responseDate.getTime())
                 ? responseDate.toLocaleString()
@@ -205,19 +245,19 @@ export const ResponseViewer = ({ prompt, selectedLLMs }: ResponseViewerProps) =>
                   </div>
                   {(responseItem.brandMentions !== null ||
                     responseItem.competitorMentions !== null) && (
-                    <div className="text-xs text-[var(--text-caption)] flex items-center gap-2 mb-3 flex-wrap">
-                      {(responseItem.brandMentions !== null && responseItem.brandMentions !== undefined) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
-                          Brand: {responseItem.brandMentions}
-                        </span>
-                      )}
-                      {(responseItem.competitorMentions !== null && responseItem.competitorMentions !== undefined) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
-                          Competitor: {responseItem.competitorMentions}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                      <div className="text-xs text-[var(--text-caption)] flex items-center gap-2 mb-3 flex-wrap">
+                        {(responseItem.brandMentions !== null && responseItem.brandMentions !== undefined) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
+                            Brand: {responseItem.brandMentions}
+                          </span>
+                        )}
+                        {(responseItem.competitorMentions !== null && responseItem.competitorMentions !== undefined) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full bg-[var(--bg-secondary)] text-[var(--text-caption)]">
+                            Competitor: {responseItem.competitorMentions}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   <div className="text-sm text-[var(--text-body)]">
                     <PositionHighlighter
                       text={responseItem.response}

@@ -44,9 +44,12 @@ export const Prompts = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerKpiType, setDrawerKpiType] = useState<KpiType>('visibility');
   const { brands, selectedBrandId, selectedBrand, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  const [isResponsePinned, setIsResponsePinned] = useState(false);
+  const [isResponseVisible, setIsResponseVisible] = useState(false);
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
+    setIsResponseVisible(true);
   };
 
   // Build endpoint - always fetch all prompts with all responses (filtering happens client-side)
@@ -309,7 +312,7 @@ export const Prompts = () => {
         )}
 
         <div className="grid grid-cols-10 gap-6">
-          <div className="col-span-6">
+          <div className={isResponseVisible || isResponsePinned ? "col-span-6" : "col-span-10"}>
             <PromptsList
               topics={topics}
               selectedPromptId={selectedPrompt?.id ?? null}
@@ -326,9 +329,20 @@ export const Prompts = () => {
             />
           </div>
 
-          <div className="col-span-4">
-            <ResponseViewer prompt={selectedPrompt} selectedLLMs={selectedLLMs} />
-          </div>
+          {(isResponseVisible || isResponsePinned) && (
+            <div className="col-span-4 transition-all">
+              <ResponseViewer
+                prompt={selectedPrompt}
+                selectedLLMs={selectedLLMs}
+                isPinned={isResponsePinned}
+                onPinToggle={() => setIsResponsePinned(!isResponsePinned)}
+                onClose={() => {
+                  setIsResponseVisible(false);
+                  setIsResponsePinned(false);
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
       <EducationalContentDrawer

@@ -6,6 +6,7 @@
 
 import { Router, Request, Response } from 'express';
 import { opportunityIdentifierService, OpportunityOptions } from './opportunity-identifier.service';
+import { opportunityRecommendationService } from './opportunity-recommendation.service';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
@@ -91,6 +92,35 @@ router.get('/brands/:brandId/opportunities/summary', authenticateToken, async (r
         });
     } catch (error) {
         console.error('[OpportunityRoutes] Error:', error);
+        return res.status(500).json({
+            error: error instanceof Error ? error.message : 'Internal server error'
+        });
+    }
+});
+
+/**
+ * POST /api/brands/:brandId/recommendations
+ * 
+ * Convert identified opportunities into actionable recommendations using AI.
+ */
+router.post('/brands/:brandId/recommendations', authenticateToken, async (req: Request, res: Response) => {
+    try {
+        const { brandId } = req.params;
+        const customerId = req.user!.customer_id;
+
+        if (!customerId) {
+            return res.status(403).json({
+                error: 'Customer ID is required. Please ensure you are properly authenticated.'
+            });
+        }
+
+        console.log(`[OpportunityRoutes] POST /recommendations - Brand: ${brandId}, Customer: ${customerId}`);
+
+        const result = await opportunityRecommendationService.convertToRecommendations(brandId, customerId);
+
+        return res.json(result);
+    } catch (error) {
+        console.error('[OpportunityRoutes] Error converting opportunities:', error);
         return res.status(500).json({
             error: error instanceof Error ? error.message : 'Internal server error'
         });

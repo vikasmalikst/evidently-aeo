@@ -27,7 +27,7 @@ import {
 } from '../api/recommendationsV3Api';
 import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
-import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
+import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabNavigator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
@@ -1238,46 +1238,37 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     <Layout>
       <div className="p-6" style={{ backgroundColor: '#f9f9fb', minHeight: '100vh' }}>
         {/* Header */}
-        <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                {selectedBrand && (
-                  <SafeLogo
-                    src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
-                    domain={selectedBrand.homepage_url || undefined}
-                    alt={selectedBrand.name}
-                    size={48}
-                    className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100"
-                  />
-                )}
-                <div>
-                  <h1 className="text-[24px] font-bold text-[#1a1d29] m-0">Optimize</h1>
-                  <p className="text-[13px] text-[#64748b]">
-                    KPI-first approach with 4-step workflow
-                  </p>
-                </div>
-              </div>
-            </div>
+        <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm px-5 py-3 mb-4">
+          {/* Title Row */}
+          <div className="flex items-center gap-3 mb-3">
+            {selectedBrand && (
+              <SafeLogo
+                src={selectedBrand.metadata?.logo || selectedBrand.metadata?.brand_logo}
+                domain={selectedBrand.homepage_url || undefined}
+                alt={selectedBrand.name}
+                size={32}
+                className="w-8 h-8 rounded-lg shadow-sm object-contain bg-white p-0.5 border border-gray-100"
+              />
+            )}
+            <h1 className="text-[16px] font-bold text-[#1a1d29] m-0">Optimize</h1>
           </div>
 
-          {/* Step Indicator */}
+          {/* Full-width Tab Navigator */}
           {generationId && (
-            <div className="mb-6">
-              <StepIndicator
-                currentStep={currentStep}
-                attentionSteps={{
-                  2: (() => {
-                    const sourceArray = allRecommendations.length > 0 ? allRecommendations : recommendations;
-                    const approvedCount = sourceArray.filter(
-                      rec => (rec.reviewStatus || 'pending_review') === 'approved'
-                    ).length;
-                    return currentStep === 1 && approvedCount > 0;
-                  })(),
-                  3: currentStep <= 2 && hasGeneratedContentForStep3,
-                  4: currentStep <= 3 && hasCompletedForStep4
-                }}
-                onStepClick={async (step) => {
+            <PremiumTabNavigator
+              currentStep={currentStep}
+              attentionSteps={{
+                2: (() => {
+                  const sourceArray = allRecommendations.length > 0 ? allRecommendations : recommendations;
+                  const approvedCount = sourceArray.filter(
+                    rec => (rec.reviewStatus || 'pending_review') === 'approved'
+                  ).length;
+                  return currentStep === 1 && approvedCount > 0;
+                })(),
+                3: currentStep <= 2 && hasGeneratedContentForStep3,
+                4: currentStep <= 3 && hasCompletedForStep4
+              }}
+                onStepClick={async (step: number) => {
                   // Set manual loading flags
                   isManuallyNavigatingRef.current = true;
                   setIsManuallyLoading(true);
@@ -1384,9 +1375,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                   }
                 }}
               />
-            </div>
           )}
-
         </div>
 
         {/* Error Message */}
@@ -1426,8 +1415,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
               >
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
-                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 1: Discover Opportunities</h2>
-                    <p className="text-[13px] text-[#64748b]">Review findings and prioritize recommendations</p>
+                    <h2 className="text-[20px] font-bold text-[#0f172a] mb-1">Discover Opportunities</h2>
+                    <p className="text-[14px] text-[#64748b]">Review findings and prioritize recommendations</p>
                   </div>
                   <div className="flex items-end gap-3 flex-wrap">
                     <StatusFilter value={statusFilter} onChange={setStatusFilter} />
@@ -1455,10 +1444,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
               >
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                   <div>
-                    <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-1">Step 2: To-Do List</h2>
-                    <p className="text-[13px] text-[#64748b]">
+                    <h2 className="text-[20px] font-bold text-[#0f172a] mb-1">Content Generation</h2>
+                    <p className="text-[14px] text-[#64748b]">
                       {isColdStart
-                        ? 'Generate an execution-ready implementation guide for each approved action (checklists, deliverables, success criteria).'
+                        ? 'Generate an execution-ready implementation guide for each approved action'
                         : 'Approve and generate content for chosen actions'}
                     </p>
                   </div>
@@ -1511,10 +1500,10 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 transition={{ duration: 0.3 }}
               >
                 <div className="mb-6">
-                  <h2 className="text-[18px] font-semibold text-[#1a1d29]">Step 3: Review and Refine</h2>
-                  <p className="text-[13px] text-[#64748b] mt-1">
+                  <h2 className="text-[20px] font-bold text-[#0f172a]">Review and Refine</h2>
+                  <p className="text-[14px] text-[#64748b] mt-1">
                     {isColdStart
-                      ? 'Cold-start brands skip content generation. Use Step 2 to review implementation guides, then execute and track results in Step 4.'
+                      ? 'Cold-start brands skip content generation. Use previous step for implementation guides.'
                       : 'Review generated content and finalize for publication'}
                   </p>
                 </div>
@@ -2735,7 +2724,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.3 }}
               >
-                <h2 className="text-[18px] font-semibold text-[#1a1d29] mb-6">Step 4: Track Outcomes</h2>
+                <h2 className="text-[20px] font-bold text-[#0f172a] mb-6">Track Outcomes</h2>
 
                 {/* KPI cards removed as requested for more compact table view */}
                 <div className="bg-white border border-[#e8e9ed] rounded-lg shadow-sm overflow-hidden">

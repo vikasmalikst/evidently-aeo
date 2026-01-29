@@ -35,15 +35,15 @@ interface RecommendationsTableV3Props {
 
 const FocusAreaBadge = ({ area }: { area: 'visibility' | 'soa' | 'sentiment' }) => {
   const config = {
-    visibility: { label: 'Visibility', color: 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe]' },
-    soa: { label: 'SOA', color: 'bg-[#e9d5ff] text-[#6b21a8] border-[#d8b4fe]' },
-    sentiment: { label: 'Sentiment', color: 'bg-[#ccfbf1] text-[#134e4a] border-[#99f6e4]' }
+    visibility: { label: 'Visibility', color: 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe] shadow-sm shadow-blue-100' },
+    soa: { label: 'SOA', color: 'bg-[#e9d5ff] text-[#6b21a8] border-[#d8b4fe] shadow-sm shadow-purple-100' },
+    sentiment: { label: 'Sentiment', color: 'bg-[#ccfbf1] text-[#134e4a] border-[#99f6e4] shadow-sm shadow-teal-100' }
   };
 
   const { label, color } = config[area];
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${color}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${color}`}>
       {label}
     </span>
   );
@@ -126,10 +126,10 @@ export const RecommendationsTableV3 = ({
   };
 
   return (
-    <div className="bg-white border border-[var(--border-default)] rounded-lg shadow-sm overflow-hidden">
+    <div className="bg-white border border-[#e2e8f0] rounded-xl shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-[var(--bg-secondary)]">
+          <thead className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] border-b border-[#e2e8f0]">
             <tr>
               {showCheckboxes && (
                 <th className="px-4 py-3 text-left w-12">
@@ -144,28 +144,28 @@ export const RecommendationsTableV3 = ({
                   />
                 </th>
               )}
-              <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider min-w-[400px]">
+              <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider min-w-[400px]">
                 Recommendation
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[200px]">
+              <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[200px]">
                 Source/Domain
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[120px]">
+              <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[120px]">
                 Focus Area
               </th>
               {showStatusDropdown && (
-                <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[160px]">
+                <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[160px]">
                   Status
                 </th>
               )}
               {showActions && (
-                <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[150px]">
+                <th className="px-4 py-3 text-left text-[11px] font-bold text-[#64748b] uppercase tracking-wider w-[150px]">
                   Actions
                 </th>
               )}
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-[var(--border-default)]">
+          <tbody className="bg-white divide-y divide-[#f1f5f9]">
             {recommendations.length === 0 ? (
               <tr>
                 <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
@@ -194,10 +194,10 @@ export const RecommendationsTableV3 = ({
                           rotate: 5, // Tilted drop
                           transition: { duration: 0.4, ease: "backIn" }
                         }}
-                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#f9fafb]'} hover:bg-[#f1f5f9] transition-colors`}
+                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-[#fafbfc]'} hover:bg-[#f0f9ff] transition-all duration-200 cursor-pointer`}
                       >
                         {showCheckboxes && (
-                          <td className="px-4 py-4">
+                          <td className="px-4 py-3">
                             <input
                               type="checkbox"
                               checked={rec.id ? selectedIds.has(rec.id) : false}
@@ -212,25 +212,25 @@ export const RecommendationsTableV3 = ({
                             />
                           </td>
                         )}
-                        <td className="px-4 py-4">
+                        <td className="px-4 py-3">
                           <div className="flex items-start gap-2">
                             {hasDetails && (
                               <button
                                 onClick={() => toggleExpand(recId)}
-                                className="p-1 hover:bg-[#e2e8f0] rounded transition-colors flex-shrink-0 mt-0.5"
+                                className="p-1.5 hover:bg-[#00bcdc]/10 rounded-lg transition-all duration-200 flex-shrink-0 mt-0.5 group"
                                 aria-label={isExpanded ? 'Collapse' : 'Expand'}
                               >
                                 {isExpanded ? (
-                                  <IconChevronUp size={16} className="text-[#64748b]" />
+                                  <IconChevronUp size={16} className="text-[#00bcdc] group-hover:text-[#0096b0] transition-colors" />
                                 ) : (
-                                  <IconChevronDown size={16} className="text-[#64748b]" />
+                                  <IconChevronDown size={16} className="text-[#94a3b8] group-hover:text-[#00bcdc] transition-colors" />
                                 )}
                               </button>
                             )}
                             <div className="flex flex-col gap-1.5">
                               {/* Content Type Badge */}
                               {rec.action && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-gradient-to-r from-[#eef2ff] to-[#e0e7ff] text-[#4338ca] border border-[#c7d2fe] w-fit">
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-gradient-to-r from-[#00bcdc]/10 to-[#0096b0]/10 text-[#0096b0] border border-[#00bcdc]/20 w-fit shadow-sm shadow-cyan-100">
                                   {rec.action.match(/^\[(.*?)\]/)?.[1] || 'Article'}
                                 </span>
                               )}
@@ -241,17 +241,17 @@ export const RecommendationsTableV3 = ({
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="px-4 py-3">
                           <p className="text-[12px] text-[var(--text-body)]">
                             {rec.citationSource}
                           </p>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="px-4 py-3">
                           <FocusAreaBadge area={rec.focusArea} />
                         </td>
                         {showStatusDropdown && (
-                          <td className="px-4 py-4">
-                            <div className="relative">
+                          <td className="px-4 py-3">
+                            <div className="relative group min-w-[140px]">
                               <select
                                 value={rec.reviewStatus || 'pending_review'}
                                 onChange={(e) => {
@@ -261,39 +261,42 @@ export const RecommendationsTableV3 = ({
                                   }
                                 }}
                                 onClick={(e) => e.stopPropagation()}
-                                aria-label={`Change status for ${rec.action?.substring(0, 30)}`}
-                                className={`w-full pl-9 pr-8 py-2 border rounded-lg text-[13px] font-medium cursor-pointer transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-offset-1 ${rec.reviewStatus === 'approved'
-                                    ? 'border-[#06c686] bg-[#f0fdf4] text-[#027a48] focus:ring-[#06c686]'
-                                    : rec.reviewStatus === 'rejected'
-                                      ? 'border-[#fecaca] bg-[#fef2f2] text-[#991b1b] focus:ring-[#ef4444]'
-                                      : 'border-[#fde68a] bg-[#fffbeb] text-[#92400e] focus:ring-[#f59e0b]'
-                                  }`}
-                                style={{
-                                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L10 1' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-                                  backgroundSize: '10px 6px',
-                                  backgroundPosition: 'right 8px center',
-                                  backgroundRepeat: 'no-repeat'
-                                }}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                aria-label="Change status"
                               >
                                 <option value="pending_review">Pending Review</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
                                 <option value="removed">Stop Tracking</option>
                               </select>
-                              {/* Status indicator dot */}
-                              <div
-                                className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ${rec.reviewStatus === 'approved'
-                                    ? 'bg-[#06c686]'
-                                    : rec.reviewStatus === 'rejected'
-                                      ? 'bg-[#ef4444]'
-                                      : 'bg-[#f59e0b]'
-                                  }`}
-                              />
+                              
+                              <div className={`
+                                flex items-center justify-between px-3 py-1.5 rounded-full border text-[12px] font-semibold transition-all shadow-sm
+                                ${rec.reviewStatus === 'approved' 
+                                  ? 'bg-[#ecfdf5] border-[#bbf7d0] text-[#15803d]' 
+                                  : rec.reviewStatus === 'rejected' 
+                                    ? 'bg-[#fef2f2] border-[#fecaca] text-[#b91c1c]' 
+                                    : 'bg-[#fff7ed] border-[#ffedd5] text-[#c2410c]'}
+                              `}>
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-1.5 h-1.5 rounded-full ${
+                                    rec.reviewStatus === 'approved' ? 'bg-[#16a34a]' : 
+                                    rec.reviewStatus === 'rejected' ? 'bg-[#dc2626]' : 'bg-[#f97316]'
+                                  }`} />
+                                  <span>
+                                    {rec.reviewStatus === 'approved' ? 'Approved' : 
+                                     rec.reviewStatus === 'rejected' ? 'Rejected' : 'Pending'}
+                                  </span>
+                                </div>
+                                <svg className="w-3.5 h-3.5 opacity-50 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </div>
                             </div>
                           </td>
                         )}
                         {showActions && (
-                          <td className="px-4 py-4">
+                          <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               {onAction && (() => {
                                 const isGenerating = generatingContentIds.has(rec.id || '');
@@ -352,154 +355,162 @@ export const RecommendationsTableV3 = ({
 
                       </motion.tr>
                       {isExpanded && hasDetails && (
-                        <tr key={`${recId}-details`} className="bg-[#fafbfc]">
-                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-4 py-4">
-                            <div className="bg-white border border-[#e5e7eb] rounded-xl p-5 space-y-4 shadow-sm">
-                              {/* Action - What to Do (Full Width) */}
-                              <div className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] rounded-lg p-4 border border-[#e2e8f0]">
+                        <tr key={`${recId}-details`} className="bg-[#f8fafc]">
+                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-5 py-4">
+                            <div className="bg-white border border-[#e2e8f0] rounded-xl overflow-hidden shadow-sm">
+                              {/* Main Action Banner */}
+                              <div className="bg-[#f0f9ff] px-6 py-5 border-b border-[#bde0fe] relative">
+                                {/* Accent Bar */}
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00bcdc]" />
+                                
                                 <div className="flex items-start gap-3">
-                                  <div className="w-8 h-8 rounded-lg bg-[#00bcdc] bg-opacity-10 flex items-center justify-center flex-shrink-0">
-                                    <svg className="w-4 h-4 text-[#00bcdc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <div className="mt-0.5 w-6 h-6 rounded-md bg-[#ffffff] border border-[#00bcdc]/20 flex items-center justify-center flex-shrink-0 shadow-sm">
+                                    <svg className="w-3.5 h-3.5 text-[#00bcdc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                     </svg>
                                   </div>
                                   <div className="flex-1">
-                                    <p className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wide mb-1">What to Do</p>
-                                    <p className="text-[14px] text-[#0f172a] leading-relaxed">
-                                      {rec.action?.replace(/^\[.*?\]\s*/, '') || 'No action specified'}
+                                    <p className="text-[11px] font-bold text-[#00bcdc] uppercase tracking-wide mb-1 opacity-80">Recommended Action</p>
+                                    <p className="text-[15px] text-[#0f172a] leading-relaxed font-semibold">
+                                      {rec.action?.replace(/^\[[^\]]+\]\s*/, '') || 'No action specified'}
                                     </p>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* Two Column Grid */}
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Strategic Rationale - muted professional style */}
-                                {(rec.reason || rec.explanation) && (
-                                  <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4">
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <div className="w-6 h-6 rounded-md bg-[#6b7280] bg-opacity-10 flex items-center justify-center">
-                                        <svg className="w-3.5 h-3.5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                        </svg>
-                                      </div>
-                                      <p className="text-[11px] font-bold text-[#4b5563] uppercase tracking-wide">Why This Matters</p>
-                                    </div>
-                                    <p className="text-[13px] text-[#374151] leading-relaxed">{rec.reason}</p>
-                                    {rec.explanation && (
-                                      <p className="text-[12px] text-[#6b7280] mt-2 pt-2 border-t border-[#e5e7eb]">{rec.explanation}</p>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Expected Impact - muted professional style */}
-                                <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <div className="w-6 h-6 rounded-md bg-[#6b7280] bg-opacity-10 flex items-center justify-center">
-                                      <svg className="w-3.5 h-3.5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                      </svg>
-                                    </div>
-                                    <p className="text-[11px] font-bold text-[#4b5563] uppercase tracking-wide">Expected Impact</p>
-                                  </div>
-                                  <div className="space-y-2">
-                                    {rec.expectedBoost && (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[12px] font-medium text-[#6b7280]">Boost:</span>
-                                        <span className="text-[13px] font-semibold text-[#374151]">{rec.expectedBoost}</span>
-                                      </div>
-                                    )}
+                              {/* Content Grid */}
+                              <div className="flex">
+                                {/* Left Sidebar - Quick Stats */}
+                                <div className="w-48 bg-[#f8fafc] border-r border-[#e2e8f0] p-4 flex-shrink-0">
+                                  <div className="space-y-4">
+                                    {/* Confidence */}
                                     {rec.confidence !== undefined && rec.confidence !== null && (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[12px] font-medium text-[#6b7280]">Confidence:</span>
-                                        <div className="flex-1 bg-[#e5e7eb] rounded-full h-2 overflow-hidden">
-                                          <div 
-                                            className="h-full bg-gradient-to-r from-[#00bcdc] to-[#0891b2] rounded-full transition-all"
-                                            style={{ width: `${rec.confidence}%` }}
-                                          />
+                                      <div>
+                                        <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wide mb-1.5">Confidence</p>
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1 bg-[#e2e8f0] rounded-full h-1.5 overflow-hidden">
+                                            <div 
+                                              className="h-full bg-gradient-to-r from-[#00bcdc] to-[#0891b2] rounded-full"
+                                              style={{ width: `${rec.confidence}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-[12px] font-bold text-[#0f172a]">{rec.confidence}%</span>
                                         </div>
-                                        <span className="text-[12px] font-bold text-[#374151]">{rec.confidence}%</span>
                                       </div>
                                     )}
-                                    {rec.kpi && (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[12px] font-medium text-[#6b7280]">Primary KPI:</span>
-                                        <span className="text-[13px] text-[#374151]">{rec.kpi}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
 
-                                {/* Execution Details */}
-                                <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-4">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <div className="w-6 h-6 rounded-md bg-[#6366f1] bg-opacity-10 flex items-center justify-center">
-                                      <svg className="w-3.5 h-3.5 text-[#6366f1]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                      </svg>
-                                    </div>
-                                    <p className="text-[11px] font-bold text-[#475569] uppercase tracking-wide">Execution Plan</p>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-3">
+                                    {/* Timeline */}
                                     {rec.timeline && (
                                       <div>
-                                        <p className="text-[10px] text-[#94a3b8] uppercase font-medium">Timeline</p>
-                                        <p className="text-[13px] font-medium text-[#334155]">{rec.timeline}</p>
+                                        <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wide mb-1">Timeline</p>
+                                        <p className="text-[13px] font-semibold text-[#0f172a]">{rec.timeline}</p>
                                       </div>
                                     )}
+
+                                    {/* Effort */}
                                     {rec.effort && (
                                       <div>
-                                        <p className="text-[10px] text-[#94a3b8] uppercase font-medium">Effort Level</p>
-                                        <p className="text-[13px] font-medium text-[#334155]">{rec.effort}</p>
+                                        <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wide mb-1">Effort</p>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${
+                                          rec.effort === 'Low' ? 'bg-[#d1fae5] text-[#065f46]' :
+                                          rec.effort === 'Medium' ? 'bg-[#fef3c7] text-[#92400e]' :
+                                          'bg-[#fee2e2] text-[#991b1b]'
+                                        }`}>
+                                          {rec.effort}
+                                        </span>
                                       </div>
                                     )}
-                                    {rec.citationSource && (
-                                      <div className="col-span-2">
-                                        <p className="text-[10px] text-[#94a3b8] uppercase font-medium">Target Platform</p>
-                                        <p className="text-[13px] font-medium text-[#334155]">{rec.citationSource}</p>
+
+                                    {/* Expected Boost */}
+                                    {rec.expectedBoost && (
+                                      <div>
+                                        <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wide mb-1">Expected Boost</p>
+                                        {rec.expectedBoost.trim().startsWith('{') ? (
+                                          <div className="space-y-1.5 mt-1.5">
+                                            {(() => {
+                                              try {
+                                                const boostObj = JSON.parse(rec.expectedBoost);
+                                                return Object.entries(boostObj).map(([key, val]) => (
+                                                  <div key={key} className="flex items-center justify-between gap-2">
+                                                    <span className="text-[11px] font-medium text-[#64748b] truncate">{key}</span>
+                                                    <span className="text-[11px] font-bold text-[#06c686] flex-shrink-0 bg-[#06c686]/10 px-1.5 py-0.5 rounded text-center min-w-[32px]">{String(val)}</span>
+                                                  </div>
+                                                ));
+                                              } catch (e) {
+                                                return <p className="text-[12px] font-medium text-[#0f172a] leading-snug">{rec.expectedBoost}</p>;
+                                              }
+                                            })()}
+                                          </div>
+                                        ) : (
+                                          <p className="text-[12px] font-medium text-[#0f172a] leading-snug">{rec.expectedBoost}</p>
+                                        )}
                                       </div>
                                     )}
+
+                                    {/* KPI */}
+
                                   </div>
                                 </div>
 
-                                {/* Cross-Channel Strategy - muted professional style */}
-                                {rec.focusSources && (
-                                  <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4">
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <div className="w-6 h-6 rounded-md bg-[#6b7280] bg-opacity-10 flex items-center justify-center">
-                                        <svg className="w-3.5 h-3.5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                        </svg>
+                                {/* Right Content - Details */}
+                                <div className="flex-1 p-5 space-y-4">
+                                  {/* Why This Matters */}
+                                  {(rec.reason || rec.explanation) && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-5 h-5 rounded bg-[#f1f5f9] flex items-center justify-center">
+                                          <svg className="w-3 h-3 text-[#64748b]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                          </svg>
+                                        </div>
+                                        <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide">Why This Matters</p>
                                       </div>
-                                      <p className="text-[11px] font-bold text-[#4b5563] uppercase tracking-wide">Cross-Channel Strategy</p>
+                                      <p className="text-[13px] text-[#374151] leading-relaxed">{rec.reason}</p>
+                                      {rec.explanation && (
+                                        <p className="text-[12px] text-[#64748b] mt-2 pl-7">{rec.explanation}</p>
+                                      )}
                                     </div>
-                                    <p className="text-[13px] text-[#374151] leading-relaxed">{rec.focusSources}</p>
-                                  </div>
-                                )}
+                                  )}
+
+                                  {/* Cross-Channel Strategy */}
+                                  {rec.focusSources && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-5 h-5 rounded bg-[#f1f5f9] flex items-center justify-center">
+                                          <svg className="w-3 h-3 text-[#64748b]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                          </svg>
+                                        </div>
+                                        <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide">Cross-Channel Strategy</p>
+                                      </div>
+                                      <p className="text-[13px] text-[#374151] leading-relaxed">{rec.focusSources}</p>
+                                    </div>
+                                  )}
+
+                                  {/* How to Fix */}
+                                  {rec.howToFix && rec.howToFix.length > 0 && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-5 h-5 rounded bg-[#f1f5f9] flex items-center justify-center">
+                                          <svg className="w-3 h-3 text-[#64748b]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                          </svg>
+                                        </div>
+                                        <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide">Implementation Steps</p>
+                                      </div>
+                                      <ol className="space-y-1.5 pl-7">
+                                        {rec.howToFix.map((step, i) => (
+                                          <li key={i} className="flex items-start gap-2">
+                                            <span className="w-5 h-5 rounded-full bg-[#00bcdc] text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                                            <span className="text-[13px] text-[#374151]">{step}</span>
+                                          </li>
+                                        ))}
+                                      </ol>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-
-                              {/* How to Fix (for domain audit recommendations) - muted professional style */}
-                              {rec.howToFix && rec.howToFix.length > 0 && (
-                                <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <div className="w-6 h-6 rounded-md bg-[#6b7280] bg-opacity-10 flex items-center justify-center">
-                                      <svg className="w-3.5 h-3.5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                      </svg>
-                                    </div>
-                                    <p className="text-[11px] font-bold text-[#4b5563] uppercase tracking-wide">How to Fix</p>
-                                  </div>
-                                  <ol className="space-y-2">
-                                    {rec.howToFix.map((step, i) => (
-                                      <li key={i} className="flex items-start gap-2">
-                                        <span className="w-5 h-5 rounded-full bg-[#00bcdc] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                                        <span className="text-[13px] text-[#374151]">{step}</span>
-                                      </li>
-                                    ))}
-                                  </ol>
-                                </div>
-                              )}
                             </div>
                           </td>
                         </tr>

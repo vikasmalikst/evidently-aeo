@@ -1,0 +1,286 @@
+/* ==========================================
+   EVIDENTLYAEO - PREMIUM UI UTILITIES
+   Glassmorphism, Animations, Effects
+   ========================================== */
+
+@layer utilities {
+
+    /* ==========================================
+     GLASSMORPHISM
+     ========================================== */
+    .glass {
+        background: var(--glass-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+    }
+
+    .glass-strong {
+        background: var(--glass-bg-strong);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+    }
+
+    .glass-card {
+        background: var(--glass-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+        border-radius: 0.75rem;
+    }
+
+    .glass-card-strong {
+        background: var(--glass-bg-strong);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+        border-radius: 0.75rem;
+    }
+
+    /* ==========================================
+     GRADIENT BACKGROUNDS
+     ========================================== */
+    .bg-gradient-primary {
+        background: var(--gradient-primary);
+    }
+
+    .bg-gradient-secondary {
+        background: var(--gradient-secondary);
+    }
+
+    .bg-gradient-success {
+        background: var(--gradient-success);
+    }
+
+    .bg-gradient-warning {
+        background: var(--gradient-warning);
+    }
+
+    .bg-gradient-danger {
+        background: var(--gradient-danger);
+    }
+
+    /* ==========================================
+     GLOW EFFECTS
+     ========================================== */
+    .glow-cyan {
+        box-shadow: var(--glow-cyan);
+    }
+
+    .glow-purple {
+        box-shadow: var(--glow-purple);
+    }
+
+    .glow-pink {
+        box-shadow: var(--glow-pink);
+    }
+
+    .glow-cyan-border {
+        border-color: var(--accent-primary);
+        box-shadow: var(--glow-cyan);
+    }
+
+    /* ==========================================
+     ANIMATED GRADIENTS
+     ========================================== */
+    .animated-gradient {
+        background: linear-gradient(-45deg,
+                #00d4ff,
+                #0080ff,
+                #a855f7,
+                #ec4899);
+        background-size: 400% 400%;
+        animation: gradient-shift 15s ease infinite;
+    }
+
+    @keyframes gradient-shift {
+        0% {
+            background-position: 0% 50%;
+        }
+
+        50% {
+            background-position: 100% 50%;
+        }
+
+        100% {
+            background-position: 0% 50%;
+        }
+    }
+
+    /* ==========================================
+     SHIMMER EFFECT
+     ========================================== */
+    .shimmer {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .shimmer::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg,
+                transparent,
+                rgba(255, 255, 255, 0.1),
+                transparent);
+        animation: shimmer 2s infinite;
+    }
+
+    @keyframes shimmer {
+        to {
+            left: 100%;
+        }
+    }
+
+    /* ==========================================
+     PREMIUM CARD EFFECTS
+     ========================================== */
+    .premium-card {
+        background: var(--glass-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+        border-radius: 0.75rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .premium-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--glass-shadow), var(--glow-cyan);
+    }
+
+    /* ==========================================
+     TEXT GRADIENTS
+     ========================================== */
+    .text-gradient-primary {
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .text-gradient-secondary {
+        background: var(--gradient-secondary);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    /* ==========================================
+     FLOATING ANIMATION
+     ========================================== */
+    @keyframes float {
+
+        0%,
+        100% {
+            transform: translateY(0px);
+        }
+
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+
+    .animate-float {
+        animation: float 3s ease-in-out infinite;
+    }
+
+    /* ==========================================
+     PULSE GLOW
+     ========================================== */
+    @keyframes pulse-glow {
+
+        0%,
+        100% {
+            box-shadow: var(--glow-cyan);
+        }
+
+        50% {
+            box-shadow: 0 0 40px rgba(0, 212, 255, 0.8);
+        }
+    }
+
+    .animate-pulse-glow {
+        animation: pulse-glow 2s ease-in-out infinite;
+    }
+
+    /* ==========================================
+     SLIDE IN ANIMATIONS
+     ========================================== */
+    @keyframes slide-in-bottom {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .animate-slide-in-bottom {
+        animation: slide-in-bottom 0.4s ease-out;
+    }
+
+    /* ==========================================
+     NAVIGATION UTILITIES (from original)
+     ========================================== */
+    .nav-expand {
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .text-fade-in {
+        transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+            transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ==========================================
+     SCROLLBAR STYLING
+     ========================================== */
+    .scrollbar-thin::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-track {
+        background: var(--bg-secondary);
+        border-radius: 3px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+        background: var(--primary300);
+        border-radius: 3px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+        background: var(--accent-primary);
+    }
+
+    /* ==========================================
+     BACKDROP BLUR UTILITIES
+     ========================================== */
+    .backdrop-blur-sm {
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+    }
+
+    .backdrop-blur-md {
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+    }
+
+    .backdrop-blur-lg {
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+    }
+}

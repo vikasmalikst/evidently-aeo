@@ -10,7 +10,7 @@ import { Opportunity } from './opportunity-identifier.service';
 export interface OpportunityRecommendationLLMResponse {
     Recommendation: string;
     Channel: string;
-    ContentType: 'Transcript for the Video' | 'White Paper' | 'Article' | 'Blog post' | 'Podcast' | 'Expert Articles';
+    ContentType: 'Short-form Video Script' | 'Social Media Thread' | 'Technical Comparison Table' | 'Interactive Tool/Calculator' | 'Expert Community Response' | 'Data-Driven White Paper' | 'Article' | 'Podcast' | 'Expert Articles';
     ThoughtProcess: string;
     ContentTitle: string;
     Timeline: string;
@@ -35,6 +35,7 @@ export class OpportunityPromptService {
         opportunities.forEach(opp => {
             if (!queryMap.has(opp.queryId)) {
                 queryMap.set(opp.queryId, {
+                    id: opp.queryId,
                     queryText: opp.queryText,
                     topic: opp.topic,
                     metrics: [],
@@ -48,7 +49,9 @@ export class OpportunityPromptService {
         });
 
         const queryList = Array.from(queryMap.values()).map((q, idx) => {
-            return `Query ${idx + 1}: "${q.queryText}"
+            return `--- Query ${idx + 1} ---
+ID: ${q.id}
+Text: "${q.queryText}"
 Topic: ${q.topic || 'Not specified'}
 KPIs to Improve: ${q.metrics.join(', ')}
 Available Channels: ${q.sources.join(', ') || 'No specific sources identified'}`;
@@ -71,12 +74,15 @@ RULES:
 4. Content MUST be optimized for LLM scraping and AEO impact.
 
 CONTENT TYPE OPTIONS:
-- Transcript for the Video (e.g., for YouTube)
-- White Paper
-- Article
-- Blog post
-- Podcast
-- Expert Articles
+- Short-form Video Script (TikTok/Reels/YouTube Shorts)
+- Social Media Thread (X/Threads)
+- Technical Comparison Table (Specialized for AEO comparison queries)
+- Interactive Tool/Calculator (High utility for specific problems)
+- Expert Community Response (Reddit/Quora/StackOverflow)
+- Data-Driven White Paper (In-depth research)
+- Article (Standard SEO/AEO long-form content)
+- Podcast (Conversational audio)
+- Expert Articles (Highly authoritative thought leadership)
 
 For each recommendation, return a JSON object with these EXACT fields:
 - Recommendation: (The primary task/action)
@@ -89,7 +95,7 @@ For each recommendation, return a JSON object with these EXACT fields:
 - ExpectedBoost: (Specific estimate for Visibility, SOA, and Sentiment)
 - Confidence: (Integer 0-100 indicating likelihood of success)
 - Amplification: (Strategic advice for cross-channel reuse)
-- queryId: (The ID of the query this recommendation refers to)
+- queryId: (The ID provided above in the ID field for the query)
 
 Return the output as a valid JSON array of objects.`;
     }

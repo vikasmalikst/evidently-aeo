@@ -1,15 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
-import { aeoScoringService } from '../services/recommendations/aeo-scoring.service';
+import { AEOScoringFactory, ContentType } from '../services/recommendations/aeo-scoring/aeo-scoring-factory.service';
 
 export const scoreContent = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { content } = req.body;
+        const { content, contentType } = req.body;
 
         if (!content && content !== '') {
             return res.status(400).json({ success: false, message: 'Content is required' });
         }
 
-        const result = aeoScoringService.calculateScrapabilityScore(content);
+        // Get appropriate service using factory (defaults to 'article')
+        const type: ContentType = (contentType as ContentType) || 'article';
+        const scoringService = AEOScoringFactory.getService(type);
+
+        const result = scoringService.calculateScrapabilityScore(content);
 
         res.json({
             success: true,

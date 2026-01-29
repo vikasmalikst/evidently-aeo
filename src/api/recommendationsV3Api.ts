@@ -144,6 +144,7 @@ export interface ApproveRecommendationsV3Request {
  */
 export interface GenerateContentV3Request {
   contentType?: string;
+  structureConfig?: any; // StructureConfig type from backend
 }
 
 // ============================================================================
@@ -302,7 +303,8 @@ export async function approveRecommendationsV3(
  * Generate content for all approved recommendations in bulk (Step 2 → Step 3)
  */
 export async function generateContentBulkV3(
-  generationId: string
+  generationId: string,
+  structureConfig?: any // Optional structure override for all items (if uniform) or key-based map
 ): Promise<{ success: boolean; data?: { total: number; successful: number; failed: number; results: any[] }; error?: string }> {
   try {
     // Use direct fetch with longer timeout for bulk content generation (can take 20-30 seconds)
@@ -322,7 +324,7 @@ export async function generateContentBulkV3(
           'Content-Type': 'application/json',
           ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
         },
-        body: JSON.stringify({ generationId }),
+        body: JSON.stringify({ generationId, structureConfig }),
         signal: timeoutController.signal
       });
 

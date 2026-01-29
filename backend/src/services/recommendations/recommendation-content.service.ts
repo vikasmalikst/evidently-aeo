@@ -16,13 +16,14 @@ import {
   ContentPromptContext,
 } from './content-prompt-factory';
 import { BrandContextV3, RecommendationV3, ContentAssetType } from './recommendation.types';
-import { getNewContentPrompt, NewContentPromptContext } from './new-content-factory';
+import { getNewContentPrompt, NewContentPromptContext, StructureConfig } from './new-content-factory';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
 export type RecommendationContentProvider = 'cerebras' | 'openrouter' | 'ollama';
 
 export interface GenerateRecommendationContentRequest {
   contentType?: string; // e.g. 'draft', 'blog_intro', 'faq', 'linkedin_post'
+  structureConfig?: StructureConfig;
 }
 
 export interface RecommendationContentRecord {
@@ -706,7 +707,8 @@ ${contentStyleGuide}
 
       newFactoryPrompt = getNewContentPrompt({
         recommendation: recV3ForNew,
-        brandContext: brandContextV3ForNew
+        brandContext: brandContextV3ForNew,
+        structureConfig: request.structureConfig
       }, 'article');
     }
 

@@ -29,6 +29,7 @@ import { fetchRecommendationContentLatest } from '../api/recommendationsApi';
 import { apiClient } from '../lib/apiClient';
 import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabNavigator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
+import { ContentStructureEditor, StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
 import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
@@ -109,7 +110,13 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [feedbackText, setFeedbackText] = useState('');
   const [selectedRecommendationForRegen, setSelectedRecommendationForRegen] = useState<RecommendationV3 | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+
   const [activeFeedbackSection, setActiveFeedbackSection] = useState<string | null>(null); // recId_sectionId
+
+  // Structure Editor State
+  const [isStructureEditorOpen, setIsStructureEditorOpen] = useState(false);
+  const [structureEditorRecId, setStructureEditorRecId] = useState<string | null>(null);
+  const [structureEditorTitle, setStructureEditorTitle] = useState<string>('');
 
   // v4.0 Interactive Refinement state
   const [sectionFeedback, setSectionFeedback] = useState<Map<string, Map<string, string>>>(new Map()); // recId -> (sectionId -> feedback)
@@ -929,28 +936,44 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     }
   };
 
-  // Handle generate content for single recommendation
+  // Handle generate content for single recommendation (Trigger)
   const handleGenerateContent = async (recommendation: RecommendationV3, action: string) => {
     if (!recommendation.id || action !== 'generate-content') return;
-    if (generatingContentIds.has(recommendation.id)) return; // Prevent duplicate requests
+    if (generatingContentIds.has(recommendation.id)) return;
+
+    // Open structure editor instead of generating immediately
+    setStructureEditorRecId(recommendation.id);
+    setStructureEditorTitle(recommendation.contentFocus || recommendation.action || 'Content');
+    setIsStructureEditorOpen(true);
+  };
+
+  // Execution of content generation after structure confirmation
+  const executeContentGeneration = async (recommendationId: string, sections: StructureSection[]) => {
+    setIsStructureEditorOpen(false);
+    setStructureEditorRecId(null);
+
+    // Create structure config
+    const structureConfig = {
+      sections: sections
+    };
 
     // Add to generating set
-    setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
+    setGeneratingContentIds(prev => new Set(prev).add(recommendationId));
     setError(null);
 
     try {
-      console.log(`📝 [RecommendationsV3] Generating content for recommendation ${recommendation.id}...`);
-      const response = await generateContentV3(recommendation.id);
+      console.log(`📝 [RecommendationsV3] Generating content for recommendation ${recommendationId}...`);
+      const response = await generateContentV3(recommendationId, { contentType: 'draft', structureConfig });
 
       if (response.success && response.data) {
-        console.log(`✅ [RecommendationsV3] Content generated successfully for ${recommendation.id}`);
+        console.log(`✅ [RecommendationsV3] Content generated successfully for ${recommendationId}`);
 
         // Store content in contentMap (for Step 3)
-        setContentMap(prev => new Map(prev).set(recommendation.id!, response.data.content));
+        setContentMap(prev => new Map(prev).set(recommendationId, response.data.content));
 
         // UX: Once content is generated, make Step 3 "light up" and navigate to it
         setHasGeneratedContentForStep3(true);
-        setRecommendations(prev => prev.filter(rec => rec.id !== recommendation.id));
+        setRecommendations(prev => prev.filter(rec => rec.id !== recommendationId));
 
         // Navigate to Step 3 immediately after content generation
         if (generationId) {
@@ -997,7 +1020,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       // Remove from generating set
       setGeneratingContentIds(prev => {
         const next = new Set(prev);
-        next.delete(recommendation.id!);
+        next.delete(recommendationId);
         return next;
       });
     }
@@ -1377,6 +1400,18 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
               />
           )}
         </div>
+
+        {/* Structure Editor Modal */}
+        <ContentStructureEditor
+          isOpen={isStructureEditorOpen}
+          onClose={() => setIsStructureEditorOpen(false)}
+          onConfirm={(sections) => {
+            if (structureEditorRecId) {
+              executeContentGeneration(structureEditorRecId, sections);
+            }
+          }}
+          recommendationTitle={structureEditorTitle}
+        />
 
         {/* Error Message */}
         {error && (

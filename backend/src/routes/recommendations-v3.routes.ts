@@ -728,7 +728,7 @@ router.post('/generate-content-bulk', authenticateToken, requireFeatureEntitleme
       });
     }
 
-    const { generationId } = req.body;
+    const { generationId, structureConfig, structureMap } = req.body;
 
     if (!generationId) {
       return res.status(400).json({
@@ -766,10 +766,16 @@ router.post('/generate-content-bulk', authenticateToken, requireFeatureEntitleme
     // Generate content for all recommendations in parallel
     const contentPromises = recommendations.map(async (rec) => {
       try {
+        // Determine specific config for this recommendation
+        const specificConfig = (structureMap && structureMap[rec.id]) || structureConfig;
+
         const result = await recommendationContentService.generateContent(
           rec.id,
           customerId,
-          { contentType: 'draft' }
+          {
+            contentType: 'draft',
+            structureConfig: specificConfig
+          }
         );
 
         if (result?.record) {
@@ -2056,6 +2062,73 @@ router.get('/analyze/keyword-mapping-graph', authenticateToken, async (req, res)
     return res.status(500).json({
       success: false,
       error: 'Failed to fetch graph-based keyword mapping'
+    });
+  }
+});
+
+/**
+ * POST /api/recommendations-v3/:recommendationId/content
+ * 
+ * Generate content for a single recommendation (Step 2 → Step 3).
+ * Supports custom structure config.
+ */
+router.post('/:recommendationId/content', authenticateToken, requireFeatureEntitlement('recommendations'), async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    const { recommendationId } = req.params;
+    const { contentType, structureConfig } = req.body;
+
+    // Generate content
+    const result = await recommendationContentService.generateContent(
+      recommendationId,
+      customerId,
+      {
+        contentType: contentType || 'draft',
+        structureConfig: structureConfig
+      }
+    );
+
+    if (result?.record) {
+      // Mark as generated
+      await supabaseAdmin
+        .from('recommendations')
+        .update({ is_content_generated: true })
+        .eq('id', recommendationId)
+        .eq('customer_id', customerId);
+
+      // Parse if JSON string
+      let contentData = result.record;
+      if (typeof result.record.content === 'string') {
+        try {
+          const parsed = JSON.parse(result.record.content);
+          contentData = { ...result.record, content: parsed };
+        } catch { }
+      }
+
+      return res.json({
+        success: true,
+        data: contentData
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to generate content'
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ [RecommendationsV3 Single Content] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to generate content'
     });
   }
 });

@@ -12,6 +12,16 @@ export interface NewContentPromptContext {
     recommendation: RecommendationV3;
     brandContext: BrandContextV3;
     // We might add more specific context fields here later
+    structureConfig?: StructureConfig;
+}
+
+export interface StructureConfig {
+    sections: Array<{
+        id: string;
+        title: string;
+        content: string; // This serves as the intent/description for the prompt
+        sectionType: string;
+    }>;
 }
 
 // Main entry point for getting content prompts (New System v2026.3)
@@ -24,7 +34,7 @@ export function getNewContentPrompt(ctx: NewContentPromptContext, assetType: Con
 
     switch (assetType) {
         case 'article':
-            return buildBlogArticlePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation);
+            return buildBlogArticlePrompt(systemContext, recContext, brandName, currentYear, ctx.recommendation, ctx.structureConfig);
         default:
             return null;
     }
@@ -96,8 +106,53 @@ function buildBlogArticlePrompt(
     recContext: string,
     brandName: string,
     currentYear: number,
-    rec: RecommendationV3
+    rec: RecommendationV3,
+    structureConfig?: StructureConfig
 ): string {
+
+    // Default structure if none provided
+    const defaultSections = [
+        {
+            id: "direct_answer",
+            title: "Direct Answer",
+            content: "<Concise answer to the primary question (80–120 words)>",
+            sectionType: "answer"
+        },
+        {
+            id: "how_it_works",
+            title: "How It Works",
+            content: "<Explain mechanism step-by-step>",
+            sectionType: "explanation"
+        },
+        {
+            id: "comparison",
+            title: "Comparison With Alternatives",
+            content: "<Objective comparison with competitors>",
+            sectionType: "comparison"
+        },
+        {
+            id: "limitations",
+            title: "Limitations and Trade-Offs",
+            content: "<What this does NOT solve>",
+            sectionType: "constraints"
+        }
+    ];
+
+    const sectionsToUse = structureConfig?.sections && structureConfig.sections.length > 0
+        ? structureConfig.sections.map(s => ({
+            id: s.id,
+            title: s.title,
+            // If user provided a description content, guide the model to use it. 
+            // The model is asked to output the content, so we put the instruction in the 'content' field for the example.
+            // But for the final JSON structure instruction, we want the model to FILL IT based on the instruction.
+            // So we'll pass the user's intent as the "placeholder" that informs the generation.
+            content: `<${s.content || 'Generate relevant content for this section'}>`,
+            sectionType: s.sectionType || "custom"
+        }))
+        : defaultSections;
+
+    // Convert sections to JSON string for the prompt example, but we need to ensure formatting is clean
+    const sectionsJson = JSON.stringify(sectionsToUse, null, 2);
 
     return `${systemContext}
 ${recContext}
@@ -114,32 +169,9 @@ You must return a VALID JSON object with the following structure. Content must b
   "version": "4.0",
   "brandName": "${brandName}",
   "contentTitle": "<Catchy, Click-Worthy Title>",
-  "sections": [
-  {
-  "id": "direct_answer",
-  "title": "Direct Answer",
-  "content": "<Concise answer to the primary question (80–120 words)>",
-  "sectionType": "answer"
+  "sections": ${sectionsJson},
+  "requiredInputs": []
 },
-{
-  "id": "how_it_works",
-  "title": "How It Works",
-  "content": "<Explain mechanism step-by-step>",
-  "sectionType": "explanation"
-},
-{
-  "id": "comparison",
-  "title": "Comparison With Alternatives",
-  "content": "<Objective comparison with competitors>",
-  "sectionType": "comparison"
-},
-{
-  "id": "limitations",
-  "title": "Limitations and Trade-Offs",
-  "content": "<What this does NOT solve>",
-  "sectionType": "constraints"
-}
-,
   "requiredInputs": []
 }
 

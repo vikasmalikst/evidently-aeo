@@ -39,6 +39,7 @@ import { ManageReports } from './pages/ManageReports';
 // New pages for restructured navigation
 import { MeasurePage } from './pages/Measure';
 import { DiscoverPage, ActionPlanPage, ExecutePage, ImpactPage } from './pages/Improve';
+import { OpportunitiesQBRES } from './features/opportunity-identifier/OpportunitiesPage';
 
 
 function DefaultRedirect() {
@@ -298,6 +299,14 @@ function App() {
           element={
             <EntitlementRoute requiredFeature="recommendations">
               <ImpactPage />
+            </EntitlementRoute>
+          }
+        />
+        <Route
+          path="/improve/opportunities-qbres"
+          element={
+            <EntitlementRoute requiredFeature="recommendations">
+              <OpportunitiesQBRES />
             </EntitlementRoute>
           }
         />

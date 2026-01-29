@@ -7,6 +7,7 @@ import { getDefaultDateRange } from '../dashboard/utils';
 import { useManualBrandDashboard } from '../../manual-dashboard';
 import { useCachedData } from '../../hooks/useCachedData';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
+import { motion } from 'framer-motion';
 
 // Components
 import { QueriesRankedTable } from './components/QueriesRankedTable';
@@ -32,6 +33,7 @@ export const QueriesAnalysisPage = () => {
 
     // LLM Filters
     const [selectedModels, setSelectedModels] = useState<string[]>([]);
+    const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null);
 
     const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [selectedTopic, setSelectedTopic] = useState<string>('All');
@@ -234,7 +236,7 @@ export const QueriesAnalysisPage = () => {
                                 </p>
                             </div>
                         </div>
-                        <div style={{ flexShrink: 0, alignSelf: 'flex-end', marginBottom: '-24px', paddingBottom: '24px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '12px', flexShrink: 0, alignSelf: 'flex-end', marginBottom: '-24px', paddingBottom: '24px' }}>
                             <DateRangePicker
                                 key={`${startDate}-${endDate}`}
                                 startDate={startDate}
@@ -244,14 +246,74 @@ export const QueriesAnalysisPage = () => {
                                 showComparisonInfo={false}
                                 className="flex-shrink-0"
                             />
+
+                            {/* LLM Selector/Filter Icons */}
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">LLMs</span>
+                                    <div className="relative flex items-center bg-[#f1f5f9] rounded-xl p-1 gap-0.5">
+                                        {/* "All" Button */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedModels([])}
+                                            onMouseEnter={() => setHoveredLlmIndex(-1)}
+                                            onMouseLeave={() => setHoveredLlmIndex(null)}
+                                            className="relative px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors z-10 cursor-pointer border-0"
+                                        >
+                                            {hoveredLlmIndex === -1 && (
+                                                <motion.span
+                                                    className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                                                    layoutId="llm-filter-hover"
+                                                    transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                                                />
+                                            )}
+                                            <span className={`relative z-10 ${selectedModels.length === 0 ? 'text-[#1a1d29] font-bold' : 'text-[#64748b]'}`}>
+                                                All
+                                            </span>
+                                        </button>
+
+                                        {/* Individual LLM Buttons */}
+                                        {availableModels.map((model, index) => {
+                                            const isActive = selectedModels.includes(model);
+                                            return (
+                                                <button
+                                                    key={model}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setSelectedModels((prev) =>
+                                                            prev.includes(model) ? prev.filter((m) => m !== model) : [...prev, model]
+                                                        )
+                                                    }
+                                                    onMouseEnter={() => setHoveredLlmIndex(index)}
+                                                    onMouseLeave={() => setHoveredLlmIndex(null)}
+                                                    className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10 cursor-pointer border-0"
+                                                    title={model}
+                                                >
+                                                    {hoveredLlmIndex === index && (
+                                                        <motion.span
+                                                            className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                                                            layoutId="llm-filter-hover"
+                                                            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                                                        />
+                                                    )}
+                                                    <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                                                        {getLLMIcon(model)}
+                                                    </span>
+                                                    {isActive && (
+                                                        <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#06b6d4] rounded-full" />
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Filters */}
                 <div className="mb-6 flex items-center justify-start gap-80 flex-wrap">
-
-
                     {/* Topic Filter */}
                     <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Topic:</span>
@@ -266,45 +328,6 @@ export const QueriesAnalysisPage = () => {
                                 <option key={topic} value={topic}>{topic}</option>
                             ))}
                         </select>
-                    </div>
-
-                    <div className="h-6 w-px bg-gray-200 mx-2 hidden sm:block"></div>
-
-                    {/* LLM Filter */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setSelectedModels([])}
-                            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${selectedModels.length === 0
-                                ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48]'
-                                : 'bg-white border-[#e4e7ec] text-[#6c7289] hover:border-[#cfd4e3]'
-                                }`}
-                        >
-                            All
-                        </button>
-                        {availableModels.map((model) => {
-                            const isActive = selectedModels.includes(model);
-                            return (
-                                <button
-                                    key={model}
-                                    type="button"
-                                    onClick={() =>
-                                        setSelectedModels((prev) =>
-                                            prev.includes(model) ? prev.filter((m) => m !== model) : [...prev, model]
-                                        )
-                                    }
-                                    className={`flex items-center justify-center gap-2 px-3 py-2 rounded-full text-xs font-semibold border transition-all ${isActive
-                                        ? 'bg-[#e6f7f0] border-[#12b76a] text-[#027a48] shadow-sm'
-                                        : 'bg-white border-[#e4e7ec] text-[#1a1d29] hover:border-[#cfd4e3]'
-                                        }`}
-                                    title={model}
-                                >
-                                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
-                                        {getLLMIcon(model)}
-                                    </span>
-                                </button>
-                            );
-                        })}
                     </div>
                 </div>
 
@@ -328,6 +351,6 @@ export const QueriesAnalysisPage = () => {
                 )}
 
             </div>
-        </Layout>
+        </Layout >
     );
 };

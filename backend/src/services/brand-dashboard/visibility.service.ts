@@ -210,6 +210,7 @@ export class VisibilityService {
       isRealData: boolean[] // NEW: true if data from DB, false if interpolated
     }>
   ): CompetitorVisibility[] {
+    const displayLimit = Math.max(knownCompetitors.length, 20)
     let competitorVisibility: CompetitorVisibility[] = Array.from(competitorAggregates.entries())
       .map(([competitorName, aggregate]) => {
         // Use simple average for competitor SOA (consistent with Topics page and brand SOA calculation)
@@ -307,7 +308,7 @@ export class VisibilityService {
         }
       })
       .sort((a, b) => b.share - a.share)
-      .slice(0, 5)
+      .slice(0, displayLimit)
 
     const competitorNamesSeen = new Set(competitorVisibility.map((entry) => entry.competitor.toLowerCase()))
     knownCompetitors.forEach((competitorName) => {
@@ -333,7 +334,7 @@ export class VisibilityService {
       }
     })
 
-    competitorVisibility = competitorVisibility.sort((a, b) => b.share - a.share).slice(0, 5)
+    competitorVisibility = competitorVisibility.sort((a, b) => b.share - a.share).slice(0, displayLimit)
 
     return competitorVisibility
   }

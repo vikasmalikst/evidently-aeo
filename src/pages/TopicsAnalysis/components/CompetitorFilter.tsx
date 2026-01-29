@@ -1,9 +1,9 @@
-import { BrandIcon } from '../../../components/Visibility/BrandIcon';
+import { SafeLogo } from '../../../components/Onboarding/common/SafeLogo';
 import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
 
 interface CompetitorFilterProps {
   competitors: ManagedCompetitor[];
-  selectedCompetitors: string[]; // Array of competitor names (lowercase)
+  selectedCompetitors: string[] | Set<string>; // Array or Set of competitor names (lowercase)
   onCompetitorToggle: (competitorName: string) => void;
   onSelectAll: () => void;
   onDeselectAll: () => void;
@@ -18,10 +18,18 @@ export const CompetitorFilter = ({
   onDeselectAll,
   isLoading = false,
 }: CompetitorFilterProps) => {
+  // Helper to check if a competitor is selected
+  const isCompetitorSelected = (name: string) => {
+    const key = name.toLowerCase();
+    if (selectedCompetitors instanceof Set) {
+      return selectedCompetitors.has(key);
+    }
+    return Array.isArray(selectedCompetitors) && selectedCompetitors.includes(key);
+  };
+
   // Check if all competitors are selected
   const allSelected = competitors.length > 0 &&
-    selectedCompetitors.length === competitors.length &&
-    competitors.every(c => selectedCompetitors.includes(c.name.toLowerCase()));
+    competitors.every(c => isCompetitorSelected(c.name));
 
   // Show component even when loading (to avoid layout shift)
   // Only hide if not loading and no competitors
@@ -55,7 +63,7 @@ export const CompetitorFilter = ({
 
       {/* Individual competitor toggle buttons - show even when loading */}
       {competitors.length > 0 ? competitors.map((competitor) => {
-        const isSelected = selectedCompetitors.includes(competitor.name.toLowerCase());
+        const isSelected = isCompetitorSelected(competitor.name);
 
         return (
           <button
@@ -69,8 +77,14 @@ export const CompetitorFilter = ({
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             aria-label={`Filter by ${competitor.name}`}
           >
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white">
-              <BrandIcon brandName={competitor.name} size={24} />
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white overflow-hidden">
+              <SafeLogo
+                src={competitor.logo}
+                domain={competitor.domain || competitor.url}
+                alt={competitor.name}
+                size={24}
+                className="w-full h-full object-contain"
+              />
             </span>
 
             {/* Custom Tooltip */}

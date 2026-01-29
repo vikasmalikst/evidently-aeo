@@ -911,15 +911,16 @@ export const MeasurePage = () => {
               className="w-12 h-12 rounded-lg shadow-sm object-contain bg-white p-1 border border-gray-100 shrink-0"
             />
           )}
-          <div className="flex-1">
-            {/* Title Row */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-[28px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
-                <p className="text-[14px] text-[#64748b] mt-0.5">{overviewSubtitle}</p>
-              </div>
+          {/* Header Content Wrapper */}
+          <div className="flex items-start justify-between w-full">
+            {/* Left Side: Title & Subtitle */}
+            <div>
+              <h1 className="text-[28px] font-bold text-[#1a1d29]">AI Visibility Dashboard</h1>
+              <p className="text-[14px] text-[#64748b] mt-0.5">{overviewSubtitle}</p>
+            </div>
 
-              {/* Date Range - Top Right */}
+            {/* Right Side: Date Selector + Filters Stack */}
+            <div className="flex flex-col items-end gap-3">
               <DateRangeSelector
                 startDate={startDate}
                 endDate={endDate}
@@ -927,97 +928,86 @@ export const MeasurePage = () => {
                 onEndDateChange={setEndDate}
                 showComparisonInfo={false}
               />
-            </div>
 
-            {/* Filters Row - Below Title */}
-            <div className="flex items-center gap-6 mt-4">
-              {/* LLM Filters - Icons Only with Smooth Hover Animation */}
-              {llmOptions.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px] font-medium text-[#64748b] uppercase tracking-wide">LLMs</span>
-                  <div className="relative flex items-center bg-[#f1f5f9] rounded-xl p-1 gap-0.5">
-                    {/* "All" Button */}
-                    <button
-                      type="button"
-                      onClick={() => setLlmFilters([])}
-                      onMouseEnter={() => setHoveredLlmIndex(-1)}
-                      onMouseLeave={() => setHoveredLlmIndex(null)}
-                      className="relative px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors z-10"
-                    >
-                      {/* Animated Background Pill */}
-                      {hoveredLlmIndex === -1 && (
-                        <motion.span
-                          className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
-                          layoutId="llm-filter-hover"
-                          transition={{
-                            type: "spring",
-                            bounce: 0,
-                            duration: 0.4
-                          }}
-                        />
-                      )}
-                      <span className={`relative z-10 ${llmFilters.length === 0 ? 'text-[#1a1d29] font-semibold' : 'text-[#64748b]'}`}>
-                        All
-                      </span>
-                    </button>
+              {/* Filters & Actions Group - Now strictly vertical to Date Selector */}
+              <div className="flex items-center gap-4">
+                {/* LLM Filters - Icons Only */}
+                {llmOptions.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">LLMs</span>
+                    <div className="relative flex items-center bg-[#f1f5f9] rounded-xl p-1 gap-0.5">
+                      {/* "All" Button */}
+                      <button
+                        type="button"
+                        onClick={() => setLlmFilters([])}
+                        onMouseEnter={() => setHoveredLlmIndex(-1)}
+                        onMouseLeave={() => setHoveredLlmIndex(null)}
+                        className="relative px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors z-10"
+                      >
+                        {hoveredLlmIndex === -1 && (
+                          <motion.span
+                            className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                            layoutId="llm-filter-hover"
+                            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                          />
+                        )}
+                        <span className={`relative z-10 ${llmFilters.length === 0 ? 'text-[#1a1d29] font-bold' : 'text-[#64748b]'}`}>
+                          All
+                        </span>
+                      </button>
 
-                    {/* Individual LLM Buttons */}
-                    {llmOptions
-                      .filter((opt) => opt.value !== 'all')
-                      .map((opt, index) => {
-                        const isActive = llmFilters.includes(opt.value);
-                        return (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => {
-                              const newFilters = llmFilters.includes(opt.value)
-                                ? llmFilters.filter((v) => v !== opt.value)
-                                : [...llmFilters, opt.value];
-                              setLlmFilters(newFilters);
-                            }}
-                            onMouseEnter={() => setHoveredLlmIndex(index)}
-                            onMouseLeave={() => setHoveredLlmIndex(null)}
-                            className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10"
-                            title={opt.label}
-                          >
-                            {/* Animated Background Pill */}
-                            {hoveredLlmIndex === index && (
-                              <motion.span
-                                className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
-                                layoutId="llm-filter-hover"
-                                transition={{
-                                  type: "spring",
-                                  bounce: 0,
-                                  duration: 0.4
-                                }}
-                              />
-                            )}
-                            <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
-                              {getLLMIcon(opt.label)}
-                            </span>
-                            {/* Active indicator dot */}
-                            {isActive && (
-                              <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#06b6d4] rounded-full" />
-                            )}
-                          </button>
-                        );
-                      })}
+                      {/* Individual LLM Buttons */}
+                      {llmOptions
+                        .filter((opt) => opt.value !== 'all')
+                        .map((opt, index) => {
+                          const isActive = llmFilters.includes(opt.value);
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => {
+                                const newFilters = llmFilters.includes(opt.value)
+                                  ? llmFilters.filter((v) => v !== opt.value)
+                                  : [...llmFilters, opt.value];
+                                setLlmFilters(newFilters);
+                              }}
+                              onMouseEnter={() => setHoveredLlmIndex(index)}
+                              onMouseLeave={() => setHoveredLlmIndex(null)}
+                              className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10"
+                              title={opt.label}
+                            >
+                              {hoveredLlmIndex === index && (
+                                <motion.span
+                                  className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                                  layoutId="llm-filter-hover"
+                                  transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                                />
+                              )}
+                              <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                                {getLLMIcon(opt.label)}
+                              </span>
+                              {isActive && (
+                                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#06b6d4] rounded-full" />
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* "See analysis" Button next to filters */}
-              <Link to="/analyze/citation-sources">
-                <motion.button
-                  whileHover={{ scale: 1.02, boxShadow: "0 4px 12px rgba(0, 188, 220, 0.2)" }}
-                  whileTap={{ scale: 0.98 }}
-                  className="flex items-center gap-1.5 px-4 h-9 bg-[#00bcdc] text-white text-[12px] font-bold rounded-xl shadow-sm hover:shadow-md hover:bg-[#0096b0] transition-all duration-300 group"
-                >
-                  <span>See Analysis</span>
-                  <ChevronRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
-                </motion.button>
-              </Link>
+                {/* "See analysis" Button */}
+                <Link to="/analyze/citation-sources">
+                  <motion.button
+                    whileHover={{ scale: 1.02, boxShadow: "0 4px 12px rgba(0, 188, 220, 0.2)" }}
+                    whileTap={{ scale: 0.98 }}
+                    className="flex items-center gap-1.5 px-4 h-9 bg-[#00bcdc] text-white text-[12px] font-bold rounded-xl shadow-sm hover:shadow-md hover:bg-[#0096b0] transition-all duration-300 group"
+                  >
+                    <span>See Analysis</span>
+                    <ChevronRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
+                  </motion.button>
+                </Link>
+              </div>
             </div>
           </div>
         </div>

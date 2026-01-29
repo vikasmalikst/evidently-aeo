@@ -13,6 +13,9 @@ import { getActiveCompetitors, ManagedCompetitor } from '../api/competitorManage
 import { KpiToggle } from '../components/Visibility/KpiToggle';
 import { KpiType } from '../components/EducationalDrawer/EducationalContentDrawer';
 import { EducationalContentDrawer } from '../components/EducationalDrawer/EducationalContentDrawer';
+import { DateRangePicker } from '../components/DateRangePicker/DateRangePicker';
+import { getLLMIcon } from '../components/Visibility/LLMIcons';
+import { motion } from 'framer-motion';
 
 // Performance logging
 const perfLog = (label: string, startTime: number) => {
@@ -35,6 +38,7 @@ export const Prompts = () => {
   const [selectedPrompt, setSelectedPrompt] = useState<PromptEntry | null>(null);
   const navigate = useNavigate();
   const [selectedLLMs, setSelectedLLMs] = useState<string[]>([]);
+  const [hoveredLlmIndex, setHoveredLlmIndex] = useState<number | null>(null); // State for hover effect
   const defaultDateRange = getDefaultDateRange();
   const [startDate, setStartDate] = useState<string>(defaultDateRange.start);
   const [endDate, setEndDate] = useState<string>(defaultDateRange.end);
@@ -44,9 +48,12 @@ export const Prompts = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerKpiType, setDrawerKpiType] = useState<KpiType>('visibility');
   const { brands, selectedBrandId, selectedBrand, isLoading: brandsLoading, selectBrand } = useManualBrandDashboard();
+  const [isResponsePinned, setIsResponsePinned] = useState(false);
+  const [isResponseVisible, setIsResponseVisible] = useState(false);
 
   const handlePromptSelect = (prompt: PromptEntry) => {
     setSelectedPrompt(prompt);
+    setIsResponseVisible(true);
   };
 
   // Build endpoint - always fetch all prompts with all responses (filtering happens client-side)
@@ -221,9 +228,6 @@ export const Prompts = () => {
 
   const error = fetchError?.message || (response && !response.success ? (response.error || response.message || 'Failed to load prompts.') : null);
 
-  const handleManagePrompts = () => {
-    navigate('/settings/manage-prompts');
-  };
 
   // Log page render completion
   useEffect(() => {
@@ -272,12 +276,79 @@ export const Prompts = () => {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleManagePrompts}
-            className="px-5 py-2.5 bg-[var(--accent-primary)] text-white rounded-lg font-semibold hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
-          >
-            Manage Prompts
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '12px', flexShrink: 0, alignSelf: 'flex-end', marginBottom: '-4px' }}>
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+              showComparisonInfo={false}
+              className="flex-shrink-0"
+            />
+
+            {/* LLM Selector/Filter Icons */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">LLMs</span>
+                <div className="relative flex items-center bg-[#f1f5f9] rounded-xl p-1 gap-0.5">
+                  {/* "All" Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleLLMChange([])}
+                    onMouseEnter={() => setHoveredLlmIndex(-1)}
+                    onMouseLeave={() => setHoveredLlmIndex(null)}
+                    className="relative px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors z-10 cursor-pointer border-0"
+                  >
+                    {hoveredLlmIndex === -1 && (
+                      <motion.span
+                        className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                        layoutId="llm-filter-hover"
+                        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                      />
+                    )}
+                    <span className={`relative z-10 ${selectedLLMs.length === 0 ? 'text-[#1a1d29] font-bold' : 'text-[#64748b]'}`}>
+                      All
+                    </span>
+                  </button>
+
+                  {/* Individual LLM Buttons */}
+                  {llmOptions.map((model, index) => {
+                    const isActive = selectedLLMs.includes(model);
+                    return (
+                      <button
+                        key={model}
+                        type="button"
+                        onClick={() => {
+                          const newSelection = isActive
+                            ? selectedLLMs.filter(m => m !== model)
+                            : [...selectedLLMs, model];
+                          handleLLMChange(newSelection);
+                        }}
+                        onMouseEnter={() => setHoveredLlmIndex(index)}
+                        onMouseLeave={() => setHoveredLlmIndex(null)}
+                        className="relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors z-10 cursor-pointer border-0"
+                        title={model}
+                      >
+                        {hoveredLlmIndex === index && (
+                          <motion.span
+                            className="absolute inset-0 bg-white/80 rounded-lg -z-10 shadow-sm"
+                            layoutId="llm-filter-hover"
+                            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                          />
+                        )}
+                        <span className={`relative z-10 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                          {getLLMIcon(model)}
+                        </span>
+                        {isActive && (
+                          <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#06b6d4] rounded-full" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
@@ -309,7 +380,7 @@ export const Prompts = () => {
         )}
 
         <div className="grid grid-cols-10 gap-6">
-          <div className="col-span-6">
+          <div className={isResponseVisible || isResponsePinned ? "col-span-6" : "col-span-10"}>
             <PromptsList
               topics={topics}
               selectedPromptId={selectedPrompt?.id ?? null}
@@ -326,9 +397,20 @@ export const Prompts = () => {
             />
           </div>
 
-          <div className="col-span-4">
-            <ResponseViewer prompt={selectedPrompt} selectedLLMs={selectedLLMs} />
-          </div>
+          {(isResponseVisible || isResponsePinned) && (
+            <div className="col-span-4 transition-all">
+              <ResponseViewer
+                prompt={selectedPrompt}
+                selectedLLMs={selectedLLMs}
+                isPinned={isResponsePinned}
+                onPinToggle={() => setIsResponsePinned(!isResponsePinned)}
+                onClose={() => {
+                  setIsResponseVisible(false);
+                  setIsResponsePinned(false);
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
       <EducationalContentDrawer

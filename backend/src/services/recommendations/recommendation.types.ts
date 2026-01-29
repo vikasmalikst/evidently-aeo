@@ -178,7 +178,7 @@ export type ContentSectionType =
     | 'custom'               // Generic fallback
     // New Strategic Asset Types
     | 'comparison_table'     // Structured markdown table (for "vs" queries)
-    | 'interactive_tool_spec'// Blueprint for calculators/widgets (Logic + JSON-LD)
+    | 'comparison_table'     // Structured markdown table (for "vs" queries)
     | 'whitepaper_metadata'  // Report metadata (summary, chapters, download link)
     | 'structured_list'      // Timestamped lists (webinar recaps, checklists)
     | 'code_block'           // Technical code/config snippets
@@ -191,13 +191,16 @@ export type ContentSectionType =
 export type ContentAssetType =
     | 'article'              // Standard blog/article (default)
     | 'video_script'         // YouTube script with scenes
-    | 'interactive_tool'     // Calculator/widget blueprint
+    | 'article'              // Standard blog/article (default)
+    | 'video_script'         // YouTube script with scenes
     | 'comparison_table'     // Side-by-side comparison
     | 'whitepaper'           // Executive report / downloadable guide
     | 'webinar_recap'        // Event summary with Q&A
     | 'case_study'           // Customer success story template
     | 'linkedin_post'        // Short-form professional post
     | 'reddit_post'          // Community-style conversational post
+    | 'expert_community_response' // Detailed response for forums/communities
+    | 'social_media_thread'  // Threaded content (X, LinkedIn)
     | 'other';
 
 /**
@@ -210,29 +213,7 @@ export interface ContentSection {
     sectionType: ContentSectionType;
 }
 
-/**
- * Interactive Tool Blueprint output structure.
- * This is a SPEC for developers, not executable code.
- */
-export interface InteractiveToolBlueprint {
-    toolName: string;               // e.g., "ROI Calculator"
-    toolDescription: string;        // What the tool does
-    inputs: Array<{
-        name: string;               // e.g., "monthlySpend"
-        label: string;              // e.g., "Monthly Ad Spend"
-        type: 'number' | 'text' | 'select';
-        defaultValue?: string | number;
-        options?: string[];         // For 'select' type
-    }>;
-    formula: string;                // Calculation logic description (not code)
-    outputs: Array<{
-        name: string;               // e.g., "annualSavings"
-        label: string;              // e.g., "Estimated Annual Savings"
-        format: 'currency' | 'percentage' | 'number';
-    }>;
-    seoSchema: object;              // JSON-LD SoftwareApplication schema
-    introductionText: string;       // Copy written for the page hosting the tool
-}
+
 
 /**
  * Comparison Table output structure.

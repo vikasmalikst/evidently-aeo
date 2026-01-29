@@ -195,7 +195,7 @@ export const OpportunitiesQBRES = () => {
         setIsGenerating(true);
         try {
             console.log(`🚀 [OpportunitiesPage] Generating recommendations for brand: ${selectedBrandId}`);
-            const result = await apiClient.post<any>(`/brands/${selectedBrandId}/recommendations`);
+            const result = await apiClient.post<any>(`/brands/${selectedBrandId}/recommendations`, {}, { timeout: 180000 });
 
             if (result.success) {
                 alert(`✅ Successfully generated ${result.recommendationsCount} recommendations! You can view them on the Improve -> Recommendations page.`);

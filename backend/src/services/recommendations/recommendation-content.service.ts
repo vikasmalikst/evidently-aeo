@@ -16,6 +16,7 @@ import {
   ContentPromptContext,
 } from './content-prompt-factory';
 import { BrandContextV3, RecommendationV3, ContentAssetType } from './recommendation.types';
+import { getNewContentPrompt, NewContentPromptContext } from './new-content-factory';
 
 export type RecommendationContentStatus = 'generated' | 'accepted' | 'rejected';
 export type RecommendationContentProvider = 'cerebras' | 'openrouter' | 'ollama';
@@ -530,7 +531,7 @@ CONSTRAINTS:
     const assetDetection = detectContentAsset(rec.action || '');
     const platformDetection = detectPlatform(rec.citation_source || '', brand?.name);
     const useFactoryPrompt = assetDetection.confidence === 'high' &&
-      ['interactive_tool', 'comparison_table', 'whitepaper', 'webinar_recap', 'case_study'].includes(assetDetection.asset);
+      ['comparison_table', 'whitepaper', 'webinar_recap', 'case_study', 'expert_community_response', 'social_media_thread'].includes(assetDetection.asset);
 
     console.log(`📊 [RecommendationContentService] Asset Detection: ${assetDetection.asset} (${assetDetection.confidence}), Platform: ${platformDetection}, UseFactory: ${useFactoryPrompt}`);
 
@@ -679,8 +680,42 @@ ${contentStyleGuide}
 `;
 
     // === PROMPT SELECTION: Factory (for FSA strategic assets) or Legacy ===
+
+    // v2026.3 Integration: Check New Content Factory first for 'article'
+    let newFactoryPrompt: string | null = null;
+    if (assetDetection.asset === 'article') {
+      const recV3ForNew: RecommendationV3 = {
+        id: rec.id,
+        action: rec.action || '',
+        citationSource: rec.citation_source || '',
+        focusArea: (rec.focus_area as 'visibility' | 'soa' | 'sentiment') || 'visibility',
+        priority: (rec.priority as 'High' | 'Medium' | 'Low') || 'Medium',
+        effort: (rec.effort as 'Low' | 'Medium' | 'High') || 'Medium',
+        kpi: rec.kpi,
+        reason: rec.reason,
+        explanation: rec.explanation,
+        contentFocus: rec.content_focus,
+        timeline: rec.timeline,
+      };
+      const brandContextV3ForNew: BrandContextV3 = {
+        brandId: brand?.id || rec.brand_id,
+        brandName: brand?.name || 'Brand',
+        industry: brand?.industry || 'Unknown',
+        brandDomain: brand?.name?.toLowerCase().replace(/\s/g, '') || undefined,
+      };
+
+      newFactoryPrompt = getNewContentPrompt({
+        recommendation: recV3ForNew,
+        brandContext: brandContextV3ForNew
+      }, 'article');
+    }
+
     let prompt: string;
-    if (useFactoryPrompt && !isColdStartGuide) {
+
+    if (newFactoryPrompt) {
+      prompt = newFactoryPrompt;
+      console.log('🚀 [RecommendationContentService] Using NEW Content Factory (v2026.3) for article.');
+    } else if (useFactoryPrompt && !isColdStartGuide) {
       // Use the new ContentPromptFactory for strategic asset types
       const recV3: RecommendationV3 = {
         id: rec.id,
@@ -976,6 +1011,66 @@ ${contentStyleGuide}
       }
     } catch {
       // Continue to next strategy
+    }
+
+    // Strategy 3.5: Robust V4 Recovery (for truncated/malformed responses)
+    try {
+      if (raw.includes('"version":"4.0"') || raw.includes('"version": "4.0"') || raw.includes('"sections"')) {
+        // Extract title
+        const titleMatch = raw.match(/"contentTitle"\s*:\s*"([^"]+)"/);
+        const sections: any[] = [];
+
+        // 1. Extract the text following "sections": [
+        const sectionsStartMatch = raw.match(/"sections"\s*:\s*\[([\s\S]*)/);
+
+        if (sectionsStartMatch) {
+          const sectionsStr = sectionsStartMatch[1];
+
+          // 2. Match individual object blocks { ... } non-greedily
+          // We look for { "id": ... } structure roughly
+          const objectBlockRegex = /\{[\s\S]*?\}(?=\s*,|\s*\]|\s*$)/g;
+          const potentialBlocks = sectionsStr.match(objectBlockRegex) || [];
+
+          for (const block of potentialBlocks) {
+            try {
+              // Try clean parse first
+              const validBlock = JSON.parse(block);
+              sections.push(validBlock);
+            } catch {
+              // Regex extract fields if JSON is broken inside the block
+              const idMatch = block.match(/"id"\s*:\s*"([^"]+)"/);
+              const titleMatch = block.match(/"title"\s*:\s*"([^"]+)"/);
+              const contentMatch = block.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+              const typeMatch = block.match(/"sectionType"\s*:\s*"([^"]+)"/);
+
+              if (idMatch && contentMatch) {
+                sections.push({
+                  id: idMatch[1],
+                  title: titleMatch ? titleMatch[1] : 'Section',
+                  content: contentMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
+                  sectionType: typeMatch ? typeMatch[1] : 'strategies'
+                });
+              }
+            }
+          }
+        }
+
+        if (sections.length > 0) {
+          console.log(`✅ [RecommendationContentService] Recovered ${sections.length} sections from truncated V4 response`);
+          const recovered = {
+            version: '4.0' as '4.0',
+            contentTitle: titleMatch ? titleMatch[1] : 'Content (Recovered)',
+            sections,
+            callToAction: '', // Default if missing
+            requiredInputs: []
+          };
+          if (this.isValidGeneratedContent(recovered)) {
+            return this.normalizeGeneratedContent(recovered);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[PARSE] Strategy 3.5 (V4 recovery) failed:', (e as Error).message);
     }
 
     // Strategy 4: Fix incomplete/truncated JSON (missing closing braces/quotes)

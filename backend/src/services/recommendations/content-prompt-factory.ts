@@ -17,7 +17,6 @@
 import {
   ContentAssetType,
   ContentSectionType,
-  InteractiveToolBlueprint,
   ComparisonTableData,
   WhitepaperMetadata,
   RecommendationV3,
@@ -73,57 +72,64 @@ export function detectContentAsset(action: string): AssetDetectionResult {
   const actionLower = action.toLowerCase();
 
   // 1. EXPLICIT ARTICLE/BLOG - Highest priority
-  // If the action explicitly says "article", "blog", or similar, treat it as an article
-  // even if it contains comparison keywords like "vs"
-  const articleKeywords = ['standard article', 'publish article', 'blog post', 'guest post', 'write article'];
+  const articleKeywords = ['standard article', 'publish article', 'blog post', 'guest post', 'write article', 'pillar page', 'resource guide'];
   if (articleKeywords.some(k => actionLower.includes(k))) {
     return { asset: 'article', confidence: 'high' };
   }
 
-  // 2. EXPLICIT WHITEPAPER/REPORT - High priority
+  // 2. EXPLICIT WHITEPAPER/REPORT
   const whitepaperKeywords = ['whitepaper', 'white paper', 'research report', 'industry report', 'ebook'];
   if (whitepaperKeywords.some(k => actionLower.includes(k))) {
     return { asset: 'whitepaper', confidence: 'high' };
   }
 
-  // 3. Interactive Tool Keywords
-  const toolKeywords = ['calculator', 'widget', 'tool', 'estimate', 'roi calculator', 'quiz'];
-  if (toolKeywords.some(k => actionLower.includes(k))) {
-    return { asset: 'interactive_tool', confidence: 'high' };
-  }
 
-  // 4. Case Study Keywords
+  // 3. Case Study Keywords
   const caseStudyKeywords = ['case study', 'success story', 'customer story'];
   if (caseStudyKeywords.some(k => actionLower.includes(k))) {
     return { asset: 'case_study', confidence: 'high' };
   }
 
-  // 5. Webinar Keywords
+  // 4. Webinar Keywords
   const webinarKeywords = ['webinar', 'recap', 'event summary', 'presentation', 'talk'];
   if (webinarKeywords.some(k => actionLower.includes(k))) {
     return { asset: 'webinar_recap', confidence: 'high' };
   }
 
-  // 6. Video/YouTube Keywords
-  const videoKeywords = ['video', 'youtube', 'script', 'vlog'];
+  // 5. Video/YouTube Keywords
+  const videoKeywords = ['video', 'youtube', 'script', 'vlog', 'tiktok', 'reels'];
   if (videoKeywords.some(k => actionLower.includes(k))) {
     return { asset: 'video_script', confidence: 'high' };
   }
 
-  // 7. Comparison Table - Only if EXPLICITLY requested as a TABLE/COMPARISON
-  // "comparison table", "create a comparison", "release a comparison table"
-  const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison'];
+  // 6. Comparison Table
+  const explicitComparisonKeywords = ['comparison table', 'create a comparison', 'release a comparison', 'versus table', 'vs table'];
   if (explicitComparisonKeywords.some(k => actionLower.includes(k))) {
     return { asset: 'comparison_table', confidence: 'high' };
   }
 
-  // 8. Guide keyword (could be article or whitepaper depending on context)
+  // 7. Expert Community / Forum
+  const expertKeywords = ['expert community', 'forum response', 'quora', 'reddit response', 'community answer', 'expert answer'];
+  if (expertKeywords.some(k => actionLower.includes(k))) {
+    return { asset: 'expert_community_response', confidence: 'high' };
+  }
+
+  // 8. Social Media Thread
+  const threadKeywords = ['thread', 'linkedin carousel', 'twitter thread', 'x thread', 'social thread'];
+  if (threadKeywords.some(k => actionLower.includes(k))) {
+    return { asset: 'social_media_thread', confidence: 'high' };
+  }
+
+  // 9. Guide keyword
   if (actionLower.includes('guide')) {
-    // If it's a "selection guide", "buying guide" - treat as article with comparison elements
     return { asset: 'article', confidence: 'medium' };
   }
 
-  // 9. Default to article
+  // 10. Comparison fallback
+  if (actionLower.includes(' vs ') || actionLower.includes(' versus ')) {
+    return { asset: 'comparison_table', confidence: 'medium' };
+  }
+
   return { asset: 'article', confidence: 'low' };
 }
 
@@ -235,8 +241,6 @@ function getAssetSpecificInstructions(
   currentYear: number
 ): string {
   switch (asset) {
-    case 'interactive_tool':
-      return getInteractiveToolInstructions(brandName, rec);
     case 'comparison_table':
       return getComparisonTableInstructions(brandName, rec);
     case 'whitepaper':
@@ -247,72 +251,16 @@ function getAssetSpecificInstructions(
       return getVideoScriptInstructions(brandName, rec);
     case 'case_study':
       return getCaseStudyInstructions(brandName, rec);
+    case 'expert_community_response':
+      return getExpertCommunityInstructions(brandName, rec);
+    case 'social_media_thread':
+      return getSocialThreadInstructions(brandName, rec);
     default:
       return getStandardArticleInstructions(brandName, rec, currentYear);
   }
 }
 
 // --- Asset-Specific Prompt Templates ---
-
-function getInteractiveToolInstructions(brandName: string, rec: RecommendationV3): string {
-  return `
-=== ASSET TYPE: INTERACTIVE TOOL BLUEPRINT ===
-You are generating a DETAILED BLUEPRINT/SPECIFICATION for a web-based interactive tool.
-This is NOT executable code. It is a comprehensive document for a developer to implement.
-
-QUALITY REQUIREMENTS:
-- Provide SPECIFIC, actionable input/output definitions
-- Include realistic default values and examples
-- Write compelling introduction text (200-300 words)
-- Define clear, understandable calculation logic in plain English
-
-OUTPUT SCHEMA (InteractiveToolBlueprint):
-{
-  "version": "4.0",
-  "assetType": "interactive_tool",
-  "brandName": "${brandName}",
-  "targetSource": { "domain": "${rec.citationSource}", "sourceType": "owned_site" },
-  "contentTitle": "<Tool Name - e.g., '${brandName} ROI Calculator'>",
-  "toolBlueprint": {
-    "toolName": "<Descriptive name>",
-    "toolDescription": "<3-4 sentences explaining what the tool does and who it's for>",
-    "inputs": [
-      { 
-        "name": "<camelCaseName>", 
-        "label": "<User-Facing Label>", 
-        "type": "number|text|select|range", 
-        "defaultValue": "<realistic default>", 
-        "validation": "<min/max or pattern>",
-        "helpText": "<Tooltip explaining this input>",
-        "options": ["<for select type only>"] 
-      }
-    ],
-    "formula": "<Plain-English description of ALL calculation steps. Be specific: 'Step 1: Multiply monthly cost by 12 to get annual cost. Step 2: Calculate savings by...'>",
-    "outputs": [
-      { 
-        "name": "<outputId>", 
-        "label": "<User-Facing Label>", 
-        "format": "currency|percentage|number|text",
-        "description": "<What this output means>"
-      }
-    ],
-    "seoSchema": { 
-      "@type": "SoftwareApplication", 
-      "name": "<Tool name>", 
-      "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web Browser"
-    }
-  },
-  "sections": [
-    { "id": "intro", "title": "About This Tool", "content": "<200-300 word introduction explaining the tool's value proposition and why it solves a specific user problem>", "sectionType": "context" },
-    { "id": "how_to_use", "title": "How to Use", "content": "<Detailed step-by-step instructions in numbered list>", "sectionType": "strategies" },
-    { "id": "methodology", "title": "Our Methodology", "content": "<Explain the calculation approach and why it's reliable>", "sectionType": "context" },
-    { "id": "cta", "title": "Next Steps", "content": "<What to do after using the tool>", "sectionType": "cta" }
-  ],
-  "requiredInputs": ["[FILL_IN: industry-specific benchmarks]", "[FILL_IN: typical customer values]"]
-}
-`;
-}
 
 function getComparisonTableInstructions(brandName: string, rec: RecommendationV3): string {
   return `
@@ -322,48 +270,29 @@ This should be FAIR and BALANCED - not just marketing for ${brandName}.
 
 QUALITY REQUIREMENTS:
 - Compare 5-7 realistic features/criteria in DEPTH
-- Be HONEST about where competitors might excel
-- **CRITICAL:** The 'Detailed Analysis' section must be a FULL ARTICLE (600+ words) analyzing the differences.
-- Do NOT just list features. Explain WHY they matter.
+- **CRITICAL:** The comparison table must be valid MARKDOWN TABLE syntax.
+- The prose analysis should be SUBSTANTIAL (400+ words).
 
-OUTPUT SCHEMA (ComparisonTableData):
+OUTPUT SCHEMA (GeneratedContentJsonV4):
 {
   "version": "4.0",
   "assetType": "comparison_table",
   "brandName": "${brandName}",
   "targetSource": { "domain": "${rec.citationSource}" },
   "contentTitle": "<Descriptive comparison title>",
-  "comparisonTable": {
-    "title": "<e.g., ${brandName} vs [Competitor]: Full Feature Comparison for [Year]>",
-    "lastUpdated": "<current year>",
-    "products": [
-      { "name": "${brandName}", "description": "<Detailed positioning statement>" },
-      { "name": "<Competitor>", "description": "<Detailed positioning statement>" }
-    ],
-    "criteria": [
-      {
-        "category": "<Category name>",
-        "feature": "<Specific feature>",
-        "values": {
-          "${brandName}": "<specific capability or rating>",
-          "<Competitor>": "<specific capability or rating>"
-        },
-        "winner": "<which is better or 'Tie'>",
-        "notes": "<brief explanation>"
-      }
-    ],
-    "verdict": "<3-4 sentences: who should choose which option>"
-  },
   "sections": [
-    { "id": "overview", "title": "Overview", "content": "<300-400 words introducing the comparison. Discuss market context and why this comparison matters now.>", "sectionType": "context" },
-    { "id": "detailed_analysis", "title": "Deep Dive: Feature-by-Feature Analysis", "content": "<CRITICAL: This must be a comprehensive prose analysis (400-600 words). Go through each major difference. Explain the trade-offs. Use subheaders like '### Price vs Value', '### Durability Concerns'.>", "sectionType": "strategies" },
-    { "id": "use_cases", "title": "Which Should You Choose?", "content": "<Detailed recommendations by user type/use case>\n\n**Choose ${brandName} if:**\n<bullet points with explanations>\n\n**Choose [Competitor] if:**\n<bullet points with explanations>", "sectionType": "summary" },
-    { "id": "conclusion", "title": "Final Verdict", "content": "<Balanced conclusion summarizing key takeaways>", "sectionType": "cta" }
+    { "id": "overview", "title": "Overview", "content": "<300-400 words introducing the comparison.>", "sectionType": "context" },
+    { 
+      "id": "table", 
+      "title": "Comparison Table", 
+      "content": "| Feature | ${brandName} | [Competitor] |\\n|---|---|---|\\n| [Feature 1] | [Value] | [Value] |", 
+      "sectionType": "comparison_table" 
+    },
+    { "id": "detailed_analysis", "title": "Deep Dive Analysis", "content": "<Comprehensive prose analysis of the differences (400-600 words).>", "sectionType": "strategies" },
+    { "id": "verdict", "title": "Final Verdict", "content": "<Balanced conclusion: who should choose which option>", "sectionType": "cta" }
   ],
-  "requiredInputs": ["[FILL_IN: specific pricing if available]", "[FILL_IN: competitor's latest features]"]
+  "requiredInputs": ["[FILL_IN: pricing]", "[FILL_IN: competitor features]"]
 }
-
-CRITICAL: Include BOTH the structured comparisonTable AND the prose sections. The prose should NOT just repeat the table but EXPAND upon it significantly.
 `;
 }
 
@@ -654,6 +583,62 @@ CONTENT QUALITY REQUIREMENTS:
 // ============================================================================
 // FACTORY EXPORT
 // ============================================================================
+
+function getExpertCommunityInstructions(brandName: string, rec: RecommendationV3): string {
+  return `
+=== ASSET TYPE: EXPERT COMMUNITY RESPONSE ===
+You are generating a HIGH-AUTHORITY response for a community forum (Reddit, Quora, or industry-specific forum).
+
+QUALITY REQUIREMENTS:
+- TONE: Helpful, expert, objective, and community-first.
+- Avoid sounding like an ad. Provide REAL value first.
+- Disclosure: Mention ${brandName} naturally as a solution when relevant.
+
+OUTPUT SCHEMA (GeneratedContentJsonV4):
+{
+  "version": "4.0",
+  "assetType": "expert_community_response",
+  "brandName": "${brandName}",
+  "targetSource": { "domain": "${rec.citationSource}" },
+  "contentTitle": "Expert Response: [Topic]",
+  "sections": [
+    { "id": "direct_answer", "title": "Direct Answer", "content": "<1-2 paragraphs giving the most direct, helpful answer to the user's intent.>", "sectionType": "summary" },
+    { "id": "context", "title": "The Full Context", "content": "<Detailed explanation of the 'Why' behind the answer. (300+ words)>", "sectionType": "context" },
+    { "id": "strategies", "title": "Best Practices / How-To", "content": "<Bullet points or numbered steps for the user to follow.>", "sectionType": "strategies" },
+    { "id": "entity_bond", "title": "How ${brandName} Helps", "content": "<Natural mention of ${brandName}'s capability in this area and why it's a fit.>", "sectionType": "cta" }
+  ],
+  "requiredInputs": ["[FILL_IN: specific community thread context]"]
+}
+`;
+}
+
+function getSocialThreadInstructions(brandName: string, rec: RecommendationV3): string {
+  return `
+=== ASSET TYPE: SOCIAL MEDIA THREAD ===
+You are generating a THREADED series of posts for X (Twitter) or LinkedIn.
+
+QUALITY REQUIREMENTS:
+- Post 1 must be a HOOK.
+- Each post should be self-contained but lead to the next.
+- Max 280 characters per post for X.
+
+OUTPUT SCHEMA (GeneratedContentJsonV4):
+{
+  "version": "4.0",
+  "assetType": "social_media_thread",
+  "brandName": "${brandName}",
+  "targetSource": { "domain": "${rec.citationSource}" },
+  "contentTitle": "Social Thread: [Topic]",
+  "sections": [
+    { "id": "post_1", "title": "Post 1: The Hook", "content": "<Hook text>", "sectionType": "strategies" },
+    { "id": "post_2", "title": "Post 2", "content": "<Bridge/Context>", "sectionType": "strategies" },
+    { "id": "post_3", "title": "Post 3", "content": "<Key Insight/Evidence>", "sectionType": "strategies" },
+    { "id": "post_cta", "title": "Last Post: CTA", "content": "<Final thought + Link/CTA>", "sectionType": "cta" }
+  ],
+  "requiredInputs": ["[FILL_IN: social media handle]"]
+}
+`;
+}
 
 function getVideoScriptInstructions(brandName: string, rec: RecommendationV3): string {
   return `

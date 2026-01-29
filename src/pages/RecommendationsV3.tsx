@@ -1891,22 +1891,46 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                           // v4.0 Recovery: Try to fix truncated JSON by closing brackets
                                           if (content.includes('"version":"4.0"') || content.includes('"version": "4.0"')) {
                                             try {
-                                              // Extract sections array even if incomplete
-                                              const sectionsMatch = content.match(/"sections"\s*:\s*\[([\s\S]*)/);
-                                              if (sectionsMatch) {
-                                                let sectionsStr = sectionsMatch[1];
-                                                // Find complete section objects
+                                              // Robust V4 Recovery
+                                              // 1. Extract the text following "sections": [
+                                              const sectionsStartMatch = content.match(/"sections"\s*:\s*\[([\s\S]*)/);
+                                              
+                                              if (sectionsStartMatch) {
+                                                const sectionsStr = sectionsStartMatch[1];
                                                 const sections: any[] = [];
-                                                const sectionRegex = /\{\s*"id"\s*:\s*"([^"]+)"\s*,\s*"title"\s*:\s*"([^"]+)"\s*,\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"sectionType"\s*:\s*"([^"]+)"\s*\}/g;
-                                                let match;
-                                                while ((match = sectionRegex.exec(sectionsStr)) !== null) {
-                                                  sections.push({
-                                                    id: match[1],
-                                                    title: match[2],
-                                                    content: match[3].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
-                                                    sectionType: match[4]
-                                                  });
+                                                
+                                                // 2. Match individual object blocks { ... } non-greedily
+                                                // Note: This simple regex assumes no nested braces within content (escaped braces are fine)
+                                                // If content has nested objects, this might be brittle, but standard V4 schema is flat.
+                                                // We look for { "id": ... } structure roughly
+                                                const objectBlockRegex = /\{[\s\S]*?\}(?=\s*,|\s*\]|\s*$)/g;
+                                                const potentialBlocks = sectionsStr.match(objectBlockRegex) || [];
+
+                                                for (const block of potentialBlocks) {
+                                                  try {
+                                                    // Try to parse the individual block as JSON first
+                                                    const validBlock = JSON.parse(block);
+                                                    sections.push(validBlock);
+                                                  } catch {
+                                                    // If individual block checks fail, regex extract fields 
+                                                    const idMatch = block.match(/"id"\s*:\s*"([^"]+)"/);
+                                                    const titleMatch = block.match(/"title"\s*:\s*"([^"]+)"/);
+                                                    // Content match is tricky due to escaped quotes. 
+                                                    // Look for "content": "..." pattern
+                                                    const contentMatch = block.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                                                    const typeMatch = block.match(/"sectionType"\s*:\s*"([^"]+)"/);
+
+                                                    if (idMatch && contentMatch) {
+                                                      sections.push({
+                                                        id: idMatch[1],
+                                                        title: titleMatch ? titleMatch[1] : 'Section',
+                                                        content: contentMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
+                                                        sectionType: typeMatch ? typeMatch[1] : 'strategies'
+                                                      });
+                                                    }
+                                                  }
                                                 }
+
                                                 if (sections.length > 0) {
                                                   // Extract title if present
                                                   const titleMatch = content.match(/"contentTitle"\s*:\s*"([^"]+)"/);
@@ -1917,6 +1941,12 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                                     callToAction: '',
                                                     requiredInputs: []
                                                   };
+                                                } else {
+                                                  // Fallback: If no objects matched, try matching strictly by "id" presence
+                                                  // This catches cases where the brace matching failed (e.g. truncated end)
+                                                  // Logic: Find "id": "..." and take context around it? 
+                                                  // Actually simpler: Just accept null if recovery failed this hard.
+                                                  parsedContent = null;
                                                 }
                                               }
                                             } catch (e) {

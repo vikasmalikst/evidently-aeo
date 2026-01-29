@@ -49,23 +49,41 @@ export class OpportunityRecommendationService {
             return { success: true, message: 'No opportunities identified.', recommendations: [] };
         }
 
-        // 4. Construct Batched Prompt
-        console.log(`📝 Constructing batched prompt for ${opportunities.length} opportunities...`);
-        const prompt = opportunityPromptService.constructBatchPrompt(brand.name, opportunities, competitorDomains);
+        // 4. Construct Batched Prompts (Chunked)
+        const CHUNK_SIZE = 4;
+        const chunks = [];
+        for (let i = 0; i < opportunities.length; i += CHUNK_SIZE) {
+            chunks.push(opportunities.slice(i, i + CHUNK_SIZE));
+        }
 
-        // 5. Execute LLM Call
-        console.log('🚀 Calling LLM via OpenRouter...');
+        console.log(`📝 Splitting ${opportunities.length} opportunities into ${chunks.length} batches...`);
+
+        // 5. Execute LLM Calls in Parallel
         const systemMessage = `Act like a world's best SEO + AEO (Answer Engine Optimization) Expert working for ${brand.name}. Respond ONLY with a valid JSON array.`;
 
-        const llmResults = await recommendationLLMService.executePrompt<OpportunityRecommendationLLMResponse>(
-            brandId,
-            prompt,
-            systemMessage,
-            24000 // High max tokens for batched results
-        );
+        const allLlmResultsPromises = chunks.map(async (chunk, idx) => {
+            console.log(`🚀 [Batch ${idx + 1}/${chunks.length}] Calling LLM for ${chunk.length} items...`);
+            const prompt = opportunityPromptService.constructBatchPrompt(brand.name, chunk, competitorDomains);
 
-        if (!llmResults || llmResults.length === 0) {
-            console.error('❌ LLM returned no recommendations.');
+            try {
+                const result = await recommendationLLMService.executePrompt<OpportunityRecommendationLLMResponse>(
+                    brandId,
+                    prompt,
+                    systemMessage,
+                    8000 // Lower max tokens per chunk is safer and faster
+                );
+                return result || [];
+            } catch (err) {
+                console.error(`❌ [Batch ${idx + 1}] LLM transformation failed:`, err);
+                return [];
+            }
+        });
+
+        const batchResults = await Promise.all(allLlmResultsPromises);
+        const llmResults = batchResults.flat();
+
+        if (llmResults.length === 0) {
+            console.error('❌ LLM returned no recommendations across all batches.');
             return { success: false, message: 'LLM generation failed.' };
         }
 

@@ -2,9 +2,12 @@
  * SEO Score Card & Export Suite
  * 
  * Premium features for content quality analysis and multi-format export.
+ * Updates V2:
+ * - Splits scoring into "Hygiene" (Frontend, 30pts) and "Scrapability" (Backend, 70pts).
+ * - Fetches backend score asynchronously.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   IconChartBar,
@@ -17,11 +20,16 @@ import {
   IconDownload,
   IconBrandLinkedin,
   IconBrandWordpress,
-  IconRefresh
+  IconRefresh,
+  IconServer,
+  IconLayout,
+  IconLoader
 } from '@tabler/icons-react';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
 // =============================================================================
-// SEO SCORE ANALYSIS
+// TYPES
 // =============================================================================
 
 interface SEOMetric {
@@ -29,106 +37,79 @@ interface SEOMetric {
   status: 'good' | 'warning' | 'error';
   value: string;
   suggestion?: string;
+  score?: number;
+  maxScore?: number;
 }
 
-interface SEOAnalysis {
-  score: number;
+interface HygieneAnalysis {
+  score: number; // Max 30
   metrics: SEOMetric[];
+}
+
+interface ScrapabilityAnalysis {
+  score: number; // Max 70
+  metrics: SEOMetric[];
+  loading: boolean;
+  error?: string;
+}
+
+interface CombinedAnalysis {
+  totalScore: number;
+  hygiene: HygieneAnalysis;
+  scrapability: ScrapabilityAnalysis;
   citationProbability: 'high' | 'medium' | 'low';
 }
 
-/**
- * Analyze content for SEO/AEO quality
- */
-export function analyzeContent(content: string, brandName?: string): SEOAnalysis {
+// =============================================================================
+// HYGIENE ANALYSIS (Frontend - 30pts)
+// =============================================================================
+
+function analyzeHygiene(content: string): HygieneAnalysis {
   const metrics: SEOMetric[] = [];
   let score = 0;
 
-  // 1. Word Count
+  // 1. Word Count (Max 10)
   const wordCount = content.split(/\s+/).filter(Boolean).length;
   if (wordCount >= 300) {
-    metrics.push({ name: 'Word Count', status: 'good', value: `${wordCount} words` });
-    score += 15;
-  } else if (wordCount >= 150) {
-    metrics.push({ name: 'Word Count', status: 'warning', value: `${wordCount} words`, suggestion: 'Aim for 300+ words for better depth' });
+    metrics.push({ name: 'Word Count', status: 'good', value: `${wordCount}`, score: 10, maxScore: 10 });
     score += 10;
-  } else {
-    metrics.push({ name: 'Word Count', status: 'error', value: `${wordCount} words`, suggestion: 'Content is too short' });
+  } else if (wordCount >= 150) {
+    metrics.push({ name: 'Word Count', status: 'warning', value: `${wordCount}`, suggestion: 'Aim for 300+', score: 5, maxScore: 10 });
     score += 5;
+  } else {
+    metrics.push({ name: 'Word Count', status: 'error', value: `${wordCount}`, suggestion: 'Too short', score: 0, maxScore: 10 });
+    score += 0;
   }
 
-  // 2. Readability (simplified Flesch-Kincaid approximation)
+  // 2. Readability (Max 10)
   const sentences = content.split(/[.!?]+/).filter(Boolean).length;
   const avgWordsPerSentence = wordCount / Math.max(sentences, 1);
   if (avgWordsPerSentence <= 20) {
-    metrics.push({ name: 'Readability', status: 'good', value: 'Grade 8-10 (Optimal)' });
-    score += 20;
+    metrics.push({ name: 'Readability', status: 'good', value: 'Grade 8-10', score: 10, maxScore: 10 });
+    score += 10;
   } else if (avgWordsPerSentence <= 25) {
-    metrics.push({ name: 'Readability', status: 'warning', value: 'Grade 11-12', suggestion: 'Shorten some sentences' });
-    score += 12;
-  } else {
-    metrics.push({ name: 'Readability', status: 'error', value: 'Complex', suggestion: 'Sentences are too long for AI parsing' });
+    metrics.push({ name: 'Readability', status: 'warning', value: 'Grade 11-12', suggestion: 'Simplify sentences', score: 5, maxScore: 10 });
     score += 5;
+  } else {
+    metrics.push({ name: 'Readability', status: 'error', value: 'Complex', suggestion: 'Sentences too long', score: 2, maxScore: 10 });
+    score += 2;
   }
 
-  // 3. Structure (Headers, Lists)
+  // 3. Structure (Max 10)
   const hasHeaders = /#{1,3}\s/.test(content) || /<h[1-3]>/i.test(content);
   const hasBullets = /^[-*•]/m.test(content) || /^\d+\./m.test(content);
   if (hasHeaders && hasBullets) {
-    metrics.push({ name: 'Structure', status: 'good', value: 'Headers + Lists ✓' });
-    score += 20;
+    metrics.push({ name: 'Structure', status: 'good', value: 'Headers + Lists', score: 10, maxScore: 10 });
+    score += 10;
   } else if (hasHeaders || hasBullets) {
-    metrics.push({ name: 'Structure', status: 'warning', value: 'Partial', suggestion: 'Add headers and bullet points' });
-    score += 12;
-  } else {
-    metrics.push({ name: 'Structure', status: 'error', value: 'Missing', suggestion: 'Add headers and lists for better parsing' });
+    metrics.push({ name: 'Structure', status: 'warning', value: 'Partial', suggestion: 'Add headers/lists', score: 5, maxScore: 10 });
     score += 5;
-  }
-
-  // 4. Brand Mentions (if brand provided)
-  if (brandName) {
-    const brandMentions = (content.match(new RegExp(brandName, 'gi')) || []).length;
-    const density = (brandMentions / wordCount) * 100;
-    if (brandMentions >= 3 && density <= 3) {
-      metrics.push({ name: 'Brand Mentions', status: 'good', value: `${brandMentions} mentions (${density.toFixed(1)}%)` });
-      score += 15;
-    } else if (brandMentions >= 1) {
-      metrics.push({ name: 'Brand Mentions', status: 'warning', value: `${brandMentions} mentions`, suggestion: 'Add 2-3 more brand references' });
-      score += 8;
-    } else {
-      metrics.push({ name: 'Brand Mentions', status: 'error', value: '0 mentions', suggestion: 'Include brand name in content' });
-      score += 0;
-    }
   } else {
-    score += 15; // Skip if no brand provided
+    metrics.push({ name: 'Structure', status: 'error', value: 'Flat text', suggestion: 'Formatting needed', score: 2, maxScore: 10 });
+    score += 2;
   }
 
-  // 5. Statistics/Data Points
-  const hasNumbers = /\d+%|\d+x|\$\d+|\d+\s*(million|billion|thousand)/i.test(content);
-  if (hasNumbers) {
-    metrics.push({ name: 'Data Points', status: 'good', value: 'Statistics included ✓' });
-    score += 15;
-  } else {
-    metrics.push({ name: 'Data Points', status: 'warning', value: 'None found', suggestion: 'Add statistics to boost authority' });
-    score += 5;
-  }
-
-  // 6. Call to Action
-  const hasCTA = /click|subscribe|learn more|get started|sign up|download|contact/i.test(content);
-  if (hasCTA) {
-    metrics.push({ name: 'Call to Action', status: 'good', value: 'CTA detected ✓' });
-    score += 15;
-  } else {
-    metrics.push({ name: 'Call to Action', status: 'warning', value: 'Missing', suggestion: 'Add a clear call to action' });
-    score += 5;
-  }
-
-  // Calculate citation probability
-  let citationProbability: 'high' | 'medium' | 'low' = 'low';
-  if (score >= 80) citationProbability = 'high';
-  else if (score >= 60) citationProbability = 'medium';
-
-  return { score: Math.min(score, 100), metrics, citationProbability };
+  return { score, metrics };
 }
 
 // =============================================================================
@@ -142,8 +123,66 @@ interface SEOScoreCardProps {
 }
 
 export function SEOScoreCard({ content, brandName, onRefresh }: SEOScoreCardProps) {
-  const analysis = useMemo(() => analyzeContent(content, brandName), [content, brandName]);
+  // Client-side state
+  const [hygiene, setHygiene] = useState<HygieneAnalysis>(analyzeHygiene(content));
+  
+  // Server-side state
+  const [scrapability, setScrapability] = useState<ScrapabilityAnalysis>({
+    score: 0,
+    metrics: [],
+    loading: false
+  });
 
+  // Debounce logic for API calls
+  useEffect(() => {
+    // Immediate update for hygiene
+    setHygiene(analyzeHygiene(content));
+
+    // Debounced update for scrapability
+    const timer = setTimeout(async () => {
+      if (!content || content.length < 50) return;
+      
+      setScrapability(prev => ({ ...prev, loading: true, error: undefined }));
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}/aeo/score`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+           const b = data.data.breakdown;
+           const newMetrics: SEOMetric[] = [
+             { name: 'Primary Answer', ...b.primaryAnswer, value: b.primaryAnswer.status === 'good' ? 'Found' : 'Missing', suggestion: b.primaryAnswer.feedback },
+             { name: 'Chunkability', ...b.chunkability, value: b.chunkability.status === 'good' ? 'Good' : 'Poor', suggestion: b.chunkability.feedback },
+             { name: 'Concept Definitions', ...b.conceptClarity, value: b.conceptClarity.status === 'good' ? 'Clear' : 'Vague', suggestion: b.conceptClarity.feedback },
+             { name: 'Explanation Depth', ...b.explanationDepth, value: b.explanationDepth.status === 'good' ? 'Deep' : 'Shallow', suggestion: b.explanationDepth.feedback },
+             { name: 'Comparisons', ...b.comparison, value: b.comparison.status === 'good' ? 'Present' : 'None', suggestion: b.comparison.feedback },
+             { name: 'Authority Signals', ...b.authority, value: b.authority.status === 'good' ? 'Strong' : 'Weak', suggestion: b.authority.feedback },
+             { name: 'Tone Check', ...b.antiMarketing, value: b.antiMarketing.status === 'good' ? 'Neutral' : 'Promo', suggestion: b.antiMarketing.feedback }
+           ];
+
+           setScrapability({
+             score: data.data.totalScore,
+             metrics: newMetrics,
+             loading: false
+           });
+        }
+      } catch (err) {
+        console.error("AEO Score API Error:", err);
+        setScrapability(prev => ({ ...prev, loading: false, error: 'Scoring failed' }));
+      }
+    }, 1000); // 1s debounce
+
+    return () => clearTimeout(timer);
+  }, [content]);
+
+  // Combined score
+  const totalScore = Math.min(100, Math.max(0, hygiene.score + scrapability.score));
+  
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-[#10b981]';
     if (score >= 60) return 'text-[#f59e0b]';
@@ -156,18 +195,16 @@ export function SEOScoreCard({ content, brandName, onRefresh }: SEOScoreCardProp
     return 'from-[#ef4444] to-[#f87171]';
   };
 
-  const getCitationBadge = (prob: 'high' | 'medium' | 'low') => {
-    switch (prob) {
-      case 'high': return { color: 'bg-[#d1fae5] text-[#047857]', label: '🎯 High Citation Probability' };
-      case 'medium': return { color: 'bg-[#fef3c7] text-[#92400e]', label: '⚠️ Medium Citation Probability' };
-      case 'low': return { color: 'bg-[#fee2e2] text-[#991b1b]', label: '❌ Low Citation Probability' };
-    }
+  const getCitationBadge = (score: number) => {
+    if (score >= 80) return { color: 'bg-[#d1fae5] text-[#047857]', label: '🎯 High Citation Probability' };
+    if (score >= 60) return { color: 'bg-[#fef3c7] text-[#92400e]', label: '⚠️ Medium Citation Probability' };
+    return { color: 'bg-[#fee2e2] text-[#991b1b]', label: '❌ Low Citation Probability' };
   };
 
-  const citationBadge = getCitationBadge(analysis.citationProbability);
+  const citationBadge = getCitationBadge(totalScore);
 
   return (
-    <div className="seo-score-card border border-[#e2e8f0] rounded-lg overflow-hidden">
+    <div className="seo-score-card border border-[#e2e8f0] rounded-lg overflow-hidden bg-white shadow-sm">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#1e293b] to-[#334155] px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -175,8 +212,13 @@ export function SEOScoreCard({ content, brandName, onRefresh }: SEOScoreCardProp
           <span className="text-[13px] font-semibold text-white">AEO Content Score</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className={`text-[24px] font-bold ${getScoreColor(analysis.score)}`}>
-            {analysis.score}
+           {scrapability.loading && (
+             <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}>
+               <IconLoader size={14} className="text-[#94a3b8]" />
+             </motion.div>
+           )}
+          <span className={`text-[24px] font-bold ${getScoreColor(totalScore)}`}>
+            {totalScore}
           </span>
           <span className="text-[12px] text-[#94a3b8]">/100</span>
           {onRefresh && (
@@ -188,47 +230,83 @@ export function SEOScoreCard({ content, brandName, onRefresh }: SEOScoreCardProp
       </div>
 
       {/* Score Bar */}
-      <div className="px-4 py-2 bg-[#f8fafc]">
+      <div className="px-4 py-2 bg-[#f8fafc] border-b border-[#f1f5f9]">
         <div className="h-2 bg-[#e2e8f0] rounded-full overflow-hidden">
           <motion.div
             initial={{ width: 0 }}
-            animate={{ width: `${analysis.score}%` }}
+            animate={{ width: `${totalScore}%` }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
-            className={`h-full bg-gradient-to-r ${getScoreGradient(analysis.score)} rounded-full`}
+            className={`h-full bg-gradient-to-r ${getScoreGradient(totalScore)} rounded-full`}
           />
         </div>
       </div>
 
-      {/* Metrics */}
-      <div className="p-4 space-y-2">
-        {analysis.metrics.map((metric, idx) => (
-          <div key={idx} className="flex items-center justify-between py-1">
-            <div className="flex items-center gap-2">
-              {metric.status === 'good' && <IconCheck size={14} className="text-[#10b981]" />}
-              {metric.status === 'warning' && <IconAlertTriangle size={14} className="text-[#f59e0b]" />}
-              {metric.status === 'error' && <IconX size={14} className="text-[#ef4444]" />}
-              <span className="text-[12px] text-[#475569]">{metric.name}</span>
-            </div>
-            <div className="text-right">
-              <span className={`text-[12px] font-medium ${
-                metric.status === 'good' ? 'text-[#10b981]' :
-                metric.status === 'warning' ? 'text-[#f59e0b]' : 'text-[#ef4444]'
-              }`}>
-                {metric.value}
-              </span>
-              {metric.suggestion && (
-                <p className="text-[10px] text-[#94a3b8]">{metric.suggestion}</p>
-              )}
-            </div>
+      <div className="flex flex-col md:flex-row">
+        {/* Hygiene Column */}
+        <div className="flex-1 border-b md:border-b-0 md:border-r border-[#f1f5f9] p-4">
+          <div className="flex items-center gap-2 mb-3">
+             <IconLayout size={14} className="text-[#64748b]" />
+             <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">Hygiene (30pts)</h4>
           </div>
-        ))}
+          <div className="space-y-3">
+            {hygiene.metrics.map((metric, idx) => (
+               <MetricItem key={idx} metric={metric} />
+            ))}
+          </div>
+        </div>
+
+        {/* Scrapability Column */}
+        <div className="flex-1 p-4 bg-[#fafcff]">
+          <div className="flex items-center gap-2 mb-3">
+             <IconServer size={14} className="text-[#64748b]" />
+             <h4 className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">AI Scrapability (70pts)</h4>
+          </div>
+          <div className="space-y-3">
+            {scrapability.loading && scrapability.metrics.length === 0 ? (
+               <div className="text-[12px] text-[#94a3b8] italic p-2">Analyzing content semantics...</div>
+            ) : (
+                scrapability.metrics.map((metric, idx) => (
+                   <MetricItem key={idx} metric={metric} />
+                ))
+            )}
+            {scrapability.error && <div className="text-[11px] text-red-400">{scrapability.error}</div>}
+          </div>
+        </div>
       </div>
 
-      {/* Citation Probability */}
-      <div className="px-4 pb-4">
+      {/* Citation Probability Footer */}
+      <div className="px-4 py-3 bg-white border-t border-[#f1f5f9]">
         <div className={`${citationBadge.color} rounded-lg px-3 py-2 text-center text-[12px] font-medium`}>
           {citationBadge.label}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricItem({ metric }: { metric: SEOMetric }) {
+  return (
+    <div className="flex items-start justify-between group">
+      <div className="flex items-start gap-2 max-w-[65%]">
+        <div className="mt-0.5">
+          {metric.status === 'good' && <IconCheck size={14} className="text-[#10b981]" />}
+          {metric.status === 'warning' && <IconAlertTriangle size={14} className="text-[#f59e0b]" />}
+          {metric.status === 'error' && <IconX size={14} className="text-[#ef4444]" />}
+        </div>
+        <div>
+           <span className="text-[12px] text-[#334155] font-medium block leading-tight">{metric.name}</span>
+           {metric.suggestion && (
+             <p className="text-[10px] text-[#94a3b8] leading-tight mt-0.5">{metric.suggestion}</p>
+           )}
+        </div>
+      </div>
+      <div className="text-right">
+        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${
+          metric.status === 'good' ? 'bg-[#d1fae5] text-[#047857]' :
+          metric.status === 'warning' ? 'bg-[#fef3c7] text-[#92400e]' : 'bg-[#fee2e2] text-[#991b1b]'
+        }`}>
+          {metric.value}
+        </span>
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ import citationCategorizationRoutes from './routes/citation-categorization.route
 import onboardingRoutes from './routes/onboarding.routes';
 import promptManagementRoutes from './routes/prompt-management.routes';
 import adminRoutes from './routes/admin.routes';
+import aeoScoringRoutes from './routes/aeo-scoring.routes';
 
 import recommendationsV3Routes from './routes/recommendations-v3.routes';
 import moversShakersRoutes from './routes/movers-shakers.routes';
@@ -133,6 +134,8 @@ app.use('/api', domainReadinessRoutes);
 app.use('/api/report-settings', reportSettingsRoutes);
 app.use('/api', opportunityIdentifierRoutes);
 app.use('/api/tools', toolsRoutes);
+app.use('/api/aeo', aeoScoringRoutes);
+
 
 // TEMPORARY: User management routes commented out
 // app.use('/api/users', userManagementRoutes);

@@ -30,6 +30,8 @@ import { apiClient } from '../lib/apiClient';
 import { StepIndicator } from '../components/RecommendationsV3/StepIndicator';
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
+import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
+import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
 import { ContentSectionRenderer, SectionTypeBadge } from '../components/RecommendationsV3/components/ContentSectionRenderer';
 import { SEOScoreCard, ExportModal } from '../components/RecommendationsV3/components/SEOScoreCard';
 import { AEOScoreBadge } from '../components/RecommendationsV3/components/ContentAnalysisTools';
@@ -94,6 +96,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
   const [contentMap, setContentMap] = useState<Map<string, any>>(new Map());
   const [guideMap, setGuideMap] = useState<Map<string, any>>(new Map());
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
+  const [priorityFilter, setPriorityFilter] = useState<'all' | 'High' | 'Medium' | 'Low'>('all');
+  const [effortFilter, setEffortFilter] = useState<'all' | 'Low' | 'Medium' | 'High'>('all');
   const [allRecommendations, setAllRecommendations] = useState<RecommendationV3[]>([]); // Store all Step 1 recommendations for local filtering
   const [generatingContentIds, setGeneratingContentIds] = useState<Set<string>>(new Set()); // Track which recommendations are generating content
   const [hasGeneratedContentForStep3, setHasGeneratedContentForStep3] = useState(false); // Drives Step 3 "attention" animation after generating content
@@ -364,19 +368,29 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
       return;
     }
 
-    // Apply the filter
-    if (statusFilter === 'all') {
-      // Show all recommendations when filter is "all"
-      setRecommendations([...allRecommendations]);
-    } else {
-      // Filter locally by status
-      const filtered = allRecommendations.filter(rec => {
+    // Apply all filters (status, priority, effort)
+    let filtered = [...allRecommendations];
+    
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(rec => {
         const recStatus = rec.reviewStatus || 'pending_review';
         return recStatus === statusFilter;
       });
-      setRecommendations([...filtered]);
     }
-  }, [statusFilter, allRecommendations, currentStep]);
+    
+    // Priority filter
+    if (priorityFilter !== 'all') {
+      filtered = filtered.filter(rec => rec.priority === priorityFilter);
+    }
+    
+    // Effort filter
+    if (effortFilter !== 'all') {
+      filtered = filtered.filter(rec => rec.effort === effortFilter);
+    }
+    
+    setRecommendations(filtered);
+  }, [statusFilter, priorityFilter, effortFilter, allRecommendations, currentStep]);
 
   // Restore persisted step when selectedBrandId changes (e.g., brand switch)
   useEffect(() => {
@@ -406,7 +420,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     setExpandedSections(new Map());
     setDataMaturity(null);
     setError(null);
-    setStatusFilter('all'); // Reset filter
+    setStatusFilter('all'); // Reset filters
+    setPriorityFilter('all');
+    setEffortFilter('all');
 
     // Load persisted step for new brand, or default to 1
     const newStep = getPersistedStep(newBrandId);
@@ -1414,8 +1430,9 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                     <p className="text-[13px] text-[#64748b]">Review findings and prioritize recommendations</p>
                   </div>
                   <div className="flex items-end gap-3 flex-wrap">
-                    {/* Status Filter - Enhanced UI */}
                     <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+                    <PriorityFilter value={priorityFilter} onChange={setPriorityFilter} />
+                    <EffortFilter value={effortFilter} onChange={setEffortFilter} />
                   </div>
                 </div>
                 <RecommendationsTableV3

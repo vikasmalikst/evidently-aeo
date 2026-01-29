@@ -145,19 +145,13 @@ export const RecommendationsTableV3 = ({
                 </th>
               )}
               <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider min-w-[400px]">
-                Action
+                Recommendation
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[200px]">
                 Source/Domain
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[120px]">
                 Focus Area
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[120px]">
-                Priority
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[120px]">
-                Effort Level
               </th>
               {showStatusDropdown && (
                 <th className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-caption)] uppercase tracking-wider w-[160px]">
@@ -174,7 +168,7 @@ export const RecommendationsTableV3 = ({
           <tbody className="bg-white divide-y divide-[var(--border-default)]">
             {recommendations.length === 0 ? (
               <tr>
-                <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 8 : 7) : (showActions ? 7 : 6)) : (showStatusDropdown ? (showActions ? 7 : 6) : (showActions ? 6 : 5))} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
+                <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-6 py-12 text-center text-sm text-[var(--text-caption)]">
                   No recommendations found
                 </td>
               </tr>
@@ -233,11 +227,17 @@ export const RecommendationsTableV3 = ({
                                 )}
                               </button>
                             )}
-                            <div className="flex flex-col gap-1">
-                              <p className="text-[13px] text-[var(--text-headings)] font-medium leading-snug">
-                                {rec.action}
+                            <div className="flex flex-col gap-1.5">
+                              {/* Content Type Badge */}
+                              {rec.action && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-gradient-to-r from-[#eef2ff] to-[#e0e7ff] text-[#4338ca] border border-[#c7d2fe] w-fit">
+                                  {rec.action.match(/^\[(.*?)\]/)?.[1] || 'Article'}
+                                </span>
+                              )}
+                              {/* Title (contentFocus) as main display */}
+                              <p className="text-[14px] text-[var(--text-headings)] font-semibold leading-snug">
+                                {rec.contentFocus || rec.action?.replace(/^\[.*?\]\s*/, '') || 'Untitled Recommendation'}
                               </p>
-                              {/* <SourceBadge source={rec.source} /> */}
                             </div>
                           </div>
                         </td>
@@ -248,12 +248,6 @@ export const RecommendationsTableV3 = ({
                         </td>
                         <td className="px-4 py-4">
                           <FocusAreaBadge area={rec.focusArea} />
-                        </td>
-                        <td className="px-4 py-4">
-                          <PriorityBadge priority={rec.priority} />
-                        </td>
-                        <td className="px-4 py-4">
-                          <EffortBadge effort={rec.effort} />
                         </td>
                         {showStatusDropdown && (
                           <td className="px-4 py-4">
@@ -358,140 +352,149 @@ export const RecommendationsTableV3 = ({
 
                       </motion.tr>
                       {isExpanded && hasDetails && (
-                        <tr key={`${recId}-details`} className="bg-[#f8fafc]">
-                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 8 : 7) : (showActions ? 7 : 6)) : (showStatusDropdown ? (showActions ? 7 : 6) : (showActions ? 6 : 5))} className="px-4 py-4">
-                            <div className="bg-white border border-[#e2e8f0] rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {/* Why this matters */}
-                              <div className="space-y-2">
-                                <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Why this matters</p>
-                                <ul className="list-disc pl-5 space-y-1">
-                                  {rec.reason && (
-                                    <li className="text-[13px] text-[#0f172a]">{rec.reason}</li>
-                                  )}
-                                  {rec.explanation && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Content Type to Publish/Explanation:</span>
-                                      <span className="text-[#0f172a]">{rec.explanation}</span>
-                                    </li>
-                                  )}
-                                </ul>
+                        <tr key={`${recId}-details`} className="bg-[#fafbfc]">
+                          <td colSpan={showCheckboxes ? (showStatusDropdown ? (showActions ? 6 : 5) : (showActions ? 5 : 4)) : (showStatusDropdown ? (showActions ? 5 : 4) : (showActions ? 4 : 3))} className="px-4 py-4">
+                            <div className="bg-white border border-[#e5e7eb] rounded-xl p-5 space-y-4 shadow-sm">
+                              {/* Action - What to Do (Full Width) */}
+                              <div className="bg-gradient-to-r from-[#f8fafc] to-[#f1f5f9] rounded-lg p-4 border border-[#e2e8f0]">
+                                <div className="flex items-start gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-[#00bcdc] bg-opacity-10 flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-4 h-4 text-[#00bcdc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wide mb-1">What to Do</p>
+                                    <p className="text-[14px] text-[#0f172a] leading-relaxed">
+                                      {rec.action?.replace(/^\[.*?\]\s*/, '') || 'No action specified'}
+                                    </p>
+                                  </div>
+                                </div>
                               </div>
 
-                              {/* Proof & metrics */}
-                              <div className="space-y-2">
-                                <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Proof & metrics</p>
-                                <ul className="list-disc pl-5 space-y-1">
-                                  {rec.citationSource && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Target source:</span>
-                                      <span className="text-[#0f172a]">{rec.citationSource}</span>
-                                    </li>
-                                  )}
-                                  {rec.impactScore && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Impact score:</span>
-                                      <span className="text-[#0f172a]">{rec.impactScore}</span>
-                                    </li>
-                                  )}
-                                  {rec.mentionRate && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Mentions:</span>
-                                      <span className="text-[#0f172a]">{rec.mentionRate}</span>
-                                    </li>
-                                  )}
-                                  {rec.citationCount !== undefined && rec.citationCount !== null && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Citations:</span>
-                                      <span className="text-[#0f172a]">{rec.citationCount}</span>
-                                    </li>
-                                  )}
-                                  {rec.soa && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">SOA:</span>
-                                      <span className="text-[#0f172a]">{rec.soa}</span>
-                                    </li>
-                                  )}
-                                  {rec.sentiment && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Sentiment:</span>
-                                      <span className="text-[#0f172a]">{rec.sentiment}</span>
-                                    </li>
-                                  )}
-                                  {rec.visibilityScore && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Visibility:</span>
-                                      <span className="text-[#0f172a]">{rec.visibilityScore}</span>
-                                    </li>
-                                  )}
-                                </ul>
+                              {/* Two Column Grid */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Strategic Rationale - muted professional style */}
+                                {(rec.reason || rec.explanation) && (
+                                  <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <div className="w-6 h-6 rounded-md bg-[#6b7280] bg-opacity-10 flex items-center justify-center">
+                                        <svg className="w-3.5 h-3.5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-[11px] font-bold text-[#4b5563] uppercase tracking-wide">Why This Matters</p>
+                                    </div>
+                                    <p className="text-[13px] text-[#374151] leading-relaxed">{rec.reason}</p>
+                                    {rec.explanation && (
+                                      <p className="text-[12px] text-[#6b7280] mt-2 pt-2 border-t border-[#e5e7eb]">{rec.explanation}</p>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Expected Impact - muted professional style */}
+                                <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-6 h-6 rounded-md bg-[#6b7280] bg-opacity-10 flex items-center justify-center">
+                                      <svg className="w-3.5 h-3.5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                      </svg>
+                                    </div>
+                                    <p className="text-[11px] font-bold text-[#4b5563] uppercase tracking-wide">Expected Impact</p>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {rec.expectedBoost && (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[12px] font-medium text-[#6b7280]">Boost:</span>
+                                        <span className="text-[13px] font-semibold text-[#374151]">{rec.expectedBoost}</span>
+                                      </div>
+                                    )}
+                                    {rec.confidence !== undefined && rec.confidence !== null && (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[12px] font-medium text-[#6b7280]">Confidence:</span>
+                                        <div className="flex-1 bg-[#e5e7eb] rounded-full h-2 overflow-hidden">
+                                          <div 
+                                            className="h-full bg-gradient-to-r from-[#00bcdc] to-[#0891b2] rounded-full transition-all"
+                                            style={{ width: `${rec.confidence}%` }}
+                                          />
+                                        </div>
+                                        <span className="text-[12px] font-bold text-[#374151]">{rec.confidence}%</span>
+                                      </div>
+                                    )}
+                                    {rec.kpi && (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[12px] font-medium text-[#6b7280]">Primary KPI:</span>
+                                        <span className="text-[13px] text-[#374151]">{rec.kpi}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Execution Details */}
+                                <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-4">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-6 h-6 rounded-md bg-[#6366f1] bg-opacity-10 flex items-center justify-center">
+                                      <svg className="w-3.5 h-3.5 text-[#6366f1]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                      </svg>
+                                    </div>
+                                    <p className="text-[11px] font-bold text-[#475569] uppercase tracking-wide">Execution Plan</p>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    {rec.timeline && (
+                                      <div>
+                                        <p className="text-[10px] text-[#94a3b8] uppercase font-medium">Timeline</p>
+                                        <p className="text-[13px] font-medium text-[#334155]">{rec.timeline}</p>
+                                      </div>
+                                    )}
+                                    {rec.effort && (
+                                      <div>
+                                        <p className="text-[10px] text-[#94a3b8] uppercase font-medium">Effort Level</p>
+                                        <p className="text-[13px] font-medium text-[#334155]">{rec.effort}</p>
+                                      </div>
+                                    )}
+                                    {rec.citationSource && (
+                                      <div className="col-span-2">
+                                        <p className="text-[10px] text-[#94a3b8] uppercase font-medium">Target Platform</p>
+                                        <p className="text-[13px] font-medium text-[#334155]">{rec.citationSource}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Cross-Channel Strategy - muted professional style */}
+                                {rec.focusSources && (
+                                  <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <div className="w-6 h-6 rounded-md bg-[#6b7280] bg-opacity-10 flex items-center justify-center">
+                                        <svg className="w-3.5 h-3.5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-[11px] font-bold text-[#4b5563] uppercase tracking-wide">Cross-Channel Strategy</p>
+                                    </div>
+                                    <p className="text-[13px] text-[#374151] leading-relaxed">{rec.focusSources}</p>
+                                  </div>
+                                )}
                               </div>
 
-                              {/* Focus & plan */}
-                              <div className="space-y-2">
-                                <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Focus & plan</p>
-                                <ul className="list-disc pl-5 space-y-1">
-                                  {rec.kpi && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Primary KPI:</span>
-                                      <span className="text-[#0f172a]">{rec.kpi} {rec.expectedBoost ? `(${rec.expectedBoost})` : ''}</span>
-                                    </li>
-                                  )}
-                                  {rec.focusSources && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Double dip - Cross-Channel Reuse Efficiencies:</span>
-                                      <span className="text-[#0f172a]">{rec.focusSources}</span>
-                                    </li>
-                                  )}
-                                  {rec.contentFocus && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Title:</span>
-                                      <span className="text-[#0f172a]">{rec.contentFocus}</span>
-                                    </li>
-                                  )}
-                                </ul>
-                              </div>
-
-                              {/* Timing & confidence */}
-                              <div className="space-y-2">
-                                <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide">Timing & confidence</p>
-                                <ul className="list-disc pl-5 space-y-1">
-                                  {rec.effort && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Effort:</span>
-                                      <span className="text-[#0f172a]">{rec.effort}</span>
-                                    </li>
-                                  )}
-                                  {rec.timeline && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Timeline:</span>
-                                      <span className="text-[#0f172a]">{rec.timeline}</span>
-                                    </li>
-                                  )}
-                                  {rec.confidence !== undefined && rec.confidence !== null && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Confidence:</span>
-                                      <span className="text-[#0f172a]">{rec.confidence}%</span>
-                                    </li>
-                                  )}
-                                  {rec.expectedBoost && (
-                                    <li className="text-[13px] text-[#0f172a]">
-                                      <span className="font-semibold text-[#475569] mr-1">Expected boost:</span>
-                                      <span className="text-[#06c686]">{rec.expectedBoost}</span>
-                                    </li>
-                                  )}
-                                </ul>
-                              </div>
-
-                              {/* How to Fix (for domain audit recommendations) */}
+                              {/* How to Fix (for domain audit recommendations) - muted professional style */}
                               {rec.howToFix && rec.howToFix.length > 0 && (
-                                <div className="md:col-span-2 space-y-2">
-                                  <p className="text-[12px] font-semibold text-[#475569] uppercase tracking-wide flex items-center gap-1.5">
-                                    <span className="text-[14px]">📋</span> How to Fix
-                                  </p>
-                                  <ol className="list-decimal pl-5 space-y-1">
+                                <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-6 h-6 rounded-md bg-[#6b7280] bg-opacity-10 flex items-center justify-center">
+                                      <svg className="w-3.5 h-3.5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                      </svg>
+                                    </div>
+                                    <p className="text-[11px] font-bold text-[#4b5563] uppercase tracking-wide">How to Fix</p>
+                                  </div>
+                                  <ol className="space-y-2">
                                     {rec.howToFix.map((step, i) => (
-                                      <li key={i} className="text-[13px] text-[#0f172a]">
-                                        {step}
+                                      <li key={i} className="flex items-start gap-2">
+                                        <span className="w-5 h-5 rounded-full bg-[#00bcdc] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                                        <span className="text-[13px] text-[#374151]">{step}</span>
                                       </li>
                                     ))}
                                   </ol>

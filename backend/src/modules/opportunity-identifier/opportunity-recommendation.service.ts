@@ -121,7 +121,7 @@ export class OpportunityRecommendationService {
                 generation_id: generationId,
                 brand_id: brandId,
                 customer_id: customerId,
-                action: l.Recommendation,
+                action: `[${l.ContentType}] ${l.Recommendation}`,
                 citation_source: l.Channel,
                 focus_area: focusArea,
                 priority: opp?.severity === 'Critical' ? 'High' : (opp?.severity === 'Medium' ? 'Medium' : 'Low'),

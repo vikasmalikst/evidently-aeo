@@ -26,13 +26,13 @@ import {
   IconLoader
 } from '@tabler/icons-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-interface SEOMetric {
+export interface SEOMetric {
   name: string;
   status: 'good' | 'warning' | 'error';
   value: string;
@@ -41,19 +41,19 @@ interface SEOMetric {
   maxScore?: number;
 }
 
-interface HygieneAnalysis {
+export interface HygieneAnalysis {
   score: number; // Max 30
   metrics: SEOMetric[];
 }
 
-interface ScrapabilityAnalysis {
+export interface ScrapabilityAnalysis {
   score: number; // Max 70
   metrics: SEOMetric[];
   loading: boolean;
   error?: string;
 }
 
-interface CombinedAnalysis {
+export interface CombinedAnalysis {
   totalScore: number;
   hygiene: HygieneAnalysis;
   scrapability: ScrapabilityAnalysis;
@@ -64,7 +64,7 @@ interface CombinedAnalysis {
 // HYGIENE ANALYSIS (Frontend - 30pts)
 // =============================================================================
 
-function analyzeHygiene(content: string): HygieneAnalysis {
+export function analyzeHygiene(content: string): HygieneAnalysis {
   const metrics: SEOMetric[] = [];
   let score = 0;
 
@@ -112,6 +112,23 @@ function analyzeHygiene(content: string): HygieneAnalysis {
   return { score, metrics };
 }
 
+/**
+ * Legacy Export for backward compatibility with ContentAnalysisTools.
+ * Returns a projected score based on Hygiene only (scaled to 100) or just the raw hygiene score.
+ * Since users are used to a 100-pt scale, we'll project: 30pts hygiene -> 100pts.
+ * This is just a placeholder until they open the full card.
+ */
+export function analyzeContent(content: string, brandName?: string): { score: number; metrics: SEOMetric[] } {
+  const hygiene = analyzeHygiene(content);
+  // Scale score: (score / 30) * 100.
+  const projectedScore = Math.min(100, Math.round((hygiene.score / 30) * 100));
+  
+  return { 
+    score: projectedScore, 
+    metrics: hygiene.metrics 
+  };
+}
+
 // =============================================================================
 // SEO SCORE CARD COMPONENT
 // =============================================================================
@@ -140,6 +157,7 @@ export function SEOScoreCard({ content, brandName, onRefresh }: SEOScoreCardProp
 
     // Debounced update for scrapability
     const timer = setTimeout(async () => {
+      // If content is empty or very short, don't bother asking backend
       if (!content || content.length < 50) return;
       
       setScrapability(prev => ({ ...prev, loading: true, error: undefined }));
@@ -181,6 +199,9 @@ export function SEOScoreCard({ content, brandName, onRefresh }: SEOScoreCardProp
   }, [content]);
 
   // Combined score
+  // If scrapability is 0 (not loaded yet or failed), should we show just hygiene?
+  // Let's assume scrapability starts at 0.
+  // We should probably visually indicate "calculating" if score is low but loading is true.
   const totalScore = Math.min(100, Math.max(0, hygiene.score + scrapability.score));
   
   const getScoreColor = (score: number) => {

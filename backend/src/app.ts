@@ -118,6 +118,7 @@ app.use('/api', (_req, res, next) => {
 app.use('/api', executiveReportingRoutes); // Register specific routes first to avoid conflicts
 app.use('/api/auth', authRoutes);
 app.use('/api/contact', contactRouter);
+app.use('/api/aeo', aeoScoringRoutes);
 app.use('/api/brands', brandRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/query-generation', queryGenerationRoutes);
@@ -134,7 +135,7 @@ app.use('/api', domainReadinessRoutes);
 app.use('/api/report-settings', reportSettingsRoutes);
 app.use('/api', opportunityIdentifierRoutes);
 app.use('/api/tools', toolsRoutes);
-app.use('/api/aeo', aeoScoringRoutes);
+
 
 
 // TEMPORARY: User management routes commented out

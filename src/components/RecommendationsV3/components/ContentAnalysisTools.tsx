@@ -101,7 +101,7 @@ export function AEOScoreBadge({ content, brandName }: AEOScoreBadgeProps) {
             className="pointer-events-auto" // Re-enable pointer events for specific content
           >
             <div 
-              className="w-[360px] max-h-[600px] bg-white rounded-xl shadow-2xl border-2 border-[#e2e8f0] overflow-hidden flex flex-col"
+              className="w-[800px] max-h-[80vh] bg-white rounded-xl shadow-2xl border-2 border-[#e2e8f0] overflow-hidden flex flex-col"
               // Keep tooltip open when hovering IT (optional UX pattern, but sticking to parent-hover for now for simplicity)
             >
               <div className="p-1 overflow-y-auto custom-scrollbar">

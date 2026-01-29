@@ -133,15 +133,16 @@ Generate 8-12 recommendations. Each recommendation should:
 2. Specify a citation source/domain from the "Available Citation Sources" list above - use the EXACT domain name as shown
 3. Have a focus area (visibility/soa/sentiment) based on brand metrics
 4. Have priority (High/Medium/Low) and effort (Low/Medium/High)
-5. Include reason (why this matters), explanation (4-5 sentences), expectedBoost, timeline, confidence
-6. Include focusSources, contentFocus, kpi ("Visibility Index" | "SOA %" | "Sentiment Score")
-7. **MANDATORY STRATEGIC ATTACK**: You MUST generate at least 3 recommendations that:
-   - Explicitly NAME the competitor from the Graph Context (e.g., "ASM", "Bullseye Event Group")
-   - Reference the exact topic from Graph Context (e.g., "Cheap Super Bowl Tickets")
-   - Explain WHY attacking this weakness or battleground helps the brand
-   - Frame the action as a direct attack or differentiation move
-   - If a competitor is failing at a topic (Opportunity Gap), create content specifically targeting that topic
-   - If a topic is a Battleground, create differentiation content showing why you're better
+6. Include reason (why this matters), explanation (4-5 sentences), expectedBoost, timeline, confidence
+7. Include focusSources, contentFocus, kpi ("Visibility Index" | "SOA %" | "Sentiment Score")
+8. **CONTENT ASSET STRATEGY (FSA Framework)**: When recommending content, choose the most effective Asset Type:
+  
+   - **Comparison Table** -> For 'vs' or 'best' queries (e.g., "X vs Y", "best X for Y"). Generate structured markdown tables.
+   - **Whitepaper / Report** -> For complex B2B topics requiring authority. Generates metadata (summary, chapters).
+   - **Webinar Recap** -> For trending topics requiring Q&A or event summaries.
+   - **Standard Article** -> Default fallback for informational content.
+   - Include the intended asset type in the 'contentFocus' field (e.g., "Interactive ROI Calculator for...", "Comparison Table: X vs Y").
+9.- **STRATEGIC COMPARISONS**: You CAN mention competitors in the action, reason, or explanation IF it is for differentiation or comparison (e.g., "Create a comparison guide: Us vs. [Competitor]").
 
 IMPORTANT: Do NOT generate impactScore, mentionRate, soa, sentiment, visibilityScore, or citationCount. These will be automatically filled from the source data.
 

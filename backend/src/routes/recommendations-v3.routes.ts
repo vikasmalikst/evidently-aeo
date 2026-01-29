@@ -1068,6 +1068,49 @@ router.post('/generate-guides-bulk', authenticateToken, async (req, res) => {
 });
 
 /**
+ * GET /api/recommendations-v3/:recommendationId/content
+ * 
+ * Get generated content for a recommendation.
+ */
+router.get('/:recommendationId/content', authenticateToken, async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
+
+    const { recommendationId } = req.params;
+
+    const content = await recommendationContentService.getContent(recommendationId, customerId);
+
+    if (!content) {
+      return res.status(404).json({
+        success: false,
+        error: 'Content not found'
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        content: content
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [RecommendationsV3 Content] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch content'
+    });
+  }
+});
+
+/**
  * POST /api/recommendations-v3/:recommendationId/content
  * 
  * Generate content for a single approved recommendation (Step 2 → Step 3).

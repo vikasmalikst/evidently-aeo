@@ -530,49 +530,64 @@ Return ONLY a JSON array with the personalized recommendations.`;
         console.log('⚠️ [RecommendationV3Service] No Domain Readiness audit found - recommendations will not be filtered');
       }
 
-      // Step 2: Generate recommendations (cold-start templates OR LLM)
+      // Step 2: Generate recommendations (Parallel Execution)
       let recommendations: RecommendationV3[] = [];
+      const kpis: IdentifiedKPI[] = []; // Kept for interface compatibility
 
-      // Phase 1: Identify KPIs (newly integrated)
-      // Phase 1: KPIs (Skipping LLM generation for speed, will be populated if needed or purely technical)
-      const kpis: IdentifiedKPI[] = [];
+      let strategicRecs: RecommendationV3[] = [];
+      let domainRecs: RecommendationV3[] = [];
 
-      if (flags.coldStartMode && context._dataMaturity === 'cold_start') {
-        console.log('🧊 [RecommendationV3Service] Step 2: Using cold-start baseline recommendations (template-driven)...');
-        const templates = generateColdStartRecommendations({ brandName: context.brandName, industry: context.industry });
-        console.log(`   📋 Generated ${templates.length} cold-start template(s)`);
-        // Already-done checks + personalization (AI rewrite + prune)
-        recommendations = await this.personalizeColdStartRecommendations(context, templates);
-        console.log(`✅ [RecommendationV3Service] Cold-start personalization produced ${recommendations.length} recommendation(s)`);
-        if (recommendations.length === 0) {
-          console.error(`❌ [RecommendationV3Service] Cold-start personalization returned 0 recommendations! Falling back to templates.`);
-          recommendations = templates;
+      console.log('🚀 [RecommendationV3Service] Starting parallel recommendation generation (Strategic + Technical)...');
+      const genStartTime = Date.now();
+
+      // Define the strategic generation promise
+      const strategicPromise = (async () => {
+        if (flags.coldStartMode && context._dataMaturity === 'cold_start') {
+          console.log('🧊 [RecommendationV3Service] Generating strategic recommendations (Cold Start templates)...');
+          const templates = generateColdStartRecommendations({ brandName: context.brandName, industry: context.industry });
+          return await this.personalizeColdStartRecommendations(context, templates);
+        } else {
+          console.log('📝 [RecommendationV3Service] Generating strategic recommendations (LLM)...');
+          return await this.generateRecommendationsDirect(context);
         }
-      } else {
-        console.log('📝 [RecommendationV3Service] Step 2: Generating recommendations with LLM...');
-        const llmStartTime = Date.now();
-        recommendations = await this.generateRecommendationsDirect(context);
-        console.log(`✅ [RecommendationV3Service] LLM generation completed in ${Date.now() - llmStartTime}ms, produced ${recommendations.length} recommendation(s)`);
-        if (recommendations.length === 0) {
-          console.error(`❌ [RecommendationV3Service] LLM generation returned 0 recommendations!`);
+      })();
+
+      // Define the domain readiness promise
+      const domainPromise = (async () => {
+        if (context.domainAuditResult) {
+          console.log('🔧 [RecommendationV3Service] Generating Domain Readiness recommendations...');
+          const rawRecs = this.generateDomainReadinessRecommendations(context);
+          if (rawRecs.length > 0) {
+            // Optimization: Limit to top 8 unique technical issues to avoid context overflow/timeouts
+            // (Deduplicate mainly by action name if needed, but here simple slice is safest for speed)
+            const limitedRecs = rawRecs.slice(0, 8);
+            if (rawRecs.length > 8) {
+              console.log(`   ✂️ Capped technical recommendations to 8 (found ${rawRecs.length}) for faster personalization.`);
+            }
+            console.log(`   🤖 Personalizing ${limitedRecs.length} technical recommendations...`);
+            return await this.personalizeDomainReadinessRecommendations(context, limitedRecs);
+          }
+          console.log('   ✨ No domain readiness recommendations to process.');
         }
+        return [];
+      })();
+
+      // Execute in parallel
+      try {
+        [strategicRecs, domainRecs] = await Promise.all([strategicPromise, domainPromise]);
+      } catch (err) {
+        console.error('❌ [RecommendationV3Service] Parallel generation failed, attempting partial recovery:', err);
+        // Best effort: if one failed, try to return what we have? 
+        // For now, simpler to just log and rely on initialized empty arrays if individual promises caught errors internally 
+        // (but purely internal handlers in direct/personalize methods usually catch errors)
       }
 
-      // Step 2.5: Inject Domain Readiness Recommendations (with AI personalization)
-      if (context.domainAuditResult) {
-        console.log('🔧 [RecommendationV3Service] Step 2.5: Generating Domain Readiness recommendations...');
-        const domainRecsRaw = this.generateDomainReadinessRecommendations(context);
-        if (domainRecsRaw.length > 0) {
-          console.log(`   📋 Generated ${domainRecsRaw.length} raw domain readiness recommendation(s)`);
+      console.log(`✅ [RecommendationV3Service] Parallel generation completed in ${Date.now() - genStartTime}ms`);
 
-          // Personalize domain readiness recommendations through AI
-          console.log('   🤖 Personalizing domain readiness recommendations with AI...');
-          const domainRecs = await this.personalizeDomainReadinessRecommendations(context, domainRecsRaw);
-          console.log(`   ✅ Adding ${domainRecs.length} personalized technical recommendations derived from Domain Audit`);
-          recommendations = [...domainRecs, ...recommendations];
-        } else {
-          console.log('   ✨ No critical domain readiness issues found to convert to recommendations.');
-        }
+      // Merge results (Technical first, then Strategic)
+      recommendations = [...domainRecs, ...strategicRecs];
+      if (recommendations.length === 0) {
+        console.error(`❌ [RecommendationV3Service] Total recommendations generated is 0!`);
       }
 
       // Unified post-processing (competitor safety, quality contract, deterministic ranking)

@@ -70,11 +70,11 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
     if (name.length <= maxLineLength) {
       return name;
     }
-    
+
     const words = name.split(' ');
     const lines: string[] = [];
     let currentLine = '';
-    
+
     words.forEach((word, index) => {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
       if (testLine.length <= maxLineLength) {
@@ -94,12 +94,12 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
           currentLine = word;
         }
       }
-      
+
       if (index === words.length - 1 && currentLine) {
         lines.push(currentLine);
       }
     });
-    
+
     return lines.length > 0 ? lines.join('\n') : name;
   };
 
@@ -166,7 +166,7 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
     // Round up to nearest 10 for cleaner scale
     const paddedMax = maxValue * 1.1;
     const roundedMax = Math.ceil(paddedMax / 10) * 10;
-    
+
     // Ensure minimum scale for very small values
     return Math.max(roundedMax, 10);
   }, [sortedTopics, metricType]);
@@ -204,13 +204,13 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
           titleFont: {
             size: 13,
             weight: 600,
-            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            family: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
           },
           bodyColor: '#ffffff',
           bodyFont: {
             size: 12,
             weight: 500,
-            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            family: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
           },
           borderColor: '#00bcdc',
           borderWidth: 1.5,
@@ -219,7 +219,7 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
           cornerRadius: 8,
           displayColors: false,
           callbacks: {
-            label: function(context: any) {
+            label: function (context: any) {
               const suffix = metricType === 'share' ? '%' : '';
               return `${metricLabel}: ${context.parsed.y.toFixed(2)}${suffix}`;
             }
@@ -236,7 +236,7 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
             font: {
               size: isMobile ? 10 : 11,
               weight: 500,
-              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              family: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
             },
             maxRotation: 45,
             minRotation: 45,
@@ -255,7 +255,7 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
             font: {
               size: isMobile ? 11 : 13,
               weight: 600,
-              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              family: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
             },
             padding: {
               top: 0,
@@ -273,10 +273,10 @@ export const TopicsAreaChart = ({ topics, onBarClick, metricType = 'share' }: To
             font: {
               size: 12,
               weight: 400,
-              family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              family: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
             },
             padding: 8,
-            callback: function(value: any) {
+            callback: function (value: any) {
               return metricType === 'share' ? value + '%' : value;
             },
             stepSize: calculatedMax <= 20 ? 5 : calculatedMax <= 50 ? 10 : 20,

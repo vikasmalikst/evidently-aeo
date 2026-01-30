@@ -17,9 +17,9 @@ interface TopicsRacingBarChartProps {
   metricType?: 'share' | 'visibility' | 'sentiment';
 }
 
-export const TopicsRacingBarChart = ({ 
-  topics, 
-  onBarClick, 
+export const TopicsRacingBarChart = ({
+  topics,
+  onBarClick,
   stackData = false,
   competitors: _competitors = [],
   brandFavicon: _brandFavicon, // Unused - removed from legend
@@ -32,9 +32,9 @@ export const TopicsRacingBarChart = ({
   // Competitors load asynchronously; tying comparison mode to `competitors.length`
   // causes a visual “reload” even when topic data is cached. Base comparison on
   // whether topic data actually has industry averages.
-  
+
   // Determine if bars should be stacked or grouped (computed after showComparison is defined)
-  
+
   // Helper function to resolve CSS variable at runtime
   const getCSSVariable = (variableName: string): string => {
     if (typeof window !== 'undefined') {
@@ -50,11 +50,11 @@ export const TopicsRacingBarChart = ({
   const chartLabelColor = useMemo(() => getCSSVariable('--chart-label'), []);
   const chartAxisColor = useMemo(() => getCSSVariable('--chart-axis'), []);
   const textCaptionColor = useMemo(() => getCSSVariable('--text-caption'), []);
-  
-  // Brand color (data viz 02) - resolved from CSS variable
-  const BRAND_COLOR = useMemo(() => getCSSVariable('--dataviz-2') || '#498cf9', []); // data-viz-02 (blue)
-  // Avg Industry color (neutral 400)
-  const AVG_INDUSTRY_COLOR = '#8b90a7'; // neutral-400
+
+  // Brand color (accent-primary) - resolved from CSS variable
+  const BRAND_COLOR = useMemo(() => getCSSVariable('--accent-primary') || '#00bcdc', []);
+  // Avg Industry color (Cool Grey) - Professional neutral backdrop
+  const AVG_INDUSTRY_COLOR = useMemo(() => getCSSVariable('--chart-axis') || '#BDC3C7', []);
 
   const getMetricValue = (topic: Topic): number => {
     if (metricType === 'visibility') {
@@ -115,11 +115,11 @@ export const TopicsRacingBarChart = ({
     if (!managedCompetitors.length || !selectedCompetitors.size) {
       return metricType === 'share' ? 'Competitor SoA' : metricType === 'visibility' ? 'Competitor Visibility' : 'Competitor Sentiment';
     }
-    
+
     // Check if all competitors are selected
-    const isAllSelected = selectedCompetitors.size === managedCompetitors.length && 
+    const isAllSelected = selectedCompetitors.size === managedCompetitors.length &&
       managedCompetitors.every(c => selectedCompetitors.has(c.name.toLowerCase()));
-    
+
     if (isAllSelected || selectedCompetitors.size > 1) {
       // All competitors or multiple selected - show "Avg Competitor SOA"
       return metricType === 'share' ? 'Avg Competitor SoA' : metricType === 'visibility' ? 'Avg Competitor Visibility' : 'Avg Competitor Sentiment';
@@ -128,10 +128,10 @@ export const TopicsRacingBarChart = ({
       const selectedKey = Array.from(selectedCompetitors)[0];
       const selectedCompetitor = managedCompetitors.find(c => c.name.toLowerCase() === selectedKey);
       const competitorName = selectedCompetitor?.name || 'Competitor';
-      return metricType === 'share' 
-        ? `${competitorName} SoA` 
-        : metricType === 'visibility' 
-          ? `${competitorName} Visibility` 
+      return metricType === 'share'
+        ? `${competitorName} SoA`
+        : metricType === 'visibility'
+          ? `${competitorName} Visibility`
           : `${competitorName} Sentiment`;
     }
   }, [managedCompetitors, selectedCompetitors, metricType]);
@@ -159,14 +159,14 @@ export const TopicsRacingBarChart = ({
     } else {
       // Brand and avg competitor SoA per topic (competitor avg also shown as marker line)
       return [...sortedTopics].reverse().map((topic) => {
-        const data: Record<string, string | number> = { 
+        const data: Record<string, string | number> = {
           topic: topic.name,
           soA: topic.soA, // Include SoA metric (0-5x scale) for brand
         };
-        
+
         // Add brand performance
         data['brand'] = getMetricValue(topic);
-        
+
         // Add avg competitor metric (topic already has competitor averages mapped)
         if (metricType === 'share') {
           data['avgIndustry'] =
@@ -178,7 +178,7 @@ export const TopicsRacingBarChart = ({
         } else {
           data['avgIndustry'] = topic.industryAvgSentiment ?? 0;
         }
-        
+
         return data;
       });
     }
@@ -212,15 +212,15 @@ export const TopicsRacingBarChart = ({
           indexScale={{ type: 'band', round: true }}
           colors={showComparison
             ? (bar: any) => {
-                const key = bar.id as string;
-                if (key === 'brand') {
-                  return BRAND_COLOR; // Data viz 02 (blue) for brand
-                } else if (key === 'avgIndustry') {
-                  return AVG_INDUSTRY_COLOR; // neutral-400 for avg industry
-                }
-                return '#498cf9';
+              const key = bar.id as string;
+              if (key === 'brand') {
+                return BRAND_COLOR; // Data viz 02 (blue) for brand
+              } else if (key === 'avgIndustry') {
+                return AVG_INDUSTRY_COLOR; // neutral-400 for avg industry
               }
-            : "#498cf9" // Data viz 01 - matches Chart.js color
+              return BRAND_COLOR;
+            }
+            : BRAND_COLOR // Data viz 01 - matches Chart.js color
           }
           markers={[]}
           borderRadius={0} // Remove border radius on all bars
@@ -262,7 +262,7 @@ export const TopicsRacingBarChart = ({
                       style={{
                         fill: textCaptionColor || '#6e7387',
                         fontSize: 11,
-                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                        fontFamily: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
                         fontWeight: 400,
                       }}
                     >
@@ -339,13 +339,13 @@ export const TopicsRacingBarChart = ({
             const topicName = props.data.topic as string;
             const topic = topicMap.get(topicName);
             if (!topic) return null;
-            
+
             const key = showComparison ? props.id : null;
             const value = props.value as number;
-            
+
             let label = '';
             let barColor = '#498cf9';
-            
+
             if (showComparison && key) {
               if (key === 'brand') {
                 label =
@@ -360,7 +360,7 @@ export const TopicsRacingBarChart = ({
                 barColor = AVG_INDUSTRY_COLOR;
               }
             }
-            
+
             if (showComparison && key && label) {
               // Comparison view: show specific tooltip
               return (
@@ -388,7 +388,7 @@ export const TopicsRacingBarChart = ({
                   >
                     {topic.name}
                   </div>
-                  <div style={{ 
+                  <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
@@ -403,8 +403,8 @@ export const TopicsRacingBarChart = ({
                         flexShrink: 0,
                       }}
                     />
-                    <div style={{ 
-                      fontSize: '11px', 
+                    <div style={{
+                      fontSize: '11px',
                       color: '#ffffff',
                       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                     }}>
@@ -440,7 +440,7 @@ export const TopicsRacingBarChart = ({
                   >
                     {topic.name}
                   </div>
-                  <div style={{ 
+                  <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
@@ -455,16 +455,16 @@ export const TopicsRacingBarChart = ({
                         flexShrink: 0,
                       }}
                     />
-                    <div style={{ 
-                      fontSize: '11px', 
+                    <div style={{
+                      fontSize: '11px',
                       color: '#ffffff',
                       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                     }}>
                       {topic.name}: {formatValue(value)}
                     </div>
                   </div>
-                  <div style={{ 
-                    fontSize: '11px', 
+                  <div style={{
+                    fontSize: '11px',
                     color: '#ffffff',
                     marginTop: '6px',
                     paddingLeft: '16px',
@@ -472,8 +472,8 @@ export const TopicsRacingBarChart = ({
                   }}>
                     {metricLabel}: {formatValue(value)}
                   </div>
-                  <div style={{ 
-                    fontSize: '11px', 
+                  <div style={{
+                    fontSize: '11px',
                     color: '#ffffff',
                     marginTop: '6px',
                     paddingLeft: '16px',
@@ -495,22 +495,22 @@ export const TopicsRacingBarChart = ({
             (props: any) => {
               // Custom layer to add SoA labels to the right of bars
               const { bars, xScale, yScale } = props;
-              
+
               return (
                 <g>
                   {bars.map((bar: any) => {
                     // Only show label for brand bars (or single value bars)
                     const isBrandBar = showComparison ? bar.id === 'brand' : true;
                     if (!isBrandBar) return null;
-                    
+
                     const topicName = bar.data.topic as string;
                     const topic = topicMap.get(topicName);
                     if (!topic) return null;
-                    
+
                     const metricValue = getMetricValue(topic);
                     const xPosition = xScale(metricValue) + 8; // Position to the right of the bar
                     const yPosition = yScale(bar.data.topic) + (yScale.bandwidth() / 2);
-                    
+
                     return (
                       <text
                         key={`label-${bar.id}-${bar.data.topic}`}
@@ -521,7 +521,7 @@ export const TopicsRacingBarChart = ({
                         style={{
                           fill: textCaptionColor,
                           fontSize: 11,
-                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+                          fontFamily: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
                           fontWeight: 500,
                         }}
                       >
@@ -535,7 +535,7 @@ export const TopicsRacingBarChart = ({
           ]}
         />
       </div>
-      
+
       {/* Custom Legend with Brand, Competitor SoA Bar, and Competitor SoA Marker */}
       {showComparison && hasIndustryData && (
         <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pb-2">
@@ -554,7 +554,7 @@ export const TopicsRacingBarChart = ({
               {brandName} {metricType === 'share' ? 'SoA' : metricType === 'visibility' ? 'Visibility' : 'Sentiment'}
             </span>
           </div>
-          
+
           {/* Competitor metric - Bar */}
           <div className="flex items-center gap-1.5">
             <div
@@ -570,7 +570,7 @@ export const TopicsRacingBarChart = ({
               {competitorLabel}
             </span>
           </div>
-          
+
         </div>
       )}
     </div>

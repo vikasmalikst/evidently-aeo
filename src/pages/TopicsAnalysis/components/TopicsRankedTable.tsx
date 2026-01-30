@@ -4,6 +4,7 @@ import { HelpButton } from '../../../components/common/HelpButton';
 import { KpiType } from '../../../components/EducationalDrawer/EducationalContentDrawer';
 import type { Topic, SortColumn, SortState } from '../types';
 import type { ManagedCompetitor } from '../../../api/competitorManagementApi';
+import { SafeLogo } from '../../../components/Onboarding/common/SafeLogo';
 
 interface TopicsRankedTableProps {
   topics: Topic[];
@@ -12,7 +13,8 @@ interface TopicsRankedTableProps {
   selectedTopics?: Set<string>;
   onSelectedTopicsChange?: (selectedTopics: Set<string>) => void;
   selectedCategory?: string;
-  brandFavicon?: string;
+  brandLogo?: string;
+  brandDomain?: string;
   brandName?: string;
   metricType?: 'share' | 'visibility' | 'sentiment';
   competitors?: ManagedCompetitor[];
@@ -54,13 +56,19 @@ export const TopicsRankedTable = ({
   selectedTopics: externalSelectedTopics,
   onSelectedTopicsChange,
   selectedCategory: externalSelectedCategory,
-  brandFavicon,
+  brandLogo,
+  brandDomain,
   brandName,
   metricType = 'share',
   competitors = [],
   selectedCompetitors = new Set(),
   onHelpClick,
 }: TopicsRankedTableProps) => {
+
+  const visibleCompetitors = useMemo(() =>
+    competitors.filter(c => selectedCompetitors.size === 0 || selectedCompetitors.has(c.name.toLowerCase())),
+    [competitors, selectedCompetitors]
+  );
 
   // Model functions removed - topics are now distinct, not grouped by model
   // Model filtering happens via the filter dropdown, not per-row
@@ -204,40 +212,37 @@ export const TopicsRankedTable = ({
   };
 
   // Helper to get heatmap style for a cell based on a 0-5 scale value
-  const getHeatmapStyle = (value: number, type: 'share' | 'visibility' | 'sentiment' = 'share') => {
-    let backgroundColor = 'transparent';
-    let color = 'inherit';
+  const getHeatmapColor = (value: number | null | undefined, allValues: (number | null | undefined)[]) => {
+    if (value === null || value === undefined || allValues.length < 2) return undefined;
 
-    if (type === 'sentiment') {
-      // Sentiment specific: Green (Positive) -> Yellow (Neutral) -> Red (Negative)
-      if (value >= 3.75) { // corresponds to > 75 on 0-100 scale
-        backgroundColor = 'rgba(18, 183, 106, 0.1)'; // Success (Green)
-        color = '#027a48';
-      } else if (value >= 2.5) { // corresponds to 50-75
-        backgroundColor = 'rgba(247, 144, 9, 0.1)'; // Warning (Orange/Yellow)
-        color = '#b54708';
-      } else { // < 50
-        backgroundColor = 'rgba(217, 45, 32, 0.1)'; // Error (Red)
-        color = '#991b1b';
+    const validValues = allValues.filter((v): v is number => v !== null && v !== undefined);
+    if (validValues.length < 2) {
+      if (validValues.length === 1 && validValues[0] === value) {
+        return { backgroundColor: 'rgba(134, 239, 172, 0.15)', color: '#027a48' }; // Single value is "good"
       }
-    } else {
-      // SOA/Visibility: Cyan -> Teal -> Orange
-      if (value >= 3.0) {
-        backgroundColor = 'rgba(0, 188, 220, 0.15)'; // Cyan
-        color = '#007a8e';
-      } else if (value >= 2.0) {
-        backgroundColor = 'rgba(13, 124, 150, 0.15)'; // Teal
-        color = '#095c70';
-      } else if (value >= 1.0) {
-        backgroundColor = 'rgba(249, 115, 22, 0.15)'; // Orange
-        color = '#c25409';
-      } else {
-        backgroundColor = 'rgba(26, 29, 41, 0.05)'; // Navy/Grey
-        color = '#1a1d29';
-      }
+      return undefined;
     }
 
-    return { backgroundColor, color };
+    const min = Math.min(...validValues);
+    const max = Math.max(...validValues);
+
+    if (max === min) return { backgroundColor: 'rgba(134, 239, 172, 0.15)', color: '#027a48' }; // Equal max is "good"
+
+    const ratio = (value - min) / (max - min);
+
+    if (ratio >= 0.5) {
+      // Yellow (254, 240, 138) to Green (134, 239, 172)
+      const r = Math.round(254 - (254 - 134) * ((ratio - 0.5) * 2));
+      const g = Math.round(240 - (240 - 239) * ((ratio - 0.5) * 2));
+      const b = Math.round(138 - (138 - 172) * ((ratio - 0.5) * 2));
+      return { backgroundColor: `rgba(${r}, ${g}, ${b}, 0.25)`, color: '#1a1d29' };
+    } else {
+      // Red (252, 165, 165) to Yellow (254, 240, 138)
+      const r = Math.round(252 + (254 - 252) * (ratio * 2));
+      const g = Math.round(165 + (240 - 165) * (ratio * 2));
+      const b = Math.round(165 + (138 - 165) * (ratio * 2));
+      return { backgroundColor: `rgba(${r}, ${g}, ${b}, 0.25)`, color: '#1a1d29' };
+    }
   };
 
   return (
@@ -261,6 +266,21 @@ export const TopicsRankedTable = ({
       <div className="overflow-x-auto relative">
         <table className="w-full border-collapse">
           <thead>
+            {/* Top row for Group headers */}
+            <tr className="border-b border-[var(--border-default)] bg-[var(--bg-secondary)]">
+              <th className="px-3 py-1 sticky left-0 z-30 bg-[var(--bg-secondary)] border-r border-[var(--border-default)]"></th>
+              <th className="px-3 py-1 sticky left-12 z-30 bg-[var(--bg-secondary)] shadow-[1px_0_0_0_rgba(0,0,0,0.1)]"></th>
+              <th
+                className="px-3 py-1.5 text-center border-l border-[var(--border-default)]"
+                colSpan={1 + visibleCompetitors.length}
+              >
+                <div className="flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-[var(--accent500)] uppercase tracking-widest bg-[var(--accent50)] px-3 py-0.5 rounded-full border border-[var(--accent200)]">
+                    {metricHeaderLabel}
+                  </span>
+                </div>
+              </th>
+            </tr>
             <tr className="border-b-2 border-[var(--border-default)] bg-[var(--bg-secondary)]">
               <th className="px-3 sm:px-4 lg:px-5 py-3 text-left w-12 sticky left-0 z-20 bg-[var(--bg-secondary)]">
                 <input
@@ -287,54 +307,44 @@ export const TopicsRankedTable = ({
                   className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)] cursor-pointer"
                 />
               </th>
-              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[60px]">
-                <SortButton column="rank">Rank</SortButton>
-              </th>
               <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[200px] sticky left-12 z-20 bg-[var(--bg-secondary)] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                 <SortButton column="name">Topic</SortButton>
               </th>
-              <th className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[100px]">
-                <div className="flex items-center gap-1.5">
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      {brandFavicon && (
-                        <img
-                          src={brandFavicon}
-                          alt="Brand"
-                          className="w-3 h-3 flex-shrink-0"
-                          style={{ width: '12px', height: '12px' }}
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      )}
-                      <span className="text-[10px] font-bold text-[var(--accent500)] uppercase tracking-wider">{metricHeaderLabel}</span>
-                    </div>
-                    <SortButton column="soA">{brandName || metricHeaderLabel}</SortButton>
+              <th className="px-3 sm:px-4 lg:px-5 py-4 text-center relative min-w-[100px] border-l border-[var(--border-default)]">
+                <div className="flex flex-col items-center">
+                  <div className="flex items-center justify-center w-8 h-8 bg-white rounded-lg shadow-sm border border-gray-100 mb-1" title={brandName || "Your Brand"}>
+                    <SafeLogo
+                      src={brandLogo}
+                      domain={brandDomain}
+                      alt={brandName || "Brand"}
+                      size={20}
+                      className="w-5 h-5 object-contain"
+                    />
                   </div>
+                  <SortButton column="soA">
+                    <span className="text-[10px] font-bold text-[var(--text-headings)] uppercase tracking-tight truncate max-w-[80px]">
+                      {brandName?.split(' ')[0] || "Brand"}
+                    </span>
+                  </SortButton>
                 </div>
               </th>
 
               {/* Dynamic Competitor Columns */}
-              {competitors.filter(c => selectedCompetitors.size === 0 || selectedCompetitors.has(c.name.toLowerCase())).map((competitor) => (
-                <th key={competitor.id} className="px-3 sm:px-4 lg:px-5 py-3 text-left relative min-w-[140px]">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{metricHeaderLabel}</span>
-                    <div className="flex items-center gap-2">
-                      {competitor.logo && (
-                        <img
-                          src={competitor.logo}
-                          alt={competitor.name}
-                          className="w-4 h-4 object-contain rounded-sm"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      )}
-                      <span className="text-xs font-semibold text-[var(--text-headings)] uppercase tracking-wide whitespace-nowrap">
-                        {competitor.name}
-                      </span>
+              {visibleCompetitors.map((competitor) => (
+                <th key={competitor.id} className="px-3 py-4 text-center relative min-w-[80px] border-l border-[var(--border-default)]">
+                  <div className="flex flex-col items-center">
+                    <div className="flex items-center justify-center w-8 h-8 bg-white rounded-lg shadow-sm border border-gray-100 mb-1" title={competitor.name}>
+                      <SafeLogo
+                        src={competitor.logo}
+                        domain={competitor.domain || competitor.url}
+                        alt={competitor.name}
+                        size={24}
+                        className="w-6 h-6 object-contain rounded-sm"
+                      />
                     </div>
+                    <span className="text-[10px] font-bold text-[var(--text-headings)] uppercase tracking-tight truncate max-w-[80px]" title={competitor.name}>
+                      {competitor.name.split(' ')[0]}
+                    </span>
                   </div>
                 </th>
               ))}
@@ -343,7 +353,7 @@ export const TopicsRankedTable = ({
           <tbody className="divide-y divide-[var(--border-default)]">
             {filteredAndSortedTopics.length === 0 ? (
               <tr>
-                <td colSpan={4 + (competitors.filter(c => selectedCompetitors.size === 0 || selectedCompetitors.has(c.name.toLowerCase())).length)} className="px-3 sm:px-4 lg:px-5 py-12 text-center">
+                <td colSpan={3 + visibleCompetitors.length} className="px-3 sm:px-4 lg:px-5 py-12 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <p className="text-sm font-medium text-[var(--text-headings)]">
                       No topics found for selected filters
@@ -356,6 +366,26 @@ export const TopicsRankedTable = ({
               </tr>
             ) : (
               filteredAndSortedTopics.map((topic) => {
+                // Pre-calculate all visible values for this row to use in heatmap
+                const rowValues: (number | null)[] = [];
+
+                // Brand value
+                let brandVal: number | null = null;
+                if (metricType === 'visibility') brandVal = topic.currentVisibility ?? null;
+                else if (metricType === 'sentiment') brandVal = topic.currentSentiment ?? null;
+                else brandVal = (topic.currentSoA || topic.soA * 20) ?? null;
+                rowValues.push(brandVal);
+
+                // Competitor values
+                visibleCompetitors.forEach(competitor => {
+                  const compKey = competitor.name.toLowerCase();
+                  let compVal: number | null = null;
+                  if (metricType === 'share') compVal = topic.competitorSoAMap?.[compKey] ?? null;
+                  else if (metricType === 'visibility') compVal = topic.competitorVisibilityMap?.[compKey] ?? null;
+                  else compVal = topic.competitorSentimentMap?.[compKey] ?? null;
+                  rowValues.push(compVal);
+                });
+
                 return (
                   <tr
                     key={topic.id}
@@ -363,7 +393,7 @@ export const TopicsRankedTable = ({
                     className="transition-colors cursor-pointer hover:bg-[var(--bg-secondary)]/50 group"
                     role="button"
                     tabIndex={0}
-                    aria-label={`Topic: ${topic.name}, ${metricTooltipLabel}: ${formatMetricValue(topic)}, Rank: ${topic.rank}`}
+                    aria-label={`Topic: ${topic.name}, ${metricTooltipLabel}: ${formatMetricValue(topic)}`}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
@@ -380,11 +410,6 @@ export const TopicsRankedTable = ({
                         className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)] cursor-pointer"
                       />
                     </td>
-                    <td className="px-3 sm:px-4 lg:px-5 py-4">
-                      <span className="text-sm font-semibold text-[var(--text-body)]">
-                        {topic.rank}
-                      </span>
-                    </td>
                     <td className="px-3 sm:px-4 lg:px-5 py-4 sticky left-12 z-10 bg-white group-hover:bg-[var(--bg-secondary)]/50 transition-colors shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                       <div className="flex items-center gap-2 flex-wrap min-w-[200px]">
                         <span className="text-sm font-medium text-[var(--text-headings)] break-words">{topic.name}</span>
@@ -395,22 +420,8 @@ export const TopicsRankedTable = ({
                     </td>
                     <td className="px-1 sm:px-2 py-4">
                       {(() => {
-                        let valueForScale = 0;
-                        let hasData = false;
-
-                        if (metricType === 'visibility') {
-                          valueForScale = (topic.currentVisibility ?? 0) / 20; // 0-100 -> 0-5
-                          hasData = topic.currentVisibility !== null && topic.currentVisibility !== undefined;
-                        } else if (metricType === 'sentiment') {
-                          valueForScale = (topic.currentSentiment ?? 0) / 20; // 0-100 -> 0-5
-                          hasData = topic.currentSentiment !== null && topic.currentSentiment !== undefined;
-                        } else {
-                          // share
-                          valueForScale = topic.soA; // 0-5
-                          hasData = topic.soA > 0;
-                        }
-
-                        if (!hasData) {
+                        const heatmapStyle = getHeatmapColor(brandVal, rowValues);
+                        if (brandVal === null) {
                           return (
                             <div className="flex items-center justify-center py-2 px-3">
                               <span className="text-sm text-[var(--text-caption)]">—</span>
@@ -418,7 +429,6 @@ export const TopicsRankedTable = ({
                           );
                         }
 
-                        const heatmapStyle = getHeatmapStyle(valueForScale, metricType);
                         return (
                           <div className="flex items-center justify-center py-2 px-3 rounded-md" style={heatmapStyle}>
                             <span className="text-sm font-bold whitespace-nowrap">
@@ -430,36 +440,23 @@ export const TopicsRankedTable = ({
                     </td>
 
                     {/* Dynamic Competitor Cells */}
-                    {competitors.filter(c => selectedCompetitors.size === 0 || selectedCompetitors.has(c.name.toLowerCase())).map((competitor) => {
+                    {visibleCompetitors.map((competitor) => {
                       const compKey = competitor.name.toLowerCase();
-                      let rawValue: number | undefined;
-                      let normalizedValue = 0;
-                      let displayValue = '—';
+                      let compVal: number | null = null;
 
-                      if (metricType === 'share') {
-                        rawValue = topic.competitorSoAMap?.[compKey];
-                        if (rawValue !== undefined) {
-                          displayValue = `${rawValue.toFixed(1)}%`;
-                          normalizedValue = rawValue / 20;
-                        }
-                      } else if (metricType === 'visibility') {
-                        rawValue = topic.competitorVisibilityMap?.[compKey];
-                        if (rawValue !== undefined) {
-                          displayValue = rawValue.toFixed(1);
-                          normalizedValue = rawValue / 20;
-                        }
-                      } else {
-                        rawValue = topic.competitorSentimentMap?.[compKey];
-                        if (rawValue !== undefined) {
-                          displayValue = rawValue.toFixed(1);
-                          normalizedValue = rawValue / 20;
-                        }
-                      }
+                      if (metricType === 'share') compVal = topic.competitorSoAMap?.[compKey] ?? null;
+                      else if (metricType === 'visibility') compVal = topic.competitorVisibilityMap?.[compKey] ?? null;
+                      else compVal = topic.competitorSentimentMap?.[compKey] ?? null;
+
+                      const heatmapStyle = getHeatmapColor(compVal, rowValues);
+                      const displayValue = compVal !== null
+                        ? (metricType === 'share' ? `${compVal.toFixed(1)}%` : compVal.toFixed(1))
+                        : '—';
 
                       return (
                         <td key={competitor.id} className="px-1 sm:px-2 py-4">
-                          {rawValue !== undefined ? (
-                            <div className="flex items-center justify-center py-2 px-3 rounded-md" style={getHeatmapStyle(normalizedValue, metricType)}>
+                          {compVal !== null ? (
+                            <div className="flex items-center justify-center py-2 px-3 rounded-md" style={heatmapStyle}>
                               <span className="text-sm font-bold whitespace-nowrap">
                                 {displayValue}
                               </span>

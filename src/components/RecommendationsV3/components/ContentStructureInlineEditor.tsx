@@ -2,48 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { IconPlus, IconTrash, IconChevronUp, IconChevronDown, IconCheck, IconSparkles, IconGripVertical } from '@tabler/icons-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { StructureSection } from './ContentStructureEditor';
+import { CONTENT_TEMPLATES, ContentTemplateType } from '../data/structure-templates';
 
 interface ContentStructureInlineEditorProps {
     recommendationId: string;
+    contentType?: ContentTemplateType; // New prop for dynamic templating
     initialSections?: StructureSection[];
     onSave: (sections: StructureSection[]) => void;
     isSaving: boolean;
 }
 
-const DEFAULT_SECTIONS: StructureSection[] = [
-    {
-        id: "direct_answer",
-        title: "Direct Answer",
-        content: "Concise answer to the primary question (80–120 words)",
-        sectionType: "answer"
-    },
-    {
-        id: "how_it_works",
-        title: "How It Works",
-        content: "Explain mechanism step-by-step",
-        sectionType: "explanation"
-    },
-    {
-        id: "comparison",
-        title: "Comparison With Alternatives",
-        content: "Objective comparison with competitors",
-        sectionType: "comparison"
-    },
-    {
-        id: "limitations",
-        title: "Limitations and Trade-Offs",
-        content: "What this does NOT solve",
-        sectionType: "constraints"
-    }
-];
-
 export const ContentStructureInlineEditor: React.FC<ContentStructureInlineEditorProps> = ({
     recommendationId,
+    contentType = 'article', // Default to article
     initialSections,
     onSave,
     isSaving
 }) => {
-    const [sections, setSections] = useState<StructureSection[]>(initialSections || DEFAULT_SECTIONS);
+    // Initialize sections: Use provided initialSections OR fallback to the correct template based on contentType
+    const [sections, setSections] = useState<StructureSection[]>(
+        initialSections || CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES['article']
+    );
     const [saveFeedback, setSaveFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
     useEffect(() => {

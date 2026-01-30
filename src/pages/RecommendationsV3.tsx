@@ -32,6 +32,7 @@ import { PremiumTabNavigator } from '../components/RecommendationsV3/PremiumTabN
 import { RecommendationsTableV3 } from '../components/RecommendationsV3/RecommendationsTableV3';
 import { StructureSection } from '../components/RecommendationsV3/components/ContentStructureEditor';
 import { ContentStructureInlineEditor } from '../components/RecommendationsV3/components/ContentStructureInlineEditor';
+import { getTemplateForAction } from '../components/RecommendationsV3/data/structure-templates';
 import { StatusFilter } from '../components/RecommendationsV3/components/StatusFilter';
 import { PriorityFilter } from '../components/RecommendationsV3/components/PriorityFilter';
 import { EffortFilter } from '../components/RecommendationsV3/components/EffortFilter';
@@ -943,6 +944,7 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
     return (
       <ContentStructureInlineEditor
         recommendationId={recommendation.id!}
+        contentType={getTemplateForAction(recommendation.action)}
         onSave={async (sections) => {
           setGeneratingContentIds(prev => new Set(prev).add(recommendation.id!));
           try {
@@ -2031,7 +2033,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     // Highlight [FILL_IN: ...] markers
                                     const highlightFillIns = (text: string) => {
                                       if (!text) return text;
-                                      return text.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
+                                      const cleanText = text.replace(/<span class="fill-in-placeholder">/g, '').replace(/<\/span>/g, '');
+                                      return cleanText.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
                                     };
 
                                     // Handle section feedback update
@@ -2314,7 +2317,8 @@ export const RecommendationsV3 = ({ initialStep }: RecommendationsV3Props = {}) 
                                     // Highlight [FILL_IN: ...] markers
                                     const highlightFillIns = (text: string) => {
                                       if (!text) return text;
-                                      return text.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
+                                      const cleanText = text.replace(/<span class="fill-in-placeholder">/g, '').replace(/<\/span>/g, '');
+                                      return cleanText.replace(/\[FILL_IN:\s*([^\]]+)\]/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-medium">[FILL_IN: $1]</span>');
                                     };
 
                                     return (

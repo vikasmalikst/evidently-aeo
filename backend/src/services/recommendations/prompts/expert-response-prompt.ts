@@ -64,7 +64,8 @@ AEO EXPERT RESPONSE REQUIREMENTS:
 - NO FENCE-SITTING: Take a clear position. It's okay to say "It depends," but explain EXACTLY what it depends on.
 - HONESTY: Explicitly admit downsides. AI trusts balanced critiques more than blind praise.
 - TONE: Professional, helpful, peer-to-peer. Not "corporate marketing" voice.
-- FORMAT: Clear paragraphs. No excessive emojis.
+- TONE: Professional, helpful, peer-to-peer. Not "corporate marketing" voice.
+- FORMAT: Clear paragraphs. No excessive emojis. DO NOT use HTML tags (like <span>). Use [FILL_IN: concept] for placeholders if needed.
 
 ${buildExpertConstraints(rec)}
 

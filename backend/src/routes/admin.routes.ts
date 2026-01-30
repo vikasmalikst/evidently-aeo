@@ -13,6 +13,7 @@ import { backfillRawAnswerFromSnapshots } from '../scripts/backfill-raw-answer-f
 import { createClient } from '@supabase/supabase-js';
 import { loadEnvironment, getEnvVar } from '../utils/env-utils';
 import { collectionStatsService } from '../services/collection-stats.service';
+import { ollamaLocalScoreService } from '../services/scoring/ollama-local-score.service';
 
 loadEnvironment();
 
@@ -1865,6 +1866,40 @@ function mapAIModelsToCollectors(aiModels: string[]): string[] {
   // Remove duplicates
   return [...new Set(collectors)];
 }
+
+/**
+ * POST /api/admin/llm/local-score
+ * Trigger brand-agnostic scoring using local Ollama (.env config)
+ * Uses SSE for real-time progress logging
+ */
+router.post('/llm/local-score', async (req: Request, res: Response) => {
+  // Set up SSE for real-time logging
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendLog = (message: string) => {
+    const data = JSON.stringify({ message, timestamp: new Date().toISOString() });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  try {
+    console.log('[Admin] Local Ollama scoring requested');
+    sendLog('🚀 Initialization of Local Ollama Scoring Service...');
+
+    const result = await ollamaLocalScoreService.runScoring(sendLog);
+
+    res.write(`data: ${JSON.stringify({ status: 'completed', data: result })}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error('Local scoring failed:', error);
+    res.write(`data: ${JSON.stringify({
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })}\n\n`);
+    res.end();
+  }
+});
 
 /**
  * POST /api/admin/brands/:brandId/collect-and-score-now

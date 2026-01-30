@@ -37,6 +37,7 @@ export interface ConsolidatedAnalysisOptions {
   collectorResultId?: number; // For caching
   customerId?: string; // For database caching
   brandId?: string; // For database caching
+  ollamaConfigOverride?: { ollamaUrl: string; ollamaModel: string; useOllama: boolean };
 }
 
 export interface ConsolidatedAnalysisMetrics {
@@ -289,13 +290,15 @@ export class ConsolidatedAnalysisService {
         brandName: brandName,
       });
 
-      // Check if Ollama should be used (brand-specific)
-      const useOllama = await shouldUseOllama(brandId);
+      // Check if Ollama should be used (brand-specific or override)
+      const useOllama = options.ollamaConfigOverride
+        ? options.ollamaConfigOverride.useOllama
+        : await shouldUseOllama(brandId);
       const llmProvider: 'ollama' | 'openrouter' = useOllama ? 'ollama' : 'openrouter';
 
       // Call LLM API - either Ollama or OpenRouter (existing functionality)
       const result = useOllama
-        ? await this.callOllamaAPI(prompt, brandId)
+        ? await this.callOllamaAPI(prompt, brandId, options.ollamaConfigOverride)
         : await this.callOpenRouterAPI(prompt);
 
       // Merge cached citations with LLM results
@@ -531,16 +534,20 @@ Respond with ONLY valid JSON in this exact structure:
   }
 
   /**
-   * Call Ollama API (separate, modular function - brand-specific)
+   * Call Ollama API (separate, modular function - brand-specific or override)
    */
-  private async callOllamaAPI(prompt: string, brandId?: string): Promise<ConsolidatedAnalysisResult> {
-    console.log('🦙 Calling Ollama for consolidated analysis...');
+  private async callOllamaAPI(
+    prompt: string,
+    brandId?: string,
+    configOverride?: Partial<{ ollamaUrl: string; ollamaModel: string; useOllama: boolean }>
+  ): Promise<ConsolidatedAnalysisResult> {
+    console.log('🦙 Calling Ollama for consolidated analysis' + (configOverride ? ' with override' : '') + '...');
 
     const systemMessage = 'You are a precise analysis assistant. Always respond with valid JSON only, no explanations.';
 
     try {
-      // Use the separate Ollama client service (brand-specific)
-      const fullResponse = await callOllamaClientAPI(systemMessage, prompt, brandId);
+      // Use the separate Ollama client service (brand-specific or override)
+      const fullResponse = await callOllamaClientAPI(systemMessage, prompt, brandId, configOverride);
 
       // Extract JSON from response (handle markdown code blocks)
       let jsonStr = typeof fullResponse === 'string' ? fullResponse.trim() : String(fullResponse).trim();

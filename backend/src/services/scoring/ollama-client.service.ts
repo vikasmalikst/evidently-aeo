@@ -132,7 +132,7 @@ async function getOllamaConfigForBrand(brandId: string): Promise<OllamaConfig | 
     }
 
     const config = brand.local_llm as any;
-    
+
     // Check if Ollama is enabled
     if (!config.useOllama) {
       return null;
@@ -158,13 +158,13 @@ async function getOllamaConfigForBrand(brandId: string): Promise<OllamaConfig | 
 async function getOllamaConfig(): Promise<OllamaConfig | null> {
   try {
     const setting = await globalSettingsService.getGlobalSetting('consolidated_analysis');
-    
+
     if (!setting || !setting.metadata) {
       return null;
     }
 
     const metadata = setting.metadata as any;
-    
+
     // Check if Ollama is enabled
     if (!metadata.useOllama) {
       return null;
@@ -202,12 +202,24 @@ export async function shouldUseOllama(brandId?: string): Promise<boolean> {
 export async function callOllamaAPI(
   systemMessage: string,
   userMessage: string,
-  brandId?: string
+  brandId?: string,
+  configOverride?: Partial<OllamaConfig>
 ): Promise<string> {
-  const config = brandId 
-    ? await getOllamaConfigForBrand(brandId)
-    : await getOllamaConfig();
-  
+  // Use configOverride if provided, otherwise fetch from brand or global settings
+  let config: OllamaConfig | null = null;
+
+  if (configOverride && configOverride.ollamaUrl && configOverride.ollamaModel) {
+    config = {
+      ollamaUrl: configOverride.ollamaUrl,
+      ollamaModel: configOverride.ollamaModel,
+      useOllama: configOverride.useOllama !== undefined ? configOverride.useOllama : true
+    };
+  } else {
+    config = brandId
+      ? await getOllamaConfigForBrand(brandId)
+      : await getOllamaConfig();
+  }
+
   if (!config || !config.useOllama) {
     throw new Error('Ollama is not enabled or configured for this brand');
   }
@@ -221,14 +233,14 @@ export async function callOllamaAPI(
 
     // Add timeout for Ollama calls (300 seconds for complex tasks like recommendations or enrichment, 180 seconds for scoring)
     // Complex tasks need more time due to longer prompts and larger responses
-    const isComplexPrompt = userMessage.includes('Generate 8-12 recommendations') || 
-                            userMessage.includes('actionable recommendations') ||
-                            userMessage.includes('comprehensive synonyms') ||
-                            userMessage.includes('commercial products') ||
-                            userMessage.includes('Collaboration Email') ||
-                            userMessage.includes('Publishable Content');
+    const isComplexPrompt = userMessage.includes('Generate 8-12 recommendations') ||
+      userMessage.includes('actionable recommendations') ||
+      userMessage.includes('comprehensive synonyms') ||
+      userMessage.includes('commercial products') ||
+      userMessage.includes('Collaboration Email') ||
+      userMessage.includes('Publishable Content');
     const timeoutMs = isComplexPrompt ? 300000 : 180000; // 300s (5 mins) for complex prompts, 180s (3 mins) for scoring
-    
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -281,14 +293,14 @@ export async function callOllamaAPI(
       return content;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      
+
       // Check if it's a timeout error
-      if (errorMsg.includes('aborted') || errorMsg.includes('timeout') || 
-          (error instanceof Error && error.name === 'AbortError')) {
+      if (errorMsg.includes('aborted') || errorMsg.includes('timeout') ||
+        (error instanceof Error && error.name === 'AbortError')) {
         console.error(`❌ Ollama API call timed out after ${timeoutMs / 1000} seconds`);
         throw new Error(`Ollama API timeout: Request took longer than ${timeoutMs / 1000} seconds. The model may be too slow for this task.`);
       }
-      
+
       console.error(`❌ Ollama API call failed:`, errorMsg);
       throw new Error(`Ollama API error: ${errorMsg}`);
     }
@@ -316,7 +328,7 @@ export async function checkOllamaHealth(): Promise<{
   responseTime?: number;
 }> {
   const config = await getOllamaConfig();
-  
+
   if (!config || !config.useOllama) {
     return {
       healthy: false,
@@ -408,7 +420,7 @@ export async function checkOllamaHealth(): Promise<{
   } catch (error) {
     const responseTime = Date.now() - startTime;
     const errorMsg = error instanceof Error ? error.message : String(error);
-    
+
     if (errorMsg.includes('timeout') || errorMsg.includes('AbortError')) {
       return {
         healthy: false,
@@ -442,7 +454,7 @@ export async function checkOllamaHealthForBrand(brandId: string): Promise<{
   responseTime?: number;
 }> {
   const config = await getOllamaConfigForBrand(brandId);
-  
+
   if (!config || !config.useOllama) {
     return {
       healthy: false,
@@ -534,7 +546,7 @@ export async function checkOllamaHealthForBrand(brandId: string): Promise<{
   } catch (error) {
     const responseTime = Date.now() - startTime;
     const errorMsg = error instanceof Error ? error.message : String(error);
-    
+
     if (errorMsg.includes('timeout') || errorMsg.includes('AbortError')) {
       return {
         healthy: false,
@@ -568,7 +580,7 @@ export async function testOllamaPromptForBrand(brandId: string, prompt: string):
   error?: string;
 }> {
   const config = await getOllamaConfigForBrand(brandId);
-  
+
   if (!config || !config.useOllama) {
     return {
       success: false,
@@ -646,7 +658,7 @@ export async function testOllamaPrompt(prompt: string): Promise<{
   error?: string;
 }> {
   const config = await getOllamaConfig();
-  
+
   if (!config || !config.useOllama) {
     return {
       success: false,

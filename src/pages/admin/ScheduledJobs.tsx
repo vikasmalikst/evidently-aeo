@@ -109,6 +109,9 @@ export const ScheduledJobs = () => {
     brandId: string;
   } | null>(null);
 
+  const [localOllamaScoringRunning, setLocalOllamaScoringRunning] = useState(false);
+  const [localOllamaScoringLogs, setLocalOllamaScoringLogs] = useState<Array<{ ts: string; message: string }>>([]);
+
   const handleGenerateRecommendations = async () => {
     if (!selectedBrandId && !generateRecsForAllBrands) return;
 
@@ -248,6 +251,64 @@ export const ScheduledJobs = () => {
   const [scoringBackfillRunning, setScoringBackfillRunning] = useState(false);
   const [scoringBackfillLogs, setScoringBackfillLogs] = useState<Array<{ ts: string; message: string }>>([]);
   const [backfillForce, setBackfillForce] = useState(false);
+
+  const handleLocalOllamaScoring = async () => {
+    if (!confirm('Start brand-agnostic scoring using local Ollama model? This will process ALL pending results across all brands.')) {
+      return;
+    }
+
+    setLocalOllamaScoringRunning(true);
+    setLocalOllamaScoringLogs([{ ts: new Date().toLocaleTimeString(), message: 'Initiating local Ollama scoring...' }]);
+
+    try {
+      const response = await fetch(`${apiClient.baseUrl}/admin/llm/local-score`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiClient.getAccessToken()}`,
+        }
+      });
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Failed to read response stream');
+
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ')) {
+            try {
+              const jsonStr = trimmedLine.substring(6);
+              const data = JSON.parse(jsonStr);
+              if (data.message) {
+                setLocalOllamaScoringLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), message: data.message }]);
+              }
+              if (data.status === 'completed' || data.status === 'failed') {
+                setLocalOllamaScoringRunning(false);
+                if (data.status === 'completed') {
+                  setLocalOllamaScoringLogs(prev => [...prev, {
+                    ts: new Date().toLocaleTimeString(),
+                    message: `✅ Completed: ${data.data?.processed || 0} processed, ${data.data?.errors || 0} errors`
+                  }]);
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Local Ollama scoring error:', error);
+      setLocalOllamaScoringLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), message: `❌ Error: ${error instanceof Error ? error.message : 'Failed to connect'}` }]);
+      setLocalOllamaScoringRunning(false);
+    }
+  };
   const [backfillPreserveDates, setBackfillPreserveDates] = useState(true);
 
   const { selectedCustomerId: adminSelectedCustomerId, selectedBrandId: adminSelectedBrandId } = useAdminStore();
@@ -1083,216 +1144,246 @@ export const ScheduledJobs = () => {
                   {scoring ? 'Scoring...' : 'Start Scoring'}
                 </button>
               </div>
-              <div className="bg-white p-4 rounded border border-red-200">
-                <h4 className="font-medium text-gray-900 mb-2">Recover Stuck Scoring</h4>
+              <div className="bg-white p-4 rounded border border-indigo-200">
+                <h4 className="font-medium text-gray-900 mb-2">Local Ollama Scoring</h4>
                 <p className="text-sm text-gray-600 mb-3">
-                  Completes interrupted scoring tasks using existing cache data
+                  Brand-agnostic scoring using local Ollama model from .env config
                 </p>
                 <button
-                  onClick={handleRecoverStuckScoring}
-                  disabled={collecting || scoring || backfillRunning || recovering}
-                  className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleLocalOllamaScoring}
+                  disabled={collecting || scoring || backfillRunning || localOllamaScoringRunning}
+                  className="w-full px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {recovering ? 'Recovering...' : 'Recover Stuck Scoring'}
+                  {localOllamaScoringRunning ? 'Local Scoring...' : 'Start Local Scoring (Ollama)'}
                 </button>
-                {recoveryResult && (
-                  <div className="mt-2 text-xs text-gray-600">
-                    Last run: {recoveryResult.processed} items recovered, {recoveryResult.errors.length} errors.
+                {localOllamaScoringLogs.length > 0 && (
+                  <div className="mt-4 p-3 bg-gray-900 text-gray-100 rounded text-xs font-mono max-h-60 overflow-y-auto">
+                    {localOllamaScoringLogs.map((log, i) => (
+                      <div key={i} className="mb-1">
+                        <span className="text-gray-500">[{log.ts}]</span> {log.message}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             </div>
-            <div className="mt-4 bg-white p-4 rounded border border-orange-200">
-              <h4 className="font-medium text-gray-900 mb-2">Backfill Raw Answers</h4>
+            <div className="bg-white p-4 rounded border border-red-200">
+              <h4 className="font-medium text-gray-900 mb-2">Recover Stuck Scoring</h4>
               <p className="text-sm text-gray-600 mb-3">
-                Updates raw_answer from BrightData snapshots and resets stuck scoring
+                Completes interrupted scoring tasks using existing cache data
               </p>
               <button
-                onClick={handleBackfillRawAnswers}
-                disabled={collecting || scoring || backfillRunning}
-                className="w-full px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleRecoverStuckScoring}
+                disabled={collecting || scoring || backfillRunning || recovering}
+                className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {backfillRunning ? 'Running Backfill...' : 'Run Backfill'}
+                {recovering ? 'Recovering...' : 'Recover Stuck Scoring'}
               </button>
-              {backfillResult ? (
-                <div
-                  className={`mt-2 text-sm ${backfillResult.ok ? 'text-green-700' : 'text-red-700'}`}
-                >
-                  {backfillResult.ok ? 'Backfill finished successfully' : `Backfill failed: ${backfillResult.error || 'Unknown error'}`}
+              {recoveryResult && (
+                <div className="mt-2 text-xs text-gray-600">
+                  Last run: {recoveryResult.processed} items recovered, {recoveryResult.errors.length} errors.
                 </div>
-              ) : null}
+              )}
             </div>
-
-            {/* Scoring Backfill Panel */}
-            <div className="mt-4 bg-white p-4 rounded border border-teal-200">
-              <h4 className="font-medium text-gray-900 mb-2">Backfill Scoring</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Re-calculate scores for a specific time period using cached analysis (no LLM cost)
-              </p>
-              <button
-                onClick={handleOpenBackfillModal}
-                disabled={collecting || scoring || backfillRunning || scoringBackfillRunning}
-                className="w-full px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          </div>
+          <div className="mt-4 bg-white p-4 rounded border border-orange-200">
+            <h4 className="font-medium text-gray-900 mb-2">Backfill Raw Answers</h4>
+            <p className="text-sm text-gray-600 mb-3">
+              Updates raw_answer from BrightData snapshots and resets stuck scoring
+            </p>
+            <button
+              onClick={handleBackfillRawAnswers}
+              disabled={collecting || scoring || backfillRunning}
+              className="w-full px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {backfillRunning ? 'Running Backfill...' : 'Run Backfill'}
+            </button>
+            {backfillResult ? (
+              <div
+                className={`mt-2 text-sm ${backfillResult.ok ? 'text-green-700' : 'text-red-700'}`}
               >
-                {scoringBackfillRunning ? 'Backfilling Scoring...' : 'Start Scoring Backfill'}
-              </button>
-            </div>
+                {backfillResult.ok ? 'Backfill finished successfully' : `Backfill failed: ${backfillResult.error || 'Unknown error'}`}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Scoring Backfill Panel */}
+          <div className="mt-4 bg-white p-4 rounded border border-teal-200">
+            <h4 className="font-medium text-gray-900 mb-2">Backfill Scoring</h4>
+            <p className="text-sm text-gray-600 mb-3">
+              Re-calculate scores for a specific time period using cached analysis (no LLM cost)
+            </p>
+            <button
+              onClick={handleOpenBackfillModal}
+              disabled={collecting || scoring || backfillRunning || scoringBackfillRunning}
+              className="w-full px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {scoringBackfillRunning ? 'Backfilling Scoring...' : 'Start Scoring Backfill'}
+            </button>
           </div>
         </div>
       )}
 
       {/* Backfill Scoring Modal */}
-      {showBackfillModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div className="mt-3 text-center">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">Backfill Scoring</h3>
-              <div className="mt-2 px-7 py-3">
-                <p className="text-sm text-gray-500 mb-4">
-                  Select time period for {brands.find(b => b.id === selectedBrandId)?.name}.
-                  This will re-run scoring using existing analysis data.
-                </p>
-                <div className="mb-4 text-left">
-                  <label className="block text-gray-700 text-sm font-bold mb-2">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                    value={backfillStartDate}
-                    onChange={(e) => setBackfillStartDate(e.target.value)}
-                  />
-                </div>
-                <div className="mb-4 text-left">
-                  <label className="block text-gray-700 text-sm font-bold mb-2">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                    value={backfillEndDate}
-                    onChange={(e) => setBackfillEndDate(e.target.value)}
-                  />
-                </div>
-                <div className="mb-4 text-left">
-                  <div className="flex items-center mb-2">
-                    <input
-                      type="checkbox"
-                      id="backfill-force"
-                      className="mr-2 h-4 w-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
-                      checked={backfillForce}
-                      onChange={(e) => setBackfillForce(e.target.checked)}
-                    />
-                    <label htmlFor="backfill-force" className="text-gray-700 text-sm font-medium">
-                      Force Re-Scoring (Delete existing data)
+      {
+        showBackfillModal && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+              <div className="mt-3 text-center">
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Backfill Scoring</h3>
+                <div className="mt-2 px-7 py-3">
+                  <p className="text-sm text-gray-500 mb-4">
+                    Select time period for {brands.find(b => b.id === selectedBrandId)?.name}.
+                    This will re-run scoring using existing analysis data.
+                  </p>
+                  <div className="mb-4 text-left">
+                    <label className="block text-gray-700 text-sm font-bold mb-2">
+                      Start Date
                     </label>
-                  </div>
-                  <div className="flex items-center">
                     <input
-                      type="checkbox"
-                      id="backfill-dates"
-                      className="mr-2 h-4 w-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
-                      checked={backfillPreserveDates}
-                      onChange={(e) => setBackfillPreserveDates(e.target.checked)}
+                      type="date"
+                      className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                      value={backfillStartDate}
+                      onChange={(e) => setBackfillStartDate(e.target.value)}
                     />
-                    <label htmlFor="backfill-dates" className="text-gray-700 text-sm font-medium">
-                      Preserve Dates (Backdate metrics)
+                  </div>
+                  <div className="mb-4 text-left">
+                    <label className="block text-gray-700 text-sm font-bold mb-2">
+                      End Date
                     </label>
+                    <input
+                      type="date"
+                      className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                      value={backfillEndDate}
+                      onChange={(e) => setBackfillEndDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="mb-4 text-left">
+                    <div className="flex items-center mb-2">
+                      <input
+                        type="checkbox"
+                        id="backfill-force"
+                        className="mr-2 h-4 w-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                        checked={backfillForce}
+                        onChange={(e) => setBackfillForce(e.target.checked)}
+                      />
+                      <label htmlFor="backfill-force" className="text-gray-700 text-sm font-medium">
+                        Force Re-Scoring (Delete existing data)
+                      </label>
+                    </div>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="backfill-dates"
+                        className="mr-2 h-4 w-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                        checked={backfillPreserveDates}
+                        onChange={(e) => setBackfillPreserveDates(e.target.checked)}
+                      />
+                      <label htmlFor="backfill-dates" className="text-gray-700 text-sm font-medium">
+                        Preserve Dates (Backdate metrics)
+                      </label>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="items-center px-4 py-3">
-                <button
-                  onClick={handleRunBackfillScoring}
-                  disabled={scoringBackfillRunning || !backfillStartDate || !backfillEndDate}
-                  className="px-4 py-2 bg-teal-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-300 disabled:opacity-50 mb-2"
-                >
-                  {scoringBackfillRunning ? 'Running...' : 'Start Backfill'}
-                </button>
-                <button
-                  onClick={() => setShowBackfillModal(false)}
-                  disabled={scoringBackfillRunning}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                >
-                  Close
-                </button>
+                <div className="items-center px-4 py-3">
+                  <button
+                    onClick={handleRunBackfillScoring}
+                    disabled={scoringBackfillRunning || !backfillStartDate || !backfillEndDate}
+                    className="px-4 py-2 bg-teal-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-300 disabled:opacity-50 mb-2"
+                  >
+                    {scoringBackfillRunning ? 'Running...' : 'Start Backfill'}
+                  </button>
+                  <button
+                    onClick={() => setShowBackfillModal(false)}
+                    disabled={scoringBackfillRunning}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {(scoringBackfillRunning || scoringBackfillLogs.length > 0) && (
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-lg font-bold text-gray-900">Scoring Backfill Logs</h2>
-            <button
-              onClick={() => setScoringBackfillLogs([])}
-              disabled={scoringBackfillRunning || scoringBackfillLogs.length === 0}
-              className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
-            >
-              Clear
-            </button>
+      {
+        (scoringBackfillRunning || scoringBackfillLogs.length > 0) && (
+          <div className="bg-white rounded-lg shadow p-4 mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-bold text-gray-900">Scoring Backfill Logs</h2>
+              <button
+                onClick={() => setScoringBackfillLogs([])}
+                disabled={scoringBackfillRunning || scoringBackfillLogs.length === 0}
+                className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="h-64 overflow-auto border rounded bg-gray-900 text-teal-400 p-3 font-mono text-xs whitespace-pre-wrap shadow-inner">
+              {scoringBackfillLogs.length === 0
+                ? 'Initializing scoring backfill...'
+                : scoringBackfillLogs.map((l, i) => (
+                  <div key={i} className="mb-1">
+                    <span className="text-gray-500">[{l.ts}]</span> {l.message}
+                  </div>
+                ))}
+              {scoringBackfillRunning && <div className="animate-pulse inline-block w-2 h-4 bg-teal-400 ml-1"></div>}
+            </div>
           </div>
-          <div className="h-64 overflow-auto border rounded bg-gray-900 text-teal-400 p-3 font-mono text-xs whitespace-pre-wrap shadow-inner">
-            {scoringBackfillLogs.length === 0
-              ? 'Initializing scoring backfill...'
-              : scoringBackfillLogs.map((l, i) => (
-                <div key={i} className="mb-1">
-                  <span className="text-gray-500">[{l.ts}]</span> {l.message}
-                </div>
-              ))}
-            {scoringBackfillRunning && <div className="animate-pulse inline-block w-2 h-4 bg-teal-400 ml-1"></div>}
-          </div>
-        </div>
-      )}
+        )
+      }
 
-      {(enrichmentRunning || enrichmentLogs.length > 0) && (
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-lg font-bold text-gray-900">Enrichment Logs</h2>
-            <button
-              onClick={() => setEnrichmentLogs([])}
-              disabled={enrichmentRunning || enrichmentLogs.length === 0}
-              className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
-            >
-              Clear
-            </button>
+      {
+        (enrichmentRunning || enrichmentLogs.length > 0) && (
+          <div className="bg-white rounded-lg shadow p-4 mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-bold text-gray-900">Enrichment Logs</h2>
+              <button
+                onClick={() => setEnrichmentLogs([])}
+                disabled={enrichmentRunning || enrichmentLogs.length === 0}
+                className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="h-64 overflow-auto border rounded bg-gray-900 text-green-400 p-3 font-mono text-xs whitespace-pre-wrap shadow-inner">
+              {enrichmentLogs.length === 0
+                ? 'Initializing LLM enrichment...'
+                : enrichmentLogs.map((l, i) => (
+                  <div key={i} className="mb-1">
+                    <span className="text-gray-500">[{l.ts}]</span> {l.message}
+                  </div>
+                ))}
+              {enrichmentRunning && <div className="animate-pulse inline-block w-2 h-4 bg-green-400 ml-1"></div>}
+            </div>
           </div>
-          <div className="h-64 overflow-auto border rounded bg-gray-900 text-green-400 p-3 font-mono text-xs whitespace-pre-wrap shadow-inner">
-            {enrichmentLogs.length === 0
-              ? 'Initializing LLM enrichment...'
-              : enrichmentLogs.map((l, i) => (
-                <div key={i} className="mb-1">
-                  <span className="text-gray-500">[{l.ts}]</span> {l.message}
-                </div>
-              ))}
-            {enrichmentRunning && <div className="animate-pulse inline-block w-2 h-4 bg-green-400 ml-1"></div>}
-          </div>
-        </div>
-      )}
+        )
+      }
 
-      {(backfillRunning || backfillLogs.length > 0 || backfillResult) && (
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-lg font-bold text-gray-900">Backfill Logs</h2>
-            <button
-              onClick={() => setBackfillLogs([])}
-              disabled={backfillRunning || backfillLogs.length === 0}
-              className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
-            >
-              Clear
-            </button>
+      {
+        (backfillRunning || backfillLogs.length > 0 || backfillResult) && (
+          <div className="bg-white rounded-lg shadow p-4 mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-bold text-gray-900">Backfill Logs</h2>
+              <button
+                onClick={() => setBackfillLogs([])}
+                disabled={backfillRunning || backfillLogs.length === 0}
+                className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="h-64 overflow-auto border rounded bg-gray-50 p-3 font-mono text-xs whitespace-pre-wrap">
+              {backfillLogs.length === 0
+                ? backfillRunning
+                  ? 'Connecting...'
+                  : 'No logs yet'
+                : backfillLogs.map((l) => `${l.ts} [${l.level}] ${l.message}`).join('\n')}
+            </div>
           </div>
-          <div className="h-64 overflow-auto border rounded bg-gray-50 p-3 font-mono text-xs whitespace-pre-wrap">
-            {backfillLogs.length === 0
-              ? backfillRunning
-                ? 'Connecting...'
-                : 'No logs yet'
-              : backfillLogs.map((l) => `${l.ts} [${l.level}] ${l.message}`).join('\n')}
-          </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Ollama Settings Panel */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
@@ -1504,67 +1595,68 @@ export const ScheduledJobs = () => {
       </div>
 
       {/* Test Prompt Section */}
-      {ollamaSettings.useOllama && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Test Ollama</h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Send a test prompt to verify Ollama is working correctly
-          </p>
+      {
+        ollamaSettings.useOllama && (
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Test Ollama</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Send a test prompt to verify Ollama is working correctly
+            </p>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Test Prompt
-              </label>
-              <textarea
-                value={testPrompt}
-                onChange={(e) => setTestPrompt(e.target.value)}
-                placeholder="Enter a test prompt here..."
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                disabled={testLoading}
-              />
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={testOllamaPrompt}
-                disabled={testLoading || !testPrompt.trim()}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {testLoading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Testing...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🚀</span>
-                    <span>Send Test Prompt</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Test Response */}
-            {testError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-sm font-medium text-red-800">Error</p>
-                <p className="text-xs text-red-700 mt-1">{testError}</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Test Prompt
+                </label>
+                <textarea
+                  value={testPrompt}
+                  onChange={(e) => setTestPrompt(e.target.value)}
+                  placeholder="Enter a test prompt here..."
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={testLoading}
+                />
               </div>
-            )}
 
-            {testResponse && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-md">
-                <p className="text-sm font-medium text-green-800 mb-2">Response</p>
-                <div className="bg-white p-3 rounded border border-green-200">
-                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{testResponse}</p>
+              <div className="flex justify-end">
+                <button
+                  onClick={testOllamaPrompt}
+                  disabled={testLoading || !testPrompt.trim()}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {testLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Testing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🚀</span>
+                      <span>Send Test Prompt</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Test Response */}
+              {testError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-sm font-medium text-red-800">Error</p>
+                  <p className="text-xs text-red-700 mt-1">{testError}</p>
                 </div>
-              </div>
-            )}
+              )}
+
+              {testResponse && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+                  <p className="text-sm font-medium text-green-800 mb-2">Response</p>
+                  <div className="bg-white p-3 rounded border border-green-200">
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{testResponse}</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Jobs Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
@@ -1650,44 +1742,52 @@ export const ScheduledJobs = () => {
       </div>
 
       {/* Create Modal */}
-      {showCreateModal && (
-        <CreateJobModal
-          onClose={() => setShowCreateModal(false)}
-          onSubmit={handleCreateJob}
-          brands={brands}
-          defaultBrandId={selectedBrandId ?? undefined}
-        />
-      )}
+      {
+        showCreateModal && (
+          <CreateJobModal
+            onClose={() => setShowCreateModal(false)}
+            onSubmit={handleCreateJob}
+            brands={brands}
+            defaultBrandId={selectedBrandId ?? undefined}
+          />
+        )
+      }
 
       {/* Runs History Modal */}
-      {showRunsModal && selectedJob && (
-        <RunsHistoryModal
-          job={selectedJob}
-          onClose={() => {
-            setShowRunsModal(false);
-            setSelectedJob(null);
-          }}
-        />
-      )}
+      {
+        showRunsModal && selectedJob && (
+          <RunsHistoryModal
+            job={selectedJob}
+            onClose={() => {
+              setShowRunsModal(false);
+              setSelectedJob(null);
+            }}
+          />
+        )
+      }
 
       {/* Collection Confirmation Modal */}
-      {showCollectionModal && collectionPreview && (
-        <CollectionConfirmationModal
-          preview={collectionPreview}
-          onClose={() => setShowCollectionModal(false)}
-          onConfirm={confirmCollectDataNow}
-        />
-      )}
+      {
+        showCollectionModal && collectionPreview && (
+          <CollectionConfirmationModal
+            preview={collectionPreview}
+            onClose={() => setShowCollectionModal(false)}
+            onConfirm={confirmCollectDataNow}
+          />
+        )
+      }
 
       {/* Scoring Confirmation Modal */}
-      {showScoringModal && scoringPreview && (
-        <ScoringConfirmationModal
-          preview={scoringPreview}
-          onClose={() => setShowScoringModal(false)}
-          onConfirm={confirmScoreNow}
-        />
-      )}
-    </div>
+      {
+        showScoringModal && scoringPreview && (
+          <ScoringConfirmationModal
+            preview={scoringPreview}
+            onClose={() => setShowScoringModal(false)}
+            onConfirm={confirmScoreNow}
+          />
+        )
+      }
+    </div >
   );
 };
 
